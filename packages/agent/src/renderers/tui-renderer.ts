@@ -305,7 +305,7 @@ export class TuiRenderer implements AgentEventReceiver {
 
 		// Add tool call count
 		if (this.toolCallCount > 0) {
-			tokenText += chalk.dim(` ⚒${this.toolCallCount}`);
+			tokenText += chalk.dim(` ⚒ ${this.toolCallCount}`);
 		}
 
 		this.tokenStatusComponent = new TextComponent(tokenText);

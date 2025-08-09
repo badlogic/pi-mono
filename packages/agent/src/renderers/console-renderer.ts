@@ -68,7 +68,7 @@ export class ConsoleRenderer implements AgentEventReceiver {
 
 		// Add tool call count
 		if (this.toolCallCount > 0) {
-			metricsText += chalk.dim(` ⚒${this.toolCallCount}`);
+			metricsText += chalk.dim(` ⚒ ${this.toolCallCount}`);
 		}
 
 		console.log(metricsText);
