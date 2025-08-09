@@ -296,15 +296,63 @@ The agent is built with:
 
 ## Development
 
+### Running from Source
+
 ```bash
-# Run from source
-npx tsx src/cli.ts "Hello"
+# Run directly with npx tsx - no build needed
+npx tsx src/cli.ts "What is 2+2?"
 
-# Build
-npm run build
+# Interactive TUI mode
+npx tsx src/cli.ts
 
-# Run built version
-dist/cli.js "Hello"
+# JSON mode for programmatic use
+echo '{"type":"message","content":"list files"}' | npx tsx src/cli.ts --json
+```
+
+### Testing
+
+The agent supports three testing modes:
+
+#### 1. Test UI/Renderers (non-interactive mode)
+```bash
+# Test console renderer output and metrics
+npx tsx src/cli.ts "list files in /tmp" 2>&1 | tail -5
+# Verify: ↑609 ↓610 ⚒ 1 (tokens and tool count)
+
+# Test TUI renderer (with stdin)
+echo "list files" | npx tsx src/cli.ts 2>&1 | grep "⚒"
+```
+
+#### 2. Test Model Behavior (JSON mode)
+```bash
+# Extract metrics for model comparison
+echo '{"type":"message","content":"write fibonacci in Python"}' | \
+  npx tsx src/cli.ts --json --model gpt-4o-mini 2>&1 | \
+  jq -s '[.[] | select(.type=="token_usage")] | last'
+
+# Compare models: tokens used, tool calls made, quality
+for model in "gpt-4o-mini" "gpt-4o"; do
+  echo "Testing $model:"
+  echo '{"type":"message","content":"fix syntax errors in: prnt(hello)"}' | \
+    npx tsx src/cli.ts --json --model $model 2>&1 | \
+    jq -r 'select(.type=="token_usage" or .type=="tool_call" or .type=="assistant_message")'
+done
+```
+
+#### 3. LLM-as-Judge Testing
+```bash
+# Capture output from different models and evaluate with another LLM
+TASK="write a Python function to check if a number is prime"
+
+# Get response from model A
+RESPONSE_A=$(echo "{\"type\":\"message\",\"content\":\"$TASK\"}" | \
+  npx tsx src/cli.ts --json --model gpt-4o-mini 2>&1 | \
+  jq -r '.[] | select(.type=="assistant_message") | .text')
+
+# Judge the response
+echo "{\"type\":\"message\",\"content\":\"Rate this code (1-10): $RESPONSE_A\"}" | \
+  npx tsx src/cli.ts --json --model gpt-4o 2>&1 | \
+  jq -r '.[] | select(.type=="assistant_message") | .text'
 ```
 
 ## Use as a Library
