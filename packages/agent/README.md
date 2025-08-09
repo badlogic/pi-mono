@@ -45,7 +45,7 @@ pi-agent --base-url https://openrouter.ai/api/v1 --api-key $OPENROUTER_API_KEY -
 pi-agent --base-url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY --model claude-opus-4-1-20250805
 
 # Gemini via Google AI (set GEMINI_API_KEY environment variable)
-# Note: Gemini 2.5 models support reasoning but require extra_body for thinking content (not yet supported)
+# Note: Gemini 2.5 models support reasoning with thinking content automatically configured
 pi-agent --base-url https://generativelanguage.googleapis.com/v1beta/openai/ --api-key $GEMINI_API_KEY --model gemini-2.5-flash
 ```
 
@@ -153,7 +153,7 @@ When using `--json`, the agent outputs these event types:
 **Note:**
 - OpenAI's Chat Completions API (`--api completions`, the default) only returns reasoning token *counts* but not the actual thinking content. To see thinking events, use the Responses API with `--api responses` for supported models (o1, o3, gpt-5).
 - Anthropic's OpenAI compatibility layer doesn't return thinking content. Use the native Anthropic API for full extended thinking features.
-- Gemini 2.5 models support reasoning via `reasoning_effort` but require the `extra_body` parameter with `thinking_config.include_thoughts: true` to get thinking content, which is not yet supported in pi-agent.
+- Gemini 2.5 models automatically include thinking content when reasoning is detected - pi-agent handles the `extra_body` configuration for you.
 
 The complete TypeScript type definition for `AgentEvent` can be found in [`src/agent.ts`](src/agent.ts#L6).
 
