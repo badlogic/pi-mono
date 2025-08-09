@@ -6,7 +6,7 @@ A comprehensive toolkit for managing Large Language Model (LLM) deployments and 
 - Terminal UI framework with differential rendering and interactive components
 - AI agent framework with tool calling, session persistence, and multiple renderers
 - GPU pod management CLI for automated vLLM deployment on various providers
-- Support for OpenAI, Anthropic, Groq, OpenRouter, and compatible APIs
+- Support for OpenAI, Anthropic, Groq, OpenRouter, Gemini, and compatible APIs
 - Built-in file system tools for agentic AI capabilities
 
 ## Tech Stack

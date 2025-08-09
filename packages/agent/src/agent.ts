@@ -44,10 +44,135 @@ export interface ToolCall {
 // Cache for model reasoning support detection per API type
 const modelReasoningSupport = new Map<string, { completions?: boolean; responses?: boolean }>();
 
+// Provider detection based on base URL
+function detectProvider(baseURL?: string): "openai" | "gemini" | "groq" | "anthropic" | "openrouter" | "other" {
+	if (!baseURL) return "openai";
+	if (baseURL.includes("api.openai.com")) return "openai";
+	if (baseURL.includes("generativelanguage.googleapis.com")) return "gemini";
+	if (baseURL.includes("api.groq.com")) return "groq";
+	if (baseURL.includes("api.anthropic.com")) return "anthropic";
+	if (baseURL.includes("openrouter.ai")) return "openrouter";
+	return "other";
+}
+
+// Parse provider-specific reasoning from message content
+function parseReasoningFromMessage(message: any, baseURL?: string): { cleanContent: string; reasoningTexts: string[] } {
+	const provider = detectProvider(baseURL);
+	const reasoningTexts: string[] = [];
+	let cleanContent = message.content || "";
+
+	switch (provider) {
+		case "gemini":
+			// Gemini returns thinking in <thought> tags
+			if (cleanContent.includes("<thought>")) {
+				const thoughtMatches = cleanContent.matchAll(/<thought>([\s\S]*?)<\/thought>/g);
+				for (const match of thoughtMatches) {
+					reasoningTexts.push(match[1].trim());
+				}
+				// Remove all thought tags from the response
+				cleanContent = cleanContent.replace(/<thought>[\s\S]*?<\/thought>/g, "").trim();
+			}
+			break;
+
+		case "groq":
+			// Groq returns reasoning in a separate field when reasoning_format is "parsed"
+			if (message.reasoning) {
+				reasoningTexts.push(message.reasoning);
+			}
+			break;
+
+		case "openrouter":
+			// OpenRouter returns reasoning in message.reasoning field
+			if (message.reasoning) {
+				reasoningTexts.push(message.reasoning);
+			}
+			break;
+
+		default:
+			// Other providers don't embed reasoning in message content
+			break;
+	}
+
+	return { cleanContent, reasoningTexts };
+}
+
+// Adjust request options based on provider-specific requirements
+function adjustRequestForProvider(
+	requestOptions: any,
+	api: "completions" | "responses",
+	baseURL?: string,
+	supportsReasoning?: boolean,
+): any {
+	const provider = detectProvider(baseURL);
+
+	// Handle provider-specific adjustments
+	switch (provider) {
+		case "gemini":
+			if (api === "completions" && supportsReasoning && requestOptions.reasoning_effort) {
+				// Gemini needs extra_body for thinking content
+				// Can't use both reasoning_effort and thinking_config
+				const budget =
+					requestOptions.reasoning_effort === "low"
+						? 1024
+						: requestOptions.reasoning_effort === "medium"
+							? 8192
+							: 24576;
+
+				requestOptions.extra_body = {
+					google: {
+						thinking_config: {
+							thinking_budget: budget,
+							include_thoughts: true,
+						},
+					},
+				};
+				// Remove reasoning_effort when using thinking_config
+				delete requestOptions.reasoning_effort;
+			}
+			break;
+
+		case "groq":
+			if (api === "responses" && requestOptions.reasoning) {
+				// Groq responses API doesn't support reasoning.summary
+				delete requestOptions.reasoning.summary;
+			} else if (api === "completions" && supportsReasoning && requestOptions.reasoning_effort) {
+				// Groq Chat Completions uses reasoning_format instead of reasoning_effort alone
+				requestOptions.reasoning_format = "parsed";
+				// Keep reasoning_effort for Groq
+			}
+			break;
+
+		case "anthropic":
+			// Anthropic's OpenAI compatibility has its own quirks
+			// But thinking content isn't available via OpenAI compat layer
+			break;
+
+		case "openrouter":
+			// OpenRouter uses a unified reasoning parameter format
+			if (api === "completions" && supportsReasoning && requestOptions.reasoning_effort) {
+				// Convert reasoning_effort to OpenRouter's reasoning format
+				requestOptions.reasoning = {
+					effort: requestOptions.reasoning_effort === "low" ? "low" : 
+					       requestOptions.reasoning_effort === "minimal" ? "low" : 
+					       requestOptions.reasoning_effort === "medium" ? "medium" : "high"
+				};
+				delete requestOptions.reasoning_effort;
+			}
+			break;
+
+		default:
+			// OpenAI and others use standard format
+			break;
+	}
+
+	return requestOptions;
+}
+
 async function checkReasoningSupport(
 	client: OpenAI,
 	model: string,
 	api: "completions" | "responses",
+	baseURL?: string,
 ): Promise<boolean> {
 	// Check cache first
 	const cacheKey = model;
@@ -57,31 +182,54 @@ async function checkReasoningSupport(
 	}
 
 	let supportsReasoning = false;
+	const provider = detectProvider(baseURL);
 
 	if (api === "responses") {
 		// Try a minimal request with reasoning parameter for Responses API
 		try {
-			await client.responses.create({
+			const testRequest: any = {
 				model,
 				input: "test",
 				max_output_tokens: 1024,
 				reasoning: {
 					effort: "low", // Use low instead of minimal to ensure we get summaries
 				},
-			});
+			};
+			await client.responses.create(testRequest);
 			supportsReasoning = true;
 		} catch (error) {
 			supportsReasoning = false;
 		}
 	} else {
-		// For Chat Completions API, try with reasoning_effort parameter
+		// For Chat Completions API, try with reasoning parameter
 		try {
-			await client.chat.completions.create({
+			const testRequest: any = {
 				model,
 				messages: [{ role: "user", content: "test" }],
-				max_completion_tokens: 1,
-				reasoning_effort: "minimal",
-			});
+				max_completion_tokens: 1024,
+			};
+
+			// Add provider-specific reasoning parameters
+			if (provider === "gemini") {
+				// Gemini uses extra_body for thinking
+				testRequest.extra_body = {
+					google: {
+						thinking_config: {
+							thinking_budget: 100, // Minimum viable budget for test
+							include_thoughts: true,
+						},
+					},
+				};
+			} else if (provider === "groq") {
+				// Groq uses both reasoning_format and reasoning_effort
+				testRequest.reasoning_format = "parsed";
+				testRequest.reasoning_effort = "low";
+			} else {
+				// Others use reasoning_effort
+				testRequest.reasoning_effort = "minimal";
+			}
+
+			await client.chat.completions.create(testRequest);
 			supportsReasoning = true;
 		} catch (error) {
 			supportsReasoning = false;
@@ -103,13 +251,9 @@ export async function callModelResponsesApi(
 	signal?: AbortSignal,
 	eventReceiver?: AgentEventReceiver,
 	supportsReasoning?: boolean,
+	baseURL?: string,
 ): Promise<void> {
 	await eventReceiver?.on({ type: "assistant_start" });
-
-	// Use provided reasoning support or detect it
-	if (supportsReasoning === undefined) {
-		supportsReasoning = await checkReasoningSupport(client, model, "responses");
-	}
 
 	let conversationDone = false;
 
@@ -120,23 +264,26 @@ export async function callModelResponsesApi(
 			throw new Error("Interrupted");
 		}
 
-		const response = await client.responses.create(
-			{
-				model,
-				input: messages,
-				tools: toolsForResponses as any,
-				tool_choice: "auto",
-				parallel_tool_calls: true,
-				max_output_tokens: 2000, // TODO make configurable
-				...(supportsReasoning && {
-					reasoning: {
-						effort: "medium", // Use auto reasoning effort
-						summary: "auto", // Request reasoning summaries
-					},
-				}),
-			},
-			{ signal },
-		);
+		// Build request options
+		let requestOptions: any = {
+			model,
+			input: messages,
+			tools: toolsForResponses as any,
+			tool_choice: "auto",
+			parallel_tool_calls: true,
+			max_output_tokens: 2000, // TODO make configurable
+			...(supportsReasoning && {
+				reasoning: {
+					effort: "minimal", // Use minimal effort for responses API
+					summary: "detailed", // Request detailed reasoning summaries
+				},
+			}),
+		};
+
+		// Apply provider-specific adjustments
+		requestOptions = adjustRequestForProvider(requestOptions, "responses", baseURL, supportsReasoning);
+
+		const response = await client.responses.create(requestOptions, { signal });
 
 		// Report token usage if available (responses API format)
 		if (response.usage) {
@@ -250,13 +397,9 @@ export async function callModelChatCompletionsApi(
 	signal?: AbortSignal,
 	eventReceiver?: AgentEventReceiver,
 	supportsReasoning?: boolean,
+	baseURL?: string,
 ): Promise<void> {
 	await eventReceiver?.on({ type: "assistant_start" });
-
-	// Use provided reasoning support or detect it
-	if (supportsReasoning === undefined) {
-		supportsReasoning = await checkReasoningSupport(client, model, "completions");
-	}
 
 	let assistantResponded = false;
 
@@ -266,19 +409,22 @@ export async function callModelChatCompletionsApi(
 			throw new Error("Interrupted");
 		}
 
-		const response = await client.chat.completions.create(
-			{
-				model,
-				messages,
-				tools: toolsForChat,
-				tool_choice: "auto",
-				max_completion_tokens: 2000, // TODO make configurable
-				...(supportsReasoning && {
-					reasoning_effort: "medium",
-				}),
-			},
-			{ signal },
-		);
+		// Build request options
+		let requestOptions: any = {
+			model,
+			messages,
+			tools: toolsForChat,
+			tool_choice: "auto",
+			max_completion_tokens: 2000, // TODO make configurable
+			...(supportsReasoning && {
+				reasoning_effort: "low", // Use low effort for completions API
+			}),
+		};
+
+		// Apply provider-specific adjustments
+		requestOptions = adjustRequestForProvider(requestOptions, "completions", baseURL, supportsReasoning);
+
+		const response = await client.chat.completions.create(requestOptions, { signal });
 
 		const message = response.choices[0].message;
 
@@ -339,9 +485,17 @@ export async function callModelChatCompletionsApi(
 				}
 			}
 		} else if (message.content) {
-			// Final assistant response
-			eventReceiver?.on({ type: "assistant_message", text: message.content });
-			const finalMsg = { role: "assistant", content: message.content };
+			// Parse provider-specific reasoning from message
+			const { cleanContent, reasoningTexts } = parseReasoningFromMessage(message, baseURL);
+
+			// Emit reasoning events if any
+			for (const reasoning of reasoningTexts) {
+				await eventReceiver?.on({ type: "reasoning", text: reasoning });
+			}
+
+			// Emit the cleaned assistant message
+			await eventReceiver?.on({ type: "assistant_message", text: cleanContent });
+			const finalMsg = { role: "assistant", content: cleanContent };
 			messages.push(finalMsg);
 			assistantResponded = true;
 		}
@@ -417,6 +571,7 @@ export class Agent {
 						this.client,
 						this.config.model,
 						"responses",
+						this.config.baseURL,
 					);
 				}
 
@@ -427,6 +582,7 @@ export class Agent {
 					this.abortController.signal,
 					this.comboReceiver,
 					this.supportsReasoningResponses,
+					this.config.baseURL,
 				);
 			} else {
 				// Check reasoning support for completions API
@@ -435,6 +591,7 @@ export class Agent {
 						this.client,
 						this.config.model,
 						"completions",
+						this.config.baseURL,
 					);
 				}
 
@@ -445,6 +602,7 @@ export class Agent {
 					this.abortController.signal,
 					this.comboReceiver,
 					this.supportsReasoningCompletions,
+					this.config.baseURL,
 				);
 			}
 		} catch (e) {

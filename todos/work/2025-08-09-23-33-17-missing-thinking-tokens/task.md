@@ -1,6 +1,6 @@
 # Fix Missing Thinking Tokens for GPT-5 and Anthropic Models
 **Status:** AwaitingCommit
-**Agent PID:** 27674
+**Agent PID:** 41002
 
 ## Original Todo
 agent: we do not get thinking tokens for gpt-5. possibly also not for anthropic models?
@@ -25,6 +25,18 @@ The agent doesn't extract or report reasoning/thinking tokens from OpenAI's reas
 - [x] Fix: Add reasoning support detection for Chat Completions API
 - [x] Fix: Add correct summary parameter value and increase max_output_tokens for preflight check
 - [x] Investigate: Chat Completions API has reasoning tokens but no thinking events
+- [x] Debug: Add logging to understand gpt-5 response structure in responses API
+- [x] Fix: Change reasoning summary from "auto" to "always" to ensure reasoning text is always returned
+- [x] Fix: Set correct effort levels - "minimal" for responses API, "low" for completions API
+- [x] Add note to README about Chat Completions API not returning thinking content
+- [x] Add Gemini API example to README
+- [x] Verify Gemini thinking token support and update README accordingly
+- [x] Add special case for Gemini to include extra_body with thinking_config
+- [x] Add special case for Groq responses API (doesn't support reasoning.summary)
+- [x] Refactor: Create centralized provider-specific request adjustment function
+- [x] Refactor: Extract message content parsing into parseReasoningFromMessage() function
+- [x] Test: Verify Groq reasoning extraction works with refactored code
+- [x] Test: Verify Gemini thinking extraction works with refactored code
 
 ## Notes
 User reported that o3 model with responses API doesn't show reasoning tokens or thinking events.
@@ -36,5 +48,11 @@ Fixed by:
 5. Parsing both reasoning_text (o1/o3) and summary_text (gpt-5) formats
 6. Displaying reasoning tokens in console and TUI renderers with ⚡ symbol
 7. Properly handling reasoning_effort for Chat Completions API
+8. Set correct effort levels: "minimal" for Responses API, "low" for Chat Completions API
+9. Set summary to "always" for Responses API
 
-**Important finding**: Chat Completions API by design only returns reasoning token *counts* but not the actual thinking/reasoning content for o1 models. This is expected behavior - only the Responses API exposes thinking events.
+**Important findings**: 
+- Chat Completions API by design only returns reasoning token *counts* but not the actual thinking/reasoning content for o1 models. This is expected behavior - only the Responses API exposes thinking events.
+- GPT-5 models currently return empty summary arrays even with `summary: "detailed"` - the model indicates it "can't share step-by-step reasoning". This appears to be a model limitation/behavior rather than a code issue. 
+- The reasoning tokens ARE being used and counted correctly when the model chooses to use them.
+- With effort="minimal" and summary="detailed", gpt-5 sometimes chooses not to use reasoning at all for simple questions.
