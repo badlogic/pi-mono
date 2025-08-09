@@ -142,6 +142,7 @@ export class SessionManager implements AgentEventReceiver {
 			totalTokens: 0,
 			cacheReadTokens: 0,
 			cacheWriteTokens: 0,
+			reasoningTokens: 0,
 		};
 
 		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");

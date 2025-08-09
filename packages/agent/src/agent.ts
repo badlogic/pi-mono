@@ -6,7 +6,7 @@ import { executeTool, toolsForChat, toolsForResponses } from "./tools/tools.js";
 export type AgentEvent =
 	| { type: "session_start"; sessionId: string; model: string; api: string; baseURL: string; systemPrompt: string }
 	| { type: "assistant_start" }
-	| { type: "thinking"; text: string }
+	| { type: "reasoning"; text: string }
 	| { type: "tool_call"; toolCallId: string; name: string; args: string }
 	| { type: "tool_result"; toolCallId: string; result: string; isError: boolean }
 	| { type: "assistant_message"; text: string }
@@ -20,6 +20,7 @@ export type AgentEvent =
 			totalTokens: number;
 			cacheReadTokens: number;
 			cacheWriteTokens: number;
+			reasoningTokens: number;
 	  };
 
 export interface AgentEventReceiver {
@@ -40,14 +41,75 @@ export interface ToolCall {
 	id: string;
 }
 
+// Cache for model reasoning support detection per API type
+const modelReasoningSupport = new Map<string, { completions?: boolean; responses?: boolean }>();
+
+async function checkReasoningSupport(
+	client: OpenAI,
+	model: string,
+	api: "completions" | "responses",
+): Promise<boolean> {
+	// Check cache first
+	const cacheKey = model;
+	const cached = modelReasoningSupport.get(cacheKey);
+	if (cached && cached[api] !== undefined) {
+		return cached[api]!;
+	}
+
+	let supportsReasoning = false;
+
+	if (api === "responses") {
+		// Try a minimal request with reasoning parameter for Responses API
+		try {
+			await client.responses.create({
+				model,
+				input: "test",
+				max_output_tokens: 1024,
+				reasoning: {
+					effort: "low", // Use low instead of minimal to ensure we get summaries
+				},
+			});
+			supportsReasoning = true;
+		} catch (error) {
+			supportsReasoning = false;
+		}
+	} else {
+		// For Chat Completions API, try with reasoning_effort parameter
+		try {
+			await client.chat.completions.create({
+				model,
+				messages: [{ role: "user", content: "test" }],
+				max_completion_tokens: 1,
+				reasoning_effort: "minimal",
+			});
+			supportsReasoning = true;
+		} catch (error) {
+			supportsReasoning = false;
+		}
+	}
+
+	// Update cache
+	const existing = modelReasoningSupport.get(cacheKey) || {};
+	existing[api] = supportsReasoning;
+	modelReasoningSupport.set(cacheKey, existing);
+
+	return supportsReasoning;
+}
+
 export async function callModelResponsesApi(
 	client: OpenAI,
 	model: string,
 	messages: any[],
 	signal?: AbortSignal,
 	eventReceiver?: AgentEventReceiver,
+	supportsReasoning?: boolean,
 ): Promise<void> {
 	await eventReceiver?.on({ type: "assistant_start" });
+
+	// Use provided reasoning support or detect it
+	if (supportsReasoning === undefined) {
+		supportsReasoning = await checkReasoningSupport(client, model, "responses");
+	}
 
 	let conversationDone = false;
 
@@ -65,11 +127,13 @@ export async function callModelResponsesApi(
 				tools: toolsForResponses as any,
 				tool_choice: "auto",
 				parallel_tool_calls: true,
-				reasoning: {
-					effort: "medium", // Use auto reasoning effort
-					summary: "auto",
-				},
 				max_output_tokens: 2000, // TODO make configurable
+				...(supportsReasoning && {
+					reasoning: {
+						effort: "medium", // Use auto reasoning effort
+						summary: "auto", // Request reasoning summaries
+					},
+				}),
 			},
 			{ signal },
 		);
@@ -82,8 +146,9 @@ export async function callModelResponsesApi(
 				inputTokens: usage.input_tokens || 0,
 				outputTokens: usage.output_tokens || 0,
 				totalTokens: usage.total_tokens || 0,
-				cacheReadTokens: usage.input_tokens_details.cached_tokens || 0,
+				cacheReadTokens: usage.input_tokens_details?.cached_tokens || 0,
 				cacheWriteTokens: 0, // Not available in API
+				reasoningTokens: usage.output_tokens_details?.reasoning_tokens || 0,
 			});
 		}
 
@@ -101,9 +166,11 @@ export async function callModelResponsesApi(
 
 			switch (item.type) {
 				case "reasoning": {
-					for (const content of item.content || []) {
-						if (content.type === "reasoning_text") {
-							await eventReceiver?.on({ type: "thinking", text: content.text });
+					// Handle both content (o1/o3) and summary (gpt-5) formats
+					const reasoningItems = item.content || item.summary || [];
+					for (const content of reasoningItems) {
+						if (content.type === "reasoning_text" || content.type === "summary_text") {
+							await eventReceiver?.on({ type: "reasoning", text: content.text });
 						}
 					}
 					break;
@@ -182,8 +249,14 @@ export async function callModelChatCompletionsApi(
 	messages: any[],
 	signal?: AbortSignal,
 	eventReceiver?: AgentEventReceiver,
+	supportsReasoning?: boolean,
 ): Promise<void> {
 	await eventReceiver?.on({ type: "assistant_start" });
+
+	// Use provided reasoning support or detect it
+	if (supportsReasoning === undefined) {
+		supportsReasoning = await checkReasoningSupport(client, model, "completions");
+	}
 
 	let assistantResponded = false;
 
@@ -200,6 +273,9 @@ export async function callModelChatCompletionsApi(
 				tools: toolsForChat,
 				tool_choice: "auto",
 				max_completion_tokens: 2000, // TODO make configurable
+				...(supportsReasoning && {
+					reasoning_effort: "medium",
+				}),
 			},
 			{ signal },
 		);
@@ -216,6 +292,7 @@ export async function callModelChatCompletionsApi(
 				totalTokens: usage.total_tokens || 0,
 				cacheReadTokens: usage.prompt_tokens_details?.cached_tokens || 0,
 				cacheWriteTokens: 0, // Not available in API
+				reasoningTokens: usage.completion_tokens_details?.reasoning_tokens || 0,
 			});
 		}
 
@@ -279,6 +356,8 @@ export class Agent {
 	private sessionManager?: SessionManager;
 	private comboReceiver: AgentEventReceiver;
 	private abortController: AbortController | null = null;
+	private supportsReasoningResponses: boolean | null = null; // Cache reasoning support for responses API
+	private supportsReasoningCompletions: boolean | null = null; // Cache reasoning support for completions API
 
 	constructor(config: AgentConfig, renderer?: AgentEventReceiver, sessionManager?: SessionManager) {
 		this.config = config;
@@ -332,25 +411,46 @@ export class Agent {
 
 		try {
 			if (this.config.api === "responses") {
+				// Check reasoning support only once per agent instance
+				if (this.supportsReasoningResponses === null) {
+					this.supportsReasoningResponses = await checkReasoningSupport(
+						this.client,
+						this.config.model,
+						"responses",
+					);
+				}
+
 				await callModelResponsesApi(
 					this.client,
 					this.config.model,
 					this.messages,
 					this.abortController.signal,
 					this.comboReceiver,
+					this.supportsReasoningResponses,
 				);
 			} else {
+				// Check reasoning support for completions API
+				if (this.supportsReasoningCompletions === null) {
+					this.supportsReasoningCompletions = await checkReasoningSupport(
+						this.client,
+						this.config.model,
+						"completions",
+					);
+				}
+
 				await callModelChatCompletionsApi(
 					this.client,
 					this.config.model,
 					this.messages,
 					this.abortController.signal,
 					this.comboReceiver,
+					this.supportsReasoningCompletions,
 				);
 			}
-		} catch (e: any) {
+		} catch (e) {
 			// Check if this was an interruption
-			if (e.message === "Interrupted" || this.abortController.signal.aborted) {
+			const errorMessage = e instanceof Error ? e.message : String(e);
+			if (errorMessage === "Interrupted" || this.abortController.signal.aborted) {
 				return;
 			}
 			throw e;
@@ -385,7 +485,7 @@ export class Agent {
 						});
 						break;
 
-					case "thinking":
+					case "reasoning":
 						// Add reasoning message
 						this.messages.push({
 							type: "reasoning",

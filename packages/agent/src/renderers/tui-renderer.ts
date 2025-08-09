@@ -61,6 +61,7 @@ export class TuiRenderer implements AgentEventReceiver {
 	private lastOutputTokens = 0;
 	private lastCacheReadTokens = 0;
 	private lastCacheWriteTokens = 0;
+	private lastReasoningTokens = 0;
 	private toolCallCount = 0;
 	private tokenStatusComponent: TextComponent | null = null;
 
@@ -185,7 +186,7 @@ export class TuiRenderer implements AgentEventReceiver {
 				this.statusContainer.addChild(this.currentLoadingAnimation);
 				break;
 
-			case "thinking": {
+			case "reasoning": {
 				// Show thinking in dim text
 				const thinkingContainer = new Container();
 				thinkingContainer.addChild(new TextComponent(chalk.dim("[thinking]")));
@@ -264,6 +265,7 @@ export class TuiRenderer implements AgentEventReceiver {
 				this.lastOutputTokens = event.outputTokens;
 				this.lastCacheReadTokens = event.cacheReadTokens;
 				this.lastCacheWriteTokens = event.cacheWriteTokens;
+				this.lastReasoningTokens = event.reasoningTokens;
 				this.updateTokenDisplay();
 				break;
 
@@ -290,6 +292,11 @@ export class TuiRenderer implements AgentEventReceiver {
 
 		// Build token display text
 		let tokenText = chalk.dim(`↑${this.lastInputTokens.toLocaleString()} ↓${this.lastOutputTokens.toLocaleString()}`);
+
+		// Add reasoning tokens if present
+		if (this.lastReasoningTokens > 0) {
+			tokenText += chalk.dim(` ⚡${this.lastReasoningTokens.toLocaleString()}`);
+		}
 
 		// Add cache info if available
 		if (this.lastCacheReadTokens > 0 || this.lastCacheWriteTokens > 0) {

@@ -13,6 +13,7 @@ export class ConsoleRenderer implements AgentEventReceiver {
 	private lastOutputTokens = 0;
 	private lastCacheReadTokens = 0;
 	private lastCacheWriteTokens = 0;
+	private lastReasoningTokens = 0;
 
 	private startAnimation(text: string = "Thinking"): void {
 		if (this.isAnimating || !this.isTTY) return;
@@ -53,6 +54,11 @@ export class ConsoleRenderer implements AgentEventReceiver {
 		let metricsText = chalk.dim(
 			`↑${this.lastInputTokens.toLocaleString()} ↓${this.lastOutputTokens.toLocaleString()}`,
 		);
+
+		// Add reasoning tokens if present
+		if (this.lastReasoningTokens > 0) {
+			metricsText += chalk.dim(` ⚡${this.lastReasoningTokens.toLocaleString()}`);
+		}
 
 		// Add cache info if available
 		if (this.lastCacheReadTokens > 0 || this.lastCacheWriteTokens > 0) {
@@ -96,7 +102,7 @@ export class ConsoleRenderer implements AgentEventReceiver {
 				this.startAnimation();
 				break;
 
-			case "thinking":
+			case "reasoning":
 				this.stopAnimation();
 				console.log(chalk.dim("[thinking]"));
 				console.log(chalk.dim(event.text));
@@ -162,6 +168,7 @@ export class ConsoleRenderer implements AgentEventReceiver {
 				this.lastOutputTokens = event.outputTokens;
 				this.lastCacheReadTokens = event.cacheReadTokens;
 				this.lastCacheWriteTokens = event.cacheWriteTokens;
+				this.lastReasoningTokens = event.reasoningTokens;
 				// Don't stop animation for this event
 				break;
 		}
