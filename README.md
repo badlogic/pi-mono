@@ -12,34 +12,24 @@ A collection of tools for managing LLM deployments and building AI agents.
 
 This is a monorepo using npm workspaces for package management and a dual TypeScript configuration for development and building.
 
-### Setup
+### Common Commands
 
 ```bash
 # Install all dependencies
 npm install
 
-# Build all packages (required for production use)
+# Build all packages (required for publishing to NPM)
 npm run build
 
-# Or run directly with tsx during development (no build needed)
-cd packages/pods && npx tsx src/cli.ts
-cd packages/agent && npx tsx src/cli.ts
-```
-
-### Common Commands
-
-```bash
-# Clean all build artifacts and tsconfig.tsbuildinfo files
+# Clean out dist/ folders in all packages
 npm run clean
 
-# Build all packages in dependency order
-npm run build
-
-# Run biome checks and TypeScript type checking (no build required)
+# Run linting, formatting, and tsc typechecking (no build needed)
 npm run check
 
-# Run tests (if present)
-npm run test
+# Run directly with tsx during development (no build needed)
+cd packages/pods && npx tsx src/cli.ts
+cd packages/agent && npx tsx src/cli.ts
 ```
 
 ### Package Dependencies
@@ -47,6 +37,8 @@ npm run test
 The packages have the following dependency structure:
 
 `pi-tui` -> `pi-agent` -> `pi`
+
+When new packages are added, the must be inserted in the correct order in the `build` script in `package.json`.
 
 ### TypeScript Configuration
 
@@ -89,7 +81,7 @@ Quick version:
 npm run publish:dry
 
 # Publish all packages to npm
-npm run publish:all
+npm run publish
 ```
 
 ## License

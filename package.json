@@ -14,10 +14,9 @@
 		"version:minor": "npm version minor -ws --no-git-tag-version && node scripts/sync-versions.js",
 		"version:major": "npm version major -ws --no-git-tag-version && node scripts/sync-versions.js",
 		"version:set": "npm version -ws",
-		"version:sync": "node scripts/sync-versions.js",
-		"prepublish:all": "npm run clean && npm run build && npm run check",
-		"publish:all": "npm run prepublish:all && npm publish -ws --access public",
-		"publish:dry": "npm run prepublish:all && npm publish -ws --access public --dry-run"
+		"prepublish": "npm run clean && npm run build && npm run check",
+		"publish": "npm run prepublish && npm publish -ws --access public",
+		"publish:dry": "npm run prepublish && npm publish -ws --access public --dry-run"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.1.4",
@@ -27,5 +26,6 @@
 	},
 	"engines": {
 		"node": ">=20.0.0"
-	}
+	},
+	"version": ""
 }

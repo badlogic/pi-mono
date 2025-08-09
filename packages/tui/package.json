@@ -5,7 +5,7 @@
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
-		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
 		"check": "biome check --write .",
 		"prepublishOnly": "npm run clean && npm run build"
@@ -27,7 +27,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/badlogic/pi-mono.git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
 		"directory": "packages/tui"
 	},
 	"engines": {

@@ -4,7 +4,7 @@
 	"description": "General-purpose agent with tool calling and session persistence",
 	"type": "module",
 	"bin": {
-		"pi-agent": "./dist/cli.js"
+		"pi-agent": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
 		"dist"
 	],
 	"scripts": {
-		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
 		"check": "biome check --write .",
 		"prepublishOnly": "npm run clean && npm run build"
@@ -38,7 +38,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/badlogic/pi-mono.git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
 		"directory": "packages/agent"
 	},
 	"engines": {

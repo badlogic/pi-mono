@@ -4,10 +4,10 @@
 	"description": "CLI tool for managing vLLM deployments on GPU pods",
 	"type": "module",
 	"bin": {
-		"pi": "./dist/cli.js"
+		"pi": "dist/cli.js"
 	},
 	"scripts": {
-		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/",
 		"check": "biome check --write .",
 		"prepublishOnly": "npm run clean && npm run build"
@@ -26,7 +26,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/badlogic/pi-mono.git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
 		"directory": "packages/pods"
 	},
 	"engines": {
