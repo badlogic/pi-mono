@@ -10,7 +10,7 @@ export interface LoggerConfig {
 class Logger {
 	private config: LoggerConfig = {
 		enabled: false,
-		logFile: join(process.cwd(), "tui-debug.log"),
+		logFile: "tui-debug.log", // Will be resolved when needed
 		logLevel: "debug",
 	};
 
@@ -20,7 +20,12 @@ class Logger {
 		if (this.config.enabled) {
 			// Clear log file on startup
 			try {
-				writeFileSync(this.config.logFile, `=== TUI Debug Log Started ${new Date().toISOString()} ===\n`);
+				// Resolve log file path when needed
+				const logFile = this.config.logFile.startsWith("/") 
+					? this.config.logFile 
+					: join(process.cwd(), this.config.logFile);
+				
+				writeFileSync(logFile, `=== TUI Debug Log Started ${new Date().toISOString()} ===\n`);
 			} catch (error) {
 				// Silently fail if we can't write to log file
 			}
@@ -45,7 +50,12 @@ class Logger {
 			const dataStr = data ? ` | Data: ${JSON.stringify(data)}` : "";
 			const logLine = `[${timestamp}] ${level.toUpperCase()} [${component}] ${message}${dataStr}\n`;
 
-			appendFileSync(this.config.logFile, logLine);
+			// Resolve log file path when needed
+			const logFile = this.config.logFile.startsWith("/") 
+				? this.config.logFile 
+				: join(process.cwd(), this.config.logFile);
+			
+			appendFileSync(logFile, logLine);
 		} catch (error) {
 			// Silently fail if we can't write to log file
 		}
