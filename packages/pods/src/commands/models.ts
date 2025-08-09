@@ -545,8 +545,11 @@ export const viewLogs = async (name: string, options: { pod?: string }) => {
  * Show known models and their hardware requirements
  */
 export const showKnownModels = async () => {
-	const modelsJson = await import("../models.json", { assert: { type: "json" } });
-	const models = modelsJson.default.models;
+	const __filename = fileURLToPath(import.meta.url);
+	const __dirname = dirname(__filename);
+	const modelsJsonPath = join(__dirname, "..", "models.json");
+	const modelsJson = JSON.parse(readFileSync(modelsJsonPath, "utf-8"));
+	const models = modelsJson.models;
 
 	// Get active pod info if available
 	const activePod = getActivePod();
