@@ -1,0 +1,40 @@
+{
+	"name": "@mariozechner/pi",
+	"version": "0.5.0",
+	"description": "CLI tool for managing vLLM deployments on GPU pods",
+	"type": "module",
+	"bin": {
+		"pi": "./dist/cli.js"
+	},
+	"scripts": {
+		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/",
+		"check": "biome check --write .",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"llm",
+		"vllm",
+		"gpu",
+		"ai",
+		"cli"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/pods"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent": "^0.5.0",
+		"chalk": "^5.5.0"
+	},
+	"devDependencies": {}
+}

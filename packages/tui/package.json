@@ -1,0 +1,44 @@
+{
+	"name": "@mariozechner/pi-tui",
+	"version": "0.5.0",
+	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
+	"type": "module",
+	"main": "dist/index.js",
+	"scripts": {
+		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"build": "tsc -p tsconfig.build.json",
+		"check": "biome check --write .",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"files": [
+		"dist/**/*",
+		"README.md"
+	],
+	"keywords": [
+		"tui",
+		"terminal",
+		"ui",
+		"text-editor",
+		"differential-rendering",
+		"typescript",
+		"cli"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/tui"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"devDependencies": {},
+	"types": "./dist/index.d.ts",
+	"dependencies": {
+		"@types/mime-types": "^2.1.4",
+		"chalk": "^5.5.0",
+		"marked": "^15.0.12",
+		"mime-types": "^3.0.1"
+	}
+}

@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+*.tsbuildinfo
+packages/*/node_modules/
+packages/*/dist/
+
+# Environment
+.env
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Package specific
+.npm/
+coverage/
+.nyc_output/
+.pi_config/
+tui-debug.log

@@ -1,0 +1,47 @@
+{
+	"name": "@mariozechner/pi-agent",
+	"version": "0.5.0",
+	"description": "General-purpose agent with tool calling and session persistence",
+	"type": "module",
+	"bin": {
+		"pi-agent": "./dist/cli.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"clean": "rm -rf dist tsconfig.tsbuildinfo",
+		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+		"check": "biome check --write .",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-tui": "^0.5.0",
+		"@types/glob": "^8.1.0",
+		"chalk": "^5.5.0",
+		"glob": "^11.0.3",
+		"openai": "^5.12.2"
+	},
+	"devDependencies": {},
+	"keywords": [
+		"agent",
+		"ai",
+		"llm",
+		"openai",
+		"claude",
+		"cli",
+		"tui"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/agent"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

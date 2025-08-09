@@ -1,0 +1,11 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"paths": {
+			"@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
+			"@mariozechner/pi-agent": ["./packages/agent/src/index.ts"],
+			"@mariozechner/pi": ["./packages/pods/src/index.ts"]
+		}
+	},
+	"include": ["packages/*/src/**/*"]
+}
