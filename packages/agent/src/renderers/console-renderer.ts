@@ -8,6 +8,11 @@ export class ConsoleRenderer implements AgentEventReceiver {
 	private isAnimating = false;
 	private animationLine = "";
 	private isTTY = process.stdout.isTTY;
+	private toolCallCount = 0;
+	private lastInputTokens = 0;
+	private lastOutputTokens = 0;
+	private lastCacheReadTokens = 0;
+	private lastCacheWriteTokens = 0;
 
 	private startAnimation(text: string = "Thinking"): void {
 		if (this.isAnimating || !this.isTTY) return;
@@ -43,6 +48,33 @@ export class ConsoleRenderer implements AgentEventReceiver {
 		this.animationLine = "";
 	}
 
+	private displayMetrics(): void {
+		// Build metrics display
+		let metricsText = chalk.dim(
+			`↑${this.lastInputTokens.toLocaleString()} ↓${this.lastOutputTokens.toLocaleString()}`,
+		);
+
+		// Add cache info if available
+		if (this.lastCacheReadTokens > 0 || this.lastCacheWriteTokens > 0) {
+			const cacheText: string[] = [];
+			if (this.lastCacheReadTokens > 0) {
+				cacheText.push(`⟲${this.lastCacheReadTokens.toLocaleString()}`);
+			}
+			if (this.lastCacheWriteTokens > 0) {
+				cacheText.push(`⟳${this.lastCacheWriteTokens.toLocaleString()}`);
+			}
+			metricsText += chalk.dim(` (${cacheText.join(" ")})`);
+		}
+
+		// Add tool call count
+		if (this.toolCallCount > 0) {
+			metricsText += chalk.dim(` ⚒${this.toolCallCount}`);
+		}
+
+		console.log(metricsText);
+		console.log();
+	}
+
 	async on(event: AgentEvent): Promise<void> {
 		// Stop animation for any new event except token_usage
 		if (event.type !== "token_usage" && this.isAnimating) {
@@ -75,6 +107,7 @@ export class ConsoleRenderer implements AgentEventReceiver {
 
 			case "tool_call":
 				this.stopAnimation();
+				this.toolCallCount++;
 				console.log(chalk.yellow(`[tool] ${event.name}(${event.args})`));
 				// Resume animation while tool executes
 				this.startAnimation(`Running ${event.name}`);
@@ -103,6 +136,8 @@ export class ConsoleRenderer implements AgentEventReceiver {
 				this.stopAnimation();
 				console.log(event.text);
 				console.log();
+				// Display metrics after assistant message
+				this.displayMetrics();
 				break;
 
 			case "error":
@@ -122,7 +157,11 @@ export class ConsoleRenderer implements AgentEventReceiver {
 				break;
 
 			case "token_usage":
-				// Token usage is not displayed in console mode
+				// Store token usage for display after assistant message
+				this.lastInputTokens = event.inputTokens;
+				this.lastOutputTokens = event.outputTokens;
+				this.lastCacheReadTokens = event.cacheReadTokens;
+				this.lastCacheWriteTokens = event.cacheWriteTokens;
 				// Don't stop animation for this event
 				break;
 		}

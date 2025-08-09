@@ -1,4 +1,3 @@
-- agent: we should output number of tool calls so far next to input and output and cached tokens. Can use that hammer emoji or whatever.
 - pods: if a pod is down and i run `pi list`, verifying processes says All processes verified. But that can't be true, as we can no longer SSH into the pod to check.
 - agent: start a new agent session. when i press CTRL+C, "Press Ctrl+C again to exit" appears above the text editor followed by an empty line. After about 1 second, the empty line disappears. We should either not show the empty line, or always show the empty line. Maybe Ctrl+C info should be displayed below the text editor.
 - tui: npx tsx test/demo.ts, using /exit or pressing CTRL+C does not work to exit the demo.

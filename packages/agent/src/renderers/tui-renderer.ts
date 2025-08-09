@@ -61,6 +61,7 @@ export class TuiRenderer implements AgentEventReceiver {
 	private lastOutputTokens = 0;
 	private lastCacheReadTokens = 0;
 	private lastCacheWriteTokens = 0;
+	private toolCallCount = 0;
 	private tokenStatusComponent: TextComponent | null = null;
 
 	constructor() {
@@ -200,6 +201,8 @@ export class TuiRenderer implements AgentEventReceiver {
 			}
 
 			case "tool_call":
+				this.toolCallCount++;
+				this.updateTokenDisplay();
 				this.chatContainer.addChild(new TextComponent(chalk.yellow(`[tool] ${event.name}(${event.args})`)));
 				break;
 
@@ -298,6 +301,11 @@ export class TuiRenderer implements AgentEventReceiver {
 				cacheText.push(`⟳${this.lastCacheWriteTokens.toLocaleString()}`);
 			}
 			tokenText += chalk.dim(` (${cacheText.join(" ")})`);
+		}
+
+		// Add tool call count
+		if (this.toolCallCount > 0) {
+			tokenText += chalk.dim(` ⚒${this.toolCallCount}`);
 		}
 
 		this.tokenStatusComponent = new TextComponent(tokenText);
