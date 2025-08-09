@@ -73,9 +73,6 @@ These commands automatically:
 
 ### Publishing
 
-See [PUBLISHING.md](PUBLISHING.md) for the complete publishing workflow.
-
-Quick version:
 ```bash
 # Dry run to see what would be published
 npm run publish:dry

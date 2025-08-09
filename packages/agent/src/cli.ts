@@ -286,9 +286,8 @@ export async function main(args: string[]): Promise<void> {
 }
 
 // Run as CLI if invoked directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-	main(process.argv.slice(2)).catch((err) => {
-		console.error(err);
-		process.exit(1);
-	});
-}
+// Run main function when executed directly
+main(process.argv.slice(2)).catch((err) => {
+	console.error(err);
+	process.exit(1);
+});
