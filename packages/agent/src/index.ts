@@ -6,7 +6,7 @@ export type { ArgDef, ArgDefs, ParsedArgs } from "./args.js";
 // CLI utilities
 export { parseArgs, printHelp } from "./args.js";
 // CLI main function
-export { main } from "./cli.js";
+export { main } from "./main.js";
 // Renderers
 export { ConsoleRenderer } from "./renderers/console-renderer.js";
 export { JsonRenderer } from "./renderers/json-renderer.js";
