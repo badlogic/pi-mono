@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"description": "CLI tool for managing vLLM deployments on GPU pods",
 	"type": "module",
 	"bin": {
@@ -8,12 +8,13 @@
 	},
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/",
+		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/ && cp -r scripts dist/",
 		"check": "biome check --write .",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"scripts"
 	],
 	"keywords": [
 		"llm",
