@@ -1,13 +1,14 @@
 # @mariozechner/pi-tui
 
-Terminal UI framework with differential rendering for building interactive CLI applications.
+Terminal UI framework with surgical differential rendering for building flicker-free interactive CLI applications.
 
 ## Features
 
-- **Differential Rendering**: Only re-renders content that has changed for optimal performance
-- **Interactive Components**: Text editor, autocomplete, selection lists, and markdown rendering
-- **Composable Architecture**: Container-based component system with proper lifecycle management
-- **Text Editor Autocomplete System**: File completion and slash commands with provider interface
+- **Surgical Differential Rendering**: Three-strategy system that minimizes redraws to 1-2 lines for typical updates
+- **Scrollback Buffer Preservation**: Correctly maintains terminal history when content exceeds viewport
+- **Zero Flicker**: Components like text editors remain perfectly still while other parts update
+- **Interactive Components**: Text editor with autocomplete, selection lists, markdown rendering
+- **Composable Architecture**: Container-based component system with automatic lifecycle management
 
 ## Quick Start
 
@@ -35,7 +36,7 @@ editor.onSubmit = (text: string) => {
 	if (text.trim()) {
 		const message = new TextComponent(`💬 ${text}`);
 		chatContainer.addChild(message);
-		ui.requestRender();
+		// Note: Container automatically calls requestRender when children change
 	}
 };
 
@@ -47,134 +48,62 @@ ui.start();
 
 ### TUI
 
-Main TUI manager that handles rendering, input, and component coordination.
+Main TUI manager with surgical differential rendering that handles input and component lifecycle.
+
+**Key Features:**
+- **Three rendering strategies**: Automatically selects optimal approach
+  - Surgical: Updates only changed lines (1-2 lines typical)
+  - Partial: Re-renders from first change when structure shifts
+  - Full: Complete re-render when changes are above viewport
+- **Performance metrics**: Built-in tracking via `getLinesRedrawn()` and `getAverageLinesRedrawn()`
+- **Terminal abstraction**: Works with any Terminal interface implementation
 
 **Methods:**
-
-- `addChild(component)` - Add a component to the TUI
-- `removeChild(component)` - Remove a component from the TUI
-- `setFocus(component)` - Set which component receives keyboard input
-- `start()` - Start the TUI (enables raw mode)
-- `stop()` - Stop the TUI (disables raw mode)
-- `requestRender()` - Request a re-render on next tick
-- `configureLogging(config)` - Configure debug logging
-- `cleanupSentinels()` - Remove placeholder components after removal operations
-- `findComponent(component)` - Check if a component exists in the hierarchy (private)
-- `findInContainer(container, component)` - Search for component in container (private)
+- `addChild(component)` - Add a component
+- `removeChild(component)` - Remove a component
+- `setFocus(component)` - Set keyboard focus
+- `start()` / `stop()` - Lifecycle management
+- `requestRender()` - Queue re-render (automatically debounced)
+- `configureLogging(config)` - Enable debug logging
 
 ### Container
 
-Component that manages child components with differential rendering.
-
-**Constructor:**
+Component that manages child components. Automatically triggers re-renders when children change.
 
 ```typescript
-new Container(parentTui?: TUI | undefined)
+const container = new Container();
+container.addChild(new TextComponent("Child 1"));
+container.removeChild(component);
+container.clear();
 ```
-
-**Methods:**
-
-- `addChild(component)` - Add a child component
-- `removeChild(component)` - Remove a child component
-- `getChild(index)` - Get a specific child component
-- `getChildCount()` - Get the number of child components
-- `clear()` - Remove all child components
-- `setParentTui(tui)` - Set the parent TUI reference
-- `cleanupSentinels()` - Clean up removed component placeholders
-- `render(width)` - Render all child components (returns ContainerRenderResult)
 
 ### TextEditor
 
-Interactive multiline text editor with cursor support and comprehensive keyboard shortcuts.
-
-**Constructor:**
+Interactive multiline text editor with autocomplete support.
 
 ```typescript
-new TextEditor(config?: TextEditorConfig)
+const editor = new TextEditor();
+editor.setText("Initial text");
+editor.onSubmit = (text) => console.log("Submitted:", text);
+editor.setAutocompleteProvider(provider);
 ```
 
-**Configuration:**
-
-```typescript
-interface TextEditorConfig {
-	// Configuration options for text editor
-}
-
-editor.configure(config: Partial<TextEditorConfig>)
-```
-
-**Properties:**
-
-- `onSubmit?: (text: string) => void` - Callback when user presses Enter
-- `onChange?: (text: string) => void` - Callback when text content changes
-
-**Methods:**
-
-- `getText()` - Get current text content
-- `setText(text)` - Set text content and move cursor to end
-- `setAutocompleteProvider(provider)` - Set autocomplete provider for Tab completion
-- `render(width)` - Render the editor with current state
-- `handleInput(data)` - Process keyboard input
-
-**Keyboard Shortcuts:**
-
-**Navigation:**
-
-- `Arrow Keys` - Move cursor
-- `Home` / `Ctrl+A` - Move to start of line
-- `End` / `Ctrl+E` - Move to end of line
-
-**Editing:**
-
-- `Backspace` - Delete character before cursor
-- `Delete` / `Fn+Backspace` - Delete character at cursor
-- `Ctrl+K` - Delete current line
-- `Enter` - Submit text (calls onSubmit)
-- `Shift+Enter` / `Option+Enter` - Add new line
-- `Tab` - Trigger autocomplete
-
-**Autocomplete (when active):**
-
-- `Tab` - Apply selected completion
-- `Arrow Up/Down` - Navigate suggestions
-- `Escape` - Cancel autocomplete
-- `Enter` - Cancel autocomplete and submit
-
-**Paste Detection:**
-
-- Automatically handles multi-line paste
-- Converts tabs to 4 spaces
-- Filters non-printable characters
+**Key Bindings:**
+- `Enter` - Submit text
+- `Shift+Enter` - New line
+- `Tab` - Autocomplete
+- `Ctrl+K` - Delete line
+- `Ctrl+A/E` - Start/end of line
+- Arrow keys, Backspace, Delete work as expected
 
 ### TextComponent
 
-Simple text component with automatic text wrapping and differential rendering.
-
-**Constructor:**
+Simple text display with automatic word wrapping.
 
 ```typescript
-new TextComponent(text: string, padding?: Padding)
-
-interface Padding {
-	top?: number;
-	bottom?: number;
-	left?: number;
-	right?: number;
-}
+const text = new TextComponent("Hello World", { top: 1, bottom: 1 });
+text.setText("Updated text");
 ```
-
-**Methods:**
-
-- `setText(text)` - Update the text content
-- `getText()` - Get current text content
-- `render(width)` - Render with word wrapping
-
-**Features:**
-
-- Automatic text wrapping to fit terminal width
-- Configurable padding on all sides
-- Preserves line breaks in source text
-- Uses differential rendering to avoid unnecessary updates
 
 ### MarkdownComponent
 
@@ -328,24 +257,58 @@ interface SlashCommand {
 - `shouldTriggerFileCompletion()` - Check if file completion should trigger
 - `applyCompletion()` - Apply selected completion
 
-## Differential Rendering
+## Surgical Differential Rendering
 
-The core concept: components return `{lines: string[], changed: boolean, keepLines?: number}`:
+The TUI uses a three-strategy rendering system that minimizes redraws to only what's necessary:
 
-- `lines`: All lines the component should display
-- `changed`: Whether the component has changed since last render
-- `keepLines`: (Containers only) How many lines from the beginning are unchanged
+### Rendering Strategies
 
-**How it works:**
+1. **Surgical Updates** (most common)
+   - When: Only content changes, same line counts, all changes in viewport
+   - Action: Updates only specific changed lines (typically 1-2 lines)
+   - Example: Loading spinner animation, updating status text
 
-1. TUI calculates total unchanged lines from top (`keepLines`)
-2. Moves cursor up by `(totalLines - keepLines)` positions
-3. Clears from cursor position down with `\x1b[0J`
-4. Prints only the changing lines: `result.lines.slice(keepLines)`
+2. **Partial Re-render** 
+   - When: Line count changes or structural changes within viewport
+   - Action: Clears from first change to end of screen, re-renders tail
+   - Example: Adding new messages to a chat, expanding text editor
 
-This approach minimizes screen updates and provides smooth performance even with large amounts of text.
+3. **Full Re-render**
+   - When: Changes occur above the viewport (in scrollback buffer)
+   - Action: Clears scrollback and screen, renders everything fresh
+   - Example: Content exceeds viewport and early components change
 
-**Important:** Don't add extra cursor positioning after printing - it interferes with terminal scrolling and causes rendering artifacts.
+### How Components Participate
+
+Components implement the simple `Component` interface:
+
+```typescript
+interface ComponentRenderResult {
+  lines: string[];      // The lines to display
+  changed: boolean;     // Whether content changed since last render
+}
+
+interface Component {
+  readonly id: number;  // Unique ID for tracking
+  render(width: number): ComponentRenderResult;
+  handleInput?(keyData: string): void;
+}
+```
+
+The TUI tracks component IDs and line positions to determine the optimal strategy automatically.
+
+### Performance Metrics
+
+Monitor rendering efficiency:
+
+```typescript
+const ui = new TUI();
+// After some rendering...
+console.log(`Total lines redrawn: ${ui.getLinesRedrawn()}`);
+console.log(`Average per render: ${ui.getAverageLinesRedrawn()}`);
+```
+
+Typical performance: 1-2 lines redrawn for animations, 0 for static content.
 
 ## Advanced Examples
 
@@ -618,6 +581,149 @@ interface SelectItem {
 }
 ```
 
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file
+npm test -- test/tui-rendering.test.ts
+
+# Run tests matching a pattern
+npm test -- --test-name-pattern="preserves existing"
+```
+
+### Test Infrastructure
+
+The TUI uses a **VirtualTerminal** for testing that provides accurate terminal emulation via `@xterm/headless`:
+
+```typescript
+import { VirtualTerminal } from "./test/virtual-terminal.js";
+import { TUI, TextComponent } from "../src/index.js";
+
+test("my TUI test", async () => {
+  const terminal = new VirtualTerminal(80, 24);
+  const ui = new TUI(terminal);
+  ui.start();
+  
+  ui.addChild(new TextComponent("Hello"));
+  
+  // Wait for render
+  await new Promise(resolve => process.nextTick(resolve));
+  
+  // Get rendered output
+  const viewport = await terminal.flushAndGetViewport();
+  assert.strictEqual(viewport[0], "Hello");
+  
+  ui.stop();
+});
+```
+
+### Writing a New Test
+
+1. **Create test file** in `test/` directory with `.test.ts` extension
+2. **Use VirtualTerminal** for accurate terminal emulation
+3. **Key testing patterns**:
+
+```typescript
+import { test, describe } from "node:test";
+import assert from "node:assert";
+import { VirtualTerminal } from "./virtual-terminal.js";
+import { TUI, Container, TextComponent } from "../src/index.js";
+
+describe("My Feature", () => {
+  test("should handle dynamic content", async () => {
+    const terminal = new VirtualTerminal(80, 24);
+    const ui = new TUI(terminal);
+    ui.start();
+    
+    // Setup components
+    const container = new Container();
+    ui.addChild(container);
+    
+    // Initial render
+    await new Promise(resolve => process.nextTick(resolve));
+    await terminal.flush();
+    
+    // Check viewport (visible content)
+    let viewport = terminal.getViewport();
+    assert.strictEqual(viewport.length, 24);
+    
+    // Check scrollback buffer (all content including history)
+    let scrollBuffer = terminal.getScrollBuffer();
+    
+    // Simulate user input
+    terminal.sendInput("Hello");
+    
+    // Wait for processing
+    await new Promise(resolve => process.nextTick(resolve));
+    await terminal.flush();
+    
+    // Verify changes
+    viewport = terminal.getViewport();
+    // ... assertions
+    
+    ui.stop();
+  });
+});
+```
+
+### VirtualTerminal API
+
+- `new VirtualTerminal(columns, rows)` - Create terminal with dimensions
+- `write(data)` - Write ANSI sequences to terminal
+- `sendInput(data)` - Simulate keyboard input
+- `flush()` - Wait for all writes to complete
+- `getViewport()` - Get visible lines (what user sees)
+- `getScrollBuffer()` - Get all lines including scrollback
+- `flushAndGetViewport()` - Convenience method
+- `getCursorPosition()` - Get cursor row/column
+- `resize(columns, rows)` - Resize terminal
+
+### Testing Best Practices
+
+1. **Always flush after renders**: Terminal writes are async
+   ```typescript
+   await new Promise(resolve => process.nextTick(resolve));
+   await terminal.flush();
+   ```
+
+2. **Test both viewport and scrollback**: Ensure content preservation
+   ```typescript
+   const viewport = terminal.getViewport();     // Visible content
+   const scrollBuffer = terminal.getScrollBuffer(); // All content
+   ```
+
+3. **Use exact string matching**: Don't trim() - whitespace matters
+   ```typescript
+   assert.strictEqual(viewport[0], "Expected text"); // Good
+   assert.strictEqual(viewport[0].trim(), "Expected"); // Bad
+   ```
+
+4. **Test rendering strategies**: Verify surgical vs partial vs full
+   ```typescript
+   const beforeLines = ui.getLinesRedrawn();
+   // Make change...
+   const afterLines = ui.getLinesRedrawn();
+   assert.strictEqual(afterLines - beforeLines, 1); // Only 1 line changed
+   ```
+
+### Performance Testing
+
+Use `test/bench.ts` as a template for performance testing:
+
+```bash
+npx tsx test/bench.ts
+```
+
+Monitor real-time performance metrics:
+- Render count and timing
+- Lines redrawn per render
+- Visual verification of flicker-free updates
+
 ## Development
 
 ```bash
@@ -629,17 +735,10 @@ npm run build
 
 # Run type checking
 npm run check
+
+# Run tests
+npm test
 ```
-
-**Testing:**
-Create a test file and run it with tsx:
-
-```bash
-# From packages/tui directory
-npx tsx test/demo.ts
-```
-
-Special input keywords for simulation: "TAB", "ENTER", "SPACE", "ESC"
 
 **Debugging:**
 Enable logging to see detailed component behavior:
@@ -651,5 +750,3 @@ ui.configureLogging({
 	logFile: "tui-debug.log",
 });
 ```
-
-Check the log file to debug rendering issues, input handling, and component lifecycle.
