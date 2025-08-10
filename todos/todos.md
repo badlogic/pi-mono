@@ -1,3 +1,13 @@
+- agent: ultrathink to temporarily set reasoning_effort?
+
+- agent: need to figure out a models max context lenght
+
+- agent: compaction & micro compactionexi
+
+- agent: token usage output sucks, make it better
+    - current: ↑1,706 ↓409 ⚒ 2
+    - maybe: ↑ 1,706 - ↓ 409 - ⚒ 2 (or dot?)
+
 - agent: test for basic functionality, including thinking, completions & responses API support for all the known providers and their endpoints.
 
 - agent: token usage gets overwritten with each message that has usage data. however, if the latest data doesn't have a specific usage field, we record undefined i think? also,   {"type":"token_usage" "inputTokens":240,"outputTokens":35,"totalTokens":275,"cacheReadTokens":0,"cacheWriteTokens":0} doesn't contain reasoningToken? do we lack initialization? See case "token_usage": in renderers. probably need to check if lastXXX > current and use lastXXX.

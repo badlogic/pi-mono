@@ -152,9 +152,14 @@ function adjustRequestForProvider(
 			if (api === "completions" && supportsReasoning && requestOptions.reasoning_effort) {
 				// Convert reasoning_effort to OpenRouter's reasoning format
 				requestOptions.reasoning = {
-					effort: requestOptions.reasoning_effort === "low" ? "low" : 
-					       requestOptions.reasoning_effort === "minimal" ? "low" : 
-					       requestOptions.reasoning_effort === "medium" ? "medium" : "high"
+					effort:
+						requestOptions.reasoning_effort === "low"
+							? "low"
+							: requestOptions.reasoning_effort === "minimal"
+								? "low"
+								: requestOptions.reasoning_effort === "medium"
+									? "medium"
+									: "high",
 				};
 				delete requestOptions.reasoning_effort;
 			}
@@ -253,8 +258,6 @@ export async function callModelResponsesApi(
 	supportsReasoning?: boolean,
 	baseURL?: string,
 ): Promise<void> {
-	await eventReceiver?.on({ type: "assistant_start" });
-
 	let conversationDone = false;
 
 	while (!conversationDone) {
@@ -399,8 +402,6 @@ export async function callModelChatCompletionsApi(
 	supportsReasoning?: boolean,
 	baseURL?: string,
 ): Promise<void> {
-	await eventReceiver?.on({ type: "assistant_start" });
-
 	let assistantResponded = false;
 
 	while (!assistantResponded) {
@@ -510,8 +511,7 @@ export class Agent {
 	private sessionManager?: SessionManager;
 	private comboReceiver: AgentEventReceiver;
 	private abortController: AbortController | null = null;
-	private supportsReasoningResponses: boolean | null = null; // Cache reasoning support for responses API
-	private supportsReasoningCompletions: boolean | null = null; // Cache reasoning support for completions API
+	private supportsReasoning: boolean | null = null;
 
 	constructor(config: AgentConfig, renderer?: AgentEventReceiver, sessionManager?: SessionManager) {
 		this.config = config;
@@ -564,44 +564,36 @@ export class Agent {
 		this.abortController = new AbortController();
 
 		try {
-			if (this.config.api === "responses") {
-				// Check reasoning support only once per agent instance
-				if (this.supportsReasoningResponses === null) {
-					this.supportsReasoningResponses = await checkReasoningSupport(
-						this.client,
-						this.config.model,
-						"responses",
-						this.config.baseURL,
-					);
-				}
+			await this.comboReceiver.on({ type: "assistant_start" });
 
+			// Check reasoning support only once per agent instance
+			if (this.supportsReasoning === null) {
+				this.supportsReasoning = await checkReasoningSupport(
+					this.client,
+					this.config.model,
+					this.config.api,
+					this.config.baseURL,
+				);
+			}
+
+			if (this.config.api === "responses") {
 				await callModelResponsesApi(
 					this.client,
 					this.config.model,
 					this.messages,
 					this.abortController.signal,
 					this.comboReceiver,
-					this.supportsReasoningResponses,
+					this.supportsReasoning,
 					this.config.baseURL,
 				);
 			} else {
-				// Check reasoning support for completions API
-				if (this.supportsReasoningCompletions === null) {
-					this.supportsReasoningCompletions = await checkReasoningSupport(
-						this.client,
-						this.config.model,
-						"completions",
-						this.config.baseURL,
-					);
-				}
-
 				await callModelChatCompletionsApi(
 					this.client,
 					this.config.model,
 					this.messages,
 					this.abortController.signal,
 					this.comboReceiver,
-					this.supportsReasoningCompletions,
+					this.supportsReasoning,
 					this.config.baseURL,
 				);
 			}

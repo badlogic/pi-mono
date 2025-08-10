@@ -33,19 +33,16 @@ pi-agent
 # Continue most recently modified session in current directory
 pi-agent --continue "Follow up question"
 
-# GPT-OSS via Groq (supports reasoning with both APIs)
+# GPT-OSS via Groq
 pi-agent --base-url https://api.groq.com/openai/v1 --api-key $GROQ_API_KEY --model openai/gpt-oss-120b
 
 # GLM 4.5 via OpenRouter
 pi-agent --base-url https://openrouter.ai/api/v1 --api-key $OPENROUTER_API_KEY --model z-ai/glm-4.5
 
-# Claude via Anthropic's OpenAI compatibility layer
-# Note: No prompt caching or thinking content support. For full features, use the native Anthropic API.
-# See: https://docs.anthropic.com/en/api/openai-sdk
+# Claude via Anthropic's OpenAI compatibility layer. See: https://docs.anthropic.com/en/api/openai-sdk
 pi-agent --base-url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY --model claude-opus-4-1-20250805
 
-# Gemini via Google AI (set GEMINI_API_KEY environment variable)
-# Note: Gemini 2.5 models support reasoning with thinking content automatically configured
+# Gemini via Google AI
 pi-agent --base-url https://generativelanguage.googleapis.com/v1beta/openai/ --api-key $GEMINI_API_KEY --model gemini-2.5-flash
 ```
 
@@ -108,9 +105,6 @@ Commands you can send via stdin in interactive JSON mode:
 --help, -h              Show help message
 ```
 
-### Environment Variables
-- `OPENAI_API_KEY` - OpenAI API key (used if --api-key not provided)
-
 ## Session Persistence
 
 Sessions are automatically saved to `~/.pi/sessions/` and include:
@@ -143,17 +137,12 @@ When using `--json`, the agent outputs these event types:
 - `user_message` - User input
 - `assistant_start` - Assistant begins responding
 - `assistant_message` - Assistant's response
-- `thinking` - Reasoning/thinking (for models that support it, requires `--api responses`)
+- `reasoning` - Reasoning/thinking (for models that support it)
 - `tool_call` - Tool being called
 - `tool_result` - Result from tool
 - `token_usage` - Token usage statistics (includes `reasoningTokens` for models with reasoning)
 - `error` - Error occurred
 - `interrupted` - Processing was interrupted
-
-**Note:**
-- OpenAI's Chat Completions API (`--api completions`, the default) only returns reasoning token *counts* but not the actual thinking content. To see thinking events, use the Responses API with `--api responses` for supported models (o1, o3, gpt-5).
-- Anthropic's OpenAI compatibility layer doesn't return thinking content. Use the native Anthropic API for full extended thinking features.
-- Gemini 2.5 models automatically include thinking content when reasoning is detected - pi-agent handles the `extra_body` configuration for you.
 
 The complete TypeScript type definition for `AgentEvent` can be found in [`src/agent.ts`](src/agent.ts#L6).
 
@@ -295,24 +284,6 @@ agent.on('error', (err) => {
 console.log('Pi Agent Interactive Chat');
 ```
 
-## Reasoning
-
-Pi-agent supports reasoning/thinking tokens for models that provide this capability:
-
-### Supported Providers
-
-| Provider | API | Reasoning Tokens | Thinking Content | Notes |
-|----------|-----|------------------|------------------|-------|
-| OpenAI (o1, o3) | Responses | ✅ | ✅ | Full support via `reasoning` events |
-| OpenAI (o1, o3) | Chat Completions | ✅ | ❌ | Token counts only, no content |
-| OpenAI (gpt-5) | Responses | ✅ | ⚠️ | Model returns empty summaries |
-| OpenAI (gpt-5) | Chat Completions | ✅ | ❌ | Token counts only |
-| Groq (gpt-oss) | Responses | ✅ | ❌ | No reasoning.summary support |
-| Groq (gpt-oss) | Chat Completions | ✅ | ✅ | Via `reasoning_format: "parsed"` |
-| Gemini 2.5 | Chat Completions | ✅ | ✅ | Via `extra_body.google.thinking_config` |
-| Anthropic | OpenAI Compat | ❌ | ❌ | Not supported in compatibility layer |
-| OpenRouter | Various | ✅ | ✅ | Model-dependent, see provider docs |
-
 ### Usage Examples
 
 ```bash
@@ -338,6 +309,24 @@ When reasoning is active, you'll see:
 - `reasoning` events with thinking text (when available)
 - `token_usage` events include `reasoningTokens` field
 - Console/TUI show reasoning tokens with ⚡ symbol
+
+## Reasoning
+
+Pi-agent supports reasoning/thinking tokens for models that provide this capability:
+
+### Supported Providers
+
+| Provider | Model | API | Thinking Content | Notes |
+|----------|-------|-----|------------------|-------|
+| **OpenAI** | o1, o3 | Responses | ✅ Full | Thinking events + token counts |
+| | o1, o3 | Chat Completions | ❌ | Token counts only |
+| | gpt-5 | Both APIs | ❌ | Model limitation (empty summaries) |
+| **Groq** | gpt-oss | Chat Completions | ✅ Full | Via `reasoning_format: "parsed"` |
+| | gpt-oss | Responses | ❌ | API doesn't support reasoning.summary |
+| **Gemini** | 2.5 models | Chat Completions | ✅ Full | Auto-configured via extra_body |
+| **Anthropic** | Claude | OpenAI Compat | ❌ | Use native API for thinking |
+| **OpenRouter** | Various | Both APIs | Varies | Depends on underlying model |
+
 
 ### Technical Details
 
