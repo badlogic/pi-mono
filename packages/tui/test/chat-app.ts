@@ -1,5 +1,5 @@
 #!/usr/bin/env npx tsx
-import { TUI, Container, TextEditor, MarkdownComponent, CombinedAutocompleteProvider } from "../src/index.js";
+import { TUI, Container, TextEditor, TextComponent, MarkdownComponent, CombinedAutocompleteProvider } from "../src/index.js";
 
 /**
  * Chat Application with Autocomplete
@@ -12,6 +12,13 @@ import { TUI, Container, TextEditor, MarkdownComponent, CombinedAutocompleteProv
  */
 
 const ui = new TUI();
+
+// Add header with instructions
+const header = new TextComponent(
+	"💬 Chat Demo | Type '/' for commands | Start typing a filename + Tab to autocomplete | Ctrl+C to exit",
+	{ bottom: 1 }
+);
+
 const chatHistory = new Container();
 const editor = new TextEditor();
 
@@ -74,6 +81,24 @@ ui.onGlobalKeyPress = (data: string) => {
 	return true;
 };
 
+// Add initial welcome message to chat history
+chatHistory.addChild(new MarkdownComponent(`
+## Welcome to the Chat Demo!
+
+**Available slash commands:**
+- \`/clear\` - Clear the chat history
+- \`/help\` - Show help information  
+- \`/attach <file>\` - Attach a file (with autocomplete)
+
+**File autocomplete:**
+- Start typing any filename or directory name and press **Tab**
+- Works with relative paths (\`./\`, \`../\`)
+- Works with home directory (\`~/\`)
+
+Try it out! Type a message or command below.
+`));
+
+ui.addChild(header);
 ui.addChild(chatHistory);
 ui.addChild(editor);
 ui.setFocus(editor);
