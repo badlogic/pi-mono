@@ -238,6 +238,11 @@ export class TUI extends Container {
 		} catch (error) {
 			console.error("Error starting terminal:", error);
 		}
+
+		// Trigger initial render if we have components
+		if (this.children.length > 0) {
+			this.requestRender();
+		}
 	}
 
 	stop(): void {
