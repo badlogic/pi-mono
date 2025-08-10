@@ -310,200 +310,30 @@ console.log(`Average per render: ${ui.getAverageLinesRedrawn()}`);
 
 Typical performance: 1-2 lines redrawn for animations, 0 for static content.
 
-## Advanced Examples
+## Examples
 
-### Chat Application with Autocomplete
+Run the example applications in the `test/` directory:
 
-```typescript
-import { TUI, Container, TextEditor, MarkdownComponent, CombinedAutocompleteProvider } from "@mariozechner/pi-tui";
+```bash
+# Chat application with slash commands and autocomplete
+npx tsx test/chat-app.ts
 
-const ui = new TUI();
-const chatHistory = new Container();
-const editor = new TextEditor();
+# File browser with navigation
+npx tsx test/file-browser.ts
 
-// Set up autocomplete with slash commands
-const autocompleteProvider = new CombinedAutocompleteProvider([
-	{ name: "clear", description: "Clear chat history" },
-	{ name: "help", description: "Show help information" },
-	{
-		name: "attach",
-		description: "Attach a file",
-		getArgumentCompletions: (prefix) => {
-			// Return file suggestions for attach command
-			return null; // Use default file completion
-		},
-	},
-]);
+# Multi-component layout demo
+npx tsx test/multi-layout.ts
 
-editor.setAutocompleteProvider(autocompleteProvider);
-
-editor.onSubmit = (text) => {
-	// Handle slash commands
-	if (text.startsWith("/")) {
-		const [command, ...args] = text.slice(1).split(" ");
-		if (command === "clear") {
-			chatHistory.clear();
-			return;
-		}
-		if (command === "help") {
-			const help = new MarkdownComponent(`
-## Available Commands
-- \`/clear\` - Clear chat history
-- \`/help\` - Show this help
-- \`/attach <file>\` - Attach a file
-			`);
-			chatHistory.addChild(help);
-			ui.requestRender();
-			return;
-		}
-	}
-
-	// Regular message
-	const message = new MarkdownComponent(`**You:** ${text}`);
-	chatHistory.addChild(message);
-
-	// Add AI response (simulated)
-	setTimeout(() => {
-		const response = new MarkdownComponent(`**AI:** Response to "${text}"`);
-		chatHistory.addChild(response);
-		ui.requestRender();
-	}, 1000);
-};
-
-ui.addChild(chatHistory);
-ui.addChild(editor);
-ui.setFocus(editor);
-ui.start();
+# Performance benchmark with animation
+npx tsx test/bench.ts
 ```
 
-### File Browser
+### Example Descriptions
 
-```typescript
-import { TUI, SelectList } from "@mariozechner/pi-tui";
-import { readdirSync, statSync } from "fs";
-import { join } from "path";
-
-const ui = new TUI();
-let currentPath = process.cwd();
-
-function createFileList(path: string) {
-	const entries = readdirSync(path).map((entry) => {
-		const fullPath = join(path, entry);
-		const isDir = statSync(fullPath).isDirectory();
-		return {
-			value: entry,
-			label: entry,
-			description: isDir ? "directory" : "file",
-		};
-	});
-
-	// Add parent directory option
-	if (path !== "/") {
-		entries.unshift({
-			value: "..",
-			label: "..",
-			description: "parent directory",
-		});
-	}
-
-	return entries;
-}
-
-function showDirectory(path: string) {
-	ui.clear();
-
-	const entries = createFileList(path);
-	const fileList = new SelectList(entries, 10);
-
-	fileList.onSelect = (item) => {
-		if (item.value === "..") {
-			currentPath = join(currentPath, "..");
-			showDirectory(currentPath);
-		} else if (item.description === "directory") {
-			currentPath = join(currentPath, item.value);
-			showDirectory(currentPath);
-		} else {
-			console.log(`Selected file: ${join(currentPath, item.value)}`);
-			ui.stop();
-		}
-	};
-
-	ui.addChild(fileList);
-	ui.setFocus(fileList);
-}
-
-showDirectory(currentPath);
-ui.start();
-```
-
-### Multi-Component Layout
-
-```typescript
-import { TUI, Container, TextComponent, TextEditor, MarkdownComponent } from "@mariozechner/pi-tui";
-
-const ui = new TUI();
-
-// Create layout containers
-const header = new TextComponent("📝 Advanced TUI Demo", { bottom: 1 });
-const mainContent = new Container();
-const sidebar = new Container();
-const footer = new TextComponent("Press Ctrl+C to exit", { top: 1 });
-
-// Sidebar content
-sidebar.addChild(new TextComponent("📁 Files:", { bottom: 1 }));
-sidebar.addChild(new TextComponent("- config.json"));
-sidebar.addChild(new TextComponent("- README.md"));
-sidebar.addChild(new TextComponent("- package.json"));
-
-// Main content area
-const chatArea = new Container();
-const inputArea = new TextEditor();
-
-// Add welcome message
-chatArea.addChild(
-	new MarkdownComponent(`
-# Welcome to the TUI Demo
-
-This demonstrates multiple components working together:
-
-- **Header**: Static title with padding
-- **Sidebar**: File list (simulated)
-- **Chat Area**: Scrollable message history
-- **Input**: Interactive text editor
-- **Footer**: Status information
-
-Try typing a message and pressing Enter!
-`),
-);
-
-inputArea.onSubmit = (text) => {
-	if (text.trim()) {
-		const message = new MarkdownComponent(`
-**${new Date().toLocaleTimeString()}:** ${text}
-		`);
-		chatArea.addChild(message);
-		ui.requestRender();
-	}
-};
-
-// Build layout
-mainContent.addChild(chatArea);
-mainContent.addChild(inputArea);
-
-ui.addChild(header);
-ui.addChild(mainContent);
-ui.addChild(footer);
-ui.setFocus(inputArea);
-
-// Configure debug logging
-ui.configureLogging({
-	enabled: true,
-	level: "info",
-	logFile: "tui-debug.log",
-});
-
-ui.start();
-```
+- **chat-app.ts** - Chat interface with slash commands (/clear, /help, /attach) and autocomplete
+- **file-browser.ts** - Interactive file browser with directory navigation
+- **multi-layout.ts** - Complex layout with header, sidebar, main content, and footer
+- **bench.ts** - Performance test with animation showing surgical rendering efficiency
 
 ## Interfaces and Types
 
