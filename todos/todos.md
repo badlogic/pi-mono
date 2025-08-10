@@ -1,3 +1,20 @@
+- tui: we get tons of flicker in the text editor component. specifically, if we have an animated component above the editor, the editor needs re-rendering completely. Different strategy:
+    - keep a back buffer and front buffer. a buffer is a list of lines.
+    - on Tui.render()
+        - render a new back buffer, top to bottom. components can cache previous render results and return that as a single list of lines if nothing changed
+        - compare the back buffer with the front buffer. for each line that changed
+            - position the cursor at that line
+            - clear the line
+            - render the new line
+        - batch multiple subsequent lines that changed so we do not have tons of writeSync() calls
+    - Open questions:
+        - is this faster and procudes less flicker?
+    - If possible, we should implement this as a new TuiDoubleBuffer class. Existing components should not need changing, as they already report if they changed and report their lines
+    - Testing:
+        - Create a packages/tui/test/single-buffer.ts file: it has a LoadingAnimation like in packages/agent/src/renderers/tui-renderer.ts inside a container as the first child, and a text editor component as the second child, which is focused.
+        - Create a packages/tui/test/double-buffer.ts file: same setup
+        - Measure timing of render() for both
+
 - agent: improve reasoning section in README.md
 
 - agent: ultrathink to temporarily set reasoning_effort?

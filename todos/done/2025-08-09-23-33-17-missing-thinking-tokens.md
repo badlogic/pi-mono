@@ -1,6 +1,6 @@
 # Fix Missing Thinking Tokens for GPT-5 and Anthropic Models
-**Status:** AwaitingCommit
-**Agent PID:** 41002
+**Status:** Done
+**Agent PID:** 72653
 
 ## Original Todo
 agent: we do not get thinking tokens for gpt-5. possibly also not for anthropic models?
