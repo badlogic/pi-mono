@@ -1,6 +1,7 @@
-import type { Component, ComponentRenderResult, Padding } from "./tui.js";
+import { type Component, type ComponentRenderResult, getNextComponentId, type Padding } from "../tui.js";
 
 export class TextComponent implements Component {
+	readonly id = getNextComponentId();
 	private text: string;
 	private lastRenderedLines: string[] = [];
 	private padding: Required<Padding>;

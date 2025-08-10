@@ -8,6 +8,7 @@
 		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
 		"check": "biome check --write .",
+		"test": "node --test --import tsx test/*.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"files": [
@@ -33,12 +34,15 @@
 	"engines": {
 		"node": ">=20.0.0"
 	},
-	"devDependencies": {},
 	"types": "./dist/index.d.ts",
 	"dependencies": {
 		"@types/mime-types": "^2.1.4",
 		"chalk": "^5.5.0",
 		"marked": "^15.0.12",
 		"mime-types": "^3.0.1"
+	},
+	"devDependencies": {
+		"@xterm/headless": "^5.5.0",
+		"@xterm/xterm": "^5.5.0"
 	}
 }

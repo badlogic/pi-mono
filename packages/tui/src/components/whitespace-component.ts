@@ -1,9 +1,10 @@
-import type { Component, ComponentRenderResult } from "./tui.js";
+import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
 
 /**
  * A simple component that renders blank lines for spacing
  */
 export class WhitespaceComponent implements Component {
+	readonly id = getNextComponentId();
 	private lines: string[] = [];
 	private lineCount: number;
 	private firstRender: boolean = true;

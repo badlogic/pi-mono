@@ -1,8 +1,8 @@
 import chalk from "chalk";
-import type { AutocompleteProvider, CombinedAutocompleteProvider } from "./autocomplete.js";
-import { logger } from "./logger.js";
+import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
+import { logger } from "../logger.js";
+import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
 import { SelectList } from "./select-list.js";
-import type { Component, ComponentRenderResult } from "./tui.js";
 
 interface EditorState {
 	lines: string[];
@@ -21,6 +21,7 @@ export interface TextEditorConfig {
 }
 
 export class TextEditor implements Component {
+	readonly id = getNextComponentId();
 	private state: EditorState = {
 		lines: [""],
 		cursorLine: 0,
@@ -64,7 +65,7 @@ export class TextEditor implements Component {
 		const horizontal = chalk.gray("─");
 		const vertical = chalk.gray("│");
 
-		// Calculate box width (leave some margin)
+		// Calculate box width - leave 1 char margin to avoid edge wrapping
 		const boxWidth = width - 1;
 		const contentWidth = boxWidth - 4; // Account for "│ " and " │"
 

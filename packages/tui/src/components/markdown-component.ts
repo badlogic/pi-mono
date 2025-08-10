@@ -1,8 +1,9 @@
 import chalk from "chalk";
 import { marked, type Token } from "marked";
-import type { Component, ComponentRenderResult } from "./tui.js";
+import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
 
 export class MarkdownComponent implements Component {
+	readonly id = getNextComponentId();
 	private text: string;
 	private lines: string[] = [];
 	private previousLines: string[] = [];

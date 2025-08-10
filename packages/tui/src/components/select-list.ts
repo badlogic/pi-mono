@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import type { Component, ComponentRenderResult } from "./tui.js";
+import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
 
 export interface SelectItem {
 	value: string;
@@ -8,6 +8,7 @@ export interface SelectItem {
 }
 
 export class SelectList implements Component {
+	readonly id = getNextComponentId();
 	private items: SelectItem[] = [];
 	private filteredItems: SelectItem[] = [];
 	private selectedIndex: number = 0;
