@@ -3,6 +3,17 @@
 - agent: ultrathink to temporarily set reasoning_effort?
 
 - agent: need to figure out a models max context lenght
+    - Add automatic context length detection via models endpoint
+    - Cache per baseURL/model combination in $PI_CONFIG_DIR/models.json or ~/.pi/models.json
+    - Should be part of preflight check in agent (like reasoning support detection)
+    - Provider support status:
+        - vLLM: ✅ `/v1/models` → `max_model_len`
+        - Groq: ✅ `/openai/v1/models` → `context_window`
+        - OpenRouter: ✅ `/api/v1/models` → `context_length`
+        - Gemini: ✅ `/v1beta/models` (native API) → `inputTokenLimit`
+        - Anthropic: ❌ `/v1/models` (no context info)
+        - OpenAI: ❌ `/v1/models` (no context info)
+    - For Anthropic/OpenAI, may need hardcoded fallback values or separate lookup table
 
 - agent: compaction & micro compactionexi
 
