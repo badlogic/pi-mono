@@ -269,7 +269,8 @@ export class TUI extends Container {
 			this.isFirstRender = false;
 		} else {
 			// this.executeDifferentialRender(currentRenderCommands, termHeight);
-			this.renderDifferential(currentRenderCommands, termHeight);
+			// this.renderDifferential(currentRenderCommands, termHeight);
+			this.renderDifferentialSurgical(currentRenderCommands, termHeight);
 		}
 
 		// Save for next render
@@ -319,6 +320,190 @@ export class TUI extends Container {
 		logger.debug("TUI", "Initial render", {
 			commandsExecuted: commands.length,
 			linesRendered: lines.length,
+		});
+	}
+
+	private renderDifferentialSurgical(currentCommands: RenderCommand[], termHeight: number): void {
+		const viewportHeight = termHeight - 1; // Leave one line for cursor
+
+		// Build the new lines array
+		const newLines: string[] = [];
+		for (const command of currentCommands) {
+			newLines.push(...command.lines);
+		}
+
+		const totalNewLines = newLines.length;
+		const totalOldLines = this.previousLines.length;
+
+		// Phase 1: Analyze - categorize all changes
+		let firstChangeOffset = -1;
+		let hasLineCountChange = false;
+		let hasStructuralChange = false;
+		const changedLines: Array<{lineIndex: number, newContent: string}> = [];
+
+		let currentLineOffset = 0;
+
+		for (let i = 0; i < Math.max(currentCommands.length, this.previousRenderCommands.length); i++) {
+			const current = i < currentCommands.length ? currentCommands[i] : null;
+			const previous = i < this.previousRenderCommands.length ? this.previousRenderCommands[i] : null;
+
+			// Structural change: component added/removed/reordered
+			if (!current || !previous || current.id !== previous.id) {
+				hasStructuralChange = true;
+				if (firstChangeOffset === -1) {
+					firstChangeOffset = currentLineOffset;
+				}
+				break;
+			}
+
+			// Line count change
+			if (current.changed && current.lines.length !== previous.lines.length) {
+				hasLineCountChange = true;
+				if (firstChangeOffset === -1) {
+					firstChangeOffset = currentLineOffset;
+				}
+				break;
+			}
+
+			// Content change with same line count - track individual line changes
+			if (current.changed) {
+				for (let j = 0; j < current.lines.length; j++) {
+					const oldLine = currentLineOffset + j < this.previousLines.length
+						? this.previousLines[currentLineOffset + j]
+						: "";
+					const newLine = current.lines[j];
+
+					if (oldLine !== newLine) {
+						changedLines.push({
+							lineIndex: currentLineOffset + j,
+							newContent: newLine
+						});
+						if (firstChangeOffset === -1) {
+							firstChangeOffset = currentLineOffset + j;
+						}
+					}
+				}
+			}
+
+			currentLineOffset += current ? current.lines.length : 0;
+		}
+
+		// If nothing changed, do nothing
+		if (firstChangeOffset === -1) {
+			this.previousLines = newLines;
+			return;
+		}
+
+		// Phase 2: Decision - pick rendering strategy
+		const contentStartInViewport = Math.max(0, totalOldLines - viewportHeight);
+		const changePositionInViewport = firstChangeOffset - contentStartInViewport;
+
+		let output = "";
+		let linesRedrawn = 0;
+
+		if (changePositionInViewport < 0) {
+			// Strategy: FULL - change is above viewport, must clear scrollback and re-render all
+			output = "\x1b[3J\x1b[H"; // Clear scrollback and screen, then home cursor
+
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) output += "\r\n";
+				output += newLines[i];
+			}
+
+			if (newLines.length > 0) output += "\r\n";
+			linesRedrawn = newLines.length;
+
+		} else if (hasStructuralChange || hasLineCountChange) {
+			// Strategy: PARTIAL - changes in viewport but with shifts, clear from change to end
+			// After rendering with a final newline, cursor is one line below the last content line
+			// So if we have N lines (0 to N-1), cursor is at line N
+			// To move to line firstChangeOffset, we need to move up (N - firstChangeOffset) lines
+			// But since cursor is at N (not N-1), we actually need to move up (N - firstChangeOffset) lines
+			// which is totalOldLines - firstChangeOffset
+			const cursorLine = totalOldLines; // Cursor is one past the last line
+			const targetLine = firstChangeOffset;
+			const linesToMoveUp = cursorLine - targetLine;
+
+			if (linesToMoveUp > 0) {
+				output += `\x1b[${linesToMoveUp}A`;
+			}
+
+			output += "\x1b[0J"; // Clear from cursor to end of screen
+
+			const linesToRender = newLines.slice(firstChangeOffset);
+			for (let i = 0; i < linesToRender.length; i++) {
+				if (i > 0) output += "\r\n";
+				output += linesToRender[i];
+			}
+
+			if (linesToRender.length > 0) output += "\r\n";
+			linesRedrawn = linesToRender.length;
+
+		} else {
+			// Strategy: SURGICAL - only content changes with same line counts, update only changed lines
+			// The cursor starts at the line after our last content
+			let currentCursorLine = totalOldLines;
+
+			logger.debug("TUI", "SURGICAL strategy", {
+				totalOldLines,
+				totalNewLines,
+				changedLines: changedLines.map(c => ({ line: c.lineIndex, content: c.newContent.substring(0, 30) })),
+				currentCursorLine
+			});
+
+			for (const change of changedLines) {
+				// Move cursor to the line that needs updating
+				const linesToMove = currentCursorLine - change.lineIndex;
+
+				if (linesToMove > 0) {
+					output += `\x1b[${linesToMove}A`; // Move up
+				} else if (linesToMove < 0) {
+					output += `\x1b[${-linesToMove}B`; // Move down
+				}
+
+				// Clear the line and write new content
+				output += "\x1b[2K"; // Clear entire line
+				output += "\r"; // Move to start of line
+				output += change.newContent;
+				// Cursor is now at the end of the content on this line
+
+				currentCursorLine = change.lineIndex;
+				linesRedrawn++;
+			}
+
+			// Return cursor to end position
+			// We need to be on the line after our last content line
+			// First ensure we're at start of current line
+			output += "\r";
+			// Move to last content line
+			const lastContentLine = totalNewLines - 1;
+			const linesToMove = lastContentLine - currentCursorLine;
+			if (linesToMove > 0) {
+				output += `\x1b[${linesToMove}B`;
+			} else if (linesToMove < 0) {
+				output += `\x1b[${-linesToMove}A`;
+			}
+			// Now add final newline to position cursor on next line
+			output += "\r\n";
+		}
+
+		this.terminal.write(output);
+
+		// Save what we rendered
+		this.previousLines = newLines;
+		this.totalLinesRedrawn += linesRedrawn;
+
+		logger.debug("TUI", "Surgical differential render", {
+			strategy: changePositionInViewport < 0 ? "FULL" :
+			         (hasStructuralChange || hasLineCountChange) ? "PARTIAL" : "SURGICAL",
+			linesRedrawn,
+			firstChangeOffset,
+			changePositionInViewport,
+			hasStructuralChange,
+			hasLineCountChange,
+			surgicalChanges: changedLines.length,
+			totalNewLines,
+			totalOldLines,
 		});
 	}
 
@@ -426,142 +611,6 @@ export class TUI extends Container {
 			linesRedrawn,
 			firstChangedLineOffset,
 			changePositionInViewport,
-			totalNewLines,
-			totalOldLines,
-		});
-	}
-
-	private executeDifferentialRender(currentCommands: RenderCommand[], termHeight: number): void {
-		let output = "";
-		let linesRedrawn = 0;
-		const viewportHeight = termHeight - 1; // Leave one line for cursor
-
-		// Build the new lines
-		const newLines: string[] = [];
-		for (const command of currentCommands) {
-			newLines.push(...command.lines);
-		}
-
-		// Calculate total lines for both old and new
-		const totalNewLines = newLines.length;
-		const totalOldLines = this.previousLines.length;
-
-		// Calculate what's visible in viewport
-		const oldVisibleLines = Math.min(totalOldLines, viewportHeight);
-		const newVisibleLines = Math.min(totalNewLines, viewportHeight);
-
-		// Check if we need to do a full redraw
-		let needFullRedraw = false;
-		let currentLineOffset = 0;
-
-		// Compare commands to detect structural changes
-		for (let i = 0; i < currentCommands.length; i++) {
-			const current = currentCommands[i];
-			const previous = i < this.previousRenderCommands.length ? this.previousRenderCommands[i] : null;
-
-			// Check if component order changed or new component
-			if (!previous || previous.id !== current.id) {
-				needFullRedraw = true;
-				break;
-			}
-
-			// Check if component changed
-			if (current.changed) {
-				// Check if line count changed
-				if (current.lines.length !== previous.lines.length) {
-					needFullRedraw = true;
-					break;
-				}
-
-				// Check if component is fully visible
-				const componentEnd = currentLineOffset + current.lines.length;
-				const visibleStart = Math.max(0, totalNewLines - viewportHeight);
-
-				if (currentLineOffset < visibleStart) {
-					// Component is partially or fully outside viewport
-					needFullRedraw = true;
-					break;
-				}
-			}
-
-			currentLineOffset += current.lines.length;
-		}
-
-		if (needFullRedraw) {
-			// When we need a full redraw, we must clear the entire scrollback buffer
-			// and render ALL components, not just what fits in the viewport
-
-			// Clear the entire screen and scrollback buffer
-			output = "\x1b[2J\x1b[3J\x1b[H";
-
-			// Render ALL lines, letting the terminal handle scrolling naturally
-			for (let i = 0; i < newLines.length; i++) {
-				if (i > 0) output += "\r\n";
-				output += newLines[i];
-			}
-
-			// Add final newline to position cursor below content
-			if (newLines.length > 0) output += "\r\n";
-
-			linesRedrawn = newLines.length;
-		} else {
-			// We can only do differential updates for components in the viewport
-			// Move cursor to top of visible content
-			if (oldVisibleLines > 0) {
-				output += `\x1b[${oldVisibleLines}A`;
-			}
-
-			// Do line-by-line diff for visible portion only
-			const oldVisible =
-				totalOldLines > viewportHeight ? this.previousLines.slice(-viewportHeight) : this.previousLines;
-			const newVisible = totalNewLines > viewportHeight ? newLines.slice(-viewportHeight) : newLines;
-
-			// Compare and update only changed lines
-			const maxLines = Math.max(oldVisible.length, newVisible.length);
-
-			for (let i = 0; i < maxLines; i++) {
-				const oldLine = i < oldVisible.length ? oldVisible[i] : "";
-				const newLine = i < newVisible.length ? newVisible[i] : "";
-
-				if (i >= newVisible.length) {
-					// This line no longer exists - clear it
-					if (i > 0) {
-						output += `\x1b[${i}B`; // Move to line i
-					}
-					output += "\x1b[2K"; // Clear line
-					output += `\x1b[${i}A`; // Move back to top
-				} else if (oldLine !== newLine) {
-					// Line changed - update it
-					if (i > 0) {
-						output += `\x1b[${i}B`; // Move to line i
-					}
-					output += "\x1b[2K\r"; // Clear line and return to start
-					output += newLine;
-					if (i > 0) {
-						output += `\x1b[${i}A`; // Move back to top
-					}
-					linesRedrawn++;
-				}
-			}
-
-			// Move cursor to end
-			output += `\x1b[${newVisible.length}B`;
-
-			// Clear any remaining lines if we have fewer lines now
-			if (newVisible.length < oldVisible.length) {
-				output += "\x1b[0J";
-			}
-		}
-
-		this.terminal.write(output);
-
-		// Save what we rendered
-		this.previousLines = newLines;
-		this.totalLinesRedrawn += linesRedrawn;
-
-		logger.debug("TUI", "Differential render", {
-			linesRedrawn,
-			needFullRedraw,
 			totalNewLines,
 			totalOldLines,
 		});
