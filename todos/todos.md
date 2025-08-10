@@ -20,6 +20,8 @@
 - agent: token usage output sucks, make it better
     - current: ↑1,706 ↓409 ⚒ 2
     - maybe: ↑ 1,706 - ↓ 409 - ⚒ 2 (or dot?)
+    - add context window usage percentage (e.g., "23% context used")
+    - requires context length detection from models endpoint (see todo above)
 
 - agent: test for basic functionality, including thinking, completions & responses API support for all the known providers and their endpoints.
 
