@@ -285,6 +285,8 @@ WRAPPER
 
 	let interrupted = false;
 	let startupComplete = false;
+	let startupFailed = false;
+	let failureReason = "";
 
 	// Handle Ctrl+C
 	const sigintHandler = () => {
@@ -305,6 +307,28 @@ WRAPPER
 					startupComplete = true;
 					logProcess.kill(); // Stop tailing logs
 				}
+
+				// Check for failure indicators
+				if (line.includes("Model runner exiting with code") && !line.includes("code 0")) {
+					startupFailed = true;
+					failureReason = "Model runner failed to start";
+					logProcess.kill();
+				}
+				if (line.includes("Script exited with code") && !line.includes("code 0")) {
+					startupFailed = true;
+					failureReason = "Script failed to execute";
+					logProcess.kill();
+				}
+				if (line.includes("torch.OutOfMemoryError") || line.includes("CUDA out of memory")) {
+					startupFailed = true;
+					failureReason = "Out of GPU memory (OOM)";
+					// Don't kill immediately - let it show more error context
+				}
+				if (line.includes("RuntimeError: Engine core initialization failed")) {
+					startupFailed = true;
+					failureReason = "vLLM engine initialization failed";
+					logProcess.kill();
+				}
 			}
 		}
 	};
@@ -315,7 +339,30 @@ WRAPPER
 	await new Promise<void>((resolve) => logProcess.on("exit", resolve));
 	process.removeListener("SIGINT", sigintHandler);
 
-	if (startupComplete) {
+	if (startupFailed) {
+		// Model failed to start - clean up and report error
+		console.log("\n" + chalk.red(`✗ Model failed to start: ${failureReason}`));
+
+		// Remove the failed model from config
+		const config = loadConfig();
+		delete config.pods[podName].models[name];
+		saveConfig(config);
+
+		console.log(chalk.yellow("\nModel has been removed from configuration."));
+
+		// Provide helpful suggestions based on failure reason
+		if (failureReason.includes("OOM") || failureReason.includes("memory")) {
+			console.log("\n" + chalk.bold("Suggestions:"));
+			console.log("  • Try reducing GPU memory utilization: --memory 50%");
+			console.log("  • Use a smaller context window: --context 4k");
+			console.log("  • Use a quantized version of the model (e.g., FP8)");
+			console.log("  • Use more GPUs with tensor parallelism");
+			console.log("  • Try a smaller model variant");
+		}
+
+		console.log("\n" + chalk.cyan('Check full logs: pi ssh "tail -100 ~/.vllm_logs/' + name + '.log"'));
+		process.exit(1);
+	} else if (startupComplete) {
 		// Model started successfully - output connection details
 		console.log("\n" + chalk.green("✓ Model started successfully!"));
 		console.log("\n" + chalk.bold("Connection Details:"));

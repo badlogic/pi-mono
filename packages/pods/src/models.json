@@ -155,9 +155,9 @@
 						"--tensor-parallel-size",
 						"16",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice"
 					]
 				},
@@ -168,9 +168,9 @@
 						"--tensor-parallel-size",
 						"8",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice"
 					]
 				}
@@ -187,9 +187,9 @@
 						"--tensor-parallel-size",
 						"8",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice"
 					]
 				},
@@ -200,9 +200,9 @@
 						"--tensor-parallel-size",
 						"4",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice"
 					]
 				}
@@ -218,12 +218,10 @@
 						"--tensor-parallel-size",
 						"2",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
-						"--enable-auto-tool-choice",
-						"--quantization",
-						"fp8"
+						"glm45",
+						"--enable-auto-tool-choice"
 					],
 					"env": {
 						"VLLM_ATTENTION_BACKEND": "XFORMERS"
@@ -235,12 +233,10 @@
 					"gpuTypes": ["H200"],
 					"args": [
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
-						"--enable-auto-tool-choice",
-						"--quantization",
-						"fp8"
+						"glm45",
+						"--enable-auto-tool-choice"
 					],
 					"env": {
 						"VLLM_ATTENTION_BACKEND": "XFORMERS"
@@ -259,9 +255,9 @@
 						"--tensor-parallel-size",
 						"2",
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice"
 					],
 					"notes": "Non-quantized BF16 version, more compatible"
@@ -271,9 +267,9 @@
 					"gpuTypes": ["H200"],
 					"args": [
 						"--tool-call-parser",
-						"glm4_moe",
+						"glm45",
 						"--reasoning-parser",
-						"glm4_moe",
+						"glm45",
 						"--enable-auto-tool-choice",
 						"--gpu-memory-utilization",
 						"0.95"

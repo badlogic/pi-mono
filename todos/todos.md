@@ -1,6 +1,22 @@
+- agent/tui: broken rendering of resumed session messages
+    - start session, "read all README.md files except in node_modules
+    - stop session
+    - resume session, messages are cut off?
+
+- pods: pi start outputs all models that can be run on the pod. however, it doesn't check the vllm version. e.g. gpt-oss can only run via vllm+gpt-oss. glm4.5 can only run on vllm nightly.
+
 - agent: improve reasoning section in README.md
 
 - agent: ultrathink to temporarily set reasoning_effort?
+
+- agent: ripgrep tool is very broken
+    [tool] rg({"args":"-l --hidden --glob \"**/README.md\""})
+    ripgrep error: rg: ripgrep requires at least one pattern to execute a search
+
+- agent: gpt-5/responses api seems to be broken?
+    - prompt: read all README.md files
+    - output:
+        [error] 400 Item 'fc_68990b4ddf60819e9138b7a496da3fcb04d5f47f123043f7' of type 'function_call' was provided without its required 'reasoning' item: 'rs_68990b4d5784819eac65086d9a6e42e704d5f47f123043f7'.
 
 - agent: need to figure out a models max context lenght
     - Add automatic context length detection via models endpoint

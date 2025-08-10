@@ -533,7 +533,10 @@ export class Agent {
 
 		// Initialize with system prompt if provided
 		if (config.systemPrompt) {
-			this.messages.push({ role: "system", content: config.systemPrompt });
+			this.messages.push({
+				role: "developer",
+				content: config.systemPrompt,
+			});
 		}
 
 		// Start session logging if we have a session manager
@@ -621,8 +624,8 @@ export class Agent {
 			// Responses API format
 			if (this.config.systemPrompt) {
 				this.messages.push({
-					type: "system",
-					content: [{ type: "system_text", text: this.config.systemPrompt }],
+					role: "developer",
+					content: this.config.systemPrompt,
 				});
 			}
 
@@ -630,7 +633,7 @@ export class Agent {
 				switch (event.type) {
 					case "user_message":
 						this.messages.push({
-							type: "user",
+							role: "user",
 							content: [{ type: "input_text", text: event.text }],
 						});
 						break;

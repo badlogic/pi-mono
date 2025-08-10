@@ -238,9 +238,6 @@ export class TUI extends Container {
 		} catch (error) {
 			console.error("Error starting terminal:", error);
 		}
-
-		// Initial render
-		this.renderToScreen();
 	}
 
 	stop(): void {
@@ -268,10 +265,11 @@ export class TUI extends Container {
 		this.collectRenderCommands(this, termWidth, currentRenderCommands);
 
 		if (this.isFirstRender) {
-			this.executeInitialRender(currentRenderCommands);
+			this.renderInitial(currentRenderCommands);
 			this.isFirstRender = false;
 		} else {
-			this.executeDifferentialRender(currentRenderCommands, termHeight);
+			// this.executeDifferentialRender(currentRenderCommands, termHeight);
+			this.renderDifferential(currentRenderCommands, termHeight);
 		}
 
 		// Save for next render
@@ -295,7 +293,7 @@ export class TUI extends Container {
 		}
 	}
 
-	private executeInitialRender(commands: RenderCommand[]): void {
+	private renderInitial(commands: RenderCommand[]): void {
 		let output = "";
 		const lines: string[] = [];
 
@@ -321,6 +319,115 @@ export class TUI extends Container {
 		logger.debug("TUI", "Initial render", {
 			commandsExecuted: commands.length,
 			linesRendered: lines.length,
+		});
+	}
+
+	private renderDifferential(currentCommands: RenderCommand[], termHeight: number): void {
+		const viewportHeight = termHeight - 1; // Leave one line for cursor
+
+		// Build the new lines array
+		const newLines: string[] = [];
+		for (const command of currentCommands) {
+			newLines.push(...command.lines);
+		}
+
+		const totalNewLines = newLines.length;
+		const totalOldLines = this.previousLines.length;
+
+		// Find the first line that changed
+		let firstChangedLineOffset = -1;
+		let currentLineOffset = 0;
+
+		for (let i = 0; i < currentCommands.length; i++) {
+			const current = currentCommands[i];
+			const previous = i < this.previousRenderCommands.length ? this.previousRenderCommands[i] : null;
+
+			// Check if this is a new component or component was removed/reordered
+			if (!previous || previous.id !== current.id) {
+				firstChangedLineOffset = currentLineOffset;
+				break;
+			}
+
+			// Check if component content or size changed
+			if (current.changed) {
+				firstChangedLineOffset = currentLineOffset;
+				break;
+			}
+
+			currentLineOffset += current.lines.length;
+		}
+
+		// Also check if we have fewer components now (components removed from end)
+		if (firstChangedLineOffset === -1 && currentCommands.length < this.previousRenderCommands.length) {
+			firstChangedLineOffset = currentLineOffset;
+		}
+
+		// If nothing changed, do nothing
+		if (firstChangedLineOffset === -1) {
+			this.previousLines = newLines;
+			return;
+		}
+
+		// Calculate where the first change is relative to the viewport
+		// If our content exceeds viewport, some is in scrollback
+		const contentStartInViewport = Math.max(0, totalOldLines - viewportHeight);
+		const changePositionInViewport = firstChangedLineOffset - contentStartInViewport;
+
+		let output = "";
+		let linesRedrawn = 0;
+
+		if (changePositionInViewport < 0) {
+			// The change is above the viewport - we cannot reach it with cursor
+			// MUST do full re-render
+			output = "\x1b[3J\x1b[H"; // Clear scrollback and screen, then home cursor
+
+			// Render ALL lines
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) output += "\r\n";
+				output += newLines[i];
+			}
+
+			// Add final newline
+			if (newLines.length > 0) output += "\r\n";
+
+			linesRedrawn = newLines.length;
+		} else {
+			// The change is in the viewport - we can update from there
+			// Calculate how many lines up to move from current cursor position
+			const linesToMoveUp = totalOldLines - firstChangedLineOffset;
+
+			if (linesToMoveUp > 0) {
+				output += `\x1b[${linesToMoveUp}A`;
+			}
+
+			// Clear from here to end of screen
+			output += "\x1b[0J";
+
+			// Render everything from the first change onwards
+			const linesToRender = newLines.slice(firstChangedLineOffset);
+			for (let i = 0; i < linesToRender.length; i++) {
+				if (i > 0) output += "\r\n";
+				output += linesToRender[i];
+			}
+
+			// Add final newline
+			if (linesToRender.length > 0) output += "\r\n";
+
+			linesRedrawn = linesToRender.length;
+		}
+
+		this.terminal.write(output);
+
+		// Save what we rendered
+		this.previousLines = newLines;
+		this.totalLinesRedrawn += linesRedrawn;
+
+		logger.debug("TUI", "Differential render", {
+			linesRedrawn,
+			firstChangedLineOffset,
+			changePositionInViewport,
+			totalNewLines,
+			totalOldLines,
 		});
 	}
 
@@ -380,47 +487,30 @@ export class TUI extends Container {
 			currentLineOffset += current.lines.length;
 		}
 
-		// Move cursor to top of our content
-		if (oldVisibleLines > 0) {
-			output += `\x1b[${oldVisibleLines}A`;
-		}
-
 		if (needFullRedraw) {
-			// Clear each old line to avoid wrapping artifacts
-			for (let i = 0; i < oldVisibleLines; i++) {
-				if (i > 0) output += `\x1b[1B`; // Move down one line
-				output += "\x1b[2K"; // Clear entire line
-			}
-			// Move back to start position
-			if (oldVisibleLines > 1) {
-				output += `\x1b[${oldVisibleLines - 1}A`;
-			}
-			// Ensure cursor is at beginning of line
-			output += "\r";
-			// Clear any remaining lines
-			output += "\x1b[0J"; // Clear from cursor to end of screen
+			// When we need a full redraw, we must clear the entire scrollback buffer
+			// and render ALL components, not just what fits in the viewport
 
-			// Determine what to render
-			let linesToRender: string[];
-			if (totalNewLines <= viewportHeight) {
-				// Everything fits - render all
-				linesToRender = newLines;
-			} else {
-				// Only render what fits in viewport (last N lines)
-				linesToRender = newLines.slice(-viewportHeight);
-			}
+			// Clear the entire screen and scrollback buffer
+			output = "\x1b[2J\x1b[3J\x1b[H";
 
-			// Output the lines
-			for (let i = 0; i < linesToRender.length; i++) {
+			// Render ALL lines, letting the terminal handle scrolling naturally
+			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) output += "\r\n";
-				output += linesToRender[i];
+				output += newLines[i];
 			}
 
-			// Add final newline
-			if (linesToRender.length > 0) output += "\r\n";
+			// Add final newline to position cursor below content
+			if (newLines.length > 0) output += "\r\n";
 
-			linesRedrawn = linesToRender.length;
+			linesRedrawn = newLines.length;
 		} else {
+			// We can only do differential updates for components in the viewport
+			// Move cursor to top of visible content
+			if (oldVisibleLines > 0) {
+				output += `\x1b[${oldVisibleLines}A`;
+			}
+
 			// Do line-by-line diff for visible portion only
 			const oldVisible =
 				totalOldLines > viewportHeight ? this.previousLines.slice(-viewportHeight) : this.previousLines;
