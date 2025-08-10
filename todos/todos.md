@@ -1,3 +1,5 @@
+- agent: improve reasoning section in README.md
+
 - agent: ultrathink to temporarily set reasoning_effort?
 
 - agent: need to figure out a models max context lenght
