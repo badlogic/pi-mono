@@ -156,7 +156,17 @@ export class SessionManager implements AgentEventReceiver {
 					const eventEntry: SessionEvent = entry as SessionEvent;
 					events.push(eventEntry);
 					if (eventEntry.event.type === "token_usage") {
-						totalUsage = entry.event as Extract<AgentEvent, { type: "token_usage" }>;
+						const usage = entry.event as Extract<AgentEvent, { type: "token_usage" }>;
+						if (!totalUsage) {
+							totalUsage = { ...usage };
+						} else {
+							totalUsage.inputTokens += usage.inputTokens;
+							totalUsage.outputTokens += usage.outputTokens;
+							totalUsage.totalTokens += usage.totalTokens;
+							totalUsage.cacheReadTokens += usage.cacheReadTokens;
+							totalUsage.cacheWriteTokens += usage.cacheWriteTokens;
+							totalUsage.reasoningTokens += usage.reasoningTokens;
+						}
 					}
 				}
 			} catch {

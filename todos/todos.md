@@ -1,3 +1,10 @@
+
+- agent: max output tokens is fixed to 2000 in responess and chat completions calls
+
+- tui: if text editor gets bigger than viewport, we get artifacts in scrollbuffer
+
+- tui: need to benachmark our renderer. always compares old lines vs new lines and does a diff. might be a bit much for 100k+ lines.
+
 - pods: pi start outputs all models that can be run on the pod. however, it doesn't check the vllm version. e.g. gpt-oss can only run via vllm+gpt-oss. glm4.5 can only run on vllm nightly.
 
 - agent: improve reasoning section in README.md
@@ -25,14 +32,9 @@
         - Anthropic: ❌ `/v1/models` (no context info)
         - OpenAI: ❌ `/v1/models` (no context info)
     - For Anthropic/OpenAI, may need hardcoded fallback values or separate lookup table
+    - Display how much of the context window is used by the current context
 
 - agent: compaction & micro compactionexi
-
-- agent: token usage output sucks, make it better
-    - current: ↑1,706 ↓409 ⚒ 2
-    - maybe: ↑ 1,706 - ↓ 409 - ⚒ 2 (or dot?)
-    - add context window usage percentage (e.g., "23% context used")
-    - requires context length detection from models endpoint (see todo above)
 
 - agent: test for basic functionality, including thinking, completions & responses API support for all the known providers and their endpoints.
 
@@ -71,7 +73,5 @@
     ```
 
 - pods: if a pod is down and i run `pi list`, verifying processes says All processes verified. But that can't be true, as we can no longer SSH into the pod to check.
-
-- agent: start a new agent session. when i press CTRL+C, "Press Ctrl+C again to exit" appears above the text editor followed by an empty line. After about 1 second, the empty line disappears. We should either not show the empty line, or always show the empty line. Maybe Ctrl+C info should be displayed below the text editor.
 
 - agent: we need to make system prompt and tools pluggable. We need to figure out the simplest way for users to define system prompts and toolkits. A toolkit could be a subset of the built-in tools, a mixture of a subset of the built-in tools plus custom self-made tools, maybe include MCP servers, and so on. We need to figure out a way to make this super easy. users should be able to write their tools in whatever language they fancy. which means that probably something like process spawning plus studio communication transport would make the most sense. but then we were back at MCP basically. And that does not support interruptibility, which we need for the agent. So if the agent invokes the tool and the user presses escape in the interface, then the tool invocation must be interrupted and whatever it's doing must stop, including killing all sub-processes. For MCP this could be solved for studio MCP servers by, since we spawn those on startup or whenever we load the tools, we spawn a process for an MCP server and then reuse that process for subsequent tool invocations. If the user interrupts then we could just kill that process, assuming that anything it's doing or any of its sub-processes will be killed along the way. So I guess tools could all be written as MCP servers, but that's a lot of overhead. It would also be nice to be able to provide tools just as a bash script that gets some inputs and return some outputs based on the inputs Same for Go apps or TypeScript apps invoked by MPX TSX. just make the barrier of entry for writing your own tools super fucking low. not necessarily going full MCP. but we also need to support MCP. So whatever we arrive at, we then need to take our built-in tools and see if those can be refactored to work with our new tools

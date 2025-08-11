@@ -649,6 +649,8 @@ export class TextEditor implements Component {
 		// Check if we're in a slash command context
 		if (beforeCursor.trimStart().startsWith("/")) {
 			this.handleSlashCommandCompletion();
+		} else {
+			this.forceFileAutocomplete();
 		}
 	}
 
@@ -656,7 +658,33 @@ export class TextEditor implements Component {
 		// For now, fall back to regular autocomplete (slash commands)
 		// This can be extended later to handle command-specific argument completion
 		this.tryTriggerAutocomplete(true);
+}
+
+	private forceFileAutocomplete(): void {
+		if (!this.autocompleteProvider) return;
+
+		// Check if provider has the force method
+		const provider = this.autocompleteProvider as any;
+		if (!provider.getForceFileSuggestions) {
+			this.tryTriggerAutocomplete(true);
+			return;
+		}
+
+		const suggestions = provider.getForceFileSuggestions(
+			this.state.lines,
+			this.state.cursorLine,
+			this.state.cursorCol,
+		);
+
+		if (suggestions && suggestions.items.length > 0) {
+			this.autocompletePrefix = suggestions.prefix;
+			this.autocompleteList = new SelectList(suggestions.items, 5);
+			this.isAutocompleting = true;
+		} else {
+			this.cancelAutocomplete();
+		}
 	}
+
 
 	private cancelAutocomplete(): void {
 		this.isAutocompleting = false;

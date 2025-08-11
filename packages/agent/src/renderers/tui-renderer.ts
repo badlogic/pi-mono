@@ -2,6 +2,7 @@ import {
 	CombinedAutocompleteProvider,
 	Container,
 	MarkdownComponent,
+	SlashCommand,
 	TextComponent,
 	TextEditor,
 	TUI,
@@ -63,6 +64,13 @@ export class TuiRenderer implements AgentEventReceiver {
 	private lastCacheWriteTokens = 0;
 	private lastReasoningTokens = 0;
 	private toolCallCount = 0;
+	// Cumulative token tracking
+	private cumulativeInputTokens = 0;
+	private cumulativeOutputTokens = 0;
+	private cumulativeCacheReadTokens = 0;
+	private cumulativeCacheWriteTokens = 0;
+	private cumulativeReasoningTokens = 0;
+	private cumulativeToolCallCount = 0;
 	private tokenStatusComponent: TextComponent | null = null;
 
 	constructor() {
@@ -74,7 +82,12 @@ export class TuiRenderer implements AgentEventReceiver {
 
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[],
+			[
+				{
+					name: "tokens",
+					description: "Show cumulative token usage for this session",
+				},
+			],
 			process.cwd(), // Base directory for file path completion
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -148,6 +161,17 @@ export class TuiRenderer implements AgentEventReceiver {
 			text = text.trim();
 			if (!text) return;
 
+			// Handle slash commands
+			if (text.startsWith("/")) {
+				const [command, ...args] = text.slice(1).split(" ");
+				if (command === "tokens") {
+					this.showTokenUsage();
+					return;
+				}
+				// Unknown slash command, ignore
+				return;
+			}
+
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -192,6 +216,7 @@ export class TuiRenderer implements AgentEventReceiver {
 
 			case "tool_call":
 				this.toolCallCount++;
+				this.cumulativeToolCallCount++;
 				this.updateTokenDisplay();
 				this.chatContainer.addChild(new TextComponent(chalk.yellow(`[tool] ${event.name}(${event.args})`)));
 				break;
@@ -255,6 +280,14 @@ export class TuiRenderer implements AgentEventReceiver {
 				this.lastCacheReadTokens = event.cacheReadTokens;
 				this.lastCacheWriteTokens = event.cacheWriteTokens;
 				this.lastReasoningTokens = event.reasoningTokens;
+
+				// Accumulate cumulative totals
+				this.cumulativeInputTokens += event.inputTokens;
+				this.cumulativeOutputTokens += event.outputTokens;
+				this.cumulativeCacheReadTokens += event.cacheReadTokens;
+				this.cumulativeCacheWriteTokens += event.cacheWriteTokens;
+				this.cumulativeReasoningTokens += event.reasoningTokens;
+
 				this.updateTokenDisplay();
 				break;
 
@@ -282,21 +315,21 @@ export class TuiRenderer implements AgentEventReceiver {
 		this.tokenContainer.clear();
 
 		// Build token display text
-		let tokenText = chalk.dim(`↑${this.lastInputTokens.toLocaleString()} ↓${this.lastOutputTokens.toLocaleString()}`);
+		let tokenText = chalk.dim(`↑ ${this.lastInputTokens.toLocaleString()} ↓ ${this.lastOutputTokens.toLocaleString()}`);
 
 		// Add reasoning tokens if present
 		if (this.lastReasoningTokens > 0) {
-			tokenText += chalk.dim(` ⚡${this.lastReasoningTokens.toLocaleString()}`);
+			tokenText += chalk.dim(` ⚡ ${this.lastReasoningTokens.toLocaleString()}`);
 		}
 
 		// Add cache info if available
 		if (this.lastCacheReadTokens > 0 || this.lastCacheWriteTokens > 0) {
 			const cacheText: string[] = [];
 			if (this.lastCacheReadTokens > 0) {
-				cacheText.push(`⟲${this.lastCacheReadTokens.toLocaleString()}`);
+				cacheText.push(` cache read: ${this.lastCacheReadTokens.toLocaleString()}`);
 			}
 			if (this.lastCacheWriteTokens > 0) {
-				cacheText.push(`⟳${this.lastCacheWriteTokens.toLocaleString()}`);
+				cacheText.push(` cache write: ${this.lastCacheWriteTokens.toLocaleString()}`);
 			}
 			tokenText += chalk.dim(` (${cacheText.join(" ")})`);
 		}
@@ -343,6 +376,35 @@ export class TuiRenderer implements AgentEventReceiver {
 		// Just render the assistant label without starting animations
 		// Used for restored session history
 		this.chatContainer.addChild(new TextComponent(chalk.hex("#FFA500")("[assistant]")));
+		this.ui.requestRender();
+	}
+
+	private showTokenUsage(): void {
+
+		let tokenText = chalk.dim(`Total usage\n   input: ${this.cumulativeInputTokens.toLocaleString()}\n   output: ${this.cumulativeOutputTokens.toLocaleString()}`);
+
+		if (this.cumulativeReasoningTokens > 0) {
+			tokenText += chalk.dim(`\n   reasoning: ${this.cumulativeReasoningTokens.toLocaleString()}`);
+		}
+
+		if (this.cumulativeCacheReadTokens > 0 || this.cumulativeCacheWriteTokens > 0) {
+			const cacheText: string[] = [];
+			if (this.cumulativeCacheReadTokens > 0) {
+				cacheText.push(`\n  cache read: ${this.cumulativeCacheReadTokens.toLocaleString()}`);
+			}
+			if (this.cumulativeCacheWriteTokens > 0) {
+				cacheText.push(`\n   cache right: ${this.cumulativeCacheWriteTokens.toLocaleString()}`);
+			}
+			tokenText += chalk.dim(` ${cacheText.join(" ")}`);
+		}
+
+
+		if (this.cumulativeToolCallCount > 0) {
+			tokenText += chalk.dim(`\n   tool calls: ${this.cumulativeToolCallCount}`);
+		}
+
+		const tokenSummary = new TextComponent(chalk.italic(tokenText), { bottom: 1 });
+		this.chatContainer.addChild(tokenSummary);
 		this.ui.requestRender();
 	}
 
