@@ -338,19 +338,19 @@ export class TUI extends Container {
 		// Find first changed line by comparing old and new
 		let firstChangedLine = -1;
 		const minLines = Math.min(totalOldLines, totalNewLines);
-		
+
 		for (let i = 0; i < minLines; i++) {
 			if (this.previousLines[i] !== newLines[i]) {
 				firstChangedLine = i;
 				break;
 			}
 		}
-		
+
 		// If all common lines are the same, check if we have different lengths
 		if (firstChangedLine === -1 && totalOldLines !== totalNewLines) {
 			firstChangedLine = minLines;
 		}
-		
+
 		// No changes at all
 		if (firstChangedLine === -1) {
 			this.previousLines = newLines;
@@ -360,7 +360,7 @@ export class TUI extends Container {
 		// Calculate viewport boundaries
 		const oldViewportStart = Math.max(0, totalOldLines - viewportHeight);
 		const cursorPosition = totalOldLines; // Cursor is one line below last content
-		
+
 		let output = "";
 		let linesRedrawn = 0;
 
@@ -368,43 +368,42 @@ export class TUI extends Container {
 		if (firstChangedLine < oldViewportStart) {
 			// Must do full clear and re-render
 			output = "\x1b[3J\x1b[H"; // Clear scrollback and screen, home cursor
-			
+
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) output += "\r\n";
 				output += newLines[i];
 			}
-			
+
 			if (newLines.length > 0) output += "\r\n";
 			linesRedrawn = newLines.length;
 		} else {
 			// Change is in viewport - we can reach it with cursor movements
 			// Calculate viewport position of the change
 			const viewportChangePosition = firstChangedLine - oldViewportStart;
-			
+
 			// Move cursor to the change position
-			const linesToMoveUp = (cursorPosition - oldViewportStart) - viewportChangePosition;
+			const linesToMoveUp = cursorPosition - oldViewportStart - viewportChangePosition;
 			if (linesToMoveUp > 0) {
 				output += `\x1b[${linesToMoveUp}A`;
 			}
-			
+
 			// Now do surgical updates or partial clear based on what's more efficient
 			let currentLine = firstChangedLine;
-			let currentViewportLine = viewportChangePosition;
-			
+			const currentViewportLine = viewportChangePosition;
+
 			// If we have significant structural changes, just clear and re-render from here
-			const hasSignificantChanges = totalNewLines !== totalOldLines || 
-				(totalNewLines - firstChangedLine) > 10; // Arbitrary threshold
-			
+			const hasSignificantChanges = totalNewLines !== totalOldLines || totalNewLines - firstChangedLine > 10; // Arbitrary threshold
+
 			if (hasSignificantChanges) {
 				// Clear from cursor to end of screen and render all remaining lines
 				output += "\r\x1b[0J";
-				
+
 				for (let i = firstChangedLine; i < newLines.length; i++) {
 					if (i > firstChangedLine) output += "\r\n";
 					output += newLines[i];
 					linesRedrawn++;
 				}
-				
+
 				if (newLines.length > firstChangedLine) output += "\r\n";
 			} else {
 				// Do surgical line-by-line updates
@@ -415,14 +414,14 @@ export class TUI extends Container {
 						if (moveLines > 0) {
 							output += `\x1b[${moveLines}B`;
 						}
-						
+
 						// Clear and rewrite the line
 						output += "\r\x1b[2K" + newLines[i];
 						currentLine = i;
 						linesRedrawn++;
 					}
 				}
-				
+
 				// Handle added/removed lines at the end
 				if (totalNewLines > totalOldLines) {
 					// Move to end of old content and add new lines
@@ -431,7 +430,7 @@ export class TUI extends Container {
 						output += `\x1b[${moveToEnd}B`;
 					}
 					output += "\r\n";
-					
+
 					for (let i = totalOldLines; i < totalNewLines; i++) {
 						if (i > totalOldLines) output += "\r\n";
 						output += newLines[i];
