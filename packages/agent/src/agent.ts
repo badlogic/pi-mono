@@ -178,7 +178,13 @@ async function checkReasoningSupport(
 	model: string,
 	api: "completions" | "responses",
 	baseURL?: string,
+	signal?: AbortSignal,
 ): Promise<boolean> {
+	// Check if already aborted
+	if (signal?.aborted) {
+		throw new Error("Interrupted");
+	}
+
 	// Check cache first
 	const cacheKey = model;
 	const cached = modelReasoningSupport.get(cacheKey);
@@ -200,7 +206,7 @@ async function checkReasoningSupport(
 					effort: "low", // Use low instead of minimal to ensure we get summaries
 				},
 			};
-			await client.responses.create(testRequest);
+			await client.responses.create(testRequest, { signal });
 			supportsReasoning = true;
 		} catch (error) {
 			supportsReasoning = false;
@@ -234,7 +240,7 @@ async function checkReasoningSupport(
 				testRequest.reasoning_effort = "minimal";
 			}
 
-			await client.chat.completions.create(testRequest);
+			await client.chat.completions.create(testRequest, { signal });
 			supportsReasoning = true;
 		} catch (error) {
 			supportsReasoning = false;
@@ -263,7 +269,6 @@ export async function callModelResponsesApi(
 	while (!conversationDone) {
 		// Check if we've been interrupted
 		if (signal?.aborted) {
-			await eventReceiver?.on({ type: "interrupted" });
 			throw new Error("Interrupted");
 		}
 
@@ -340,7 +345,6 @@ export async function callModelResponsesApi(
 
 				case "function_call": {
 					if (signal?.aborted) {
-						await eventReceiver?.on({ type: "interrupted" });
 						throw new Error("Interrupted");
 					}
 
@@ -406,7 +410,6 @@ export async function callModelChatCompletionsApi(
 
 	while (!assistantResponded) {
 		if (signal?.aborted) {
-			await eventReceiver?.on({ type: "interrupted" });
 			throw new Error("Interrupted");
 		}
 
@@ -456,7 +459,6 @@ export async function callModelChatCompletionsApi(
 			for (const toolCall of message.tool_calls) {
 				// Check if interrupted before executing tool
 				if (signal?.aborted) {
-					await eventReceiver?.on({ type: "interrupted" });
 					throw new Error("Interrupted");
 				}
 
@@ -576,6 +578,7 @@ export class Agent {
 					this.config.model,
 					this.config.api,
 					this.config.baseURL,
+					this.abortController.signal,
 				);
 			}
 
@@ -601,9 +604,10 @@ export class Agent {
 				);
 			}
 		} catch (e) {
-			// Check if this was an interruption
-			const errorMessage = e instanceof Error ? e.message : String(e);
-			if (errorMessage === "Interrupted" || this.abortController.signal.aborted) {
+			// Check if this was an interruption by checking the abort signal
+			if (this.abortController.signal.aborted) {
+				// Emit interrupted event so UI can clean up properly
+				await this.comboReceiver?.on({ type: "interrupted" });
 				return;
 			}
 			throw e;

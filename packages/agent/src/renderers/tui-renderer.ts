@@ -113,19 +113,8 @@ export class TuiRenderer implements AgentEventReceiver {
 					this.onInterruptCallback();
 				}
 
-				// Stop the loading animation immediately
-				if (this.currentLoadingAnimation) {
-					this.currentLoadingAnimation.stop();
-					this.statusContainer.clear();
-					this.currentLoadingAnimation = null;
-				}
-
-				// Don't show message here - the interrupted event will handle it
-
-				// Re-enable editor submission
-				this.editor.disableSubmit = false;
-
-				this.ui.requestRender();
+				// Don't do any UI cleanup here - let the interrupted event handle it
+				// This avoids race conditions and ensures the interrupted message is shown
 
 				// Don't forward to editor
 				return false;
@@ -280,6 +269,8 @@ export class TuiRenderer implements AgentEventReceiver {
 				this.chatContainer.addChild(new TextComponent(chalk.red("[Interrupted by user]"), { bottom: 1 }));
 				// Re-enable editor submission
 				this.editor.disableSubmit = false;
+				// Explicitly request render to ensure message is displayed
+				this.ui.requestRender();
 				break;
 		}
 
