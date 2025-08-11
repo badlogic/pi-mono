@@ -19,8 +19,6 @@ export { TextComponent } from "./components/text-component.js";
 export { TextEditor, type TextEditorConfig } from "./components/text-editor.js";
 // Whitespace component
 export { WhitespaceComponent } from "./components/whitespace-component.js";
-// Logger for debugging
-export { type LoggerConfig, logger } from "./logger.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 export {

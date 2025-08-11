@@ -1,6 +1,7 @@
 {
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
+		"noEmit": true,
 		"paths": {
 			"@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
 			"@mariozechner/pi-agent": ["./packages/agent/src/index.ts"],

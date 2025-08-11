@@ -3,7 +3,7 @@ import { TUI, Container, TextComponent, TextEditor, MarkdownComponent } from "..
 
 /**
  * Multi-Component Layout Demo
- * 
+ *
  * Demonstrates:
  * - Complex layout with multiple containers
  * - Header, sidebar, main content, and footer areas
@@ -64,13 +64,6 @@ ui.addChild(header);
 ui.addChild(mainContent);
 ui.addChild(footer);
 ui.setFocus(inputArea);
-
-// Configure debug logging
-ui.configureLogging({
-	enabled: true,
-	level: "info",
-	logFile: "tui-debug.log",
-});
 
 // Handle Ctrl+C to exit
 ui.onGlobalKeyPress = (data: string) => {

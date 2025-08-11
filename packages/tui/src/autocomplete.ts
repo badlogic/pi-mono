@@ -2,7 +2,6 @@ import { readdirSync, statSync } from "fs";
 import mimeTypes from "mime-types";
 import { homedir } from "os";
 import { basename, dirname, extname, join } from "path";
-import { logger } from "./logger.js";
 
 function isAttachableFile(filePath: string): boolean {
 	const mimeType = mimeTypes.lookup(filePath);
@@ -142,12 +141,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		cursorLine: number,
 		cursorCol: number,
 	): { items: AutocompleteItem[]; prefix: string } | null {
-		logger.debug("CombinedAutocompleteProvider", "getSuggestions called", {
-			lines,
-			cursorLine,
-			cursorCol,
-		});
-
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
@@ -202,10 +195,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 		// Check for file paths - triggered by Tab or if we detect a path pattern
 		const pathMatch = this.extractPathPrefix(textBeforeCursor, false);
-		logger.debug("CombinedAutocompleteProvider", "Path match check", {
-			textBeforeCursor,
-			pathMatch,
-		});
 
 		if (pathMatch !== null) {
 			const suggestions = this.getFileSuggestions(pathMatch);
@@ -342,11 +331,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 	// Get file/directory suggestions for a given path prefix
 	private getFileSuggestions(prefix: string): AutocompleteItem[] {
-		logger.debug("CombinedAutocompleteProvider", "getFileSuggestions called", {
-			prefix,
-			basePath: this.basePath,
-		});
-
 		try {
 			let searchDir: string;
 			let searchPrefix: string;
@@ -398,11 +382,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				}
 				searchPrefix = file;
 			}
-
-			logger.debug("CombinedAutocompleteProvider", "Searching directory", {
-				searchDir,
-				searchPrefix,
-			});
 
 			const entries = readdirSync(searchDir);
 			const suggestions: AutocompleteItem[] = [];
@@ -479,17 +458,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				return a.label.localeCompare(b.label);
 			});
 
-			logger.debug("CombinedAutocompleteProvider", "Returning suggestions", {
-				count: suggestions.length,
-				firstFew: suggestions.slice(0, 3).map((s) => s.label),
-			});
-
 			return suggestions.slice(0, 10); // Limit to 10 suggestions
 		} catch (e) {
 			// Directory doesn't exist or not accessible
-			logger.error("CombinedAutocompleteProvider", "Error reading directory", {
-				error: e instanceof Error ? e.message : String(e),
-			});
 			return [];
 		}
 	}
@@ -500,12 +471,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		cursorLine: number,
 		cursorCol: number,
 	): { items: AutocompleteItem[]; prefix: string } | null {
-		logger.debug("CombinedAutocompleteProvider", "getForceFileSuggestions called", {
-			lines,
-			cursorLine,
-			cursorCol,
-		});
-
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
@@ -516,11 +481,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 		// Force extract path prefix - this will always return something
 		const pathMatch = this.extractPathPrefix(textBeforeCursor, true);
-		logger.debug("CombinedAutocompleteProvider", "Forced path match", {
-			textBeforeCursor,
-			pathMatch,
-		});
-
 		if (pathMatch !== null) {
 			const suggestions = this.getFileSuggestions(pathMatch);
 			if (suggestions.length === 0) return null;

@@ -231,13 +231,7 @@
 				{
 					"gpuCount": 1,
 					"gpuTypes": ["H200"],
-					"args": [
-						"--tool-call-parser",
-						"glm45",
-						"--reasoning-parser",
-						"glm45",
-						"--enable-auto-tool-choice"
-					],
+					"args": ["--tool-call-parser", "glm45", "--reasoning-parser", "glm45", "--enable-auto-tool-choice"],
 					"env": {
 						"VLLM_ATTENTION_BACKEND": "XFORMERS"
 					},

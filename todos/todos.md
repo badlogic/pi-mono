@@ -1,7 +1,3 @@
-- agent/tui: broken rendering of resumed session messages
-    - start session, "read all README.md files except in node_modules
-    - stop session
-    - resume session, messages are cut off?
 
 - pods: pi start outputs all models that can be run on the pod. however, it doesn't check the vllm version. e.g. gpt-oss can only run via vllm+gpt-oss. glm4.5 can only run on vllm nightly.
 
@@ -40,8 +36,6 @@
     - requires context length detection from models endpoint (see todo above)
 
 - agent: test for basic functionality, including thinking, completions & responses API support for all the known providers and their endpoints.
-
-- agent: token usage gets overwritten with each message that has usage data. however, if the latest data doesn't have a specific usage field, we record undefined i think? also,   {"type":"token_usage" "inputTokens":240,"outputTokens":35,"totalTokens":275,"cacheReadTokens":0,"cacheWriteTokens":0} doesn't contain reasoningToken? do we lack initialization? See case "token_usage": in renderers. probably need to check if lastXXX > current and use lastXXX.
 
 - agent: groq responses api throws on second message
     ```

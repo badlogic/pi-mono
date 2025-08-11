@@ -268,7 +268,7 @@ The TUI uses a three-strategy rendering system that minimizes redraws to only wh
    - Action: Updates only specific changed lines (typically 1-2 lines)
    - Example: Loading spinner animation, updating status text
 
-2. **Partial Re-render** 
+2. **Partial Re-render**
    - When: Line count changes or structural changes within viewport
    - Action: Clears from first change to end of screen, re-renders tail
    - Example: Adding new messages to a chat, expanding text editor
@@ -438,16 +438,16 @@ test("my TUI test", async () => {
   const terminal = new VirtualTerminal(80, 24);
   const ui = new TUI(terminal);
   ui.start();
-  
+
   ui.addChild(new TextComponent("Hello"));
-  
+
   // Wait for render
   await new Promise(resolve => process.nextTick(resolve));
-  
+
   // Get rendered output
   const viewport = await terminal.flushAndGetViewport();
   assert.strictEqual(viewport[0], "Hello");
-  
+
   ui.stop();
 });
 ```
@@ -469,33 +469,33 @@ describe("My Feature", () => {
     const terminal = new VirtualTerminal(80, 24);
     const ui = new TUI(terminal);
     ui.start();
-    
+
     // Setup components
     const container = new Container();
     ui.addChild(container);
-    
+
     // Initial render
     await new Promise(resolve => process.nextTick(resolve));
     await terminal.flush();
-    
+
     // Check viewport (visible content)
     let viewport = terminal.getViewport();
     assert.strictEqual(viewport.length, 24);
-    
+
     // Check scrollback buffer (all content including history)
     let scrollBuffer = terminal.getScrollBuffer();
-    
+
     // Simulate user input
     terminal.sendInput("Hello");
-    
+
     // Wait for processing
     await new Promise(resolve => process.nextTick(resolve));
     await terminal.flush();
-    
+
     // Verify changes
     viewport = terminal.getViewport();
     // ... assertions
-    
+
     ui.stop();
   });
 });
@@ -559,9 +559,6 @@ Monitor real-time performance metrics:
 ```bash
 # Install dependencies (from monorepo root)
 npm install
-
-# Build the package
-npm run build
 
 # Run type checking
 npm run check

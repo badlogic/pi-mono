@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import { logger } from "../logger.js";
 import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
 import { SelectList } from "./select-list.js";
 
@@ -44,12 +43,10 @@ export class TextEditor implements Component {
 		if (config) {
 			this.config = { ...this.config, ...config };
 		}
-		logger.componentLifecycle("TextEditor", "created", { config: this.config });
 	}
 
 	configure(config: Partial<TextEditorConfig>): void {
 		this.config = { ...this.config, ...config };
-		logger.info("TextEditor", "Configuration updated", { config: this.config });
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -127,48 +124,22 @@ export class TextEditor implements Component {
 	}
 
 	handleInput(data: string): void {
-		logger.keyInput("TextEditor", data);
-		logger.debug("TextEditor", "Current state before input", {
-			lines: this.state.lines,
-			cursorLine: this.state.cursorLine,
-			cursorCol: this.state.cursorCol,
-		});
-
 		// Handle special key combinations first
 
 		// Ctrl+C - Exit (let parent handle this)
 		if (data.charCodeAt(0) === 3) {
-			logger.debug("TextEditor", "Ctrl+C received, returning to parent");
 			return;
 		}
 
 		// Handle paste - detect when we get a lot of text at once
 		const isPaste = data.length > 10 || (data.length > 2 && data.includes("\n"));
-		logger.debug("TextEditor", "Paste detection", {
-			dataLength: data.length,
-			includesNewline: data.includes("\n"),
-			includesTabs: data.includes("\t"),
-			tabCount: (data.match(/\t/g) || []).length,
-			isPaste,
-			data: JSON.stringify(data),
-			charCodes: Array.from(data).map((c) => c.charCodeAt(0)),
-		});
-
 		if (isPaste) {
-			logger.info("TextEditor", "Handling as paste");
 			this.handlePaste(data);
 			return;
 		}
 
 		// Handle autocomplete special keys first (but don't block other input)
 		if (this.isAutocompleting && this.autocompleteList) {
-			logger.debug("TextEditor", "Autocomplete active, handling input", {
-				data,
-				charCode: data.charCodeAt(0),
-				isEscape: data === "\x1b",
-				isArrowOrEnter: data === "\x1b[A" || data === "\x1b[B" || data === "\r",
-			});
-
 			// Escape - cancel autocomplete
 			if (data === "\x1b") {
 				this.cancelAutocomplete();
@@ -216,15 +187,10 @@ export class TextEditor implements Component {
 			}
 			// For other keys (like regular typing), DON'T return here
 			// Let them fall through to normal character handling
-			logger.debug("TextEditor", "Autocomplete active but falling through to normal handling");
 		}
 
 		// Tab key - context-aware completion (but not when already autocompleting)
 		if (data === "\t" && !this.isAutocompleting) {
-			logger.debug("TextEditor", "Tab key pressed, determining context", {
-				isAutocompleting: this.isAutocompleting,
-				hasProvider: !!this.autocompleteProvider,
-			});
 			this.handleTabCompletion();
 			return;
 		}
@@ -263,12 +229,6 @@ export class TextEditor implements Component {
 
 			// Plain Enter = submit
 			const result = this.state.lines.join("\n").trim();
-			logger.info("TextEditor", "Submit triggered", {
-				result,
-				rawResult: JSON.stringify(this.state.lines.join("\n")),
-				lines: this.state.lines,
-				resultLines: result.split("\n"),
-			});
 
 			// Reset editor
 			this.state = {
@@ -283,10 +243,7 @@ export class TextEditor implements Component {
 			}
 
 			if (this.onSubmit) {
-				logger.info("TextEditor", "Calling onSubmit callback", { result });
 				this.onSubmit(result);
-			} else {
-				logger.warn("TextEditor", "No onSubmit callback set");
 			}
 		}
 		// Backspace
@@ -322,13 +279,7 @@ export class TextEditor implements Component {
 		}
 		// Regular characters (printable ASCII)
 		else if (data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
-			logger.debug("TextEditor", "Inserting character", { char: data, charCode: data.charCodeAt(0) });
 			this.insertCharacter(data);
-		} else {
-			logger.warn("TextEditor", "Unhandled input", {
-				data,
-				charCodes: Array.from(data).map((c) => c.charCodeAt(0)),
-			});
 		}
 	}
 
@@ -458,12 +409,6 @@ export class TextEditor implements Component {
 	}
 
 	private handlePaste(pastedText: string): void {
-		logger.debug("TextEditor", "Processing paste", {
-			pastedText: JSON.stringify(pastedText),
-			hasTab: pastedText.includes("\t"),
-			tabCount: (pastedText.match(/\t/g) || []).length,
-		});
-
 		// Clean the pasted text
 		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
@@ -667,11 +612,6 @@ export class TextEditor implements Component {
 
 	// Autocomplete methods
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
-		logger.debug("TextEditor", "tryTriggerAutocomplete called", {
-			explicitTab,
-			hasProvider: !!this.autocompleteProvider,
-		});
-
 		if (!this.autocompleteProvider) return;
 
 		// Check if we should trigger file completion on Tab
@@ -680,15 +620,6 @@ export class TextEditor implements Component {
 			const shouldTrigger =
 				!provider.shouldTriggerFileCompletion ||
 				provider.shouldTriggerFileCompletion(this.state.lines, this.state.cursorLine, this.state.cursorCol);
-
-			logger.debug("TextEditor", "Tab file completion check", {
-				hasShouldTriggerMethod: !!provider.shouldTriggerFileCompletion,
-				shouldTrigger,
-				lines: this.state.lines,
-				cursorLine: this.state.cursorLine,
-				cursorCol: this.state.cursorCol,
-			});
-
 			if (!shouldTrigger) {
 				return;
 			}
@@ -699,12 +630,6 @@ export class TextEditor implements Component {
 			this.state.cursorLine,
 			this.state.cursorCol,
 		);
-
-		logger.debug("TextEditor", "Autocomplete suggestions", {
-			hasSuggestions: !!suggestions,
-			itemCount: suggestions?.items.length || 0,
-			prefix: suggestions?.prefix,
-		});
 
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
@@ -723,55 +648,14 @@ export class TextEditor implements Component {
 
 		// Check if we're in a slash command context
 		if (beforeCursor.trimStart().startsWith("/")) {
-			logger.debug("TextEditor", "Tab in slash command context", { beforeCursor });
 			this.handleSlashCommandCompletion();
-		} else {
-			logger.debug("TextEditor", "Tab in file completion context", { beforeCursor });
-			this.forceFileAutocomplete();
 		}
 	}
 
 	private handleSlashCommandCompletion(): void {
 		// For now, fall back to regular autocomplete (slash commands)
 		// This can be extended later to handle command-specific argument completion
-		logger.debug("TextEditor", "Handling slash command completion");
 		this.tryTriggerAutocomplete(true);
-	}
-
-	private forceFileAutocomplete(): void {
-		logger.debug("TextEditor", "forceFileAutocomplete called", {
-			hasProvider: !!this.autocompleteProvider,
-		});
-
-		if (!this.autocompleteProvider) return;
-
-		// Check if provider has the force method
-		const provider = this.autocompleteProvider as any;
-		if (!provider.getForceFileSuggestions) {
-			logger.debug("TextEditor", "Provider doesn't support forced file completion, falling back to regular");
-			this.tryTriggerAutocomplete(true);
-			return;
-		}
-
-		const suggestions = provider.getForceFileSuggestions(
-			this.state.lines,
-			this.state.cursorLine,
-			this.state.cursorCol,
-		);
-
-		logger.debug("TextEditor", "Forced file autocomplete suggestions", {
-			hasSuggestions: !!suggestions,
-			itemCount: suggestions?.items.length || 0,
-			prefix: suggestions?.prefix,
-		});
-
-		if (suggestions && suggestions.items.length > 0) {
-			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5);
-			this.isAutocompleting = true;
-		} else {
-			this.cancelAutocomplete();
-		}
 	}
 
 	private cancelAutocomplete(): void {

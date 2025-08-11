@@ -1,5 +1,4 @@
 import process from "process";
-import { logger } from "./logger.js";
 import { ProcessTerminal, type Terminal } from "./terminal.js";
 
 /**
@@ -40,8 +39,9 @@ export interface Padding {
  */
 export class Container implements Component {
 	readonly id: number;
-	protected children: (Component | Container)[] = [];
+	public children: (Component | Container)[] = [];
 	private tui?: TUI;
+	private previousChildCount: number = 0;
 
 	constructor() {
 		this.id = getNextComponentId();
@@ -108,6 +108,12 @@ export class Container implements Component {
 		const lines: string[] = [];
 		let changed = false;
 
+		// Check if the number of children changed (important for detecting clears)
+		if (this.children.length !== this.previousChildCount) {
+			changed = true;
+			this.previousChildCount = this.children.length;
+		}
+
 		for (const child of this.children) {
 			const result = child.render(width);
 			lines.push(...result.lines);
@@ -162,13 +168,6 @@ export class TUI extends Container {
 
 		// Use provided terminal or default to ProcessTerminal
 		this.terminal = terminal || new ProcessTerminal();
-
-		logger.componentLifecycle("TUI", "created");
-	}
-
-	configureLogging(config: Parameters<typeof logger.configure>[0]): void {
-		logger.configure(config);
-		logger.info("TUI", "Logging configured", config);
 	}
 
 	setFocus(component: Component): void {
@@ -321,11 +320,6 @@ export class TUI extends Container {
 		// Save what we rendered
 		this.previousLines = lines;
 		this.totalLinesRedrawn += lines.length;
-
-		logger.debug("TUI", "Initial render", {
-			commandsExecuted: commands.length,
-			linesRendered: lines.length,
-		});
 	}
 
 	private renderDifferentialSurgical(currentCommands: RenderCommand[], termHeight: number): void {
@@ -344,7 +338,7 @@ export class TUI extends Container {
 		let firstChangeOffset = -1;
 		let hasLineCountChange = false;
 		let hasStructuralChange = false;
-		const changedLines: Array<{lineIndex: number, newContent: string}> = [];
+		const changedLines: Array<{ lineIndex: number; newContent: string }> = [];
 
 		let currentLineOffset = 0;
 
@@ -373,15 +367,14 @@ export class TUI extends Container {
 			// Content change with same line count - track individual line changes
 			if (current.changed) {
 				for (let j = 0; j < current.lines.length; j++) {
-					const oldLine = currentLineOffset + j < this.previousLines.length
-						? this.previousLines[currentLineOffset + j]
-						: "";
+					const oldLine =
+						currentLineOffset + j < this.previousLines.length ? this.previousLines[currentLineOffset + j] : "";
 					const newLine = current.lines[j];
 
 					if (oldLine !== newLine) {
 						changedLines.push({
 							lineIndex: currentLineOffset + j,
-							newContent: newLine
+							newContent: newLine,
 						});
 						if (firstChangeOffset === -1) {
 							firstChangeOffset = currentLineOffset + j;
@@ -417,7 +410,6 @@ export class TUI extends Container {
 
 			if (newLines.length > 0) output += "\r\n";
 			linesRedrawn = newLines.length;
-
 		} else if (hasStructuralChange || hasLineCountChange) {
 			// Strategy: PARTIAL - changes in viewport but with shifts, clear from change to end
 			// After rendering with a final newline, cursor is one line below the last content line
@@ -433,6 +425,9 @@ export class TUI extends Container {
 				output += `\x1b[${linesToMoveUp}A`;
 			}
 
+			// Clear from cursor to end of screen
+			// First ensure we're at the beginning of the line
+			output += "\r";
 			output += "\x1b[0J"; // Clear from cursor to end of screen
 
 			const linesToRender = newLines.slice(firstChangeOffset);
@@ -443,18 +438,10 @@ export class TUI extends Container {
 
 			if (linesToRender.length > 0) output += "\r\n";
 			linesRedrawn = linesToRender.length;
-
 		} else {
 			// Strategy: SURGICAL - only content changes with same line counts, update only changed lines
 			// The cursor starts at the line after our last content
 			let currentCursorLine = totalOldLines;
-
-			logger.debug("TUI", "SURGICAL strategy", {
-				totalOldLines,
-				totalNewLines,
-				changedLines: changedLines.map(c => ({ line: c.lineIndex, content: c.newContent.substring(0, 30) })),
-				currentCursorLine
-			});
 
 			for (const change of changedLines) {
 				// Move cursor to the line that needs updating
@@ -497,21 +484,9 @@ export class TUI extends Container {
 		// Save what we rendered
 		this.previousLines = newLines;
 		this.totalLinesRedrawn += linesRedrawn;
-
-		logger.debug("TUI", "Surgical differential render", {
-			strategy: changePositionInViewport < 0 ? "FULL" :
-			         (hasStructuralChange || hasLineCountChange) ? "PARTIAL" : "SURGICAL",
-			linesRedrawn,
-			firstChangeOffset,
-			changePositionInViewport,
-			hasStructuralChange,
-			hasLineCountChange,
-			surgicalChanges: changedLines.length,
-			totalNewLines,
-			totalOldLines,
-		});
 	}
 
+	// biome-ignore lint/correctness/noUnusedPrivateClassMembers: Keeping this around as reference for LLM
 	private renderDifferential(currentCommands: RenderCommand[], termHeight: number): void {
 		const viewportHeight = termHeight - 1; // Leave one line for cursor
 
@@ -611,14 +586,6 @@ export class TUI extends Container {
 		// Save what we rendered
 		this.previousLines = newLines;
 		this.totalLinesRedrawn += linesRedrawn;
-
-		logger.debug("TUI", "Differential render", {
-			linesRedrawn,
-			firstChangedLineOffset,
-			changePositionInViewport,
-			totalNewLines,
-			totalOldLines,
-		});
 	}
 
 	private handleResize(): void {
@@ -628,8 +595,6 @@ export class TUI extends Container {
 	}
 
 	private handleKeypress(data: string): void {
-		logger.keyInput("TUI", data);
-
 		if (this.onGlobalKeyPress) {
 			const shouldForward = this.onGlobalKeyPress(data);
 			if (!shouldForward) {
@@ -639,16 +604,8 @@ export class TUI extends Container {
 		}
 
 		if (this.focusedComponent?.handleInput) {
-			logger.debug("TUI", "Forwarding input to focused component", {
-				componentType: this.focusedComponent.constructor.name,
-			});
 			this.focusedComponent.handleInput(data);
 			this.requestRender();
-		} else {
-			logger.warn("TUI", "No focused component to handle input", {
-				focusedComponent: this.focusedComponent?.constructor.name || "none",
-				hasHandleInput: this.focusedComponent?.handleInput ? "yes" : "no",
-			});
 		}
 	}
 }
