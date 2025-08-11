@@ -215,30 +215,51 @@ export class MarkdownComponent implements Component {
 			return [line];
 		}
 
-		// Need to wrap - this is complex with ANSI codes
-		// For now, use a simple approach that may break styling at wrap points
+		// Track active ANSI codes to preserve them across wrapped lines
+		const activeAnsiCodes: string[] = [];
 		let currentLine = "";
 		let currentLength = 0;
 		let i = 0;
 
 		while (i < line.length) {
 			if (line[i] === "\x1b" && line[i + 1] === "[") {
-				// ANSI escape sequence - include it without counting length
+				// ANSI escape sequence - parse and track it
 				let j = i + 2;
 				while (j < line.length && line[j] && !/[mGKHJ]/.test(line[j]!)) {
 					j++;
 				}
 				if (j < line.length) {
-					currentLine += line.substring(i, j + 1);
+					const ansiCode = line.substring(i, j + 1);
+					currentLine += ansiCode;
+
+					// Track styling codes (ending with 'm')
+					if (line[j] === "m") {
+						// Reset code
+						if (ansiCode === "\x1b[0m" || ansiCode === "\x1b[m") {
+							activeAnsiCodes.length = 0;
+						} else {
+							// Add to active codes (replacing similar ones)
+							activeAnsiCodes.push(ansiCode);
+						}
+					}
+
 					i = j + 1;
 				} else {
+					// Incomplete ANSI sequence at end - don't include it
 					break;
 				}
 			} else {
 				// Regular character
 				if (currentLength >= width) {
-					wrapped.push(currentLine);
-					currentLine = "";
+					// Need to wrap - close current line with reset if needed
+					if (activeAnsiCodes.length > 0) {
+						wrapped.push(currentLine + "\x1b[0m");
+						// Start new line with active codes
+						currentLine = activeAnsiCodes.join("");
+					} else {
+						wrapped.push(currentLine);
+						currentLine = "";
+					}
 					currentLength = 0;
 				}
 				currentLine += line[i];

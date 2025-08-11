@@ -274,7 +274,8 @@ export class TUI extends Container {
 		} else {
 			// this.executeDifferentialRender(currentRenderCommands, termHeight);
 			// this.renderDifferential(currentRenderCommands, termHeight);
-			this.renderDifferentialSurgical(currentRenderCommands, termHeight);
+			// this.renderDifferentialSurgical(currentRenderCommands, termHeight);
+			this.renderLineBased(currentRenderCommands, termHeight);
 		}
 
 		// Save for next render
@@ -320,6 +321,148 @@ export class TUI extends Container {
 		// Save what we rendered
 		this.previousLines = lines;
 		this.totalLinesRedrawn += lines.length;
+	}
+
+	private renderLineBased(currentCommands: RenderCommand[], termHeight: number): void {
+		const viewportHeight = termHeight - 1; // Leave one line for cursor
+
+		// Build the new lines array
+		const newLines: string[] = [];
+		for (const command of currentCommands) {
+			newLines.push(...command.lines);
+		}
+
+		const totalNewLines = newLines.length;
+		const totalOldLines = this.previousLines.length;
+
+		// Find first changed line by comparing old and new
+		let firstChangedLine = -1;
+		const minLines = Math.min(totalOldLines, totalNewLines);
+		
+		for (let i = 0; i < minLines; i++) {
+			if (this.previousLines[i] !== newLines[i]) {
+				firstChangedLine = i;
+				break;
+			}
+		}
+		
+		// If all common lines are the same, check if we have different lengths
+		if (firstChangedLine === -1 && totalOldLines !== totalNewLines) {
+			firstChangedLine = minLines;
+		}
+		
+		// No changes at all
+		if (firstChangedLine === -1) {
+			this.previousLines = newLines;
+			return;
+		}
+
+		// Calculate viewport boundaries
+		const oldViewportStart = Math.max(0, totalOldLines - viewportHeight);
+		const cursorPosition = totalOldLines; // Cursor is one line below last content
+		
+		let output = "";
+		let linesRedrawn = 0;
+
+		// Check if change is in scrollback (unreachable by cursor)
+		if (firstChangedLine < oldViewportStart) {
+			// Must do full clear and re-render
+			output = "\x1b[3J\x1b[H"; // Clear scrollback and screen, home cursor
+			
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) output += "\r\n";
+				output += newLines[i];
+			}
+			
+			if (newLines.length > 0) output += "\r\n";
+			linesRedrawn = newLines.length;
+		} else {
+			// Change is in viewport - we can reach it with cursor movements
+			// Calculate viewport position of the change
+			const viewportChangePosition = firstChangedLine - oldViewportStart;
+			
+			// Move cursor to the change position
+			const linesToMoveUp = (cursorPosition - oldViewportStart) - viewportChangePosition;
+			if (linesToMoveUp > 0) {
+				output += `\x1b[${linesToMoveUp}A`;
+			}
+			
+			// Now do surgical updates or partial clear based on what's more efficient
+			let currentLine = firstChangedLine;
+			let currentViewportLine = viewportChangePosition;
+			
+			// If we have significant structural changes, just clear and re-render from here
+			const hasSignificantChanges = totalNewLines !== totalOldLines || 
+				(totalNewLines - firstChangedLine) > 10; // Arbitrary threshold
+			
+			if (hasSignificantChanges) {
+				// Clear from cursor to end of screen and render all remaining lines
+				output += "\r\x1b[0J";
+				
+				for (let i = firstChangedLine; i < newLines.length; i++) {
+					if (i > firstChangedLine) output += "\r\n";
+					output += newLines[i];
+					linesRedrawn++;
+				}
+				
+				if (newLines.length > firstChangedLine) output += "\r\n";
+			} else {
+				// Do surgical line-by-line updates
+				for (let i = firstChangedLine; i < minLines; i++) {
+					if (this.previousLines[i] !== newLines[i]) {
+						// Move to this line if needed
+						const moveLines = i - currentLine;
+						if (moveLines > 0) {
+							output += `\x1b[${moveLines}B`;
+						}
+						
+						// Clear and rewrite the line
+						output += "\r\x1b[2K" + newLines[i];
+						currentLine = i;
+						linesRedrawn++;
+					}
+				}
+				
+				// Handle added/removed lines at the end
+				if (totalNewLines > totalOldLines) {
+					// Move to end of old content and add new lines
+					const moveToEnd = totalOldLines - 1 - currentLine;
+					if (moveToEnd > 0) {
+						output += `\x1b[${moveToEnd}B`;
+					}
+					output += "\r\n";
+					
+					for (let i = totalOldLines; i < totalNewLines; i++) {
+						if (i > totalOldLines) output += "\r\n";
+						output += newLines[i];
+						linesRedrawn++;
+					}
+					output += "\r\n";
+				} else if (totalNewLines < totalOldLines) {
+					// Move to end of new content and clear rest
+					const moveToEnd = totalNewLines - 1 - currentLine;
+					if (moveToEnd > 0) {
+						output += `\x1b[${moveToEnd}B`;
+					} else if (moveToEnd < 0) {
+						output += `\x1b[${-moveToEnd}A`;
+					}
+					output += "\r\n\x1b[0J";
+				} else {
+					// Same length, just position cursor at end
+					const moveToEnd = totalNewLines - 1 - currentLine;
+					if (moveToEnd > 0) {
+						output += `\x1b[${moveToEnd}B`;
+					} else if (moveToEnd < 0) {
+						output += `\x1b[${-moveToEnd}A`;
+					}
+					output += "\r\n";
+				}
+			}
+		}
+
+		this.terminal.write(output);
+		this.previousLines = newLines;
+		this.totalLinesRedrawn += linesRedrawn;
 	}
 
 	private renderDifferentialSurgical(currentCommands: RenderCommand[], termHeight: number): void {
