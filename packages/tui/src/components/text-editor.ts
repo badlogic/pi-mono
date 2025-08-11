@@ -658,7 +658,7 @@ export class TextEditor implements Component {
 		// For now, fall back to regular autocomplete (slash commands)
 		// This can be extended later to handle command-specific argument completion
 		this.tryTriggerAutocomplete(true);
-}
+	}
 
 	private forceFileAutocomplete(): void {
 		if (!this.autocompleteProvider) return;
@@ -684,7 +684,6 @@ export class TextEditor implements Component {
 			this.cancelAutocomplete();
 		}
 	}
-
 
 	private cancelAutocomplete(): void {
 		this.isAutocompleting = false;

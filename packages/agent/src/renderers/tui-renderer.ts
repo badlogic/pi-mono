@@ -315,7 +315,9 @@ export class TuiRenderer implements AgentEventReceiver {
 		this.tokenContainer.clear();
 
 		// Build token display text
-		let tokenText = chalk.dim(`↑ ${this.lastInputTokens.toLocaleString()} ↓ ${this.lastOutputTokens.toLocaleString()}`);
+		let tokenText = chalk.dim(
+			`↑ ${this.lastInputTokens.toLocaleString()} ↓ ${this.lastOutputTokens.toLocaleString()}`,
+		);
 
 		// Add reasoning tokens if present
 		if (this.lastReasoningTokens > 0) {
@@ -380,8 +382,9 @@ export class TuiRenderer implements AgentEventReceiver {
 	}
 
 	private showTokenUsage(): void {
-
-		let tokenText = chalk.dim(`Total usage\n   input: ${this.cumulativeInputTokens.toLocaleString()}\n   output: ${this.cumulativeOutputTokens.toLocaleString()}`);
+		let tokenText = chalk.dim(
+			`Total usage\n   input: ${this.cumulativeInputTokens.toLocaleString()}\n   output: ${this.cumulativeOutputTokens.toLocaleString()}`,
+		);
 
 		if (this.cumulativeReasoningTokens > 0) {
 			tokenText += chalk.dim(`\n   reasoning: ${this.cumulativeReasoningTokens.toLocaleString()}`);
@@ -397,7 +400,6 @@ export class TuiRenderer implements AgentEventReceiver {
 			}
 			tokenText += chalk.dim(` ${cacheText.join(" ")}`);
 		}
-
 
 		if (this.cumulativeToolCallCount > 0) {
 			tokenText += chalk.dim(`\n   tool calls: ${this.cumulativeToolCallCount}`);
