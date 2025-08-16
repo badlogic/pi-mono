@@ -2,7 +2,6 @@ import {
 	CombinedAutocompleteProvider,
 	Container,
 	MarkdownComponent,
-	SlashCommand,
 	TextComponent,
 	TextEditor,
 	TUI,

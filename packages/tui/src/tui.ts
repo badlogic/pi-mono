@@ -145,8 +145,7 @@ export class TUI extends Container {
 	private isStarted = false;
 	public onGlobalKeyPress?: (data: string) => boolean;
 	private terminal: Terminal;
-
-	// Tracking for differential rendering
+	// biome-ignore lint/correctness/noUnusedPrivateClassMembers: Used in renderToScreen method on lines 260 and 276
 	private previousRenderCommands: RenderCommand[] = [];
 	private previousLines: string[] = []; // What we rendered last time
 
