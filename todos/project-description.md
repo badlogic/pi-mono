@@ -39,4 +39,98 @@ A comprehensive toolkit for managing Large Language Model (LLM) deployments and 
 - Publish: `npm run publish`
 
 ## Testing
-Currently no formal testing framework is configured. Test infrastructure exists but no actual test files or framework dependencies are present.
+The TUI package includes comprehensive tests using Node.js built-in test framework:
+- Unit tests in `packages/tui/test/*.test.ts`
+- Test runner: `node --test --import tsx test/*.test.ts`
+- Virtual terminal for TUI testing via `@xterm/headless`
+- Example applications for manual testing
+
+## How to Create a New Package
+
+Follow these steps to add a new package to the monorepo:
+
+1. **Create package directory structure:**
+   ```bash
+   mkdir -p packages/your-package/src
+   ```
+
+2. **Create package.json:**
+   ```json
+   {
+     "name": "@mariozechner/your-package",
+     "version": "0.5.8",
+     "description": "Package description",
+     "type": "module",
+     "main": "./dist/index.js",
+     "types": "./dist/index.d.ts",
+     "files": ["dist", "README.md"],
+     "scripts": {
+       "clean": "rm -rf dist",
+       "build": "tsc -p tsconfig.build.json",
+       "check": "biome check --write .",
+       "prepublishOnly": "npm run clean && npm run build"
+     },
+     "dependencies": {},
+     "devDependencies": {},
+     "keywords": ["relevant", "keywords"],
+     "author": "Mario Zechner",
+     "license": "MIT",
+     "repository": {
+       "type": "git",
+       "url": "git+https://github.com/badlogic/pi-mono.git",
+       "directory": "packages/your-package"
+     },
+     "engines": {
+       "node": ">=20.0.0"
+     }
+   }
+   ```
+
+3. **Create tsconfig.build.json:**
+   ```json
+   {
+     "extends": "../../tsconfig.base.json",
+     "compilerOptions": {
+       "outDir": "./dist",
+       "rootDir": "./src"
+     },
+     "include": ["src/**/*"],
+     "exclude": ["node_modules", "dist"]
+   }
+   ```
+
+4. **Create src/index.ts:**
+   ```typescript
+   // Main exports for your package
+   export const version = "0.5.8";
+   ```
+
+5. **Update root tsconfig.json paths:**
+   Add your package to the `paths` mapping in the correct dependency order:
+   ```json
+   "paths": {
+     "@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
+     "@mariozechner/your-package": ["./packages/your-package/src/index.ts"],
+     // ... other packages
+   }
+   ```
+
+6. **Update root package.json build script:**
+   Insert your package in the correct dependency order:
+   ```json
+   "build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/your-package && ..."
+   ```
+
+7. **Install and verify:**
+   ```bash
+   npm install
+   npm run build
+   npm run check
+   ```
+
+**Important Notes:**
+- All packages use lockstep versioning (same version number)
+- Follow dependency order: foundational packages build first
+- Use ESM modules (`"type": "module"`)
+- No `any` types unless absolutely necessary
+- Include README.md with package documentation

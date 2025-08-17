@@ -1,0 +1,32 @@
+{
+	"name": "@mariozechner/ai",
+	"version": "0.5.8",
+	"description": "Unified API for OpenAI, Anthropic, and Google Gemini LLM providers",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": ["dist", "README.md"],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsc -p tsconfig.build.json",
+		"check": "biome check --write .",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"openai": "5.12.2",
+		"@anthropic-ai/sdk": "0.60.0",
+		"@google/genai": "1.14.0"
+	},
+	"devDependencies": {},
+	"keywords": ["ai", "llm", "openai", "anthropic", "gemini", "unified", "api"],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/ai"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

@@ -4,6 +4,7 @@
 		"noEmit": true,
 		"paths": {
 			"@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
+			"@mariozechner/pi-ai": ["./packages/ai/src/index.ts"],
 			"@mariozechner/pi-agent": ["./packages/agent/src/index.ts"],
 			"@mariozechner/pi": ["./packages/pods/src/index.ts"]
 		}
