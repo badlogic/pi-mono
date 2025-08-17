@@ -15,7 +15,8 @@
 	"dependencies": {
 		"openai": "5.12.2",
 		"@anthropic-ai/sdk": "0.60.0",
-		"@google/genai": "1.14.0"
+		"@google/genai": "1.14.0",
+		"chalk": "^5.5.0"
 	},
 	"devDependencies": {},
 	"keywords": ["ai", "llm", "openai", "anthropic", "gemini", "unified", "api"],
