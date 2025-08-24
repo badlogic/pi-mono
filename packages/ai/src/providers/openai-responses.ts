@@ -91,21 +91,23 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				if (event.type === "response.reasoning_summary_text.delta") {
 					const delta = event.delta;
 					thinking += delta;
-					options?.onThinking?.(delta);
+					options?.onThinking?.(delta, false);
 				} else if (event.type === "response.reasoning_summary_text.done") {
 					if (event.text) {
 						thinking = event.text;
 					}
+					options?.onThinking?.("", true);
 				}
 				// Handle main text output
 				else if (event.type === "response.output_text.delta") {
 					const delta = event.delta;
 					content += delta;
-					options?.onText?.(delta);
+					options?.onText?.(delta, false);
 				} else if (event.type === "response.output_text.done") {
 					if (event.text) {
 						content = event.text;
 					}
+					options?.onText?.("", true);
 				}
 				// Handle function calls
 				else if (event.type === "response.output_item.done") {

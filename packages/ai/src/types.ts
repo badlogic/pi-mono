@@ -1,8 +1,8 @@
 export interface LLMOptions {
 	temperature?: number;
 	maxTokens?: number;
-	onText?: (text: string) => void;
-	onThinking?: (thinking: string) => void;
+	onText?: (text: string, complete: boolean) => void;
+	onThinking?: (thinking: string, complete: boolean) => void;
 	signal?: AbortSignal;
 }
 

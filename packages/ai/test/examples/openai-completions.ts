@@ -21,8 +21,8 @@ const tools: Tool[] = [
 ];
 
 const options: OpenAICompletionsLLMOptions = {
-    onText: (t) => process.stdout.write(t),
-    onThinking: (t) => process.stdout.write(chalk.dim(t)),
+    onText: (t, complete) => process.stdout.write(t + (complete ? "\n" : "")),
+    onThinking: (t, complete) => process.stdout.write(chalk.dim(t + (complete ? "\n" : ""))),
     reasoningEffort: "medium",
     toolChoice: "auto"
 };

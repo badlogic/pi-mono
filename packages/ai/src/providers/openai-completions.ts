@@ -87,17 +87,24 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			};
 			let finishReason: ChatCompletionChunk.Choice["finish_reason"] | null = null;
 
+			let inTextBlock = false;
 			for await (const chunk of stream) {
 				const choice = chunk.choices[0];
 
 				// Handle text content
 				if (choice?.delta?.content) {
 					content += choice.delta.content;
-					options?.onText?.(choice.delta.content);
+					options?.onText?.(choice.delta.content, false);
+					inTextBlock = true;
 				}
 
 				// Handle tool calls
 				if (choice?.delta?.tool_calls) {
+					if (inTextBlock) {
+						// If we were in a text block, signal its end
+						options?.onText?.("", true);
+						inTextBlock = false;
+					}
 					for (const toolCall of choice.delta.tool_calls) {
 						const index = toolCall.index;
 
@@ -120,6 +127,11 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 				// Capture finish reason
 				if (choice?.finish_reason) {
+					if (inTextBlock) {
+						// If we were in a text block, signal its end
+						options?.onText?.("", true);
+						inTextBlock = false;
+					}
 					finishReason = choice.finish_reason;
 				}
 

@@ -114,14 +114,32 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				},
 			);
 
+			let blockType: "text" | "thinking" | "other" = "other";
 			for await (const event of stream) {
+				if (event.type === "content_block_start") {
+					if (event.content_block.type === "text") {
+						blockType = "text";
+					} else if (event.content_block.type === "thinking") {
+						blockType = "thinking";
+					} else {
+						blockType = "other";
+					}
+				}
 				if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
-						options?.onText?.(event.delta.text);
+						options?.onText?.(event.delta.text, false);
 					}
 					if (event.delta.type === "thinking_delta") {
-						options?.onThinking?.(event.delta.thinking);
+						options?.onThinking?.(event.delta.thinking, false);
 					}
+				}
+				if (event.type === "content_block_stop") {
+					if (blockType === "text") {
+						options?.onText?.("", true);
+					} else if (blockType === "thinking") {
+						options?.onThinking?.("", true);
+					}
+					blockType = "other";
 				}
 			}
 			const msg = await stream.finalMessage();
