@@ -1,9 +1,6 @@
 import chalk from "chalk";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { AnthropicLLM, AnthropicLLMOptions } from "../../src/providers/anthropic";
-import { Context, Tool } from "../../src/types";
+import { OpenAIResponsesLLMOptions, OpenAIResponsesLLM } from "../../src/providers/openai-responses.js";
+import type { Context, Tool } from "../../src/types.js";
 
 // Define a simple calculator tool
 const tools: Tool[] = [
@@ -23,23 +20,23 @@ const tools: Tool[] = [
     }
 ];
 
-const options: AnthropicLLMOptions = {
-    onText: (t) => process.stdout.write(t),
-    onThinking: (t) => process.stdout.write(chalk.dim(t)),
-    thinking: { enabled: true }
-};
-const ai = new AnthropicLLM("claude-sonnet-4-0", process.env.ANTHROPIC_OAUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY);
+const ai = new OpenAIResponsesLLM("gpt-5");
 const context: Context = {
-        systemPrompt: "You are a helpful assistant that can use tools to answer questions.",
-        messages: [
+    messages: [
         {
             role: "user",
             content: "Think about birds briefly. Then give me a list of 10 birds. Finally, calculate 42 * 17 + 123 and 453 + 434 in parallel using the calculator tool.",
         }
     ],
-    tools
+    tools,
 }
 
+const options: OpenAIResponsesLLMOptions = {
+    onText: (t) => process.stdout.write(t),
+    onThinking: (t) => process.stdout.write(chalk.dim(t)),
+    reasoningEffort: "low",
+    reasoningSummary: "auto"
+};
 let msg = await ai.complete(context, options)
 context.messages.push(msg);
 console.log();
@@ -61,7 +58,3 @@ for (const toolCall of msg.toolCalls || []) {
 msg = await ai.complete(context, options);
 console.log();
 console.log(chalk.yellow(JSON.stringify(msg, null, 2)));
-
-
-
-

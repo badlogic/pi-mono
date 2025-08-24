@@ -1,9 +1,6 @@
 import chalk from "chalk";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { AnthropicLLM, AnthropicLLMOptions } from "../../src/providers/anthropic";
 import { Context, Tool } from "../../src/types";
+import { OpenAICompletionsLLM, OpenAICompletionsLLMOptions } from "../../src/providers/openai-completions";
 
 // Define a simple calculator tool
 const tools: Tool[] = [
@@ -23,12 +20,13 @@ const tools: Tool[] = [
     }
 ];
 
-const options: AnthropicLLMOptions = {
+const options: OpenAICompletionsLLMOptions = {
     onText: (t) => process.stdout.write(t),
     onThinking: (t) => process.stdout.write(chalk.dim(t)),
-    thinking: { enabled: true }
+    reasoningEffort: "medium",
+    toolChoice: "auto"
 };
-const ai = new AnthropicLLM("claude-sonnet-4-0", process.env.ANTHROPIC_OAUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY);
+const ai = new OpenAICompletionsLLM("gpt-5-mini");
 const context: Context = {
         systemPrompt: "You are a helpful assistant that can use tools to answer questions.",
         messages: [

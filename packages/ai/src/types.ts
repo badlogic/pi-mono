@@ -1,5 +1,13 @@
-export interface AI<T = any> {
-	complete(request: Request, options?: T): Promise<AssistantMessage>;
+export interface LLMOptions {
+	temperature?: number;
+	maxTokens?: number;
+	onText?: (text: string) => void;
+	onThinking?: (thinking: string) => void;
+	signal?: AbortSignal;
+}
+
+export interface LLM<T extends LLMOptions> {
+	complete(request: Context, options?: T): Promise<AssistantMessage>;
 }
 
 export interface ModelInfo {
@@ -62,15 +70,10 @@ export interface Tool {
 	parameters: Record<string, any>; // JSON Schema
 }
 
-export interface Request {
+export interface Context {
 	systemPrompt?: string;
 	messages: Message[];
 	tools?: Tool[];
-	temperature?: number;
-	maxTokens?: number;
-	onText?: (text: string) => void;
-	onThinking?: (thinking: string) => void;
-	signal?: AbortSignal;
 }
 
 export type Event =

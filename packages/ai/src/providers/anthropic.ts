@@ -5,9 +5,18 @@ import type {
 	MessageParam,
 	Tool,
 } from "@anthropic-ai/sdk/resources/messages.js";
-import type { AI, AssistantMessage, Event, Message, Request, StopReason, TokenUsage, ToolCall } from "../types.js";
+import type {
+	AssistantMessage,
+	Context,
+	LLM,
+	LLMOptions,
+	Message,
+	StopReason,
+	TokenUsage,
+	ToolCall,
+} from "../types.js";
 
-export interface AnthropicOptions {
+export interface AnthropicLLMOptions extends LLMOptions {
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number;
@@ -15,7 +24,7 @@ export interface AnthropicOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
 
-export class AnthropicAI implements AI<AnthropicOptions> {
+export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 	private client: Anthropic;
 	private model: string;
 
@@ -28,31 +37,56 @@ export class AnthropicAI implements AI<AnthropicOptions> {
 			}
 			apiKey = process.env.ANTHROPIC_API_KEY;
 		}
-		this.client = new Anthropic({ apiKey, baseURL: baseUrl });
+		if (apiKey.includes("sk-ant-oat")) {
+			const defaultHeaders = {
+				accept: "application/json",
+				"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
+			};
+
+			process.env.ANTHROPIC_API_KEY = undefined;
+			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: baseUrl, defaultHeaders });
+		} else {
+			this.client = new Anthropic({ apiKey, baseURL: baseUrl });
+		}
 		this.model = model;
 	}
 
-	async complete(request: Request, options?: AnthropicOptions): Promise<AssistantMessage> {
+	async complete(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
 		try {
-			const messages = this.convertMessages(request.messages);
+			const messages = this.convertMessages(context.messages);
 
 			const params: MessageCreateParamsStreaming = {
 				model: this.model,
 				messages,
-				max_tokens: request.maxTokens || 4096,
+				max_tokens: options?.maxTokens || 4096,
 				stream: true,
 			};
 
-			if (request.systemPrompt) {
-				params.system = request.systemPrompt;
+			if (context.systemPrompt) {
+				params.system = [
+					{
+						type: "text",
+						text: "You are Claude Code, Anthropic's official CLI for Claude.",
+						cache_control: {
+							type: "ephemeral",
+						},
+					},
+					{
+						type: "text",
+						text: context.systemPrompt,
+						cache_control: {
+							type: "ephemeral",
+						},
+					},
+				];
 			}
 
-			if (request.temperature !== undefined) {
-				params.temperature = request.temperature;
+			if (options?.temperature !== undefined) {
+				params.temperature = options?.temperature;
 			}
 
-			if (request.tools) {
-				params.tools = this.convertTools(request.tools);
+			if (context.tools) {
+				params.tools = this.convertTools(context.tools);
 			}
 
 			if (options?.thinking?.enabled) {
@@ -76,17 +110,17 @@ export class AnthropicAI implements AI<AnthropicOptions> {
 					stream: true,
 				},
 				{
-					signal: request.signal,
+					signal: options?.signal,
 				},
 			);
 
 			for await (const event of stream) {
 				if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
-						request.onText?.(event.delta.text);
+						options?.onText?.(event.delta.text);
 					}
 					if (event.delta.type === "thinking_delta") {
-						request.onThinking?.(event.delta.thinking);
+						options?.onThinking?.(event.delta.thinking);
 					}
 				}
 			}
@@ -211,7 +245,7 @@ export class AnthropicAI implements AI<AnthropicOptions> {
 		return params;
 	}
 
-	private convertTools(tools: Request["tools"]): Tool[] {
+	private convertTools(tools: Context["tools"]): Tool[] {
 		if (!tools) return [];
 
 		return tools.map((tool) => ({
