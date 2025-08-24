@@ -51,7 +51,7 @@ export interface AssistantMessage {
 	model: string;
 	usage: TokenUsage;
 
-	stopResaon: StopReason;
+	stopReason: StopReason;
 	error?: string | Error;
 }
 

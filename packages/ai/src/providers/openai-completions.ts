@@ -163,7 +163,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 				model: this.model,
 				usage,
-				stopResaon: this.mapStopReason(finishReason),
+				stopReason: this.mapStopReason(finishReason),
 			};
 		} catch (error) {
 			return {
@@ -175,7 +175,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 					cacheRead: 0,
 					cacheWrite: 0,
 				},
-				stopResaon: "error",
+				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}

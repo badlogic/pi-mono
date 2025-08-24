@@ -5,7 +5,10 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"files": ["dist", "README.md"],
+	"files": [
+		"dist",
+		"README.md"
+	],
 	"scripts": {
 		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
@@ -13,13 +16,21 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"openai": "5.12.2",
 		"@anthropic-ai/sdk": "0.60.0",
 		"@google/genai": "1.14.0",
-		"chalk": "^5.5.0"
+		"@google/generative-ai": "^0.24.1",
+		"chalk": "^5.5.0",
+		"openai": "5.12.2"
 	},
-	"devDependencies": {},
-	"keywords": ["ai", "llm", "openai", "anthropic", "gemini", "unified", "api"],
+	"keywords": [
+		"ai",
+		"llm",
+		"openai",
+		"anthropic",
+		"gemini",
+		"unified",
+		"api"
+	],
 	"author": "Mario Zechner",
 	"license": "MIT",
 	"repository": {

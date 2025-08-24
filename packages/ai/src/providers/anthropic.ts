@@ -186,7 +186,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				toolCalls,
 				model: this.model,
 				usage,
-				stopResaon: this.mapStopReason(msg.stop_reason),
+				stopReason: this.mapStopReason(msg.stop_reason),
 			};
 		} catch (error) {
 			return {
@@ -198,7 +198,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 					cacheRead: 0,
 					cacheWrite: 0,
 				},
-				stopResaon: "error",
+				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}

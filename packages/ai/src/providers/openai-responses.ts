@@ -144,7 +144,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 						role: "assistant",
 						model: this.model,
 						usage,
-						stopResaon: "error",
+						stopReason: "error",
 						error: `Code ${event.code}: ${event.message}` || "Unknown error",
 					};
 				}
@@ -158,7 +158,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 				model: this.model,
 				usage,
-				stopResaon: stopReason,
+				stopReason,
 			};
 		} catch (error) {
 			return {
@@ -170,7 +170,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 					cacheRead: 0,
 					cacheWrite: 0,
 				},
-				stopResaon: "error",
+				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
