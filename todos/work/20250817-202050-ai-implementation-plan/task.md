@@ -1,6 +1,6 @@
 # AI Package Implementation Plan
 **Status:** InProgress
-**Agent PID:** 5114
+**Agent PID:** 54145
 
 ## Original Todo
 ai: create an implementation plan based on packages/ai/plan.md and implement it
@@ -8,11 +8,13 @@ ai: create an implementation plan based on packages/ai/plan.md and implement it
 ## Description
 Implement the unified AI API as designed in packages/ai/plan.md. Create a single interface that works with OpenAI, Anthropic, and Gemini SDKs, handling their differences internally while exposing unified streaming events, tool calling, thinking/reasoning, and caching capabilities.
 
-*Read [plan.md](packages/ai/plan.md) in full for the complete API design and implementation details*
+*Read [analysis.md](./analysis.md) in full for detailed codebase research and context*
+*Read [plan.md](packages/ai/docs/plan.md) in full for the complete API design and implementation details*
+*Read API documentation: [anthropic-api.md](packages/ai/docs/anthropic-api.md), [openai-api.md](packages/ai/docs/openai-api.md), [gemini-api.md](packages/ai/docs/gemini-api.md)*
 
 ## Implementation Plan
 - [x] Define unified types in src/types.ts based on plan.md interfaces (AIConfig, Message, Request, Event, TokenUsage, ModelInfo)
-- [ ] Implement OpenAI provider in src/providers/openai.ts with both Chat Completions and Responses API support
+- [x] Implement OpenAI provider in src/providers/openai.ts with both Chat Completions and Responses API support
 - [x] Implement Anthropic provider in src/providers/anthropic.ts with MessageStream and content blocks handling
 - [ ] Implement Gemini provider in src/providers/gemini.ts with parts system and thinking extraction
 - [ ] Create main AI class in src/index.ts that selects and uses appropriate adapter
@@ -38,3 +40,4 @@ Implement the unified AI API as designed in packages/ai/plan.md. Create a single
 - Each adapter handles its own event normalization internally
 - Tests use Node.js built-in test framework as per project conventions
 - Available API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY
+- **IMPORTANT**: Always run `npm run check` in the root directory before asking for approval to ensure code compiles and passes linting

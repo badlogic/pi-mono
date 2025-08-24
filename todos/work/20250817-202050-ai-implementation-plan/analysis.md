@@ -3,6 +3,268 @@
 ## Overview
 Based on the comprehensive plan in `packages/ai/plan.md` and detailed API documentation for OpenAI, Anthropic, and Gemini SDKs, the AI package needs to provide a unified API that abstracts over these three providers while maintaining their unique capabilities.
 
+## OpenAI Responses API Investigation
+
+### API Structure
+The OpenAI SDK includes a separate Responses API (`client.responses`) alongside the Chat Completions API. This API is designed for models with reasoning capabilities (o1/o3) and provides access to thinking/reasoning content.
+
+### Key Differences from Chat Completions API
+
+1. **Input Format**: Uses `input` array instead of `messages`
+   - Supports `EasyInputMessage` type with roles: `user`, `assistant`, `system`, `developer`
+   - Content can be text, image, audio, or file references
+   - More structured approach with explicit types for each input type
+
+2. **Streaming Events**: Rich set of events for detailed streaming
+   - `ResponseReasoningTextDeltaEvent` - Incremental reasoning/thinking text
+   - `ResponseReasoningTextDoneEvent` - Complete reasoning text
+   - `ResponseTextDeltaEvent` - Main response text deltas
+   - `ResponseFunctionCallArgumentsDeltaEvent` - Tool call argument streaming
+   - `ResponseCompletedEvent` - Final completion with usage stats
+
+3. **Response Structure**: More complex response object
+   - `output` array containing various output items
+   - Explicit reasoning items with content
+   - Tool calls as part of output items
+   - Usage tracking with detailed token breakdowns
+
+### Implementation Examples
+
+#### Basic Responses API Usage
+
+```typescript
+// Creating a response with streaming
+const stream = await client.responses.create({
+  model: "o1-preview",
+  input: [
+    {
+      role: "developer", // or "system" for non-reasoning models
+      content: "You are a helpful assistant"
+    },
+    {
+      role: "user",
+      content: "Explain quantum computing step by step"
+    }
+  ],
+  stream: true,
+  temperature: 0.7,
+  max_completion_tokens: 2000
+});
+
+// Process streaming events
+for await (const event of stream) {
+  switch (event.type) {
+    case 'response.reasoning_text.delta':
+      // Thinking/reasoning content
+      console.log('[THINKING]', event.delta);
+      break;
+    
+    case 'response.text.delta':
+      // Main response text
+      console.log('[RESPONSE]', event.delta);
+      break;
+    
+    case 'response.function_call_arguments.delta':
+      // Tool call arguments being built
+      console.log('[TOOL ARGS]', event.delta);
+      break;
+    
+    case 'response.completed':
+      // Final response with usage
+      console.log('Usage:', event.usage);
+      break;
+  }
+}
+```
+
+#### Using ResponseStream Helper
+
+```typescript
+// The SDK provides a ResponseStream helper for easier streaming
+const responseStream = client.responses.stream({
+  model: "o1-preview",
+  input: [
+    { role: "user", content: "Solve this math problem..." }
+  ],
+  tools: [
+    {
+      type: "function",
+      function: {
+        name: "calculate",
+        description: "Perform calculations",
+        parameters: { /* JSON Schema */ }
+      }
+    }
+  ]
+});
+
+// Get final response after streaming
+const finalResponse = await responseStream.finalResponse();
+console.log('Output:', finalResponse.output);
+console.log('Usage:', finalResponse.usage);
+```
+
+#### Converting Messages for Responses API
+
+```typescript
+private convertToResponsesInput(messages: Message[], systemPrompt?: string): ResponseInputItem[] {
+  const input: ResponseInputItem[] = [];
+  
+  // Add system/developer prompt
+  if (systemPrompt) {
+    input.push({
+      type: "message",
+      role: this.isReasoningModel() ? "developer" : "system",
+      content: systemPrompt
+    });
+  }
+  
+  // Convert messages
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      input.push({
+        type: "message",
+        role: "user",
+        content: msg.content
+      });
+    } else if (msg.role === "assistant") {
+      // Assistant messages with potential tool calls
+      const outputMessage: ResponseOutputMessage = {
+        type: "message",
+        role: "assistant",
+        content: []
+      };
+      
+      if (msg.content) {
+        outputMessage.content.push({
+          type: "text",
+          text: msg.content
+        });
+      }
+      
+      if (msg.toolCalls) {
+        // Tool calls need to be added as separate output items
+        for (const toolCall of msg.toolCalls) {
+          input.push({
+            type: "function_call",
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments)
+          });
+        }
+      }
+      
+      input.push(outputMessage);
+    } else if (msg.role === "toolResult") {
+      // Tool results as function call outputs
+      input.push({
+        type: "function_call_output",
+        call_id: msg.toolCallId,
+        output: msg.content
+      });
+    }
+  }
+  
+  return input;
+}
+```
+
+#### Processing Responses API Events
+
+```typescript
+private async completeWithResponsesAPI(request: Request, options?: OpenAIOptions): Promise<AssistantMessage> {
+  try {
+    const input = this.convertToResponsesInput(request.messages, request.systemPrompt);
+    
+    const stream = await this.client.responses.create({
+      model: this.model,
+      input,
+      stream: true,
+      max_completion_tokens: request.maxTokens,
+      temperature: request.temperature,
+      tools: request.tools ? this.convertTools(request.tools) : undefined,
+      tool_choice: options?.toolChoice
+    });
+    
+    let content = "";
+    let thinking = "";
+    const toolCalls: ToolCall[] = [];
+    let usage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    let finishReason: string = "stop";
+    
+    for await (const event of stream) {
+      switch (event.type) {
+        case 'response.reasoning_text.delta':
+          thinking += event.delta;
+          request.onThinking?.(event.delta);
+          break;
+        
+        case 'response.reasoning_text.done':
+          // Complete reasoning text available
+          thinking = event.text;
+          break;
+        
+        case 'response.text.delta':
+          content += event.delta;
+          request.onText?.(event.delta);
+          break;
+        
+        case 'response.function_call_arguments.delta':
+          // Build up tool calls incrementally
+          // event.item_id identifies which tool call
+          // event.arguments contains the delta
+          break;
+        
+        case 'response.function_call_arguments.done':
+          // Complete tool call
+          toolCalls.push({
+            id: event.item_id,
+            name: event.name,
+            arguments: JSON.parse(event.arguments)
+          });
+          break;
+        
+        case 'response.completed':
+          // Final event with complete response and usage
+          usage = {
+            input: event.usage.input_tokens,
+            output: event.usage.output_tokens,
+            cacheRead: event.usage.input_tokens_details?.cached_tokens || 0,
+            cacheWrite: 0
+          };
+          finishReason = event.stop_reason || "stop";
+          break;
+        
+        case 'response.error':
+          throw new Error(event.error.message);
+      }
+    }
+    
+    return {
+      role: "assistant",
+      content: content || undefined,
+      thinking: thinking || undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      model: this.model,
+      usage,
+      stopReason: this.mapStopReason(finishReason)
+    };
+  } catch (error) {
+    // Error handling...
+  }
+}
+```
+
+### Important Notes
+
+1. **"[Thinking: X tokens]" Issue**: The current implementation shows a placeholder for thinking tokens in Chat Completions API. This should only show actual thinking content from Responses API or omit the field entirely.
+
+2. **Tool Calling Differences**: Responses API handles tool calls differently, with separate events for arguments delta and completion.
+
+3. **Usage Tracking**: Responses API provides more detailed usage information including reasoning tokens in a different structure.
+
+4. **Stream vs Iterator**: The Responses API returns an async iterable that can be used with `for await...of` directly.
+
 ## Existing Codebase Context
 
 ### Current Structure
