@@ -11,10 +11,11 @@
 	],
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json",
+		"models": "curl -s https://models.dev/api.json -o src/models.json",
+		"build": "tsc -p tsconfig.build.json && cp src/models.json dist/models.json",
 		"check": "biome check --write .",
 		"test": "npx tsx --test test/providers.test.ts",
-		"prepublishOnly": "npm run clean && npm run build"
+		"prepublishOnly": "npm run clean && npm run models && npm run build"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.60.0",

@@ -16,9 +16,9 @@ import { OpenAICompletionsLLM } from '@mariozechner/ai/providers/openai-completi
 import { GeminiLLM } from '@mariozechner/ai/providers/gemini';
 
 // Pick your provider - same API for all
-const llm = new AnthropicLLM('claude-3-5-sonnet-20241022');
-// const llm = new OpenAICompletionsLLM('gpt-4o');
-// const llm = new GeminiLLM('gemini-2.0-flash-exp');
+const llm = new AnthropicLLM('claude-sonnet-4-0');
+// const llm = new OpenAICompletionsLLM('gpt-5-mini');
+// const llm = new GeminiLLM('gemini-2.5-flash');
 
 // Basic completion
 const response = await llm.complete({
