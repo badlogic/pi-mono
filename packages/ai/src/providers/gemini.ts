@@ -13,6 +13,10 @@ import type {
 
 export interface GeminiLLMOptions extends LLMOptions {
 	toolChoice?: "auto" | "none" | "any";
+	thinking?: {
+		enabled: boolean;
+		budgetTokens?: number; // -1 for dynamic, 0 to disable
+	};
 }
 
 export class GeminiLLM implements LLM<GeminiLLMOptions> {
@@ -49,16 +53,29 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 
 			const contents = this.convertMessages(context.messages);
 
-			const stream = await model.generateContentStream({
+			const config: any = {
 				contents,
 				generationConfig: {
 					temperature: options?.temperature,
 					maxOutputTokens: options?.maxTokens,
 				},
-			});
+			};
+
+			// Add thinking configuration if enabled
+			if (options?.thinking?.enabled && this.supportsThinking()) {
+				config.config = {
+					thinkingConfig: {
+						includeThoughts: true,
+						thinkingBudget: options.thinking.budgetTokens ?? -1, // Default to dynamic
+					},
+				};
+			}
+
+			const stream = await model.generateContentStream(config);
 
 			let content = "";
 			let thinking = "";
+			let thoughtSignature: string | undefined;
 			const toolCalls: ToolCall[] = [];
 			let usage: TokenUsage = {
 				input: 0,
@@ -76,24 +93,30 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				const candidate = chunk.candidates?.[0];
 				if (candidate?.content?.parts) {
 					for (const part of candidate.content.parts) {
-						if (part.text) {
-							// Check if it's thinking content
-							if ((part as any).thought) {
-								thinking += part.text;
-								options?.onThinking?.(part.text, false);
-								inThinkingBlock = true;
+						// Cast to any to access thinking properties not yet in SDK types
+						const partWithThinking = part as any;
+						if (partWithThinking.text !== undefined) {
+							// Check if it's thinking content using the thought boolean flag
+							if (partWithThinking.thought === true) {
 								if (inTextBlock) {
 									options?.onText?.("", true);
 									inTextBlock = false;
 								}
+								thinking += partWithThinking.text;
+								options?.onThinking?.(partWithThinking.text, false);
+								inThinkingBlock = true;
+								// Capture thought signature if present
+								if (partWithThinking.thoughtSignature) {
+									thoughtSignature = partWithThinking.thoughtSignature;
+								}
 							} else {
-								content += part.text;
-								options?.onText?.(part.text, false);
-								inTextBlock = true;
 								if (inThinkingBlock) {
 									options?.onThinking?.("", true);
 									inThinkingBlock = false;
 								}
+								content += partWithThinking.text;
+								options?.onText?.(partWithThinking.text, false);
+								inTextBlock = true;
 							}
 						}
 
@@ -146,6 +169,7 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				role: "assistant",
 				content: content || undefined,
 				thinking: thinking || undefined,
+				thinkingSignature: thoughtSignature,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 				model: this.model,
 				usage,
@@ -178,6 +202,15 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				});
 			} else if (msg.role === "assistant") {
 				const parts: any[] = [];
+
+				// Add thinking if present (with thought signature for function calling)
+				if (msg.thinking && msg.thinkingSignature) {
+					parts.push({
+						text: msg.thinking,
+						thought: true,
+						thoughtSignature: msg.thinkingSignature,
+					});
+				}
 
 				if (msg.content) {
 					parts.push({ text: msg.content });
@@ -260,5 +293,10 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 			default:
 				return "stop";
 		}
+	}
+
+	private supportsThinking(): boolean {
+		// Gemini 2.5 series models support thinking
+		return this.model.includes("2.5") || this.model.includes("gemini-2");
 	}
 }
