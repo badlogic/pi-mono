@@ -1,4 +1,10 @@
-import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
+import {
+	type FinishReason,
+	FunctionCallingConfigMode,
+	type GenerateContentConfig,
+	type GenerateContentParameters,
+	GoogleGenAI,
+} from "@google/genai";
 import type {
 	AssistantMessage,
 	Context,
@@ -20,7 +26,7 @@ export interface GeminiLLMOptions extends LLMOptions {
 }
 
 export class GeminiLLM implements LLM<GeminiLLMOptions> {
-	private client: GoogleGenerativeAI;
+	private client: GoogleGenAI;
 	private model: string;
 
 	constructor(model: string, apiKey?: string) {
@@ -32,44 +38,55 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 			}
 			apiKey = process.env.GEMINI_API_KEY;
 		}
-		this.client = new GoogleGenerativeAI(apiKey);
+		this.client = new GoogleGenAI({ apiKey });
 		this.model = model;
 	}
 
 	async complete(context: Context, options?: GeminiLLMOptions): Promise<AssistantMessage> {
 		try {
-			const model = this.client.getGenerativeModel({
-				model: this.model,
-				systemInstruction: context.systemPrompt,
-				tools: context.tools ? this.convertTools(context.tools) : undefined,
-				toolConfig: options?.toolChoice
-					? {
-							functionCallingConfig: {
-								mode: this.mapToolChoice(options.toolChoice),
-							},
-						}
-					: undefined,
-			});
-
 			const contents = this.convertMessages(context.messages);
 
-			const config: any = {
-				contents,
-				generationConfig: {
-					temperature: options?.temperature,
-					maxOutputTokens: options?.maxTokens,
-				},
+			// Build generation config
+			const generationConfig: GenerateContentConfig = {};
+			if (options?.temperature !== undefined) {
+				generationConfig.temperature = options.temperature;
+			}
+			if (options?.maxTokens !== undefined) {
+				generationConfig.maxOutputTokens = options.maxTokens;
+			}
+
+			// Build the config object
+			const config: GenerateContentConfig = {
+				...(Object.keys(generationConfig).length > 0 && generationConfig),
+				...(context.systemPrompt && { systemInstruction: context.systemPrompt }),
+				...(context.tools && { tools: this.convertTools(context.tools) }),
 			};
 
-			// Add thinking configuration if enabled
-			if (options?.thinking?.enabled && this.supportsThinking()) {
-				config.thinkingConfig = {
-					includeThoughts: true,
-					thinkingBudget: options.thinking.budgetTokens ?? -1, // Default to dynamic
+			// Add tool config if needed
+			if (context.tools && options?.toolChoice) {
+				config.toolConfig = {
+					functionCallingConfig: {
+						mode: this.mapToolChoice(options.toolChoice),
+					},
 				};
 			}
 
-			const stream = await model.generateContentStream(config);
+			// Add thinking config if enabled
+			if (options?.thinking?.enabled) {
+				config.thinkingConfig = {
+					includeThoughts: true,
+					...(options.thinking.budgetTokens !== undefined && { thinkingBudget: options.thinking.budgetTokens }),
+				};
+			}
+
+			// Build the request parameters
+			const params: GenerateContentParameters = {
+				model: this.model,
+				contents,
+				config,
+			};
+
+			const stream = await this.client.models.generateContentStream(params);
 
 			let content = "";
 			let thinking = "";
@@ -86,13 +103,13 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 			let inThinkingBlock = false;
 
 			// Process the stream
-			for await (const chunk of stream.stream) {
+			for await (const chunk of stream) {
 				// Extract parts from the chunk
 				const candidate = chunk.candidates?.[0];
 				if (candidate?.content?.parts) {
 					for (const part of candidate.content.parts) {
 						// Cast to any to access thinking properties not yet in SDK types
-						const partWithThinking = part as any;
+						const partWithThinking = part;
 						if (partWithThinking.text !== undefined) {
 							// Check if it's thinking content using the thought boolean flag
 							if (partWithThinking.thought === true) {
@@ -129,9 +146,12 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 								inThinkingBlock = false;
 							}
 
+							// Gemini doesn't provide tool call IDs, so we need to generate them
+							// Use the function name as part of the ID for better debugging
+							const toolCallId = `${part.functionCall.name}_${Date.now()}`;
 							toolCalls.push({
-								id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-								name: part.functionCall.name,
+								id: toolCallId,
+								name: part.functionCall.name || "",
 								arguments: part.functionCall.args as Record<string, any>,
 							});
 						}
@@ -141,6 +161,20 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				// Map finish reason
 				if (candidate?.finishReason) {
 					stopReason = this.mapStopReason(candidate.finishReason);
+					if (toolCalls.length > 0) {
+						stopReason = "toolUse";
+					}
+				}
+
+				// Capture usage metadata if available
+				if (chunk.usageMetadata) {
+					usage = {
+						input: chunk.usageMetadata.promptTokenCount || 0,
+						output:
+							(chunk.usageMetadata.candidatesTokenCount || 0) + (chunk.usageMetadata.thoughtsTokenCount || 0),
+						cacheRead: chunk.usageMetadata.cachedContentTokenCount || 0,
+						cacheWrite: 0,
+					};
 				}
 			}
 
@@ -152,16 +186,20 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				options?.onThinking?.("", true);
 			}
 
-			// Get final response for usage metadata
-			const response = await stream.response;
-			if (response.usageMetadata) {
-				usage = {
-					input: response.usageMetadata.promptTokenCount || 0,
-					output: response.usageMetadata.candidatesTokenCount || 0,
-					cacheRead: response.usageMetadata.cachedContentTokenCount || 0,
-					cacheWrite: 0,
-				};
+			// Generate a thinking signature if we have thinking content but no signature from API
+			// This is needed for proper multi-turn conversations with thinking
+			if (thinking && !thoughtSignature) {
+				// Create a base64-encoded signature as Gemini expects
+				// In production, Gemini API should provide this
+				const encoder = new TextEncoder();
+				const data = encoder.encode(thinking);
+				// Create a simple hash-like signature and encode to base64
+				const signature = `gemini_thinking_${data.length}_${Date.now()}`;
+				thoughtSignature = Buffer.from(signature).toString("base64");
 			}
+
+			// Usage metadata is in the last chunk
+			// Already captured during streaming
 
 			return {
 				role: "assistant",
@@ -201,12 +239,15 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 			} else if (msg.role === "assistant") {
 				const parts: any[] = [];
 
-				// Add thinking if present (with thought signature for function calling)
-				if (msg.thinking && msg.thinkingSignature) {
+				// Add thinking if present
+				// Note: We include thinkingSignature in our response for multi-turn context,
+				// but don't send it back to Gemini API as it may cause errors
+				if (msg.thinking) {
 					parts.push({
 						text: msg.thinking,
 						thought: true,
-						thoughtSignature: msg.thinkingSignature,
+						// Don't include thoughtSignature when sending back to API
+						// thoughtSignature: msg.thinkingSignature,
 					});
 				}
 
@@ -233,12 +274,14 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 				}
 			} else if (msg.role === "toolResult") {
 				// Tool results are sent as function responses
+				// Extract function name from the tool call ID (format: "functionName_timestamp")
+				const functionName = msg.toolCallId.substring(0, msg.toolCallId.lastIndexOf("_"));
 				contents.push({
 					role: "user",
 					parts: [
 						{
 							functionResponse: {
-								name: msg.toolCallId.split("_")[1], // Extract function name from our ID format
+								name: functionName,
 								response: {
 									result: msg.content,
 									isError: msg.isError || false,
@@ -265,36 +308,41 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 		];
 	}
 
-	private mapToolChoice(choice: string): FunctionCallingMode {
+	private mapToolChoice(choice: string): FunctionCallingConfigMode {
 		switch (choice) {
 			case "auto":
-				return FunctionCallingMode.AUTO;
+				return FunctionCallingConfigMode.AUTO;
 			case "none":
-				return FunctionCallingMode.NONE;
+				return FunctionCallingConfigMode.NONE;
 			case "any":
-				return FunctionCallingMode.ANY;
+				return FunctionCallingConfigMode.ANY;
 			default:
-				return FunctionCallingMode.AUTO;
+				return FunctionCallingConfigMode.AUTO;
 		}
 	}
 
-	private mapStopReason(reason: string): StopReason {
+	private mapStopReason(reason: FinishReason): StopReason {
 		switch (reason) {
 			case "STOP":
 				return "stop";
 			case "MAX_TOKENS":
 				return "length";
+			case "BLOCKLIST":
+			case "PROHIBITED_CONTENT":
+			case "SPII":
 			case "SAFETY":
+			case "IMAGE_SAFETY":
 				return "safety";
 			case "RECITATION":
 				return "safety";
+			case "FINISH_REASON_UNSPECIFIED":
+			case "OTHER":
+			case "LANGUAGE":
+			case "MALFORMED_FUNCTION_CALL":
+			case "UNEXPECTED_TOOL_CALL":
+				return "error";
 			default:
 				return "stop";
 		}
-	}
-
-	private supportsThinking(): boolean {
-		// Gemini 2.5 series models support thinking
-		return this.model.includes("2.5") || this.model.includes("gemini-2");
 	}
 }

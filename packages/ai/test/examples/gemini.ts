@@ -24,14 +24,13 @@ const options: GeminiLLMOptions = {
     onText: (t, complete) => process.stdout.write(t + (complete ? "\n" : "")),
     onThinking: (t, complete) => process.stdout.write(chalk.dim(t + (complete ? "\n" : ""))),
     toolChoice: "auto",
-    // Enable thinking for Gemini 2.5 models
     thinking: {
-        enabled: true,
-        budgetTokens: -1 // Dynamic thinking
+         enabled: true,
+         budgetTokens: -1 // Dynamic thinking
     }
 };
 
-const ai = new GeminiLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY || "fake-api-key-for-testing");
+const ai = new GeminiLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY);
 const context: Context = {
     systemPrompt: "You are a helpful assistant that can use tools to answer questions.",
     messages: [

@@ -13,14 +13,14 @@
 		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
 		"check": "biome check --write .",
+		"test": "npx tsx --test test/providers.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@anthropic-ai/sdk": "0.60.0",
-		"@google/genai": "1.14.0",
-		"@google/generative-ai": "^0.24.1",
+		"@anthropic-ai/sdk": "^0.60.0",
+		"@google/genai": "^1.15.0",
 		"chalk": "^5.5.0",
-		"openai": "5.12.2"
+		"openai": "^5.15.0"
 	},
 	"keywords": [
 		"ai",

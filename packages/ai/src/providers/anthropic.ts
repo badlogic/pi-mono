@@ -27,6 +27,7 @@ export interface AnthropicLLMOptions extends LLMOptions {
 export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 	private client: Anthropic;
 	private model: string;
+	private isOAuthToken: boolean = false;
 
 	constructor(model: string, apiKey?: string, baseUrl?: string) {
 		if (!apiKey) {
@@ -45,8 +46,10 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 
 			process.env.ANTHROPIC_API_KEY = undefined;
 			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: baseUrl, defaultHeaders });
+			this.isOAuthToken = true;
 		} else {
 			this.client = new Anthropic({ apiKey, baseURL: baseUrl });
+			this.isOAuthToken = false;
 		}
 		this.model = model;
 	}
@@ -62,7 +65,8 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				stream: true,
 			};
 
-			if (context.systemPrompt) {
+			// For OAuth tokens, we MUST include Claude Code identity
+			if (this.isOAuthToken) {
 				params.system = [
 					{
 						type: "text",
@@ -71,14 +75,18 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 							type: "ephemeral",
 						},
 					},
-					{
+				];
+				if (context.systemPrompt) {
+					params.system.push({
 						type: "text",
 						text: context.systemPrompt,
 						cache_control: {
 							type: "ephemeral",
 						},
-					},
-				];
+					});
+				}
+			} else if (context.systemPrompt) {
+				params.system = context.systemPrompt;
 			}
 
 			if (options?.temperature !== undefined) {
@@ -128,9 +136,11 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
 						options?.onText?.(event.delta.text, false);
+						blockType = "text"; // Ensure block type is set
 					}
 					if (event.delta.type === "thinking_delta") {
 						options?.onThinking?.(event.delta.thinking, false);
+						blockType = "thinking"; // Ensure block type is set
 					}
 				}
 				if (event.type === "content_block_stop") {

@@ -137,6 +137,9 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 
 					// Map status to stop reason
 					stopReason = this.mapStopReason(response?.status);
+					if (toolCalls.length > 0 && stopReason === "stop") {
+						stopReason = "toolUse";
+					}
 				}
 				// Handle errors
 				else if (event.type === "error") {
