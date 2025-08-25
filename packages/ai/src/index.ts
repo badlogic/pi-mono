@@ -3,6 +3,21 @@
 
 export const version = "0.5.8";
 
+// Export generated models and factory
+export {
+	ANTHROPIC_MODELS,
+	type AnthropicModel,
+	type CreateLLMOptions,
+	createLLM,
+	GEMINI_MODELS,
+	type GeminiModel,
+	type ModelData,
+	OPENAI_COMPATIBLE_PROVIDERS,
+	OPENAI_MODELS,
+	type OpenAICompatibleProvider,
+	type OpenAIModel,
+	type ProviderData,
+} from "./models.generated.js";
 // Export models utilities
 export {
 	getAllProviders,
