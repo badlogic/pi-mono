@@ -10,6 +10,8 @@ export {
 	getProviderInfo,
 	getProviderModels,
 	loadModels,
+	type ModalityInput,
+	type ModalityOutput,
 	type ModelInfo,
 	type ModelsData,
 	type ProviderInfo,

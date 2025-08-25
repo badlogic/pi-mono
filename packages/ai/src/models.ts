@@ -2,32 +2,34 @@ import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
+export type ModalityInput = "text" | "image" | "audio" | "video" | "pdf";
+export type ModalityOutput = "text" | "image" | "audio";
+
 export interface ModelInfo {
 	id: string;
 	name: string;
-	attachment?: boolean;
-	reasoning?: boolean;
-	temperature?: boolean;
-	tool_call?: boolean;
-	knowledge?: string;
-	release_date?: string;
-	last_updated?: string;
-	modalities?: {
-		input?: string[];
-		output?: string[];
+	attachment: boolean;
+	reasoning: boolean;
+	temperature: boolean;
+	tool_call: boolean;
+	release_date: string;
+	last_updated: string;
+	modalities: {
+		input: ModalityInput[];
+		output: ModalityOutput[];
 	};
-	open_weights?: boolean;
+	open_weights: boolean;
+	limit: {
+		context: number;
+		output: number;
+	};
+	knowledge?: string; // Optional - knowledge cutoff date
 	cost?: {
-		input?: number;
-		output?: number;
+		input: number;
+		output: number;
 		cache_read?: number;
 		cache_write?: number;
 	};
-	limit?: {
-		context?: number;
-		output?: number;
-	};
-	[key: string]: any;
 }
 
 export interface ProviderInfo {
