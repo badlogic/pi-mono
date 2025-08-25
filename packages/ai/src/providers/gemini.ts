@@ -63,11 +63,9 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 
 			// Add thinking configuration if enabled
 			if (options?.thinking?.enabled && this.supportsThinking()) {
-				config.config = {
-					thinkingConfig: {
-						includeThoughts: true,
-						thinkingBudget: options.thinking.budgetTokens ?? -1, // Default to dynamic
-					},
+				config.thinkingConfig = {
+					includeThoughts: true,
+					thinkingBudget: options.thinking.budgetTokens ?? -1, // Default to dynamic
 				};
 			}
 
