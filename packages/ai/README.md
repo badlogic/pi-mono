@@ -32,6 +32,7 @@ const streamResponse = await llm.complete({
 }, {
   onText: (chunk) => process.stdout.write(chunk),
   onThinking: (chunk) => process.stderr.write(chunk),
+  // Provider specific config
   thinking: { enabled: true }
 });
 
@@ -59,24 +60,6 @@ if (toolResponse.toolCalls) {
   }
 }
 ```
-
-## Features
-
-- **Unified Interface**: Same API across OpenAI, Anthropic, and Gemini
-- **Streaming**: Real-time text and thinking streams with completion signals
-- **Tool Calling**: Consistent function calling with automatic ID generation
-- **Thinking Mode**: Access reasoning tokens (o1, Claude, Gemini 2.0)
-- **Token Tracking**: Input, output, cache, and thinking token counts
-- **Error Handling**: Graceful fallbacks with detailed error messages
-
-## Providers
-
-| Provider | Models | Thinking | Tools | Streaming |
-|----------|--------|----------|-------|-----------|
-| OpenAI Completions | gpt-4o, gpt-4o-mini | ❌ | ✅ | ✅ |
-| OpenAI Responses | o1, o3, gpt-5 | ✅ | ✅ | ✅ |
-| Anthropic | claude-3.5-sonnet, claude-3.5-haiku | ✅ | ✅ | ✅ |
-| Gemini | gemini-2.0-flash, gemini-2.0-pro | ✅ | ✅ | ✅ |
 
 ## Development
 

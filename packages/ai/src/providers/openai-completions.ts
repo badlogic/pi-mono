@@ -43,8 +43,12 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				messages,
 				stream: true,
 				stream_options: { include_usage: true },
-				store: false,
 			};
+
+			// Cerebras doesn't like the "store" field
+			if (!this.client.baseURL?.includes("cerebras.ai")) {
+				(params as any).store = false;
+			}
 
 			if (options?.maxTokens) {
 				params.max_completion_tokens = options?.maxTokens;
@@ -71,6 +75,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			});
 
 			let content = "";
+			let reasoningContent = "";
+			let reasoningField: "reasoning" | "reasoning_content" | null = null;
 			const toolCallsMap = new Map<
 				number,
 				{
@@ -86,56 +92,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				cacheWrite: 0,
 			};
 			let finishReason: ChatCompletionChunk.Choice["finish_reason"] | null = null;
-
-			let inTextBlock = false;
+			let blockType: "text" | "thinking" | null = null;
 			for await (const chunk of stream) {
-				const choice = chunk.choices[0];
-
-				// Handle text content
-				if (choice?.delta?.content) {
-					content += choice.delta.content;
-					options?.onText?.(choice.delta.content, false);
-					inTextBlock = true;
-				}
-
-				// Handle tool calls
-				if (choice?.delta?.tool_calls) {
-					if (inTextBlock) {
-						// If we were in a text block, signal its end
-						options?.onText?.("", true);
-						inTextBlock = false;
-					}
-					for (const toolCall of choice.delta.tool_calls) {
-						const index = toolCall.index;
-
-						if (!toolCallsMap.has(index)) {
-							toolCallsMap.set(index, {
-								id: toolCall.id || "",
-								name: toolCall.function?.name || "",
-								arguments: "",
-							});
-						}
-
-						const existing = toolCallsMap.get(index)!;
-						if (toolCall.id) existing.id = toolCall.id;
-						if (toolCall.function?.name) existing.name = toolCall.function.name;
-						if (toolCall.function?.arguments) {
-							existing.arguments += toolCall.function.arguments;
-						}
-					}
-				}
-
-				// Capture finish reason
-				if (choice?.finish_reason) {
-					if (inTextBlock) {
-						// If we were in a text block, signal its end
-						options?.onText?.("", true);
-						inTextBlock = false;
-					}
-					finishReason = choice.finish_reason;
-				}
-
-				// Capture usage
 				if (chunk.usage) {
 					usage = {
 						input: chunk.usage.prompt_tokens || 0,
@@ -143,9 +101,96 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						cacheRead: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
 						cacheWrite: 0,
 					};
+				}
 
-					// Note: reasoning tokens are in completion_tokens_details?.reasoning_tokens
-					// but we don't have actual thinking content from Chat Completions API
+				const choice = chunk.choices[0];
+				if (!choice) continue;
+
+				if (choice.delta) {
+					// Handle text content
+					if (
+						choice.delta.content !== null &&
+						choice.delta.content !== undefined &&
+						choice.delta.content.length > 0
+					) {
+						if (blockType === "thinking") {
+							options?.onThinking?.("", true);
+							blockType = null;
+						}
+						content += choice.delta.content;
+						options?.onText?.(choice.delta.content, false);
+						blockType = "text";
+					}
+
+					// Handle LLAMA.cpp reasoning_content
+					if (
+						(choice.delta as any).reasoning_content !== null &&
+						(choice.delta as any).reasoning_content !== undefined
+					) {
+						if (blockType === "text") {
+							options?.onText?.("", true);
+							blockType = null;
+						}
+						reasoningContent += (choice.delta as any).reasoning_content;
+						reasoningField = "reasoning_content";
+						options?.onThinking?.((choice.delta as any).reasoning_content, false);
+						blockType = "thinking";
+					}
+
+					// Handle Ollama reasoning field
+					if ((choice.delta as any).reasoning !== null && (choice.delta as any).reasoning !== undefined) {
+						if (blockType === "text") {
+							options?.onText?.("", true);
+							blockType = null;
+						}
+						reasoningContent += (choice.delta as any).reasoning;
+						reasoningField = "reasoning";
+						options?.onThinking?.((choice.delta as any).reasoning, false);
+						blockType = "thinking";
+					}
+
+					// Handle tool calls
+					if (choice?.delta?.tool_calls) {
+						if (blockType === "text") {
+							options?.onText?.("", true);
+							blockType = null;
+						}
+						if (blockType === "thinking") {
+							options?.onThinking?.("", true);
+							blockType = null;
+						}
+						for (const toolCall of choice.delta.tool_calls) {
+							const index = toolCall.index;
+
+							if (!toolCallsMap.has(index)) {
+								toolCallsMap.set(index, {
+									id: toolCall.id || "",
+									name: toolCall.function?.name || "",
+									arguments: "",
+								});
+							}
+
+							const existing = toolCallsMap.get(index)!;
+							if (toolCall.id) existing.id = toolCall.id;
+							if (toolCall.function?.name) existing.name = toolCall.function.name;
+							if (toolCall.function?.arguments) {
+								existing.arguments += toolCall.function.arguments;
+							}
+						}
+					}
+				}
+
+				// Capture finish reason
+				if (choice.finish_reason) {
+					if (blockType === "text") {
+						options?.onText?.("", true);
+						blockType = null;
+					}
+					if (blockType === "thinking") {
+						options?.onThinking?.("", true);
+						blockType = null;
+					}
+					finishReason = choice.finish_reason;
 				}
 			}
 
@@ -159,7 +204,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			return {
 				role: "assistant",
 				content: content || undefined,
-				thinking: undefined, // Chat Completions doesn't provide actual thinking content
+				thinking: reasoningContent || undefined,
+				thinkingSignature: reasoningField || undefined,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
 				model: this.model,
 				usage,
@@ -186,7 +232,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 		// Add system prompt if provided
 		if (systemPrompt) {
-			const role = this.isReasoningModel() ? "developer" : "system";
+			// Cerebras doesn't like the "developer" role
+			const role = this.isReasoningModel() && !this.client.baseURL?.includes("cerebras.ai") ? "developer" : "system";
 			params.push({ role: role, content: systemPrompt });
 		}
 
@@ -202,6 +249,11 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 					role: "assistant",
 					content: msg.content || null,
 				};
+
+				// LLama.cpp server + gpt-oss
+				if (msg.thinking && msg.thinkingSignature && msg.thinkingSignature.length > 0) {
+					(assistantMsg as any)[msg.thinkingSignature] = msg.thinking;
+				}
 
 				if (msg.toolCalls) {
 					assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
@@ -255,7 +307,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 	}
 
 	private isReasoningModel(): boolean {
-		// TODO base on models.dev data
-		return this.model.includes("o1") || this.model.includes("o3");
+		// TODO base on models.dev
+		return true;
 	}
 }
