@@ -17,7 +17,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 
-export interface GeminiLLMOptions extends LLMOptions {
+export interface GoogleLLMOptions extends LLMOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -25,7 +25,7 @@ export interface GeminiLLMOptions extends LLMOptions {
 	};
 }
 
-export class GeminiLLM implements LLM<GeminiLLMOptions> {
+export class GoogleLLM implements LLM<GoogleLLMOptions> {
 	private client: GoogleGenAI;
 	private model: string;
 
@@ -42,7 +42,7 @@ export class GeminiLLM implements LLM<GeminiLLMOptions> {
 		this.model = model;
 	}
 
-	async complete(context: Context, options?: GeminiLLMOptions): Promise<AssistantMessage> {
+	async complete(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
 		try {
 			const contents = this.convertMessages(context.messages);
 

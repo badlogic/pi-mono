@@ -106,3 +106,20 @@ export interface TokenUsage {
 }
 
 export type StopReason = "stop" | "length" | "toolUse" | "safety" | "error";
+
+// Model interface for the unified model system
+export interface Model {
+	id: string;
+	name: string;
+	provider: string;
+	reasoning: boolean;
+	input: ("text" | "image")[];
+	cost: {
+		input: number; // $/million tokens
+		output: number; // $/million tokens
+		cacheRead: number; // $/million tokens
+		cacheWrite: number; // $/million tokens
+	};
+	contextWindow: number;
+	maxTokens: number;
+}

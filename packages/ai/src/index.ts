@@ -3,41 +3,30 @@
 
 export const version = "0.5.8";
 
-// Export generated models and factory
+// Export generated models data
+export { PROVIDERS } from "./models.generated.js";
+
+// Export models utilities and types
 export {
-	ANTHROPIC_MODELS,
 	type AnthropicModel,
-	type CreateLLMOptions,
+	type CerebrasModel,
 	createLLM,
-	GEMINI_MODELS,
-	type GeminiModel,
-	type ModelData,
-	OPENAI_COMPATIBLE_PROVIDERS,
-	OPENAI_MODELS,
-	type OpenAICompatibleProvider,
+	type GoogleModel,
+	type GroqModel,
+	type Model,
 	type OpenAIModel,
-	type ProviderData,
-} from "./models.generated.js";
-// Export models utilities
-export {
-	getAllProviders,
-	getModelInfo,
-	getProviderInfo,
-	getProviderModels,
-	loadModels,
-	type ModalityInput,
-	type ModalityOutput,
-	type ModelInfo,
-	type ModelsData,
-	type ProviderInfo,
-	supportsThinking,
-	supportsTools,
+	type OpenRouterModel,
+	PROVIDER_CONFIG,
+	type ProviderModels,
+	type ProviderToLLM,
+	type XAIModel,
 } from "./models.js";
 
 // Export providers
 export { AnthropicLLM } from "./providers/anthropic.js";
-export { GeminiLLM } from "./providers/gemini.js";
+export { GoogleLLM } from "./providers/gemini.js";
 export { OpenAICompletionsLLM } from "./providers/openai-completions.js";
 export { OpenAIResponsesLLM } from "./providers/openai-responses.js";
+
 // Export types
 export type * from "./types.js";

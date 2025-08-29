@@ -13,12 +13,12 @@ npm install @mariozechner/ai
 ```typescript
 import { AnthropicLLM } from '@mariozechner/ai/providers/anthropic';
 import { OpenAICompletionsLLM } from '@mariozechner/ai/providers/openai-completions';
-import { GeminiLLM } from '@mariozechner/ai/providers/gemini';
+import { GoogleLLM } from '@mariozechner/ai/providers/gemini';
 
 // Pick your provider - same API for all
 const llm = new AnthropicLLM('claude-sonnet-4-0');
 // const llm = new OpenAICompletionsLLM('gpt-5-mini');
-// const llm = new GeminiLLM('gemini-2.5-flash');
+// const llm = new GoogleLLM('gemini-2.5-flash');
 
 // Basic completion
 const response = await llm.complete({

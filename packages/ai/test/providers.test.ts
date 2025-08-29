@@ -1,10 +1,11 @@
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
-import { GeminiLLM } from "../src/providers/gemini.js";
+import { GoogleLLM } from "../src/providers/gemini.js";
 import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
 import type { LLM, LLMOptions, Context, Tool, AssistantMessage } from "../src/types.js";
 import { spawn, ChildProcess, execSync } from "child_process";
+import { createLLM } from "../src/models.js";
 
 // Calculator tool definition (same as examples)
 const calculatorTool: Tool = {
@@ -213,10 +214,10 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
 
 describe("AI Providers E2E Tests", () => {
     describe.skipIf(!process.env.GEMINI_API_KEY)("Gemini Provider", () => {
-        let llm: GeminiLLM;
+        let llm: GoogleLLM;
 
         beforeAll(() => {
-            llm = new GeminiLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY!);
+            llm = new GoogleLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -316,11 +317,11 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.GROK_API_KEY)("Grok Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider (via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("grok-code-fast-1", process.env.GROK_API_KEY!, "https://api.x.ai/v1");
+            llm = new OpenAICompletionsLLM("grok-code-fast-1", process.env.XAI_API_KEY!, "https://api.x.ai/v1");
         });
 
         it("should complete basic text generation", async () => {
@@ -487,6 +488,34 @@ describe("AI Providers E2E Tests", () => {
                 ollamaProcess.kill("SIGTERM");
                 ollamaProcess = null;
             }
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
+        });
+    });
+
+    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (Kimi K2)", () => {
+        let llm: OpenAICompletionsLLM;
+
+        beforeAll(() => {
+            llm = createLLM("openrouter", "moonshotai/kimi-k2", process.env.OPENROUTER_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {

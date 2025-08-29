@@ -11,15 +11,11 @@
 	],
 	"scripts": {
 		"clean": "rm -rf dist",
-		"models": "curl -s https://models.dev/api.json -o src/models.json",
 		"generate-models": "npx tsx scripts/generate-models.ts",
-		"build": "npm run generate-models && tsc -p tsconfig.build.json && cp src/models.json dist/models.json",
+		"build": "npm run generate-models && tsc -p tsconfig.build.json",
 		"check": "biome check --write .",
-		"test": "vitest",
-		"test:ui": "vitest --ui",
-		"test:old": "npx tsx --test test/providers.test.ts",
-		"extract-models": "npx tsx scripts/extract-openai-models.ts",
-		"prepublishOnly": "npm run clean && npm run models && npm run build"
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.60.0",
@@ -48,7 +44,6 @@
 	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",
-		"@vitest/ui": "^3.2.4",
 		"vitest": "^3.2.4"
 	}
 }
