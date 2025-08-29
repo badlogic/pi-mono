@@ -22,6 +22,3 @@ coverage/
 .nyc_output/
 .pi_config/
 tui-debug.log
-
-# Generated files
-packages/ai/src/models.generated.ts
