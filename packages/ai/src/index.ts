@@ -24,7 +24,7 @@ export {
 
 // Export providers
 export { AnthropicLLM } from "./providers/anthropic.js";
-export { GoogleLLM } from "./providers/gemini.js";
+export { GoogleLLM } from "./providers/google.js";
 export { OpenAICompletionsLLM } from "./providers/openai-completions.js";
 export { OpenAIResponsesLLM } from "./providers/openai-responses.js";
 

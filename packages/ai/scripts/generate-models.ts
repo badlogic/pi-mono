@@ -1,7 +1,12 @@
 #!/usr/bin/env tsx
 
 import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageRoot = join(__dirname, "..");
 
 interface ModelsDevModel {
 	id: string;
@@ -27,6 +32,7 @@ interface NormalizedModel {
 	id: string;
 	name: string;
 	provider: string;
+	baseUrl?: string;
 	reasoning: boolean;
 	input: ("text" | "image")[];
 	cost: {
@@ -41,7 +47,7 @@ interface NormalizedModel {
 
 async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 	try {
-		console.log("🌐 Fetching models from OpenRouter API...");
+		console.log("Fetching models from OpenRouter API...");
 		const response = await fetch("https://openrouter.ai/api/v1/models");
 		const data = await response.json();
 
@@ -65,22 +71,39 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 				modelKey = model.id.replace("openai/", "");
 			} else if (model.id.startsWith("anthropic/")) {
 				provider = "anthropic";
-				const fullKey = model.id.replace("anthropic/", "");
-				// Map to Anthropic's preferred aliases
-				const anthropicAliases: Record<string, string> = {
-					"claude-opus-4.1": "claude-opus-4-1",
-					"claude-opus-4": "claude-opus-4-0", 
-					"claude-sonnet-4": "claude-sonnet-4-0",
-					"claude-3.7-sonnet": "claude-3-7-sonnet-latest",
-					"claude-3.7-sonnet:thinking": "claude-3-7-sonnet-latest:thinking",
-					"claude-3.5-haiku": "claude-3-5-haiku-latest",
-					"claude-3.5-haiku-20241022": "claude-3-5-haiku-latest",
-					"claude-3-haiku": "claude-3-haiku-20240307",
-					"claude-3-sonnet": "claude-3-sonnet-20240229",
-					"claude-3-opus": "claude-3-opus-20240229",
-					"claude-3.5-sonnet": "claude-3-5-sonnet-latest"
-				};
-				modelKey = anthropicAliases[fullKey] || fullKey;
+				modelKey = model.id.replace("anthropic/", "");
+
+				// Fix dot notation to dash notation for ALL Anthropic models
+				modelKey = modelKey.replace(/\./g, "-");
+
+				// Map version-less models to -latest aliases
+				if (modelKey === "claude-3-5-haiku") {
+					modelKey = "claude-3-5-haiku-latest";
+				} else if (modelKey === "claude-3-5-sonnet") {
+					modelKey = "claude-3-5-sonnet-latest";
+				} else if (modelKey === "claude-3-7-sonnet") {
+					modelKey = "claude-3-7-sonnet-latest";
+				} else if (modelKey === "claude-3-7-sonnet:thinking") {
+					modelKey = "claude-3-7-sonnet-latest:thinking";
+				}
+				// Map numbered versions to proper format
+				else if (modelKey === "claude-opus-4-1") {
+					modelKey = "claude-opus-4-1";
+				} else if (modelKey === "claude-opus-4") {
+					modelKey = "claude-opus-4-0";
+				} else if (modelKey === "claude-sonnet-4") {
+					modelKey = "claude-sonnet-4-0";
+				}
+				// Map old 3.x models to their specific dates
+				else if (modelKey === "claude-3-haiku") {
+					modelKey = "claude-3-haiku-20240307";
+				} else if (modelKey === "claude-3-sonnet") {
+					modelKey = "claude-3-sonnet-20240229";
+				} else if (modelKey === "claude-3-opus") {
+					modelKey = "claude-3-opus-20240229";
+				} else {
+					modelKey = modelKey.replace("\.", "-");
+				}
 			} else if (model.id.startsWith("x-ai/")) {
 				provider = "xai";
 				modelKey = model.id.replace("x-ai/", "");
@@ -107,7 +130,7 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 			const cacheReadCost = parseFloat(model.pricing?.input_cache_read || "0") * 1_000_000;
 			const cacheWriteCost = parseFloat(model.pricing?.input_cache_write || "0") * 1_000_000;
 
-			models.push({
+			const normalizedModel: NormalizedModel = {
 				id: modelKey,
 				name: model.name,
 				provider,
@@ -121,21 +144,30 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 				},
 				contextWindow: model.context_length || 4096,
 				maxTokens: model.top_provider?.max_completion_tokens || 4096,
-			});
+			};
+
+			// Add baseUrl for providers that need it
+			if (provider === "xai") {
+				normalizedModel.baseUrl = "https://api.x.ai/v1";
+			} else if (provider === "openrouter") {
+				normalizedModel.baseUrl = "https://openrouter.ai/api/v1";
+			}
+
+			models.push(normalizedModel);
 		}
 
-		console.log(`✅ Fetched ${models.length} tool-capable models from OpenRouter`);
+		console.log(`Fetched ${models.length} tool-capable models from OpenRouter`);
 		return models;
 	} catch (error) {
-		console.error("❌ Failed to fetch OpenRouter models:", error);
+		console.error("Failed to fetch OpenRouter models:", error);
 		return [];
 	}
 }
 
 function loadModelsDevData(): NormalizedModel[] {
 	try {
-		console.log("📁 Loading models from models.json...");
-		const data = JSON.parse(readFileSync(join(process.cwd(), "src/models.json"), "utf-8"));
+		console.log("Loading models from models.json...");
+		const data = JSON.parse(readFileSync(join(packageRoot, "src/models.json"), "utf-8"));
 
 		const models: NormalizedModel[] = [];
 
@@ -149,6 +181,7 @@ function loadModelsDevData(): NormalizedModel[] {
 					id: modelId,
 					name: m.name || modelId,
 					provider: "groq",
+					baseUrl: "https://api.groq.com/openai/v1",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -173,6 +206,7 @@ function loadModelsDevData(): NormalizedModel[] {
 					id: modelId,
 					name: m.name || modelId,
 					provider: "cerebras",
+					baseUrl: "https://api.cerebras.ai/v1",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -187,10 +221,10 @@ function loadModelsDevData(): NormalizedModel[] {
 			}
 		}
 
-		console.log(`✅ Loaded ${models.length} tool-capable models from models.dev`);
+		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
-		console.error("❌ Failed to load models.dev data:", error);
+		console.error("Failed to load models.dev data:", error);
 		return [];
 	}
 }
@@ -235,6 +269,9 @@ export const PROVIDERS = {
 			output += `\t\t\t\tid: "${model.id}",\n`;
 			output += `\t\t\t\tname: "${model.name}",\n`;
 			output += `\t\t\t\tprovider: "${model.provider}",\n`;
+			if (model.baseUrl) {
+				output += `\t\t\t\tbaseUrl: "${model.baseUrl}",\n`;
+			}
 			output += `\t\t\t\treasoning: ${model.reasoning},\n`;
 			output += `\t\t\t\tinput: ${JSON.stringify(model.input)},\n`;
 			output += `\t\t\t\tcost: {\n`;
@@ -261,14 +298,14 @@ export type ProviderModels = {
 `;
 
 	// Write file
-	writeFileSync(join(process.cwd(), "src/models.generated.ts"), output);
-	console.log("✅ Generated src/models.generated.ts");
+	writeFileSync(join(packageRoot, "src/models.generated.ts"), output);
+	console.log("Generated src/models.generated.ts");
 
 	// Print statistics
 	const totalModels = allModels.length;
 	const reasoningModels = allModels.filter(m => m.reasoning).length;
 
-	console.log(`\n📊 Model Statistics:`);
+	console.log(`\nModel Statistics:`);
 	console.log(`  Total tool-capable models: ${totalModels}`);
 	console.log(`  Reasoning-capable models: ${reasoningModels}`);
 

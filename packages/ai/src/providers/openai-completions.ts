@@ -6,6 +6,7 @@ import type {
 	LLM,
 	LLMOptions,
 	Message,
+	Model,
 	StopReason,
 	TokenUsage,
 	Tool,
@@ -19,9 +20,9 @@ export interface OpenAICompletionsLLMOptions extends LLMOptions {
 
 export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 	private client: OpenAI;
-	private model: string;
+	private modelInfo: Model;
 
-	constructor(model: string, apiKey?: string, baseUrl?: string) {
+	constructor(model: Model, apiKey?: string) {
 		if (!apiKey) {
 			if (!process.env.OPENAI_API_KEY) {
 				throw new Error(
@@ -30,8 +31,12 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			}
 			apiKey = process.env.OPENAI_API_KEY;
 		}
-		this.client = new OpenAI({ apiKey, baseURL: baseUrl });
-		this.model = model;
+		this.client = new OpenAI({ apiKey, baseURL: model.baseUrl });
+		this.modelInfo = model;
+	}
+
+	getModel(): Model {
+		return this.modelInfo;
 	}
 
 	async complete(request: Context, options?: OpenAICompletionsLLMOptions): Promise<AssistantMessage> {
@@ -39,14 +44,14 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			const messages = this.convertMessages(request.messages, request.systemPrompt);
 
 			const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-				model: this.model,
+				model: this.modelInfo.id,
 				messages,
 				stream: true,
 				stream_options: { include_usage: true },
 			};
 
 			// Cerebras/xAI dont like the "store" field
-			if (!this.client.baseURL?.includes("cerebras.ai") || this.client.baseURL?.includes("api.x.ai")) {
+			if (!this.modelInfo.baseUrl?.includes("cerebras.ai") && !this.modelInfo.baseUrl?.includes("api.x.ai")) {
 				(params as any).store = false;
 			}
 
@@ -66,7 +71,11 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				params.tool_choice = options.toolChoice;
 			}
 
-			if (options?.reasoningEffort && this.isReasoningModel() && !this.model.toLowerCase().includes("grok")) {
+			if (
+				options?.reasoningEffort &&
+				this.modelInfo.reasoning &&
+				!this.modelInfo.id.toLowerCase().includes("grok")
+			) {
 				params.reasoning_effort = options.reasoningEffort;
 			}
 
@@ -203,14 +212,16 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				thinking: reasoningContent || undefined,
 				thinkingSignature: reasoningField || undefined,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage,
 				stopReason: this.mapStopReason(finishReason),
 			};
 		} catch (error) {
 			return {
 				role: "assistant",
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage: {
 					input: 0,
 					output: 0,
@@ -230,9 +241,9 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		if (systemPrompt) {
 			// Cerebras/xAi don't like the "developer" role
 			const useDeveloperRole =
-				this.isReasoningModel() &&
-				!this.client.baseURL?.includes("cerebras.ai") &&
-				!this.client.baseURL?.includes("api.x.ai");
+				this.modelInfo.reasoning &&
+				!this.modelInfo.baseUrl?.includes("cerebras.ai") &&
+				!this.modelInfo.baseUrl?.includes("api.x.ai");
 			const role = useDeveloperRole ? "developer" : "system";
 			params.push({ role: role, content: systemPrompt });
 		}
@@ -304,10 +315,5 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			default:
 				return "stop";
 		}
-	}
-
-	private isReasoningModel(): boolean {
-		// TODO base on models.dev
-		return true;
 	}
 }

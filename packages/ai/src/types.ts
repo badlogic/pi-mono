@@ -8,29 +8,7 @@ export interface LLMOptions {
 
 export interface LLM<T extends LLMOptions> {
 	complete(request: Context, options?: T): Promise<AssistantMessage>;
-}
-
-export interface ModelInfo {
-	id: string;
-	name: string;
-	provider: string;
-	capabilities: {
-		reasoning: boolean;
-		toolCall: boolean;
-		vision: boolean;
-		audio?: boolean;
-	};
-	cost: {
-		input: number; // per million tokens
-		output: number; // per million tokens
-		cacheRead?: number;
-		cacheWrite?: number;
-	};
-	limits: {
-		context: number;
-		output: number;
-	};
-	knowledge?: string;
+	getModel(): Model;
 }
 
 export interface UserMessage {
@@ -48,6 +26,7 @@ export interface AssistantMessage {
 		name: string;
 		arguments: Record<string, any>;
 	}[];
+	provider: string;
 	model: string;
 	usage: TokenUsage;
 
@@ -112,6 +91,7 @@ export interface Model {
 	id: string;
 	name: string;
 	provider: string;
+	baseUrl?: string;
 	reasoning: boolean;
 	input: ("text" | "image")[];
 	cost: {

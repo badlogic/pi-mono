@@ -1,6 +1,6 @@
 import { PROVIDERS } from "./models.generated.js";
 import { AnthropicLLM } from "./providers/anthropic.js";
-import { GoogleLLM } from "./providers/gemini.js";
+import { GoogleLLM } from "./providers/google.js";
 import { OpenAICompletionsLLM } from "./providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "./providers/openai-responses.js";
 import type { Model } from "./types.js";
@@ -9,33 +9,31 @@ import type { Model } from "./types.js";
 export const PROVIDER_CONFIG = {
 	google: {
 		envKey: "GEMINI_API_KEY",
-		create: (model: string, apiKey: string) => new GoogleLLM(model, apiKey),
+		create: (model: Model, apiKey: string) => new GoogleLLM(model, apiKey),
 	},
 	openai: {
 		envKey: "OPENAI_API_KEY",
-		create: (model: string, apiKey: string) => new OpenAIResponsesLLM(model, apiKey),
+		create: (model: Model, apiKey: string) => new OpenAIResponsesLLM(model, apiKey),
 	},
 	anthropic: {
 		envKey: "ANTHROPIC_API_KEY",
-		create: (model: string, apiKey: string) => new AnthropicLLM(model, apiKey),
+		create: (model: Model, apiKey: string) => new AnthropicLLM(model, apiKey),
 	},
 	xai: {
 		envKey: "XAI_API_KEY",
-		create: (model: string, apiKey: string) => new OpenAICompletionsLLM(model, apiKey, "https://api.x.ai/v1"),
+		create: (model: Model, apiKey: string) => new OpenAICompletionsLLM(model, apiKey),
 	},
 	groq: {
 		envKey: "GROQ_API_KEY",
-		create: (model: string, apiKey: string) =>
-			new OpenAICompletionsLLM(model, apiKey, "https://api.groq.com/openai/v1"),
+		create: (model: Model, apiKey: string) => new OpenAICompletionsLLM(model, apiKey),
 	},
 	cerebras: {
 		envKey: "CEREBRAS_API_KEY",
-		create: (model: string, apiKey: string) => new OpenAICompletionsLLM(model, apiKey, "https://api.cerebras.ai/v1"),
+		create: (model: Model, apiKey: string) => new OpenAICompletionsLLM(model, apiKey),
 	},
 	openrouter: {
 		envKey: "OPENROUTER_API_KEY",
-		create: (model: string, apiKey: string) =>
-			new OpenAICompletionsLLM(model, apiKey, "https://openrouter.ai/api/v1"),
+		create: (model: Model, apiKey: string) => new OpenAICompletionsLLM(model, apiKey),
 	},
 } as const;
 
@@ -90,7 +88,18 @@ export function createLLM<P extends keyof typeof PROVIDERS, M extends keyof (typ
 	const key = apiKey || process.env[config.envKey];
 	if (!key) throw new Error(`No API key provided for ${provider}. Set ${config.envKey} or pass apiKey.`);
 
-	return config.create(model as string, key) as ProviderToLLM[P];
+	return config.create(modelData, key) as ProviderToLLM[P];
+}
+
+// Helper function to get model info with type-safe model IDs
+export function getModel<P extends keyof typeof PROVIDERS>(
+	provider: P,
+	modelId: keyof (typeof PROVIDERS)[P]["models"],
+): Model | undefined {
+	const providerData = PROVIDERS[provider];
+	if (!providerData) return undefined;
+	const models = providerData.models as Record<string, Model>;
+	return models[modelId as string];
 }
 
 // Re-export Model type for convenience

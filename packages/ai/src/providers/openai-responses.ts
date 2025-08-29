@@ -11,6 +11,7 @@ import type {
 	LLM,
 	LLMOptions,
 	Message,
+	Model,
 	StopReason,
 	TokenUsage,
 	Tool,
@@ -24,9 +25,9 @@ export interface OpenAIResponsesLLMOptions extends LLMOptions {
 
 export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 	private client: OpenAI;
-	private model: string;
+	private modelInfo: Model;
 
-	constructor(model: string, apiKey?: string, baseUrl?: string) {
+	constructor(model: Model, apiKey?: string) {
 		if (!apiKey) {
 			if (!process.env.OPENAI_API_KEY) {
 				throw new Error(
@@ -35,8 +36,12 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			}
 			apiKey = process.env.OPENAI_API_KEY;
 		}
-		this.client = new OpenAI({ apiKey, baseURL: baseUrl });
-		this.model = model;
+		this.client = new OpenAI({ apiKey, baseURL: model.baseUrl });
+		this.modelInfo = model;
+	}
+
+	getModel(): Model {
+		return this.modelInfo;
 	}
 
 	async complete(request: Context, options?: OpenAIResponsesLLMOptions): Promise<AssistantMessage> {
@@ -44,7 +49,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			const input = this.convertToInput(request.messages, request.systemPrompt);
 
 			const params: ResponseCreateParamsStreaming = {
-				model: this.model,
+				model: this.modelInfo.id,
 				input,
 				stream: true,
 			};
@@ -62,7 +67,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			}
 
 			// Add reasoning options for models that support it
-			if (this.supportsReasoning() && (options?.reasoningEffort || options?.reasoningSummary)) {
+			if (this.modelInfo?.reasoning && (options?.reasoningEffort || options?.reasoningSummary)) {
 				params.reasoning = {
 					effort: options?.reasoningEffort || "medium",
 					summary: options?.reasoningSummary || "auto",
@@ -145,7 +150,8 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				else if (event.type === "error") {
 					return {
 						role: "assistant",
-						model: this.model,
+						provider: this.modelInfo.provider,
+						model: this.modelInfo.id,
 						usage,
 						stopReason: "error",
 						error: `Code ${event.code}: ${event.message}` || "Unknown error",
@@ -159,14 +165,16 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				thinking: thinking || undefined,
 				thinkingSignature: JSON.stringify(reasoningItems) || undefined,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage,
 				stopReason,
 			};
 		} catch (error) {
 			return {
 				role: "assistant",
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage: {
 					input: 0,
 					output: 0,
@@ -184,7 +192,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 
 		// Add system prompt if provided
 		if (systemPrompt) {
-			const role = this.supportsReasoning() ? "developer" : "system";
+			const role = this.modelInfo?.reasoning ? "developer" : "system";
 			input.push({
 				role,
 				content: systemPrompt,
@@ -259,15 +267,5 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			default:
 				return "stop";
 		}
-	}
-
-	private supportsReasoning(): boolean {
-		// TODO base on models.dev
-		return (
-			this.model.includes("o1") ||
-			this.model.includes("o3") ||
-			this.model.includes("gpt-5") ||
-			this.model.includes("gpt-4o")
-		);
 	}
 }

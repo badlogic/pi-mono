@@ -11,6 +11,7 @@ import type {
 	LLM,
 	LLMOptions,
 	Message,
+	Model,
 	StopReason,
 	TokenUsage,
 	Tool,
@@ -27,9 +28,9 @@ export interface GoogleLLMOptions extends LLMOptions {
 
 export class GoogleLLM implements LLM<GoogleLLMOptions> {
 	private client: GoogleGenAI;
-	private model: string;
+	private model: Model;
 
-	constructor(model: string, apiKey?: string) {
+	constructor(model: Model, apiKey?: string) {
 		if (!apiKey) {
 			if (!process.env.GEMINI_API_KEY) {
 				throw new Error(
@@ -40,6 +41,10 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 		}
 		this.client = new GoogleGenAI({ apiKey });
 		this.model = model;
+	}
+
+	getModel(): Model {
+		return this.model;
 	}
 
 	async complete(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
@@ -71,8 +76,8 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 				};
 			}
 
-			// Add thinking config if enabled
-			if (options?.thinking?.enabled) {
+			// Add thinking config if enabled and model supports it
+			if (options?.thinking?.enabled && this.model.reasoning) {
 				config.thinkingConfig = {
 					includeThoughts: true,
 					...(options.thinking.budgetTokens !== undefined && { thinkingBudget: options.thinking.budgetTokens }),
@@ -81,7 +86,7 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 
 			// Build the request parameters
 			const params: GenerateContentParameters = {
-				model: this.model,
+				model: this.model.id,
 				contents,
 				config,
 			};
@@ -207,14 +212,16 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 				thinking: thinking || undefined,
 				thinkingSignature: thoughtSignature,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-				model: this.model,
+				provider: this.model.provider,
+				model: this.model.id,
 				usage,
 				stopReason,
 			};
 		} catch (error) {
 			return {
 				role: "assistant",
-				model: this.model,
+				provider: this.model.provider,
+				model: this.model.id,
 				usage: {
 					input: 0,
 					output: 0,

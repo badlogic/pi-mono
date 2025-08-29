@@ -10,6 +10,7 @@ export const PROVIDERS = {
 				id: "deepseek-r1-distill-llama-70b",
 				name: "DeepSeek R1 Distill Llama 70B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -25,6 +26,7 @@ export const PROVIDERS = {
 				id: "llama3-70b-8192",
 				name: "Llama 3 70B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -40,6 +42,7 @@ export const PROVIDERS = {
 				id: "llama-3.3-70b-versatile",
 				name: "Llama 3.3 70B Versatile",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -55,6 +58,7 @@ export const PROVIDERS = {
 				id: "llama-3.1-8b-instant",
 				name: "Llama 3.1 8B Instant",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -70,6 +74,7 @@ export const PROVIDERS = {
 				id: "qwen-qwq-32b",
 				name: "Qwen QwQ 32B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -85,6 +90,7 @@ export const PROVIDERS = {
 				id: "gemma2-9b-it",
 				name: "Gemma 2 9B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -100,6 +106,7 @@ export const PROVIDERS = {
 				id: "mistral-saba-24b",
 				name: "Mistral Saba 24B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -115,6 +122,7 @@ export const PROVIDERS = {
 				id: "llama3-8b-8192",
 				name: "Llama 3 8B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -130,6 +138,7 @@ export const PROVIDERS = {
 				id: "openai/gpt-oss-120b",
 				name: "GPT OSS 120B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -145,6 +154,7 @@ export const PROVIDERS = {
 				id: "openai/gpt-oss-20b",
 				name: "GPT OSS 20B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -160,6 +170,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-maverick-17b-128e-instruct",
 				name: "Llama 4 Maverick 17B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -175,6 +186,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-scout-17b-16e-instruct",
 				name: "Llama 4 Scout 17B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -190,6 +202,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-32b",
 				name: "Qwen3 32B",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -205,6 +218,7 @@ export const PROVIDERS = {
 				id: "moonshotai/kimi-k2-instruct",
 				name: "Kimi K2 Instruct",
 				provider: "groq",
+				baseUrl: "https://api.groq.com/openai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -224,6 +238,7 @@ export const PROVIDERS = {
 				id: "qwen-3-235b-a22b-instruct-2507",
 				name: "Qwen 3 235B Instruct",
 				provider: "cerebras",
+				baseUrl: "https://api.cerebras.ai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -239,6 +254,7 @@ export const PROVIDERS = {
 				id: "gpt-oss-120b",
 				name: "GPT OSS 120B",
 				provider: "cerebras",
+				baseUrl: "https://api.cerebras.ai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -254,6 +270,7 @@ export const PROVIDERS = {
 				id: "qwen-3-coder-480b",
 				name: "Qwen 3 Coder 480B",
 				provider: "cerebras",
+				baseUrl: "https://api.cerebras.ai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -273,6 +290,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-30b-a3b-thinking-2507",
 				name: "Qwen: Qwen3 30B A3B Thinking 2507",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -288,6 +306,7 @@ export const PROVIDERS = {
 				id: "nousresearch/hermes-4-70b",
 				name: "Nous: Hermes 4 70B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -303,6 +322,7 @@ export const PROVIDERS = {
 				id: "nousresearch/hermes-4-405b",
 				name: "Nous: Hermes 4 405B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -318,6 +338,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-chat-v3.1:free",
 				name: "DeepSeek: DeepSeek V3.1 (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -333,6 +354,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-chat-v3.1",
 				name: "DeepSeek: DeepSeek V3.1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -348,6 +370,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-medium-3.1",
 				name: "Mistral: Mistral Medium 3.1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -363,6 +386,7 @@ export const PROVIDERS = {
 				id: "z-ai/glm-4.5v",
 				name: "Z.AI: GLM 4.5V",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text", "image"],
 				cost: {
@@ -378,6 +402,7 @@ export const PROVIDERS = {
 				id: "ai21/jamba-mini-1.7",
 				name: "AI21: Jamba Mini 1.7",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -393,6 +418,7 @@ export const PROVIDERS = {
 				id: "ai21/jamba-large-1.7",
 				name: "AI21: Jamba Large 1.7",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -408,6 +434,7 @@ export const PROVIDERS = {
 				id: "mistralai/codestral-2508",
 				name: "Mistral: Codestral 2508",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -423,6 +450,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-coder-30b-a3b-instruct",
 				name: "Qwen: Qwen3 Coder 30B A3B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -438,6 +466,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-30b-a3b-instruct-2507",
 				name: "Qwen: Qwen3 30B A3B Instruct 2507",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -453,6 +482,7 @@ export const PROVIDERS = {
 				id: "z-ai/glm-4.5",
 				name: "Z.AI: GLM 4.5",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -468,6 +498,7 @@ export const PROVIDERS = {
 				id: "z-ai/glm-4.5-air:free",
 				name: "Z.AI: GLM 4.5 Air (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -483,6 +514,7 @@ export const PROVIDERS = {
 				id: "z-ai/glm-4.5-air",
 				name: "Z.AI: GLM 4.5 Air",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -498,6 +530,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-235b-a22b-thinking-2507",
 				name: "Qwen: Qwen3 235B A22B Thinking 2507",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -513,6 +546,7 @@ export const PROVIDERS = {
 				id: "z-ai/glm-4-32b",
 				name: "Z.AI: GLM 4 32B ",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -528,6 +562,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-coder:free",
 				name: "Qwen: Qwen3 Coder 480B A35B (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -543,6 +578,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-coder",
 				name: "Qwen: Qwen3 Coder 480B A35B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -558,6 +594,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-235b-a22b-2507",
 				name: "Qwen: Qwen3 235B A22B Instruct 2507",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -573,6 +610,7 @@ export const PROVIDERS = {
 				id: "moonshotai/kimi-k2:free",
 				name: "MoonshotAI: Kimi K2 (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -588,6 +626,7 @@ export const PROVIDERS = {
 				id: "moonshotai/kimi-k2",
 				name: "MoonshotAI: Kimi K2",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -603,6 +642,7 @@ export const PROVIDERS = {
 				id: "mistralai/devstral-medium",
 				name: "Mistral: Devstral Medium",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -618,6 +658,7 @@ export const PROVIDERS = {
 				id: "mistralai/devstral-small",
 				name: "Mistral: Devstral Small 1.1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -633,6 +674,7 @@ export const PROVIDERS = {
 				id: "inception/mercury",
 				name: "Inception: Mercury",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -648,6 +690,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small-3.2-24b-instruct:free",
 				name: "Mistral: Mistral Small 3.2 24B (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -663,6 +706,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small-3.2-24b-instruct",
 				name: "Mistral: Mistral Small 3.2 24B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -678,6 +722,7 @@ export const PROVIDERS = {
 				id: "minimax/minimax-m1",
 				name: "MiniMax: MiniMax M1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -693,6 +738,7 @@ export const PROVIDERS = {
 				id: "mistralai/magistral-small-2506",
 				name: "Mistral: Magistral Small 2506",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -708,6 +754,7 @@ export const PROVIDERS = {
 				id: "mistralai/magistral-medium-2506",
 				name: "Mistral: Magistral Medium 2506",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -723,6 +770,7 @@ export const PROVIDERS = {
 				id: "mistralai/magistral-medium-2506:thinking",
 				name: "Mistral: Magistral Medium 2506 (thinking)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -738,6 +786,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-r1-0528",
 				name: "DeepSeek: R1 0528",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -753,6 +802,7 @@ export const PROVIDERS = {
 				id: "mistralai/devstral-small-2505:free",
 				name: "Mistral: Devstral Small 2505 (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -768,6 +818,7 @@ export const PROVIDERS = {
 				id: "mistralai/devstral-small-2505",
 				name: "Mistral: Devstral Small 2505",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -783,6 +834,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.3-8b-instruct:free",
 				name: "Meta: Llama 3.3 8B Instruct (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -798,6 +850,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-medium-3",
 				name: "Mistral: Mistral Medium 3",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -813,6 +866,7 @@ export const PROVIDERS = {
 				id: "arcee-ai/virtuoso-large",
 				name: "Arcee AI: Virtuoso Large",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -828,6 +882,7 @@ export const PROVIDERS = {
 				id: "inception/mercury-coder",
 				name: "Inception: Mercury Coder",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -843,6 +898,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-4b:free",
 				name: "Qwen: Qwen3 4B (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -858,6 +914,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-30b-a3b",
 				name: "Qwen: Qwen3 30B A3B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -873,6 +930,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-14b",
 				name: "Qwen: Qwen3 14B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -888,6 +946,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-32b",
 				name: "Qwen: Qwen3 32B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -903,6 +962,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-235b-a22b:free",
 				name: "Qwen: Qwen3 235B A22B (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -918,6 +978,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen3-235b-a22b",
 				name: "Qwen: Qwen3 235B A22B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -933,6 +994,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-maverick:free",
 				name: "Meta: Llama 4 Maverick (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -948,6 +1010,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-maverick",
 				name: "Meta: Llama 4 Maverick",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -963,6 +1026,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-scout:free",
 				name: "Meta: Llama 4 Scout (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -978,6 +1042,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-4-scout",
 				name: "Meta: Llama 4 Scout",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -993,6 +1058,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-chat-v3-0324:free",
 				name: "DeepSeek: DeepSeek V3 0324 (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1008,6 +1074,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-chat-v3-0324",
 				name: "DeepSeek: DeepSeek V3 0324",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1023,6 +1090,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small-3.1-24b-instruct:free",
 				name: "Mistral: Mistral Small 3.1 24B (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1038,6 +1106,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small-3.1-24b-instruct",
 				name: "Mistral: Mistral Small 3.1 24B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1053,6 +1122,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-saba",
 				name: "Mistral: Saba",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1068,6 +1138,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen-turbo",
 				name: "Qwen: Qwen-Turbo",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1083,6 +1154,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen-plus",
 				name: "Qwen: Qwen-Plus",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1098,6 +1170,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen-max",
 				name: "Qwen: Qwen-Max ",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1113,6 +1186,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small-24b-instruct-2501",
 				name: "Mistral: Mistral Small 3",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1128,6 +1202,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-r1-distill-llama-70b",
 				name: "DeepSeek: R1 Distill Llama 70B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -1143,6 +1218,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-r1",
 				name: "DeepSeek: R1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -1158,6 +1234,7 @@ export const PROVIDERS = {
 				id: "mistralai/codestral-2501",
 				name: "Mistral: Codestral 2501",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1173,6 +1250,7 @@ export const PROVIDERS = {
 				id: "deepseek/deepseek-chat",
 				name: "DeepSeek: DeepSeek V3",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1188,6 +1266,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.3-70b-instruct:free",
 				name: "Meta: Llama 3.3 70B Instruct (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1203,6 +1282,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.3-70b-instruct",
 				name: "Meta: Llama 3.3 70B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1218,6 +1298,7 @@ export const PROVIDERS = {
 				id: "amazon/nova-lite-v1",
 				name: "Amazon: Nova Lite 1.0",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1233,6 +1314,7 @@ export const PROVIDERS = {
 				id: "amazon/nova-micro-v1",
 				name: "Amazon: Nova Micro 1.0",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1248,6 +1330,7 @@ export const PROVIDERS = {
 				id: "amazon/nova-pro-v1",
 				name: "Amazon: Nova Pro 1.0",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1263,6 +1346,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-large-2411",
 				name: "Mistral Large 2411",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1278,6 +1362,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-large-2407",
 				name: "Mistral Large 2407",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1293,6 +1378,7 @@ export const PROVIDERS = {
 				id: "mistralai/pixtral-large-2411",
 				name: "Mistral: Pixtral Large 2411",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1308,6 +1394,7 @@ export const PROVIDERS = {
 				id: "thedrummer/unslopnemo-12b",
 				name: "TheDrummer: UnslopNemo 12B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1323,6 +1410,7 @@ export const PROVIDERS = {
 				id: "mistralai/ministral-8b",
 				name: "Mistral: Ministral 8B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1338,6 +1426,7 @@ export const PROVIDERS = {
 				id: "nvidia/llama-3.1-nemotron-70b-instruct",
 				name: "NVIDIA: Llama 3.1 Nemotron 70B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1353,6 +1442,7 @@ export const PROVIDERS = {
 				id: "thedrummer/rocinante-12b",
 				name: "TheDrummer: Rocinante 12B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1368,6 +1458,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.2-3b-instruct",
 				name: "Meta: Llama 3.2 3B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1383,6 +1474,7 @@ export const PROVIDERS = {
 				id: "qwen/qwen-2.5-72b-instruct",
 				name: "Qwen2.5 72B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1398,6 +1490,7 @@ export const PROVIDERS = {
 				id: "mistralai/pixtral-12b",
 				name: "Mistral: Pixtral 12B",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text", "image"],
 				cost: {
@@ -1413,6 +1506,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r-plus-08-2024",
 				name: "Cohere: Command R+ (08-2024)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1428,6 +1522,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r-08-2024",
 				name: "Cohere: Command R (08-2024)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1443,6 +1538,7 @@ export const PROVIDERS = {
 				id: "microsoft/phi-3.5-mini-128k-instruct",
 				name: "Microsoft: Phi-3.5 Mini 128K Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1458,6 +1554,7 @@ export const PROVIDERS = {
 				id: "nousresearch/hermes-3-llama-3.1-70b",
 				name: "Nous: Hermes 3 70B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1473,6 +1570,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.1-8b-instruct",
 				name: "Meta: Llama 3.1 8B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1488,6 +1586,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.1-70b-instruct",
 				name: "Meta: Llama 3.1 70B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1503,6 +1602,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3.1-405b-instruct",
 				name: "Meta: Llama 3.1 405B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1518,6 +1618,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-nemo",
 				name: "Mistral: Mistral Nemo",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1533,6 +1634,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-7b-instruct-v0.3",
 				name: "Mistral: Mistral 7B Instruct v0.3",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1548,6 +1650,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-7b-instruct:free",
 				name: "Mistral: Mistral 7B Instruct (free)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1563,6 +1666,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-7b-instruct",
 				name: "Mistral: Mistral 7B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1578,6 +1682,7 @@ export const PROVIDERS = {
 				id: "microsoft/phi-3-mini-128k-instruct",
 				name: "Microsoft: Phi-3 Mini 128K Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1593,6 +1698,7 @@ export const PROVIDERS = {
 				id: "microsoft/phi-3-medium-128k-instruct",
 				name: "Microsoft: Phi-3 Medium 128K Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1608,6 +1714,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3-70b-instruct",
 				name: "Meta: Llama 3 70B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1623,6 +1730,7 @@ export const PROVIDERS = {
 				id: "meta-llama/llama-3-8b-instruct",
 				name: "Meta: Llama 3 8B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1638,6 +1746,7 @@ export const PROVIDERS = {
 				id: "mistralai/mixtral-8x22b-instruct",
 				name: "Mistral: Mixtral 8x22B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1653,6 +1762,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r-plus",
 				name: "Cohere: Command R+",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1668,6 +1778,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r-plus-04-2024",
 				name: "Cohere: Command R+ (04-2024)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1683,6 +1794,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r",
 				name: "Cohere: Command R",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1698,6 +1810,7 @@ export const PROVIDERS = {
 				id: "cohere/command-r-03-2024",
 				name: "Cohere: Command R (03-2024)",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1713,6 +1826,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-large",
 				name: "Mistral Large",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1728,6 +1842,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-tiny",
 				name: "Mistral Tiny",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1743,6 +1858,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-small",
 				name: "Mistral Small",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1758,6 +1874,7 @@ export const PROVIDERS = {
 				id: "mistralai/mixtral-8x7b-instruct",
 				name: "Mistral: Mixtral 8x7B Instruct",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1773,6 +1890,7 @@ export const PROVIDERS = {
 				id: "mistralai/mistral-7b-instruct-v0.1",
 				name: "Mistral: Mistral 7B Instruct v0.1",
 				provider: "openrouter",
+				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1792,6 +1910,7 @@ export const PROVIDERS = {
 				id: "grok-code-fast-1",
 				name: "xAI: Grok Code Fast 1",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -1807,6 +1926,7 @@ export const PROVIDERS = {
 				id: "grok-4",
 				name: "xAI: Grok 4",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: true,
 				input: ["text", "image"],
 				cost: {
@@ -1822,6 +1942,7 @@ export const PROVIDERS = {
 				id: "grok-3-mini",
 				name: "xAI: Grok 3 Mini",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -1837,6 +1958,7 @@ export const PROVIDERS = {
 				id: "grok-3",
 				name: "xAI: Grok 3",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1852,6 +1974,7 @@ export const PROVIDERS = {
 				id: "grok-3-mini-beta",
 				name: "xAI: Grok 3 Mini Beta",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: {
@@ -1867,6 +1990,7 @@ export const PROVIDERS = {
 				id: "grok-3-beta",
 				name: "xAI: Grok 3 Beta",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -1882,6 +2006,7 @@ export const PROVIDERS = {
 				id: "grok-2-1212",
 				name: "xAI: Grok 2 1212",
 				provider: "xai",
+				baseUrl: "https://api.x.ai/v1",
 				reasoning: false,
 				input: ["text"],
 				cost: {
@@ -2456,9 +2581,24 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 64000,
 			} satisfies Model,
+			"claude-3-5-haiku-20241022": {
+				id: "claude-3-5-haiku-20241022",
+				name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+				provider: "anthropic",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: {
+					input: 0.7999999999999999,
+					output: 4,
+					cacheRead: 0.08,
+					cacheWrite: 1,
+				},
+				contextWindow: 200000,
+				maxTokens: 8192,
+			} satisfies Model,
 			"claude-3-5-haiku-latest": {
 				id: "claude-3-5-haiku-latest",
-				name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+				name: "Anthropic: Claude 3.5 Haiku",
 				provider: "anthropic",
 				reasoning: false,
 				input: ["text", "image"],
@@ -2486,8 +2626,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 8192,
 			} satisfies Model,
-			"claude-3.5-sonnet-20240620": {
-				id: "claude-3.5-sonnet-20240620",
+			"claude-3-5-sonnet-20240620": {
+				id: "claude-3-5-sonnet-20240620",
 				name: "Anthropic: Claude 3.5 Sonnet (2024-06-20)",
 				provider: "anthropic",
 				reasoning: false,

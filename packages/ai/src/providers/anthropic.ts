@@ -11,6 +11,7 @@ import type {
 	LLM,
 	LLMOptions,
 	Message,
+	Model,
 	StopReason,
 	TokenUsage,
 	ToolCall,
@@ -26,10 +27,10 @@ export interface AnthropicLLMOptions extends LLMOptions {
 
 export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 	private client: Anthropic;
-	private model: string;
+	private modelInfo: Model;
 	private isOAuthToken: boolean = false;
 
-	constructor(model: string, apiKey?: string, baseUrl?: string) {
+	constructor(model: Model, apiKey?: string) {
 		if (!apiKey) {
 			if (!process.env.ANTHROPIC_API_KEY) {
 				throw new Error(
@@ -45,13 +46,17 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			};
 
 			process.env.ANTHROPIC_API_KEY = undefined;
-			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: baseUrl, defaultHeaders });
+			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: model.baseUrl, defaultHeaders });
 			this.isOAuthToken = true;
 		} else {
-			this.client = new Anthropic({ apiKey, baseURL: baseUrl });
+			this.client = new Anthropic({ apiKey, baseURL: model.baseUrl });
 			this.isOAuthToken = false;
 		}
-		this.model = model;
+		this.modelInfo = model;
+	}
+
+	getModel(): Model {
+		return this.modelInfo;
 	}
 
 	async complete(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
@@ -59,7 +64,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			const messages = this.convertMessages(context.messages);
 
 			const params: MessageCreateParamsStreaming = {
-				model: this.model,
+				model: this.modelInfo.id,
 				messages,
 				max_tokens: options?.maxTokens || 4096,
 				stream: true,
@@ -97,7 +102,8 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				params.tools = this.convertTools(context.tools);
 			}
 
-			if (options?.thinking?.enabled) {
+			// Only enable thinking if the model supports it
+			if (options?.thinking?.enabled && this.modelInfo.reasoning) {
 				params.thinking = {
 					type: "enabled",
 					budget_tokens: options.thinking.budgetTokens || 1024,
@@ -194,14 +200,16 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				thinking,
 				thinkingSignature,
 				toolCalls,
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage,
 				stopReason: this.mapStopReason(msg.stop_reason),
 			};
 		} catch (error) {
 			return {
 				role: "assistant",
-				model: this.model,
+				provider: this.modelInfo.provider,
+				model: this.modelInfo.id,
 				usage: {
 					input: 0,
 					output: 0,

@@ -1,11 +1,11 @@
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
-import { GoogleLLM } from "../src/providers/gemini.js";
+import { GoogleLLM } from "../src/providers/google.js";
 import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
-import type { LLM, LLMOptions, Context, Tool, AssistantMessage } from "../src/types.js";
+import type { LLM, LLMOptions, Context, Tool, AssistantMessage, Model } from "../src/types.js";
 import { spawn, ChildProcess, execSync } from "child_process";
-import { createLLM } from "../src/models.js";
+import { createLLM, getModel } from "../src/models.js";
 
 // Calculator tool definition (same as examples)
 const calculatorTool: Tool = {
@@ -176,7 +176,7 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
         const response = await llm.complete(context, thinkingOptions);
         context.messages.push(response);
 
-        if (response.content) {
+        if (response.stopReason === "stop" && response.content) {
             finalResponse = response;
             break;
         }
@@ -217,7 +217,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: GoogleLLM;
 
         beforeAll(() => {
-            llm = new GoogleLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY!);
+            llm = new GoogleLLM(getModel("google", "gemini-2.5-flash")!, process.env.GEMINI_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -245,7 +245,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("gpt-4o-mini", process.env.OPENAI_API_KEY!);
+            llm = new OpenAICompletionsLLM(getModel("openai", "gpt-4o-mini")!, process.env.OPENAI_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -265,7 +265,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAIResponsesLLM;
 
         beforeAll(() => {
-            llm = new OpenAIResponsesLLM("gpt-5-mini", process.env.OPENAI_API_KEY!);
+            llm = new OpenAIResponsesLLM(getModel("openai", "gpt-5-mini")!, process.env.OPENAI_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -293,7 +293,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: AnthropicLLM;
 
         beforeAll(() => {
-            llm = new AnthropicLLM("claude-sonnet-4-0", process.env.ANTHROPIC_OAUTH_TOKEN!);
+            llm = new AnthropicLLM(getModel("anthropic", "claude-sonnet-4-0")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
         });
 
         it("should complete basic text generation", async () => {
@@ -321,7 +321,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("grok-code-fast-1", process.env.XAI_API_KEY!, "https://api.x.ai/v1");
+            llm = new OpenAICompletionsLLM(getModel("xai", "grok-code-fast-1")!, process.env.XAI_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -349,7 +349,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("openai/gpt-oss-20b", process.env.GROQ_API_KEY!, "https://api.groq.com/openai/v1");
+            llm = new OpenAICompletionsLLM(getModel("groq", "openai/gpt-oss-20b")!, process.env.GROQ_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -377,7 +377,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("gpt-oss-120b", process.env.CEREBRAS_API_KEY!, "https://api.cerebras.ai/v1");
+            llm = new OpenAICompletionsLLM(getModel("cerebras", "gpt-oss-120b")!, process.env.CEREBRAS_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -405,7 +405,7 @@ describe("AI Providers E2E Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM("z-ai/glm-4.5", process.env.OPENROUTER_API_KEY!, "https://openrouter.ai/api/v1");
+            llm = new OpenAICompletionsLLM(getModel("openrouter", "z-ai/glm-4.5")!, process.env.OPENROUTER_API_KEY!);;
         });
 
         it("should complete basic text generation", async () => {
@@ -479,7 +479,23 @@ describe("AI Providers E2E Tests", () => {
                 setTimeout(checkServer, 1000); // Initial delay
             });
 
-            llm = new OpenAICompletionsLLM("gpt-oss:20b", "dummy", "http://localhost:11434/v1");
+            const model: Model = {
+                id: "gpt-oss:20b",
+                provider: "ollama",
+                baseUrl: "http://localhost:11434/v1",
+                reasoning: true,
+                input: ["text"],
+                contextWindow: 128000,
+                maxTokens: 16000,
+                cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                },
+                name: "Ollama GPT-OSS 20B"
+            }
+            llm = new OpenAICompletionsLLM(model, "dummy");
         }, 30000); // 30 second timeout for setup
 
         afterAll(() => {
