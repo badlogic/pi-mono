@@ -5,6 +5,7 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 } from "@google/genai";
+import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
@@ -13,9 +14,9 @@ import type {
 	Message,
 	Model,
 	StopReason,
-	TokenUsage,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 
 export interface GoogleLLMOptions extends LLMOptions {
@@ -97,11 +98,12 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 			let thinking = "";
 			let thoughtSignature: string | undefined;
 			const toolCalls: ToolCall[] = [];
-			let usage: TokenUsage = {
+			let usage: Usage = {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
 			let stopReason: StopReason = "stop";
 			let inTextBlock = false;
@@ -179,6 +181,13 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 							(chunk.usageMetadata.candidatesTokenCount || 0) + (chunk.usageMetadata.thoughtsTokenCount || 0),
 						cacheRead: chunk.usageMetadata.cachedContentTokenCount || 0,
 						cacheWrite: 0,
+						cost: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							total: 0,
+						},
 					};
 				}
 			}
@@ -202,6 +211,9 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 				const signature = `gemini_thinking_${data.length}_${Date.now()}`;
 				thoughtSignature = Buffer.from(signature).toString("base64");
 			}
+
+			// Calculate cost
+			calculateCost(this.model, usage);
 
 			// Usage metadata is in the last chunk
 			// Already captured during streaming
@@ -227,6 +239,7 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 					output: 0,
 					cacheRead: 0,
 					cacheWrite: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),

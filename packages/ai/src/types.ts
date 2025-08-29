@@ -28,7 +28,7 @@ export interface AssistantMessage {
 	}[];
 	provider: string;
 	model: string;
-	usage: TokenUsage;
+	usage: Usage;
 
 	stopReason: StopReason;
 	error?: string | Error;
@@ -60,7 +60,7 @@ export type Event =
 	| { type: "text"; content: string; delta: string }
 	| { type: "thinking"; content: string; delta: string }
 	| { type: "toolCall"; toolCall: ToolCall }
-	| { type: "usage"; usage: TokenUsage }
+	| { type: "usage"; usage: Usage }
 	| { type: "done"; reason: StopReason; message: AssistantMessage }
 	| { type: "error"; error: Error };
 
@@ -70,12 +70,12 @@ export interface ToolCall {
 	arguments: Record<string, any>;
 }
 
-export interface TokenUsage {
+export interface Usage {
 	input: number;
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
-	cost?: {
+	cost: {
 		input: number;
 		output: number;
 		cacheRead: number;

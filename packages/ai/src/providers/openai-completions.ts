@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionChunk, ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
@@ -8,9 +9,9 @@ import type {
 	Message,
 	Model,
 	StopReason,
-	TokenUsage,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 
 export interface OpenAICompletionsLLMOptions extends LLMOptions {
@@ -87,11 +88,12 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			let reasoningContent = "";
 			let reasoningField: "reasoning" | "reasoning_content" | null = null;
 			const parsedToolCalls: { id: string; name: string; arguments: string }[] = [];
-			let usage: TokenUsage = {
+			let usage: Usage = {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
 			let finishReason: ChatCompletionChunk.Choice["finish_reason"] | null = null;
 			let blockType: "text" | "thinking" | null = null;
@@ -104,6 +106,13 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							(chunk.usage.completion_tokens_details?.reasoning_tokens || 0),
 						cacheRead: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
 						cacheWrite: 0,
+						cost: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							total: 0,
+						},
 					};
 				}
 
@@ -206,6 +215,9 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				arguments: JSON.parse(tc.arguments),
 			}));
 
+			// Calculate cost
+			calculateCost(this.modelInfo, usage);
+
 			return {
 				role: "assistant",
 				content: content || undefined,
@@ -227,6 +239,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 					output: 0,
 					cacheRead: 0,
 					cacheWrite: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),

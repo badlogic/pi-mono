@@ -13,9 +13,9 @@ import type {
 	Message,
 	Model,
 	StopReason,
-	TokenUsage,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 
 export interface OpenAIResponsesLLMOptions extends LLMOptions {
@@ -83,11 +83,12 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			let thinking = "";
 			const toolCalls: ToolCall[] = [];
 			const reasoningItems: ResponseReasoningItem[] = [];
-			let usage: TokenUsage = {
+			let usage: Usage = {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
 			let stopReason: StopReason = "stop";
 
@@ -137,6 +138,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 							output: response.usage.output_tokens || 0,
 							cacheRead: response.usage.input_tokens_details?.cached_tokens || 0,
 							cacheWrite: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 						};
 					}
 
@@ -180,6 +182,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 					output: 0,
 					cacheRead: 0,
 					cacheWrite: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),

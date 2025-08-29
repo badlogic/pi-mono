@@ -5,6 +5,7 @@ import type {
 	MessageParam,
 	Tool,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
@@ -13,8 +14,8 @@ import type {
 	Message,
 	Model,
 	StopReason,
-	TokenUsage,
 	ToolCall,
+	Usage,
 } from "../types.js";
 
 export interface AnthropicLLMOptions extends LLMOptions {
@@ -186,13 +187,20 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 					name: block.name,
 					arguments: block.input as Record<string, any>,
 				}));
-			const usage: TokenUsage = {
+			const usage: Usage = {
 				input: msg.usage.input_tokens,
 				output: msg.usage.output_tokens,
 				cacheRead: msg.usage.cache_read_input_tokens || 0,
 				cacheWrite: msg.usage.cache_creation_input_tokens || 0,
-				// TODO add cost
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0,
+				},
 			};
+			calculateCost(this.modelInfo, usage);
 
 			return {
 				role: "assistant",
@@ -215,6 +223,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 					output: 0,
 					cacheRead: 0,
 					cacheWrite: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),

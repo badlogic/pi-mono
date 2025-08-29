@@ -3,7 +3,7 @@ import { AnthropicLLM } from "./providers/anthropic.js";
 import { GoogleLLM } from "./providers/google.js";
 import { OpenAICompletionsLLM } from "./providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "./providers/openai-responses.js";
-import type { Model } from "./types.js";
+import type { Model, Usage } from "./types.js";
 
 // Provider configuration with factory functions
 export const PROVIDER_CONFIG = {
@@ -100,6 +100,15 @@ export function getModel<P extends keyof typeof PROVIDERS>(
 	if (!providerData) return undefined;
 	const models = providerData.models as Record<string, Model>;
 	return models[modelId as string];
+}
+
+export function calculateCost(model: Model, usage: Usage) {
+	usage.cost.input = (model.cost.input / 1000000) * usage.input;
+	usage.cost.output = (model.cost.output / 1000000) * usage.output;
+	usage.cost.cacheRead = (model.cost.cacheRead / 1000000) * usage.cacheRead;
+	usage.cost.cacheWrite = (model.cost.cacheWrite / 1000000) * usage.cacheWrite;
+	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+	return usage.cost;
 }
 
 // Re-export Model type for convenience
