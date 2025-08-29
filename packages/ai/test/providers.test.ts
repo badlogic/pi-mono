@@ -538,4 +538,32 @@ describe("AI Providers E2E Tests", () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
         });
     });
+
+    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (Haiku 3.5)", () => {
+        let llm: AnthropicLLM;
+
+        beforeAll(() => {
+            llm = createLLM("anthropic", "claude-3-5-haiku-latest");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {thinking: {enabled: true}}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {thinking: {enabled: true}});
+        });
+    });
 });

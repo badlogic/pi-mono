@@ -2381,8 +2381,8 @@ export const PROVIDERS = {
 	},
 	anthropic: {
 		models: {
-			"claude-opus-4.1": {
-				id: "claude-opus-4.1",
+			"claude-opus-4-1": {
+				id: "claude-opus-4-1",
 				name: "Anthropic: Claude Opus 4.1",
 				provider: "anthropic",
 				reasoning: true,
@@ -2396,8 +2396,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 32000,
 			} satisfies Model,
-			"claude-opus-4": {
-				id: "claude-opus-4",
+			"claude-opus-4-0": {
+				id: "claude-opus-4-0",
 				name: "Anthropic: Claude Opus 4",
 				provider: "anthropic",
 				reasoning: true,
@@ -2411,8 +2411,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 32000,
 			} satisfies Model,
-			"claude-sonnet-4": {
-				id: "claude-sonnet-4",
+			"claude-sonnet-4-0": {
+				id: "claude-sonnet-4-0",
 				name: "Anthropic: Claude Sonnet 4",
 				provider: "anthropic",
 				reasoning: true,
@@ -2426,8 +2426,8 @@ export const PROVIDERS = {
 				contextWindow: 1000000,
 				maxTokens: 64000,
 			} satisfies Model,
-			"claude-3.7-sonnet": {
-				id: "claude-3.7-sonnet",
+			"claude-3-7-sonnet-latest": {
+				id: "claude-3-7-sonnet-latest",
 				name: "Anthropic: Claude 3.7 Sonnet",
 				provider: "anthropic",
 				reasoning: true,
@@ -2441,8 +2441,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 64000,
 			} satisfies Model,
-			"claude-3.7-sonnet:thinking": {
-				id: "claude-3.7-sonnet:thinking",
+			"claude-3-7-sonnet-latest:thinking": {
+				id: "claude-3-7-sonnet-latest:thinking",
 				name: "Anthropic: Claude 3.7 Sonnet (thinking)",
 				provider: "anthropic",
 				reasoning: true,
@@ -2456,8 +2456,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 64000,
 			} satisfies Model,
-			"claude-3.5-haiku-20241022": {
-				id: "claude-3.5-haiku-20241022",
+			"claude-3-5-haiku-latest": {
+				id: "claude-3-5-haiku-latest",
 				name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
 				provider: "anthropic",
 				reasoning: false,
@@ -2471,23 +2471,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 8192,
 			} satisfies Model,
-			"claude-3.5-haiku": {
-				id: "claude-3.5-haiku",
-				name: "Anthropic: Claude 3.5 Haiku",
-				provider: "anthropic",
-				reasoning: false,
-				input: ["text", "image"],
-				cost: {
-					input: 0.7999999999999999,
-					output: 4,
-					cacheRead: 0.08,
-					cacheWrite: 1,
-				},
-				contextWindow: 200000,
-				maxTokens: 8192,
-			} satisfies Model,
-			"claude-3.5-sonnet": {
-				id: "claude-3.5-sonnet",
+			"claude-3-5-sonnet-latest": {
+				id: "claude-3-5-sonnet-latest",
 				name: "Anthropic: Claude 3.5 Sonnet",
 				provider: "anthropic",
 				reasoning: false,
@@ -2516,8 +2501,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 8192,
 			} satisfies Model,
-			"claude-3-haiku": {
-				id: "claude-3-haiku",
+			"claude-3-haiku-20240307": {
+				id: "claude-3-haiku-20240307",
 				name: "Anthropic: Claude 3 Haiku",
 				provider: "anthropic",
 				reasoning: false,
@@ -2531,8 +2516,8 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 4096,
 			} satisfies Model,
-			"claude-3-opus": {
-				id: "claude-3-opus",
+			"claude-3-opus-20240229": {
+				id: "claude-3-opus-20240229",
 				name: "Anthropic: Claude 3 Opus",
 				provider: "anthropic",
 				reasoning: false,

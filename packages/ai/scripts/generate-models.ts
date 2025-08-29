@@ -65,7 +65,22 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 				modelKey = model.id.replace("openai/", "");
 			} else if (model.id.startsWith("anthropic/")) {
 				provider = "anthropic";
-				modelKey = model.id.replace("anthropic/", "");
+				const fullKey = model.id.replace("anthropic/", "");
+				// Map to Anthropic's preferred aliases
+				const anthropicAliases: Record<string, string> = {
+					"claude-opus-4.1": "claude-opus-4-1",
+					"claude-opus-4": "claude-opus-4-0", 
+					"claude-sonnet-4": "claude-sonnet-4-0",
+					"claude-3.7-sonnet": "claude-3-7-sonnet-latest",
+					"claude-3.7-sonnet:thinking": "claude-3-7-sonnet-latest:thinking",
+					"claude-3.5-haiku": "claude-3-5-haiku-latest",
+					"claude-3.5-haiku-20241022": "claude-3-5-haiku-latest",
+					"claude-3-haiku": "claude-3-haiku-20240307",
+					"claude-3-sonnet": "claude-3-sonnet-20240229",
+					"claude-3-opus": "claude-3-opus-20240229",
+					"claude-3.5-sonnet": "claude-3-5-sonnet-latest"
+				};
+				modelKey = anthropicAliases[fullKey] || fullKey;
 			} else if (model.id.startsWith("x-ai/")) {
 				provider = "xai";
 				modelKey = model.id.replace("x-ai/", "");
@@ -188,13 +203,17 @@ async function generateModels() {
 	// Combine models (models.dev takes priority for Groq/Cerebras)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
-	// Group by provider
-	const providers: Record<string, NormalizedModel[]> = {};
+	// Group by provider and deduplicate by model ID
+	const providers: Record<string, Record<string, NormalizedModel>> = {};
 	for (const model of allModels) {
 		if (!providers[model.provider]) {
-			providers[model.provider] = [];
+			providers[model.provider] = {};
 		}
-		providers[model.provider].push(model);
+		// Use model ID as key to automatically deduplicate
+		// Only add if not already present (models.dev takes priority over OpenRouter)
+		if (!providers[model.provider][model.id]) {
+			providers[model.provider][model.id] = model;
+		}
 	}
 
 	// Generate TypeScript file
@@ -211,7 +230,7 @@ export const PROVIDERS = {
 		output += `\t${providerId}: {\n`;
 		output += `\t\tmodels: {\n`;
 
-		for (const model of models) {
+		for (const model of Object.values(models)) {
 			output += `\t\t\t"${model.id}": {\n`;
 			output += `\t\t\t\tid: "${model.id}",\n`;
 			output += `\t\t\t\tname: "${model.name}",\n`;
@@ -254,7 +273,7 @@ export type ProviderModels = {
 	console.log(`  Reasoning-capable models: ${reasoningModels}`);
 
 	for (const [provider, models] of Object.entries(providers)) {
-		console.log(`  ${provider}: ${models.length} models`);
+		console.log(`  ${provider}: ${Object.keys(models).length} models`);
 	}
 }
 
