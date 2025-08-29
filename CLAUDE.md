@@ -1,5 +1,6 @@
 - When receiving the first user message, you MUST read the following files in full, in parallel:
     - README.md
+    - packages/ai/README.md
     - packages/tui/README.md
     - packages/agent/README.md
     - packages/pods/README.md

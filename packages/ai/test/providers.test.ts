@@ -1,11 +1,10 @@
-#!/usr/bin/env node --test
-import { describe, it, before } from "node:test";
-import assert from "node:assert";
+import { describe, it, beforeAll, afterAll, expect } from "vitest";
 import { GeminiLLM } from "../src/providers/gemini.js";
 import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
 import type { LLM, LLMOptions, Context, Tool, AssistantMessage } from "../src/types.js";
+import { spawn, ChildProcess, execSync } from "child_process";
 
 // Calculator tool definition (same as examples)
 const calculatorTool: Tool = {
@@ -36,12 +35,12 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
 
             const response = await llm.complete(context);
 
-            assert.strictEqual(response.role, "assistant");
-            assert.ok(response.content);
-            assert.ok(response.usage.input > 0);
-            assert.ok(response.usage.output > 0);
-            assert.ok(!response.error);
-            assert.ok(response.content.includes("Hello test successful"), `Response content should match exactly. Got: ${response.content}`);
+            expect(response.role).toBe("assistant");
+            expect(response.content).toBeTruthy();
+            expect(response.usage.input).toBeGreaterThan(0);
+            expect(response.usage.output).toBeGreaterThan(0);
+            expect(response.error).toBeFalsy();
+            expect(response.content).toContain("Hello test successful");
 }
 
 async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
@@ -55,11 +54,12 @@ async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
     };
 
     const response = await llm.complete(context);
-    assert.ok(response.stopReason == "toolUse", "Response should indicate tool use");
-    assert.ok(response.toolCalls && response.toolCalls.length > 0, "Response should include tool calls");
-    const toolCall = response.toolCalls[0];
-    assert.strictEqual(toolCall.name, "calculator");
-    assert.ok(toolCall.id);
+    expect(response.stopReason).toBe("toolUse");
+    expect(response.toolCalls).toBeTruthy();
+    expect(response.toolCalls!.length).toBeGreaterThan(0);
+    const toolCall = response.toolCalls![0];
+    expect(toolCall.name).toBe("calculator");
+    expect(toolCall.id).toBeTruthy();
 }
 
 async function handleStreaming<T extends LLMOptions>(llm: LLM<T>) {
@@ -77,9 +77,9 @@ async function handleStreaming<T extends LLMOptions>(llm: LLM<T>) {
         }
     } as T);
 
-    assert.ok(textChunks.length > 0);
-    assert.ok(textCompleted);
-    assert.ok(response.content);
+    expect(textChunks.length).toBeGreaterThan(0);
+    expect(textCompleted).toBe(true);
+    expect(response.content).toBeTruthy();
 }
 
 async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T, requireThinking: boolean = true) {
@@ -96,14 +96,11 @@ async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T, req
         ...options
     });
 
-    assert.ok(response.content, "Response should have content");
+    expect(response.content).toBeTruthy();
 
     // For providers that should always return thinking when enabled
     if (requireThinking) {
-        assert.ok(
-            thinkingChunks.length > 0 || response.thinking,
-            `LLM MUST return thinking content when thinking is enabled. Got ${thinkingChunks.length} streaming chars, thinking field: ${response.thinking?.length || 0} chars`
-        );
+        expect(thinkingChunks.length > 0 || !!response.thinking).toBe(true);
     }
 }
 
@@ -123,17 +120,15 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
     const firstResponse = await llm.complete(context, thinkingOptions);
 
     // Verify we got either thinking content or tool calls (or both)
-    const hasThinking = firstResponse.thinking;
+    const hasThinking = firstResponse.thinking !== undefined && firstResponse.thinking.length > 0;
     const hasToolCalls = firstResponse.toolCalls && firstResponse.toolCalls.length > 0;
 
-    assert.ok(
-        hasThinking || hasToolCalls,
-        `First turn MUST include either thinking or tool calls. Got thinking: ${hasThinking}, tool calls: ${hasToolCalls}`
-    );
+    expect(hasThinking || hasToolCalls).toBe(true);
 
     // If we got tool calls, verify they're correct
     if (hasToolCalls) {
-        assert.ok(firstResponse.toolCalls && firstResponse.toolCalls.length > 0, "First turn should include tool calls");
+        expect(firstResponse.toolCalls).toBeTruthy();
+        expect(firstResponse.toolCalls!.length).toBeGreaterThan(0);
     }
 
     // If we have thinking with tool calls, we should have thinkingSignature for proper multi-turn context
@@ -142,7 +137,7 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
         // For now, we'll just check if it exists when both are present
         // Some providers may not support thinkingSignature yet
         if (firstResponse.thinkingSignature !== undefined) {
-            assert.ok(firstResponse.thinkingSignature, "Response with thinking and tools should include thinkingSignature");
+            expect(firstResponse.thinkingSignature).toBeTruthy();
         }
     }
 
@@ -151,9 +146,9 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
 
     // Process tool calls and add results
     for (const toolCall of firstResponse.toolCalls || []) {
-        assert.strictEqual(toolCall.name, "calculator", "Tool call should be for calculator");
-        assert.ok(toolCall.id, "Tool call must have an ID");
-        assert.ok(toolCall.arguments, "Tool call must have arguments");
+        expect(toolCall.name).toBe("calculator");
+        expect(toolCall.id).toBeTruthy();
+        expect(toolCall.arguments).toBeTruthy();
 
         const { a, b, operation } = toolCall.arguments;
         let result: number;
@@ -206,22 +201,21 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
         }
     }
 
-    assert.ok(finalResponse, "Should get a final response with content");
-    assert.ok(finalResponse.content, "Final response should have content");
-    assert.strictEqual(finalResponse.role, "assistant");
+    expect(finalResponse).toBeTruthy();
+    expect(finalResponse!.content).toBeTruthy();
+    expect(finalResponse!.role).toBe("assistant");
 
     // The final response should reference the calculations
-    assert.ok(
-        finalResponse.content.includes("714") || finalResponse.content.includes("887"),
-        `Final response should include calculation results. Got: ${finalResponse.content}`
-    );
+    expect(
+        finalResponse!.content!.includes("714") || finalResponse!.content!.includes("887")
+    ).toBe(true);
 }
 
 describe("AI Providers E2E Tests", () => {
-    describe("Gemini Provider", { skip: !process.env.GEMINI_API_KEY }, () => {
+    describe.skipIf(!process.env.GEMINI_API_KEY)("Gemini Provider", () => {
         let llm: GeminiLLM;
 
-        before(() => {
+        beforeAll(() => {
             llm = new GeminiLLM("gemini-2.5-flash", process.env.GEMINI_API_KEY!);
         });
 
@@ -246,10 +240,10 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe("OpenAI Completions Provider", { skip: !process.env.OPENAI_API_KEY }, () => {
+    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
         let llm: OpenAICompletionsLLM;
 
-        before(() => {
+        beforeAll(() => {
             llm = new OpenAICompletionsLLM("gpt-4o-mini", process.env.OPENAI_API_KEY!);
         });
 
@@ -266,10 +260,10 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe("OpenAI Responses Provider", { skip: !process.env.OPENAI_API_KEY }, () => {
+    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
         let llm: OpenAIResponsesLLM;
 
-        before(() => {
+        beforeAll(() => {
             llm = new OpenAIResponsesLLM("gpt-5-mini", process.env.OPENAI_API_KEY!);
         });
 
@@ -286,8 +280,6 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            // OpenAI Responses API may not always return thinking even when requested
-            // This is model-dependent behavior
             await handleThinking(llm, {reasoningEffort: "medium"}, false);
         });
 
@@ -296,10 +288,10 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe("Anthropic Provider", { skip: !process.env.ANTHROPIC_OAUTH_TOKEN }, () => {
+    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider", () => {
         let llm: AnthropicLLM;
 
-        before(() => {
+        beforeAll(() => {
             llm = new AnthropicLLM("claude-sonnet-4-0", process.env.ANTHROPIC_OAUTH_TOKEN!);
         });
 
@@ -321,6 +313,200 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
+        });
+    });
+
+    describe.skipIf(!process.env.GROK_API_KEY)("Grok Provider (via OpenAI Completions)", () => {
+        let llm: OpenAICompletionsLLM;
+
+        beforeAll(() => {
+            llm = new OpenAICompletionsLLM("grok-code-fast-1", process.env.GROK_API_KEY!, "https://api.x.ai/v1");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
+        });
+    });
+
+    describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider (via OpenAI Completions)", () => {
+        let llm: OpenAICompletionsLLM;
+
+        beforeAll(() => {
+            llm = new OpenAICompletionsLLM("openai/gpt-oss-20b", process.env.GROQ_API_KEY!, "https://api.groq.com/openai/v1");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
+        });
+    });
+
+    describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider (via OpenAI Completions)", () => {
+        let llm: OpenAICompletionsLLM;
+
+        beforeAll(() => {
+            llm = new OpenAICompletionsLLM("gpt-oss-120b", process.env.CEREBRAS_API_KEY!, "https://api.cerebras.ai/v1");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
+        });
+    });
+
+    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (via OpenAI Completions)", () => {
+        let llm: OpenAICompletionsLLM;
+
+        beforeAll(() => {
+            llm = new OpenAICompletionsLLM("z-ai/glm-4.5", process.env.OPENROUTER_API_KEY!, "https://openrouter.ai/api/v1");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
+        });
+    });
+
+    // Check if ollama is installed
+    let ollamaInstalled = false;
+    try {
+        execSync("which ollama", { stdio: "ignore" });
+        ollamaInstalled = true;
+    } catch {
+        ollamaInstalled = false;
+    }
+
+    describe.skipIf(!ollamaInstalled)("Ollama Provider (via OpenAI Completions)", () => {
+        let llm: OpenAICompletionsLLM;
+        let ollamaProcess: ChildProcess | null = null;
+
+        beforeAll(async () => {
+            // Check if model is available, if not pull it
+            try {
+                execSync("ollama list | grep -q 'gpt-oss:20b'", { stdio: "ignore" });
+            } catch {
+                console.log("Pulling gpt-oss:20b model for Ollama tests...");
+                try {
+                    execSync("ollama pull gpt-oss:20b", { stdio: "inherit" });
+                } catch (e) {
+                    console.warn("Failed to pull gpt-oss:20b model, tests will be skipped");
+                    return;
+                }
+            }
+
+            // Start ollama server
+            ollamaProcess = spawn("ollama", ["serve"], {
+                detached: false,
+                stdio: "ignore"
+            });
+
+            // Wait for server to be ready
+            await new Promise<void>((resolve) => {
+                const checkServer = async () => {
+                    try {
+                        const response = await fetch("http://localhost:11434/api/tags");
+                        if (response.ok) {
+                            resolve();
+                        } else {
+                            setTimeout(checkServer, 500);
+                        }
+                    } catch {
+                        setTimeout(checkServer, 500);
+                    }
+                };
+                setTimeout(checkServer, 1000); // Initial delay
+            });
+
+            llm = new OpenAICompletionsLLM("gpt-oss:20b", "dummy", "http://localhost:11434/v1");
+        }, 30000); // 30 second timeout for setup
+
+        afterAll(() => {
+            // Kill ollama server
+            if (ollamaProcess) {
+                ollamaProcess.kill("SIGTERM");
+                ollamaProcess = null;
+            }
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle thinking mode", async () => {
+            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {reasoningEffort: "medium"});
         });
     });
 });

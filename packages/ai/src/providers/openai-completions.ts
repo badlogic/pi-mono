@@ -45,8 +45,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				stream_options: { include_usage: true },
 			};
 
-			// Cerebras doesn't like the "store" field
-			if (!this.client.baseURL?.includes("cerebras.ai")) {
+			// Cerebras/xAI dont like the "store" field
+			if (!this.client.baseURL?.includes("cerebras.ai") || this.client.baseURL?.includes("api.x.ai")) {
 				(params as any).store = false;
 			}
 
@@ -66,7 +66,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				params.tool_choice = options.toolChoice;
 			}
 
-			if (options?.reasoningEffort && this.isReasoningModel()) {
+			if (options?.reasoningEffort && this.isReasoningModel() && !this.model.toLowerCase().includes("grok")) {
 				params.reasoning_effort = options.reasoningEffort;
 			}
 
@@ -77,14 +77,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			let content = "";
 			let reasoningContent = "";
 			let reasoningField: "reasoning" | "reasoning_content" | null = null;
-			const toolCallsMap = new Map<
-				number,
-				{
-					id: string;
-					name: string;
-					arguments: string;
-				}
-			>();
+			const parsedToolCalls: { id: string; name: string; arguments: string }[] = [];
 			let usage: TokenUsage = {
 				input: 0,
 				output: 0,
@@ -97,7 +90,9 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				if (chunk.usage) {
 					usage = {
 						input: chunk.usage.prompt_tokens || 0,
-						output: chunk.usage.completion_tokens || 0,
+						output:
+							(chunk.usage.completion_tokens || 0) +
+							(chunk.usage.completion_tokens_details?.reasoning_tokens || 0),
 						cacheRead: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
 						cacheWrite: 0,
 					};
@@ -122,7 +117,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						blockType = "text";
 					}
 
-					// Handle LLAMA.cpp reasoning_content
+					// Handle reasoning_content field
 					if (
 						(choice.delta as any).reasoning_content !== null &&
 						(choice.delta as any).reasoning_content !== undefined
@@ -137,7 +132,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						blockType = "thinking";
 					}
 
-					// Handle Ollama reasoning field
+					// Handle reasoning field
 					if ((choice.delta as any).reasoning !== null && (choice.delta as any).reasoning !== undefined) {
 						if (blockType === "text") {
 							options?.onText?.("", true);
@@ -160,21 +155,22 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							blockType = null;
 						}
 						for (const toolCall of choice.delta.tool_calls) {
-							const index = toolCall.index;
-
-							if (!toolCallsMap.has(index)) {
-								toolCallsMap.set(index, {
+							if (
+								parsedToolCalls.length === 0 ||
+								(toolCall.id !== undefined && parsedToolCalls[parsedToolCalls.length - 1].id !== toolCall.id)
+							) {
+								parsedToolCalls.push({
 									id: toolCall.id || "",
 									name: toolCall.function?.name || "",
 									arguments: "",
 								});
 							}
 
-							const existing = toolCallsMap.get(index)!;
-							if (toolCall.id) existing.id = toolCall.id;
-							if (toolCall.function?.name) existing.name = toolCall.function.name;
+							const current = parsedToolCalls[parsedToolCalls.length - 1];
+							if (toolCall.id) current.id = toolCall.id;
+							if (toolCall.function?.name) current.name = toolCall.function.name;
 							if (toolCall.function?.arguments) {
-								existing.arguments += toolCall.function.arguments;
+								current.arguments += toolCall.function.arguments;
 							}
 						}
 					}
@@ -195,7 +191,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			}
 
 			// Convert tool calls map to array
-			const toolCalls: ToolCall[] = Array.from(toolCallsMap.values()).map((tc) => ({
+			const toolCalls: ToolCall[] = parsedToolCalls.map((tc) => ({
 				id: tc.id,
 				name: tc.name,
 				arguments: JSON.parse(tc.arguments),
@@ -232,8 +228,12 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 		// Add system prompt if provided
 		if (systemPrompt) {
-			// Cerebras doesn't like the "developer" role
-			const role = this.isReasoningModel() && !this.client.baseURL?.includes("cerebras.ai") ? "developer" : "system";
+			// Cerebras/xAi don't like the "developer" role
+			const useDeveloperRole =
+				this.isReasoningModel() &&
+				!this.client.baseURL?.includes("cerebras.ai") &&
+				!this.client.baseURL?.includes("api.x.ai");
+			const role = useDeveloperRole ? "developer" : "system";
 			params.push({ role: role, content: systemPrompt });
 		}
 
