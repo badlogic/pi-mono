@@ -53,7 +53,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 			// Cerebras/xAI dont like the "store" field
 			if (!this.modelInfo.baseUrl?.includes("cerebras.ai") && !this.modelInfo.baseUrl?.includes("api.x.ai")) {
-				(params as any).store = false;
+				params.store = false;
 			}
 
 			if (options?.maxTokens) {
