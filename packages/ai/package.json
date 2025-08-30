@@ -1,7 +1,7 @@
 {
-	"name": "@mariozechner/ai",
-	"version": "0.5.8",
-	"description": "Unified API for OpenAI, Anthropic, and Google Gemini LLM providers",
+	"name": "@mariozechner/pi-ai",
+	"version": "0.5.9",
+	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

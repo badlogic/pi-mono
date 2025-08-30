@@ -1,69 +1,230 @@
-# @mariozechner/ai
+# @mariozechner/pi-ai
 
-Unified API for OpenAI, Anthropic, and Google Gemini LLM providers with streaming, tool calling, and thinking support.
+Unified LLM API with automatic model discovery, provider configuration, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
+
+## Supported Providers
+
+- **OpenAI**
+- **Anthropic**
+- **Google**
+- **Groq**
+- **Cerebras**
+- **xAI**
+- **OpenRouter**
+- **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
 
 ```bash
-npm install @mariozechner/ai
+npm install @mariozechner/pi-ai
 ```
 
 ## Quick Start
 
 ```typescript
-import { AnthropicLLM } from '@mariozechner/ai/providers/anthropic';
-import { OpenAICompletionsLLM } from '@mariozechner/ai/providers/openai-completions';
-import { GoogleLLM } from '@mariozechner/ai/providers/gemini';
+import { createLLM } from '@mariozechner/pi-ai';
 
-// Pick your provider - same API for all
-const llm = new AnthropicLLM('claude-sonnet-4-0');
-// const llm = new OpenAICompletionsLLM('gpt-5-mini');
-// const llm = new GoogleLLM('gemini-2.5-flash');
+const llm = createLLM('openai', 'gpt-4o-mini');
 
-// Basic completion
 const response = await llm.complete({
   messages: [{ role: 'user', content: 'Hello!' }]
 });
+
 console.log(response.content);
+```
 
-// Streaming with thinking
-const streamResponse = await llm.complete({
-  messages: [{ role: 'user', content: 'Explain quantum computing' }]
-}, {
-  onText: (chunk) => process.stdout.write(chunk),
-  onThinking: (chunk) => process.stderr.write(chunk),
-  // Provider specific config
-  thinking: { enabled: true }
+## Image Input
+
+```typescript
+import { readFileSync } from 'fs';
+
+const imageBuffer = readFileSync('image.png');
+const base64Image = imageBuffer.toString('base64');
+
+const response = await llm.complete({
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'text', text: 'What is in this image?' },
+      { type: 'image', data: base64Image, mimeType: 'image/png' }
+    ]
+  }]
 });
+```
 
-// Tool calling
+## Tool Calling
+
+```typescript
 const tools = [{
-  name: 'calculator',
-  description: 'Perform calculations',
+  name: 'get_weather',
+  description: 'Get current weather for a location',
   parameters: {
     type: 'object',
     properties: {
-      expression: { type: 'string' }
+      location: { type: 'string' }
     },
-    required: ['expression']
+    required: ['location']
   }
 }];
 
-const toolResponse = await llm.complete({
-  messages: [{ role: 'user', content: 'What is 15 * 27?' }],
-  tools
-});
+const messages = [];
+messages.push({ role: 'user', content: 'What is the weather in Paris?' });
 
-if (toolResponse.toolCalls) {
-  for (const call of toolResponse.toolCalls) {
-    console.log(`Tool: ${call.name}, Args:`, call.arguments);
+const response = await llm.complete({ messages, tools });
+messages.push(response);
+
+if (response.toolCalls) {
+  for (const call of response.toolCalls) {
+    // Call your actual function
+    const result = await getWeather(call.arguments.location);
+    
+    // Add tool result to context
+    messages.push({ 
+      role: 'toolResult', 
+      content: JSON.stringify(result), 
+      toolCallId: call.id, 
+      isError: false 
+    });
+  }
+  
+  // Continue conversation with tool results
+  const followUp = await llm.complete({ messages, tools });
+  messages.push(followUp);
+  console.log(followUp.content);
+}
+```
+
+## Streaming
+
+```typescript
+const response = await llm.complete({
+  messages: [{ role: 'user', content: 'Write a story' }]
+}, {
+  onText: (chunk, complete) => {
+    process.stdout.write(chunk);
+    if (complete) console.log('\n[Text streaming complete]');
+  },
+  onThinking: (chunk, complete) => {
+    process.stderr.write(chunk);
+    if (complete) console.error('\n[Thinking complete]');
+  }
+});
+```
+
+## Abort Signal
+
+```typescript
+const controller = new AbortController();
+
+// Abort after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+try {
+  const response = await llm.complete({
+    messages: [{ role: 'user', content: 'Write a long story' }]
+  }, {
+    signal: controller.signal,
+    onText: (chunk) => process.stdout.write(chunk)
+  });
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request was aborted');
   }
 }
 ```
 
-## Development
+## Provider-Specific Options
 
-This package is part of the pi monorepo. See the main README for development instructions.
+### OpenAI Reasoning (o1, o3)
+```typescript
+const llm = createLLM('openai', 'o1-mini');
+
+await llm.complete(context, {
+  reasoningEffort: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
+});
+```
+
+### Anthropic Thinking
+```typescript
+const llm = createLLM('anthropic', 'claude-3-7-sonnet-latest');
+
+await llm.complete(context, {
+  thinking: {
+    enabled: true,
+    budgetTokens: 2048  // Optional thinking token limit
+  }
+});
+```
+
+### Google Gemini Thinking
+```typescript
+const llm = createLLM('google', 'gemini-2.0-flash-thinking-exp');
+
+await llm.complete(context, {
+  thinking: { enabled: true }
+});
+```
+
+## Custom Models
+
+### Local Models (Ollama, vLLM, etc.)
+```typescript
+import { OpenAICompletionsLLM } from '@mariozechner/pi-ai';
+
+const model = {
+  id: 'llama3.1:8b',
+  provider: 'ollama',
+  baseUrl: 'http://localhost:11434/v1',
+  reasoning: false,
+  input: ['text'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 8192,
+  maxTokens: 4096,
+  name: 'Llama 3.1 8B'
+};
+
+const llm = new OpenAICompletionsLLM(model, 'dummy-key');
+```
+
+### Custom OpenAI-Compatible Endpoints
+```typescript
+const model = {
+  id: 'custom-model',
+  provider: 'custom',
+  baseUrl: 'https://your-api.com/v1',
+  reasoning: true,
+  input: ['text', 'image'],
+  cost: { input: 0.5, output: 1.5, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 32768,
+  maxTokens: 8192,
+  name: 'Custom Model'
+};
+
+const llm = new OpenAICompletionsLLM(model, 'your-api-key');
+```
+
+## Environment Variables
+
+Set these environment variables to use `createLLM` without passing API keys:
+
+```bash
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
+GROQ_API_KEY=gsk_...
+CEREBRAS_API_KEY=csk-...
+XAI_API_KEY=xai-...
+OPENROUTER_API_KEY=sk-or-...
+```
+
+When set, you can omit the API key parameter:
+```typescript
+// Uses OPENAI_API_KEY from environment
+const llm = createLLM('openai', 'gpt-4o-mini');
+
+// Or pass explicitly
+const llm = createLLM('openai', 'gpt-4o-mini', 'sk-...');
+```
 
 ## License
 

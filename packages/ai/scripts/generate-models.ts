@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { readFileSync, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -164,10 +164,11 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 	}
 }
 
-function loadModelsDevData(): NormalizedModel[] {
+async function loadModelsDevData(): Promise<NormalizedModel[]> {
 	try {
-		console.log("Loading models from models.json...");
-		const data = JSON.parse(readFileSync(join(packageRoot, "src/models.json"), "utf-8"));
+		console.log("Fetching models from models.dev API...");
+		const response = await fetch("https://models.dev/api.json");
+		const data = await response.json();
 
 		const models: NormalizedModel[] = [];
 
@@ -232,7 +233,7 @@ function loadModelsDevData(): NormalizedModel[] {
 async function generateModels() {
 	// Fetch all models
 	const openRouterModels = await fetchOpenRouterModels();
-	const modelsDevModels = loadModelsDevData();
+	const modelsDevModels = await loadModelsDevData();
 
 	// Combine models (models.dev takes priority for Groq/Cerebras)
 	const allModels = [...modelsDevModels, ...openRouterModels];

@@ -1,4 +1,4 @@
-// @mariozechner/ai - Unified API for OpenAI, Anthropic, and Google Gemini
+// @mariozechner/pi-ai - Unified LLM API with automatic model discovery
 // This package provides a common interface for working with multiple LLM providers
 
 export const version = "0.5.8";
