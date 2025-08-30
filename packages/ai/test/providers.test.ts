@@ -48,6 +48,18 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
             expect(response.usage.output).toBeGreaterThan(0);
             expect(response.error).toBeFalsy();
             expect(response.content).toContain("Hello test successful");
+
+            context.messages.push(response);
+            context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'" });
+
+            const secondResponse = await llm.complete(context);
+
+            expect(secondResponse.role).toBe("assistant");
+            expect(secondResponse.content).toBeTruthy();
+            expect(secondResponse.usage.input).toBeGreaterThan(0);
+            expect(secondResponse.usage.output).toBeGreaterThan(0);
+            expect(secondResponse.error).toBeFalsy();
+            expect(secondResponse.content).toContain("Goodbye test successful");
 }
 
 async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {

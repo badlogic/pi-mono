@@ -8,6 +8,7 @@ import type {
 	ResponseInputText,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
+import type { ResponseOutputMessage } from "openai/resources/responses/responses.mjs";
 import type {
 	AssistantMessage,
 	Context,
@@ -83,6 +84,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			});
 
 			let content = "";
+			let contentSignature = "";
 			let thinking = "";
 			const toolCalls: ToolCall[] = [];
 			const reasoningItems: ResponseReasoningItem[] = [];
@@ -117,6 +119,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 						content = event.text;
 					}
 					options?.onText?.("", true);
+					contentSignature = event.item_id;
 				}
 				// Handle function calls
 				else if (event.type === "response.output_item.done") {
@@ -167,6 +170,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			return {
 				role: "assistant",
 				content: content || undefined,
+				contentSignature: contentSignature || undefined,
 				thinking: thinking || undefined,
 				thinkingSignature: JSON.stringify(reasoningItems) || undefined,
 				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -257,8 +261,10 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 					output.push({
 						type: "message",
 						role: "assistant",
-						content: [{ type: "input_text", text: msg.content }],
-					});
+						content: [{ type: "output_text", text: msg.content, annotations: [] }],
+						status: "completed",
+						id: msg.contentSignature || "msg_" + Math.random().toString(36).substring(2, 15),
+					} satisfies ResponseOutputMessage);
 				}
 				// Add all output items to input
 				input.push(...output);

@@ -33,6 +33,9 @@ export interface AssistantMessage {
 	// Leaky abstraction: provider specific, does not translate to other providers
 	thinkingSignature?: string;
 	content?: string;
+	// Leaky abstraction: provider specific, does not translate to other providers
+	// e.g. OpenAI responses must include id for assistant responses
+	contentSignature?: string;
 	toolCalls?: {
 		id: string;
 		name: string;
