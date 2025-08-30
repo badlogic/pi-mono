@@ -1,5 +1,10 @@
+- ai: test abort signal
 
-- agent: max output tokens is fixed to 2000 in responess and chat completions calls
+- ai: implement and test session hand-off
+    - thinkingSignatures are incompatible between models/providers
+    - when converting Message instance, LLM impl needs to check model
+        - if same provider/model as LLM impl config, convert as is
+        - if provider and/or model != LLM impl config, convert thinking to plain user text Message with "Thinking: " prepended
 
 - tui: use stripVTControlCharacters in components to strip ANSI sequences and better estimate line widths? specifically markdown and text component?
 
@@ -8,72 +13,6 @@
 - tui: need to benachmark our renderer. always compares old lines vs new lines and does a diff. might be a bit much for 100k+ lines.
 
 - pods: pi start outputs all models that can be run on the pod. however, it doesn't check the vllm version. e.g. gpt-oss can only run via vllm+gpt-oss. glm4.5 can only run on vllm nightly.
-
-- agent: improve reasoning section in README.md
-
-- agent: ultrathink to temporarily set reasoning_effort?
-
-- agent: ripgrep tool is very broken
-    [tool] rg({"args":"-l --hidden --glob \"**/README.md\""})
-    ripgrep error: rg: ripgrep requires at least one pattern to execute a search
-
-- agent: gpt-5/responses api seems to be broken?
-    - prompt: read all README.md files
-    - output:
-        [error] 400 Item 'fc_68990b4ddf60819e9138b7a496da3fcb04d5f47f123043f7' of type 'function_call' was provided without its required 'reasoning' item: 'rs_68990b4d5784819eac65086d9a6e42e704d5f47f123043f7'.
-
-- agent: need to figure out a models max context lenght
-    - Actually, we could just use this? curl https://models.dev/api.json
-    - Add automatic context length detection via models endpoint
-    - Cache per baseURL/model combination in $PI_CONFIG_DIR/models.json or ~/.pi/models.json
-    - Should be part of preflight check in agent (like reasoning support detection)
-    - Provider support status:
-        - vLLM: ✅ `/v1/models` → `max_model_len`
-        - Groq: ✅ `/openai/v1/models` → `context_window`
-        - OpenRouter: ✅ `/api/v1/models` → `context_length`
-        - Gemini: ✅ `/v1beta/models` (native API) → `inputTokenLimit`
-        - Anthropic: ❌ `/v1/models` (no context info)
-        - OpenAI: ❌ `/v1/models` (no context info)
-    - For Anthropic/OpenAI, may need hardcoded fallback values or separate lookup table
-    - Display how much of the context window is used by the current context
-
-- agent: compaction & micro compactionexi
-
-- agent: test for basic functionality, including thinking, completions & responses API support for all the known providers and their endpoints.
-
-- agent: groq responses api throws on second message
-    ```
-    ➜  pi-mono git:(main) ✗ npx tsx packages/agent/src/cli.ts --base-url https://api.groq.com/openai/v1 --api-key $GROQ_API_KEY --model openai/gpt-oss-120b --api responses
-    >> pi interactive chat <<<
-    Press Escape to interrupt while processing
-    Press CTRL+C to clear the text editor
-    Press CTRL+C twice quickly to exit
-
-    [user]
-    think step by step: what's 2+2?
-
-    [assistant]
-    [thinking]
-    The user asks "think step by step: what's 2+2?" They want a step-by-step reasoning. That's
-    trivial: 2+2=4. Provide answer with steps.
-
-    Sure! Let’s break it down:
-
-    1. Identify the numbers: We have the numbers 2 and 2.
-    2. Add the first number to the second:
-    3. Calculate:
-
-    2 + 2 = 4
-
-    Answer: 2 + 2 = 4.
-
-    [user]
-    what was your last thinking content?
-
-    [assistant]
-    [error] 400 `input`: `items[3]`: `role`: assistant role cannot be used with type='message'
-    (use EasyInputMessage format without type field)
-    ```
 
 - agent: we need to make system prompt and tools pluggable. We need to figure out the simplest way for users to define system prompts and toolkits. A toolkit could be a subset of the built-in tools, a mixture of a subset of the built-in tools plus custom self-made tools, maybe include MCP servers, and so on. We need to figure out a way to make this super easy. users should be able to write their tools in whatever language they fancy. which means that probably something like process spawning plus studio communication transport would make the most sense. but then we were back at MCP basically. And that does not support interruptibility, which we need for the agent. So if the agent invokes the tool and the user presses escape in the interface, then the tool invocation must be interrupted and whatever it's doing must stop, including killing all sub-processes. For MCP this could be solved for studio MCP servers by, since we spawn those on startup or whenever we load the tools, we spawn a process for an MCP server and then reuse that process for subsequent tool invocations. If the user interrupts then we could just kill that process, assuming that anything it's doing or any of its sub-processes will be killed along the way. So I guess tools could all be written as MCP servers, but that's a lot of overhead. It would also be nice to be able to provide tools just as a bash script that gets some inputs and return some outputs based on the inputs Same for Go apps or TypeScript apps invoked by MPX TSX. just make the barrier of entry for writing your own tools super fucking low. not necessarily going full MCP. but we also need to support MCP. So whatever we arrive at, we then need to take our built-in tools and see if those can be refactored to work with our new tools
 
