@@ -597,11 +597,11 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (Kimi K2)", () => {
+    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (GLM 4.5)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = createLLM("openrouter", "moonshotai/kimi-k2", process.env.OPENROUTER_API_KEY!);
+            llm = createLLM("openrouter", "z-ai/glm-4.5", process.env.OPENROUTER_API_KEY!);
         });
 
         it("should complete basic text generation", async () => {
@@ -650,6 +650,10 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {thinking: {enabled: true}});
+        });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
         });
     });
 });
