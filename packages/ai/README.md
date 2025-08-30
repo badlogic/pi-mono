@@ -2,6 +2,8 @@
 
 Unified LLM API with automatic model discovery, provider configuration, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
 
+**Note**: This library only includes models that support tool calling (function calling), as this is essential for agentic workflows.
+
 ## Supported Providers
 
 - **OpenAI**
@@ -201,6 +203,63 @@ const model = {
 };
 
 const llm = new OpenAICompletionsLLM(model, 'your-api-key');
+```
+
+## Model Discovery
+
+All models in this library support tool calling. Models are automatically fetched from OpenRouter and models.dev APIs at build time.
+
+### List Available Models
+```typescript
+import { PROVIDERS } from '@mariozechner/pi-ai';
+
+// List all OpenAI models (all support tool calling)
+for (const [modelId, model] of Object.entries(PROVIDERS.openai.models)) {
+  console.log(`${modelId}: ${model.name}`);
+  console.log(`  Context: ${model.contextWindow} tokens`);
+  console.log(`  Reasoning: ${model.reasoning}`);
+  console.log(`  Vision: ${model.input.includes('image')}`);
+  console.log(`  Cost: $${model.cost.input}/$${model.cost.output} per million tokens`);
+}
+
+// Find all models with reasoning support
+const reasoningModels = [];
+for (const provider of Object.values(PROVIDERS)) {
+  for (const model of Object.values(provider.models)) {
+    if (model.reasoning) {
+      reasoningModels.push(model);
+    }
+  }
+}
+
+// Find all vision-capable models
+const visionModels = [];
+for (const provider of Object.values(PROVIDERS)) {
+  for (const model of Object.values(provider.models)) {
+    if (model.input.includes('image')) {
+      visionModels.push(model);
+    }
+  }
+}
+```
+
+### Check Model Capabilities
+```typescript
+import { getModel } from '@mariozechner/pi-ai';
+
+const model = getModel('openai', 'gpt-4o-mini');
+if (model) {
+  console.log(`Model: ${model.name}`);
+  console.log(`Provider: ${model.provider}`);
+  console.log(`Context window: ${model.contextWindow} tokens`);
+  console.log(`Max output: ${model.maxTokens} tokens`);
+  console.log(`Supports reasoning: ${model.reasoning}`);
+  console.log(`Supports images: ${model.input.includes('image')}`);
+  console.log(`Input cost: $${model.cost.input} per million tokens`);
+  console.log(`Output cost: $${model.cost.output} per million tokens`);
+  console.log(`Cache read cost: $${model.cost.cacheRead} per million tokens`);
+  console.log(`Cache write cost: $${model.cost.cacheWrite} per million tokens`);
+}
 ```
 
 ## Environment Variables
