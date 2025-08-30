@@ -3,9 +3,15 @@ import { GoogleLLM } from "../src/providers/google.js";
 import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
-import type { LLM, LLMOptions, Context, Tool, AssistantMessage, Model } from "../src/types.js";
+import type { LLM, LLMOptions, Context, Tool, AssistantMessage, Model, ImageContent } from "../src/types.js";
 import { spawn, ChildProcess, execSync } from "child_process";
 import { createLLM, getModel } from "../src/models.js";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Calculator tool definition (same as examples)
 const calculatorTool: Tool = {
@@ -103,6 +109,46 @@ async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T, req
     if (requireThinking) {
         expect(thinkingChunks.length > 0 || !!response.thinking).toBe(true);
     }
+}
+
+async function handleImage<T extends LLMOptions>(llm: LLM<T>) {
+    // Check if the model supports images
+    const model = llm.getModel();
+    if (!model.input.includes("image")) {
+        console.log(`Skipping image test - model ${model.id} doesn't support images`);
+        return;
+    }
+
+    // Read the test image
+    const imagePath = join(__dirname, "data", "red-circle.png");
+    const imageBuffer = readFileSync(imagePath);
+    const base64Image = imageBuffer.toString("base64");
+
+    const imageContent: ImageContent = {
+        type: "image",
+        data: base64Image,
+        mimeType: "image/png",
+    };
+
+    const context: Context = {
+        messages: [
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: "What do you see in this image? Please describe the shape and color." },
+                    imageContent,
+                ],
+            },
+        ],
+    };
+
+    const response = await llm.complete(context);
+
+    // Check the response mentions red and circle
+    expect(response.content).toBeTruthy();
+    const lowerContent = response.content?.toLowerCase() || "";
+    expect(lowerContent).toContain("red");
+    expect(lowerContent).toContain("circle");
 }
 
 async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) {
@@ -259,6 +305,10 @@ describe("AI Providers E2E Tests", () => {
         it("should handle streaming", async () => {
             await handleStreaming(llm);
         });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
+        });
     });
 
     describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
@@ -287,6 +337,10 @@ describe("AI Providers E2E Tests", () => {
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
         });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
+        });
     });
 
     describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider", () => {
@@ -314,6 +368,10 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
+        });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
         });
     });
 

@@ -3,6 +3,9 @@ import type {
 	Tool as OpenAITool,
 	ResponseCreateParamsStreaming,
 	ResponseInput,
+	ResponseInputContent,
+	ResponseInputImage,
+	ResponseInputText,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import type {
@@ -205,10 +208,34 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 		// Convert messages
 		for (const msg of messages) {
 			if (msg.role === "user") {
-				input.push({
-					role: "user",
-					content: [{ type: "input_text", text: msg.content }],
-				});
+				// Handle both string and array content
+				if (typeof msg.content === "string") {
+					input.push({
+						role: "user",
+						content: [{ type: "input_text", text: msg.content }],
+					});
+				} else {
+					// Convert array content to OpenAI Responses format
+					const content: ResponseInputContent[] = msg.content.map((item): ResponseInputContent => {
+						if (item.type === "text") {
+							return {
+								type: "input_text",
+								text: item.text,
+							} satisfies ResponseInputText;
+						} else {
+							// Image content - OpenAI Responses uses data URLs
+							return {
+								type: "input_image",
+								detail: "auto",
+								image_url: `data:${item.mimeType};base64,${item.data}`,
+							} satisfies ResponseInputImage;
+						}
+					});
+					input.push({
+						role: "user",
+						content,
+					});
+				}
 			} else if (msg.role === "assistant") {
 				// Assistant messages - add both content and tool calls to output
 				const output: ResponseInput = [];

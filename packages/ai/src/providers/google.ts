@@ -1,9 +1,11 @@
 import {
+	type Content,
 	type FinishReason,
 	FunctionCallingConfigMode,
 	type GenerateContentConfig,
 	type GenerateContentParameters,
 	GoogleGenAI,
+	type Part,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -247,17 +249,39 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 		}
 	}
 
-	private convertMessages(messages: Message[]): any[] {
-		const contents: any[] = [];
+	private convertMessages(messages: Message[]): Content[] {
+		const contents: Content[] = [];
 
 		for (const msg of messages) {
 			if (msg.role === "user") {
-				contents.push({
-					role: "user",
-					parts: [{ text: msg.content }],
-				});
+				// Handle both string and array content
+				if (typeof msg.content === "string") {
+					contents.push({
+						role: "user",
+						parts: [{ text: msg.content }],
+					});
+				} else {
+					// Convert array content to Google format
+					const parts: Part[] = msg.content.map((item) => {
+						if (item.type === "text") {
+							return { text: item.text };
+						} else {
+							// Image content - Google uses inlineData
+							return {
+								inlineData: {
+									mimeType: item.mimeType,
+									data: item.data,
+								},
+							};
+						}
+					});
+					contents.push({
+						role: "user",
+						parts,
+					});
+				}
 			} else if (msg.role === "assistant") {
-				const parts: any[] = [];
+				const parts: Part[] = [];
 
 				// Add thinking if present
 				// Note: We include thinkingSignature in our response for multi-turn context,

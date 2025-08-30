@@ -1,5 +1,11 @@
 import OpenAI from "openai";
-import type { ChatCompletionChunk, ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import type {
+	ChatCompletionChunk,
+	ChatCompletionContentPart,
+	ChatCompletionContentPartImage,
+	ChatCompletionContentPartText,
+	ChatCompletionMessageParam,
+} from "openai/resources/chat/completions.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
@@ -264,10 +270,35 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		// Convert messages
 		for (const msg of messages) {
 			if (msg.role === "user") {
-				params.push({
-					role: "user",
-					content: msg.content,
-				});
+				// Handle both string and array content
+				if (typeof msg.content === "string") {
+					params.push({
+						role: "user",
+						content: msg.content,
+					});
+				} else {
+					// Convert array content to OpenAI format
+					const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
+						if (item.type === "text") {
+							return {
+								type: "text",
+								text: item.text,
+							} satisfies ChatCompletionContentPartText;
+						} else {
+							// Image content - OpenAI uses data URLs
+							return {
+								type: "image_url",
+								image_url: {
+									url: `data:${item.mimeType};base64,${item.data}`,
+								},
+							} satisfies ChatCompletionContentPartImage;
+						}
+					});
+					params.push({
+						role: "user",
+						content,
+					});
+				}
 			} else if (msg.role === "assistant") {
 				const assistantMsg: ChatCompletionMessageParam = {
 					role: "assistant",

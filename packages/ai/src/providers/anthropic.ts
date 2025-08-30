@@ -236,10 +236,37 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 
 		for (const msg of messages) {
 			if (msg.role === "user") {
-				params.push({
-					role: "user",
-					content: msg.content,
-				});
+				// Handle both string and array content
+				if (typeof msg.content === "string") {
+					params.push({
+						role: "user",
+						content: msg.content,
+					});
+				} else {
+					// Convert array content to Anthropic format
+					const blocks: ContentBlockParam[] = msg.content.map((item) => {
+						if (item.type === "text") {
+							return {
+								type: "text",
+								text: item.text,
+							};
+						} else {
+							// Image content
+							return {
+								type: "image",
+								source: {
+									type: "base64",
+									media_type: item.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+									data: item.data,
+								},
+							};
+						}
+					});
+					params.push({
+						role: "user",
+						content: blocks,
+					});
+				}
 			} else if (msg.role === "assistant") {
 				const blocks: ContentBlockParam[] = [];
 

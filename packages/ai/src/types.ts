@@ -11,15 +11,27 @@ export interface LLM<T extends LLMOptions> {
 	getModel(): Model;
 }
 
+export interface TextContent {
+	type: "text";
+	text: string;
+}
+
+export interface ImageContent {
+	type: "image";
+	data: string; // base64 encoded image data
+	mimeType: string; // e.g., "image/jpeg", "image/png"
+}
+
 export interface UserMessage {
 	role: "user";
-	content: string;
+	content: string | (TextContent | ImageContent)[];
 }
 
 export interface AssistantMessage {
 	role: "assistant";
 	thinking?: string;
-	thinkingSignature?: string; // Leaky abstraction: needed for Anthropic
+	// Leaky abstraction: provider specific, does not translate to other providers
+	thinkingSignature?: string;
 	content?: string;
 	toolCalls?: {
 		id: string;
