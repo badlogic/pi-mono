@@ -154,14 +154,9 @@ This document describes how to submit images to different LLM provider APIs and 
 ```typescript
 interface ImageContent {
   type: "image";
-  source: ImageSource;
-  alt?: string; // Optional alt text for accessibility
+  data: string; // base64 encoded image data
+  mimeType: string; // e.g., "image/jpeg", "image/png"
 }
-
-type ImageSource = 
-  | { type: "base64"; data: string; mimeType: string }
-  | { type: "url"; url: string }
-  | { type: "file"; path: string }; // Local file path
 ```
 
 ### Unified Message Structure
@@ -198,36 +193,14 @@ if (model.input.includes("image")) {
 function toAnthropicContent(content: (TextContent | ImageContent)[]) {
   return content.map(item => {
     if (item.type === "image") {
-      if (item.source.type === "base64") {
-        return {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: item.source.mimeType,
-            data: item.source.data
-          }
-        };
-      } else if (item.source.type === "url") {
-        return {
-          type: "image",
-          source: {
-            type: "url",
-            url: item.source.url
-          }
-        };
-      } else if (item.source.type === "file") {
-        // Read file and convert to base64
-        const data = fs.readFileSync(item.source.path).toString('base64');
-        const mimeType = getMimeType(item.source.path);
-        return {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: mimeType,
-            data
-          }
-        };
-      }
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: item.mimeType,
+          data: item.data
+        }
+      };
     }
     return { type: "text", text: item.text };
   });
@@ -237,29 +210,12 @@ function toAnthropicContent(content: (TextContent | ImageContent)[]) {
 function toOpenAIContent(content: (TextContent | ImageContent)[]) {
   return content.map(item => {
     if (item.type === "image") {
-      if (item.source.type === "base64") {
-        return {
-          type: "image_url",
-          image_url: {
-            url: `data:${item.source.mimeType};base64,${item.source.data}`
-          }
-        };
-      } else if (item.source.type === "url") {
-        return {
-          type: "image_url",
-          image_url: { url: item.source.url }
-        };
-      } else if (item.source.type === "file") {
-        // Read and convert to data URL
-        const data = fs.readFileSync(item.source.path).toString('base64');
-        const mimeType = getMimeType(item.source.path);
-        return {
-          type: "image_url",
-          image_url: {
-            url: `data:${mimeType};base64,${data}`
-          }
-        };
-      }
+      return {
+        type: "image_url",
+        image_url: {
+          url: `data:${item.mimeType};base64,${item.data}`
+        }
+      };
     }
     return { type: "text", text: item.text };
   });
@@ -269,27 +225,12 @@ function toOpenAIContent(content: (TextContent | ImageContent)[]) {
 function toGoogleContent(content: (TextContent | ImageContent)[]) {
   return content.map(item => {
     if (item.type === "image") {
-      if (item.source.type === "base64") {
-        return {
-          inline_data: {
-            mime_type: item.source.mimeType,
-            data: item.source.data
-          }
-        };
-      } else if (item.source.type === "url") {
-        // Google doesn't support external URLs directly
-        // Would need to fetch and convert to base64
-        throw new Error("Google GenAI requires base64 or File API for images");
-      } else if (item.source.type === "file") {
-        const data = fs.readFileSync(item.source.path).toString('base64');
-        const mimeType = getMimeType(item.source.path);
-        return {
-          inline_data: {
-            mime_type: mimeType,
-            data
-          }
-        };
-      }
+      return {
+        inline_data: {
+          mime_type: item.mimeType,
+          data: item.data
+        }
+      };
     }
     return { text: item.text };
   });
@@ -332,23 +273,18 @@ const PROVIDER_CONSTRAINTS: Record<string, ImageConstraints> = {
 };
 
 async function validateImage(
-  source: ImageSource, 
+  image: ImageContent, 
   provider: string
 ): Promise<void> {
   const constraints = PROVIDER_CONSTRAINTS[provider];
   
-  // Get image data
-  let imageBuffer: Buffer;
-  if (source.type === "file") {
-    imageBuffer = await fs.readFile(source.path);
-  } else if (source.type === "base64") {
-    imageBuffer = Buffer.from(source.data, 'base64');
-  } else {
-    // For URLs, might need to fetch and validate
-    return;
+  // Check MIME type
+  if (!constraints.supportedFormats.includes(image.mimeType)) {
+    throw new Error(`Unsupported image format: ${image.mimeType}`);
   }
   
   // Check size
+  const imageBuffer = Buffer.from(image.data, 'base64');
   const sizeMB = imageBuffer.length / (1024 * 1024);
   if (sizeMB > constraints.maxSizeMB) {
     throw new Error(`Image exceeds ${constraints.maxSizeMB}MB limit`);
@@ -360,25 +296,27 @@ async function validateImage(
 
 ## Implementation Considerations
 
-1. **Automatic Format Conversion**:
-   - Convert URLs to base64 for providers that don't support URLs
-   - Handle file paths by reading and encoding files
-   - Optimize image size/quality when needed
+1. **Preprocessing**:
+   - User is responsible for converting images to base64 before passing to API
+   - Utility functions could be provided for common conversions (file to base64, URL to base64)
+   - Image optimization (resize/compress) should happen before encoding
 
 2. **Error Handling**:
-   - Validate image formats before sending
-   - Check model capabilities
+   - Validate MIME types and sizes before sending
+   - Check model capabilities (via `model.input.includes("image")`)
    - Provide clear error messages for unsupported features
 
 3. **Performance**:
-   - Cache base64 encodings for reused images
-   - Stream large images when possible
-   - Consider using provider-specific file upload APIs for large images
+   - Base64 encoding increases payload size by ~33%
+   - Consider image compression before encoding
+   - For Google GenAI, be aware of 20MB total request limit
 
 4. **Token Counting**:
-   - Images consume tokens (varies by provider)
+   - Images consume tokens (varies by provider and image size)
    - Include image token estimates in usage calculations
+   - Anthropic: ~1 token per ~3-4 bytes of base64 data
+   - OpenAI: Detailed images consume more tokens than low-detail
 
 5. **Fallback Strategies**:
-   - If model doesn't support images, extract text description
-   - Offer image-to-text preprocessing options
+   - If model doesn't support images, throw error or ignore images
+   - Consider offering text-only fallback for non-vision models
