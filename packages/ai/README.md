@@ -26,7 +26,7 @@ npm install @mariozechner/pi-ai
 ```typescript
 import { createLLM } from '@mariozechner/pi-ai';
 
-const llm = createLLM('openai', 'gpt-4o-mini');
+const llm = createLLM('openai', 'gpt-5-mini');
 
 const response = await llm.complete({
   messages: [{ role: 'user', content: 'Hello!' }]
@@ -79,16 +79,16 @@ if (response.toolCalls) {
   for (const call of response.toolCalls) {
     // Call your actual function
     const result = await getWeather(call.arguments.location);
-    
+
     // Add tool result to context
-    messages.push({ 
-      role: 'toolResult', 
-      content: JSON.stringify(result), 
-      toolCallId: call.id, 
-      isError: false 
+    messages.push({
+      role: 'toolResult',
+      content: JSON.stringify(result),
+      toolCallId: call.id,
+      isError: false
     });
   }
-  
+
   // Continue conversation with tool results
   const followUp = await llm.complete({ messages, tools });
   messages.push(followUp);
@@ -139,7 +139,7 @@ try {
 
 ### OpenAI Reasoning (o1, o3)
 ```typescript
-const llm = createLLM('openai', 'o1-mini');
+const llm = createLLM('openai', 'gpt-5-mini');
 
 await llm.complete(context, {
   reasoningEffort: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
@@ -148,7 +148,7 @@ await llm.complete(context, {
 
 ### Anthropic Thinking
 ```typescript
-const llm = createLLM('anthropic', 'claude-3-7-sonnet-latest');
+const llm = createLLM('anthropic', 'claude-sonnet-4-0');
 
 await llm.complete(context, {
   thinking: {
@@ -160,7 +160,7 @@ await llm.complete(context, {
 
 ### Google Gemini Thinking
 ```typescript
-const llm = createLLM('google', 'gemini-2.0-flash-thinking-exp');
+const llm = createLLM('google', 'gemini-2.5-flash');
 
 await llm.complete(context, {
   thinking: { enabled: true }
@@ -279,10 +279,10 @@ OPENROUTER_API_KEY=sk-or-...
 When set, you can omit the API key parameter:
 ```typescript
 // Uses OPENAI_API_KEY from environment
-const llm = createLLM('openai', 'gpt-4o-mini');
+const llm = createLLM('openai', 'gpt-5-mini');
 
 // Or pass explicitly
-const llm = createLLM('openai', 'gpt-4o-mini', 'sk-...');
+const llm = createLLM('openai', 'gpt-5-mini', 'sk-...');
 ```
 
 ## License
