@@ -38,7 +38,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			}
 			apiKey = process.env.OPENAI_API_KEY;
 		}
-		this.client = new OpenAI({ apiKey, baseURL: model.baseUrl });
+		this.client = new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
 		this.modelInfo = model;
 	}
 
