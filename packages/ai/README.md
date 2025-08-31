@@ -4,6 +4,22 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 
 **Note**: This library only includes models that support tool calling (function calling), as this is essential for agentic workflows.
 
+## API Changes in v0.5.15+
+
+The `AssistantMessage` response structure has been updated to support multiple content blocks of different types. Instead of separate fields for `text`, `thinking`, and `toolCalls`, responses now have a unified `content` array that can contain multiple blocks of each type in any order.
+
+```typescript
+// Old API (pre-0.5.15)
+response.text        // single text string
+response.thinking    // single thinking string
+response.toolCalls   // array of tool calls
+
+// New API (0.5.15+)
+response.content     // array of TextContent | ThinkingContent | ToolCall blocks
+```
+
+This change allows models to return multiple thinking and text blocks, which is especially useful for complex reasoning tasks.
+
 ## Supported Providers
 
 - **OpenAI**
@@ -26,13 +42,18 @@ npm install @mariozechner/pi-ai
 ```typescript
 import { createLLM } from '@mariozechner/pi-ai';
 
-const llm = createLLM('openai', 'gpt-5-mini');
+const llm = createLLM('openai', 'gpt-4o-mini');
 
 const response = await llm.complete({
   messages: [{ role: 'user', content: 'Hello!' }]
 });
 
-console.log(response.content);
+// response.content is now an array of content blocks
+for (const block of response.content) {
+  if (block.type === 'text') {
+    console.log(block.text);
+  }
+}
 ```
 
 ## Image Input
@@ -75,24 +96,34 @@ messages.push({ role: 'user', content: 'What is the weather in Paris?' });
 const response = await llm.complete({ messages, tools });
 messages.push(response);
 
-if (response.toolCalls) {
-  for (const call of response.toolCalls) {
-    // Call your actual function
-    const result = await getWeather(call.arguments.location);
+// Check for tool calls in the content blocks
+const toolCalls = response.content.filter(block => block.type === 'toolCall');
 
-    // Add tool result to context
-    messages.push({
-      role: 'toolResult',
-      content: JSON.stringify(result),
-      toolCallId: call.id,
-      isError: false
-    });
-  }
+for (const call of toolCalls) {
+  // Call your actual function
+  const result = await getWeather(call.arguments.location);
 
+  // Add tool result to context
+  messages.push({
+    role: 'toolResult',
+    content: JSON.stringify(result),
+    toolCallId: call.id,
+    toolName: call.name,
+    isError: false
+  });
+}
+
+if (toolCalls.length > 0) {
   // Continue conversation with tool results
   const followUp = await llm.complete({ messages, tools });
   messages.push(followUp);
-  console.log(followUp.content);
+  
+  // Print text blocks from the response
+  for (const block of followUp.content) {
+    if (block.type === 'text') {
+      console.log(block.text);
+    }
+  }
 }
 ```
 
@@ -102,13 +133,30 @@ if (response.toolCalls) {
 const response = await llm.complete({
   messages: [{ role: 'user', content: 'Write a story' }]
 }, {
-  onText: (chunk, complete) => {
-    process.stdout.write(chunk);
-    if (complete) console.log('\n[Text streaming complete]');
-  },
-  onThinking: (chunk, complete) => {
-    process.stderr.write(chunk);
-    if (complete) console.error('\n[Thinking complete]');
+  onEvent: (event) => {
+    switch (event.type) {
+      case 'text_start':
+        console.log('[Starting text block]');
+        break;
+      case 'text_delta':
+        process.stdout.write(event.delta);
+        break;
+      case 'text_end':
+        console.log('\n[Text block complete]');
+        break;
+      case 'thinking_start':
+        console.error('[Starting thinking]');
+        break;
+      case 'thinking_delta':
+        process.stderr.write(event.delta);
+        break;
+      case 'thinking_end':
+        console.error('\n[Thinking complete]');
+        break;
+      case 'toolCall':
+        console.log('Tool called:', event.toolCall.name);
+        break;
+    }
   }
 });
 ```
@@ -126,7 +174,11 @@ try {
     messages: [{ role: 'user', content: 'Write a long story' }]
   }, {
     signal: controller.signal,
-    onText: (chunk) => process.stdout.write(chunk)
+    onEvent: (event) => {
+      if (event.type === 'text_delta') {
+        process.stdout.write(event.delta);
+      }
+    }
   });
 } catch (error) {
   if (error.name === 'AbortError') {
@@ -139,7 +191,7 @@ try {
 
 ### OpenAI Reasoning (o1, o3)
 ```typescript
-const llm = createLLM('openai', 'gpt-5-mini');
+const llm = createLLM('openai', 'o1-mini');
 
 await llm.complete(context, {
   reasoningEffort: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
@@ -148,7 +200,7 @@ await llm.complete(context, {
 
 ### Anthropic Thinking
 ```typescript
-const llm = createLLM('anthropic', 'claude-sonnet-4-0');
+const llm = createLLM('anthropic', 'claude-3-5-sonnet-20241022');
 
 await llm.complete(context, {
   thinking: {
@@ -160,7 +212,7 @@ await llm.complete(context, {
 
 ### Google Gemini Thinking
 ```typescript
-const llm = createLLM('google', 'gemini-2.5-flash');
+const llm = createLLM('google', 'gemini-2.0-flash-thinking-exp');
 
 await llm.complete(context, {
   thinking: { enabled: true }

@@ -486,8 +486,8 @@ export const PROVIDERS = {
 				reasoning: true,
 				input: ["text"],
 				cost: {
-					input: 0.1999188,
-					output: 0.800064,
+					input: 0.32986602,
+					output: 1.3201056,
 					cacheRead: 0,
 					cacheWrite: 0,
 				},
