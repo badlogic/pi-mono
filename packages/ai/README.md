@@ -4,22 +4,6 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 
 **Note**: This library only includes models that support tool calling (function calling), as this is essential for agentic workflows.
 
-## API Changes in v0.5.15+
-
-The `AssistantMessage` response structure has been updated to support multiple content blocks of different types. Instead of separate fields for `text`, `thinking`, and `toolCalls`, responses now have a unified `content` array that can contain multiple blocks of each type in any order.
-
-```typescript
-// Old API (pre-0.5.15)
-response.text        // single text string
-response.thinking    // single thinking string
-response.toolCalls   // array of tool calls
-
-// New API (0.5.15+)
-response.content     // array of TextContent | ThinkingContent | ToolCall blocks
-```
-
-This change allows models to return multiple thinking and text blocks, which is especially useful for complex reasoning tasks.
-
 ## Supported Providers
 
 - **OpenAI**

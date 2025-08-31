@@ -114,7 +114,7 @@
 					}
 				}
 			],
-			"notes": "Requires vLLM 0.10.1+gptoss. Tools/functoin calls only  via /v1/responses endpoint."
+			"notes": "Tools/function calls only  via /v1/responses endpoint."
 		},
 		"openai/gpt-oss-120b": {
 			"name": "GPT-OSS-120B",
@@ -123,25 +123,25 @@
 					"gpuCount": 1,
 					"gpuTypes": ["H100", "H200"],
 					"args": ["--async-scheduling", "--gpu-memory-utilization", "0.95", "--max-num-batched-tokens", "1024"],
-					"notes": "Single GPU deployment. Requires vLLM 0.10.1+gptoss. Tools/function calls only via /v1/responses endpoint."
+					"notes": "Single GPU deployment. Tools/function calls only via /v1/responses endpoint."
 				},
 				{
 					"gpuCount": 2,
 					"gpuTypes": ["H100", "H200"],
 					"args": ["--tensor-parallel-size", "2", "--async-scheduling", "--gpu-memory-utilization", "0.94"],
-					"notes": "Recommended for H100/H200. Requires vLLM 0.10.1+gptoss. Tools/function calls only via /v1/responses endpoint."
+					"notes": "Recommended for H100/H200. Tools/function calls only via /v1/responses endpoint."
 				},
 				{
 					"gpuCount": 4,
 					"gpuTypes": ["H100", "H200"],
 					"args": ["--tensor-parallel-size", "4", "--async-scheduling"],
-					"notes": "Higher throughput. Requires vLLM 0.10.1+gptoss. Tools/function calls only via /v1/responses endpoint."
+					"notes": "Higher throughput. Tools/function calls only via /v1/responses endpoint."
 				},
 				{
 					"gpuCount": 8,
 					"gpuTypes": ["H100", "H200"],
 					"args": ["--tensor-parallel-size", "8", "--async-scheduling"],
-					"notes": "Maximum throughput for evaluation workloads. Requires vLLM 0.10.1+gptoss. Tools/function calls only via /v1/responses endpoint."
+					"notes": "Maximum throughput for evaluation workloads. Tools/function calls only via /v1/responses endpoint."
 				}
 			]
 		},
