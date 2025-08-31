@@ -1,8 +1,7 @@
 export interface LLMOptions {
 	temperature?: number;
 	maxTokens?: number;
-	onText?: (text: string, complete: boolean) => void;
-	onThinking?: (thinking: string, complete: boolean) => void;
+	onEvent?: (event: AssistantMessageEvent) => void;
 	signal?: AbortSignal;
 }
 
@@ -14,6 +13,13 @@ export interface LLM<T extends LLMOptions> {
 export interface TextContent {
 	type: "text";
 	text: string;
+	textSignature?: string; // e.g., for OpenAI responses, the message ID
+}
+
+export interface ThinkingContent {
+	type: "thinking";
+	thinking: string;
+	thinkingSignature?: string; // e.g., for OpenAI responses, the reasoning item ID
 }
 
 export interface ImageContent {
@@ -22,6 +28,29 @@ export interface ImageContent {
 	mimeType: string; // e.g., "image/jpeg", "image/png"
 }
 
+export interface ToolCall {
+	type: "toolCall";
+	id: string;
+	name: string;
+	arguments: Record<string, any>;
+}
+
+export interface Usage {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+	};
+}
+
+export type StopReason = "stop" | "length" | "toolUse" | "safety" | "error";
+
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
@@ -29,18 +58,7 @@ export interface UserMessage {
 
 export interface AssistantMessage {
 	role: "assistant";
-	thinking?: string;
-	// Leaky abstraction: provider specific, does not translate to other providers
-	thinkingSignature?: string;
-	content?: string;
-	// Leaky abstraction: provider specific, does not translate to other providers
-	// e.g. OpenAI responses must include id for assistant responses
-	contentSignature?: string;
-	toolCalls?: {
-		id: string;
-		name: string;
-		arguments: Record<string, any>;
-	}[];
+	content: (TextContent | ThinkingContent | ToolCall)[];
 	provider: string;
 	model: string;
 	usage: Usage;
@@ -70,36 +88,18 @@ export interface Context {
 	tools?: Tool[];
 }
 
-export type Event =
+export type AssistantMessageEvent =
 	| { type: "start"; model: string; provider: string }
-	| { type: "text"; content: string; delta: string }
-	| { type: "thinking"; content: string; delta: string }
+	| { type: "text_start" }
+	| { type: "text_delta"; content: string; delta: string }
+	| { type: "text_end"; content: string }
+	| { type: "thinking_start" }
+	| { type: "thinking_delta"; content: string; delta: string }
+	| { type: "thinking_end"; content: string }
 	| { type: "toolCall"; toolCall: ToolCall }
 	| { type: "usage"; usage: Usage }
 	| { type: "done"; reason: StopReason; message: AssistantMessage }
 	| { type: "error"; error: Error };
-
-export interface ToolCall {
-	id: string;
-	name: string;
-	arguments: Record<string, any>;
-}
-
-export interface Usage {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-		total: number;
-	};
-}
-
-export type StopReason = "stop" | "length" | "toolUse" | "safety" | "error";
 
 // Model interface for the unified model system
 export interface Model {

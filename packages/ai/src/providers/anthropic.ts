@@ -6,17 +6,7 @@ import type {
 	Tool,
 } from "@anthropic-ai/sdk/resources/messages.js";
 import { calculateCost } from "../models.js";
-import type {
-	AssistantMessage,
-	Context,
-	LLM,
-	LLMOptions,
-	Message,
-	Model,
-	StopReason,
-	ToolCall,
-	Usage,
-} from "../types.js";
+import type { AssistantMessage, Context, LLM, LLMOptions, Message, Model, StopReason, Usage } from "../types.js";
 
 export interface AnthropicLLMOptions extends LLMOptions {
 	thinking?: {
@@ -130,63 +120,65 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			);
 
 			let blockType: "text" | "thinking" | "other" = "other";
+			let blockContent = "";
 			for await (const event of stream) {
 				if (event.type === "content_block_start") {
 					if (event.content_block.type === "text") {
 						blockType = "text";
+						blockContent = "";
+						options?.onEvent?.({ type: "text_start" });
 					} else if (event.content_block.type === "thinking") {
 						blockType = "thinking";
+						blockContent = "";
+						options?.onEvent?.({ type: "thinking_start" });
 					} else {
 						blockType = "other";
+						blockContent = "";
 					}
 				}
 				if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
-						options?.onText?.(event.delta.text, false);
-						blockType = "text"; // Ensure block type is set
+						options?.onEvent?.({ type: "text_delta", content: blockContent, delta: event.delta.text });
+						blockContent += event.delta.text;
 					}
 					if (event.delta.type === "thinking_delta") {
-						options?.onThinking?.(event.delta.thinking, false);
-						blockType = "thinking"; // Ensure block type is set
+						options?.onEvent?.({ type: "thinking_delta", content: blockContent, delta: event.delta.thinking });
+						blockContent += event.delta.thinking;
 					}
 				}
 				if (event.type === "content_block_stop") {
 					if (blockType === "text") {
-						options?.onText?.("", true);
+						options?.onEvent?.({ type: "text_end", content: blockContent });
 					} else if (blockType === "thinking") {
-						options?.onThinking?.("", true);
+						options?.onEvent?.({ type: "thinking_end", content: blockContent });
 					}
 					blockType = "other";
 				}
 			}
 			const msg = await stream.finalMessage();
-			const thinking = msg.content.some((block) => block.type === "thinking")
-				? msg.content
-						.filter((block) => block.type === "thinking")
-						.map((block) => block.thinking)
-						.join("\n")
-				: undefined;
-			// This is kinda wrong if there is more than one thinking block. We do not use interleaved thinking though, so we should
-			// always have a single thinking block.
-			const thinkingSignature = msg.content.some((block) => block.type === "thinking")
-				? msg.content
-						.filter((block) => block.type === "thinking")
-						.map((block) => block.signature)
-						.join("\n")
-				: undefined;
-			const content = msg.content.some((block) => block.type === "text")
-				? msg.content
-						.filter((block) => block.type === "text")
-						.map((block) => block.text)
-						.join("\n")
-				: undefined;
-			const toolCalls: ToolCall[] = msg.content
-				.filter((block) => block.type === "tool_use")
-				.map((block) => ({
-					id: block.id,
-					name: block.name,
-					arguments: block.input as Record<string, any>,
-				}));
+			const blocks: AssistantMessage["content"] = [];
+			for (const block of msg.content) {
+				if (block.type === "text" && block.text) {
+					blocks.push({
+						type: "text",
+						text: block.text,
+					});
+				} else if (block.type === "thinking" && block.thinking) {
+					blocks.push({
+						type: "thinking",
+						thinking: block.thinking,
+						thinkingSignature: block.signature,
+					});
+				} else if (block.type === "tool_use") {
+					blocks.push({
+						type: "toolCall",
+						id: block.id,
+						name: block.name,
+						arguments: block.input as Record<string, any>,
+					});
+				}
+			}
+
 			const usage: Usage = {
 				input: msg.usage.input_tokens,
 				output: msg.usage.output_tokens,
@@ -204,10 +196,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 
 			return {
 				role: "assistant",
-				content,
-				thinking,
-				thinkingSignature,
-				toolCalls,
+				content: blocks,
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage,
@@ -216,6 +205,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 		} catch (error) {
 			return {
 				role: "assistant",
+				content: [],
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage: {
@@ -270,28 +260,24 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			} else if (msg.role === "assistant") {
 				const blocks: ContentBlockParam[] = [];
 
-				if (msg.thinking && msg.thinkingSignature) {
-					blocks.push({
-						type: "thinking",
-						thinking: msg.thinking,
-						signature: msg.thinkingSignature,
-					});
-				}
-
-				if (msg.content) {
-					blocks.push({
-						type: "text",
-						text: msg.content,
-					});
-				}
-
-				if (msg.toolCalls) {
-					for (const toolCall of msg.toolCalls) {
+				for (const block of msg.content) {
+					if (block.type === "text") {
+						blocks.push({
+							type: "text",
+							text: block.text,
+						});
+					} else if (block.type === "thinking") {
+						blocks.push({
+							type: "thinking",
+							thinking: block.thinking,
+							signature: block.thinkingSignature || "",
+						});
+					} else if (block.type === "toolCall") {
 						blocks.push({
 							type: "tool_use",
-							id: toolCall.id,
-							name: toolCall.name,
-							input: toolCall.arguments,
+							id: block.id,
+							name: block.name,
+							input: block.arguments,
 						});
 					}
 				}

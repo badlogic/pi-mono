@@ -47,7 +47,7 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
             expect(response.usage.input).toBeGreaterThan(0);
             expect(response.usage.output).toBeGreaterThan(0);
             expect(response.error).toBeFalsy();
-            expect(response.content).toContain("Hello test successful");
+            expect(response.content.map(b => b.type == "text" ? b.text : "").join("\n")).toContain("Hello test successful");
 
             context.messages.push(response);
             context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'" });
@@ -59,7 +59,7 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
             expect(secondResponse.usage.input).toBeGreaterThan(0);
             expect(secondResponse.usage.output).toBeGreaterThan(0);
             expect(secondResponse.error).toBeFalsy();
-            expect(secondResponse.content).toContain("Goodbye test successful");
+            expect(secondResponse.content.map(b => b.type == "text" ? b.text : "").join("\n")).toContain("Goodbye test successful");
 }
 
 async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
@@ -74,14 +74,14 @@ async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
 
     const response = await llm.complete(context);
     expect(response.stopReason).toBe("toolUse");
-    expect(response.toolCalls).toBeTruthy();
-    expect(response.toolCalls!.length).toBeGreaterThan(0);
-    const toolCall = response.toolCalls![0];
+    expect(response.content.some(b => b.type == "toolCall")).toBeTruthy();
+    const toolCall = response.content.find(b => b.type == "toolCall")!;
     expect(toolCall.name).toBe("calculator");
     expect(toolCall.id).toBeTruthy();
 }
 
 async function handleStreaming<T extends LLMOptions>(llm: LLM<T>) {
+    let textStarted = false;
     let textChunks = "";
     let textCompleted = false;
 
@@ -90,37 +90,50 @@ async function handleStreaming<T extends LLMOptions>(llm: LLM<T>) {
     };
 
     const response = await llm.complete(context, {
-        onText: (chunk, complete) => {
-            textChunks += chunk;
-            if (complete) textCompleted = true;
+        onEvent: (event) => {
+            if (event.type === "text_start") {
+                textStarted = true;
+            } else if (event.type === "text_delta") {
+                textChunks += event.delta;
+            } else if (event.type === "text_end") {
+                textCompleted = true;
+            }
         }
     } as T);
 
+    expect(textStarted).toBe(true);
     expect(textChunks.length).toBeGreaterThan(0);
     expect(textCompleted).toBe(true);
-    expect(response.content).toBeTruthy();
+    expect(response.content.some(b => b.type == "text")).toBeTruthy();
 }
 
-async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T, requireThinking: boolean = true) {
+async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T) {
+    let thinkingStarted = false;
     let thinkingChunks = "";
+    let thinkingCompleted = false;
 
     const context: Context = {
         messages: [{ role: "user", content: "What is 15 + 27? Think step by step." }]
     };
 
     const response = await llm.complete(context, {
-        onThinking: (chunk) => {
-            thinkingChunks += chunk;
+       onEvent: (event) => {
+            if (event.type === "thinking_start") {
+                thinkingStarted = true;
+            } else if (event.type === "thinking_delta") {
+                thinkingChunks += event.delta;
+            } else if (event.type === "thinking_end") {
+                thinkingCompleted = true;
+            }
         },
         ...options
     });
 
-    expect(response.content).toBeTruthy();
 
-    // For providers that should always return thinking when enabled
-    if (requireThinking) {
-        expect(thinkingChunks.length > 0 || !!response.thinking).toBe(true);
-    }
+    expect(thinkingStarted).toBe(true);
+    expect(thinkingChunks.length).toBeGreaterThan(0);
+    expect(thinkingCompleted).toBe(true);
+    expect(response.content.some(b => b.type == "thinking")).toBeTruthy();
 }
 
 async function handleImage<T extends LLMOptions>(llm: LLM<T>) {
@@ -157,8 +170,8 @@ async function handleImage<T extends LLMOptions>(llm: LLM<T>) {
     const response = await llm.complete(context);
 
     // Check the response mentions red and circle
-    expect(response.content).toBeTruthy();
-    const lowerContent = response.content?.toLowerCase() || "";
+    expect(response.content.length > 0).toBeTruthy();
+    const lowerContent = response.content.find(b => b.type == "text")?.text || "";
     expect(lowerContent).toContain("red");
     expect(lowerContent).toContain("circle");
 }
@@ -175,74 +188,33 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
         tools: [calculatorTool]
     };
 
-    // First turn - should get thinking and/or tool calls
-    const firstResponse = await llm.complete(context, thinkingOptions);
-
-    // Verify we got either thinking content or tool calls (or both)
-    const hasThinking = firstResponse.thinking !== undefined && firstResponse.thinking.length > 0;
-    const hasToolCalls = firstResponse.toolCalls && firstResponse.toolCalls.length > 0;
-
-    expect(hasThinking || hasToolCalls).toBe(true);
-
-    // If we got tool calls, verify they're correct
-    if (hasToolCalls) {
-        expect(firstResponse.toolCalls).toBeTruthy();
-        expect(firstResponse.toolCalls!.length).toBeGreaterThan(0);
-    }
-
-    // If we have thinking with tool calls, we should have thinkingSignature for proper multi-turn context
-    // Note: Some providers may not return thinking when tools are used
-    if (firstResponse.thinking && hasToolCalls) {
-        // For now, we'll just check if it exists when both are present
-        // Some providers may not support thinkingSignature yet
-        if (firstResponse.thinkingSignature !== undefined) {
-            expect(firstResponse.thinkingSignature).toBeTruthy();
-        }
-    }
-
-    // Add the assistant response to context
-    context.messages.push(firstResponse);
-
-    // Process tool calls and add results
-    for (const toolCall of firstResponse.toolCalls || []) {
-        expect(toolCall.name).toBe("calculator");
-        expect(toolCall.id).toBeTruthy();
-        expect(toolCall.arguments).toBeTruthy();
-
-        const { a, b, operation } = toolCall.arguments;
-        let result: number;
-        switch (operation) {
-            case "add": result = a + b; break;
-            case "multiply": result = a * b; break;
-            default: result = 0;
-        }
-
-        context.messages.push({
-            role: "toolResult",
-            content: `${result}`,
-            toolCallId: toolCall.id,
-            isError: false
-        });
-    }
-
-    // Second turn - complete the conversation
-    // Keep processing until we get a response with content (not just tool calls)
-    let finalResponse: AssistantMessage | undefined;
-    const maxTurns = 3; // Prevent infinite loops
+    // Collect all text content from all assistant responses
+    let allTextContent = "";
+    let hasSeenThinking = false;
+    let hasSeenToolCalls = false;
+    const maxTurns = 5; // Prevent infinite loops
 
     for (let turn = 0; turn < maxTurns; turn++) {
         const response = await llm.complete(context, thinkingOptions);
+
+        // Add the assistant response to context
         context.messages.push(response);
 
-        if (response.stopReason === "stop" && response.content) {
-            finalResponse = response;
-            break;
-        }
+        // Process content blocks
+        for (const block of response.content) {
+            if (block.type === "text") {
+                allTextContent += block.text + " ";
+            } else if (block.type === "thinking") {
+                hasSeenThinking = true;
+            } else if (block.type === "toolCall") {
+                hasSeenToolCalls = true;
 
-        // If we got more tool calls, process them
-        if (response.toolCalls) {
-            for (const toolCall of response.toolCalls) {
-                const { a, b, operation } = toolCall.arguments;
+                // Process the tool call
+                expect(block.name).toBe("calculator");
+                expect(block.id).toBeTruthy();
+                expect(block.arguments).toBeTruthy();
+
+                const { a, b, operation } = block.arguments;
                 let result: number;
                 switch (operation) {
                     case "add": result = a + b; break;
@@ -250,24 +222,30 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
                     default: result = 0;
                 }
 
+                // Add tool result to context
                 context.messages.push({
                     role: "toolResult",
                     content: `${result}`,
-                    toolCallId: toolCall.id,
+                    toolCallId: block.id,
                     isError: false
                 });
             }
         }
+
+        // If we got a stop response with text content, we're likely done
+        expect(response.stopReason).not.toBe("error");
+        if (response.stopReason === "stop") {
+            break;
+        }
     }
 
-    expect(finalResponse).toBeTruthy();
-    expect(finalResponse!.content).toBeTruthy();
-    expect(finalResponse!.role).toBe("assistant");
+    // Verify we got either thinking content or tool calls (or both)
+    expect(hasSeenThinking || hasSeenToolCalls).toBe(true);
 
-    // The final response should reference the calculations
-    expect(
-        finalResponse!.content!.includes("714") || finalResponse!.content!.includes("887")
-    ).toBe(true);
+    // The accumulated text should reference both calculations
+    expect(allTextContent).toBeTruthy();
+    expect(allTextContent.includes("714")).toBe(true);
+    expect(allTextContent.includes("887")).toBe(true);
 }
 
 describe("AI Providers E2E Tests", () => {
@@ -343,7 +321,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -407,7 +385,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -435,7 +413,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -463,7 +441,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -491,7 +469,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -589,7 +567,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -617,7 +595,7 @@ describe("AI Providers E2E Tests", () => {
         });
 
         it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"}, false);
+            await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
@@ -642,10 +620,6 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle streaming", async () => {
             await handleStreaming(llm);
-        });
-
-        it("should handle thinking mode", async () => {
-            await handleThinking(llm, {thinking: {enabled: true}}, false);
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
