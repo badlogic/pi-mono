@@ -15,6 +15,8 @@ import type {
 	Message,
 	Model,
 	StopReason,
+	TextContent,
+	ThinkingContent,
 	Tool,
 	ToolCall,
 	Usage,
@@ -90,10 +92,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				signal: options?.signal,
 			});
 
-			let content = "";
-			let reasoningContent = "";
-			let reasoningField: "reasoning" | "reasoning_content" | null = null;
-			const parsedToolCalls: { id: string; name: string; arguments: string }[] = [];
+			const blocks: AssistantMessage["content"] = [];
+			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
 			let usage: Usage = {
 				input: 0,
 				output: 0,
@@ -102,7 +102,6 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
 			let finishReason: ChatCompletionChunk.Choice["finish_reason"] | null = null;
-			let blockType: "text" | "thinking" | null = null;
 			for await (const chunk of stream) {
 				if (chunk.usage) {
 					usage = {
@@ -132,13 +131,32 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						choice.delta.content !== undefined &&
 						choice.delta.content.length > 0
 					) {
-						if (blockType === "thinking") {
-							options?.onThinking?.("", true);
-							blockType = null;
+						// Check if we need to switch to text block
+						if (!currentBlock || currentBlock.type !== "text") {
+							// Save current block if exists
+							if (currentBlock) {
+								if (currentBlock.type === "thinking") {
+									options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+								} else if (currentBlock.type === "toolCall") {
+									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
+									delete currentBlock.partialArgs;
+									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+								}
+								blocks.push(currentBlock);
+							}
+							// Start new text block
+							currentBlock = { type: "text", text: "" };
+							options?.onEvent?.({ type: "text_start" });
 						}
-						content += choice.delta.content;
-						options?.onText?.(choice.delta.content, false);
-						blockType = "text";
+						// Append to text block
+						if (currentBlock.type === "text") {
+							options?.onEvent?.({
+								type: "text_delta",
+								content: currentBlock.text,
+								delta: choice.delta.content,
+							});
+							currentBlock.text += choice.delta.content;
+						}
 					}
 
 					// Handle reasoning_content field
@@ -146,55 +164,98 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						(choice.delta as any).reasoning_content !== null &&
 						(choice.delta as any).reasoning_content !== undefined
 					) {
-						if (blockType === "text") {
-							options?.onText?.("", true);
-							blockType = null;
+						// Check if we need to switch to thinking block
+						if (!currentBlock || currentBlock.type !== "thinking") {
+							// Save current block if exists
+							if (currentBlock) {
+								if (currentBlock.type === "text") {
+									options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+								} else if (currentBlock.type === "toolCall") {
+									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
+									delete currentBlock.partialArgs;
+									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+								}
+								blocks.push(currentBlock);
+							}
+							// Start new thinking block
+							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning_content" };
+							options?.onEvent?.({ type: "thinking_start" });
 						}
-						reasoningContent += (choice.delta as any).reasoning_content;
-						reasoningField = "reasoning_content";
-						options?.onThinking?.((choice.delta as any).reasoning_content, false);
-						blockType = "thinking";
+						// Append to thinking block
+						if (currentBlock.type === "thinking") {
+							const delta = (choice.delta as any).reasoning_content;
+							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
+							currentBlock.thinking += delta;
+						}
 					}
 
 					// Handle reasoning field
 					if ((choice.delta as any).reasoning !== null && (choice.delta as any).reasoning !== undefined) {
-						if (blockType === "text") {
-							options?.onText?.("", true);
-							blockType = null;
+						// Check if we need to switch to thinking block
+						if (!currentBlock || currentBlock.type !== "thinking") {
+							// Save current block if exists
+							if (currentBlock) {
+								if (currentBlock.type === "text") {
+									options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+								} else if (currentBlock.type === "toolCall") {
+									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
+									delete currentBlock.partialArgs;
+									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+								}
+								blocks.push(currentBlock);
+							}
+							// Start new thinking block
+							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning" };
+							options?.onEvent?.({ type: "thinking_start" });
 						}
-						reasoningContent += (choice.delta as any).reasoning;
-						reasoningField = "reasoning";
-						options?.onThinking?.((choice.delta as any).reasoning, false);
-						blockType = "thinking";
+						// Append to thinking block
+						if (currentBlock.type === "thinking") {
+							const delta = (choice.delta as any).reasoning;
+							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
+							currentBlock.thinking += delta;
+						}
 					}
 
 					// Handle tool calls
 					if (choice?.delta?.tool_calls) {
-						if (blockType === "text") {
-							options?.onText?.("", true);
-							blockType = null;
-						}
-						if (blockType === "thinking") {
-							options?.onThinking?.("", true);
-							blockType = null;
-						}
 						for (const toolCall of choice.delta.tool_calls) {
+							// Check if we need a new tool call block
 							if (
-								parsedToolCalls.length === 0 ||
-								(toolCall.id !== undefined && parsedToolCalls[parsedToolCalls.length - 1].id !== toolCall.id)
+								!currentBlock ||
+								currentBlock.type !== "toolCall" ||
+								(toolCall.id && currentBlock.id !== toolCall.id)
 							) {
-								parsedToolCalls.push({
+								// Save current block if exists
+								if (currentBlock) {
+									if (currentBlock.type === "text") {
+										options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+									} else if (currentBlock.type === "thinking") {
+										options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+									} else if (currentBlock.type === "toolCall") {
+										currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
+										delete currentBlock.partialArgs;
+										options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+									}
+									blocks.push(currentBlock);
+								}
+
+								// Start new tool call block
+								currentBlock = {
+									type: "toolCall",
 									id: toolCall.id || "",
 									name: toolCall.function?.name || "",
-									arguments: "",
-								});
+									arguments: {},
+									partialArgs: "",
+								};
 							}
 
-							const current = parsedToolCalls[parsedToolCalls.length - 1];
-							if (toolCall.id) current.id = toolCall.id;
-							if (toolCall.function?.name) current.name = toolCall.function.name;
-							if (toolCall.function?.arguments) {
-								current.arguments += toolCall.function.arguments;
+							// Accumulate tool call data
+							if (currentBlock.type === "toolCall") {
+								if (toolCall.id) currentBlock.id = toolCall.id;
+								if (toolCall.function?.name) currentBlock.name = toolCall.function.name;
+								if (toolCall.function?.arguments) {
+									currentBlock.partialArgs += toolCall.function.arguments;
+								}
 							}
 						}
 					}
@@ -202,42 +263,41 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 				// Capture finish reason
 				if (choice.finish_reason) {
-					if (blockType === "text") {
-						options?.onText?.("", true);
-						blockType = null;
-					}
-					if (blockType === "thinking") {
-						options?.onThinking?.("", true);
-						blockType = null;
-					}
 					finishReason = choice.finish_reason;
 				}
 			}
 
-			// Convert tool calls map to array
-			const toolCalls: ToolCall[] = parsedToolCalls.map((tc) => ({
-				id: tc.id,
-				name: tc.name,
-				arguments: JSON.parse(tc.arguments),
-			}));
+			// Save final block if exists
+			if (currentBlock) {
+				if (currentBlock.type === "text") {
+					options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+				} else if (currentBlock.type === "thinking") {
+					options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+				} else if (currentBlock.type === "toolCall") {
+					currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
+					delete currentBlock.partialArgs;
+					options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+				}
+				blocks.push(currentBlock);
+			}
 
 			// Calculate cost
 			calculateCost(this.modelInfo, usage);
 
-			return {
+			const output = {
 				role: "assistant",
-				content: content || undefined,
-				thinking: reasoningContent || undefined,
-				thinkingSignature: reasoningField || undefined,
-				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+				content: blocks,
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage,
 				stopReason: this.mapStopReason(finishReason),
-			};
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
+			return output;
 		} catch (error) {
-			return {
+			const output = {
 				role: "assistant",
+				content: [],
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage: {
@@ -249,7 +309,9 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),
-			};
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "error", error: output.error || "Unknown error" });
+			return output;
 		}
 	}
 
@@ -302,16 +364,29 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 			} else if (msg.role === "assistant") {
 				const assistantMsg: ChatCompletionMessageParam = {
 					role: "assistant",
-					content: msg.content || null,
+					content: null,
 				};
 
-				// LLama.cpp server + gpt-oss
-				if (msg.thinking && msg.thinkingSignature && msg.thinkingSignature.length > 0) {
-					(assistantMsg as any)[msg.thinkingSignature] = msg.thinking;
+				// Build content from blocks
+				const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
+				if (textBlocks.length > 0) {
+					assistantMsg.content = textBlocks.map((b) => b.text).join("");
 				}
 
-				if (msg.toolCalls) {
-					assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
+				// Handle thinking blocks for llama.cpp server + gpt-oss
+				const thinkingBlocks = msg.content.filter((b) => b.type === "thinking") as ThinkingContent[];
+				if (thinkingBlocks.length > 0) {
+					// Use the signature from the first thinking block if available
+					const signature = thinkingBlocks[0].thinkingSignature;
+					if (signature && signature.length > 0) {
+						(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("");
+					}
+				}
+
+				// Handle tool calls
+				const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
+				if (toolCalls.length > 0) {
+					assistantMsg.tool_calls = toolCalls.map((tc) => ({
 						id: tc.id,
 						type: "function" as const,
 						function: {

@@ -69,8 +69,9 @@ export interface AssistantMessage {
 
 export interface ToolResultMessage {
 	role: "toolResult";
-	content: string;
 	toolCallId: string;
+	toolName: string;
+	content: string;
 	isError: boolean;
 }
 
@@ -97,9 +98,8 @@ export type AssistantMessageEvent =
 	| { type: "thinking_delta"; content: string; delta: string }
 	| { type: "thinking_end"; content: string }
 	| { type: "toolCall"; toolCall: ToolCall }
-	| { type: "usage"; usage: Usage }
 	| { type: "done"; reason: StopReason; message: AssistantMessage }
-	| { type: "error"; error: Error };
+	| { type: "error"; error: string };
 
 // Model interface for the unified model system
 export interface Model {

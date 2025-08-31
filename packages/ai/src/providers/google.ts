@@ -148,7 +148,11 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 							if (currentBlock.type === "thinking") {
 								currentBlock.thinking += part.text;
 								currentBlock.thinkingSignature = part.thoughtSignature;
-								options?.onEvent?.({type: "thinking_delta", content: currentBlock.thinking, delta: part.text });
+								options?.onEvent?.({
+									type: "thinking_delta",
+									content: currentBlock.thinking,
+									delta: part.text,
+								});
 							} else {
 								currentBlock.text += part.text;
 								options?.onEvent?.({ type: "text_delta", content: currentBlock.text, delta: part.text });

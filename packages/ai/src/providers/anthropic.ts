@@ -6,7 +6,17 @@ import type {
 	Tool,
 } from "@anthropic-ai/sdk/resources/messages.js";
 import { calculateCost } from "../models.js";
-import type { AssistantMessage, Context, LLM, LLMOptions, Message, Model, StopReason, Usage } from "../types.js";
+import type {
+	AssistantMessage,
+	Context,
+	LLM,
+	LLMOptions,
+	Message,
+	Model,
+	StopReason,
+	ToolCall,
+	Usage,
+} from "../types.js";
 
 export interface AnthropicLLMOptions extends LLMOptions {
 	thinking?: {
@@ -119,8 +129,9 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				},
 			);
 
-			let blockType: "text" | "thinking" | "other" = "other";
+			let blockType: "text" | "thinking" | "toolUse" | "other" = "other";
 			let blockContent = "";
+			let toolCall: (ToolCall & { partialJson: string }) | null = null;
 			for await (const event of stream) {
 				if (event.type === "content_block_start") {
 					if (event.content_block.type === "text") {
@@ -131,6 +142,17 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 						blockType = "thinking";
 						blockContent = "";
 						options?.onEvent?.({ type: "thinking_start" });
+					} else if (event.content_block.type === "tool_use") {
+						// We wait for the full tool use to be streamed to send the event
+						toolCall = {
+							type: "toolCall",
+							id: event.content_block.id,
+							name: event.content_block.name,
+							arguments: event.content_block.input as Record<string, any>,
+							partialJson: "",
+						};
+						blockType = "toolUse";
+						blockContent = "";
 					} else {
 						blockType = "other";
 						blockContent = "";
@@ -145,12 +167,24 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 						options?.onEvent?.({ type: "thinking_delta", content: blockContent, delta: event.delta.thinking });
 						blockContent += event.delta.thinking;
 					}
+					if (event.delta.type === "input_json_delta") {
+						toolCall!.partialJson += event.delta.partial_json;
+					}
 				}
 				if (event.type === "content_block_stop") {
 					if (blockType === "text") {
 						options?.onEvent?.({ type: "text_end", content: blockContent });
 					} else if (blockType === "thinking") {
 						options?.onEvent?.({ type: "thinking_end", content: blockContent });
+					} else if (blockType === "toolUse") {
+						const finalToolCall: ToolCall = {
+							type: "toolCall",
+							id: toolCall!.id,
+							name: toolCall!.name,
+							arguments: toolCall!.partialJson ? JSON.parse(toolCall!.partialJson) : toolCall!.arguments,
+						};
+						toolCall = null;
+						options?.onEvent?.({ type: "toolCall", toolCall: finalToolCall });
 					}
 					blockType = "other";
 				}
@@ -194,16 +228,19 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			};
 			calculateCost(this.modelInfo, usage);
 
-			return {
+			const output = {
 				role: "assistant",
 				content: blocks,
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage,
 				stopReason: this.mapStopReason(msg.stop_reason),
-			};
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
+
+			return output;
 		} catch (error) {
-			return {
+			const output = {
 				role: "assistant",
 				content: [],
 				provider: this.modelInfo.provider,
@@ -216,8 +253,10 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "error",
-				error: error instanceof Error ? error.message : String(error),
-			};
+				error: error instanceof Error ? error.message : JSON.stringify(error),
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "error", error: output.error });
+			return output;
 		}
 	}
 

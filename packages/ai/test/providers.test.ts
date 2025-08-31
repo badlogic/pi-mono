@@ -47,7 +47,7 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
             expect(response.usage.input).toBeGreaterThan(0);
             expect(response.usage.output).toBeGreaterThan(0);
             expect(response.error).toBeFalsy();
-            expect(response.content.map(b => b.type == "text" ? b.text : "").join("\n")).toContain("Hello test successful");
+            expect(response.content.map(b => b.type == "text" ? b.text : "").join("")).toContain("Hello test successful");
 
             context.messages.push(response);
             context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'" });
@@ -56,10 +56,10 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
 
             expect(secondResponse.role).toBe("assistant");
             expect(secondResponse.content).toBeTruthy();
-            expect(secondResponse.usage.input).toBeGreaterThan(0);
+            expect(secondResponse.usage.input + secondResponse.usage.cacheRead).toBeGreaterThan(0);
             expect(secondResponse.usage.output).toBeGreaterThan(0);
             expect(secondResponse.error).toBeFalsy();
-            expect(secondResponse.content.map(b => b.type == "text" ? b.text : "").join("\n")).toContain("Goodbye test successful");
+            expect(secondResponse.content.map(b => b.type == "text" ? b.text : "").join("")).toContain("Goodbye test successful");
 }
 
 async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
@@ -225,8 +225,9 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
                 // Add tool result to context
                 context.messages.push({
                     role: "toolResult",
-                    content: `${result}`,
                     toolCallId: block.id,
+                    toolName: block.name,
+                    content: `${result}`,
                     isError: false
                 });
             }
@@ -274,6 +275,10 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
+        });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
         });
     });
 
