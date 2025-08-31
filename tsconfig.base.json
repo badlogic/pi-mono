@@ -10,6 +10,8 @@
 		"declaration": true,
 		"declarationMap": true,
 		"sourceMap": true,
+		"inlineSources": true,
+		"inlineSourceMap": false,
 		"moduleResolution": "bundler",
 		"resolveJsonModule": true,
 		"types": ["node"]
