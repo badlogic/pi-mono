@@ -89,6 +89,14 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 				};
 			}
 
+			// Abort signal
+			if (options?.signal) {
+				if (options.signal.aborted) {
+					throw new Error("Request aborted");
+				}
+				config.abortSignal = options.signal;
+			}
+
 			// Build the request parameters
 			const params: GenerateContentParameters = {
 				model: this.model.id,
@@ -97,6 +105,8 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 			};
 
 			const stream = await this.client.models.generateContentStream(params);
+
+			options?.onEvent?.({ type: "start", model: this.model.id, provider: this.model.provider });
 
 			const blocks: AssistantMessage["content"] = [];
 			let currentBlock: TextContent | ThinkingContent | null = null;

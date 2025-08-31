@@ -101,7 +101,7 @@ if (toolCalls.length > 0) {
   // Continue conversation with tool results
   const followUp = await llm.complete({ messages, tools });
   messages.push(followUp);
-  
+
   // Print text blocks from the response
   for (const block of followUp.content) {
     if (block.type === 'text') {
@@ -160,24 +160,25 @@ const response = await llm.complete({
 ```typescript
 const controller = new AbortController();
 
-// Abort after 5 seconds
-setTimeout(() => controller.abort(), 5000);
+// Abort after 2 seconds
+setTimeout(() => controller.abort(), 2000);
 
-try {
-  const response = await llm.complete({
-    messages: [{ role: 'user', content: 'Write a long story' }]
-  }, {
-    signal: controller.signal,
-    onEvent: (event) => {
-      if (event.type === 'text_delta') {
-        process.stdout.write(event.delta);
-      }
+const response = await llm.complete({
+  messages: [{ role: 'user', content: 'Write a long story' }]
+}, {
+  signal: controller.signal,
+  onEvent: (event) => {
+    if (event.type === 'text_delta') {
+      process.stdout.write(event.delta);
     }
-  });
-} catch (error) {
-  if (error.name === 'AbortError') {
-    console.log('Request was aborted');
   }
+});
+
+// Check if the request was aborted
+if (response.stopReason === 'error' && response.error) {
+  console.log('Request was aborted:', response.error);
+} else {
+  console.log('Request completed successfully');
 }
 ```
 
@@ -206,7 +207,7 @@ await llm.complete(context, {
 
 ### Google Gemini Thinking
 ```typescript
-const llm = createLLM('google', 'gemini-2.0-flash-thinking-exp');
+const llm = createLLM('google', 'gemini-2.5-pro');
 
 await llm.complete(context, {
   thinking: { enabled: true }
@@ -220,14 +221,14 @@ await llm.complete(context, {
 import { OpenAICompletionsLLM } from '@mariozechner/pi-ai';
 
 const model = {
-  id: 'llama3.1:8b',
+  id: 'gpt-oss:20b',
   provider: 'ollama',
   baseUrl: 'http://localhost:11434/v1',
   reasoning: false,
   input: ['text'],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 8192,
-  maxTokens: 4096,
+  contextWindow: 126000,
+  maxTokens: 32000,
   name: 'Llama 3.1 8B'
 };
 

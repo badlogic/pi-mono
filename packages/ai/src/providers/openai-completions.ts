@@ -92,6 +92,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				signal: options?.signal,
 			});
 
+			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
+
 			const blocks: AssistantMessage["content"] = [];
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
 			let usage: Usage = {

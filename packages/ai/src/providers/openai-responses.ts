@@ -85,6 +85,8 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				signal: options?.signal,
 			});
 
+			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
+
 			const outputItems: (ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall)[] = []; // any for function_call items
 			let currentTextAccum = ""; // For delta accumulation
 			let currentThinkingAccum = ""; // For delta accumulation
@@ -184,7 +186,23 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 					} satisfies AssistantMessage;
 					options?.onEvent?.({ type: "error", error: errorOutput.error || "Unknown error" });
 					return errorOutput;
+				} else if (event.type === "response.failed") {
+					const errorOutput = {
+						role: "assistant",
+						content: [],
+						provider: this.modelInfo.provider,
+						model: this.modelInfo.id,
+						usage,
+						stopReason: "error",
+						error: "Unknown error",
+					} satisfies AssistantMessage;
+					options?.onEvent?.({ type: "error", error: errorOutput.error || "Unknown error" });
+					return errorOutput;
 				}
+			}
+
+			if (options?.signal?.aborted) {
+				throw new Error("Request was aborted");
 			}
 
 			// Convert output items to blocks

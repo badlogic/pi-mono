@@ -129,6 +129,8 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				},
 			);
 
+			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
+
 			let blockType: "text" | "thinking" | "toolUse" | "other" = "other";
 			let blockContent = "";
 			let toolCall: (ToolCall & { partialJson: string }) | null = null;
