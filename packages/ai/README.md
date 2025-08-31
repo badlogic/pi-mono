@@ -119,6 +119,9 @@ const response = await llm.complete({
 }, {
   onEvent: (event) => {
     switch (event.type) {
+      case 'start':
+        console.log(`Starting ${event.provider} ${event.model}`);
+        break;
       case 'text_start':
         console.log('[Starting text block]');
         break;
@@ -126,7 +129,7 @@ const response = await llm.complete({
         process.stdout.write(event.delta);
         break;
       case 'text_end':
-        console.log('\n[Text block complete]');
+        console.log(`\n[Text block complete: ${event.content.length} chars]`);
         break;
       case 'thinking_start':
         console.error('[Starting thinking]');
@@ -135,10 +138,17 @@ const response = await llm.complete({
         process.stderr.write(event.delta);
         break;
       case 'thinking_end':
-        console.error('\n[Thinking complete]');
+        console.error(`\n[Thinking complete: ${event.content.length} chars]`);
         break;
       case 'toolCall':
-        console.log('Tool called:', event.toolCall.name);
+        console.log(`Tool called: ${event.toolCall.name}(${JSON.stringify(event.toolCall.arguments)})`);
+        break;
+      case 'done':
+        console.log(`Completed with reason: ${event.reason}`);
+        console.log(`Tokens: ${event.message.usage.input} in, ${event.message.usage.output} out`);
+        break;
+      case 'error':
+        console.error('Error:', event.error);
         break;
     }
   }
