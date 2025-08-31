@@ -150,19 +150,20 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						}
 						// Append to text block
 						if (currentBlock.type === "text") {
+							currentBlock.text += choice.delta.content;
 							options?.onEvent?.({
 								type: "text_delta",
 								content: currentBlock.text,
 								delta: choice.delta.content,
 							});
-							currentBlock.text += choice.delta.content;
 						}
 					}
 
 					// Handle reasoning_content field
 					if (
 						(choice.delta as any).reasoning_content !== null &&
-						(choice.delta as any).reasoning_content !== undefined
+						(choice.delta as any).reasoning_content !== undefined &&
+						(choice.delta as any).reasoning_content.length > 0
 					) {
 						// Check if we need to switch to thinking block
 						if (!currentBlock || currentBlock.type !== "thinking") {
@@ -184,13 +185,17 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						// Append to thinking block
 						if (currentBlock.type === "thinking") {
 							const delta = (choice.delta as any).reasoning_content;
-							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
 							currentBlock.thinking += delta;
+							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
 						}
 					}
 
 					// Handle reasoning field
-					if ((choice.delta as any).reasoning !== null && (choice.delta as any).reasoning !== undefined) {
+					if (
+						(choice.delta as any).reasoning !== null &&
+						(choice.delta as any).reasoning !== undefined &&
+						(choice.delta as any).reasoning.length > 0
+					) {
 						// Check if we need to switch to thinking block
 						if (!currentBlock || currentBlock.type !== "thinking") {
 							// Save current block if exists
@@ -211,8 +216,8 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 						// Append to thinking block
 						if (currentBlock.type === "thinking") {
 							const delta = (choice.delta as any).reasoning;
-							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
 							currentBlock.thinking += delta;
+							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
 						}
 					}
 

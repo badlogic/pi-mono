@@ -203,7 +203,7 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
         // Process content blocks
         for (const block of response.content) {
             if (block.type === "text") {
-                allTextContent += block.text + " ";
+                allTextContent += block.text;
             } else if (block.type === "thinking") {
                 hasSeenThinking = true;
             } else if (block.type === "toolCall") {
@@ -250,7 +250,7 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
 }
 
 describe("AI Providers E2E Tests", () => {
-    describe.skipIf(!process.env.GEMINI_API_KEY)("Gemini Provider", () => {
+    describe.skipIf(!process.env.GEMINI_API_KEY)("Gemini Provider (gemini-2.5-flash)", () => {
         let llm: GoogleLLM;
 
         beforeAll(() => {
@@ -282,7 +282,7 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
+    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
@@ -306,7 +306,7 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
+    describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider (gpt-5-mini)", () => {
         let llm: OpenAIResponsesLLM;
 
         beforeAll(() => {
@@ -338,7 +338,7 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider", () => {
+    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider (claude-sonnet-4-0)", () => {
         let llm: AnthropicLLM;
 
         beforeAll(() => {
@@ -370,7 +370,35 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (Haiku 3.5)", () => {
+        let llm: AnthropicLLM;
+
+        beforeAll(() => {
+            llm = createLLM("anthropic", "claude-3-5-haiku-latest");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {thinking: {enabled: true}});
+        });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
+        });
+    });
+
+    describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider (grok-code-fast-1 via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
@@ -398,7 +426,7 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider (gpt-oss-20b via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
@@ -426,7 +454,7 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider (gpt-oss-120b via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
@@ -454,11 +482,11 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (glm-4.5v via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM(getModel("openrouter", "z-ai/glm-4.5")!, process.env.OPENROUTER_API_KEY!);;
+            llm = new OpenAICompletionsLLM(getModel("openrouter", "z-ai/glm-4.5v")!, process.env.OPENROUTER_API_KEY!);;
         });
 
         it("should complete basic text generation", async () => {
@@ -480,6 +508,10 @@ describe("AI Providers E2E Tests", () => {
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
         });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
+        });
     });
 
     // Check if ollama is installed
@@ -491,7 +523,7 @@ describe("AI Providers E2E Tests", () => {
         ollamaInstalled = false;
     }
 
-    describe.skipIf(!ollamaInstalled)("Ollama Provider (via OpenAI Completions)", () => {
+    describe.skipIf(!ollamaInstalled)("Ollama Provider (gpt-oss-20b via OpenAI Completions)", () => {
         let llm: OpenAICompletionsLLM;
         let ollamaProcess: ChildProcess | null = null;
 
@@ -577,62 +609,6 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
-        });
-    });
-
-    describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter Provider (GLM 4.5)", () => {
-        let llm: OpenAICompletionsLLM;
-
-        beforeAll(() => {
-            llm = createLLM("openrouter", "z-ai/glm-4.5", process.env.OPENROUTER_API_KEY!);
-        });
-
-        it("should complete basic text generation", async () => {
-            await basicTextGeneration(llm);
-        });
-
-        it("should handle tool calling", async () => {
-            await handleToolCall(llm);
-        });
-
-        it("should handle streaming", async () => {
-            await handleStreaming(llm);
-        });
-
-        it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"});
-        });
-
-        it("should handle multi-turn with thinking and tools", async () => {
-            await multiTurn(llm, {reasoningEffort: "medium"});
-        });
-    });
-
-    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (Haiku 3.5)", () => {
-        let llm: AnthropicLLM;
-
-        beforeAll(() => {
-            llm = createLLM("anthropic", "claude-3-5-haiku-latest");
-        });
-
-        it("should complete basic text generation", async () => {
-            await basicTextGeneration(llm);
-        });
-
-        it("should handle tool calling", async () => {
-            await handleToolCall(llm);
-        });
-
-        it("should handle streaming", async () => {
-            await handleStreaming(llm);
-        });
-
-        it("should handle multi-turn with thinking and tools", async () => {
-            await multiTurn(llm, {thinking: {enabled: true}});
-        });
-
-        it("should handle image input", async () => {
-            await handleImage(llm);
         });
     });
 });

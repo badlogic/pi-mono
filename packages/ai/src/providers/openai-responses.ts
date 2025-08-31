@@ -2,13 +2,14 @@ import OpenAI from "openai";
 import type {
 	Tool as OpenAITool,
 	ResponseCreateParamsStreaming,
+	ResponseFunctionToolCall,
 	ResponseInput,
 	ResponseInputContent,
 	ResponseInputImage,
 	ResponseInputText,
+	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
-import type { ResponseOutputMessage } from "openai/resources/responses/responses.mjs";
 import type {
 	AssistantMessage,
 	Context,
@@ -17,6 +18,7 @@ import type {
 	Message,
 	Model,
 	StopReason,
+	TextContent,
 	Tool,
 	ToolCall,
 	Usage,
@@ -83,11 +85,9 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				signal: options?.signal,
 			});
 
-			let content = "";
-			let contentSignature = "";
-			let thinking = "";
-			const toolCalls: ToolCall[] = [];
-			const reasoningItems: ResponseReasoningItem[] = [];
+			const outputItems: (ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall)[] = []; // any for function_call items
+			let currentTextAccum = ""; // For delta accumulation
+			let currentThinkingAccum = ""; // For delta accumulation
 			let usage: Usage = {
 				input: 0,
 				output: 0,
@@ -98,41 +98,61 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			let stopReason: StopReason = "stop";
 
 			for await (const event of stream) {
-				// Handle reasoning summary for models that support it
-				if (event.type === "response.reasoning_summary_text.delta") {
-					const delta = event.delta;
-					thinking += delta;
-					options?.onThinking?.(delta, false);
-				} else if (event.type === "response.reasoning_summary_text.done") {
-					if (event.text) {
-						thinking = event.text;
+				// Handle output item start
+				if (event.type === "response.output_item.added") {
+					const item = event.item;
+					if (item.type === "reasoning") {
+						options?.onEvent?.({ type: "thinking_start" });
+						currentThinkingAccum = "";
+					} else if (item.type === "message") {
+						options?.onEvent?.({ type: "text_start" });
+						currentTextAccum = "";
 					}
-					options?.onThinking?.("", true);
 				}
-				// Handle main text output
+				// Handle reasoning summary deltas
+				else if (event.type === "response.reasoning_summary_text.delta") {
+					const delta = event.delta;
+					currentThinkingAccum += delta;
+					options?.onEvent?.({ type: "thinking_delta", content: currentThinkingAccum, delta });
+				}
+				// Add a new line between summary parts (hack...)
+				else if (event.type === "response.reasoning_summary_part.done") {
+					currentThinkingAccum += "\n\n";
+					options?.onEvent?.({ type: "thinking_delta", content: currentThinkingAccum, delta: "\n\n" });
+				}
+				// Handle text output deltas
 				else if (event.type === "response.output_text.delta") {
 					const delta = event.delta;
-					content += delta;
-					options?.onText?.(delta, false);
-				} else if (event.type === "response.output_text.done") {
-					if (event.text) {
-						content = event.text;
-					}
-					options?.onText?.("", true);
-					contentSignature = event.item_id;
+					currentTextAccum += delta;
+					options?.onEvent?.({ type: "text_delta", content: currentTextAccum, delta });
 				}
-				// Handle function calls
+				// Handle refusal output deltas
+				else if (event.type === "response.refusal.delta") {
+					const delta = event.delta;
+					currentTextAccum += delta;
+					options?.onEvent?.({ type: "text_delta", content: currentTextAccum, delta });
+				}
+				// Handle output item completion
 				else if (event.type === "response.output_item.done") {
 					const item = event.item;
-					if (item?.type === "function_call") {
-						toolCalls.push({
+
+					if (item.type === "reasoning") {
+						const thinkingContent = item.summary?.map((s: any) => s.text).join("\n\n") || "";
+						options?.onEvent?.({ type: "thinking_end", content: thinkingContent });
+						outputItems.push(item);
+					} else if (item.type === "message") {
+						const textContent = item.content.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join("");
+						options?.onEvent?.({ type: "text_end", content: textContent });
+						outputItems.push(item);
+					} else if (item.type === "function_call") {
+						const toolCall: ToolCall = {
+							type: "toolCall",
 							id: item.call_id + "|" + item.id,
 							name: item.name,
 							arguments: JSON.parse(item.arguments),
-						});
-					}
-					if (item.type === "reasoning") {
-						reasoningItems.push(item);
+						};
+						options?.onEvent?.({ type: "toolCall", toolCall });
+						outputItems.push(item);
 					}
 				}
 				// Handle completion
@@ -150,38 +170,68 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 
 					// Map status to stop reason
 					stopReason = this.mapStopReason(response?.status);
-					if (toolCalls.length > 0 && stopReason === "stop") {
-						stopReason = "toolUse";
-					}
 				}
 				// Handle errors
 				else if (event.type === "error") {
-					return {
+					const errorOutput = {
 						role: "assistant",
+						content: [],
 						provider: this.modelInfo.provider,
 						model: this.modelInfo.id,
 						usage,
 						stopReason: "error",
 						error: `Code ${event.code}: ${event.message}` || "Unknown error",
-					};
+					} satisfies AssistantMessage;
+					options?.onEvent?.({ type: "error", error: errorOutput.error || "Unknown error" });
+					return errorOutput;
 				}
 			}
 
-			return {
+			// Convert output items to blocks
+			const blocks: AssistantMessage["content"] = [];
+
+			for (const item of outputItems) {
+				if (item.type === "reasoning") {
+					blocks.push({
+						type: "thinking",
+						thinking: item.summary?.map((s: any) => s.text).join("\n\n") || "",
+						thinkingSignature: JSON.stringify(item), // Full item for resubmission
+					});
+				} else if (item.type === "message") {
+					blocks.push({
+						type: "text",
+						text: item.content.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join(""),
+						textSignature: item.id, // ID for resubmission
+					});
+				} else if (item.type === "function_call") {
+					blocks.push({
+						type: "toolCall",
+						id: item.call_id + "|" + item.id,
+						name: item.name,
+						arguments: JSON.parse(item.arguments),
+					});
+				}
+			}
+
+			// Check if we have tool calls for stop reason
+			if (blocks.some((b) => b.type === "toolCall") && stopReason === "stop") {
+				stopReason = "toolUse";
+			}
+
+			const output = {
 				role: "assistant",
-				content: content || undefined,
-				contentSignature: contentSignature || undefined,
-				thinking: thinking || undefined,
-				thinkingSignature: JSON.stringify(reasoningItems) || undefined,
-				toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+				content: blocks,
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage,
 				stopReason,
-			};
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
+			return output;
 		} catch (error) {
-			return {
+			const output = {
 				role: "assistant",
+				content: [],
 				provider: this.modelInfo.provider,
 				model: this.modelInfo.id,
 				usage: {
@@ -193,7 +243,9 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				},
 				stopReason: "error",
 				error: error instanceof Error ? error.message : String(error),
-			};
+			} satisfies AssistantMessage;
+			options?.onEvent?.({ type: "error", error: output.error || "Unknown error" });
+			return output;
 		}
 	}
 
@@ -241,13 +293,27 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 					});
 				}
 			} else if (msg.role === "assistant") {
-				// Assistant messages - add both content and tool calls to output
+				// Process content blocks in order
 				const output: ResponseInput = [];
-				if (msg.thinkingSignature) {
-					output.push(...JSON.parse(msg.thinkingSignature));
-				}
-				if (msg.toolCalls) {
-					for (const toolCall of msg.toolCalls) {
+
+				for (const block of msg.content) {
+					if (block.type === "thinking") {
+						// Push the full reasoning item(s) from signature
+						if (block.thinkingSignature) {
+							const reasoningItem = JSON.parse(block.thinkingSignature);
+							output.push(reasoningItem);
+						}
+					} else if (block.type === "text") {
+						const textBlock = block as TextContent;
+						output.push({
+							type: "message",
+							role: "assistant",
+							content: [{ type: "output_text", text: textBlock.text, annotations: [] }],
+							status: "completed",
+							id: textBlock.textSignature || "msg_" + Math.random().toString(36).substring(2, 15),
+						} satisfies ResponseOutputMessage);
+					} else if (block.type === "toolCall") {
+						const toolCall = block as ToolCall;
 						output.push({
 							type: "function_call",
 							id: toolCall.id.split("|")[1], // Extract original ID
@@ -257,15 +323,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 						});
 					}
 				}
-				if (msg.content) {
-					output.push({
-						type: "message",
-						role: "assistant",
-						content: [{ type: "output_text", text: msg.content, annotations: [] }],
-						status: "completed",
-						id: msg.contentSignature || "msg_" + Math.random().toString(36).substring(2, 15),
-					} satisfies ResponseOutputMessage);
-				}
+
 				// Add all output items to input
 				input.push(...output);
 			} else if (msg.role === "toolResult") {
