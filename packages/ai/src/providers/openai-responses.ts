@@ -10,6 +10,7 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
+import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
@@ -235,6 +236,8 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			if (blocks.some((b) => b.type === "toolCall") && stopReason === "stop") {
 				stopReason = "toolUse";
 			}
+
+			calculateCost(this.modelInfo, usage);
 
 			const output = {
 				role: "assistant",
