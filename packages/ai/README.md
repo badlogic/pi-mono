@@ -32,7 +32,7 @@ const response = await llm.complete({
   messages: [{ role: 'user', content: 'Hello!' }]
 });
 
-// response.content is now an array of content blocks
+// response.content is an array of content blocks
 for (const block of response.content) {
   if (block.type === 'text') {
     console.log(block.text);
@@ -315,10 +315,10 @@ OPENROUTER_API_KEY=sk-or-...
 When set, you can omit the API key parameter:
 ```typescript
 // Uses OPENAI_API_KEY from environment
-const llm = createLLM('openai', 'gpt-5-mini');
+const llm = createLLM('openai', 'gpt-4o-mini');
 
 // Or pass explicitly
-const llm = createLLM('openai', 'gpt-5-mini', 'sk-...');
+const llm = createLLM('openai', 'gpt-4o-mini', 'sk-...');
 ```
 
 ## License
