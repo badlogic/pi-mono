@@ -14,8 +14,9 @@ import type {
 	Message,
 	Model,
 	StopReason,
+	TextContent,
+	ThinkingContent,
 	ToolCall,
-	Usage,
 } from "../types.js";
 
 export interface AnthropicLLMOptions extends LLMOptions {
@@ -61,6 +62,21 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 	}
 
 	async complete(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
+		const output: AssistantMessage = {
+			role: "assistant",
+			content: [],
+			provider: this.modelInfo.provider,
+			model: this.modelInfo.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+		};
+
 		try {
 			const messages = this.convertMessages(context.messages);
 
@@ -131,132 +147,94 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 
 			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
 
-			let blockType: "text" | "thinking" | "toolUse" | "other" = "other";
-			let blockContent = "";
-			let toolCall: (ToolCall & { partialJson: string }) | null = null;
+			let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
 			for await (const event of stream) {
 				if (event.type === "content_block_start") {
 					if (event.content_block.type === "text") {
-						blockType = "text";
-						blockContent = "";
+						currentBlock = {
+							type: "text",
+							text: "",
+						};
+						output.content.push(currentBlock);
 						options?.onEvent?.({ type: "text_start" });
 					} else if (event.content_block.type === "thinking") {
-						blockType = "thinking";
-						blockContent = "";
+						currentBlock = {
+							type: "thinking",
+							thinking: "",
+							thinkingSignature: "",
+						};
+						output.content.push(currentBlock);
 						options?.onEvent?.({ type: "thinking_start" });
 					} else if (event.content_block.type === "tool_use") {
 						// We wait for the full tool use to be streamed to send the event
-						toolCall = {
+						currentBlock = {
 							type: "toolCall",
 							id: event.content_block.id,
 							name: event.content_block.name,
 							arguments: event.content_block.input as Record<string, any>,
 							partialJson: "",
 						};
-						blockType = "toolUse";
-						blockContent = "";
-					} else {
-						blockType = "other";
-						blockContent = "";
 					}
-				}
-				if (event.type === "content_block_delta") {
+				} else if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
-						options?.onEvent?.({ type: "text_delta", content: blockContent, delta: event.delta.text });
-						blockContent += event.delta.text;
+						if (currentBlock && currentBlock.type === "text") {
+							currentBlock.text += event.delta.text;
+							options?.onEvent?.({ type: "text_delta", content: currentBlock.text, delta: event.delta.text });
+						}
+					} else if (event.delta.type === "thinking_delta") {
+						if (currentBlock && currentBlock.type === "thinking") {
+							currentBlock.thinking += event.delta.thinking;
+							options?.onEvent?.({
+								type: "thinking_delta",
+								content: currentBlock.thinking,
+								delta: event.delta.thinking,
+							});
+						}
+					} else if (event.delta.type === "input_json_delta") {
+						if (currentBlock && currentBlock.type === "toolCall") {
+							currentBlock.partialJson += event.delta.partial_json;
+						}
+					} else if (event.delta.type === "signature_delta") {
+						if (currentBlock && currentBlock.type === "thinking") {
+							currentBlock.thinkingSignature = currentBlock.thinkingSignature || "";
+							currentBlock.thinkingSignature += event.delta.signature;
+						}
 					}
-					if (event.delta.type === "thinking_delta") {
-						options?.onEvent?.({ type: "thinking_delta", content: blockContent, delta: event.delta.thinking });
-						blockContent += event.delta.thinking;
+				} else if (event.type === "content_block_stop") {
+					if (currentBlock) {
+						if (currentBlock.type === "text") {
+							options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+						} else if (currentBlock.type === "thinking") {
+							options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+						} else if (currentBlock.type === "toolCall") {
+							const finalToolCall: ToolCall = {
+								type: "toolCall",
+								id: currentBlock.id,
+								name: currentBlock.name,
+								arguments: JSON.parse(currentBlock.partialJson),
+							};
+							output.content.push(finalToolCall);
+							options?.onEvent?.({ type: "toolCall", toolCall: finalToolCall });
+						}
+						currentBlock = null;
 					}
-					if (event.delta.type === "input_json_delta") {
-						toolCall!.partialJson += event.delta.partial_json;
+				} else if (event.type === "message_delta") {
+					if (event.delta.stop_reason) {
+						output.stopReason = this.mapStopReason(event.delta.stop_reason);
 					}
-				}
-				if (event.type === "content_block_stop") {
-					if (blockType === "text") {
-						options?.onEvent?.({ type: "text_end", content: blockContent });
-					} else if (blockType === "thinking") {
-						options?.onEvent?.({ type: "thinking_end", content: blockContent });
-					} else if (blockType === "toolUse") {
-						const finalToolCall: ToolCall = {
-							type: "toolCall",
-							id: toolCall!.id,
-							name: toolCall!.name,
-							arguments: toolCall!.partialJson ? JSON.parse(toolCall!.partialJson) : toolCall!.arguments,
-						};
-						toolCall = null;
-						options?.onEvent?.({ type: "toolCall", toolCall: finalToolCall });
-					}
-					blockType = "other";
-				}
-			}
-			const msg = await stream.finalMessage();
-			const blocks: AssistantMessage["content"] = [];
-			for (const block of msg.content) {
-				if (block.type === "text" && block.text) {
-					blocks.push({
-						type: "text",
-						text: block.text,
-					});
-				} else if (block.type === "thinking" && block.thinking) {
-					blocks.push({
-						type: "thinking",
-						thinking: block.thinking,
-						thinkingSignature: block.signature,
-					});
-				} else if (block.type === "tool_use") {
-					blocks.push({
-						type: "toolCall",
-						id: block.id,
-						name: block.name,
-						arguments: block.input as Record<string, any>,
-					});
+					output.usage.input += event.usage.input_tokens || 0;
+					output.usage.output += event.usage.output_tokens || 0;
+					output.usage.cacheRead += event.usage.cache_read_input_tokens || 0;
+					output.usage.cacheWrite += event.usage.cache_creation_input_tokens || 0;
+					calculateCost(this.modelInfo, output.usage);
 				}
 			}
 
-			const usage: Usage = {
-				input: msg.usage.input_tokens,
-				output: msg.usage.output_tokens,
-				cacheRead: msg.usage.cache_read_input_tokens || 0,
-				cacheWrite: msg.usage.cache_creation_input_tokens || 0,
-				cost: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					total: 0,
-				},
-			};
-			calculateCost(this.modelInfo, usage);
-
-			const output = {
-				role: "assistant",
-				content: blocks,
-				provider: this.modelInfo.provider,
-				model: this.modelInfo.id,
-				usage,
-				stopReason: this.mapStopReason(msg.stop_reason),
-			} satisfies AssistantMessage;
 			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
-
 			return output;
 		} catch (error) {
-			const output = {
-				role: "assistant",
-				content: [],
-				provider: this.modelInfo.provider,
-				model: this.modelInfo.id,
-				usage: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				},
-				stopReason: "error",
-				error: error instanceof Error ? error.message : JSON.stringify(error),
-			} satisfies AssistantMessage;
+			output.stopReason = "error";
+			output.error = error instanceof Error ? error.message : JSON.stringify(error);
 			options?.onEvent?.({ type: "error", error: output.error });
 			return output;
 		}

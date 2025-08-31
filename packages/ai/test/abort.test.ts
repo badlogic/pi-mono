@@ -6,28 +6,38 @@ import { AnthropicLLM } from "../src/providers/anthropic.js";
 import type { LLM, LLMOptions, Context } from "../src/types.js";
 import { getModel } from "../src/models.js";
 
-async function testAbortSignal<T extends LLMOptions>(llm: LLM<T>) {
+async function testAbortSignal<T extends LLMOptions>(llm: LLM<T>, options: T) {
     const controller = new AbortController();
 
     // Abort after 100ms
-    setTimeout(() => controller.abort(), 1000);
+    setTimeout(() => controller.abort(), 5000);
 
     const context: Context = {
         messages: [{
             role: "user",
-            content: "Write a very long story about a dragon that lives in a mountain. Include lots of details about the dragon's appearance, its daily life, the treasures it guards, and its interactions with nearby villages. Make it at least 1000 words long."
+            content: "What is 15 + 27? Think step by step. Then list 100 first names."
         }]
     };
 
     const response = await llm.complete(context, {
+        ...options,
         signal: controller.signal
-    } as T);
+    });
 
     // If we get here without throwing, the abort didn't work
     expect(response.stopReason).toBe("error");
+    expect(response.content.length).toBeGreaterThan(0);
+
+    context.messages.push(response);
+    context.messages.push({ role: "user", content: "Please continue." });
+
+    // Ensure we can still make requests after abort
+    const followUp = await llm.complete(context, options);
+    expect(followUp.stopReason).toBe("stop");
+    expect(followUp.content.length).toBeGreaterThan(0);
 }
 
-async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>) {
+async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>, options: T) {
     const controller = new AbortController();
 
     // Abort immediately
@@ -38,8 +48,9 @@ async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>) {
     };
 
     const response = await llm.complete(context, {
+        ...options,
         signal: controller.signal
-    } as T);
+    });
     expect(response.stopReason).toBe("error");
 }
 
@@ -52,11 +63,11 @@ describe("AI Providers Abort Tests", () => {
         });
 
         it("should abort mid-stream", async () => {
-            await testAbortSignal(llm);
+            await testAbortSignal(llm, { thinking: { enabled: true } });
         });
 
         it("should handle immediate abort", async () => {
-            await testImmediateAbort(llm);
+            await testImmediateAbort(llm, { thinking: { enabled: true } });
         });
     });
 
@@ -64,15 +75,15 @@ describe("AI Providers Abort Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM(getModel("openai", "gpt-4o-mini")!, process.env.OPENAI_API_KEY!);
+            llm = new OpenAICompletionsLLM(getModel("openai", "gpt-5-mini")!, process.env.OPENAI_API_KEY!);
         });
 
         it("should abort mid-stream", async () => {
-            await testAbortSignal(llm);
+            await testAbortSignal(llm, { reasoningEffort: "medium"});
         });
 
         it("should handle immediate abort", async () => {
-            await testImmediateAbort(llm);
+            await testImmediateAbort(llm, { reasoningEffort: "medium" });
         });
     });
 
@@ -88,27 +99,27 @@ describe("AI Providers Abort Tests", () => {
         });
 
         it("should abort mid-stream", async () => {
-            await testAbortSignal(llm);
+            await testAbortSignal(llm, {});
         });
 
         it("should handle immediate abort", async () => {
-            await testImmediateAbort(llm);
+            await testImmediateAbort(llm, {});
         });
     });
 
-    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider Abort", () => {
+    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider Abort", () => {
         let llm: AnthropicLLM;
 
         beforeAll(() => {
-            llm = new AnthropicLLM(getModel("anthropic", "claude-3-5-haiku-latest")!, process.env.ANTHROPIC_API_KEY!);
+            llm = new AnthropicLLM(getModel("anthropic", "claude-opus-4-1")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
         });
 
         it("should abort mid-stream", async () => {
-            await testAbortSignal(llm);
+            await testAbortSignal(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
         });
 
         it("should handle immediate abort", async () => {
-            await testImmediateAbort(llm);
+            await testImmediateAbort(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
         });
     });
 });
