@@ -629,6 +629,21 @@ export const PROVIDERS = {
 				contextWindow: 200000,
 				maxTokens: 100000,
 			} satisfies Model,
+			"gpt-5-chat-latest": {
+				id: "gpt-5-chat-latest",
+				name: "GPT-5 Chat Latest",
+				provider: "openai",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: {
+					input: 1.25,
+					output: 10,
+					cacheRead: 0.125,
+					cacheWrite: 0,
+				},
+				contextWindow: 128000,
+				maxTokens: 16384,
+			} satisfies Model,
 		},
 	},
 	groq: {

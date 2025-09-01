@@ -63,8 +63,8 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 			let modelKey = model.id;
 
 			// Skip models that we get from models.dev (Anthropic, Google, OpenAI)
-			if (model.id.startsWith("google/") || 
-			    model.id.startsWith("openai/") || 
+			if (model.id.startsWith("google/") ||
+			    model.id.startsWith("openai/") ||
 			    model.id.startsWith("anthropic/")) {
 				continue;
 			} else if (model.id.startsWith("x-ai/")) {
@@ -274,6 +274,25 @@ async function generateModels() {
 
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
+
+	// Add missing gpt models
+	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5-chat-latest")) {
+		allModels.push({
+			id: "gpt-5-chat-latest",
+			name: "GPT-5 Chat Latest",
+			provider: "openai",
+			reasoning: false,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 10,
+				cacheRead: 0.125,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 16384,
+		});
+	}
 
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, NormalizedModel>> = {};
