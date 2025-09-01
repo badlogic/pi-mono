@@ -48,7 +48,10 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 				"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
 			};
 
-			process.env.ANTHROPIC_API_KEY = undefined;
+			// Clear the env var if we're in Node.js to prevent SDK from using it
+			if (typeof process !== "undefined" && process.env) {
+				process.env.ANTHROPIC_API_KEY = undefined;
+			}
 			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: model.baseUrl, defaultHeaders });
 			this.isOAuthToken = true;
 		} else {
