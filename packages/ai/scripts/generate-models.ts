@@ -62,48 +62,11 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 			let provider = "";
 			let modelKey = model.id;
 
-			// Map provider prefixes to our provider names
-			if (model.id.startsWith("google/")) {
-				provider = "google";
-				modelKey = model.id.replace("google/", "");
-			} else if (model.id.startsWith("openai/")) {
-				provider = "openai";
-				modelKey = model.id.replace("openai/", "");
-			} else if (model.id.startsWith("anthropic/")) {
-				provider = "anthropic";
-				modelKey = model.id.replace("anthropic/", "");
-
-				// Fix dot notation to dash notation for ALL Anthropic models
-				modelKey = modelKey.replace(/\./g, "-");
-
-				// Map version-less models to -latest aliases
-				if (modelKey === "claude-3-5-haiku") {
-					modelKey = "claude-3-5-haiku-latest";
-				} else if (modelKey === "claude-3-5-sonnet") {
-					modelKey = "claude-3-5-sonnet-latest";
-				} else if (modelKey === "claude-3-7-sonnet") {
-					modelKey = "claude-3-7-sonnet-latest";
-				} else if (modelKey === "claude-3-7-sonnet:thinking") {
-					modelKey = "claude-3-7-sonnet-latest:thinking";
-				}
-				// Map numbered versions to proper format
-				else if (modelKey === "claude-opus-4-1") {
-					modelKey = "claude-opus-4-1";
-				} else if (modelKey === "claude-opus-4") {
-					modelKey = "claude-opus-4-0";
-				} else if (modelKey === "claude-sonnet-4") {
-					modelKey = "claude-sonnet-4-0";
-				}
-				// Map old 3.x models to their specific dates
-				else if (modelKey === "claude-3-haiku") {
-					modelKey = "claude-3-haiku-20240307";
-				} else if (modelKey === "claude-3-sonnet") {
-					modelKey = "claude-3-sonnet-20240229";
-				} else if (modelKey === "claude-3-opus") {
-					modelKey = "claude-3-opus-20240229";
-				} else {
-					modelKey = modelKey.replace("\.", "-");
-				}
+			// Skip models that we get from models.dev (Anthropic, Google, OpenAI)
+			if (model.id.startsWith("google/") || 
+			    model.id.startsWith("openai/") || 
+			    model.id.startsWith("anthropic/")) {
+				continue;
 			} else if (model.id.startsWith("x-ai/")) {
 				provider = "xai";
 				modelKey = model.id.replace("x-ai/", "");
@@ -113,8 +76,8 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 				modelKey = model.id; // Keep full ID for OpenRouter
 			}
 
-			// Skip if not one of our supported providers
-			if (!["google", "openai", "anthropic", "xai", "openrouter"].includes(provider)) {
+			// Skip if not one of our supported providers from OpenRouter
+			if (!["xai", "openrouter"].includes(provider)) {
 				continue;
 			}
 
@@ -171,6 +134,78 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 		const data = await response.json();
 
 		const models: NormalizedModel[] = [];
+
+		// Process Anthropic models
+		if (data.anthropic?.models) {
+			for (const [modelId, model] of Object.entries(data.anthropic.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					provider: "anthropic",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process Google models
+		if (data.google?.models) {
+			for (const [modelId, model] of Object.entries(data.google.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					provider: "google",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process OpenAI models
+		if (data.openai?.models) {
+			for (const [modelId, model] of Object.entries(data.openai.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					provider: "openai",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
 
 		// Process Groq models
 		if (data.groq?.models) {
@@ -231,11 +266,13 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 }
 
 async function generateModels() {
-	// Fetch all models
-	const openRouterModels = await fetchOpenRouterModels();
+	// Fetch models from both sources
+	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
+	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
 	const modelsDevModels = await loadModelsDevData();
+	const openRouterModels = await fetchOpenRouterModels();
 
-	// Combine models (models.dev takes priority for Groq/Cerebras)
+	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
 	// Group by provider and deduplicate by model ID

@@ -114,7 +114,7 @@ describe("AI Providers Abort Tests", () => {
         let llm: AnthropicLLM;
 
         beforeAll(() => {
-            llm = new AnthropicLLM(getModel("anthropic", "claude-opus-4-1")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
+            llm = new AnthropicLLM(getModel("anthropic", "claude-opus-4-1-20250805")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
         });
 
         it("should abort mid-stream", async () => {

@@ -340,11 +340,11 @@ describe("AI Providers E2E Tests", () => {
         });
     });
 
-    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider (claude-sonnet-4-0)", () => {
+    describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider (claude-sonnet-4-20250514)", () => {
         let llm: AnthropicLLM;
 
         beforeAll(() => {
-            llm = new AnthropicLLM(getModel("anthropic", "claude-sonnet-4-0")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
+            llm = new AnthropicLLM(getModel("anthropic", "claude-sonnet-4-20250514")!, process.env.ANTHROPIC_OAUTH_TOKEN!);
         });
 
         it("should complete basic text generation", async () => {

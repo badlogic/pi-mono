@@ -4,7 +4,7 @@ import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
 import type { LLM, Context, AssistantMessage, Tool, Message } from "../src/types.js";
-import { getModel } from "../src/models.js";
+import { createLLM, getModel } from "../src/models.js";
 
 // Tool for testing
 const weatherTool: Tool = {

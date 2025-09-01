@@ -93,12 +93,32 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 			}
 
 			// Add reasoning options for models that support it
-			if (this.modelInfo?.reasoning && (options?.reasoningEffort || options?.reasoningSummary)) {
-				params.reasoning = {
-					effort: options?.reasoningEffort || "medium",
-					summary: options?.reasoningSummary || "auto",
-				};
-				params.include = ["reasoning.encrypted_content"];
+			if (this.modelInfo?.reasoning) {
+				if (options?.reasoningEffort || options?.reasoningSummary) {
+					params.reasoning = {
+						effort: options?.reasoningEffort || "medium",
+						summary: options?.reasoningSummary || "auto",
+					};
+					params.include = ["reasoning.encrypted_content"];
+				} else {
+					params.reasoning = {
+						effort: this.modelInfo.name.startsWith("gpt-5") ? "minimal" : null,
+						summary: null,
+					};
+
+					if (this.modelInfo.name.startsWith("gpt-5")) {
+						// Jesus Christ, see https://community.openai.com/t/need-reasoning-false-option-for-gpt-5/1351588/7
+						input.push({
+							role: "developer",
+							content: [
+								{
+									type: "input_text",
+									text: "# Juice: 0 !important",
+								},
+							],
+						});
+					}
+				}
 			}
 
 			const stream = await this.client.responses.create(params, {

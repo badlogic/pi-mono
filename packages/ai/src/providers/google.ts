@@ -6,7 +6,6 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type Part,
-	setDefaultBaseUrls,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
