@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-agent",
-	"version": "0.5.21",
+	"version": "0.5.22",
 	"description": "General-purpose agent with tool calling and session persistence",
 	"type": "module",
 	"bin": {
