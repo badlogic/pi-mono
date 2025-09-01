@@ -45,6 +45,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 		if (apiKey.includes("sk-ant-oat")) {
 			const defaultHeaders = {
 				accept: "application/json",
+				"anthropic-dangerous-direct-browser-access": "true",
 				"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
 			};
 
@@ -61,7 +62,12 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			});
 			this.isOAuthToken = true;
 		} else {
-			this.client = new Anthropic({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
+			const defaultHeaders = {
+				accept: "application/json",
+				"anthropic-dangerous-direct-browser-access": "true",
+				"anthropic-beta": "fine-grained-tool-streaming-2025-05-14",
+			};
+			this.client = new Anthropic({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true, defaultHeaders });
 			this.isOAuthToken = false;
 		}
 		this.modelInfo = model;
