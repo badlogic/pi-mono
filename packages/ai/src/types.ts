@@ -8,6 +8,7 @@ export interface LLMOptions {
 export interface LLM<T extends LLMOptions> {
 	generate(request: Context, options?: T): Promise<AssistantMessage>;
 	getModel(): Model;
+	getApi(): string;
 }
 
 export interface TextContent {
@@ -59,6 +60,7 @@ export interface UserMessage {
 export interface AssistantMessage {
 	role: "assistant";
 	content: (TextContent | ThinkingContent | ToolCall)[];
+	api: string;
 	provider: string;
 	model: string;
 	usage: Usage;

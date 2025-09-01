@@ -77,10 +77,15 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 		return this.modelInfo;
 	}
 
+	getApi(): string {
+		return "anthropic-messages";
+	}
+
 	async generate(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
+			api: this.getApi(),
 			provider: this.modelInfo.provider,
 			model: this.modelInfo.id,
 			usage: {
@@ -260,7 +265,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 		const params: MessageParam[] = [];
 
 		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo);
+		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
 
 		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
@@ -290,9 +295,12 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 							};
 						}
 					});
+					const filteredBlocks = !this.modelInfo?.input.includes("image")
+						? blocks.filter((b) => b.type !== "image")
+						: blocks;
 					params.push({
 						role: "user",
-						content: blocks,
+						content: filteredBlocks,
 					});
 				}
 			} else if (msg.role === "assistant") {

@@ -12,7 +12,7 @@ import type { AssistantMessage, Message, Model } from "../types.js";
  * @param model The target model that will process these messages
  * @returns A copy of the messages array with transformations applied
  */
-export function transformMessages(messages: Message[], model: Model): Message[] {
+export function transformMessages(messages: Message[], model: Model, api: string): Message[] {
 	return messages.map((msg) => {
 		// User and toolResult messages pass through unchanged
 		if (msg.role === "user" || msg.role === "toolResult") {
@@ -23,8 +23,8 @@ export function transformMessages(messages: Message[], model: Model): Message[] 
 		if (msg.role === "assistant") {
 			const assistantMsg = msg as AssistantMessage;
 
-			// If message is from the same provider and model, keep as-is
-			if (assistantMsg.provider === model.provider && assistantMsg.model === model.id) {
+			// If message is from the same provider and API, keep as is
+			if (assistantMsg.provider === model.provider && assistantMsg.api === api) {
 				return msg;
 			}
 

@@ -6,6 +6,7 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type Part,
+	setDefaultBaseUrls,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -52,10 +53,15 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 		return this.modelInfo;
 	}
 
+	getApi(): string {
+		return "google-generative-ai";
+	}
+
 	async generate(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
+			api: this.getApi(),
 			provider: this.modelInfo.provider,
 			model: this.modelInfo.id,
 			usage: {
@@ -247,7 +253,7 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 		const contents: Content[] = [];
 
 		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo);
+		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
 
 		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
@@ -272,9 +278,12 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 							};
 						}
 					});
+					const filteredParts = !this.modelInfo?.input.includes("image")
+						? parts.filter((p) => p.text !== undefined)
+						: parts;
 					contents.push({
 						role: "user",
-						parts,
+						parts: filteredParts,
 					});
 				}
 			} else if (msg.role === "assistant") {

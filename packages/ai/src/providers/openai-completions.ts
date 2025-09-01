@@ -48,10 +48,15 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		return this.modelInfo;
 	}
 
+	getApi(): string {
+		return "openai-completions";
+	}
+
 	async generate(request: Context, options?: OpenAICompletionsLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
+			api: this.getApi(),
 			provider: this.modelInfo.provider,
 			model: this.modelInfo.id,
 			usage: {
@@ -313,7 +318,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		const params: ChatCompletionMessageParam[] = [];
 
 		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo);
+		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
 
 		// Add system prompt if provided
 		if (systemPrompt) {
@@ -353,9 +358,12 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							} satisfies ChatCompletionContentPartImage;
 						}
 					});
+					const filteredContent = !this.modelInfo?.input.includes("image")
+						? content.filter((c) => c.type !== "image_url")
+						: content;
 					params.push({
 						role: "user",
-						content,
+						content: filteredContent,
 					});
 				}
 			} else if (msg.role === "assistant") {

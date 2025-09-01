@@ -51,10 +51,15 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 		return this.modelInfo;
 	}
 
+	getApi(): string {
+		return "openai-responses";
+	}
+
 	async generate(request: Context, options?: OpenAIResponsesLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
+			api: this.getApi(),
 			provider: this.modelInfo.provider,
 			model: this.modelInfo.id,
 			usage: {
@@ -287,7 +292,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 		const input: ResponseInput = [];
 
 		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo);
+		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
 
 		// Add system prompt if provided
 		if (systemPrompt) {
@@ -324,9 +329,12 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 							} satisfies ResponseInputImage;
 						}
 					});
+					const filteredContent = !this.modelInfo?.input.includes("image")
+						? content.filter((c) => c.type !== "input_image")
+						: content;
 					input.push({
 						role: "user",
-						content,
+						content: filteredContent,
 					});
 				}
 			} else if (msg.role === "assistant") {
