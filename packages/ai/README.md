@@ -427,6 +427,25 @@ if (model) {
 }
 ```
 
+## Browser Usage
+
+The library supports browser environments. You must pass the API key explicitly since environment variables are not available in browsers:
+
+```typescript
+import { createLLM } from '@mariozechner/pi-ai';
+
+// API key must be passed explicitly in browser
+const llm = createLLM('anthropic', 'claude-3-5-haiku-20241022', {
+  apiKey: 'your-api-key'
+});
+
+const response = await llm.generate({
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+```
+
+> **Security Warning**: Exposing API keys in frontend code is dangerous. Anyone can extract and abuse your keys. Only use this approach for internal tools or demos. For production applications, use a backend proxy that keeps your API keys secure.
+
 ## Environment Variables
 
 Set these environment variables to use `createLLM` without passing API keys:
