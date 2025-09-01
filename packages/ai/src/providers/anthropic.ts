@@ -52,10 +52,16 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 			if (typeof process !== "undefined" && process.env) {
 				process.env.ANTHROPIC_API_KEY = undefined;
 			}
-			this.client = new Anthropic({ apiKey: null, authToken: apiKey, baseURL: model.baseUrl, defaultHeaders });
+			this.client = new Anthropic({
+				apiKey: null,
+				authToken: apiKey,
+				baseURL: model.baseUrl,
+				defaultHeaders,
+				dangerouslyAllowBrowser: true,
+			});
 			this.isOAuthToken = true;
 		} else {
-			this.client = new Anthropic({ apiKey, baseURL: model.baseUrl });
+			this.client = new Anthropic({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
 			this.isOAuthToken = false;
 		}
 		this.modelInfo = model;
