@@ -18,6 +18,7 @@ import type {
 	ThinkingContent,
 	ToolCall,
 } from "../types.js";
+import { transformMessages } from "./utils.js";
 
 export interface AnthropicLLMOptions extends LLMOptions {
 	thinking?: {
@@ -61,7 +62,7 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 		return this.modelInfo;
 	}
 
-	async complete(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
+	async generate(context: Context, options?: AnthropicLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
@@ -243,7 +244,10 @@ export class AnthropicLLM implements LLM<AnthropicLLMOptions> {
 	private convertMessages(messages: Message[]): MessageParam[] {
 		const params: MessageParam[] = [];
 
-		for (const msg of messages) {
+		// Transform messages for cross-provider compatibility
+		const transformedMessages = transformMessages(messages, this.modelInfo);
+
+		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
 				// Handle both string and array content
 				if (typeof msg.content === "string") {

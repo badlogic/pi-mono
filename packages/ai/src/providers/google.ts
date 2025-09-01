@@ -21,6 +21,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { transformMessages } from "./utils.js";
 
 export interface GoogleLLMOptions extends LLMOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -51,7 +52,7 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 		return this.modelInfo;
 	}
 
-	async complete(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
+	async generate(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
@@ -223,6 +224,15 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 				}
 			}
 
+			// Finalize last block
+			if (currentBlock) {
+				if (currentBlock.type === "text") {
+					options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+				} else {
+					options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+				}
+			}
+
 			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
 			return output;
 		} catch (error) {
@@ -236,7 +246,10 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 	private convertMessages(messages: Message[]): Content[] {
 		const contents: Content[] = [];
 
-		for (const msg of messages) {
+		// Transform messages for cross-provider compatibility
+		const transformedMessages = transformMessages(messages, this.modelInfo);
+
+		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
 				// Handle both string and array content
 				if (typeof msg.content === "string") {

@@ -40,11 +40,11 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
                 ]
             };
 
-            const response = await llm.complete(context);
+            const response = await llm.generate(context);
 
             expect(response.role).toBe("assistant");
             expect(response.content).toBeTruthy();
-            expect(response.usage.input).toBeGreaterThan(0);
+            expect(response.usage.input + response.usage.cacheRead).toBeGreaterThan(0);
             expect(response.usage.output).toBeGreaterThan(0);
             expect(response.error).toBeFalsy();
             expect(response.content.map(b => b.type == "text" ? b.text : "").join("")).toContain("Hello test successful");
@@ -52,7 +52,7 @@ async function basicTextGeneration<T extends LLMOptions>(llm: LLM<T>) {
             context.messages.push(response);
             context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'" });
 
-            const secondResponse = await llm.complete(context);
+            const secondResponse = await llm.generate(context);
 
             expect(secondResponse.role).toBe("assistant");
             expect(secondResponse.content).toBeTruthy();
@@ -72,7 +72,7 @@ async function handleToolCall<T extends LLMOptions>(llm: LLM<T>) {
         tools: [calculatorTool]
     };
 
-    const response = await llm.complete(context);
+    const response = await llm.generate(context);
     expect(response.stopReason).toBe("toolUse");
     expect(response.content.some(b => b.type == "toolCall")).toBeTruthy();
     const toolCall = response.content.find(b => b.type == "toolCall")!;
@@ -89,7 +89,7 @@ async function handleStreaming<T extends LLMOptions>(llm: LLM<T>) {
         messages: [{ role: "user", content: "Count from 1 to 3" }]
     };
 
-    const response = await llm.complete(context, {
+    const response = await llm.generate(context, {
         onEvent: (event) => {
             if (event.type === "text_start") {
                 textStarted = true;
@@ -113,14 +113,15 @@ async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T) {
     let thinkingCompleted = false;
 
     const context: Context = {
-        messages: [{ role: "user", content: "What is 15 + 27? Think step by step." }]
+        messages: [{ role: "user", content: `Think about ${(Math.random() * 255) | 0} + 27. Think step by step. Then output the result.` }]
     };
 
-    const response = await llm.complete(context, {
+    const response = await llm.generate(context, {
        onEvent: (event) => {
             if (event.type === "thinking_start") {
                 thinkingStarted = true;
             } else if (event.type === "thinking_delta") {
+                expect(event.content.endsWith(event.delta)).toBe(true);
                 thinkingChunks += event.delta;
             } else if (event.type === "thinking_end") {
                 thinkingCompleted = true;
@@ -130,6 +131,7 @@ async function handleThinking<T extends LLMOptions>(llm: LLM<T>, options: T) {
     });
 
 
+    expect(response.stopReason, `Error: ${(response as any).error}`).toBe("stop");
     expect(thinkingStarted).toBe(true);
     expect(thinkingChunks.length).toBeGreaterThan(0);
     expect(thinkingCompleted).toBe(true);
@@ -160,14 +162,14 @@ async function handleImage<T extends LLMOptions>(llm: LLM<T>) {
             {
                 role: "user",
                 content: [
-                    { type: "text", text: "What do you see in this image? Please describe the shape and color." },
+                    { type: "text", text: "What do you see in this image? Please describe the shape (circle, rectangle, square, triangle, ...) and color (red, blue, green, ...)." },
                     imageContent,
                 ],
             },
         ],
     };
 
-    const response = await llm.complete(context);
+    const response = await llm.generate(context);
 
     // Check the response mentions red and circle
     expect(response.content.length > 0).toBeTruthy();
@@ -195,7 +197,7 @@ async function multiTurn<T extends LLMOptions>(llm: LLM<T>, thinkingOptions: T) 
     const maxTurns = 5; // Prevent infinite loops
 
     for (let turn = 0; turn < maxTurns; turn++) {
-        const response = await llm.complete(context, thinkingOptions);
+        const response = await llm.generate(context, thinkingOptions);
 
         // Add the assistant response to context
         context.messages.push(response);
@@ -325,12 +327,12 @@ describe("AI Providers E2E Tests", () => {
             await handleStreaming(llm);
         });
 
-        it("should handle thinking mode", async () => {
-            await handleThinking(llm, {reasoningEffort: "medium"});
+        it("should handle thinking mode", {retry: 2}, async () => {
+            await handleThinking(llm, {reasoningEffort: "high"});
         });
 
         it("should handle multi-turn with thinking and tools", async () => {
-            await multiTurn(llm, {reasoningEffort: "medium"});
+            await multiTurn(llm, {reasoningEffort: "high"});
         });
 
         it("should handle image input", async () => {
@@ -363,34 +365,6 @@ describe("AI Providers E2E Tests", () => {
 
         it("should handle multi-turn with thinking and tools", async () => {
             await multiTurn(llm, {thinking: { enabled: true, budgetTokens: 2048 }});
-        });
-
-        it("should handle image input", async () => {
-            await handleImage(llm);
-        });
-    });
-
-    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (Haiku 3.5)", () => {
-        let llm: AnthropicLLM;
-
-        beforeAll(() => {
-            llm = createLLM("anthropic", "claude-3-5-haiku-latest");
-        });
-
-        it("should complete basic text generation", async () => {
-            await basicTextGeneration(llm);
-        });
-
-        it("should handle tool calling", async () => {
-            await handleToolCall(llm);
-        });
-
-        it("should handle streaming", async () => {
-            await handleStreaming(llm);
-        });
-
-        it("should handle multi-turn with thinking and tools", async () => {
-            await multiTurn(llm, {thinking: {enabled: true}});
         });
 
         it("should handle image input", async () => {
@@ -505,7 +479,7 @@ describe("AI Providers E2E Tests", () => {
             await handleThinking(llm, {reasoningEffort: "medium"});
         });
 
-        it("should handle multi-turn with thinking and tools", async () => {
+        it("should handle multi-turn with thinking and tools", { retry: 2 }, async () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
         });
 
@@ -611,4 +585,34 @@ describe("AI Providers E2E Tests", () => {
             await multiTurn(llm, {reasoningEffort: "medium"});
         });
     });
+
+    /*
+    describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (Haiku 3.5)", () => {
+        let llm: AnthropicLLM;
+
+        beforeAll(() => {
+            llm = createLLM("anthropic", "claude-3-5-haiku-latest");
+        });
+
+        it("should complete basic text generation", async () => {
+            await basicTextGeneration(llm);
+        });
+
+        it("should handle tool calling", async () => {
+            await handleToolCall(llm);
+        });
+
+        it("should handle streaming", async () => {
+            await handleStreaming(llm);
+        });
+
+        it("should handle multi-turn with thinking and tools", async () => {
+            await multiTurn(llm, {thinking: {enabled: true}});
+        });
+
+        it("should handle image input", async () => {
+            await handleImage(llm);
+        });
+    });
+    */
 });

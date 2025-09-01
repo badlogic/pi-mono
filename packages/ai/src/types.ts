@@ -6,7 +6,7 @@ export interface LLMOptions {
 }
 
 export interface LLM<T extends LLMOptions> {
-	complete(request: Context, options?: T): Promise<AssistantMessage>;
+	generate(request: Context, options?: T): Promise<AssistantMessage>;
 	getModel(): Model;
 }
 

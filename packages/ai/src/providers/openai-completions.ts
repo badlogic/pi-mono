@@ -19,8 +19,8 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
-	Usage,
 } from "../types.js";
+import { transformMessages } from "./utils.js";
 
 export interface OpenAICompletionsLLMOptions extends LLMOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
@@ -48,7 +48,22 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		return this.modelInfo;
 	}
 
-	async complete(request: Context, options?: OpenAICompletionsLLMOptions): Promise<AssistantMessage> {
+	async generate(request: Context, options?: OpenAICompletionsLLMOptions): Promise<AssistantMessage> {
+		const output: AssistantMessage = {
+			role: "assistant",
+			content: [],
+			provider: this.modelInfo.provider,
+			model: this.modelInfo.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+		};
+
 		try {
 			const messages = this.convertMessages(request.messages, request.systemPrompt);
 
@@ -94,19 +109,10 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 
 			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
 
-			const blocks: AssistantMessage["content"] = [];
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
-			let usage: Usage = {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			};
-			let finishReason: ChatCompletionChunk.Choice["finish_reason"] | null = null;
 			for await (const chunk of stream) {
 				if (chunk.usage) {
-					usage = {
+					output.usage = {
 						input: chunk.usage.prompt_tokens || 0,
 						output:
 							(chunk.usage.completion_tokens || 0) +
@@ -121,10 +127,16 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							total: 0,
 						},
 					};
+					calculateCost(this.modelInfo, output.usage);
 				}
 
 				const choice = chunk.choices[0];
 				if (!choice) continue;
+
+				// Capture finish reason
+				if (choice.finish_reason) {
+					output.stopReason = this.mapStopReason(choice.finish_reason);
+				}
 
 				if (choice.delta) {
 					// Handle text content
@@ -144,10 +156,10 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 									delete currentBlock.partialArgs;
 									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
 								}
-								blocks.push(currentBlock);
 							}
 							// Start new text block
 							currentBlock = { type: "text", text: "" };
+							output.content.push(currentBlock);
 							options?.onEvent?.({ type: "text_start" });
 						}
 						// Append to text block
@@ -178,10 +190,10 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 									delete currentBlock.partialArgs;
 									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
 								}
-								blocks.push(currentBlock);
 							}
 							// Start new thinking block
 							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning_content" };
+							output.content.push(currentBlock);
 							options?.onEvent?.({ type: "thinking_start" });
 						}
 						// Append to thinking block
@@ -209,10 +221,10 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 									delete currentBlock.partialArgs;
 									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
 								}
-								blocks.push(currentBlock);
 							}
 							// Start new thinking block
 							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning" };
+							output.content.push(currentBlock);
 							options?.onEvent?.({ type: "thinking_start" });
 						}
 						// Append to thinking block
@@ -243,7 +255,6 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 										delete currentBlock.partialArgs;
 										options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
 									}
-									blocks.push(currentBlock);
 								}
 
 								// Start new tool call block
@@ -254,6 +265,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 									arguments: {},
 									partialArgs: "",
 								};
+								output.content.push(currentBlock);
 							}
 
 							// Accumulate tool call data
@@ -266,11 +278,6 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							}
 						}
 					}
-				}
-
-				// Capture finish reason
-				if (choice.finish_reason) {
-					finishReason = choice.finish_reason;
 				}
 			}
 
@@ -285,45 +292,28 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 					delete currentBlock.partialArgs;
 					options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
 				}
-				blocks.push(currentBlock);
 			}
 
-			// Calculate cost
-			calculateCost(this.modelInfo, usage);
+			if (options?.signal?.aborted) {
+				throw new Error("Request was aborted");
+			}
 
-			const output = {
-				role: "assistant",
-				content: blocks,
-				provider: this.modelInfo.provider,
-				model: this.modelInfo.id,
-				usage,
-				stopReason: this.mapStopReason(finishReason),
-			} satisfies AssistantMessage;
 			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
 			return output;
 		} catch (error) {
-			const output = {
-				role: "assistant",
-				content: [],
-				provider: this.modelInfo.provider,
-				model: this.modelInfo.id,
-				usage: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				},
-				stopReason: "error",
-				error: error instanceof Error ? error.message : String(error),
-			} satisfies AssistantMessage;
-			options?.onEvent?.({ type: "error", error: output.error || "Unknown error" });
+			// Update output with error information
+			output.stopReason = "error";
+			output.error = error instanceof Error ? error.message : String(error);
+			options?.onEvent?.({ type: "error", error: output.error });
 			return output;
 		}
 	}
 
 	private convertMessages(messages: Message[], systemPrompt?: string): ChatCompletionMessageParam[] {
 		const params: ChatCompletionMessageParam[] = [];
+
+		// Transform messages for cross-provider compatibility
+		const transformedMessages = transformMessages(messages, this.modelInfo);
 
 		// Add system prompt if provided
 		if (systemPrompt) {
@@ -337,7 +327,7 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		}
 
 		// Convert messages
-		for (const msg of messages) {
+		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
 				// Handle both string and array content
 				if (typeof msg.content === "string") {

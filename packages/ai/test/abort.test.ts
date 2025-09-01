@@ -6,22 +6,25 @@ import { AnthropicLLM } from "../src/providers/anthropic.js";
 import type { LLM, LLMOptions, Context } from "../src/types.js";
 import { getModel } from "../src/models.js";
 
-async function testAbortSignal<T extends LLMOptions>(llm: LLM<T>, options: T) {
-    const controller = new AbortController();
-
-    // Abort after 100ms
-    setTimeout(() => controller.abort(), 5000);
-
+async function testAbortSignal<T extends LLMOptions>(llm: LLM<T>, options: T = {} as T) {
     const context: Context = {
         messages: [{
             role: "user",
-            content: "What is 15 + 27? Think step by step. Then list 100 first names."
+            content: "What is 15 + 27? Think step by step. Then list 50 first names."
         }]
     };
 
-    const response = await llm.complete(context, {
+    let abortFired = false;
+    const controller = new AbortController();
+    const response = await llm.generate(context, {
         ...options,
-        signal: controller.signal
+        signal: controller.signal,
+        onEvent: (event) => {
+            // console.log(JSON.stringify(event, null, 2));
+            if (abortFired) return;
+            setTimeout(() => controller.abort(), 2000);
+            abortFired = true;
+        }
     });
 
     // If we get here without throwing, the abort didn't work
@@ -29,15 +32,15 @@ async function testAbortSignal<T extends LLMOptions>(llm: LLM<T>, options: T) {
     expect(response.content.length).toBeGreaterThan(0);
 
     context.messages.push(response);
-    context.messages.push({ role: "user", content: "Please continue." });
+    context.messages.push({ role: "user", content: "Please continue, but only generate 5 names." });
 
     // Ensure we can still make requests after abort
-    const followUp = await llm.complete(context, options);
+    const followUp = await llm.generate(context, options);
     expect(followUp.stopReason).toBe("stop");
     expect(followUp.content.length).toBeGreaterThan(0);
 }
 
-async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>, options: T) {
+async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>, options: T = {} as T) {
     const controller = new AbortController();
 
     // Abort immediately
@@ -47,7 +50,7 @@ async function testImmediateAbort<T extends LLMOptions>(llm: LLM<T>, options: T)
         messages: [{ role: "user", content: "Hello" }]
     };
 
-    const response = await llm.complete(context, {
+    const response = await llm.generate(context, {
         ...options,
         signal: controller.signal
     });
@@ -75,15 +78,15 @@ describe("AI Providers Abort Tests", () => {
         let llm: OpenAICompletionsLLM;
 
         beforeAll(() => {
-            llm = new OpenAICompletionsLLM(getModel("openai", "gpt-5-mini")!, process.env.OPENAI_API_KEY!);
+            llm = new OpenAICompletionsLLM(getModel("openai", "gpt-4o-mini")!, process.env.OPENAI_API_KEY!);
         });
 
         it("should abort mid-stream", async () => {
-            await testAbortSignal(llm, { reasoningEffort: "medium"});
+            await testAbortSignal(llm);
         });
 
         it("should handle immediate abort", async () => {
-            await testImmediateAbort(llm, { reasoningEffort: "medium" });
+            await testImmediateAbort(llm);
         });
     });
 

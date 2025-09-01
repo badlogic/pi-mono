@@ -23,6 +23,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { transformMessages } from "./utils.js";
 
 export interface OpenAIResponsesLLMOptions extends LLMOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high";
@@ -50,7 +51,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 		return this.modelInfo;
 	}
 
-	async complete(request: Context, options?: OpenAIResponsesLLMOptions): Promise<AssistantMessage> {
+	async generate(request: Context, options?: OpenAIResponsesLLMOptions): Promise<AssistantMessage> {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
@@ -132,7 +133,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 							lastPart.text += event.delta;
 							options?.onEvent?.({
 								type: "thinking_delta",
-								content: currentItem.summary.join("\n\n"),
+								content: currentItem.summary.map((s) => s.text).join("\n\n"),
 								delta: event.delta,
 							});
 						}
@@ -141,11 +142,16 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 				// Add a new line between summary parts (hack...)
 				else if (event.type === "response.reasoning_summary_part.done") {
 					if (currentItem && currentItem.type === "reasoning") {
-						options?.onEvent?.({
-							type: "thinking_delta",
-							content: currentItem.summary.join("\n\n"),
-							delta: "\n\n",
-						});
+						currentItem.summary = currentItem.summary || [];
+						const lastPart = currentItem.summary[currentItem.summary.length - 1];
+						if (lastPart) {
+							lastPart.text += "\n\n";
+							options?.onEvent?.({
+								type: "thinking_delta",
+								content: currentItem.summary.map((s) => s.text).join("\n\n"),
+								delta: "\n\n",
+							});
+						}
 					}
 				}
 				// Handle text output deltas
@@ -189,7 +195,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 
 					if (item.type === "reasoning") {
 						outputItems[outputItems.length - 1] = item; // Update with final item
-						const thinkingContent = item.summary?.map((s: any) => s.text).join("\n\n") || "";
+						const thinkingContent = item.summary?.map((s) => s.text).join("\n\n") || "";
 						options?.onEvent?.({ type: "thinking_end", content: thinkingContent });
 					} else if (item.type === "message") {
 						outputItems[outputItems.length - 1] = item; // Update with final item
@@ -280,6 +286,9 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 	private convertToInput(messages: Message[], systemPrompt?: string): ResponseInput {
 		const input: ResponseInput = [];
 
+		// Transform messages for cross-provider compatibility
+		const transformedMessages = transformMessages(messages, this.modelInfo);
+
 		// Add system prompt if provided
 		if (systemPrompt) {
 			const role = this.modelInfo?.reasoning ? "developer" : "system";
@@ -290,7 +299,7 @@ export class OpenAIResponsesLLM implements LLM<OpenAIResponsesLLMOptions> {
 		}
 
 		// Convert messages
-		for (const msg of messages) {
+		for (const msg of transformedMessages) {
 			if (msg.role === "user") {
 				// Handle both string and array content
 				if (typeof msg.content === "string") {

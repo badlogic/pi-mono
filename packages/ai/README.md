@@ -28,7 +28,7 @@ import { createLLM } from '@mariozechner/pi-ai';
 
 const llm = createLLM('openai', 'gpt-4o-mini');
 
-const response = await llm.complete({
+const response = await llm.generate({
   messages: [{ role: 'user', content: 'Hello!' }]
 });
 
@@ -48,7 +48,7 @@ import { readFileSync } from 'fs';
 const imageBuffer = readFileSync('image.png');
 const base64Image = imageBuffer.toString('base64');
 
-const response = await llm.complete({
+const response = await llm.generate({
   messages: [{
     role: 'user',
     content: [
@@ -77,7 +77,7 @@ const tools = [{
 const messages = [];
 messages.push({ role: 'user', content: 'What is the weather in Paris?' });
 
-const response = await llm.complete({ messages, tools });
+const response = await llm.generate({ messages, tools });
 messages.push(response);
 
 // Check for tool calls in the content blocks
@@ -99,7 +99,7 @@ for (const call of toolCalls) {
 
 if (toolCalls.length > 0) {
   // Continue conversation with tool results
-  const followUp = await llm.complete({ messages, tools });
+  const followUp = await llm.generate({ messages, tools });
   messages.push(followUp);
 
   // Print text blocks from the response
@@ -114,7 +114,7 @@ if (toolCalls.length > 0) {
 ## Streaming
 
 ```typescript
-const response = await llm.complete({
+const response = await llm.generate({
   messages: [{ role: 'user', content: 'Write a story' }]
 }, {
   onEvent: (event) => {
@@ -157,13 +157,17 @@ const response = await llm.complete({
 
 ## Abort Signal
 
+The abort signal allows you to cancel in-progress requests. When aborted, providers return partial results accumulated up to the cancellation point, including accurate token counts and cost estimates.
+
+### Basic Usage
+
 ```typescript
 const controller = new AbortController();
 
 // Abort after 2 seconds
 setTimeout(() => controller.abort(), 2000);
 
-const response = await llm.complete({
+const response = await llm.generate({
   messages: [{ role: 'user', content: 'Write a long story' }]
 }, {
   signal: controller.signal,
@@ -177,10 +181,124 @@ const response = await llm.complete({
 // Check if the request was aborted
 if (response.stopReason === 'error' && response.error) {
   console.log('Request was aborted:', response.error);
+  console.log('Partial content received:', response.content);
+  console.log('Tokens used:', response.usage);
 } else {
   console.log('Request completed successfully');
 }
 ```
+
+### Partial Results and Token Tracking
+
+When a request is aborted, the API returns an `AssistantMessage` with:
+- `stopReason: 'error'` - Indicates the request was aborted
+- `error: string` - Error message describing the abort
+- `content: array` - **Partial content** accumulated before the abort
+- `usage: object` - **Token counts and costs** (may be incomplete depending on when abort occurred)
+
+```typescript
+// Example: User interrupts a long-running request
+const controller = new AbortController();
+document.getElementById('stop-button').onclick = () => controller.abort();
+
+const response = await llm.generate(context, {
+  signal: controller.signal,
+  onEvent: (e) => {
+    if (e.type === 'text_delta') updateUI(e.delta);
+  }
+});
+
+// Even if aborted, you get:
+// - Partial text that was streamed
+// - Token count (may be partial/estimated)
+// - Cost calculations (may be incomplete)
+console.log(`Generated ${response.content.length} content blocks`);
+console.log(`Estimated ${response.usage.output} output tokens`);
+console.log(`Estimated cost: $${response.usage.cost.total}`);
+```
+
+### Continuing After Abort
+
+Aborted messages can be added to the conversation context and continued in subsequent requests:
+
+```typescript
+const context = {
+  messages: [
+    { role: 'user', content: 'Explain quantum computing in detail' }
+  ]
+};
+
+// First request gets aborted after 2 seconds
+const controller1 = new AbortController();
+setTimeout(() => controller1.abort(), 2000);
+
+const partial = await llm.generate(context, { signal: controller1.signal });
+
+// Add the partial response to context
+context.messages.push(partial);
+context.messages.push({ role: 'user', content: 'Please continue' });
+
+// Continue the conversation
+const continuation = await llm.generate(context);
+```
+
+When an aborted message (with `stopReason: 'error'`) is resubmitted in the context:
+- **OpenAI Responses**: Filters out thinking blocks and tool calls from aborted messages, as API call will fail if incomplete thinking and tool calls are submitted
+- **Anthropic, Google, OpenAI Completions**: Send all blocks as-is (text, thinking, tool calls)
+
+## Cross-Provider Handoffs
+
+The library supports seamless handoffs between different LLM providers within the same conversation. This allows you to switch models mid-conversation while preserving context, including thinking blocks, tool calls, and tool results.
+
+### How It Works
+
+When messages from one provider are sent to a different provider, the library automatically transforms them for compatibility:
+
+- **User and tool result messages** are passed through unchanged
+- **Assistant messages from the same provider/model** are preserved as-is
+- **Assistant messages from different providers** have their thinking blocks converted to text with `<thinking>` tags
+- **Tool calls and regular text** are preserved unchanged
+
+### Example: Multi-Provider Conversation
+
+```typescript
+import { createLLM } from '@mariozechner/pi-ai';
+
+// Start with Claude
+const claude = createLLM('anthropic', 'claude-sonnet-4-0');
+const messages = [];
+
+messages.push({ role: 'user', content: 'What is 25 * 18?' });
+const claudeResponse = await claude.generate({ messages }, {
+  thinking: { enabled: true }
+});
+messages.push(claudeResponse);
+
+// Switch to GPT-5 - it will see Claude's thinking as <thinking> tagged text
+const gpt5 = createLLM('openai', 'gpt-5-mini');
+messages.push({ role: 'user', content: 'Is that calculation correct?' });
+const gptResponse = await gpt5.generate({ messages });
+messages.push(gptResponse);
+
+// Switch to Gemini
+const gemini = createLLM('google', 'gemini-2.5-flash');  
+messages.push({ role: 'user', content: 'What was the original question?' });
+const geminiResponse = await gemini.generate({ messages });
+```
+
+### Provider Compatibility
+
+All providers can handle messages from other providers, including:
+- Text content
+- Tool calls and tool results
+- Thinking/reasoning blocks (transformed to tagged text for cross-provider compatibility)
+- Aborted messages with partial content
+
+This enables flexible workflows where you can:
+- Start with a fast model for initial responses
+- Switch to a more capable model for complex reasoning
+- Use specialized models for specific tasks
+- Maintain conversation continuity across provider outages
 
 ## Provider-Specific Options
 
@@ -188,7 +306,7 @@ if (response.stopReason === 'error' && response.error) {
 ```typescript
 const llm = createLLM('openai', 'o1-mini');
 
-await llm.complete(context, {
+await llm.generate(context, {
   reasoningEffort: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
 });
 ```
@@ -197,7 +315,7 @@ await llm.complete(context, {
 ```typescript
 const llm = createLLM('anthropic', 'claude-3-5-sonnet-20241022');
 
-await llm.complete(context, {
+await llm.generate(context, {
   thinking: {
     enabled: true,
     budgetTokens: 2048  // Optional thinking token limit
@@ -209,7 +327,7 @@ await llm.complete(context, {
 ```typescript
 const llm = createLLM('google', 'gemini-2.5-pro');
 
-await llm.complete(context, {
+await llm.generate(context, {
   thinking: { enabled: true }
 });
 ```
