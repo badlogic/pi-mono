@@ -3,7 +3,7 @@
 
 import type { Model } from "./types.js";
 
-export const PROVIDERS = {
+export const MODELS = {
 	anthropic: {
 		"claude-3-7-sonnet-20250219": {
 			id: "claude-3-7-sonnet-20250219",
@@ -2652,23 +2652,6 @@ export const PROVIDERS = {
 			contextWindow: 32768,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"cohere/command-r-08-2024": {
-			id: "cohere/command-r-08-2024",
-			name: "Cohere: Command R (08-2024)",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.15,
-				output: 0.6,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 128000,
-			maxTokens: 4000,
-		} satisfies Model<"openai-completions">,
 		"cohere/command-r-plus-08-2024": {
 			id: "cohere/command-r-plus-08-2024",
 			name: "Cohere: Command R+ (08-2024)",
@@ -2680,6 +2663,23 @@ export const PROVIDERS = {
 			cost: {
 				input: 2.5,
 				output: 10,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 4000,
+		} satisfies Model<"openai-completions">,
+		"cohere/command-r-08-2024": {
+			id: "cohere/command-r-08-2024",
+			name: "Cohere: Command R (08-2024)",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.15,
+				output: 0.6,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
@@ -2720,23 +2720,6 @@ export const PROVIDERS = {
 			contextWindow: 131072,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3.1-405b-instruct": {
-			id: "meta-llama/llama-3.1-405b-instruct",
-			name: "Meta: Llama 3.1 405B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.7999999999999999,
-				output: 0.7999999999999999,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 32768,
-			maxTokens: 16384,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-8b-instruct": {
 			id: "meta-llama/llama-3.1-8b-instruct",
 			name: "Meta: Llama 3.1 8B Instruct",
@@ -2752,6 +2735,23 @@ export const PROVIDERS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
+			maxTokens: 16384,
+		} satisfies Model<"openai-completions">,
+		"meta-llama/llama-3.1-405b-instruct": {
+			id: "meta-llama/llama-3.1-405b-instruct",
+			name: "Meta: Llama 3.1 405B Instruct",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.7999999999999999,
+				output: 0.7999999999999999,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 32768,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-70b-instruct": {
@@ -2873,23 +2873,6 @@ export const PROVIDERS = {
 			contextWindow: 128000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3-70b-instruct": {
-			id: "meta-llama/llama-3-70b-instruct",
-			name: "Meta: Llama 3 70B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.3,
-				output: 0.39999999999999997,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 8192,
-			maxTokens: 16384,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3-8b-instruct": {
 			id: "meta-llama/llama-3-8b-instruct",
 			name: "Meta: Llama 3 8B Instruct",
@@ -2901,6 +2884,23 @@ export const PROVIDERS = {
 			cost: {
 				input: 0.03,
 				output: 0.06,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 8192,
+			maxTokens: 16384,
+		} satisfies Model<"openai-completions">,
+		"meta-llama/llama-3-70b-instruct": {
+			id: "meta-llama/llama-3-70b-instruct",
+			name: "Meta: Llama 3 70B Instruct",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.3,
+				output: 0.39999999999999997,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},

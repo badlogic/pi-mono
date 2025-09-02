@@ -1,5 +1,4 @@
 export * from "./generate.js";
-export * from "./models.generated.js";
 export * from "./models.js";
 export * from "./providers/anthropic.js";
 export * from "./providers/google.js";

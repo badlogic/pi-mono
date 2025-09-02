@@ -338,7 +338,7 @@ async function generateModels() {
 
 import type { Model } from "./types.js";
 
-export const PROVIDERS = {
+export const MODELS = {
 `;
 
 	// Generate provider sections
