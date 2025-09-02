@@ -1,18 +1,20 @@
 import OpenAI from "openai";
 import type {
+	ChatCompletionAssistantMessageParam,
 	ChatCompletionChunk,
 	ChatCompletionContentPart,
 	ChatCompletionContentPartImage,
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
+import { QueuedGenerateStream } from "../generate.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
-	LLM,
-	LLMOptions,
-	Message,
+	GenerateFunction,
+	GenerateOptions,
+	GenerateStream,
 	Model,
 	StopReason,
 	TextContent,
@@ -22,43 +24,25 @@ import type {
 } from "../types.js";
 import { transformMessages } from "./utils.js";
 
-export interface OpenAICompletionsLLMOptions extends LLMOptions {
+export interface OpenAICompletionsOptions extends GenerateOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
-	reasoningEffort?: "low" | "medium" | "high";
+	reasoningEffort?: "minimal" | "low" | "medium" | "high";
 }
 
-export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
-	private client: OpenAI;
-	private modelInfo: Model;
+export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
+	model: Model<"openai-completions">,
+	context: Context,
+	options?: OpenAICompletionsOptions,
+): GenerateStream => {
+	const stream = new QueuedGenerateStream();
 
-	constructor(model: Model, apiKey?: string) {
-		if (!apiKey) {
-			if (!process.env.OPENAI_API_KEY) {
-				throw new Error(
-					"OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it as an argument.",
-				);
-			}
-			apiKey = process.env.OPENAI_API_KEY;
-		}
-		this.client = new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
-		this.modelInfo = model;
-	}
-
-	getModel(): Model {
-		return this.modelInfo;
-	}
-
-	getApi(): string {
-		return "openai-completions";
-	}
-
-	async generate(request: Context, options?: OpenAICompletionsLLMOptions): Promise<AssistantMessage> {
+	(async () => {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
-			api: this.getApi(),
-			provider: this.modelInfo.provider,
-			model: this.modelInfo.id,
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
 			usage: {
 				input: 0,
 				output: 0,
@@ -70,52 +54,13 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 		};
 
 		try {
-			const messages = this.convertMessages(request.messages, request.systemPrompt);
-
-			const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-				model: this.modelInfo.id,
-				messages,
-				stream: true,
-				stream_options: { include_usage: true },
-			};
-
-			// Cerebras/xAI dont like the "store" field
-			if (!this.modelInfo.baseUrl?.includes("cerebras.ai") && !this.modelInfo.baseUrl?.includes("api.x.ai")) {
-				params.store = false;
-			}
-
-			if (options?.maxTokens) {
-				params.max_completion_tokens = options?.maxTokens;
-			}
-
-			if (options?.temperature !== undefined) {
-				params.temperature = options?.temperature;
-			}
-
-			if (request.tools) {
-				params.tools = this.convertTools(request.tools);
-			}
-
-			if (options?.toolChoice) {
-				params.tool_choice = options.toolChoice;
-			}
-
-			if (
-				options?.reasoningEffort &&
-				this.modelInfo.reasoning &&
-				!this.modelInfo.id.toLowerCase().includes("grok")
-			) {
-				params.reasoning_effort = options.reasoningEffort;
-			}
-
-			const stream = await this.client.chat.completions.create(params, {
-				signal: options?.signal,
-			});
-
-			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
+			const client = createClient(model, options?.apiKey);
+			const params = buildParams(model, context, options);
+			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
+			stream.push({ type: "start", partial: output });
 
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
-			for await (const chunk of stream) {
+			for await (const chunk of openaiStream) {
 				if (chunk.usage) {
 					output.usage = {
 						input: chunk.usage.prompt_tokens || 0,
@@ -132,137 +77,170 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 							total: 0,
 						},
 					};
-					calculateCost(this.modelInfo, output.usage);
+					calculateCost(model, output.usage);
 				}
 
 				const choice = chunk.choices[0];
 				if (!choice) continue;
 
-				// Capture finish reason
 				if (choice.finish_reason) {
-					output.stopReason = this.mapStopReason(choice.finish_reason);
+					output.stopReason = mapStopReason(choice.finish_reason);
 				}
 
 				if (choice.delta) {
-					// Handle text content
 					if (
 						choice.delta.content !== null &&
 						choice.delta.content !== undefined &&
 						choice.delta.content.length > 0
 					) {
-						// Check if we need to switch to text block
 						if (!currentBlock || currentBlock.type !== "text") {
-							// Save current block if exists
 							if (currentBlock) {
 								if (currentBlock.type === "thinking") {
-									options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+									stream.push({
+										type: "thinking_end",
+										content: currentBlock.thinking,
+										partial: output,
+									});
 								} else if (currentBlock.type === "toolCall") {
 									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
 									delete currentBlock.partialArgs;
-									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+									stream.push({
+										type: "toolCall",
+										toolCall: currentBlock as ToolCall,
+										partial: output,
+									});
 								}
 							}
-							// Start new text block
 							currentBlock = { type: "text", text: "" };
 							output.content.push(currentBlock);
-							options?.onEvent?.({ type: "text_start" });
+							stream.push({ type: "text_start", partial: output });
 						}
-						// Append to text block
+
 						if (currentBlock.type === "text") {
 							currentBlock.text += choice.delta.content;
-							options?.onEvent?.({
+							stream.push({
 								type: "text_delta",
-								content: currentBlock.text,
 								delta: choice.delta.content,
+								partial: output,
 							});
 						}
 					}
 
-					// Handle reasoning_content field
+					// Some endpoints return reasoning in reasoning_content (llama.cpp)
 					if (
 						(choice.delta as any).reasoning_content !== null &&
 						(choice.delta as any).reasoning_content !== undefined &&
 						(choice.delta as any).reasoning_content.length > 0
 					) {
-						// Check if we need to switch to thinking block
 						if (!currentBlock || currentBlock.type !== "thinking") {
-							// Save current block if exists
 							if (currentBlock) {
 								if (currentBlock.type === "text") {
-									options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+									stream.push({
+										type: "text_end",
+										content: currentBlock.text,
+										partial: output,
+									});
 								} else if (currentBlock.type === "toolCall") {
 									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
 									delete currentBlock.partialArgs;
-									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+									stream.push({
+										type: "toolCall",
+										toolCall: currentBlock as ToolCall,
+										partial: output,
+									});
 								}
 							}
-							// Start new thinking block
-							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning_content" };
+							currentBlock = {
+								type: "thinking",
+								thinking: "",
+								thinkingSignature: "reasoning_content",
+							};
 							output.content.push(currentBlock);
-							options?.onEvent?.({ type: "thinking_start" });
+							stream.push({ type: "thinking_start", partial: output });
 						}
-						// Append to thinking block
+
 						if (currentBlock.type === "thinking") {
 							const delta = (choice.delta as any).reasoning_content;
 							currentBlock.thinking += delta;
-							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
+							stream.push({
+								type: "thinking_delta",
+								delta,
+								partial: output,
+							});
 						}
 					}
 
-					// Handle reasoning field
+					// Some endpoints return reasoning in reasining (ollama, xAI, ...)
 					if (
 						(choice.delta as any).reasoning !== null &&
 						(choice.delta as any).reasoning !== undefined &&
 						(choice.delta as any).reasoning.length > 0
 					) {
-						// Check if we need to switch to thinking block
 						if (!currentBlock || currentBlock.type !== "thinking") {
-							// Save current block if exists
 							if (currentBlock) {
 								if (currentBlock.type === "text") {
-									options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+									stream.push({
+										type: "text_end",
+										content: currentBlock.text,
+										partial: output,
+									});
 								} else if (currentBlock.type === "toolCall") {
 									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
 									delete currentBlock.partialArgs;
-									options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+									stream.push({
+										type: "toolCall",
+										toolCall: currentBlock as ToolCall,
+										partial: output,
+									});
 								}
 							}
-							// Start new thinking block
-							currentBlock = { type: "thinking", thinking: "", thinkingSignature: "reasoning" };
+							currentBlock = {
+								type: "thinking",
+								thinking: "",
+								thinkingSignature: "reasoning",
+							};
 							output.content.push(currentBlock);
-							options?.onEvent?.({ type: "thinking_start" });
+							stream.push({ type: "thinking_start", partial: output });
 						}
-						// Append to thinking block
+
 						if (currentBlock.type === "thinking") {
 							const delta = (choice.delta as any).reasoning;
 							currentBlock.thinking += delta;
-							options?.onEvent?.({ type: "thinking_delta", content: currentBlock.thinking, delta });
+							stream.push({ type: "thinking_delta", delta, partial: output });
 						}
 					}
 
-					// Handle tool calls
 					if (choice?.delta?.tool_calls) {
 						for (const toolCall of choice.delta.tool_calls) {
-							// Check if we need a new tool call block
 							if (
 								!currentBlock ||
 								currentBlock.type !== "toolCall" ||
 								(toolCall.id && currentBlock.id !== toolCall.id)
 							) {
-								// Save current block if exists
 								if (currentBlock) {
 									if (currentBlock.type === "text") {
-										options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+										stream.push({
+											type: "text_end",
+											content: currentBlock.text,
+											partial: output,
+										});
 									} else if (currentBlock.type === "thinking") {
-										options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+										stream.push({
+											type: "thinking_end",
+											content: currentBlock.thinking,
+											partial: output,
+										});
 									} else if (currentBlock.type === "toolCall") {
 										currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
 										delete currentBlock.partialArgs;
-										options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+										stream.push({
+											type: "toolCall",
+											toolCall: currentBlock as ToolCall,
+											partial: output,
+										});
 									}
 								}
 
-								// Start new tool call block
 								currentBlock = {
 									type: "toolCall",
 									id: toolCall.id || "",
@@ -273,7 +251,6 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 								output.content.push(currentBlock);
 							}
 
-							// Accumulate tool call data
 							if (currentBlock.type === "toolCall") {
 								if (toolCall.id) currentBlock.id = toolCall.id;
 								if (toolCall.function?.name) currentBlock.name = toolCall.function.name;
@@ -286,16 +263,27 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				}
 			}
 
-			// Save final block if exists
 			if (currentBlock) {
 				if (currentBlock.type === "text") {
-					options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+					stream.push({
+						type: "text_end",
+						content: currentBlock.text,
+						partial: output,
+					});
 				} else if (currentBlock.type === "thinking") {
-					options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+					stream.push({
+						type: "thinking_end",
+						content: currentBlock.thinking,
+						partial: output,
+					});
 				} else if (currentBlock.type === "toolCall") {
 					currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
 					delete currentBlock.partialArgs;
-					options?.onEvent?.({ type: "toolCall", toolCall: currentBlock as ToolCall });
+					stream.push({
+						type: "toolCall",
+						toolCall: currentBlock as ToolCall,
+						partial: output,
+					});
 				}
 			}
 
@@ -303,141 +291,188 @@ export class OpenAICompletionsLLM implements LLM<OpenAICompletionsLLMOptions> {
 				throw new Error("Request was aborted");
 			}
 
-			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
+			stream.push({ type: "done", reason: output.stopReason, message: output });
+			stream.end();
 			return output;
 		} catch (error) {
-			// Update output with error information
 			output.stopReason = "error";
 			output.error = error instanceof Error ? error.message : String(error);
-			options?.onEvent?.({ type: "error", error: output.error });
-			return output;
+			stream.push({ type: "error", error: output.error, partial: output });
+			stream.end();
 		}
+	})();
+
+	return stream;
+};
+
+function createClient(model: Model<"openai-completions">, apiKey?: string) {
+	if (!apiKey) {
+		if (!process.env.OPENAI_API_KEY) {
+			throw new Error(
+				"OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it as an argument.",
+			);
+		}
+		apiKey = process.env.OPENAI_API_KEY;
+	}
+	return new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
+}
+
+function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
+	const messages = convertMessages(model, context);
+
+	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+		model: model.id,
+		messages,
+		stream: true,
+		stream_options: { include_usage: true },
+	};
+
+	// Cerebras/xAI dont like the "store" field
+	if (!model.baseUrl.includes("cerebras.ai") && !model.baseUrl.includes("api.x.ai")) {
+		params.store = false;
 	}
 
-	private convertMessages(messages: Message[], systemPrompt?: string): ChatCompletionMessageParam[] {
-		const params: ChatCompletionMessageParam[] = [];
+	if (options?.maxTokens) {
+		params.max_completion_tokens = options?.maxTokens;
+	}
 
-		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
+	if (options?.temperature !== undefined) {
+		params.temperature = options?.temperature;
+	}
 
-		// Add system prompt if provided
-		if (systemPrompt) {
-			// Cerebras/xAi don't like the "developer" role
-			const useDeveloperRole =
-				this.modelInfo.reasoning &&
-				!this.modelInfo.baseUrl?.includes("cerebras.ai") &&
-				!this.modelInfo.baseUrl?.includes("api.x.ai");
-			const role = useDeveloperRole ? "developer" : "system";
-			params.push({ role: role, content: systemPrompt });
-		}
+	if (context.tools) {
+		params.tools = convertTools(context.tools);
+	}
 
-		// Convert messages
-		for (const msg of transformedMessages) {
-			if (msg.role === "user") {
-				// Handle both string and array content
-				if (typeof msg.content === "string") {
-					params.push({
-						role: "user",
-						content: msg.content,
-					});
-				} else {
-					// Convert array content to OpenAI format
-					const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
-						if (item.type === "text") {
-							return {
-								type: "text",
-								text: item.text,
-							} satisfies ChatCompletionContentPartText;
-						} else {
-							// Image content - OpenAI uses data URLs
-							return {
-								type: "image_url",
-								image_url: {
-									url: `data:${item.mimeType};base64,${item.data}`,
-								},
-							} satisfies ChatCompletionContentPartImage;
-						}
-					});
-					const filteredContent = !this.modelInfo?.input.includes("image")
-						? content.filter((c) => c.type !== "image_url")
-						: content;
-					params.push({
-						role: "user",
-						content: filteredContent,
-					});
-				}
-			} else if (msg.role === "assistant") {
-				const assistantMsg: ChatCompletionMessageParam = {
-					role: "assistant",
-					content: null,
-				};
+	if (options?.toolChoice) {
+		params.tool_choice = options.toolChoice;
+	}
 
-				// Build content from blocks
-				const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
-				if (textBlocks.length > 0) {
-					assistantMsg.content = textBlocks.map((b) => b.text).join("");
-				}
+	// Grok models don't like reasoning_effort
+	if (options?.reasoningEffort && model.reasoning && !model.id.toLowerCase().includes("grok")) {
+		params.reasoning_effort = options.reasoningEffort;
+	}
 
-				// Handle thinking blocks for llama.cpp server + gpt-oss
-				const thinkingBlocks = msg.content.filter((b) => b.type === "thinking") as ThinkingContent[];
-				if (thinkingBlocks.length > 0) {
-					// Use the signature from the first thinking block if available
-					const signature = thinkingBlocks[0].thinkingSignature;
-					if (signature && signature.length > 0) {
-						(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("");
-					}
-				}
+	return params;
+}
 
-				// Handle tool calls
-				const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
-				if (toolCalls.length > 0) {
-					assistantMsg.tool_calls = toolCalls.map((tc) => ({
-						id: tc.id,
-						type: "function" as const,
-						function: {
-							name: tc.name,
-							arguments: JSON.stringify(tc.arguments),
-						},
-					}));
-				}
+function convertMessages(model: Model<"openai-completions">, context: Context): ChatCompletionMessageParam[] {
+	const params: ChatCompletionMessageParam[] = [];
 
-				params.push(assistantMsg);
-			} else if (msg.role === "toolResult") {
+	const transformedMessages = transformMessages(context.messages, model);
+
+	if (context.systemPrompt) {
+		// Cerebras/xAi don't like the "developer" role
+		const useDeveloperRole =
+			model.reasoning && !model.baseUrl.includes("cerebras.ai") && !model.baseUrl.includes("api.x.ai");
+		const role = useDeveloperRole ? "developer" : "system";
+		params.push({ role: role, content: context.systemPrompt });
+	}
+
+	for (const msg of transformedMessages) {
+		if (msg.role === "user") {
+			if (typeof msg.content === "string") {
 				params.push({
-					role: "tool",
+					role: "user",
 					content: msg.content,
-					tool_call_id: msg.toolCallId,
+				});
+			} else {
+				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
+					if (item.type === "text") {
+						return {
+							type: "text",
+							text: item.text,
+						} satisfies ChatCompletionContentPartText;
+					} else {
+						return {
+							type: "image_url",
+							image_url: {
+								url: `data:${item.mimeType};base64,${item.data}`,
+							},
+						} satisfies ChatCompletionContentPartImage;
+					}
+				});
+				const filteredContent = !model.input.includes("image")
+					? content.filter((c) => c.type !== "image_url")
+					: content;
+				if (filteredContent.length === 0) continue;
+				params.push({
+					role: "user",
+					content: filteredContent,
 				});
 			}
+		} else if (msg.role === "assistant") {
+			const assistantMsg: ChatCompletionAssistantMessageParam = {
+				role: "assistant",
+				content: null,
+			};
+
+			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
+			if (textBlocks.length > 0) {
+				assistantMsg.content = textBlocks.map((b) => b.text).join("");
+			}
+
+			// Handle thinking blocks for llama.cpp server + gpt-oss
+			const thinkingBlocks = msg.content.filter((b) => b.type === "thinking") as ThinkingContent[];
+			if (thinkingBlocks.length > 0) {
+				// Use the signature from the first thinking block if available
+				const signature = thinkingBlocks[0].thinkingSignature;
+				if (signature && signature.length > 0) {
+					(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("");
+				}
+			}
+
+			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
+			if (toolCalls.length > 0) {
+				assistantMsg.tool_calls = toolCalls.map((tc) => ({
+					id: tc.id,
+					type: "function" as const,
+					function: {
+						name: tc.name,
+						arguments: JSON.stringify(tc.arguments),
+					},
+				}));
+			}
+
+			params.push(assistantMsg);
+		} else if (msg.role === "toolResult") {
+			params.push({
+				role: "tool",
+				content: msg.content,
+				tool_call_id: msg.toolCallId,
+			});
 		}
-
-		return params;
 	}
 
-	private convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
-		return tools.map((tool) => ({
-			type: "function",
-			function: {
-				name: tool.name,
-				description: tool.description,
-				parameters: tool.parameters,
-			},
-		}));
-	}
+	return params;
+}
 
-	private mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | null): StopReason {
-		switch (reason) {
-			case "stop":
-				return "stop";
-			case "length":
-				return "length";
-			case "function_call":
-			case "tool_calls":
-				return "toolUse";
-			case "content_filter":
-				return "safety";
-			default:
-				return "stop";
+function convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
+	return tools.map((tool) => ({
+		type: "function",
+		function: {
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+		},
+	}));
+}
+
+function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): StopReason {
+	if (reason === null) return "stop";
+	switch (reason) {
+		case "stop":
+			return "stop";
+		case "length":
+			return "length";
+		case "function_call":
+		case "tool_calls":
+			return "toolUse";
+		case "content_filter":
+			return "safety";
+		default: {
+			const _exhaustive: never = reason;
+			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
 		}
 	}
 }

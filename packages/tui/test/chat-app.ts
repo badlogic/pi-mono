@@ -1,9 +1,16 @@
 #!/usr/bin/env npx tsx
-import { TUI, Container, TextEditor, TextComponent, MarkdownComponent, CombinedAutocompleteProvider } from "../src/index.js";
+import {
+	CombinedAutocompleteProvider,
+	Container,
+	MarkdownComponent,
+	TextComponent,
+	TextEditor,
+	TUI,
+} from "../src/index.js";
 
 /**
  * Chat Application with Autocomplete
- * 
+ *
  * Demonstrates:
  * - Slash command system with autocomplete
  * - Dynamic message history
@@ -16,7 +23,7 @@ const ui = new TUI();
 // Add header with instructions
 const header = new TextComponent(
 	"💬 Chat Demo | Type '/' for commands | Start typing a filename + Tab to autocomplete | Ctrl+C to exit",
-	{ bottom: 1 }
+	{ bottom: 1 },
 );
 
 const chatHistory = new Container();
@@ -82,7 +89,8 @@ ui.onGlobalKeyPress = (data: string) => {
 };
 
 // Add initial welcome message to chat history
-chatHistory.addChild(new MarkdownComponent(`
+chatHistory.addChild(
+	new MarkdownComponent(`
 ## Welcome to the Chat Demo!
 
 **Available slash commands:**
@@ -96,7 +104,8 @@ chatHistory.addChild(new MarkdownComponent(`
 - Works with home directory (\`~/\`)
 
 Try it out! Type a message or command below.
-`));
+`),
+);
 
 ui.addChild(header);
 ui.addChild(chatHistory);

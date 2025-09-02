@@ -1,18 +1,6 @@
-import type { AssistantMessage, Message, Model } from "../types.js";
+import type { Api, AssistantMessage, Message, Model } from "../types.js";
 
-/**
- * Transform messages for cross-provider compatibility.
- *
- * - User and toolResult messages are copied verbatim
- * - Assistant messages:
- *   - If from the same provider/model, copied as-is
- *   - If from different provider/model, thinking blocks are converted to text blocks with <thinking></thinking> tags
- *
- * @param messages The messages to transform
- * @param model The target model that will process these messages
- * @returns A copy of the messages array with transformations applied
- */
-export function transformMessages(messages: Message[], model: Model, api: string): Message[] {
+export function transformMessages<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
 	return messages.map((msg) => {
 		// User and toolResult messages pass through unchanged
 		if (msg.role === "user" || msg.role === "toolResult") {
@@ -24,7 +12,7 @@ export function transformMessages(messages: Message[], model: Model, api: string
 			const assistantMsg = msg as AssistantMessage;
 
 			// If message is from the same provider and API, keep as is
-			if (assistantMsg.provider === model.provider && assistantMsg.api === api) {
+			if (assistantMsg.provider === model.provider && assistantMsg.api === model.api) {
 				return msg;
 			}
 
@@ -47,8 +35,6 @@ export function transformMessages(messages: Message[], model: Model, api: string
 				content: transformedContent,
 			};
 		}
-
-		// Should not reach here, but return as-is for safety
 		return msg;
 	});
 }

@@ -1,6 +1,6 @@
-import xterm from '@xterm/headless';
-import type { Terminal as XtermTerminalType } from '@xterm/headless';
-import { Terminal } from '../src/terminal.js';
+import type { Terminal as XtermTerminalType } from "@xterm/headless";
+import xterm from "@xterm/headless";
+import type { Terminal } from "../src/terminal.js";
 
 // Extract Terminal class from the module
 const XtermTerminal = xterm.Terminal;
@@ -81,7 +81,7 @@ export class VirtualTerminal implements Terminal {
 	async flush(): Promise<void> {
 		// Write an empty string to ensure all previous writes are flushed
 		return new Promise<void>((resolve) => {
-			this.xterm.write('', () => resolve());
+			this.xterm.write("", () => resolve());
 		});
 	}
 
@@ -107,7 +107,7 @@ export class VirtualTerminal implements Terminal {
 			if (line) {
 				lines.push(line.translateToString(true));
 			} else {
-				lines.push('');
+				lines.push("");
 			}
 		}
 
@@ -127,7 +127,7 @@ export class VirtualTerminal implements Terminal {
 			if (line) {
 				lines.push(line.translateToString(true));
 			} else {
-				lines.push('');
+				lines.push("");
 			}
 		}
 
@@ -155,7 +155,7 @@ export class VirtualTerminal implements Terminal {
 		const buffer = this.xterm.buffer.active;
 		return {
 			x: buffer.cursorX,
-			y: buffer.cursorY
+			y: buffer.cursorY,
 		};
 	}
 }

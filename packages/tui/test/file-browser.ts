@@ -1,6 +1,6 @@
-import { TUI, SelectList } from "../src/index.js";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import { SelectList, TUI } from "../src/index.js";
 
 const ui = new TUI();
 ui.start();

@@ -1,19 +1,21 @@
 import {
 	type Content,
-	type FinishReason,
+	FinishReason,
 	FunctionCallingConfigMode,
 	type GenerateContentConfig,
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type Part,
 } from "@google/genai";
+import { QueuedGenerateStream } from "../generate.js";
 import { calculateCost } from "../models.js";
 import type {
+	Api,
 	AssistantMessage,
 	Context,
-	LLM,
-	LLMOptions,
-	Message,
+	GenerateFunction,
+	GenerateOptions,
+	GenerateStream,
 	Model,
 	StopReason,
 	TextContent,
@@ -23,7 +25,7 @@ import type {
 } from "../types.js";
 import { transformMessages } from "./utils.js";
 
-export interface GoogleLLMOptions extends LLMOptions {
+export interface GoogleOptions extends GenerateOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -31,38 +33,20 @@ export interface GoogleLLMOptions extends LLMOptions {
 	};
 }
 
-export class GoogleLLM implements LLM<GoogleLLMOptions> {
-	private client: GoogleGenAI;
-	private modelInfo: Model;
+export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
+	model: Model<"google-generative-ai">,
+	context: Context,
+	options?: GoogleOptions,
+): GenerateStream => {
+	const stream = new QueuedGenerateStream();
 
-	constructor(model: Model, apiKey?: string) {
-		if (!apiKey) {
-			if (!process.env.GEMINI_API_KEY) {
-				throw new Error(
-					"Gemini API key is required. Set GEMINI_API_KEY environment variable or pass it as an argument.",
-				);
-			}
-			apiKey = process.env.GEMINI_API_KEY;
-		}
-		this.client = new GoogleGenAI({ apiKey });
-		this.modelInfo = model;
-	}
-
-	getModel(): Model {
-		return this.modelInfo;
-	}
-
-	getApi(): string {
-		return "google-generative-ai";
-	}
-
-	async generate(context: Context, options?: GoogleLLMOptions): Promise<AssistantMessage> {
+	(async () => {
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
-			api: this.getApi(),
-			provider: this.modelInfo.provider,
-			model: this.modelInfo.id,
+			api: "google-generative-ai" as Api,
+			provider: model.provider,
+			model: model.id,
 			usage: {
 				input: 0,
 				output: 0,
@@ -72,70 +56,20 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 			},
 			stopReason: "stop",
 		};
+
 		try {
-			const contents = this.convertMessages(context.messages);
+			const client = createClient(options?.apiKey);
+			const params = buildParams(model, context, options);
+			const googleStream = await client.models.generateContentStream(params);
 
-			// Build generation config
-			const generationConfig: GenerateContentConfig = {};
-			if (options?.temperature !== undefined) {
-				generationConfig.temperature = options.temperature;
-			}
-			if (options?.maxTokens !== undefined) {
-				generationConfig.maxOutputTokens = options.maxTokens;
-			}
-
-			// Build the config object
-			const config: GenerateContentConfig = {
-				...(Object.keys(generationConfig).length > 0 && generationConfig),
-				...(context.systemPrompt && { systemInstruction: context.systemPrompt }),
-				...(context.tools && { tools: this.convertTools(context.tools) }),
-			};
-
-			// Add tool config if needed
-			if (context.tools && options?.toolChoice) {
-				config.toolConfig = {
-					functionCallingConfig: {
-						mode: this.mapToolChoice(options.toolChoice),
-					},
-				};
-			}
-
-			// Add thinking config if enabled and model supports it
-			if (options?.thinking?.enabled && this.modelInfo.reasoning) {
-				config.thinkingConfig = {
-					includeThoughts: true,
-					...(options.thinking.budgetTokens !== undefined && { thinkingBudget: options.thinking.budgetTokens }),
-				};
-			}
-
-			// Abort signal
-			if (options?.signal) {
-				if (options.signal.aborted) {
-					throw new Error("Request aborted");
-				}
-				config.abortSignal = options.signal;
-			}
-
-			// Build the request parameters
-			const params: GenerateContentParameters = {
-				model: this.modelInfo.id,
-				contents,
-				config,
-			};
-
-			const stream = await this.client.models.generateContentStream(params);
-
-			options?.onEvent?.({ type: "start", model: this.modelInfo.id, provider: this.modelInfo.provider });
+			stream.push({ type: "start", partial: output });
 			let currentBlock: TextContent | ThinkingContent | null = null;
-			for await (const chunk of stream) {
-				// Extract parts from the chunk
+			for await (const chunk of googleStream) {
 				const candidate = chunk.candidates?.[0];
 				if (candidate?.content?.parts) {
 					for (const part of candidate.content.parts) {
 						if (part.text !== undefined) {
 							const isThinking = part.thought === true;
-
-							// Check if we need to switch blocks
 							if (
 								!currentBlock ||
 								(isThinking && currentBlock.type !== "thinking") ||
@@ -143,50 +77,60 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 							) {
 								if (currentBlock) {
 									if (currentBlock.type === "text") {
-										options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+										stream.push({
+											type: "text_end",
+											content: currentBlock.text,
+											partial: output,
+										});
 									} else {
-										options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+										stream.push({
+											type: "thinking_end",
+											content: currentBlock.thinking,
+											partial: output,
+										});
 									}
 								}
-
-								// Start new block
 								if (isThinking) {
 									currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-									options?.onEvent?.({ type: "thinking_start" });
+									stream.push({ type: "thinking_start", partial: output });
 								} else {
 									currentBlock = { type: "text", text: "" };
-									options?.onEvent?.({ type: "text_start" });
+									stream.push({ type: "text_start", partial: output });
 								}
 								output.content.push(currentBlock);
 							}
-
-							// Append content to current block
 							if (currentBlock.type === "thinking") {
 								currentBlock.thinking += part.text;
 								currentBlock.thinkingSignature = part.thoughtSignature;
-								options?.onEvent?.({
+								stream.push({
 									type: "thinking_delta",
-									content: currentBlock.thinking,
 									delta: part.text,
+									partial: output,
 								});
 							} else {
 								currentBlock.text += part.text;
-								options?.onEvent?.({ type: "text_delta", content: currentBlock.text, delta: part.text });
+								stream.push({ type: "text_delta", delta: part.text, partial: output });
 							}
 						}
 
-						// Handle function calls
 						if (part.functionCall) {
 							if (currentBlock) {
 								if (currentBlock.type === "text") {
-									options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+									stream.push({
+										type: "text_end",
+										content: currentBlock.text,
+										partial: output,
+									});
 								} else {
-									options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+									stream.push({
+										type: "thinking_end",
+										content: currentBlock.thinking,
+										partial: output,
+									});
 								}
 								currentBlock = null;
 							}
 
-							// Add tool call
 							const toolCallId = part.functionCall.id || `${part.functionCall.name}_${Date.now()}`;
 							const toolCall: ToolCall = {
 								type: "toolCall",
@@ -195,21 +139,18 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 								arguments: part.functionCall.args as Record<string, any>,
 							};
 							output.content.push(toolCall);
-							options?.onEvent?.({ type: "toolCall", toolCall });
+							stream.push({ type: "toolCall", toolCall, partial: output });
 						}
 					}
 				}
 
-				// Map finish reason
 				if (candidate?.finishReason) {
-					output.stopReason = this.mapStopReason(candidate.finishReason);
-					// Check if we have tool calls in blocks
+					output.stopReason = mapStopReason(candidate.finishReason);
 					if (output.content.some((b) => b.type === "toolCall")) {
 						output.stopReason = "toolUse";
 					}
 				}
 
-				// Capture usage metadata if available
 				if (chunk.usageMetadata) {
 					output.usage = {
 						input: chunk.usageMetadata.promptTokenCount || 0,
@@ -225,166 +166,223 @@ export class GoogleLLM implements LLM<GoogleLLMOptions> {
 							total: 0,
 						},
 					};
-					calculateCost(this.modelInfo, output.usage);
+					calculateCost(model, output.usage);
 				}
 			}
 
-			// Finalize last block
 			if (currentBlock) {
 				if (currentBlock.type === "text") {
-					options?.onEvent?.({ type: "text_end", content: currentBlock.text });
+					stream.push({ type: "text_end", content: currentBlock.text, partial: output });
 				} else {
-					options?.onEvent?.({ type: "thinking_end", content: currentBlock.thinking });
+					stream.push({ type: "thinking_end", content: currentBlock.thinking, partial: output });
 				}
 			}
 
-			options?.onEvent?.({ type: "done", reason: output.stopReason, message: output });
-			return output;
+			stream.push({ type: "done", reason: output.stopReason, message: output });
+			stream.end();
 		} catch (error) {
 			output.stopReason = "error";
 			output.error = error instanceof Error ? error.message : JSON.stringify(error);
-			options?.onEvent?.({ type: "error", error: output.error });
-			return output;
+			stream.push({ type: "error", error: output.error, partial: output });
+			stream.end();
 		}
+	})();
+
+	return stream;
+};
+
+function createClient(apiKey?: string): GoogleGenAI {
+	if (!apiKey) {
+		if (!process.env.GEMINI_API_KEY) {
+			throw new Error(
+				"Gemini API key is required. Set GEMINI_API_KEY environment variable or pass it as an argument.",
+			);
+		}
+		apiKey = process.env.GEMINI_API_KEY;
+	}
+	return new GoogleGenAI({ apiKey });
+}
+
+function buildParams(
+	model: Model<"google-generative-ai">,
+	context: Context,
+	options: GoogleOptions = {},
+): GenerateContentParameters {
+	const contents = convertMessages(model, context);
+
+	const generationConfig: GenerateContentConfig = {};
+	if (options.temperature !== undefined) {
+		generationConfig.temperature = options.temperature;
+	}
+	if (options.maxTokens !== undefined) {
+		generationConfig.maxOutputTokens = options.maxTokens;
 	}
 
-	private convertMessages(messages: Message[]): Content[] {
-		const contents: Content[] = [];
+	const config: GenerateContentConfig = {
+		...(Object.keys(generationConfig).length > 0 && generationConfig),
+		...(context.systemPrompt && { systemInstruction: context.systemPrompt }),
+		...(context.tools && { tools: convertTools(context.tools) }),
+	};
 
-		// Transform messages for cross-provider compatibility
-		const transformedMessages = transformMessages(messages, this.modelInfo, this.getApi());
+	if (context.tools && options.toolChoice) {
+		config.toolConfig = {
+			functionCallingConfig: {
+				mode: mapToolChoice(options.toolChoice),
+			},
+		};
+	}
 
-		for (const msg of transformedMessages) {
-			if (msg.role === "user") {
-				// Handle both string and array content
-				if (typeof msg.content === "string") {
-					contents.push({
-						role: "user",
-						parts: [{ text: msg.content }],
-					});
-				} else {
-					// Convert array content to Google format
-					const parts: Part[] = msg.content.map((item) => {
-						if (item.type === "text") {
-							return { text: item.text };
-						} else {
-							// Image content - Google uses inlineData
-							return {
-								inlineData: {
-									mimeType: item.mimeType,
-									data: item.data,
-								},
-							};
-						}
-					});
-					const filteredParts = !this.modelInfo?.input.includes("image")
-						? parts.filter((p) => p.text !== undefined)
-						: parts;
-					contents.push({
-						role: "user",
-						parts: filteredParts,
-					});
-				}
-			} else if (msg.role === "assistant") {
-				const parts: Part[] = [];
+	if (options.thinking?.enabled && model.reasoning) {
+		config.thinkingConfig = {
+			includeThoughts: true,
+			...(options.thinking.budgetTokens !== undefined && { thinkingBudget: options.thinking.budgetTokens }),
+		};
+	}
 
-				// Process content blocks
-				for (const block of msg.content) {
-					if (block.type === "text") {
-						parts.push({ text: block.text });
-					} else if (block.type === "thinking") {
-						const thinkingPart: Part = {
-							thought: true,
-							thoughtSignature: block.thinkingSignature,
-							text: block.thinking,
-						};
-						parts.push(thinkingPart);
-					} else if (block.type === "toolCall") {
-						parts.push({
-							functionCall: {
-								id: block.id,
-								name: block.name,
-								args: block.arguments,
-							},
-						});
-					}
-				}
+	if (options.signal) {
+		if (options.signal.aborted) {
+			throw new Error("Request aborted");
+		}
+		config.abortSignal = options.signal;
+	}
 
-				if (parts.length > 0) {
-					contents.push({
-						role: "model",
-						parts,
-					});
-				}
-			} else if (msg.role === "toolResult") {
+	const params: GenerateContentParameters = {
+		model: model.id,
+		contents,
+		config,
+	};
+
+	return params;
+}
+function convertMessages(model: Model<"google-generative-ai">, context: Context): Content[] {
+	const contents: Content[] = [];
+	const transformedMessages = transformMessages(context.messages, model);
+
+	for (const msg of transformedMessages) {
+		if (msg.role === "user") {
+			if (typeof msg.content === "string") {
 				contents.push({
 					role: "user",
-					parts: [
-						{
-							functionResponse: {
-								id: msg.toolCallId,
-								name: msg.toolName,
-								response: {
-									result: msg.content,
-									isError: msg.isError,
-								},
+					parts: [{ text: msg.content }],
+				});
+			} else {
+				const parts: Part[] = msg.content.map((item) => {
+					if (item.type === "text") {
+						return { text: item.text };
+					} else {
+						return {
+							inlineData: {
+								mimeType: item.mimeType,
+								data: item.data,
 							},
-						},
-					],
+						};
+					}
+				});
+				const filteredParts = !model.input.includes("image") ? parts.filter((p) => p.text !== undefined) : parts;
+				if (filteredParts.length === 0) continue;
+				contents.push({
+					role: "user",
+					parts: filteredParts,
 				});
 			}
+		} else if (msg.role === "assistant") {
+			const parts: Part[] = [];
+
+			for (const block of msg.content) {
+				if (block.type === "text") {
+					parts.push({ text: block.text });
+				} else if (block.type === "thinking") {
+					const thinkingPart: Part = {
+						thought: true,
+						thoughtSignature: block.thinkingSignature,
+						text: block.thinking,
+					};
+					parts.push(thinkingPart);
+				} else if (block.type === "toolCall") {
+					parts.push({
+						functionCall: {
+							id: block.id,
+							name: block.name,
+							args: block.arguments,
+						},
+					});
+				}
+			}
+
+			if (parts.length === 0) continue;
+			contents.push({
+				role: "model",
+				parts,
+			});
+		} else if (msg.role === "toolResult") {
+			contents.push({
+				role: "user",
+				parts: [
+					{
+						functionResponse: {
+							id: msg.toolCallId,
+							name: msg.toolName,
+							response: {
+								result: msg.content,
+								isError: msg.isError,
+							},
+						},
+					},
+				],
+			});
 		}
-
-		return contents;
 	}
 
-	private convertTools(tools: Tool[]): any[] {
-		return [
-			{
-				functionDeclarations: tools.map((tool) => ({
-					name: tool.name,
-					description: tool.description,
-					parameters: tool.parameters,
-				})),
-			},
-		];
-	}
+	return contents;
+}
 
-	private mapToolChoice(choice: string): FunctionCallingConfigMode {
-		switch (choice) {
-			case "auto":
-				return FunctionCallingConfigMode.AUTO;
-			case "none":
-				return FunctionCallingConfigMode.NONE;
-			case "any":
-				return FunctionCallingConfigMode.ANY;
-			default:
-				return FunctionCallingConfigMode.AUTO;
-		}
-	}
+function convertTools(tools: Tool[]): any[] {
+	return [
+		{
+			functionDeclarations: tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters,
+			})),
+		},
+	];
+}
 
-	private mapStopReason(reason: FinishReason): StopReason {
-		switch (reason) {
-			case "STOP":
-				return "stop";
-			case "MAX_TOKENS":
-				return "length";
-			case "BLOCKLIST":
-			case "PROHIBITED_CONTENT":
-			case "SPII":
-			case "SAFETY":
-			case "IMAGE_SAFETY":
-				return "safety";
-			case "RECITATION":
-				return "safety";
-			case "FINISH_REASON_UNSPECIFIED":
-			case "OTHER":
-			case "LANGUAGE":
-			case "MALFORMED_FUNCTION_CALL":
-			case "UNEXPECTED_TOOL_CALL":
-				return "error";
-			default:
-				return "stop";
+function mapToolChoice(choice: string): FunctionCallingConfigMode {
+	switch (choice) {
+		case "auto":
+			return FunctionCallingConfigMode.AUTO;
+		case "none":
+			return FunctionCallingConfigMode.NONE;
+		case "any":
+			return FunctionCallingConfigMode.ANY;
+		default:
+			return FunctionCallingConfigMode.AUTO;
+	}
+}
+
+function mapStopReason(reason: FinishReason): StopReason {
+	switch (reason) {
+		case FinishReason.STOP:
+			return "stop";
+		case FinishReason.MAX_TOKENS:
+			return "length";
+		case FinishReason.BLOCKLIST:
+		case FinishReason.PROHIBITED_CONTENT:
+		case FinishReason.SPII:
+		case FinishReason.SAFETY:
+		case FinishReason.IMAGE_SAFETY:
+		case FinishReason.RECITATION:
+			return "safety";
+		case FinishReason.FINISH_REASON_UNSPECIFIED:
+		case FinishReason.OTHER:
+		case FinishReason.LANGUAGE:
+		case FinishReason.MALFORMED_FUNCTION_CALL:
+		case FinishReason.UNEXPECTED_TOOL_CALL:
+			return "error";
+		default: {
+			const _exhaustive: never = reason;
+			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
 		}
 	}
 }

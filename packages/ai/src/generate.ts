@@ -1,47 +1,43 @@
+import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type GoogleOptions, streamGoogle } from "./providers/google.js";
+import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
+import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
 	Api,
 	AssistantMessage,
 	AssistantMessageEvent,
 	Context,
-	GenerateFunction,
-	GenerateOptionsUnified,
 	GenerateStream,
 	KnownProvider,
 	Model,
+	OptionsForApi,
 	ReasoningEffort,
+	SimpleGenerateOptions,
 } from "./types.js";
 
 export class QueuedGenerateStream implements GenerateStream {
 	private queue: AssistantMessageEvent[] = [];
 	private waiting: ((value: IteratorResult<AssistantMessageEvent>) => void)[] = [];
 	private done = false;
-	private error?: Error;
 	private finalMessagePromise: Promise<AssistantMessage>;
 	private resolveFinalMessage!: (message: AssistantMessage) => void;
-	private rejectFinalMessage!: (error: Error) => void;
 
 	constructor() {
-		this.finalMessagePromise = new Promise((resolve, reject) => {
+		this.finalMessagePromise = new Promise((resolve) => {
 			this.resolveFinalMessage = resolve;
-			this.rejectFinalMessage = reject;
 		});
 	}
 
 	push(event: AssistantMessageEvent): void {
 		if (this.done) return;
 
-		// If it's the done event, resolve the final message
 		if (event.type === "done") {
 			this.done = true;
 			this.resolveFinalMessage(event.message);
 		}
-
-		// If it's an error event, reject the final message
 		if (event.type === "error") {
-			this.error = new Error(event.error);
-			if (!this.done) {
-				this.rejectFinalMessage(this.error);
-			}
+			this.done = true;
+			this.resolveFinalMessage(event.partial);
 		}
 
 		// Deliver to waiting consumer or queue it
@@ -86,31 +82,14 @@ export class QueuedGenerateStream implements GenerateStream {
 	}
 }
 
-// API implementations registry
-const apiImplementations: Map<Api | string, GenerateFunction> = new Map();
-
-/**
- * Register a custom API implementation
- */
-export function registerApi(api: string, impl: GenerateFunction): void {
-	apiImplementations.set(api, impl);
-}
-
-// API key storage
 const apiKeys: Map<string, string> = new Map();
 
-/**
- * Set an API key for a provider
- */
 export function setApiKey(provider: KnownProvider, key: string): void;
 export function setApiKey(provider: string, key: string): void;
 export function setApiKey(provider: any, key: string): void {
 	apiKeys.set(provider, key);
 }
 
-/**
- * Get API key for a provider
- */
 export function getApiKey(provider: KnownProvider): string | undefined;
 export function getApiKey(provider: string): string | undefined;
 export function getApiKey(provider: any): string | undefined {
@@ -133,45 +112,76 @@ export function getApiKey(provider: any): string | undefined {
 	return envVar ? process.env[envVar] : undefined;
 }
 
-/**
- * Main generate function
- */
-export function generate(model: Model, context: Context, options?: GenerateOptionsUnified): GenerateStream {
-	// Get implementation
-	const impl = apiImplementations.get(model.api);
-	if (!impl) {
-		throw new Error(`Unsupported API: ${model.api}`);
+export function stream<TApi extends Api>(
+	model: Model<TApi>,
+	context: Context,
+	options?: OptionsForApi<TApi>,
+): GenerateStream {
+	const apiKey = options?.apiKey || getApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
 	}
+	const providerOptions = { ...options, apiKey };
 
-	// Get API key from options or environment
+	const api: Api = model.api;
+	switch (api) {
+		case "anthropic-messages":
+			return streamAnthropic(model as Model<"anthropic-messages">, context, providerOptions);
+
+		case "openai-completions":
+			return streamOpenAICompletions(model as Model<"openai-completions">, context, providerOptions as any);
+
+		case "openai-responses":
+			return streamOpenAIResponses(model as Model<"openai-responses">, context, providerOptions as any);
+
+		case "google-generative-ai":
+			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
+
+		default: {
+			// This should never be reached if all Api cases are handled
+			const _exhaustive: never = api;
+			throw new Error(`Unhandled API: ${_exhaustive}`);
+		}
+	}
+}
+
+export async function complete<TApi extends Api>(
+	model: Model<TApi>,
+	context: Context,
+	options?: OptionsForApi<TApi>,
+): Promise<AssistantMessage> {
+	const s = stream(model, context, options);
+	return s.finalMessage();
+}
+
+export function streamSimple<TApi extends Api>(
+	model: Model<TApi>,
+	context: Context,
+	options?: SimpleGenerateOptions,
+): GenerateStream {
 	const apiKey = options?.apiKey || getApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
-	// Map generic options to provider-specific
-	const providerOptions = mapOptionsForApi(model.api, model, options, apiKey);
-
-	// Return the GenerateStream from implementation
-	return impl(model, context, providerOptions);
+	const providerOptions = mapOptionsForApi(model, options, apiKey);
+	return stream(model, context, providerOptions);
 }
 
-/**
- * Helper to generate and get complete response (no streaming)
- */
-export async function generateComplete(
-	model: Model,
+export async function completeSimple<TApi extends Api>(
+	model: Model<TApi>,
 	context: Context,
-	options?: GenerateOptionsUnified,
+	options?: SimpleGenerateOptions,
 ): Promise<AssistantMessage> {
-	const stream = generate(model, context, options);
-	return stream.finalMessage();
+	const s = streamSimple(model, context, options);
+	return s.finalMessage();
 }
 
-/**
- * Map generic options to provider-specific options
- */
-function mapOptionsForApi(api: Api | string, model: Model, options?: GenerateOptionsUnified, apiKey?: string): any {
+function mapOptionsForApi<TApi extends Api>(
+	model: Model<TApi>,
+	options?: SimpleGenerateOptions,
+	apiKey?: string,
+): OptionsForApi<TApi> {
 	const base = {
 		temperature: options?.temperature,
 		maxTokens: options?.maxTokens,
@@ -179,18 +189,10 @@ function mapOptionsForApi(api: Api | string, model: Model, options?: GenerateOpt
 		apiKey: apiKey || options?.apiKey,
 	};
 
-	switch (api) {
-		case "openai-responses":
-		case "openai-completions":
-			return {
-				...base,
-				reasoning_effort: options?.reasoning,
-			};
-
+	switch (model.api) {
 		case "anthropic-messages": {
-			if (!options?.reasoning) return base;
+			if (!options?.reasoning) return base satisfies AnthropicOptions;
 
-			// Map effort to token budget
 			const anthropicBudgets = {
 				minimal: 1024,
 				low: 2048,
@@ -200,55 +202,60 @@ function mapOptionsForApi(api: Api | string, model: Model, options?: GenerateOpt
 
 			return {
 				...base,
-				thinking: {
-					enabled: true,
-					budgetTokens: anthropicBudgets[options.reasoning],
-				},
-			};
+				thinkingEnabled: true,
+				thinkingBudgetTokens: anthropicBudgets[options.reasoning],
+			} satisfies AnthropicOptions;
 		}
-		case "google-generative-ai": {
-			if (!options?.reasoning) return { ...base, thinking_budget: -1 };
 
-			// Model-specific mapping for Google
-			const googleBudget = getGoogleBudget(model, options.reasoning);
+		case "openai-completions":
 			return {
 				...base,
-				thinking_budget: googleBudget,
-			};
+				reasoningEffort: options?.reasoning,
+			} satisfies OpenAICompletionsOptions;
+
+		case "openai-responses":
+			return {
+				...base,
+				reasoningEffort: options?.reasoning,
+			} satisfies OpenAIResponsesOptions;
+
+		case "google-generative-ai": {
+			if (!options?.reasoning) return base as any;
+
+			const googleBudget = getGoogleBudget(model as Model<"google-generative-ai">, options.reasoning);
+			return {
+				...base,
+				thinking: {
+					enabled: true,
+					budgetTokens: googleBudget,
+				},
+			} satisfies GoogleOptions;
 		}
-		default:
-			return base;
+
+		default: {
+			// Exhaustiveness check
+			const _exhaustive: never = model.api;
+			throw new Error(`Unhandled API in mapOptionsForApi: ${_exhaustive}`);
+		}
 	}
 }
 
-/**
- * Get Google thinking budget based on model and effort
- */
-function getGoogleBudget(model: Model, effort: ReasoningEffort): number {
-	// Model-specific logic
-	if (model.id.includes("flash-lite")) {
-		const budgets = {
-			minimal: 512,
-			low: 2048,
-			medium: 8192,
-			high: 24576,
-		};
-		return budgets[effort];
-	}
-
-	if (model.id.includes("pro")) {
+function getGoogleBudget(model: Model<"google-generative-ai">, effort: ReasoningEffort): number {
+	// See https://ai.google.dev/gemini-api/docs/thinking#set-budget
+	if (model.id.includes("2.5-pro")) {
 		const budgets = {
 			minimal: 128,
 			low: 2048,
 			medium: 8192,
-			high: Math.min(25000, 32768),
+			high: 32768,
 		};
 		return budgets[effort];
 	}
 
-	if (model.id.includes("flash")) {
+	if (model.id.includes("2.5-flash")) {
+		// Covers 2.5-flash-lite as well
 		const budgets = {
-			minimal: 0, // Disable thinking
+			minimal: 128,
 			low: 2048,
 			medium: 8192,
 			high: 24576,
@@ -259,10 +266,3 @@ function getGoogleBudget(model: Model, effort: ReasoningEffort): number {
 	// Unknown model - use dynamic
 	return -1;
 }
-
-// Register built-in API implementations
-// Import the new function-based implementations
-import { generateAnthropic } from "./providers/anthropic-generate.js";
-
-// Register Anthropic implementation
-apiImplementations.set("anthropic-messages", generateAnthropic);

@@ -1,6 +1,6 @@
-import { describe, test } from "node:test";
 import assert from "node:assert";
-import { TextEditor, TextComponent, Container, TUI } from "../src/index.js";
+import { describe, test } from "node:test";
+import { Container, TextComponent, TextEditor, TUI } from "../src/index.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 describe("Layout shift artifacts", () => {
@@ -27,7 +27,7 @@ describe("Layout shift artifacts", () => {
 
 		// Initial render
 		ui.start();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Capture initial state
@@ -40,7 +40,7 @@ describe("Layout shift artifacts", () => {
 		ui.requestRender();
 
 		// Wait for render
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Capture state with status message
@@ -51,7 +51,7 @@ describe("Layout shift artifacts", () => {
 		ui.requestRender();
 
 		// Wait for render
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Capture final state
@@ -64,8 +64,12 @@ describe("Layout shift artifacts", () => {
 			const nextLine = finalViewport[i + 1];
 
 			// Check if we have duplicate bottom borders (the artifact)
-			if (currentLine.includes("╰") && currentLine.includes("╯") &&
-			    nextLine.includes("╰") && nextLine.includes("╯")) {
+			if (
+				currentLine.includes("╰") &&
+				currentLine.includes("╯") &&
+				nextLine.includes("╰") &&
+				nextLine.includes("╯")
+			) {
 				foundDuplicateBorder = true;
 			}
 		}
@@ -74,18 +78,12 @@ describe("Layout shift artifacts", () => {
 		assert.strictEqual(foundDuplicateBorder, false, "Found duplicate bottom borders - rendering artifact detected!");
 
 		// Also check that there's only one bottom border total
-		const bottomBorderCount = finalViewport.filter((line) =>
-			line.includes("╰")
-		).length;
+		const bottomBorderCount = finalViewport.filter((line) => line.includes("╰")).length;
 		assert.strictEqual(bottomBorderCount, 1, `Expected 1 bottom border, found ${bottomBorderCount}`);
 
 		// Verify the editor is back in its original position
-		const finalEditorStartLine = finalViewport.findIndex((line) =>
-			line.includes("╭")
-		);
-		const initialEditorStartLine = initialViewport.findIndex((line) =>
-			line.includes("╭")
-		);
+		const finalEditorStartLine = finalViewport.findIndex((line) => line.includes("╭"));
+		const initialEditorStartLine = initialViewport.findIndex((line) => line.includes("╭"));
 		assert.strictEqual(finalEditorStartLine, initialEditorStartLine);
 
 		ui.stop();
@@ -103,7 +101,7 @@ describe("Layout shift artifacts", () => {
 
 		// Initial render
 		ui.start();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Rapidly add and remove a status message
@@ -112,25 +110,21 @@ describe("Layout shift artifacts", () => {
 		// Add status
 		ui.children.splice(1, 0, status);
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Remove status immediately
 		ui.children.splice(1, 1);
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await term.flush();
 
 		// Final output check
 		const finalViewport = term.getViewport();
 
 		// Should only have one set of borders for the editor
-		const topBorderCount = finalViewport.filter((line) =>
-			line.includes("╭") && line.includes("╮")
-		).length;
-		const bottomBorderCount = finalViewport.filter((line) =>
-			line.includes("╰") && line.includes("╯")
-		).length;
+		const topBorderCount = finalViewport.filter((line) => line.includes("╭") && line.includes("╮")).length;
+		const bottomBorderCount = finalViewport.filter((line) => line.includes("╰") && line.includes("╯")).length;
 
 		assert.strictEqual(topBorderCount, 1);
 		assert.strictEqual(bottomBorderCount, 1);

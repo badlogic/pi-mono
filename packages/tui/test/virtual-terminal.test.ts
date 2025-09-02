@@ -1,5 +1,5 @@
-import { test, describe } from "node:test";
 import assert from "node:assert";
+import { describe, test } from "node:test";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 describe("VirtualTerminal", () => {
@@ -86,13 +86,13 @@ describe("VirtualTerminal", () => {
 		assert.strictEqual(viewport.length, 10);
 		assert.strictEqual(viewport[0], "Line 7");
 		assert.strictEqual(viewport[8], "Line 15");
-		assert.strictEqual(viewport[9], "");  // Last line is empty after the final \r\n
+		assert.strictEqual(viewport[9], ""); // Last line is empty after the final \r\n
 
 		// Scroll buffer should have all lines
 		assert.ok(scrollBuffer.length >= 15);
 		// Check specific lines exist in the buffer
-		const hasLine1 = scrollBuffer.some(line => line === "Line 1");
-		const hasLine15 = scrollBuffer.some(line => line === "Line 15");
+		const hasLine1 = scrollBuffer.some((line) => line === "Line 1");
+		const hasLine15 = scrollBuffer.some((line) => line === "Line 15");
 		assert.ok(hasLine1, "Buffer should contain 'Line 1'");
 		assert.ok(hasLine15, "Buffer should contain 'Line 15'");
 	});
@@ -129,9 +129,12 @@ describe("VirtualTerminal", () => {
 		const terminal = new VirtualTerminal(80, 24);
 
 		let received = "";
-		terminal.start((data) => {
-			received = data;
-		}, () => {});
+		terminal.start(
+			(data) => {
+				received = data;
+			},
+			() => {},
+		);
 
 		terminal.sendInput("a");
 		assert.strictEqual(received, "a");
@@ -146,9 +149,12 @@ describe("VirtualTerminal", () => {
 		const terminal = new VirtualTerminal(80, 24);
 
 		let resized = false;
-		terminal.start(() => {}, () => {
-			resized = true;
-		});
+		terminal.start(
+			() => {},
+			() => {
+				resized = true;
+			},
+		);
 
 		terminal.resize(100, 30);
 		assert.strictEqual(resized, true);

@@ -1,7 +1,7 @@
-import { test, describe } from "node:test";
 import assert from "node:assert";
+import { describe, test } from "node:test";
+import { Container, TextComponent, TextEditor, TUI } from "../src/index.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
-import { TUI, Container, TextComponent, TextEditor } from "../src/index.js";
 
 describe("Differential Rendering - Dynamic Content", () => {
 	test("handles static text, dynamic container, and text editor correctly", async () => {
@@ -23,7 +23,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		ui.setFocus(editor);
 
 		// Wait for next tick to complete and flush virtual terminal
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 4: Check initial output in scrollbuffer
@@ -33,14 +33,16 @@ describe("Differential Rendering - Dynamic Content", () => {
 		console.log("Initial render:");
 		console.log("Viewport lines:", viewport.length);
 		console.log("ScrollBuffer lines:", scrollBuffer.length);
-		
+
 		// Count non-empty lines in scrollbuffer
-		let nonEmptyInBuffer = scrollBuffer.filter(line => line.trim() !== "").length;
+		const nonEmptyInBuffer = scrollBuffer.filter((line) => line.trim() !== "").length;
 		console.log("Non-empty lines in scrollbuffer:", nonEmptyInBuffer);
 
 		// Verify initial render has static text in scrollbuffer
-		assert.ok(scrollBuffer.some(line => line.includes("Static Header Text")), 
-			`Expected static text in scrollbuffer`);
+		assert.ok(
+			scrollBuffer.some((line) => line.includes("Static Header Text")),
+			`Expected static text in scrollbuffer`,
+		);
 
 		// Step 5: Add 100 text components to container
 		console.log("\nAdding 100 components to container...");
@@ -52,7 +54,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		ui.requestRender();
 
 		// Wait for next tick to complete and flush
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 6: Check output after adding 100 components
@@ -62,10 +64,10 @@ describe("Differential Rendering - Dynamic Content", () => {
 		console.log("\nAfter adding 100 items:");
 		console.log("Viewport lines:", viewport.length);
 		console.log("ScrollBuffer lines:", scrollBuffer.length);
-		
+
 		// Count all dynamic items in scrollbuffer
 		let dynamicItemsInBuffer = 0;
-		let allItemNumbers = new Set<number>();
+		const allItemNumbers = new Set<number>();
 		for (const line of scrollBuffer) {
 			const match = line.match(/Dynamic Item (\d+)/);
 			if (match) {
@@ -73,31 +75,39 @@ describe("Differential Rendering - Dynamic Content", () => {
 				allItemNumbers.add(parseInt(match[1]));
 			}
 		}
-		
+
 		console.log("Dynamic items found in scrollbuffer:", dynamicItemsInBuffer);
 		console.log("Unique item numbers:", allItemNumbers.size);
 		console.log("Item range:", Math.min(...allItemNumbers), "-", Math.max(...allItemNumbers));
-		
+
 		// CRITICAL TEST: The scrollbuffer should contain ALL 100 items
 		// This is what the differential render should preserve!
-		assert.strictEqual(allItemNumbers.size, 100, 
-			`Expected all 100 unique items in scrollbuffer, but found ${allItemNumbers.size}`);
-		
+		assert.strictEqual(
+			allItemNumbers.size,
+			100,
+			`Expected all 100 unique items in scrollbuffer, but found ${allItemNumbers.size}`,
+		);
+
 		// Verify items are 1-100
 		for (let i = 1; i <= 100; i++) {
 			assert.ok(allItemNumbers.has(i), `Missing Dynamic Item ${i} in scrollbuffer`);
 		}
-		
-		// Also verify the static header is still in scrollbuffer
-		assert.ok(scrollBuffer.some(line => line.includes("Static Header Text")), 
-			"Static header should still be in scrollbuffer");
-		
-		// And the editor should be there too
-		assert.ok(scrollBuffer.some(line => line.includes("╭") && line.includes("╮")), 
-			"Editor top border should be in scrollbuffer");
-		assert.ok(scrollBuffer.some(line => line.includes("╰") && line.includes("╯")), 
-			"Editor bottom border should be in scrollbuffer");
 
+		// Also verify the static header is still in scrollbuffer
+		assert.ok(
+			scrollBuffer.some((line) => line.includes("Static Header Text")),
+			"Static header should still be in scrollbuffer",
+		);
+
+		// And the editor should be there too
+		assert.ok(
+			scrollBuffer.some((line) => line.includes("╭") && line.includes("╮")),
+			"Editor top border should be in scrollbuffer",
+		);
+		assert.ok(
+			scrollBuffer.some((line) => line.includes("╰") && line.includes("╯")),
+			"Editor bottom border should be in scrollbuffer",
+		);
 
 		ui.stop();
 	});
@@ -124,7 +134,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		contentContainer.addChild(new TextComponent("Content Line 2"));
 
 		// Initial render
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		let viewport = terminal.getViewport();
@@ -142,7 +152,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		statusContainer.addChild(new TextComponent("Status: Processing..."));
 		ui.requestRender();
 
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		viewport = terminal.getViewport();
@@ -162,7 +172,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		}
 		ui.requestRender();
 
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		viewport = terminal.getViewport();
@@ -180,7 +190,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 		contentLine10.setText("Content Line 10 - MODIFIED");
 		ui.requestRender();
 
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		viewport = terminal.getViewport();

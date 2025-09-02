@@ -1,5 +1,27 @@
-export type KnownApi = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
-export type Api = KnownApi | string;
+import type { AnthropicOptions } from "./providers/anthropic";
+import type { GoogleOptions } from "./providers/google";
+import type { OpenAICompletionsOptions } from "./providers/openai-completions";
+import type { OpenAIResponsesOptions } from "./providers/openai-responses";
+
+export type Api = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
+
+export interface ApiOptionsMap {
+	"anthropic-messages": AnthropicOptions;
+	"openai-completions": OpenAICompletionsOptions;
+	"openai-responses": OpenAIResponsesOptions;
+	"google-generative-ai": GoogleOptions;
+}
+
+// Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
+type _CheckExhaustive = ApiOptionsMap extends Record<Api, GenerateOptions>
+	? Record<Api, GenerateOptions> extends ApiOptionsMap
+		? true
+		: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
+	: ["ApiOptionsMap doesn't extend Record<KnownApi, GenerateOptions>"];
+const _exhaustive: _CheckExhaustive = true;
+
+// Helper type to get options for a specific API
+export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 
 export type KnownProvider = "anthropic" | "google" | "openai" | "xai" | "groq" | "cerebras" | "openrouter";
 export type Provider = KnownProvider | string;
@@ -21,30 +43,16 @@ export interface GenerateOptions {
 }
 
 // Unified options with reasoning (what public generate() accepts)
-export interface GenerateOptionsUnified extends GenerateOptions {
+export interface SimpleGenerateOptions extends GenerateOptions {
 	reasoning?: ReasoningEffort;
 }
 
 // Generic GenerateFunction with typed options
-export type GenerateFunction<TOptions extends GenerateOptions = GenerateOptions> = (
-	model: Model,
+export type GenerateFunction<TApi extends Api> = (
+	model: Model<TApi>,
 	context: Context,
-	options: TOptions,
+	options: OptionsForApi<TApi>,
 ) => GenerateStream;
-
-// Legacy LLM interface (to be removed)
-export interface LLMOptions {
-	temperature?: number;
-	maxTokens?: number;
-	onEvent?: (event: AssistantMessageEvent) => void;
-	signal?: AbortSignal;
-}
-
-export interface LLM<T extends LLMOptions> {
-	generate(request: Context, options?: T): Promise<AssistantMessage>;
-	getModel(): Model;
-	getApi(): string;
-}
 
 export interface TextContent {
 	type: "text";
@@ -100,7 +108,7 @@ export interface AssistantMessage {
 	model: string;
 	usage: Usage;
 	stopReason: StopReason;
-	error?: string | Error;
+	error?: string;
 }
 
 export interface ToolResultMessage {
@@ -138,10 +146,10 @@ export type AssistantMessageEvent =
 	| { type: "error"; error: string; partial: AssistantMessage };
 
 // Model interface for the unified model system
-export interface Model {
+export interface Model<TApi extends Api> {
 	id: string;
 	name: string;
-	api: Api;
+	api: TApi;
 	provider: Provider;
 	baseUrl: string;
 	reasoning: boolean;

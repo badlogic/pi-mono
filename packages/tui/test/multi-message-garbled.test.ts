@@ -1,7 +1,7 @@
-import { test, describe } from "node:test";
 import assert from "node:assert";
+import { describe, test } from "node:test";
+import { Container, LoadingAnimation, MarkdownComponent, TextComponent, TextEditor, TUI } from "../src/index.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
-import { TUI, Container, TextComponent, MarkdownComponent, TextEditor, LoadingAnimation } from "../src/index.js";
 
 describe("Multi-Message Garbled Output Reproduction", () => {
 	test("handles rapid message additions with large content without garbling", async () => {
@@ -20,7 +20,7 @@ describe("Multi-Message Garbled Output Reproduction", () => {
 		ui.setFocus(editor);
 
 		// Initial render
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 1: Simulate user message
@@ -32,7 +32,7 @@ describe("Multi-Message Garbled Output Reproduction", () => {
 		statusContainer.addChild(loadingAnim);
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 3: Simulate rapid tool calls with large outputs
@@ -54,7 +54,7 @@ node_modules/get-tsconfig/README.md
 		chatContainer.addChild(new TextComponent(globResult));
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Simulate multiple read tool calls with long content
@@ -74,7 +74,7 @@ A collection of tools for managing LLM deployments and building AI agents.
 		chatContainer.addChild(new MarkdownComponent(readmeContent));
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Second read with even more content
@@ -94,7 +94,7 @@ Terminal UI framework with surgical differential rendering for building flicker-
 		chatContainer.addChild(new MarkdownComponent(tuiReadmeContent));
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 4: Stop loading animation and add assistant response
@@ -114,7 +114,7 @@ The TUI library features surgical differential rendering that minimizes screen u
 		chatContainer.addChild(new MarkdownComponent(assistantResponse));
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Step 5: CRITICAL - Send a new message while previous content is displayed
@@ -126,7 +126,7 @@ The TUI library features surgical differential rendering that minimizes screen u
 		statusContainer.addChild(loadingAnim2);
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Add assistant response
@@ -144,7 +144,7 @@ Key aspects:
 		chatContainer.addChild(new MarkdownComponent(secondResponse));
 
 		ui.requestRender();
-		await new Promise(resolve => process.nextTick(resolve));
+		await new Promise((resolve) => process.nextTick(resolve));
 		await terminal.flush();
 
 		// Debug: Show the garbled output after the problematic step
@@ -153,19 +153,25 @@ Key aspects:
 		debugOutput.forEach((line, i) => {
 			if (line.trim()) console.log(`${i}: "${line}"`);
 		});
-		
+
 		// Step 6: Check final output
 		const finalOutput = terminal.getScrollBuffer();
 
 		// Check that first user message is NOT garbled
-		const userLine1 = finalOutput.find(line => line.includes("read all README.md files"));
-		assert.strictEqual(userLine1, "read all README.md files except in node_modules",
-			`First user message is garbled: "${userLine1}"`);
+		const userLine1 = finalOutput.find((line) => line.includes("read all README.md files"));
+		assert.strictEqual(
+			userLine1,
+			"read all README.md files except in node_modules",
+			`First user message is garbled: "${userLine1}"`,
+		);
 
 		// Check that second user message is clean
-		const userLine2 = finalOutput.find(line => line.includes("What is the main purpose"));
-		assert.strictEqual(userLine2, "What is the main purpose of the TUI library?",
-			`Second user message is garbled: "${userLine2}"`);
+		const userLine2 = finalOutput.find((line) => line.includes("What is the main purpose"));
+		assert.strictEqual(
+			userLine2,
+			"What is the main purpose of the TUI library?",
+			`Second user message is garbled: "${userLine2}"`,
+		);
 
 		// Check for common garbling patterns
 		const garbledPatterns = [
@@ -173,11 +179,11 @@ Key aspects:
 			"README.mdectly",
 			"modulesl rendering",
 			"[assistant]ns.",
-			"node_modules/@esbuild/darwin-arm64/README.mdategy"
+			"node_modules/@esbuild/darwin-arm64/README.mdategy",
 		];
 
 		for (const pattern of garbledPatterns) {
-			const hasGarbled = finalOutput.some(line => line.includes(pattern));
+			const hasGarbled = finalOutput.some((line) => line.includes(pattern));
 			assert.ok(!hasGarbled, `Found garbled pattern "${pattern}" in output`);
 		}
 

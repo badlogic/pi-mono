@@ -28,6 +28,6 @@
 		"lineWidth": 120
 	},
 	"files": {
-		"includes": ["packages/*/src/**/*", "*.json", "*.md"]
+		"includes": ["packages/*/src/**/*", "packages/*/test/**/*", "*.json", "*.md"]
 	}
 }

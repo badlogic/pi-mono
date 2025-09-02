@@ -3,6 +3,7 @@
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { Api, KnownProvider, Model } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,30 +29,13 @@ interface ModelsDevModel {
 	};
 }
 
-interface NormalizedModel {
-	id: string;
-	name: string;
-	provider: string;
-	baseUrl?: string;
-	reasoning: boolean;
-	input: ("text" | "image")[];
-	cost: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-	};
-	contextWindow: number;
-	maxTokens: number;
-}
-
-async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
+async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
 		const response = await fetch("https://openrouter.ai/api/v1/models");
 		const data = await response.json();
 
-		const models: NormalizedModel[] = [];
+		const models: Model<any>[] = [];
 
 		for (const model of data.data) {
 			// Only include models that support tools
@@ -59,27 +43,17 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 
 			// Parse provider from model ID
 			const [providerPrefix] = model.id.split("/");
-			let provider = "";
+			let provider: KnownProvider = "openrouter";
 			let modelKey = model.id;
 
 			// Skip models that we get from models.dev (Anthropic, Google, OpenAI)
 			if (model.id.startsWith("google/") ||
 			    model.id.startsWith("openai/") ||
-			    model.id.startsWith("anthropic/")) {
-				continue;
-			} else if (model.id.startsWith("x-ai/")) {
-				provider = "xai";
-				modelKey = model.id.replace("x-ai/", "");
-			} else {
-				// All other models go through OpenRouter
-				provider = "openrouter";
-				modelKey = model.id; // Keep full ID for OpenRouter
-			}
-
-			// Skip if not one of our supported providers from OpenRouter
-			if (!["xai", "openrouter"].includes(provider)) {
+			    model.id.startsWith("anthropic/") ||
+				model.id.startsWith("x-ai/")) {
 				continue;
 			}
+			modelKey = model.id; // Keep full ID for OpenRouter
 
 			// Parse input modalities
 			const input: ("text" | "image")[] = ["text"];
@@ -93,9 +67,11 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 			const cacheReadCost = parseFloat(model.pricing?.input_cache_read || "0") * 1_000_000;
 			const cacheWriteCost = parseFloat(model.pricing?.input_cache_write || "0") * 1_000_000;
 
-			const normalizedModel: NormalizedModel = {
+			const normalizedModel: Model<any> = {
 				id: modelKey,
 				name: model.name,
+				api: "openai-completions",
+				baseUrl: "https://openrouter.ai/api/v1",
 				provider,
 				reasoning: model.supported_parameters?.includes("reasoning") || false,
 				input,
@@ -108,14 +84,6 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 				contextWindow: model.context_length || 4096,
 				maxTokens: model.top_provider?.max_completion_tokens || 4096,
 			};
-
-			// Add baseUrl for providers that need it
-			if (provider === "xai") {
-				normalizedModel.baseUrl = "https://api.x.ai/v1";
-			} else if (provider === "openrouter") {
-				normalizedModel.baseUrl = "https://openrouter.ai/api/v1";
-			}
-
 			models.push(normalizedModel);
 		}
 
@@ -127,13 +95,13 @@ async function fetchOpenRouterModels(): Promise<NormalizedModel[]> {
 	}
 }
 
-async function loadModelsDevData(): Promise<NormalizedModel[]> {
+async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
 		const response = await fetch("https://models.dev/api.json");
 		const data = await response.json();
 
-		const models: NormalizedModel[] = [];
+		const models: Model<any>[] = [];
 
 		// Process Anthropic models
 		if (data.anthropic?.models) {
@@ -144,7 +112,9 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
+					api: "anthropic-messages",
 					provider: "anthropic",
+					baseUrl: "https://api.anthropic.com",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -168,7 +138,9 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
+					api: "google-generative-ai",
 					provider: "google",
+					baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -192,7 +164,9 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
+					api: "openai-responses",
 					provider: "openai",
+					baseUrl: "https://api.openai.com/v1",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -216,6 +190,7 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
+					api: "openai-completions",
 					provider: "groq",
 					baseUrl: "https://api.groq.com/openai/v1",
 					reasoning: m.reasoning === true,
@@ -241,8 +216,35 @@ async function loadModelsDevData(): Promise<NormalizedModel[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
+					api: "openai-completions",
 					provider: "cerebras",
 					baseUrl: "https://api.cerebras.ai/v1",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process xAi models
+		if (data.xai?.models) {
+			for (const [modelId, model] of Object.entries(data.xai.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider: "xai",
+					baseUrl: "https://api.x.ai/v1",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -280,6 +282,8 @@ async function generateModels() {
 		allModels.push({
 			id: "gpt-5-chat-latest",
 			name: "GPT-5 Chat Latest",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
 			provider: "openai",
 			reasoning: false,
 			input: ["text", "image"],
@@ -294,8 +298,29 @@ async function generateModels() {
 		});
 	}
 
+	// Add missing Grok models
+	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
+		allModels.push({
+			id: "grok-code-fast-1",
+			name: "Grok Code Fast 1",
+			api: "openai-completions",
+			baseUrl: "https://api.x.ai/v1",
+			provider: "xai",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.2,
+				output: 1.5,
+				cacheRead: 0.02,
+				cacheWrite: 0,
+			},
+			contextWindow: 32768,
+			maxTokens: 8192,
+		});
+	}
+
 	// Group by provider and deduplicate by model ID
-	const providers: Record<string, Record<string, NormalizedModel>> = {};
+	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
 		if (!providers[model.provider]) {
 			providers[model.provider] = {};
@@ -319,39 +344,33 @@ export const PROVIDERS = {
 	// Generate provider sections
 	for (const [providerId, models] of Object.entries(providers)) {
 		output += `\t${providerId}: {\n`;
-		output += `\t\tmodels: {\n`;
 
 		for (const model of Object.values(models)) {
-			output += `\t\t\t"${model.id}": {\n`;
-			output += `\t\t\t\tid: "${model.id}",\n`;
-			output += `\t\t\t\tname: "${model.name}",\n`;
-			output += `\t\t\t\tprovider: "${model.provider}",\n`;
+			output += `\t\t"${model.id}": {\n`;
+			output += `\t\t\tid: "${model.id}",\n`;
+			output += `\t\t\tname: "${model.name}",\n`;
+			output += `\t\t\tapi: "${model.api}",\n`;
+			output += `\t\t\tprovider: "${model.provider}",\n`;
 			if (model.baseUrl) {
-				output += `\t\t\t\tbaseUrl: "${model.baseUrl}",\n`;
+				output += `\t\t\tbaseUrl: "${model.baseUrl}",\n`;
 			}
-			output += `\t\t\t\treasoning: ${model.reasoning},\n`;
-			output += `\t\t\t\tinput: ${JSON.stringify(model.input)},\n`;
-			output += `\t\t\t\tcost: {\n`;
-			output += `\t\t\t\t\tinput: ${model.cost.input},\n`;
-			output += `\t\t\t\t\toutput: ${model.cost.output},\n`;
-			output += `\t\t\t\t\tcacheRead: ${model.cost.cacheRead},\n`;
-			output += `\t\t\t\t\tcacheWrite: ${model.cost.cacheWrite},\n`;
-			output += `\t\t\t\t},\n`;
-			output += `\t\t\t\tcontextWindow: ${model.contextWindow},\n`;
-			output += `\t\t\t\tmaxTokens: ${model.maxTokens},\n`;
-			output += `\t\t\t} satisfies Model,\n`;
+			output += `\t\t\treasoning: ${model.reasoning},\n`;
+			output += `\t\t\tinput: [${model.input.map(i => `"${i}"`).join(", ")}],\n`;
+			output += `\t\t\tcost: {\n`;
+			output += `\t\t\t\tinput: ${model.cost.input},\n`;
+			output += `\t\t\t\toutput: ${model.cost.output},\n`;
+			output += `\t\t\t\tcacheRead: ${model.cost.cacheRead},\n`;
+			output += `\t\t\t\tcacheWrite: ${model.cost.cacheWrite},\n`;
+			output += `\t\t\t},\n`;
+			output += `\t\t\tcontextWindow: ${model.contextWindow},\n`;
+			output += `\t\t\tmaxTokens: ${model.maxTokens},\n`;
+			output += `\t\t} satisfies Model<"${model.api}">,\n`;
 		}
 
-		output += `\t\t}\n`;
 		output += `\t},\n`;
 	}
 
 	output += `} as const;
-
-// Helper type to extract models for each provider
-export type ProviderModels = {
-	[K in keyof typeof PROVIDERS]: typeof PROVIDERS[K]["models"]
-};
 `;
 
 	// Write file

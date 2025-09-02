@@ -1,5 +1,5 @@
 #!/usr/bin/env npx tsx
-import { TUI, Container, TextComponent, TextEditor, MarkdownComponent } from "../src/index.js";
+import { Container, MarkdownComponent, TextComponent, TextEditor, TUI } from "../src/index.js";
 
 /**
  * Multi-Component Layout Demo
