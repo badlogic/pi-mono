@@ -3,7 +3,7 @@ import { GoogleLLM } from "../src/providers/google.js";
 import { OpenAICompletionsLLM } from "../src/providers/openai-completions.js";
 import { OpenAIResponsesLLM } from "../src/providers/openai-responses.js";
 import { AnthropicLLM } from "../src/providers/anthropic.js";
-import type { LLM, LLMOptions, Context, UserMessage } from "../src/types.js";
+import type { LLM, LLMOptions, Context, UserMessage, AssistantMessage } from "../src/types.js";
 import { getModel } from "../src/models.js";
 
 async function testEmptyMessage<T extends LLMOptions>(llm: LLM<T>, options: T = {} as T) {
@@ -76,6 +76,53 @@ async function testWhitespaceOnlyMessage<T extends LLMOptions>(llm: LLM<T>, opti
     }
 }
 
+async function testEmptyAssistantMessage<T extends LLMOptions>(llm: LLM<T>, options: T = {} as T) {
+    // Test with empty assistant message in conversation flow
+    // User -> Empty Assistant -> User
+    const emptyAssistant: AssistantMessage = {
+        role: "assistant",
+        content: [],
+        api: llm.getApi(),
+        provider: llm.getModel().provider,
+        model: llm.getModel().id,
+        usage: {
+            input: 10,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+        },
+        stopReason: "stop"
+    };
+
+    const context: Context = {
+        messages: [
+            {
+                role: "user",
+                content: "Hello, how are you?"
+            },
+            emptyAssistant,
+            {
+                role: "user",
+                content: "Please respond this time."
+            }
+        ]
+    };
+
+    const response = await llm.generate(context, options);
+    
+    expect(response).toBeDefined();
+    expect(response.role).toBe("assistant");
+    
+    // Should handle empty assistant message in context gracefully
+    if (response.stopReason === "error") {
+        expect(response.error).toBeDefined();
+    } else {
+        expect(response.content).toBeDefined();
+        expect(response.content.length).toBeGreaterThan(0);
+    }
+}
+
 describe("AI Providers Empty Message Tests", () => {
     describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Empty Messages", () => {
         let llm: GoogleLLM;
@@ -94,6 +141,10 @@ describe("AI Providers Empty Message Tests", () => {
 
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
+        });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
         });
     });
 
@@ -114,6 +165,10 @@ describe("AI Providers Empty Message Tests", () => {
 
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
+        });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
         });
     });
 
@@ -139,6 +194,10 @@ describe("AI Providers Empty Message Tests", () => {
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
         });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
+        });
     });
 
     describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider Empty Messages", () => {
@@ -158,6 +217,10 @@ describe("AI Providers Empty Message Tests", () => {
 
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
+        });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
         });
     });
 
@@ -184,6 +247,10 @@ describe("AI Providers Empty Message Tests", () => {
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
         });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
+        });
     });
 
     // Test with Groq if available
@@ -209,6 +276,10 @@ describe("AI Providers Empty Message Tests", () => {
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
         });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
+        });
     });
 
     // Test with Cerebras if available
@@ -233,6 +304,10 @@ describe("AI Providers Empty Message Tests", () => {
 
         it("should handle whitespace-only content", async () => {
             await testWhitespaceOnlyMessage(llm);
+        });
+
+        it("should handle empty assistant message in conversation", async () => {
+            await testEmptyAssistantMessage(llm);
         });
     });
 });
