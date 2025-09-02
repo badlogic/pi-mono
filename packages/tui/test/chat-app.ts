@@ -36,7 +36,7 @@ const autocompleteProvider = new CombinedAutocompleteProvider([
 	{
 		name: "attach",
 		description: "Attach a file",
-		getArgumentCompletions: (prefix) => {
+		getArgumentCompletions: () => {
 			// Return file suggestions for attach command
 			return null; // Use default file completion
 		},
@@ -95,7 +95,7 @@ chatHistory.addChild(
 
 **Available slash commands:**
 - \`/clear\` - Clear the chat history
-- \`/help\` - Show help information  
+- \`/help\` - Show help information
 - \`/attach <file>\` - Attach a file (with autocomplete)
 
 **File autocomplete:**

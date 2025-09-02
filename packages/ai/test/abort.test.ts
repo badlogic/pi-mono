@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { complete, stream } from "../src/generate.js";
 import { getModel } from "../src/models.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";

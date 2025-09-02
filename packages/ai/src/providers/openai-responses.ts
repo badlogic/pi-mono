@@ -19,7 +19,6 @@ import type {
 	GenerateFunction,
 	GenerateOptions,
 	GenerateStream,
-	Message,
 	Model,
 	StopReason,
 	TextContent,
