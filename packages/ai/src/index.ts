@@ -3,26 +3,26 @@
 
 export const version = "0.5.8";
 
+// Export generate API
+export {
+	generate,
+	generateComplete,
+	getApiKey,
+	QueuedGenerateStream,
+	registerApi,
+	setApiKey,
+} from "./generate.js";
 // Export generated models data
 export { PROVIDERS } from "./models.generated.js";
-
-// Export models utilities and types
+// Export model utilities
 export {
-	type AnthropicModel,
-	type CerebrasModel,
-	createLLM,
-	type GoogleModel,
-	type GroqModel,
-	type Model,
-	type OpenAIModel,
-	type OpenRouterModel,
-	PROVIDER_CONFIG,
-	type ProviderModels,
-	type ProviderToLLM,
-	type XAIModel,
+	calculateCost,
+	getModel,
+	type KnownProvider,
+	registerModel,
 } from "./models.js";
 
-// Export providers
+// Legacy providers (to be deprecated)
 export { AnthropicLLM } from "./providers/anthropic.js";
 export { GoogleLLM } from "./providers/google.js";
 export { OpenAICompletionsLLM } from "./providers/openai-completions.js";
@@ -30,3 +30,8 @@ export { OpenAIResponsesLLM } from "./providers/openai-responses.js";
 
 // Export types
 export type * from "./types.js";
+
+// TODO: Remove these legacy exports once consumers are updated
+export function createLLM(): never {
+	throw new Error("createLLM is deprecated. Use generate() with getModel() instead.");
+}
