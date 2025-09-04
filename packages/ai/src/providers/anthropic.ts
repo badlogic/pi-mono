@@ -282,6 +282,12 @@ function buildParams(
 	return params;
 }
 
+// Sanitize tool call IDs to match Anthropic's required pattern: ^[a-zA-Z0-9_-]+$
+function sanitizeToolCallId(id: string): string {
+	// Replace any character that isn't alphanumeric, underscore, or hyphen with underscore
+	return id.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function convertMessages(messages: Message[], model: Model<"anthropic-messages">): MessageParam[] {
 	const params: MessageParam[] = [];
 
@@ -348,7 +354,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",
-						id: block.id,
+						id: sanitizeToolCallId(block.id),
 						name: block.name,
 						input: block.arguments,
 					});
@@ -365,7 +371,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				content: [
 					{
 						type: "tool_result",
-						tool_use_id: msg.toolCallId,
+						tool_use_id: sanitizeToolCallId(msg.toolCallId),
 						content: msg.content,
 						is_error: msg.isError,
 					},
