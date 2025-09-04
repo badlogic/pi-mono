@@ -33,6 +33,9 @@ export interface GoogleOptions extends GenerateOptions {
 	};
 }
 
+// Counter for generating unique tool call IDs
+let toolCallCounter = 0;
+
 export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 	model: Model<"google-generative-ai">,
 	context: Context,
@@ -131,7 +134,14 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								currentBlock = null;
 							}
 
-							const toolCallId = part.functionCall.id || `${part.functionCall.name}_${Date.now()}`;
+							// Generate unique ID if not provided or if it's a duplicate
+							const providedId = part.functionCall.id;
+							const needsNewId =
+								!providedId || output.content.some((b) => b.type === "toolCall" && b.id === providedId);
+							const toolCallId = needsNewId
+								? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
+								: providedId;
+
 							const toolCall: ToolCall = {
 								type: "toolCall",
 								id: toolCallId,
