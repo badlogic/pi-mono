@@ -259,6 +259,32 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process xAi models
+		if (data.zai?.models) {
+			for (const [modelId, model] of Object.entries(data.zai.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "anthropic-messages",
+					provider: "zai",
+					baseUrl: "https://api.z.ai/api/anthropic",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
@@ -277,7 +303,7 @@ async function generateModels() {
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
-	// Add missing gpt models
+	// Add missing gpt models (can't use tools)
 	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5-chat-latest")) {
 		allModels.push({
 			id: "gpt-5-chat-latest",

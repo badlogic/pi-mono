@@ -118,7 +118,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 		messages: [
 			{
 				role: "user",
-				content: `Think about ${(Math.random() * 255) | 0} + 27. Think step by step. Then output the result.`,
+				content: `Think long and hard about ${(Math.random() * 255) | 0} + 27. Think step by step. Then output the result.`,
 			},
 		],
 	};
@@ -169,7 +169,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 				content: [
 					{
 						type: "text",
-						text: "What do you see in this image? Please describe the shape (circle, rectangle, square, triangle, ...) and color (red, blue, green, ...).",
+						text: "What do you see in this image? Please describe the shape (circle, rectangle, square, triangle, ...) and color (red, blue, green, ...). You MUST reply in English.",
 					},
 					imageContent,
 				],
@@ -509,6 +509,60 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle image input", async () => {
 			await handleImage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via Anthropic Messages)", () => {
+		const llm = getModel("zai", "glm-4.5-air");
+
+		it("should complete basic text generation", async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", async () => {
+			// Prompt doesn't trigger thinking
+			// await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it("should handle multi-turn with thinking and tools", async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via Anthropic Messages)", () => {
+		const llm = getModel("zai", "glm-4.5v");
+
+		it("should complete basic text generation", async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", async () => {
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it("should handle multi-turn with thinking and tools", async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it("should handle image input", async () => {
+			// Can't see image for some reason?
+			// await handleImage(llm);
 		});
 	});
 

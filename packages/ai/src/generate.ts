@@ -106,6 +106,7 @@ export function getApiKey(provider: any): string | undefined {
 		cerebras: "CEREBRAS_API_KEY",
 		xai: "XAI_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
+		zai: "ZAI_API_KEY",
 	};
 
 	const envVar = envMap[provider];

@@ -23,7 +23,7 @@ const _exhaustive: _CheckExhaustive = true;
 // Helper type to get options for a specific API
 export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 
-export type KnownProvider = "anthropic" | "google" | "openai" | "xai" | "groq" | "cerebras" | "openrouter";
+export type KnownProvider = "anthropic" | "google" | "openai" | "xai" | "groq" | "cerebras" | "openrouter" | "zai";
 export type Provider = KnownProvider | string;
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";

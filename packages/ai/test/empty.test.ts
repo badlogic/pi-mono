@@ -262,4 +262,24 @@ describe("AI Providers Empty Message Tests", () => {
 			await testEmptyAssistantMessage(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider Empty Messages", () => {
+		const llm = getModel("zai", "glm-4.5-air");
+
+		it("should handle empty content array", async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
 });
