@@ -1,7 +1,10 @@
+import type { AssistantMessageEventStream } from "./event-stream";
 import type { AnthropicOptions } from "./providers/anthropic";
 import type { GoogleOptions } from "./providers/google";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions";
 import type { OpenAIResponsesOptions } from "./providers/openai-responses";
+
+export type { AssistantMessageEventStream } from "./event-stream";
 
 export type Api = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
 
@@ -28,12 +31,6 @@ export type Provider = KnownProvider | string;
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
-// The stream interface - what generate() returns
-export interface GenerateStream extends AsyncIterable<AssistantMessageEvent> {
-	// Get the final message (waits for streaming to complete)
-	finalMessage(): Promise<AssistantMessage>;
-}
-
 // Base options all providers share
 export interface GenerateOptions {
 	temperature?: number;
@@ -52,7 +49,7 @@ export type GenerateFunction<TApi extends Api> = (
 	model: Model<TApi>,
 	context: Context,
 	options: OptionsForApi<TApi>,
-) => GenerateStream;
+) => AssistantMessageEventStream;
 
 export interface TextContent {
 	type: "text";
@@ -111,11 +108,12 @@ export interface AssistantMessage {
 	error?: string;
 }
 
-export interface ToolResultMessage {
+export interface ToolResultMessage<TDetails = any> {
 	role: "toolResult";
 	toolCallId: string;
 	toolName: string;
-	content: string;
+	output: string;
+	details?: TDetails;
 	isError: boolean;
 }
 
@@ -135,13 +133,15 @@ export interface Context {
 
 export type AssistantMessageEvent =
 	| { type: "start"; partial: AssistantMessage }
-	| { type: "text_start"; partial: AssistantMessage }
-	| { type: "text_delta"; delta: string; partial: AssistantMessage }
-	| { type: "text_end"; content: string; partial: AssistantMessage }
-	| { type: "thinking_start"; partial: AssistantMessage }
-	| { type: "thinking_delta"; delta: string; partial: AssistantMessage }
-	| { type: "thinking_end"; content: string; partial: AssistantMessage }
-	| { type: "toolCall"; toolCall: ToolCall; partial: AssistantMessage }
+	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
+	| { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+	| { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
+	| { type: "thinking_start"; contentIndex: number; partial: AssistantMessage }
+	| { type: "thinking_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+	| { type: "thinking_end"; contentIndex: number; content: string; partial: AssistantMessage }
+	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
+	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
 	| { type: "done"; reason: StopReason; message: AssistantMessage }
 	| { type: "error"; error: string; partial: AssistantMessage };
 

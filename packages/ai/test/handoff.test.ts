@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { complete } from "../src/generate.js";
 import { getModel } from "../src/models.js";
-import type { Api, AssistantMessage, Context, Message, Model, Tool } from "../src/types.js";
+import type { Api, AssistantMessage, Context, Message, Model, Tool, ToolResultMessage } from "../src/types.js";
 
 // Tool for testing
 const weatherTool: Tool = {
@@ -22,6 +22,7 @@ const providerContexts = {
 	anthropic: {
 		message: {
 			role: "assistant",
+			api: "anthropic-messages",
 			content: [
 				{
 					type: "thinking",
@@ -49,14 +50,14 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
-		} as AssistantMessage,
+		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
 			toolCallId: "toolu_01abc123",
 			toolName: "get_weather",
-			content: "Weather in Tokyo: 18°C, partly cloudy",
+			output: "Weather in Tokyo: 18°C, partly cloudy",
 			isError: false,
-		},
+		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 391,
 			city: "Tokyo",
@@ -69,6 +70,7 @@ const providerContexts = {
 	google: {
 		message: {
 			role: "assistant",
+			api: "google-generative-ai",
 			content: [
 				{
 					type: "thinking",
@@ -97,14 +99,14 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
-		} as AssistantMessage,
+		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
 			toolCallId: "call_gemini_123",
 			toolName: "get_weather",
-			content: "Weather in Berlin: 22°C, sunny",
+			output: "Weather in Berlin: 22°C, sunny",
 			isError: false,
-		},
+		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 456,
 			city: "Berlin",
@@ -117,6 +119,7 @@ const providerContexts = {
 	openaiCompletions: {
 		message: {
 			role: "assistant",
+			api: "openai-completions",
 			content: [
 				{
 					type: "thinking",
@@ -144,14 +147,14 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
-		} as AssistantMessage,
+		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
 			toolCallId: "call_abc123",
 			toolName: "get_weather",
-			content: "Weather in London: 15°C, rainy",
+			output: "Weather in London: 15°C, rainy",
 			isError: false,
-		},
+		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 525,
 			city: "London",
@@ -164,6 +167,7 @@ const providerContexts = {
 	openaiResponses: {
 		message: {
 			role: "assistant",
+			api: "openai-responses",
 			content: [
 				{
 					type: "thinking",
@@ -193,14 +197,14 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
-		} as AssistantMessage,
+		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
 			toolCallId: "call_789_item_012", // Match the updated ID format
 			toolName: "get_weather",
-			content: "Weather in Sydney: 25°C, clear",
+			output: "Weather in Sydney: 25°C, clear",
 			isError: false,
-		},
+		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 486,
 			city: "Sydney",
@@ -213,6 +217,7 @@ const providerContexts = {
 	aborted: {
 		message: {
 			role: "assistant",
+			api: "anthropic-messages",
 			content: [
 				{
 					type: "thinking",
@@ -235,7 +240,7 @@ const providerContexts = {
 			},
 			stopReason: "error",
 			error: "Request was aborted",
-		} as AssistantMessage,
+		} satisfies AssistantMessage,
 		toolResult: null,
 		facts: {
 			calculation: 600,

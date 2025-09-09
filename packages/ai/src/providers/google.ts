@@ -7,7 +7,7 @@ import {
 	GoogleGenAI,
 	type Part,
 } from "@google/genai";
-import { QueuedGenerateStream } from "../generate.js";
+import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -15,7 +15,6 @@ import type {
 	Context,
 	GenerateFunction,
 	GenerateOptions,
-	GenerateStream,
 	Model,
 	StopReason,
 	TextContent,
@@ -23,7 +22,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { transformMessages } from "./utils.js";
+import { transformMessages } from "./transorm-messages.js";
 
 export interface GoogleOptions extends GenerateOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -40,8 +39,8 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 	model: Model<"google-generative-ai">,
 	context: Context,
 	options?: GoogleOptions,
-): GenerateStream => {
-	const stream = new QueuedGenerateStream();
+): AssistantMessageEventStream => {
+	const stream = new AssistantMessageEventStream();
 
 	(async () => {
 		const output: AssistantMessage = {
@@ -67,6 +66,8 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 
 			stream.push({ type: "start", partial: output });
 			let currentBlock: TextContent | ThinkingContent | null = null;
+			const blocks = output.content;
+			const blockIndex = () => blocks.length - 1;
 			for await (const chunk of googleStream) {
 				const candidate = chunk.candidates?.[0];
 				if (candidate?.content?.parts) {
@@ -82,12 +83,14 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 									if (currentBlock.type === "text") {
 										stream.push({
 											type: "text_end",
+											contentIndex: blocks.length - 1,
 											content: currentBlock.text,
 											partial: output,
 										});
 									} else {
 										stream.push({
 											type: "thinking_end",
+											contentIndex: blockIndex(),
 											content: currentBlock.thinking,
 											partial: output,
 										});
@@ -95,10 +98,10 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								}
 								if (isThinking) {
 									currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-									stream.push({ type: "thinking_start", partial: output });
+									stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
 								} else {
 									currentBlock = { type: "text", text: "" };
-									stream.push({ type: "text_start", partial: output });
+									stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
 								}
 								output.content.push(currentBlock);
 							}
@@ -107,12 +110,18 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								currentBlock.thinkingSignature = part.thoughtSignature;
 								stream.push({
 									type: "thinking_delta",
+									contentIndex: blockIndex(),
 									delta: part.text,
 									partial: output,
 								});
 							} else {
 								currentBlock.text += part.text;
-								stream.push({ type: "text_delta", delta: part.text, partial: output });
+								stream.push({
+									type: "text_delta",
+									contentIndex: blockIndex(),
+									delta: part.text,
+									partial: output,
+								});
 							}
 						}
 
@@ -121,12 +130,14 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								if (currentBlock.type === "text") {
 									stream.push({
 										type: "text_end",
+										contentIndex: blockIndex(),
 										content: currentBlock.text,
 										partial: output,
 									});
 								} else {
 									stream.push({
 										type: "thinking_end",
+										contentIndex: blockIndex(),
 										content: currentBlock.thinking,
 										partial: output,
 									});
@@ -149,7 +160,14 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								arguments: part.functionCall.args as Record<string, any>,
 							};
 							output.content.push(toolCall);
-							stream.push({ type: "toolCall", toolCall, partial: output });
+							stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
+							stream.push({
+								type: "toolcall_delta",
+								contentIndex: blockIndex(),
+								delta: JSON.stringify(toolCall.arguments),
+								partial: output,
+							});
+							stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 						}
 					}
 				}
@@ -182,9 +200,19 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 
 			if (currentBlock) {
 				if (currentBlock.type === "text") {
-					stream.push({ type: "text_end", content: currentBlock.text, partial: output });
+					stream.push({
+						type: "text_end",
+						contentIndex: blockIndex(),
+						content: currentBlock.text,
+						partial: output,
+					});
 				} else {
-					stream.push({ type: "thinking_end", content: currentBlock.thinking, partial: output });
+					stream.push({
+						type: "thinking_end",
+						contentIndex: blockIndex(),
+						content: currentBlock.thinking,
+						partial: output,
+					});
 				}
 			}
 
@@ -333,7 +361,7 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 							id: msg.toolCallId,
 							name: msg.toolName,
 							response: {
-								result: msg.content,
+								result: msg.output,
 								isError: msg.isError,
 							},
 						},

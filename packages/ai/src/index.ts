@@ -1,3 +1,4 @@
+export * from "./agent/index.js";
 export * from "./generate.js";
 export * from "./models.js";
 export * from "./providers/anthropic.js";

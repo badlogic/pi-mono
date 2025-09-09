@@ -7,14 +7,13 @@ import type {
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
-import { QueuedGenerateStream } from "../generate.js";
+import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
 	GenerateFunction,
 	GenerateOptions,
-	GenerateStream,
 	Model,
 	StopReason,
 	TextContent,
@@ -22,7 +21,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { transformMessages } from "./utils.js";
+import { transformMessages } from "./transorm-messages.js";
 
 export interface OpenAICompletionsOptions extends GenerateOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
@@ -33,8 +32,8 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 	model: Model<"openai-completions">,
 	context: Context,
 	options?: OpenAICompletionsOptions,
-): GenerateStream => {
-	const stream = new QueuedGenerateStream();
+): AssistantMessageEventStream => {
+	const stream = new AssistantMessageEventStream();
 
 	(async () => {
 		const output: AssistantMessage = {
@@ -60,6 +59,37 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 			stream.push({ type: "start", partial: output });
 
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
+			const blocks = output.content;
+			const blockIndex = () => blocks.length - 1;
+			const finishCurrentBlock = (block?: typeof currentBlock) => {
+				if (block) {
+					if (block.type === "text") {
+						stream.push({
+							type: "text_end",
+							contentIndex: blockIndex(),
+							content: block.text,
+							partial: output,
+						});
+					} else if (block.type === "thinking") {
+						stream.push({
+							type: "thinking_end",
+							contentIndex: blockIndex(),
+							content: block.thinking,
+							partial: output,
+						});
+					} else if (block.type === "toolCall") {
+						block.arguments = JSON.parse(block.partialArgs || "{}");
+						delete block.partialArgs;
+						stream.push({
+							type: "toolcall_end",
+							contentIndex: blockIndex(),
+							toolCall: block,
+							partial: output,
+						});
+					}
+				}
+			};
+
 			for await (const chunk of openaiStream) {
 				if (chunk.usage) {
 					output.usage = {
@@ -94,119 +124,53 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 						choice.delta.content.length > 0
 					) {
 						if (!currentBlock || currentBlock.type !== "text") {
-							if (currentBlock) {
-								if (currentBlock.type === "thinking") {
-									stream.push({
-										type: "thinking_end",
-										content: currentBlock.thinking,
-										partial: output,
-									});
-								} else if (currentBlock.type === "toolCall") {
-									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
-									delete currentBlock.partialArgs;
-									stream.push({
-										type: "toolCall",
-										toolCall: currentBlock as ToolCall,
-										partial: output,
-									});
-								}
-							}
+							finishCurrentBlock(currentBlock);
 							currentBlock = { type: "text", text: "" };
 							output.content.push(currentBlock);
-							stream.push({ type: "text_start", partial: output });
+							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
 						}
 
 						if (currentBlock.type === "text") {
 							currentBlock.text += choice.delta.content;
 							stream.push({
 								type: "text_delta",
+								contentIndex: blockIndex(),
 								delta: choice.delta.content,
 								partial: output,
 							});
 						}
 					}
 
-					// Some endpoints return reasoning in reasoning_content (llama.cpp)
-					if (
-						(choice.delta as any).reasoning_content !== null &&
-						(choice.delta as any).reasoning_content !== undefined &&
-						(choice.delta as any).reasoning_content.length > 0
-					) {
-						if (!currentBlock || currentBlock.type !== "thinking") {
-							if (currentBlock) {
-								if (currentBlock.type === "text") {
-									stream.push({
-										type: "text_end",
-										content: currentBlock.text,
-										partial: output,
-									});
-								} else if (currentBlock.type === "toolCall") {
-									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
-									delete currentBlock.partialArgs;
-									stream.push({
-										type: "toolCall",
-										toolCall: currentBlock as ToolCall,
-										partial: output,
-									});
-								}
+					// Some endpoints return reasoning in reasoning_content (llama.cpp),
+					// or reasoning (other openai compatible endpoints)
+					const reasoningFields = ["reasoning_content", "reasoning"];
+					for (const field of reasoningFields) {
+						if (
+							(choice.delta as any)[field] !== null &&
+							(choice.delta as any)[field] !== undefined &&
+							(choice.delta as any)[field].length > 0
+						) {
+							if (!currentBlock || currentBlock.type !== "thinking") {
+								finishCurrentBlock(currentBlock);
+								currentBlock = {
+									type: "thinking",
+									thinking: "",
+									thinkingSignature: field,
+								};
+								output.content.push(currentBlock);
+								stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
 							}
-							currentBlock = {
-								type: "thinking",
-								thinking: "",
-								thinkingSignature: "reasoning_content",
-							};
-							output.content.push(currentBlock);
-							stream.push({ type: "thinking_start", partial: output });
-						}
 
-						if (currentBlock.type === "thinking") {
-							const delta = (choice.delta as any).reasoning_content;
-							currentBlock.thinking += delta;
-							stream.push({
-								type: "thinking_delta",
-								delta,
-								partial: output,
-							});
-						}
-					}
-
-					// Some endpoints return reasoning in reasining (ollama, xAI, ...)
-					if (
-						(choice.delta as any).reasoning !== null &&
-						(choice.delta as any).reasoning !== undefined &&
-						(choice.delta as any).reasoning.length > 0
-					) {
-						if (!currentBlock || currentBlock.type !== "thinking") {
-							if (currentBlock) {
-								if (currentBlock.type === "text") {
-									stream.push({
-										type: "text_end",
-										content: currentBlock.text,
-										partial: output,
-									});
-								} else if (currentBlock.type === "toolCall") {
-									currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
-									delete currentBlock.partialArgs;
-									stream.push({
-										type: "toolCall",
-										toolCall: currentBlock as ToolCall,
-										partial: output,
-									});
-								}
+							if (currentBlock.type === "thinking") {
+								const delta = (choice.delta as any)[field];
+								currentBlock.thinking += delta;
+								stream.push({
+									type: "thinking_delta",
+									contentIndex: blockIndex(),
+									delta,
+									partial: output,
+								});
 							}
-							currentBlock = {
-								type: "thinking",
-								thinking: "",
-								thinkingSignature: "reasoning",
-							};
-							output.content.push(currentBlock);
-							stream.push({ type: "thinking_start", partial: output });
-						}
-
-						if (currentBlock.type === "thinking") {
-							const delta = (choice.delta as any).reasoning;
-							currentBlock.thinking += delta;
-							stream.push({ type: "thinking_delta", delta, partial: output });
 						}
 					}
 
@@ -217,30 +181,7 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 								currentBlock.type !== "toolCall" ||
 								(toolCall.id && currentBlock.id !== toolCall.id)
 							) {
-								if (currentBlock) {
-									if (currentBlock.type === "text") {
-										stream.push({
-											type: "text_end",
-											content: currentBlock.text,
-											partial: output,
-										});
-									} else if (currentBlock.type === "thinking") {
-										stream.push({
-											type: "thinking_end",
-											content: currentBlock.thinking,
-											partial: output,
-										});
-									} else if (currentBlock.type === "toolCall") {
-										currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
-										delete currentBlock.partialArgs;
-										stream.push({
-											type: "toolCall",
-											toolCall: currentBlock as ToolCall,
-											partial: output,
-										});
-									}
-								}
-
+								finishCurrentBlock(currentBlock);
 								currentBlock = {
 									type: "toolCall",
 									id: toolCall.id || "",
@@ -249,43 +190,30 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 									partialArgs: "",
 								};
 								output.content.push(currentBlock);
+								stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 							}
 
 							if (currentBlock.type === "toolCall") {
 								if (toolCall.id) currentBlock.id = toolCall.id;
 								if (toolCall.function?.name) currentBlock.name = toolCall.function.name;
+								let delta = "";
 								if (toolCall.function?.arguments) {
+									delta = toolCall.function.arguments;
 									currentBlock.partialArgs += toolCall.function.arguments;
 								}
+								stream.push({
+									type: "toolcall_delta",
+									contentIndex: blockIndex(),
+									delta,
+									partial: output,
+								});
 							}
 						}
 					}
 				}
 			}
 
-			if (currentBlock) {
-				if (currentBlock.type === "text") {
-					stream.push({
-						type: "text_end",
-						content: currentBlock.text,
-						partial: output,
-					});
-				} else if (currentBlock.type === "thinking") {
-					stream.push({
-						type: "thinking_end",
-						content: currentBlock.thinking,
-						partial: output,
-					});
-				} else if (currentBlock.type === "toolCall") {
-					currentBlock.arguments = JSON.parse(currentBlock.partialArgs || "{}");
-					delete currentBlock.partialArgs;
-					stream.push({
-						type: "toolCall",
-						toolCall: currentBlock as ToolCall,
-						partial: output,
-					});
-				}
-			}
+			finishCurrentBlock(currentBlock);
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -438,7 +366,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 		} else if (msg.role === "toolResult") {
 			params.push({
 				role: "tool",
-				content: msg.content,
+				content: msg.output,
 				tool_call_id: msg.toolCallId,
 			});
 		}

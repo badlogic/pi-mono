@@ -10,7 +10,7 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
-import { QueuedGenerateStream } from "../generate.js";
+import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -18,7 +18,6 @@ import type {
 	Context,
 	GenerateFunction,
 	GenerateOptions,
-	GenerateStream,
 	Model,
 	StopReason,
 	TextContent,
@@ -26,7 +25,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { transformMessages } from "./utils.js";
+import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends GenerateOptions {
@@ -41,8 +40,8 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 	model: Model<"openai-responses">,
 	context: Context,
 	options?: OpenAIResponsesOptions,
-): GenerateStream => {
-	const stream = new QueuedGenerateStream();
+): AssistantMessageEventStream => {
+	const stream = new AssistantMessageEventStream();
 
 	// Start async processing
 	(async () => {
@@ -70,7 +69,9 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
-			let currentBlock: ThinkingContent | TextContent | ToolCall | null = null;
+			let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
+			const blocks = output.content;
+			const blockIndex = () => blocks.length - 1;
 
 			for await (const event of openaiStream) {
 				// Handle output item start
@@ -80,12 +81,23 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 						currentItem = item;
 						currentBlock = { type: "thinking", thinking: "" };
 						output.content.push(currentBlock);
-						stream.push({ type: "thinking_start", partial: output });
+						stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
 					} else if (item.type === "message") {
 						currentItem = item;
 						currentBlock = { type: "text", text: "" };
 						output.content.push(currentBlock);
-						stream.push({ type: "text_start", partial: output });
+						stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+					} else if (item.type === "function_call") {
+						currentItem = item;
+						currentBlock = {
+							type: "toolCall",
+							id: item.call_id + "|" + item.id,
+							name: item.name,
+							arguments: {},
+							partialJson: item.arguments || "",
+						};
+						output.content.push(currentBlock);
+						stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 					}
 				}
 				// Handle reasoning summary deltas
@@ -108,6 +120,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							lastPart.text += event.delta;
 							stream.push({
 								type: "thinking_delta",
+								contentIndex: blockIndex(),
 								delta: event.delta,
 								partial: output,
 							});
@@ -129,6 +142,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							lastPart.text += "\n\n";
 							stream.push({
 								type: "thinking_delta",
+								contentIndex: blockIndex(),
 								delta: "\n\n",
 								partial: output,
 							});
@@ -149,6 +163,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							lastPart.text += event.delta;
 							stream.push({
 								type: "text_delta",
+								contentIndex: blockIndex(),
 								delta: event.delta,
 								partial: output,
 							});
@@ -162,10 +177,34 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							lastPart.refusal += event.delta;
 							stream.push({
 								type: "text_delta",
+								contentIndex: blockIndex(),
 								delta: event.delta,
 								partial: output,
 							});
 						}
+					}
+				}
+				// Handle function call argument deltas
+				else if (event.type === "response.function_call_arguments.delta") {
+					if (
+						currentItem &&
+						currentItem.type === "function_call" &&
+						currentBlock &&
+						currentBlock.type === "toolCall"
+					) {
+						currentBlock.partialJson += event.delta;
+						try {
+							const args = JSON.parse(currentBlock.partialJson);
+							currentBlock.arguments = args;
+						} catch {
+							// Ignore JSON parse errors - the JSON might be incomplete
+						}
+						stream.push({
+							type: "toolcall_delta",
+							contentIndex: blockIndex(),
+							delta: event.delta,
+							partial: output,
+						});
 					}
 				}
 				// Handle output item completion
@@ -177,6 +216,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 						currentBlock.thinkingSignature = JSON.stringify(item);
 						stream.push({
 							type: "thinking_end",
+							contentIndex: blockIndex(),
 							content: currentBlock.thinking,
 							partial: output,
 						});
@@ -186,6 +226,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 						currentBlock.textSignature = item.id;
 						stream.push({
 							type: "text_end",
+							contentIndex: blockIndex(),
 							content: currentBlock.text,
 							partial: output,
 						});
@@ -197,8 +238,7 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							name: item.name,
 							arguments: JSON.parse(item.arguments),
 						};
-						output.content.push(toolCall);
-						stream.push({ type: "toolCall", toolCall, partial: output });
+						stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 					}
 				}
 				// Handle completion
@@ -398,7 +438,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: msg.content,
+				output: msg.output,
 			});
 		}
 	}

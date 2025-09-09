@@ -22,7 +22,7 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 		abortFired = true;
 		break;
 	}
-	const msg = await response.finalMessage();
+	const msg = await response.result();
 
 	// If we get here without throwing, the abort didn't work
 	expect(msg.stopReason).toBe("error");
