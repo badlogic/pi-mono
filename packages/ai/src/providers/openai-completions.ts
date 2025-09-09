@@ -348,7 +348,9 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 
 			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
 			if (textBlocks.length > 0) {
-				assistantMsg.content = textBlocks.map((b) => b.text).join("");
+				assistantMsg.content = textBlocks.map((b) => {
+					return { type: "text", text: b.text };
+				});
 			}
 
 			// Handle thinking blocks for llama.cpp server + gpt-oss
@@ -357,7 +359,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 				// Use the signature from the first thinking block if available
 				const signature = thinkingBlocks[0].thinkingSignature;
 				if (signature && signature.length > 0) {
-					(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("");
+					(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("\n");
 				}
 			}
 
@@ -372,7 +374,9 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 					},
 				}));
 			}
-
+			if (assistantMsg.content === null && !assistantMsg.tool_calls) {
+				continue;
+			}
 			params.push(assistantMsg);
 		} else if (msg.role === "toolResult") {
 			params.push({
