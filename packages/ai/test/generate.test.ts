@@ -22,7 +22,7 @@ const calculatorTool: Tool = {
 			operation: {
 				type: "string",
 				enum: ["add", "subtract", "multiply", "divide"],
-				description: "The operation to perform",
+				description: "The operation to perform. One of 'add', 'subtract', 'multiply', 'divide'.",
 			},
 		},
 		required: ["a", "b", "operation"],
