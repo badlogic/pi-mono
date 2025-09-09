@@ -3,8 +3,9 @@ import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { complete, stream } from "../src/generate.js";
+import { z } from "zod";
 import { getModel } from "../src/models.js";
+import { complete, stream } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,19 +15,13 @@ const __dirname = dirname(__filename);
 const calculatorTool: Tool = {
 	name: "calculator",
 	description: "Perform basic arithmetic operations",
-	parameters: {
-		type: "object",
-		properties: {
-			a: { type: "number", description: "First number" },
-			b: { type: "number", description: "Second number" },
-			operation: {
-				type: "string",
-				enum: ["add", "subtract", "multiply", "divide"],
-				description: "The operation to perform. One of 'add', 'subtract', 'multiply', 'divide'.",
-			},
-		},
-		required: ["a", "b", "operation"],
-	},
+	parameters: z.object({
+		a: z.number().describe("First number"),
+		b: z.number().describe("Second number"),
+		operation: z
+			.enum(["add", "subtract", "multiply", "divide"])
+			.describe("The operation to perform. One of 'add', 'subtract', 'multiply', 'divide'."),
+	}),
 };
 
 async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {

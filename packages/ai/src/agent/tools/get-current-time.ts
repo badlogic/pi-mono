@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { AgentTool } from "../../agent";
 import type { AgentToolResult } from "../types";
 
@@ -25,20 +26,16 @@ export async function getCurrentTime(timezone?: string): Promise<GetCurrentTimeR
 	};
 }
 
-export const getCurrentTimeTool: AgentTool<{ utcTimestamp: number }> = {
+const getCurrentTimeSchema = z.object({
+	timezone: z.string().optional().describe("Optional timezone (e.g., 'America/New_York', 'Europe/London')"),
+});
+
+export const getCurrentTimeTool: AgentTool<typeof getCurrentTimeSchema, { utcTimestamp: number }> = {
 	label: "Current Time",
 	name: "get_current_time",
 	description: "Get the current date and time",
-	parameters: {
-		type: "object",
-		properties: {
-			timezone: {
-				type: "string",
-				description: "Optional timezone (e.g., 'America/New_York', 'Europe/London')",
-			},
-		},
-	},
-	execute: async (args: { timezone?: string }) => {
+	parameters: getCurrentTimeSchema,
+	execute: async (_toolCallId, args) => {
 		return getCurrentTime(args.timezone);
 	},
 };

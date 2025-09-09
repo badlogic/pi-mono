@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { complete } from "../src/generate.js";
+import { z } from "zod";
 import { getModel } from "../src/models.js";
+import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Message, Model, Tool, ToolResultMessage } from "../src/types.js";
 
 // Tool for testing
 const weatherTool: Tool = {
 	name: "get_weather",
 	description: "Get the weather for a location",
-	parameters: {
-		type: "object",
-		properties: {
-			location: { type: "string", description: "City name" },
-		},
-		required: ["location"],
-	},
+	parameters: z.object({
+		location: z.string().describe("City name"),
+	}),
 };
 
 // Pre-built contexts representing typical outputs from each provider

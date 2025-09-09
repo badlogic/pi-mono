@@ -4,32 +4,34 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
-	GenerateFunction,
-	GenerateOptions,
 	Message,
 	Model,
 	StopReason,
+	StreamFunction,
+	StreamOptions,
 	TextContent,
 	ThinkingContent,
 	Tool,
 	ToolCall,
 	ToolResultMessage,
 } from "../types.js";
+import { validateToolArguments } from "../validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
-export interface AnthropicOptions extends GenerateOptions {
+export interface AnthropicOptions extends StreamOptions {
 	thinkingEnabled?: boolean;
 	thinkingBudgetTokens?: number;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
 
-export const streamAnthropic: GenerateFunction<"anthropic-messages"> = (
+export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 	model: Model<"anthropic-messages">,
 	context: Context,
 	options?: AnthropicOptions,
@@ -159,6 +161,15 @@ export const streamAnthropic: GenerateFunction<"anthropic-messages"> = (
 							});
 						} else if (block.type === "toolCall") {
 							block.arguments = JSON.parse(block.partialJson);
+
+							// Validate tool arguments if tool definition is available
+							if (context.tools) {
+								const tool = context.tools.find((t) => t.name === block.name);
+								if (tool) {
+									block.arguments = validateToolArguments(tool, block);
+								}
+							}
+
 							delete (block as any).partialJson;
 							stream.push({
 								type: "toolcall_end",
@@ -390,7 +401,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				content: blocks,
 			});
 		} else if (msg.role === "toolResult") {
-			// Collect all consecutive toolResult messages
+			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint
 			const toolResults: ContentBlockParam[] = [];
 
 			// Add the current tool result
@@ -430,15 +441,19 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 function convertTools(tools: Tool[]): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
-	return tools.map((tool) => ({
-		name: tool.name,
-		description: tool.description,
-		input_schema: {
-			type: "object" as const,
-			properties: tool.parameters.properties || {},
-			required: tool.parameters.required || [],
-		},
-	}));
+	return tools.map((tool) => {
+		const jsonSchema = zodToJsonSchema(tool.parameters, { $refStrategy: "none" }) as any;
+
+		return {
+			name: tool.name,
+			description: tool.description,
+			input_schema: {
+				type: "object" as const,
+				properties: jsonSchema.properties || {},
+				required: jsonSchema.required || [],
+			},
+		};
+	});
 }
 
 function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {

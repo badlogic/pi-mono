@@ -1,97 +1,68 @@
 import { EventStream } from "../event-stream";
-import { streamSimple } from "../generate.js";
-import type {
-	AssistantMessage,
-	Context,
-	Message,
-	Model,
-	SimpleGenerateOptions,
-	ToolResultMessage,
-	UserMessage,
-} from "../types.js";
-import type { AgentContext, AgentTool, AgentToolResult } from "./types";
-
-// Event types
-export type AgentEvent =
-	| { type: "message_start"; message: Message }
-	| { type: "message_update"; message: AssistantMessage }
-	| { type: "message_complete"; message: Message }
-	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
-	| {
-			type: "tool_execution_complete";
-			toolCallId: string;
-			toolName: string;
-			result: AgentToolResult<any> | string;
-			isError: boolean;
-	  }
-	| { type: "turn_complete"; messages: AgentContext["messages"] };
-
-// Configuration for prompt execution
-export interface PromptConfig {
-	model: Model<any>;
-	apiKey: string;
-	enableThinking?: boolean;
-	preprocessor?: (messages: AgentContext["messages"], abortSignal?: AbortSignal) => Promise<AgentContext["messages"]>;
-}
+import { streamSimple } from "../stream.js";
+import type { AssistantMessage, Context, Message, ToolResultMessage, UserMessage } from "../types.js";
+import { validateToolArguments } from "../validation.js";
+import type { AgentContext, AgentEvent, AgentTool, AgentToolResult, PromptConfig } from "./types";
 
 // Main prompt function - returns a stream of events
 export function prompt(
+	prompt: UserMessage,
 	context: AgentContext,
 	config: PromptConfig,
-	prompt: UserMessage,
 	signal?: AbortSignal,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
 	const stream = new EventStream<AgentEvent, AgentContext["messages"]>(
-		(event) => event.type === "turn_complete",
-		(event) => (event.type === "turn_complete" ? event.messages : []),
+		(event) => event.type === "agent_end",
+		(event) => (event.type === "agent_end" ? event.messages : []),
 	);
 
 	// Run the prompt async
 	(async () => {
-		try {
-			// Track new messages generated during this prompt
-			const newMessages: AgentContext["messages"] = [];
+		// Track new messages generated during this prompt
+		const newMessages: AgentContext["messages"] = [];
+		// Create user message for the prompt
+		const messages = [...context.messages, prompt];
+		newMessages.push(prompt);
 
-			// Create user message
-			const messages = [...context.messages, prompt];
-			newMessages.push(prompt);
+		stream.push({ type: "agent_start" });
+		stream.push({ type: "turn_start" });
+		stream.push({ type: "message_start", message: prompt });
+		stream.push({ type: "message_end", message: prompt });
 
-			stream.push({ type: "message_start", message: prompt });
-			stream.push({ type: "message_complete", message: prompt });
+		// Update context with new messages
+		const currentContext: AgentContext = {
+			...context,
+			messages,
+		};
 
-			// Update context with new messages
-			const currentContext: AgentContext = {
-				...context,
-				messages,
-			};
-
-			// Keep looping while we have tool calls
-			let hasMoreToolCalls = true;
-			while (hasMoreToolCalls) {
-				// Stream assistant response
-				const assistantMessage = await streamAssistantResponse(currentContext, config, signal, stream);
-				newMessages.push(assistantMessage);
-
-				// Check for tool calls
-				const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
-				hasMoreToolCalls = toolCalls.length > 0;
-
-				if (hasMoreToolCalls) {
-					// Execute tool calls
-					const toolResults = await executeToolCalls(currentContext.tools, assistantMessage, signal, stream);
-					newMessages.push(...toolResults);
-
-					// Add tool results to context
-					currentContext.messages = [...currentContext.messages, ...toolResults];
-				}
+		// Keep looping while we have tool calls
+		let hasMoreToolCalls = true;
+		let firstTurn = true;
+		while (hasMoreToolCalls) {
+			if (!firstTurn) {
+				stream.push({ type: "turn_start" });
+			} else {
+				firstTurn = false;
 			}
+			// Stream assistant response
+			const assistantMessage = await streamAssistantResponse(currentContext, config, signal, stream);
+			newMessages.push(assistantMessage);
 
-			stream.push({ type: "turn_complete", messages: newMessages });
-		} catch (error) {
-			// End stream on error
-			stream.end([]);
-			throw error;
+			// Check for tool calls
+			const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
+			hasMoreToolCalls = toolCalls.length > 0;
+
+			const toolResults: ToolResultMessage[] = [];
+			if (hasMoreToolCalls) {
+				// Execute tool calls
+				toolResults.push(...(await executeToolCalls(currentContext.tools, assistantMessage, signal, stream)));
+				currentContext.messages.push(...toolResults);
+				newMessages.push(...toolResults);
+			}
+			stream.push({ type: "turn_end", assistantMessage, toolResults: toolResults });
 		}
+		stream.push({ type: "agent_end", messages: newMessages });
+		stream.end(newMessages);
 	})();
 
 	return stream;
@@ -122,16 +93,7 @@ async function streamAssistantResponse(
 		tools: context.tools, // AgentTool extends Tool, so this works
 	};
 
-	const options: SimpleGenerateOptions = {
-		apiKey: config.apiKey,
-		signal,
-	};
-
-	if (config.model.reasoning && config.enableThinking) {
-		options.reasoning = "medium";
-	}
-
-	const response = await streamSimple(config.model, processedContext, options);
+	const response = await streamSimple(config.model, processedContext, { ...config, signal });
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
@@ -147,14 +109,17 @@ async function streamAssistantResponse(
 
 			case "text_start":
 			case "text_delta":
+			case "text_end":
 			case "thinking_start":
 			case "thinking_delta":
+			case "thinking_end":
 			case "toolcall_start":
 			case "toolcall_delta":
+			case "toolcall_end":
 				if (partialMessage) {
 					partialMessage = event.partial;
 					context.messages[context.messages.length - 1] = partialMessage;
-					stream.push({ type: "message_update", message: { ...partialMessage } });
+					stream.push({ type: "message_update", assistantMessageEvent: event, message: { ...partialMessage } });
 				}
 				break;
 
@@ -166,7 +131,7 @@ async function streamAssistantResponse(
 				} else {
 					context.messages.push(finalMessage);
 				}
-				stream.push({ type: "message_complete", message: finalMessage });
+				stream.push({ type: "message_end", message: finalMessage });
 				return finalMessage;
 			}
 		}
@@ -176,7 +141,7 @@ async function streamAssistantResponse(
 }
 
 async function executeToolCalls<T>(
-	tools: AgentTool<T>[] | undefined,
+	tools: AgentTool<any, T>[] | undefined,
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, Message[]>,
@@ -199,14 +164,19 @@ async function executeToolCalls<T>(
 
 		try {
 			if (!tool) throw new Error(`Tool ${toolCall.name} not found`);
-			resultOrError = await tool.execute(toolCall.arguments, toolCall.id, signal);
+
+			// Validate arguments using shared validation function
+			const validatedArgs = validateToolArguments(tool, toolCall);
+
+			// Execute with validated, typed arguments
+			resultOrError = await tool.execute(toolCall.id, validatedArgs, signal);
 		} catch (e) {
-			resultOrError = `Error: ${e instanceof Error ? e.message : String(e)}`;
+			resultOrError = e instanceof Error ? e.message : String(e);
 			isError = true;
 		}
 
 		stream.push({
-			type: "tool_execution_complete",
+			type: "tool_execution_end",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
 			result: resultOrError,
@@ -224,7 +194,7 @@ async function executeToolCalls<T>(
 
 		results.push(toolResultMessage);
 		stream.push({ type: "message_start", message: toolResultMessage });
-		stream.push({ type: "message_complete", message: toolResultMessage });
+		stream.push({ type: "message_end", message: toolResultMessage });
 	}
 
 	return results;

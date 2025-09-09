@@ -1413,6 +1413,23 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 	},
 	openrouter: {
+		"nvidia/nemotron-nano-9b-v2": {
+			id: "nvidia/nemotron-nano-9b-v2",
+			name: "NVIDIA: Nemotron Nano 9B V2",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
 		"openrouter/sonoma-dusk-alpha": {
 			id: "openrouter/sonoma-dusk-alpha",
 			name: "Sonoma Dusk Alpha",

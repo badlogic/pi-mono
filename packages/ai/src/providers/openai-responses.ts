@@ -10,25 +10,27 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
-	GenerateFunction,
-	GenerateOptions,
 	Model,
 	StopReason,
+	StreamFunction,
+	StreamOptions,
 	TextContent,
 	ThinkingContent,
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { validateToolArguments } from "../validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
-export interface OpenAIResponsesOptions extends GenerateOptions {
+export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 }
@@ -36,7 +38,7 @@ export interface OpenAIResponsesOptions extends GenerateOptions {
 /**
  * Generate function for OpenAI Responses API
  */
-export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
+export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	model: Model<"openai-responses">,
 	context: Context,
 	options?: OpenAIResponsesOptions,
@@ -238,6 +240,15 @@ export const streamOpenAIResponses: GenerateFunction<"openai-responses"> = (
 							name: item.name,
 							arguments: JSON.parse(item.arguments),
 						};
+
+						// Validate tool arguments if tool definition is available
+						if (context.tools) {
+							const tool = context.tools.find((t) => t.name === toolCall.name);
+							if (tool) {
+								toolCall.arguments = validateToolArguments(tool, toolCall);
+							}
+						}
+
 						stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 					}
 				}
@@ -451,7 +462,7 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		type: "function",
 		name: tool.name,
 		description: tool.description,
-		parameters: tool.parameters,
+		parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }),
 		strict: null,
 	}));
 }

@@ -4,6 +4,7 @@ A collection of tools for managing LLM deployments and building AI agents.
 
 ## Packages
 
+- **[@mariozechner/pi-ai](packages/ai)** - Unified multi-provider LLM API
 - **[@mariozechner/pi-tui](packages/tui)** - Terminal UI library with differential rendering
 - **[@mariozechner/pi-agent](packages/agent)** - General-purpose agent with tool calling and session persistence
 - **[@mariozechner/pi](packages/pods)** - CLI for managing vLLM deployments on GPU pods

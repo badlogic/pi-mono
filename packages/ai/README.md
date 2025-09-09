@@ -24,20 +24,18 @@ npm install @mariozechner/pi-ai
 ## Quick Start
 
 ```typescript
-import { getModel, stream, complete, Context, Tool } from '@mariozechner/pi-ai';
+import { getModel, stream, complete, Context, Tool, z } from '@mariozechner/pi-ai';
 
 // Fully typed with auto-complete support for both providers and models
 const model = getModel('openai', 'gpt-4o-mini');
 
-// Define tools
+// Define tools with Zod schemas for type safety and validation
 const tools: Tool[] = [{
   name: 'get_time',
   description: 'Get the current time',
-  parameters: {
-    type: 'object',
-    properties: {},
-    required: []
-  }
+  parameters: z.object({
+    timezone: z.string().optional().describe('Optional timezone (e.g., America/New_York)')
+  })
 }];
 
 // Build a conversation context (easily serializable and transferable between models)
@@ -94,7 +92,11 @@ const toolCalls = finalMessage.content.filter(b => b.type === 'toolCall');
 for (const call of toolCalls) {
   // Execute the tool
   const result = call.name === 'get_time'
-    ? new Date().toISOString()
+    ? new Date().toLocaleString('en-US', {
+        timeZone: call.arguments.timezone || 'UTC',
+        dateStyle: 'full',
+        timeStyle: 'long'
+      })
     : 'Unknown tool';
 
   // Add tool result to context
@@ -102,7 +104,7 @@ for (const call of toolCalls) {
     role: 'toolResult',
     toolCallId: call.id,
     toolName: call.name,
-    content: result,
+    output: result,
     isError: false
   });
 }
@@ -125,6 +127,70 @@ for (const block of response.content) {
     console.log(block.text);
   } else if (block.type === 'toolCall') {
     console.log(`Tool: ${block.name}(${JSON.stringify(block.arguments)})`);
+  }
+}
+```
+
+## Tools
+
+Tools enable LLMs to interact with external systems. This library uses Zod schemas for type-safe tool definitions with automatic validation.
+
+### Defining Tools
+
+```typescript
+import { z, Tool } from '@mariozechner/pi-ai';
+
+// Define tool parameters with Zod
+const weatherTool: Tool = {
+  name: 'get_weather',
+  description: 'Get current weather for a location',
+  parameters: z.object({
+    location: z.string().describe('City name or coordinates'),
+    units: z.enum(['celsius', 'fahrenheit']).default('celsius')
+  })
+};
+
+// Complex validation with Zod refinements
+const bookMeetingTool: Tool = {
+  name: 'book_meeting',
+  description: 'Schedule a meeting',
+  parameters: z.object({
+    title: z.string().min(1),
+    startTime: z.string().datetime(),
+    endTime: z.string().datetime(),
+    attendees: z.array(z.string().email()).min(1)
+  }).refine(
+    data => new Date(data.endTime) > new Date(data.startTime),
+    { message: 'End time must be after start time' }
+  )
+};
+```
+
+### Handling Tool Calls
+
+```typescript
+const context: Context = {
+  messages: [{ role: 'user', content: 'What is the weather in London?' }],
+  tools: [weatherTool]
+};
+
+const response = await complete(model, context);
+
+// Check for tool calls in the response
+for (const block of response.content) {
+  if (block.type === 'toolCall') {
+    // Arguments are automatically validated against the Zod schema
+    // If validation fails, an error event is emitted
+    const result = await executeWeatherApi(block.arguments);
+
+    // Add tool result to continue the conversation
+    context.messages.push({
+      role: 'toolResult',
+      toolCallId: block.id,
+      toolName: block.name,
+      output: JSON.stringify(result),
+      isError: false
+    });
   }
 }
 ```
@@ -260,7 +326,7 @@ for await (const event of s) {
 
 ## Errors & Abort Signal
 
-When a request ends with an error (including aborts), the API returns an `AssistantMessage` with:
+When a request ends with an error (including aborts and tool call validation errors), the API returns an `AssistantMessage` with:
 - `stopReason: 'error'` - Indicates the request ended with an error
 - `error: string` - Error message describing what happened
 - `content: array` - **Partial content** accumulated before the error
@@ -503,6 +569,189 @@ const continuation = await complete(newModel, restored);
 
 > **Note**: If the context contains images (encoded as base64 as shown in the Image Input section), those will also be serialized.
 
+## Agent API
+
+The Agent API provides a higher-level interface for building agents with tools. It handles tool execution, validation, and provides detailed event streaming for interactive applications.
+
+### Event System
+
+The Agent API streams events during execution, allowing you to build reactive UIs and track agent progress. The agent processes prompts in **turns**, where each turn consists of:
+1. An assistant message (the LLM's response)
+2. Optional tool executions if the assistant calls tools
+3. Tool result messages that are fed back to the LLM
+
+This continues until the assistant produces a response without tool calls.
+
+### Event Flow Example
+
+Given a prompt asking to calculate two expressions and sum them:
+
+```typescript
+import { prompt, AgentContext, calculateTool } from '@mariozechner/pi-ai';
+
+const context: AgentContext = {
+  systemPrompt: 'You are a helpful math assistant.',
+  messages: [],
+  tools: [calculateTool]
+};
+
+const stream = prompt(
+  { role: 'user', content: 'Calculate 15 * 20 and 30 * 40, then sum the results' },
+  context,
+  { model: getModel('openai', 'gpt-4o-mini') }
+);
+
+// Expected event sequence:
+// 1. agent_start          - Agent begins processing
+// 2. turn_start           - First turn begins
+// 3. message_start        - User message starts
+// 4. message_end          - User message ends
+// 5. message_start        - Assistant message starts
+// 6. message_update       - Assistant streams response with tool calls
+// 7. message_end          - Assistant message ends
+// 8. tool_execution_start - First calculation (15 * 20)
+// 9. tool_execution_end   - Result: 300
+// 10. tool_execution_start - Second calculation (30 * 40)
+// 11. tool_execution_end   - Result: 1200
+// 12. message_start       - Tool result message for first calculation
+// 13. message_end         - Tool result message ends
+// 14. message_start       - Tool result message for second calculation
+// 15. message_end         - Tool result message ends
+// 16. turn_end            - First turn ends with 2 tool results
+// 17. turn_start          - Second turn begins
+// 18. message_start       - Assistant message starts
+// 19. message_update      - Assistant streams response with sum calculation
+// 20. message_end         - Assistant message ends
+// 21. tool_execution_start - Sum calculation (300 + 1200)
+// 22. tool_execution_end   - Result: 1500
+// 23. message_start       - Tool result message for sum
+// 24. message_end         - Tool result message ends
+// 25. turn_end            - Second turn ends with 1 tool result
+// 26. turn_start          - Third turn begins
+// 27. message_start       - Final assistant message starts
+// 28. message_update      - Assistant streams final answer
+// 29. message_end         - Final assistant message ends
+// 30. turn_end            - Third turn ends with 0 tool results
+// 31. agent_end           - Agent completes with all messages
+```
+
+### Handling Events
+
+```typescript
+for await (const event of stream) {
+  switch (event.type) {
+    case 'agent_start':
+      console.log('Agent started');
+      break;
+    
+    case 'turn_start':
+      console.log('New turn started');
+      break;
+    
+    case 'message_start':
+      console.log(`${event.message.role} message started`);
+      break;
+    
+    case 'message_update':
+      // Only for assistant messages during streaming
+      if (event.message.content.some(c => c.type === 'text')) {
+        console.log('Assistant:', event.message.content);
+      }
+      break;
+    
+    case 'tool_execution_start':
+      console.log(`Calling ${event.toolName} with:`, event.args);
+      break;
+    
+    case 'tool_execution_end':
+      if (event.isError) {
+        console.error(`Tool failed:`, event.result);
+      } else {
+        console.log(`Tool result:`, event.result.output);
+      }
+      break;
+    
+    case 'turn_end':
+      console.log(`Turn ended with ${event.toolResults.length} tool calls`);
+      break;
+    
+    case 'agent_end':
+      console.log(`Agent completed with ${event.messages.length} new messages`);
+      break;
+  }
+}
+
+// Get all messages generated during this agent execution
+// These include the user message and can be directly appended to context.messages
+const messages = await stream.result();
+context.messages.push(...messages);
+```
+
+### Defining Tools with Zod
+
+Tools use Zod schemas for runtime validation and type inference:
+
+```typescript
+import { z } from 'zod';
+import { AgentTool, AgentToolResult } from '@mariozechner/pi-ai';
+
+const weatherSchema = z.object({
+  city: z.string().min(1, 'City is required'),
+  units: z.enum(['celsius', 'fahrenheit']).default('celsius')
+});
+
+const weatherTool: AgentTool<typeof weatherSchema, { temp: number }> = {
+  label: 'Get Weather',
+  name: 'get_weather',
+  description: 'Get current weather for a city',
+  parameters: weatherSchema,
+  execute: async (toolCallId, args) => {
+    // args is fully typed: { city: string, units: 'celsius' | 'fahrenheit' }
+    const temp = Math.round(Math.random() * 30);
+    return {
+      output: `Temperature in ${args.city}: ${temp}°${args.units[0].toUpperCase()}`,
+      details: { temp }
+    };
+  }
+};
+```
+
+### Validation and Error Handling
+
+Tool arguments are automatically validated using the Zod schema. Invalid arguments result in detailed error messages:
+
+```typescript
+// If the LLM calls with invalid arguments:
+// get_weather({ city: '', units: 'kelvin' })
+
+// The tool execution will fail with:
+/*
+Validation failed for tool "get_weather":
+  - city: City is required
+  - units: Invalid enum value. Expected 'celsius' | 'fahrenheit', received 'kelvin'
+
+Received arguments:
+{
+  "city": "",
+  "units": "kelvin"
+}
+*/
+```
+
+### Built-in Example Tools
+
+The library includes example tools for common operations:
+
+```typescript
+import { calculateTool, getCurrentTimeTool } from '@mariozechner/pi-ai';
+
+const context: AgentContext = {
+  systemPrompt: 'You are a helpful assistant.',
+  messages: [],
+  tools: [calculateTool, getCurrentTimeTool]
+};
+```
+
 ## Browser Usage
 
 The library supports browser environments. You must pass the API key explicitly since environment variables are not available in browsers:
@@ -533,6 +782,7 @@ GEMINI_API_KEY=...
 GROQ_API_KEY=gsk_...
 CEREBRAS_API_KEY=csk-...
 XAI_API_KEY=xai-...
+ZAI_API_KEY=...
 OPENROUTER_API_KEY=sk-or-...
 ```
 
@@ -547,6 +797,21 @@ const response = await complete(model, context);
 const response = await complete(model, context, {
   apiKey: 'sk-different-key'
 });
+```
+
+### Programmatic API Key Management
+
+You can also set and get API keys programmatically:
+
+```typescript
+import { setApiKey, getApiKey } from '@mariozechner/pi-ai';
+
+// Set API key for a provider
+setApiKey('openai', 'sk-...');
+setApiKey('anthropic', 'sk-ant-...');
+
+// Get API key for a provider (checks both programmatic and env vars)
+const key = getApiKey('openai');
 ```
 
 ## License

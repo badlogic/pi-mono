@@ -7,24 +7,26 @@ import {
 	GoogleGenAI,
 	type Part,
 } from "@google/genai";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
-	GenerateFunction,
-	GenerateOptions,
 	Model,
 	StopReason,
+	StreamFunction,
+	StreamOptions,
 	TextContent,
 	ThinkingContent,
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { validateToolArguments } from "../validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
-export interface GoogleOptions extends GenerateOptions {
+export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -35,7 +37,7 @@ export interface GoogleOptions extends GenerateOptions {
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
 
-export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
+export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 	model: Model<"google-generative-ai">,
 	context: Context,
 	options?: GoogleOptions,
@@ -159,6 +161,15 @@ export const streamGoogle: GenerateFunction<"google-generative-ai"> = (
 								name: part.functionCall.name || "",
 								arguments: part.functionCall.args as Record<string, any>,
 							};
+
+							// Validate tool arguments if tool definition is available
+							if (context.tools) {
+								const tool = context.tools.find((t) => t.name === toolCall.name);
+								if (tool) {
+									toolCall.arguments = validateToolArguments(tool, toolCall);
+								}
+							}
+
 							output.content.push(toolCall);
 							stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 							stream.push({
@@ -380,7 +391,7 @@ function convertTools(tools: Tool[]): any[] {
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters,
+				parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }),
 			})),
 		},
 	];

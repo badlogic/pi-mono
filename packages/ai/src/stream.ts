@@ -11,7 +11,7 @@ import type {
 	Model,
 	OptionsForApi,
 	ReasoningEffort,
-	SimpleGenerateOptions,
+	SimpleStreamOptions,
 } from "./types.js";
 
 const apiKeys: Map<string, string> = new Map();
@@ -90,7 +90,7 @@ export async function complete<TApi extends Api>(
 export function streamSimple<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
-	options?: SimpleGenerateOptions,
+	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
 	const apiKey = options?.apiKey || getApiKey(model.provider);
 	if (!apiKey) {
@@ -104,7 +104,7 @@ export function streamSimple<TApi extends Api>(
 export async function completeSimple<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
-	options?: SimpleGenerateOptions,
+	options?: SimpleStreamOptions,
 ): Promise<AssistantMessage> {
 	const s = streamSimple(model, context, options);
 	return s.result();
@@ -112,7 +112,7 @@ export async function completeSimple<TApi extends Api>(
 
 function mapOptionsForApi<TApi extends Api>(
 	model: Model<TApi>,
-	options?: SimpleGenerateOptions,
+	options?: SimpleStreamOptions,
 	apiKey?: string,
 ): OptionsForApi<TApi> {
 	const base = {

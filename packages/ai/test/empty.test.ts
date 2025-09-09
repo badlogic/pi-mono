@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { complete } from "../src/generate.js";
 import { getModel } from "../src/models.js";
+import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage } from "../src/types.js";
 
 async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {

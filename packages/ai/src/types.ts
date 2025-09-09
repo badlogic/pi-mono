@@ -16,11 +16,11 @@ export interface ApiOptionsMap {
 }
 
 // Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
-type _CheckExhaustive = ApiOptionsMap extends Record<Api, GenerateOptions>
-	? Record<Api, GenerateOptions> extends ApiOptionsMap
+type _CheckExhaustive = ApiOptionsMap extends Record<Api, StreamOptions>
+	? Record<Api, StreamOptions> extends ApiOptionsMap
 		? true
 		: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
-	: ["ApiOptionsMap doesn't extend Record<KnownApi, GenerateOptions>"];
+	: ["ApiOptionsMap doesn't extend Record<KnownApi, StreamOptions>"];
 const _exhaustive: _CheckExhaustive = true;
 
 // Helper type to get options for a specific API
@@ -32,20 +32,20 @@ export type Provider = KnownProvider | string;
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 // Base options all providers share
-export interface GenerateOptions {
+export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
 }
 
-// Unified options with reasoning (what public generate() accepts)
-export interface SimpleGenerateOptions extends GenerateOptions {
+// Unified options with reasoning passed to streamSimple() and completeSimple()
+export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ReasoningEffort;
 }
 
-// Generic GenerateFunction with typed options
-export type GenerateFunction<TApi extends Api> = (
+// Generic StreamFunction with typed options
+export type StreamFunction<TApi extends Api> = (
 	model: Model<TApi>,
 	context: Context,
 	options: OptionsForApi<TApi>,
@@ -119,10 +119,12 @@ export interface ToolResultMessage<TDetails = any> {
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
 
-export interface Tool {
+import type { ZodSchema } from "zod";
+
+export interface Tool<TParameters extends ZodSchema = ZodSchema> {
 	name: string;
 	description: string;
-	parameters: Record<string, any>; // JSON Schema
+	parameters: TParameters;
 }
 
 export interface Context {

@@ -7,28 +7,30 @@ import type {
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
-	GenerateFunction,
-	GenerateOptions,
 	Model,
 	StopReason,
+	StreamFunction,
+	StreamOptions,
 	TextContent,
 	ThinkingContent,
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { validateToolArguments } from "../validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
-export interface OpenAICompletionsOptions extends GenerateOptions {
+export interface OpenAICompletionsOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 	reasoningEffort?: "minimal" | "low" | "medium" | "high";
 }
 
-export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
+export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 	model: Model<"openai-completions">,
 	context: Context,
 	options?: OpenAICompletionsOptions,
@@ -79,6 +81,15 @@ export const streamOpenAICompletions: GenerateFunction<"openai-completions"> = (
 						});
 					} else if (block.type === "toolCall") {
 						block.arguments = JSON.parse(block.partialArgs || "{}");
+
+						// Validate tool arguments if tool definition is available
+						if (context.tools) {
+							const tool = context.tools.find((t) => t.name === block.name);
+							if (tool) {
+								block.arguments = validateToolArguments(tool, block);
+							}
+						}
+
 						delete block.partialArgs;
 						stream.push({
 							type: "toolcall_end",
@@ -381,7 +392,7 @@ function convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool
 		function: {
 			name: tool.name,
 			description: tool.description,
-			parameters: tool.parameters,
+			parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }),
 		},
 	}));
 }

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { AgentTool } from "../../agent";
 
 export interface CalculateResult {
@@ -14,21 +15,16 @@ export function calculate(expression: string): CalculateResult {
 	}
 }
 
-export const calculateTool: AgentTool<undefined> = {
+const calculateSchema = z.object({
+	expression: z.string().describe("The mathematical expression to evaluate"),
+});
+
+export const calculateTool: AgentTool<typeof calculateSchema, undefined> = {
 	label: "Calculator",
 	name: "calculate",
 	description: "Evaluate mathematical expressions",
-	parameters: {
-		type: "object",
-		properties: {
-			expression: {
-				type: "string",
-				description: "The mathematical expression to evaluate",
-			},
-		},
-		required: ["expression"],
-	},
-	execute: async (args: { expression: string }) => {
+	parameters: calculateSchema,
+	execute: async (_toolCallId, args) => {
 		return calculate(args.expression);
 	},
 };
