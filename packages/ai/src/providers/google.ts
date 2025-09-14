@@ -270,15 +270,17 @@ function buildParams(
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),
 		...(context.systemPrompt && { systemInstruction: context.systemPrompt }),
-		...(context.tools && { tools: convertTools(context.tools) }),
+		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
 
-	if (context.tools && options.toolChoice) {
+	if (context.tools && context.tools.length > 0 && options.toolChoice) {
 		config.toolConfig = {
 			functionCallingConfig: {
 				mode: mapToolChoice(options.toolChoice),
 			},
 		};
+	} else {
+		config.toolConfig = undefined;
 	}
 
 	if (options.thinking?.enabled && model.reasoning) {
@@ -385,7 +387,8 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 	return contents;
 }
 
-function convertTools(tools: Tool[]): any[] {
+function convertTools(tools: Tool[]): any[] | undefined {
+	if (tools.length === 0) return undefined;
 	return [
 		{
 			functionDeclarations: tools.map((tool) => ({
