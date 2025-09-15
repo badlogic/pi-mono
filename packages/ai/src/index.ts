@@ -1,4 +1,3 @@
-export { type Static, Type } from "@sinclair/typebox";
 export * from "./agent/index.js";
 export * from "./models.js";
 export * from "./providers/anthropic.js";
