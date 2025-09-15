@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-ai",
-	"version": "0.5.35",
+	"version": "0.5.36",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -21,6 +21,9 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.61.0",
 		"@google/genai": "^1.17.0",
+		"@sinclair/typebox": "^0.34.41",
+		"ajv": "^8.17.1",
+		"ajv-formats": "^3.0.1",
 		"chalk": "^5.6.2",
 		"openai": "^5.20.0",
 		"zod-to-json-schema": "^3.24.6"
