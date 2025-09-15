@@ -10,7 +10,6 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
@@ -462,7 +461,7 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		type: "function",
 		name: tool.name,
 		description: tool.description,
-		parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }),
+		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		strict: null,
 	}));
 }

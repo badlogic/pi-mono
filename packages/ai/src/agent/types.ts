@@ -1,4 +1,4 @@
-import type { ZodSchema, z } from "zod";
+import type { Static, TSchema } from "@sinclair/typebox";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -17,12 +17,12 @@ export interface AgentToolResult<T> {
 }
 
 // AgentTool extends Tool but adds the execute function
-export interface AgentTool<TParameters extends ZodSchema = ZodSchema, TDetails = any> extends Tool<TParameters> {
+export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
 	// A human-readable label for the tool to be displayed in UI
 	label: string;
 	execute: (
 		toolCallId: string,
-		params: z.infer<TParameters>,
+		params: Static<TParameters>,
 		signal?: AbortSignal,
 	) => Promise<AgentToolResult<TDetails>>;
 }

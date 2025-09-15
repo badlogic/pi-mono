@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { type Static, Type } from "@sinclair/typebox";
 import type { AgentTool } from "../../agent";
 
 export interface CalculateResult {
@@ -15,9 +15,11 @@ export function calculate(expression: string): CalculateResult {
 	}
 }
 
-const calculateSchema = z.object({
-	expression: z.string().describe("The mathematical expression to evaluate"),
+const calculateSchema = Type.Object({
+	expression: Type.String({ description: "The mathematical expression to evaluate" }),
 });
+
+type CalculateParams = Static<typeof calculateSchema>;
 
 export const calculateTool: AgentTool<typeof calculateSchema, undefined> = {
 	label: "Calculator",

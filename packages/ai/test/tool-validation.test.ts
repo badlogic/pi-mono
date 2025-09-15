@@ -1,15 +1,19 @@
+import { type Static, Type } from "@sinclair/typebox";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import type { AgentTool } from "../src/agent/types.js";
 
-describe("Tool Validation with Zod", () => {
-	// Define a test tool with Zod schema
-	const testSchema = z.object({
-		name: z.string().min(1, "Name is required"),
-		age: z.number().int().min(0).max(150),
-		email: z.string().email("Invalid email format"),
-		tags: z.array(z.string()).optional(),
+describe("Tool Validation with TypeBox and AJV", () => {
+	// Define a test tool with TypeBox schema
+	const testSchema = Type.Object({
+		name: Type.String({ minLength: 1 }),
+		age: Type.Integer({ minimum: 0, maximum: 150 }),
+		email: Type.String({ format: "email" }),
+		tags: Type.Optional(Type.Array(Type.String())),
 	});
+
+	type TestParams = Static<typeof testSchema>;
 
 	const testTool: AgentTool<typeof testSchema, void> = {
 		label: "Test Tool",
@@ -24,6 +28,10 @@ describe("Tool Validation with Zod", () => {
 		},
 	};
 
+	// Create AJV instance for validation
+	const ajv = new Ajv({ allErrors: true });
+	addFormats(ajv);
+
 	it("should validate correct input", () => {
 		const validInput = {
 			name: "John Doe",
@@ -32,9 +40,10 @@ describe("Tool Validation with Zod", () => {
 			tags: ["developer", "typescript"],
 		};
 
-		// This should not throw
-		const result = testTool.parameters.parse(validInput);
-		expect(result).toEqual(validInput);
+		// Validate with AJV
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(validInput);
+		expect(isValid).toBe(true);
 	});
 
 	it("should reject invalid email", () => {
@@ -44,7 +53,10 @@ describe("Tool Validation with Zod", () => {
 			email: "not-an-email",
 		};
 
-		expect(() => testTool.parameters.parse(invalidInput)).toThrowError(z.ZodError);
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(invalidInput);
+		expect(isValid).toBe(false);
+		expect(validate.errors).toBeDefined();
 	});
 
 	it("should reject missing required fields", () => {
@@ -53,7 +65,10 @@ describe("Tool Validation with Zod", () => {
 			email: "john@example.com",
 		};
 
-		expect(() => testTool.parameters.parse(invalidInput)).toThrowError(z.ZodError);
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(invalidInput);
+		expect(isValid).toBe(false);
+		expect(validate.errors).toBeDefined();
 	});
 
 	it("should reject invalid age", () => {
@@ -63,7 +78,10 @@ describe("Tool Validation with Zod", () => {
 			email: "john@example.com",
 		};
 
-		expect(() => testTool.parameters.parse(invalidInput)).toThrowError(z.ZodError);
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(invalidInput);
+		expect(isValid).toBe(false);
+		expect(validate.errors).toBeDefined();
 	});
 
 	it("should format validation errors nicely", () => {
@@ -73,25 +91,23 @@ describe("Tool Validation with Zod", () => {
 			email: "invalid",
 		};
 
-		try {
-			testTool.parameters.parse(invalidInput);
-			// Should not reach here
-			expect(true).toBe(false);
-		} catch (e) {
-			if (e instanceof z.ZodError) {
-				const errors = e.issues
-					.map((err) => {
-						const path = err.path.length > 0 ? err.path.join(".") : "root";
-						return `  - ${path}: ${err.message}`;
-					})
-					.join("\n");
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(invalidInput);
+		expect(isValid).toBe(false);
+		expect(validate.errors).toBeDefined();
 
-				expect(errors).toContain("name: Name is required");
-				expect(errors).toContain("age: Number must be less than or equal to 150");
-				expect(errors).toContain("email: Invalid email format");
-			} else {
-				throw e;
-			}
+		if (validate.errors) {
+			const errors = validate.errors
+				.map((err) => {
+					const path = err.instancePath ? err.instancePath.substring(1) : err.params.missingProperty || "root";
+					return `  - ${path}: ${err.message}`;
+				})
+				.join("\n");
+
+			// AJV error messages are different from Zod
+			expect(errors).toContain("name: must NOT have fewer than 1 characters");
+			expect(errors).toContain("age: must be <= 150");
+			expect(errors).toContain('email: must match format "email"');
 		}
 	});
 
@@ -103,8 +119,11 @@ describe("Tool Validation with Zod", () => {
 		};
 
 		// Validate and execute
-		const validated = testTool.parameters.parse(validInput);
-		const result = await testTool.execute("test-id", validated);
+		const validate = ajv.compile(testTool.parameters);
+		const isValid = validate(validInput);
+		expect(isValid).toBe(true);
+
+		const result = await testTool.execute("test-id", validInput as TestParams);
 
 		expect(result.output).toBe("Processed: John Doe, 30, john@example.com");
 		expect(result.details).toBeUndefined();

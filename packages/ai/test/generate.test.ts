@@ -1,27 +1,32 @@
+import { Type } from "@sinclair/typebox";
 import { type ChildProcess, execSync, spawn } from "child_process";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { z } from "zod";
 import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
+import { StringEnum } from "../src/typebox-helpers.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Calculator tool definition (same as examples)
-const calculatorTool: Tool = {
+// Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
+// that Type.Enum generates. Google requires { type: "string", enum: [...] } format.
+const calculatorSchema = Type.Object({
+	a: Type.Number({ description: "First number" }),
+	b: Type.Number({ description: "Second number" }),
+	operation: StringEnum(["add", "subtract", "multiply", "divide"], {
+		description: "The operation to perform. One of 'add', 'subtract', 'multiply', 'divide'.",
+	}),
+});
+
+const calculatorTool: Tool<typeof calculatorSchema> = {
 	name: "calculator",
 	description: "Perform basic arithmetic operations",
-	parameters: z.object({
-		a: z.number().describe("First number"),
-		b: z.number().describe("Second number"),
-		operation: z
-			.enum(["add", "subtract", "multiply", "divide"])
-			.describe("The operation to perform. One of 'add', 'subtract', 'multiply', 'divide'."),
-	}),
+	parameters: calculatorSchema,
 };
 
 async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {

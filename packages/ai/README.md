@@ -24,17 +24,17 @@ npm install @mariozechner/pi-ai
 ## Quick Start
 
 ```typescript
-import { getModel, stream, complete, Context, Tool, z } from '@mariozechner/pi-ai';
+import { Type, getModel, stream, complete, Context, Tool, StringEnum } from '@mariozechner/pi-ai';
 
 // Fully typed with auto-complete support for both providers and models
 const model = getModel('openai', 'gpt-4o-mini');
 
-// Define tools with Zod schemas for type safety and validation
+// Define tools with TypeBox schemas for type safety and validation
 const tools: Tool[] = [{
   name: 'get_time',
   description: 'Get the current time',
-  parameters: z.object({
-    timezone: z.string().optional().describe('Optional timezone (e.g., America/New_York)')
+  parameters: Type.Object({
+    timezone: Type.Optional(Type.String({ description: 'Optional timezone (e.g., America/New_York)' }))
   })
 }];
 
@@ -133,36 +133,35 @@ for (const block of response.content) {
 
 ## Tools
 
-Tools enable LLMs to interact with external systems. This library uses Zod schemas for type-safe tool definitions with automatic validation.
+Tools enable LLMs to interact with external systems. This library uses TypeBox schemas for type-safe tool definitions with automatic validation using AJV. TypeBox schemas can be serialized and deserialized as plain JSON, making them ideal for distributed systems.
 
 ### Defining Tools
 
 ```typescript
-import { z, Tool } from '@mariozechner/pi-ai';
+import { Type, Tool, StringEnum } from '@mariozechner/pi-ai';
 
-// Define tool parameters with Zod
+// Define tool parameters with TypeBox
 const weatherTool: Tool = {
   name: 'get_weather',
   description: 'Get current weather for a location',
-  parameters: z.object({
-    location: z.string().describe('City name or coordinates'),
-    units: z.enum(['celsius', 'fahrenheit']).default('celsius')
+  parameters: Type.Object({
+    location: Type.String({ description: 'City name or coordinates' }),
+    units: StringEnum(['celsius', 'fahrenheit'], { default: 'celsius' })
   })
 };
 
-// Complex validation with Zod refinements
+// Note: For Google API compatibility, use StringEnum helper instead of Type.Enum
+// Type.Enum generates anyOf/const patterns that Google doesn't support
+
 const bookMeetingTool: Tool = {
   name: 'book_meeting',
   description: 'Schedule a meeting',
-  parameters: z.object({
-    title: z.string().min(1),
-    startTime: z.string().datetime(),
-    endTime: z.string().datetime(),
-    attendees: z.array(z.string().email()).min(1)
-  }).refine(
-    data => new Date(data.endTime) > new Date(data.startTime),
-    { message: 'End time must be after start time' }
-  )
+  parameters: Type.Object({
+    title: Type.String({ minLength: 1 }),
+    startTime: Type.String({ format: 'date-time' }),
+    endTime: Type.String({ format: 'date-time' }),
+    attendees: Type.Array(Type.String({ format: 'email' }), { minItems: 1 })
+  })
 };
 ```
 
@@ -179,7 +178,7 @@ const response = await complete(model, context);
 // Check for tool calls in the response
 for (const block of response.content) {
   if (block.type === 'toolCall') {
-    // Arguments are automatically validated against the Zod schema
+    // Arguments are automatically validated against the TypeBox schema using AJV
     // If validation fails, an error event is emitted
     const result = await executeWeatherApi(block.arguments);
 
@@ -687,18 +686,19 @@ const messages = await stream.result();
 context.messages.push(...messages);
 ```
 
-### Defining Tools with Zod
+### Defining Tools with TypeBox
 
-Tools use Zod schemas for runtime validation and type inference:
+Tools use TypeBox schemas for runtime validation and type inference:
 
 ```typescript
-import { z } from 'zod';
-import { AgentTool, AgentToolResult } from '@mariozechner/pi-ai';
+import { Type, Static, AgentTool, AgentToolResult, StringEnum } from '@mariozechner/pi-ai';
 
-const weatherSchema = z.object({
-  city: z.string().min(1, 'City is required'),
-  units: z.enum(['celsius', 'fahrenheit']).default('celsius')
+const weatherSchema = Type.Object({
+  city: Type.String({ minLength: 1 }),
+  units: StringEnum(['celsius', 'fahrenheit'], { default: 'celsius' })
 });
+
+type WeatherParams = Static<typeof weatherSchema>;
 
 const weatherTool: AgentTool<typeof weatherSchema, { temp: number }> = {
   label: 'Get Weather',
@@ -718,7 +718,7 @@ const weatherTool: AgentTool<typeof weatherSchema, { temp: number }> = {
 
 ### Validation and Error Handling
 
-Tool arguments are automatically validated using the Zod schema. Invalid arguments result in detailed error messages:
+Tool arguments are automatically validated using AJV with the TypeBox schema. Invalid arguments result in detailed error messages:
 
 ```typescript
 // If the LLM calls with invalid arguments:
@@ -727,8 +727,8 @@ Tool arguments are automatically validated using the Zod schema. Invalid argumen
 // The tool execution will fail with:
 /*
 Validation failed for tool "get_weather":
-  - city: City is required
-  - units: Invalid enum value. Expected 'celsius' | 'fahrenheit', received 'kelvin'
+  - city: must NOT have fewer than 1 characters
+  - units: must be equal to one of the allowed values
 
 Received arguments:
 {

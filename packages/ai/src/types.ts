@@ -119,9 +119,9 @@ export interface ToolResultMessage<TDetails = any> {
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
 
-import type { ZodSchema } from "zod";
+import type { TSchema } from "@sinclair/typebox";
 
-export interface Tool<TParameters extends ZodSchema = ZodSchema> {
+export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
 	parameters: TParameters;

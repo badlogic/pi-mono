@@ -4,7 +4,6 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
@@ -442,7 +441,7 @@ function convertTools(tools: Tool[]): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
 	return tools.map((tool) => {
-		const jsonSchema = zodToJsonSchema(tool.parameters, { $refStrategy: "none" }) as any;
+		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
 
 		return {
 			name: tool.name,

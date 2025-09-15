@@ -1,16 +1,18 @@
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Message, Model, Tool, ToolResultMessage } from "../src/types.js";
 
 // Tool for testing
-const weatherTool: Tool = {
+const weatherSchema = Type.Object({
+	location: Type.String({ description: "City name" }),
+});
+
+const weatherTool: Tool<typeof weatherSchema> = {
 	name: "get_weather",
 	description: "Get the weather for a location",
-	parameters: z.object({
-		location: z.string().describe("City name"),
-	}),
+	parameters: weatherSchema,
 };
 
 // Pre-built contexts representing typical outputs from each provider

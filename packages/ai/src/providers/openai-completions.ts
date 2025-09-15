@@ -7,7 +7,6 @@ import type {
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
@@ -396,7 +395,7 @@ function convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool
 		function: {
 			name: tool.name,
 			description: tool.description,
-			parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }),
+			parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		},
 	}));
 }
