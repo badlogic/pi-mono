@@ -10,6 +10,7 @@ export function prompt(
 	context: AgentContext,
 	config: PromptConfig,
 	signal?: AbortSignal,
+	streamFn?: typeof streamSimple,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
 	const stream = new EventStream<AgentEvent, AgentContext["messages"]>(
 		(event) => event.type === "agent_end",
@@ -45,7 +46,7 @@ export function prompt(
 				firstTurn = false;
 			}
 			// Stream assistant response
-			const assistantMessage = await streamAssistantResponse(currentContext, config, signal, stream);
+			const assistantMessage = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
 			newMessages.push(assistantMessage);
 
 			// Check for tool calls
@@ -74,6 +75,7 @@ async function streamAssistantResponse(
 	config: PromptConfig,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentContext["messages"]>,
+	streamFn?: typeof streamSimple,
 ): Promise<AssistantMessage> {
 	// Convert AgentContext to Context for streamSimple
 	// Use a copy of messages to avoid mutating the original context
@@ -93,7 +95,9 @@ async function streamAssistantResponse(
 		tools: context.tools, // AgentTool extends Tool, so this works
 	};
 
-	const response = await streamSimple(config.model, processedContext, { ...config, signal });
+	// Use custom stream function if provided, otherwise use default streamSimple
+	const streamFunction = streamFn || streamSimple;
+	const response = await streamFunction(config.model, processedContext, { ...config, signal });
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
