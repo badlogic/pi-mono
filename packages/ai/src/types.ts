@@ -1,10 +1,10 @@
-import type { AssistantMessageEventStream } from "./event-stream";
-import type { AnthropicOptions } from "./providers/anthropic";
-import type { GoogleOptions } from "./providers/google";
-import type { OpenAICompletionsOptions } from "./providers/openai-completions";
-import type { OpenAIResponsesOptions } from "./providers/openai-responses";
+import type { AssistantMessageEventStream } from "./event-stream.js";
+import type { AnthropicOptions } from "./providers/anthropic.js";
+import type { GoogleOptions } from "./providers/google.js";
+import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
+import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 
-export type { AssistantMessageEventStream } from "./event-stream";
+export type { AssistantMessageEventStream } from "./event-stream.js";
 
 export type Api = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
 

@@ -1,6 +1,11 @@
 import { type Static, Type } from "@sinclair/typebox";
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import AjvModule from "ajv";
+import addFormatsModule from "ajv-formats";
+
+// Handle both default and named exports
+const Ajv = (AjvModule as any).default || AjvModule;
+const addFormats = (addFormatsModule as any).default || addFormatsModule;
+
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "../src/agent/types.js";
 
@@ -98,7 +103,7 @@ describe("Tool Validation with TypeBox and AJV", () => {
 
 		if (validate.errors) {
 			const errors = validate.errors
-				.map((err) => {
+				.map((err: any) => {
 					const path = err.instancePath ? err.instancePath.substring(1) : err.params.missingProperty || "root";
 					return `  - ${path}: ${err.message}`;
 				})

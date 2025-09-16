@@ -1,5 +1,5 @@
 import { type Static, Type } from "@sinclair/typebox";
-import type { AgentTool } from "../../agent";
+import type { AgentTool } from "../../agent/types.js";
 
 export interface CalculateResult {
 	output: string;
@@ -26,7 +26,7 @@ export const calculateTool: AgentTool<typeof calculateSchema, undefined> = {
 	name: "calculate",
 	description: "Evaluate mathematical expressions",
 	parameters: calculateSchema,
-	execute: async (_toolCallId, args) => {
+	execute: async (_toolCallId: string, args: CalculateParams) => {
 		return calculate(args.expression);
 	},
 };

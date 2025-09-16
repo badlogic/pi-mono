@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
-		"target": "esnext",
-		"module": "esnext",
+		"target": "ES2022",
+		"module": "Node16",
 		"lib": ["ES2022"],
 		"strict": true,
 		"esModuleInterop": true,
@@ -12,8 +12,9 @@
 		"sourceMap": true,
 		"inlineSources": true,
 		"inlineSourceMap": false,
-		"moduleResolution": "bundler",
+		"moduleResolution": "Node16",
 		"resolveJsonModule": true,
+		"allowImportingTsExtensions": false,
 		"types": ["node"]
 	}
 }

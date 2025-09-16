@@ -1,8 +1,8 @@
-import { EventStream } from "../event-stream";
+import { EventStream } from "../event-stream.js";
 import { streamSimple } from "../stream.js";
 import type { AssistantMessage, Context, Message, ToolResultMessage, UserMessage } from "../types.js";
 import { validateToolArguments } from "../validation.js";
-import type { AgentContext, AgentEvent, AgentTool, AgentToolResult, PromptConfig } from "./types";
+import type { AgentContext, AgentEvent, AgentTool, AgentToolResult, PromptConfig } from "./types.js";
 
 // Main prompt function - returns a stream of events
 export function prompt(
@@ -13,8 +13,8 @@ export function prompt(
 	streamFn?: typeof streamSimple,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
 	const stream = new EventStream<AgentEvent, AgentContext["messages"]>(
-		(event) => event.type === "agent_end",
-		(event) => (event.type === "agent_end" ? event.messages : []),
+		(event: AgentEvent) => event.type === "agent_end",
+		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
 
 	// Run the prompt async

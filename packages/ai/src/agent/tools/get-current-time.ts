@@ -1,6 +1,6 @@
 import { type Static, Type } from "@sinclair/typebox";
-import type { AgentTool } from "../../agent";
-import type { AgentToolResult } from "../types";
+import type { AgentTool } from "../../agent/index.js";
+import type { AgentToolResult } from "../types.js";
 
 export interface GetCurrentTimeResult extends AgentToolResult<{ utcTimestamp: number }> {}
 
@@ -39,7 +39,7 @@ export const getCurrentTimeTool: AgentTool<typeof getCurrentTimeSchema, { utcTim
 	name: "get_current_time",
 	description: "Get the current date and time",
 	parameters: getCurrentTimeSchema,
-	execute: async (_toolCallId, args) => {
+	execute: async (_toolCallId: string, args: GetCurrentTimeParams) => {
 		return getCurrentTime(args.timezone);
 	},
 };

@@ -1,2 +1,2 @@
-export { calculate, calculateTool } from "./calculate";
-export { getCurrentTime, getCurrentTimeTool } from "./get-current-time";
+export { calculate, calculateTool } from "./calculate.js";
+export { getCurrentTime, getCurrentTimeTool } from "./get-current-time.js";

@@ -1,5 +1,10 @@
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import AjvModule from "ajv";
+import addFormatsModule from "ajv-formats";
+
+// Handle both default and named exports
+const Ajv = (AjvModule as any).default || AjvModule;
+const addFormats = (addFormatsModule as any).default || addFormatsModule;
+
 import type { Tool, ToolCall } from "./types.js";
 
 // Create a singleton AJV instance with formats
@@ -25,7 +30,7 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	// Format validation errors nicely
 	const errors =
 		validate.errors
-			?.map((err) => {
+			?.map((err: any) => {
 				const path = err.instancePath ? err.instancePath.substring(1) : err.params.missingProperty || "root";
 				return `  - ${path}: ${err.message}`;
 			})
