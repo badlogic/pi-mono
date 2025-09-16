@@ -26,6 +26,7 @@
 		"ajv-formats": "^3.0.1",
 		"chalk": "^5.6.2",
 		"openai": "^5.20.0",
+		"partial-json": "^0.1.7",
 		"zod-to-json-schema": "^3.24.6"
 	},
 	"keywords": [

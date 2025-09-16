@@ -11,6 +11,7 @@ import type {
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import { AssistantMessageEventStream } from "../event-stream.js";
+import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -194,12 +195,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						currentBlock.type === "toolCall"
 					) {
 						currentBlock.partialJson += event.delta;
-						try {
-							const args = JSON.parse(currentBlock.partialJson);
-							currentBlock.arguments = args;
-						} catch {
-							// Ignore JSON parse errors - the JSON might be incomplete
-						}
+						currentBlock.arguments = parseStreamingJson(currentBlock.partialJson);
 						stream.push({
 							type: "toolcall_delta",
 							contentIndex: blockIndex(),

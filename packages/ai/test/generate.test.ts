@@ -95,6 +95,12 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: Op
 			if (toolCall.type === "toolCall") {
 				expect(toolCall.name).toBe("calculator");
 				accumulatedToolArgs += event.delta;
+				// Check that we have a parsed arguments object during streaming
+				expect(toolCall.arguments).toBeDefined();
+				expect(typeof toolCall.arguments).toBe("object");
+				// The arguments should be partially populated as we stream
+				// At minimum it should be an empty object, never undefined
+				expect(toolCall.arguments).not.toBeNull();
 			}
 		}
 		if (event.type === "toolcall_end") {

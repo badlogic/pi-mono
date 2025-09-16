@@ -8,6 +8,7 @@ import type {
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
 import { AssistantMessageEventStream } from "../event-stream.js";
+import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
@@ -210,6 +211,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 								if (toolCall.function?.arguments) {
 									delta = toolCall.function.arguments;
 									currentBlock.partialArgs += toolCall.function.arguments;
+									currentBlock.arguments = parseStreamingJson(currentBlock.partialArgs);
 								}
 								stream.push({
 									type: "toolcall_delta",

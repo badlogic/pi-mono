@@ -5,6 +5,7 @@ import type {
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
 import { AssistantMessageEventStream } from "../event-stream.js";
+import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -124,6 +125,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						const block = blocks[index];
 						if (block && block.type === "toolCall") {
 							block.partialJson += event.delta.partial_json;
+							block.arguments = parseStreamingJson(block.partialJson);
 							stream.push({
 								type: "toolcall_delta",
 								contentIndex: index,

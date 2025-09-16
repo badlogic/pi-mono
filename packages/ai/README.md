@@ -194,6 +194,51 @@ for (const block of response.content) {
 }
 ```
 
+### Streaming Tool Calls with Partial JSON
+
+During streaming, tool call arguments are progressively parsed as they arrive. This enables real-time UI updates before the complete arguments are available:
+
+```typescript
+const s = stream(model, context);
+
+for await (const event of s) {
+  if (event.type === 'toolcall_delta') {
+    const toolCall = event.partial.content[event.contentIndex];
+
+    // toolCall.arguments contains partially parsed JSON during streaming
+    // This allows for progressive UI updates
+    if (toolCall.type === 'toolCall' && toolCall.arguments) {
+      // BE DEFENSIVE: arguments may be incomplete
+      // Example: Show file path being written even before content is complete
+      if (toolCall.name === 'write_file' && toolCall.arguments.path) {
+        console.log(`Writing to: ${toolCall.arguments.path}`);
+
+        // Content might be partial or missing
+        if (toolCall.arguments.content) {
+          console.log(`Content preview: ${toolCall.arguments.content.substring(0, 100)}...`);
+        }
+      }
+    }
+  }
+
+  if (event.type === 'toolcall_end') {
+    // Here toolCall.arguments is complete and validated
+    const toolCall = event.toolCall;
+    console.log(`Tool completed: ${toolCall.name}`, toolCall.arguments);
+  }
+}
+```
+
+**Important notes about partial tool arguments:**
+- During `toolcall_delta` events, `arguments` contains the best-effort parse of partial JSON
+- Fields may be missing or incomplete - always check for existence before use
+- String values may be truncated mid-word
+- Arrays may be incomplete
+- Nested objects may be partially populated
+- At minimum, `arguments` will be an empty object `{}`, never `undefined`
+- Full validation only occurs at `toolcall_end` when arguments are complete
+- The Google provider does not support function call streaming. Instead, you will receive a single `toolcall_delta` even with the full arguments.
+
 ## Image Input
 
 Models with vision capabilities can process images. You can check if a model supports images via the `input` property. If you pass images to a non-vision model, they are silently ignored.
@@ -642,26 +687,26 @@ for await (const event of stream) {
     case 'agent_start':
       console.log('Agent started');
       break;
-    
+
     case 'turn_start':
       console.log('New turn started');
       break;
-    
+
     case 'message_start':
       console.log(`${event.message.role} message started`);
       break;
-    
+
     case 'message_update':
       // Only for assistant messages during streaming
       if (event.message.content.some(c => c.type === 'text')) {
         console.log('Assistant:', event.message.content);
       }
       break;
-    
+
     case 'tool_execution_start':
       console.log(`Calling ${event.toolName} with:`, event.args);
       break;
-    
+
     case 'tool_execution_end':
       if (event.isError) {
         console.error(`Tool failed:`, event.result);
@@ -669,11 +714,11 @@ for await (const event of stream) {
         console.log(`Tool result:`, event.result.output);
       }
       break;
-    
+
     case 'turn_end':
       console.log(`Turn ended with ${event.toolResults.length} tool calls`);
       break;
-    
+
     case 'agent_end':
       console.log(`Agent completed with ${event.messages.length} new messages`);
       break;
