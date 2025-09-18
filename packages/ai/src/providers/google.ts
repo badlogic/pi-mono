@@ -99,12 +99,13 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								}
 								if (isThinking) {
 									currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
+									output.content.push(currentBlock);
 									stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
 								} else {
 									currentBlock = { type: "text", text: "" };
+									output.content.push(currentBlock);
 									stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
 								}
-								output.content.push(currentBlock);
 							}
 							if (currentBlock.type === "thinking") {
 								currentBlock.thinking += part.text;
