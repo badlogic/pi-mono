@@ -71,8 +71,19 @@ for await (const event of s) {
     case 'thinking_end':
       console.log('[Thinking complete]');
       break;
-    case 'toolCall':
+    case 'toolcall_start':
+      console.log(`\n[Tool call started: index ${event.contentIndex}]`);
+      break;
+    case 'toolcall_delta':
+      // Partial tool arguments are being streamed
+      const partialCall = event.partial.content[event.contentIndex];
+      if (partialCall.type === 'toolCall') {
+        console.log(`[Streaming args for ${partialCall.name}]`);
+      }
+      break;
+    case 'toolcall_end':
       console.log(`\nTool called: ${event.toolCall.name}`);
+      console.log(`Arguments: ${JSON.stringify(event.toolCall.arguments)}`);
       break;
     case 'done':
       console.log(`\nFinished: ${event.reason}`);
@@ -84,9 +95,10 @@ for await (const event of s) {
 }
 
 // Get the final message after streaming, add it to the context
-const finalMessage = await s.finalMessage();
+const finalMessage = await s.result();
 context.messages.push(finalMessage);
 
+// Handle tool calls if any
 // Handle tool calls if any
 const toolCalls = finalMessage.content.filter(b => b.type === 'toolCall');
 for (const call of toolCalls) {
@@ -237,7 +249,26 @@ for await (const event of s) {
 - Nested objects may be partially populated
 - At minimum, `arguments` will be an empty object `{}`, never `undefined`
 - Full validation only occurs at `toolcall_end` when arguments are complete
-- The Google provider does not support function call streaming. Instead, you will receive a single `toolcall_delta` even with the full arguments.
+- The Google provider does not support function call streaming. Instead, you will receive a single `toolcall_delta` event with the full arguments.
+
+### Complete Event Reference
+
+All streaming events emitted during assistant message generation:
+
+| Event Type | Description | Key Properties |
+|------------|-------------|----------------|
+| `start` | Stream begins | `partial`: Initial assistant message structure |
+| `text_start` | Text block starts | `contentIndex`: Position in content array |
+| `text_delta` | Text chunk received | `delta`: New text, `contentIndex`: Position |
+| `text_end` | Text block complete | `content`: Full text, `contentIndex`: Position |
+| `thinking_start` | Thinking block starts | `contentIndex`: Position in content array |
+| `thinking_delta` | Thinking chunk received | `delta`: New text, `contentIndex`: Position |
+| `thinking_end` | Thinking block complete | `content`: Full thinking, `contentIndex`: Position |
+| `toolcall_start` | Tool call begins | `contentIndex`: Position in content array |
+| `toolcall_delta` | Tool arguments streaming | `delta`: JSON chunk, `partial.content[contentIndex].arguments`: Partial parsed args |
+| `toolcall_end` | Tool call complete | `toolCall`: Complete validated tool call with `id`, `name`, `arguments` |
+| `done` | Stream complete | `reason`: Stop reason, `message`: Final assistant message |
+| `error` | Error occurred | `error`: Error message, `partial`: Partial message before error |
 
 ## Image Input
 
@@ -403,7 +434,7 @@ for await (const event of s) {
 }
 
 // Get results (may be partial if aborted)
-const response = await s.finalMessage();
+const response = await s.result();
 if (response.stopReason === 'error') {
   console.log('Error:', response.error);
   console.log('Partial content received:', response.content);
