@@ -337,11 +337,6 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 			};
 			params.include = ["reasoning.encrypted_content"];
 		} else {
-			params.reasoning = {
-				effort: model.name.startsWith("gpt-5") ? "minimal" : null,
-				summary: null,
-			};
-
 			if (model.name.startsWith("gpt-5")) {
 				// Jesus Christ, see https://community.openai.com/t/need-reasoning-false-option-for-gpt-5/1351588/7
 				messages.push({
