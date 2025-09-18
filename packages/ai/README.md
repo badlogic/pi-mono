@@ -267,8 +267,8 @@ All streaming events emitted during assistant message generation:
 | `toolcall_start` | Tool call begins | `contentIndex`: Position in content array |
 | `toolcall_delta` | Tool arguments streaming | `delta`: JSON chunk, `partial.content[contentIndex].arguments`: Partial parsed args |
 | `toolcall_end` | Tool call complete | `toolCall`: Complete validated tool call with `id`, `name`, `arguments` |
-| `done` | Stream complete | `reason`: Stop reason, `message`: Final assistant message |
-| `error` | Error occurred | `error`: Error message, `partial`: Partial message before error |
+| `done` | Stream complete | `reason`: Stop reason ("stop", "length", "toolUse"), `message`: Final assistant message |
+| `error` | Error occurred | `reason`: Error type ("error" or "aborted"), `error`: AssistantMessage with partial content |
 
 ## Image Input
 
@@ -399,16 +399,43 @@ for await (const event of s) {
 }
 ```
 
-## Errors & Abort Signal
+## Stop Reasons
 
-When a request ends with an error (including aborts and tool call validation errors), the API returns an `AssistantMessage` with:
-- `stopReason: 'error'` - Indicates the request ended with an error
-- `error: string` - Error message describing what happened
-- `content: array` - **Partial content** accumulated before the error
-- `usage: Usage` - **Token counts and costs** (may be incomplete depending on when error occurred)
+Every `AssistantMessage` includes a `stopReason` field that indicates how the generation ended:
 
-### Aborting
-The abort signal allows you to cancel in-progress requests. Aborted requests return an `AssistantMessage` with `stopReason === 'error'`.
+- `"stop"` - Normal completion, the model finished its response
+- `"length"` - Output hit the maximum token limit
+- `"toolUse"` - Model is calling tools and expects tool results
+- `"error"` - An error occurred during generation
+- `"aborted"` - Request was cancelled via abort signal
+
+## Error Handling
+
+When a request ends with an error (including aborts and tool call validation errors), the streaming API emits an error event:
+
+```typescript
+// In streaming
+for await (const event of stream) {
+  if (event.type === 'error') {
+    // event.reason is either "error" or "aborted"
+    // event.error is the AssistantMessage with partial content
+    console.error(`Error (${event.reason}):`, event.error.errorMessage);
+    console.log('Partial content:', event.error.content);
+  }
+}
+
+// The final message will have the error details
+const message = await stream.result();
+if (message.stopReason === 'error' || message.stopReason === 'aborted') {
+  console.error('Request failed:', message.errorMessage);
+  // message.content contains any partial content received before the error
+  // message.usage contains partial token counts and costs
+}
+```
+
+### Aborting Requests
+
+The abort signal allows you to cancel in-progress requests. Aborted requests have `stopReason === 'aborted'`:
 
 ```typescript
 import { getModel, stream } from '@mariozechner/pi-ai';
@@ -429,14 +456,15 @@ for await (const event of s) {
   if (event.type === 'text_delta') {
     process.stdout.write(event.delta);
   } else if (event.type === 'error') {
-    console.log('Error:', event.error);
+    // event.reason tells you if it was "error" or "aborted"
+    console.log(`${event.reason === 'aborted' ? 'Aborted' : 'Error'}:`, event.error.errorMessage);
   }
 }
 
 // Get results (may be partial if aborted)
 const response = await s.result();
-if (response.stopReason === 'error') {
-  console.log('Error:', response.error);
+if (response.stopReason === 'aborted') {
+  console.log('Request was aborted:', response.errorMessage);
   console.log('Partial content received:', response.content);
   console.log('Tokens used:', response.usage);
 }

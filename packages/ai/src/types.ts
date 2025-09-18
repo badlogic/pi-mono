@@ -1,10 +1,10 @@
-import type { AssistantMessageEventStream } from "./event-stream.js";
 import type { AnthropicOptions } from "./providers/anthropic.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
 import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
+import type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
-export type { AssistantMessageEventStream } from "./event-stream.js";
+export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
 export type Api = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
 
@@ -90,7 +90,7 @@ export interface Usage {
 	};
 }
 
-export type StopReason = "stop" | "length" | "toolUse" | "safety" | "error";
+export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
 export interface UserMessage {
 	role: "user";
@@ -105,7 +105,7 @@ export interface AssistantMessage {
 	model: string;
 	usage: Usage;
 	stopReason: StopReason;
-	error?: string;
+	errorMessage?: string;
 }
 
 export interface ToolResultMessage<TDetails = any> {
@@ -144,8 +144,8 @@ export type AssistantMessageEvent =
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
-	| { type: "done"; reason: StopReason; message: AssistantMessage }
-	| { type: "error"; error: string; partial: AssistantMessage };
+	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
+	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 // Model interface for the unified model system
 export interface Model<TApi extends Api> {

@@ -6,8 +6,8 @@ import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
-import { StringEnum } from "../src/typebox-helpers.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
+import { StringEnum } from "../src/utils/typebox-helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,7 +40,7 @@ async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options
 	expect(response.content).toBeTruthy();
 	expect(response.usage.input + response.usage.cacheRead).toBeGreaterThan(0);
 	expect(response.usage.output).toBeGreaterThan(0);
-	expect(response.error).toBeFalsy();
+	expect(response.errorMessage).toBeFalsy();
 	expect(response.content.map((b) => (b.type === "text" ? b.text : "")).join("")).toContain("Hello test successful");
 
 	context.messages.push(response);
@@ -52,7 +52,7 @@ async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options
 	expect(secondResponse.content).toBeTruthy();
 	expect(secondResponse.usage.input + secondResponse.usage.cacheRead).toBeGreaterThan(0);
 	expect(secondResponse.usage.output).toBeGreaterThan(0);
-	expect(secondResponse.error).toBeFalsy();
+	expect(secondResponse.errorMessage).toBeFalsy();
 	expect(secondResponse.content.map((b) => (b.type === "text" ? b.text : "")).join("")).toContain(
 		"Goodbye test successful",
 	);
@@ -192,7 +192,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 
 	const response = await s.result();
 
-	expect(response.stopReason, `Error: ${response.error}`).toBe("stop");
+	expect(response.stopReason, `Error: ${response.errorMessage}`).toBe("stop");
 	expect(thinkingStarted).toBe(true);
 	expect(thinkingChunks.length).toBeGreaterThan(0);
 	expect(thinkingCompleted).toBe(true);

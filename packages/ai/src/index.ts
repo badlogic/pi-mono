@@ -5,5 +5,5 @@ export * from "./providers/google.js";
 export * from "./providers/openai-completions.js";
 export * from "./providers/openai-responses.js";
 export * from "./stream.js";
-export * from "./typebox-helpers.js";
 export * from "./types.js";
+export * from "./utils/typebox-helpers.js";

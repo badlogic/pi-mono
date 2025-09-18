@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { StringEnum } from "../src/typebox-helpers.js";
+import { StringEnum } from "../src/utils/typebox-helpers.js";
 
 // Zod version
 const zodSchema = z.object({

@@ -238,7 +238,7 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "error",
-			error: "Request was aborted",
+			errorMessage: "Request was aborted",
 		} satisfies AssistantMessage,
 		toolResult: null,
 		facts: {
@@ -293,7 +293,7 @@ async function testProviderHandoff<TApi extends Api>(
 
 		// Check for error
 		if (response.stopReason === "error") {
-			console.log(`[${sourceLabel} → ${targetModel.provider}] Failed with error: ${response.error}`);
+			console.log(`[${sourceLabel} → ${targetModel.provider}] Failed with error: ${response.errorMessage}`);
 			return false;
 		}
 

@@ -57,7 +57,7 @@ export type AgentEvent =
 			isError: boolean;
 	  }
 	// Emitted when a full turn completes
-	| { type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }
+	| { type: "turn_end"; message: AssistantMessage; toolResults: ToolResultMessage[] }
 	// Emitted when the agent has completed all its turns. All messages from every turn are
 	// contained in messages, which can be appended to the context
 	| { type: "agent_end"; messages: AgentContext["messages"] };

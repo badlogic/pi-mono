@@ -1,4 +1,4 @@
-import type { AssistantMessage, AssistantMessageEvent } from "./types.js";
+import type { AssistantMessage, AssistantMessageEvent } from "../types.js";
 
 // Generic event stream class for async iteration
 export class EventStream<T, R = T> implements AsyncIterable<T> {
@@ -73,7 +73,7 @@ export class AssistantMessageEventStream extends EventStream<AssistantMessageEve
 				if (event.type === "done") {
 					return event.message;
 				} else if (event.type === "error") {
-					return event.partial;
+					return event.error;
 				}
 				throw new Error("Unexpected event type for final result");
 			},

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prompt } from "../src/agent/agent.js";
+import { agentLoop } from "../src/agent/agent-loop.js";
 import { calculateTool } from "../src/agent/tools/calculate.js";
 import type { AgentContext, AgentEvent, PromptConfig } from "../src/agent/types.js";
 import { getModel } from "../src/models.js";
@@ -42,7 +42,7 @@ async function calculateTest<TApi extends Api>(model: Model<TApi>, options: Opti
 	let finalAnswer: number | undefined;
 
 	// Execute the prompt
-	const stream = prompt(userPrompt, context, config);
+	const stream = agentLoop(userPrompt, context, config);
 
 	for await (const event of stream) {
 		events.push(event);
@@ -55,7 +55,7 @@ async function calculateTest<TApi extends Api>(model: Model<TApi>, options: Opti
 
 			case "turn_end":
 				console.log(`=== Turn ${turns} ended with ${event.toolResults.length} tool results ===`);
-				console.log(event.assistantMessage);
+				console.log(event.message);
 				break;
 
 			case "tool_execution_end":
@@ -188,7 +188,7 @@ async function abortTest<TApi extends Api>(model: Model<TApi>, options: OptionsF
 	let finalMessages: Message[] | undefined;
 
 	// Execute the prompt
-	const stream = prompt(userPrompt, context, config, abortController.signal);
+	const stream = agentLoop(userPrompt, context, config, abortController.signal);
 
 	// Abort after first tool execution
 	const abortPromise = (async () => {
@@ -222,7 +222,7 @@ async function abortTest<TApi extends Api>(model: Model<TApi>, options: OptionsF
 
 	// Should have executed 1 tool call before abort
 	expect(toolCallCount).toBeGreaterThanOrEqual(1);
-	expect(assistantMessage.stopReason).toBe("error");
+	expect(assistantMessage.stopReason).toBe("aborted");
 
 	return {
 		toolCallCount,

@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 const Ajv = (AjvModule as any).default || AjvModule;
 const addFormats = (addFormatsModule as any).default || addFormatsModule;
 
-import type { Tool, ToolCall } from "./types.js";
+import type { Tool, ToolCall } from "../types.js";
 
 // Create a singleton AJV instance with formats
 const ajv = new Ajv({ allErrors: true, strict: false });

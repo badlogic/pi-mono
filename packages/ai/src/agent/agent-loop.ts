@@ -1,11 +1,11 @@
-import { EventStream } from "../event-stream.js";
 import { streamSimple } from "../stream.js";
 import type { AssistantMessage, Context, Message, ToolResultMessage, UserMessage } from "../types.js";
-import { validateToolArguments } from "../validation.js";
+import { EventStream } from "../utils/event-stream.js";
+import { validateToolArguments } from "../utils/validation.js";
 import type { AgentContext, AgentEvent, AgentTool, AgentToolResult, PromptConfig } from "./types.js";
 
 // Main prompt function - returns a stream of events
-export function prompt(
+export function agentLoop(
 	prompt: UserMessage,
 	context: AgentContext,
 	config: PromptConfig,
@@ -46,21 +46,29 @@ export function prompt(
 				firstTurn = false;
 			}
 			// Stream assistant response
-			const assistantMessage = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
-			newMessages.push(assistantMessage);
+			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+			newMessages.push(message);
+
+			if (message.stopReason === "error" || message.stopReason === "aborted") {
+				// Stop the loop on error or abort
+				stream.push({ type: "turn_end", message, toolResults: [] });
+				stream.push({ type: "agent_end", messages: newMessages });
+				stream.end(newMessages);
+				return;
+			}
 
 			// Check for tool calls
-			const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
+			const toolCalls = message.content.filter((c) => c.type === "toolCall");
 			hasMoreToolCalls = toolCalls.length > 0;
 
 			const toolResults: ToolResultMessage[] = [];
 			if (hasMoreToolCalls) {
 				// Execute tool calls
-				toolResults.push(...(await executeToolCalls(currentContext.tools, assistantMessage, signal, stream)));
+				toolResults.push(...(await executeToolCalls(currentContext.tools, message, signal, stream)));
 				currentContext.messages.push(...toolResults);
 				newMessages.push(...toolResults);
 			}
-			stream.push({ type: "turn_end", assistantMessage, toolResults: toolResults });
+			stream.push({ type: "turn_end", message, toolResults: toolResults });
 		}
 		stream.push({ type: "agent_end", messages: newMessages });
 		stream.end(newMessages);

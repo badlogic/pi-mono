@@ -7,7 +7,6 @@ import {
 	GoogleGenAI,
 	type Part,
 } from "@google/genai";
-import { AssistantMessageEventStream } from "../event-stream.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -22,7 +21,8 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { validateToolArguments } from "../validation.js";
+import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
 export interface GoogleOptions extends StreamOptions {
@@ -226,12 +226,21 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 				}
 			}
 
+			if (options?.signal?.aborted) {
+				throw new Error("Request was aborted");
+			}
+
+			if (output.stopReason === "aborted" || output.stopReason === "error") {
+				throw new Error("An unkown error ocurred");
+			}
+
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			output.stopReason = "error";
-			output.error = error instanceof Error ? error.message : JSON.stringify(error);
-			stream.push({ type: "error", error: output.error, partial: output });
+			for (const block of output.content) delete (block as any).index;
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
 	})();
@@ -424,7 +433,7 @@ function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.SAFETY:
 		case FinishReason.IMAGE_SAFETY:
 		case FinishReason.RECITATION:
-			return "safety";
+			return "error";
 		case FinishReason.FINISH_REASON_UNSPECIFIED:
 		case FinishReason.OTHER:
 		case FinishReason.LANGUAGE:

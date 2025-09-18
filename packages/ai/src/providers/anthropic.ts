@@ -4,8 +4,6 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
-import { AssistantMessageEventStream } from "../event-stream.js";
-import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -22,7 +20,9 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types.js";
-import { validateToolArguments } from "../validation.js";
+import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { parseStreamingJson } from "../utils/json-parse.js";
+import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
 export interface AnthropicOptions extends StreamOptions {
@@ -196,13 +196,17 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 				throw new Error("Request was aborted");
 			}
 
+			if (output.stopReason === "aborted" || output.stopReason === "error") {
+				throw new Error("An unkown error ocurred");
+			}
+
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
 			for (const block of output.content) delete (block as any).index;
-			output.stopReason = "error";
-			output.error = error instanceof Error ? error.message : JSON.stringify(error);
-			stream.push({ type: "error", error: output.error, partial: output });
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
 	})();
@@ -466,7 +470,7 @@ function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
 		case "tool_use":
 			return "toolUse";
 		case "refusal":
-			return "safety";
+			return "error";
 		case "pause_turn": // Stop is good enough -> resubmit
 			return "stop";
 		case "stop_sequence":

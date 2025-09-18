@@ -10,8 +10,6 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
-import { AssistantMessageEventStream } from "../event-stream.js";
-import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -26,7 +24,9 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { validateToolArguments } from "../validation.js";
+import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { parseStreamingJson } from "../utils/json-parse.js";
+import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
@@ -268,17 +268,9 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 				}
 				// Handle errors
 				else if (event.type === "error") {
-					output.stopReason = "error";
-					output.error = `Code ${event.code}: ${event.message}` || "Unknown error";
-					stream.push({ type: "error", error: output.error, partial: output });
-					stream.end();
-					return output;
+					throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 				} else if (event.type === "response.failed") {
-					output.stopReason = "error";
-					output.error = "Unknown error";
-					stream.push({ type: "error", error: output.error, partial: output });
-					stream.end();
-					return output;
+					throw new Error("Unknown error");
 				}
 			}
 
@@ -286,12 +278,17 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 				throw new Error("Request was aborted");
 			}
 
+			if (output.stopReason === "aborted" || output.stopReason === "error") {
+				throw new Error("An unkown error ocurred");
+			}
+
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			output.stopReason = "error";
-			output.error = error instanceof Error ? error.message : JSON.stringify(error);
-			stream.push({ type: "error", error: output.error, partial: output });
+			for (const block of output.content) delete (block as any).index;
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
 	})();

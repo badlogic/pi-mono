@@ -7,8 +7,6 @@ import type {
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
 } from "openai/resources/chat/completions.js";
-import { AssistantMessageEventStream } from "../event-stream.js";
-import { parseStreamingJson } from "../json-parse.js";
 import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
@@ -22,7 +20,9 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { validateToolArguments } from "../validation.js";
+import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { parseStreamingJson } from "../utils/json-parse.js";
+import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
 export interface OpenAICompletionsOptions extends StreamOptions {
@@ -231,13 +231,17 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 				throw new Error("Request was aborted");
 			}
 
+			if (output.stopReason === "aborted" || output.stopReason === "error") {
+				throw new Error("An unkown error ocurred");
+			}
+
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
-			return output;
 		} catch (error) {
-			output.stopReason = "error";
-			output.error = error instanceof Error ? error.message : String(error);
-			stream.push({ type: "error", error: output.error, partial: output });
+			for (const block of output.content) delete (block as any).index;
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
 	})();
@@ -413,7 +417,7 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 		case "tool_calls":
 			return "toolUse";
 		case "content_filter":
-			return "safety";
+			return "error";
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);

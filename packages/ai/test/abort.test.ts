@@ -25,7 +25,7 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 	const msg = await response.result();
 
 	// If we get here without throwing, the abort didn't work
-	expect(msg.stopReason).toBe("error");
+	expect(msg.stopReason).toBe("aborted");
 	expect(msg.content.length).toBeGreaterThan(0);
 
 	context.messages.push(msg);
@@ -46,7 +46,7 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: O
 	};
 
 	const response = await complete(llm, context, { ...options, signal: controller.signal });
-	expect(response.stopReason).toBe("error");
+	expect(response.stopReason).toBe("aborted");
 }
 
 describe("AI Providers Abort Tests", () => {
