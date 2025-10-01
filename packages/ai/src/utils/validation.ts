@@ -7,9 +7,25 @@ const addFormats = (addFormatsModule as any).default || addFormatsModule;
 
 import type { Tool, ToolCall } from "../types.js";
 
-// Create a singleton AJV instance with formats
-const ajv = new Ajv({ allErrors: true, strict: false });
-addFormats(ajv);
+// Detect if we're in a browser extension environment with strict CSP
+// Chrome extensions with Manifest V3 don't allow eval/Function constructor
+const isBrowserExtension = typeof globalThis !== "undefined" && (globalThis as any).chrome?.runtime?.id !== undefined;
+
+// Create a singleton AJV instance with formats (only if not in browser extension)
+// AJV requires 'unsafe-eval' CSP which is not allowed in Manifest V3
+let ajv: any = null;
+if (!isBrowserExtension) {
+	try {
+		ajv = new Ajv({
+			allErrors: true,
+			strict: false,
+		});
+		addFormats(ajv);
+	} catch (e) {
+		// AJV initialization failed (likely CSP restriction)
+		console.warn("AJV validation disabled due to CSP restrictions");
+	}
+}
 
 /**
  * Validates tool call arguments against the tool's TypeBox schema
@@ -19,6 +35,13 @@ addFormats(ajv);
  * @throws Error with formatted message if validation fails
  */
 export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
+	// Skip validation in browser extension environment (CSP restrictions prevent AJV from working)
+	if (!ajv || isBrowserExtension) {
+		// Trust the LLM's output without validation
+		// Browser extensions can't use AJV due to Manifest V3 CSP restrictions
+		return toolCall.arguments;
+	}
+
 	// Compile the schema
 	const validate = ajv.compile(tool.parameters);
 

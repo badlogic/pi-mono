@@ -51,7 +51,8 @@ const copyStatic = () => {
     "icon-16.png",
     "icon-48.png",
     "icon-128.png",
-    join("src", "sidepanel.html")
+    join("src", "sidepanel.html"),
+    join("src", "sandbox.html")
   ];
 
   for (const relative of filesToCopy) {

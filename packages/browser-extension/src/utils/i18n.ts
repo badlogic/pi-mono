@@ -68,6 +68,16 @@ declare module "@mariozechner/mini-lit" {
 		"Enter Auth Token": string;
 		"Please enter your auth token.": string;
 		"Auth token is required for proxy transport": string;
+		// JavaScript REPL strings
+		"Execution aborted": string;
+		"Code parameter is required": string;
+		"Unknown error": string;
+		"Code executed successfully (no output)": string;
+		"Execution failed": string;
+		"JavaScript REPL": string;
+		"JavaScript code to execute": string;
+		"Writing JavaScript code...": string;
+		"Executing JavaScript": string;
 	}
 }
 
@@ -142,6 +152,16 @@ const translations = {
 		"Enter Auth Token": "Enter Auth Token",
 		"Please enter your auth token.": "Please enter your auth token.",
 		"Auth token is required for proxy transport": "Auth token is required for proxy transport",
+		// JavaScript REPL strings
+		"Execution aborted": "Execution aborted",
+		"Code parameter is required": "Code parameter is required",
+		"Unknown error": "Unknown error",
+		"Code executed successfully (no output)": "Code executed successfully (no output)",
+		"Execution failed": "Execution failed",
+		"JavaScript REPL": "JavaScript REPL",
+		"JavaScript code to execute": "JavaScript code to execute",
+		"Writing JavaScript code...": "Writing JavaScript code...",
+		"Executing JavaScript": "Executing JavaScript",
 	},
 	de: {
 		...defaultGerman,
@@ -213,6 +233,16 @@ const translations = {
 		"Enter Auth Token": "Auth-Token eingeben",
 		"Please enter your auth token.": "Bitte geben Sie Ihr Auth-Token ein.",
 		"Auth token is required for proxy transport": "Auth-Token ist für Proxy-Transport erforderlich",
+		// JavaScript REPL strings
+		"Execution aborted": "Ausführung abgebrochen",
+		"Code parameter is required": "Code-Parameter ist erforderlich",
+		"Unknown error": "Unbekannter Fehler",
+		"Code executed successfully (no output)": "Code erfolgreich ausgeführt (keine Ausgabe)",
+		"Execution failed": "Ausführung fehlgeschlagen",
+		"JavaScript REPL": "JavaScript REPL",
+		"JavaScript code to execute": "Auszuführender JavaScript-Code",
+		"Writing JavaScript code...": "Schreibe JavaScript-Code...",
+		"Executing JavaScript": "Führe JavaScript aus",
 	},
 };
 

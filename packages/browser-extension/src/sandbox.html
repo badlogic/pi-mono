@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script>
+// Store files and console output for current execution
+let returnedFiles = [];
+let consoleOutput = [];
+
+// Store attachments with helper methods
+window.attachments = [];
+
+// Helper function to list available files
+window.listFiles = function() {
+  return window.attachments.map(a => ({
+    id: a.id,
+    fileName: a.fileName,
+    mimeType: a.mimeType,
+    size: a.size
+  }));
+};
+
+// Helper function to read text file by ID
+window.readTextFile = function(attachmentId) {
+  const attachment = window.attachments.find(a => a.id === attachmentId);
+  if (!attachment) {
+    throw new Error('Attachment not found: ' + attachmentId);
+  }
+  // If extractedText exists, return it
+  if (attachment.extractedText) {
+    return attachment.extractedText;
+  }
+  // Otherwise decode base64 content
+  try {
+    return atob(attachment.content);
+  } catch (e) {
+    throw new Error('Failed to decode text content for: ' + attachmentId);
+  }
+};
+
+// Helper function to read binary file as Uint8Array
+window.readBinaryFile = function(attachmentId) {
+  const attachment = window.attachments.find(a => a.id === attachmentId);
+  if (!attachment) {
+    throw new Error('Attachment not found: ' + attachmentId);
+  }
+  const binaryString = atob(attachment.content);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+};
+
+// Override console
+['log', 'error', 'warn', 'info', 'debug', 'table'].forEach(method => {
+  const original = console[method];
+  console[method] = (...args) => {
+    // Convert args to strings for plain text output
+    const stringArgs = args.map(arg => {
+      try {
+        if (arg === undefined) return 'undefined';
+        if (arg === null) return 'null';
+        if (typeof arg === 'function') return arg.toString();
+        if (typeof arg === 'symbol') return arg.toString();
+        if (arg instanceof Error) return arg.stack || arg.message;
+        if (typeof arg === 'object') return JSON.stringify(arg, null, 2);
+        return String(arg);
+      } catch {
+        return String(arg);
+      }
+    });
+    consoleOutput.push({ type: method, args: stringArgs });
+    original.apply(console, args);
+  };
+});
+
+// Single return function for files only
+window.returnFile = async (fileName, content, mimeType) => {
+  // Validate mimeType for binary-like content to guide the LLM
+  const isBinaryLike = (val) => val instanceof Blob || val instanceof Uint8Array;
+  if (isBinaryLike(content) && (!mimeType || typeof mimeType !== 'string' || !mimeType.includes('/'))) {
+    const err = new Error('returnFile: mimeType is required for Blob/Uint8Array content (e.g., "image/png").');
+    throw err;
+  }
+
+  // Default for plain string content when not specified
+  if (typeof content === 'string' && (!mimeType || typeof mimeType !== 'string' || mimeType === '')) {
+    mimeType = 'text/plain';
+  }
+
+  // Handle data URLs - extract the data and mime type
+  if (typeof content === 'string' && content.startsWith('data:')) {
+    const matches = content.match(/^data:([^;,]+)(;base64)?,(.*)$/);
+    if (matches) {
+      if (mimeType === 'text/plain' && matches[1]) {
+        mimeType = matches[1];
+      }
+      const isBase64 = !!matches[2];
+      const data = matches[3];
+      if (isBase64) {
+        const binaryString = atob(data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        content = bytes;
+      } else {
+        content = decodeURIComponent(data);
+      }
+    }
+  }
+  // Convert Blob to Uint8Array for postMessage
+  else if (content instanceof Blob) {
+    const arrayBuffer = await content.arrayBuffer();
+    content = new Uint8Array(arrayBuffer);
+  }
+  // Handle different content types
+  else if (typeof content === 'object' && !(content instanceof Uint8Array)) {
+    content = JSON.stringify(content, null, 2);
+    if (!mimeType || mimeType === 'text/plain') {
+      mimeType = 'application/json';
+    }
+  }
+  returnedFiles.push({ fileName, content, mimeType });
+};
+
+// Message handler
+window.addEventListener('message', async (e) => {
+  if (e.data.type === 'setAttachments') {
+    window.attachments = e.data.attachments;
+    parent.postMessage({ type: 'ready' }, '*');
+  } else if (e.data.type === 'execute') {
+    // Reset for new execution
+    returnedFiles = [];
+    consoleOutput = [];
+
+    try {
+      // Execute code in global scope to persist variables
+      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+      const func = new AsyncFunction(e.data.code);
+      const result = await func();
+
+      // If there was a direct return value, log it
+      if (result !== undefined) {
+        console.log('Return value:', result);
+      }
+
+      parent.postMessage({
+        type: 'result',
+        success: true,
+        files: returnedFiles,
+        console: consoleOutput
+      }, '*');
+    } catch (error) {
+      parent.postMessage({
+        type: 'error',
+        success: false,
+        error: {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        },
+        console: consoleOutput
+      }, '*');
+    }
+  }
+});
+</script>
+</head>
+<body>
+<div id="root"></div>
+</body>
+</html>

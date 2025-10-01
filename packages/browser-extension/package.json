@@ -18,6 +18,7 @@
     "@mariozechner/mini-lit": "^0.1.4",
     "@mariozechner/pi-ai": "^0.5.43",
     "docx-preview": "^0.3.7",
+    "js-interpreter": "^6.0.1",
     "jszip": "^3.10.1",
     "lit": "^3.3.1",
     "lucide": "^0.544.0",

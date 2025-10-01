@@ -1,10 +1,12 @@
-import { html, type TemplateResult } from "@mariozechner/mini-lit";
+import type { TemplateResult } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { getToolRenderer, registerToolRenderer } from "./renderer-registry.js";
 import { BashRenderer } from "./renderers/BashRenderer.js";
 import { CalculateRenderer } from "./renderers/CalculateRenderer.js";
 import { DefaultRenderer } from "./renderers/DefaultRenderer.js";
 import { GetCurrentTimeRenderer } from "./renderers/GetCurrentTimeRenderer.js";
+import "./javascript-repl.js"; // Import for side effects (registers renderer)
+import "./browser-javascript.js"; // Import for side effects (registers renderer)
 
 // Register all built-in tool renderers
 registerToolRenderer("calculate", new CalculateRenderer());
@@ -36,3 +38,5 @@ export function renderToolResult(toolName: string, params: any, result: ToolResu
 }
 
 export { registerToolRenderer, getToolRenderer };
+export { browserJavaScriptTool } from "./browser-javascript.js";
+export { createJavaScriptReplTool, javascriptReplTool } from "./javascript-repl.js";

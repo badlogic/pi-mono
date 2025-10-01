@@ -46,7 +46,9 @@ export class StreamingMessageContainer extends LitElement {
 			requestAnimationFrame(async () => {
 				// Only apply the update if we haven't been cleared
 				if (!this._immediateUpdate && this._pendingMessage !== null) {
-					this._message = this._pendingMessage;
+					// Deep clone the message to ensure Lit detects changes in nested properties
+					// (like toolCall.arguments being mutated during streaming)
+					this._message = JSON.parse(JSON.stringify(this._pendingMessage));
 					this.requestUpdate();
 				}
 				// Reset for next batch

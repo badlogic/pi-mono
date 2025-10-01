@@ -39,5 +39,11 @@
       "id": "pi-reader@mariozechner.at",
       "strict_min_version": "115.0"
     }
+  },
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

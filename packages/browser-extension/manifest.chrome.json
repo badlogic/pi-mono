@@ -28,5 +28,11 @@
     "https://*/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
-  ]
+  ],
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }

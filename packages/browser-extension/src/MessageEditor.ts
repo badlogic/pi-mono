@@ -3,7 +3,7 @@ import type { Model } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, ref } from "lit/directives/ref.js";
-import { Loader2, Paperclip, Send, Sparkles, Square } from "lucide";
+import { BookOpen, Loader2, Paperclip, Send, Sparkles, Square } from "lucide";
 import "./AttachmentTile.js";
 import { type Attachment, loadAttachment } from "./utils/attachment-utils.js";
 import { i18n } from "./utils/i18n.js";
@@ -194,7 +194,7 @@ export class MessageEditor extends LitElement {
 
 				<!-- Button Row -->
 				<div class="px-2 pb-2 flex items-center justify-between">
-					<!-- Left side - attachment button -->
+					<!-- Left side - attachment and quick action buttons -->
 					<div class="flex gap-2 items-center">
 						${
 							this.showAttachmentButton
