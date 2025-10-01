@@ -125,23 +125,28 @@ export class MessageEditor extends LitElement {
 	private adjustTextareaHeight() {
 		const textarea = this.textareaRef.value;
 		if (textarea) {
+			// Reset height to auto to get accurate scrollHeight
 			textarea.style.height = "auto";
-			textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+			// Only adjust if there's content, otherwise keep minimal height
+			if (this.value.trim()) {
+				textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+			}
 		}
 	}
 
 	override firstUpdated() {
 		const textarea = this.textareaRef.value;
 		if (textarea) {
-			// Set initial height properly
-			this.adjustTextareaHeight();
+			// Don't adjust height on first render - let it be minimal
 			textarea.focus();
 		}
 	}
 
 	override updated() {
-		// Adjust height when component updates
-		this.adjustTextareaHeight();
+		// Only adjust height when component updates if there's content
+		if (this.value) {
+			this.adjustTextareaHeight();
+		}
 	}
 
 	override render() {
