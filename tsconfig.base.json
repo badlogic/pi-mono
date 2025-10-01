@@ -15,6 +15,9 @@
 		"moduleResolution": "Node16",
 		"resolveJsonModule": true,
 		"allowImportingTsExtensions": false,
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"useDefineForClassFields": false,
 		"types": ["node"]
 	}
 }

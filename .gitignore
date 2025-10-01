@@ -5,6 +5,8 @@ dist/
 *.tsbuildinfo
 packages/*/node_modules/
 packages/*/dist/
+packages/*/dist-chrome/
+packages/*/dist-firefox/
 
 # Environment
 .env

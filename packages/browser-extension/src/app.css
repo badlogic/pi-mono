@@ -1,0 +1,14 @@
+/* Import Claude theme from mini-lit */
+@import "@mariozechner/mini-lit/styles/themes/default.css";
+
+/* Tell Tailwind to scan mini-lit components */
+@source "../../../node_modules/@mariozechner/mini-lit/dist";
+
+/* Import Tailwind */
+/* biome-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
+@import "tailwindcss";
+
+body {
+	font-size: 16px;
+	-webkit-font-smoothing: antialiased;
+}

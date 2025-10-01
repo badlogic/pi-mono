@@ -7,6 +7,7 @@
 	"scripts": {
 		"clean": "rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"check": "biome check --write .",
 		"test": "node --test --import tsx test/*.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"

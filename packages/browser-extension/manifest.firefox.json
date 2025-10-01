@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Pi Reader Assistant",
+  "description": "Use @mariozechner/pi-ai to summarize and highlight the page you are reading.",
+  "version": "0.5.43",
+  "action": {
+    "default_title": "Click to open sidebar"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "sidebar_action": {
+    "default_panel": "sidepanel.html",
+    "default_title": "Pi Reader Assistant",
+    "default_icon": {
+      "16": "icon-16.png",
+      "48": "icon-48.png"
+    },
+    "open_at_install": false
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pi-reader@mariozechner.at",
+      "strict_min_version": "115.0"
+    }
+  }
+}

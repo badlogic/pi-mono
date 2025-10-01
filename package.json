@@ -7,7 +7,8 @@
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-agent && npm run build -w @mariozechner/pi",
+		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-reader-extension && npm run build -w @mariozechner/pi-agent && npm run build -w @mariozechner/pi",
+		"dev": "concurrently --names \"ai,browser-ext,tui\" --prefix-colors \"cyan,yellow,magenta\" \"npm run dev -w @mariozechner/pi-ai\" \"npm run dev -w @mariozechner/pi-reader-extension\" \"npm run dev -w @mariozechner/pi-tui\"",
 		"check": "biome check --write . && npm run check --workspaces && tsc --noEmit",
 		"test": "npm run test --workspaces --if-present",
 		"version:patch": "npm version patch -ws --no-git-tag-version && node scripts/sync-versions.js",
@@ -22,6 +23,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.1.4",
 		"@types/node": "^22.10.5",
+		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
 		"tsx": "^4.20.3",
 		"typescript": "^5.9.2"
