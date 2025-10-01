@@ -78,6 +78,25 @@ declare module "@mariozechner/mini-lit" {
 		"JavaScript code to execute": string;
 		"Writing JavaScript code...": string;
 		"Executing JavaScript": string;
+		// Artifacts strings
+		"Processing artifact...": string;
+		Processing: string;
+		Create: string;
+		Rewrite: string;
+		Get: string;
+		Delete: string;
+		"Get logs": string;
+		"Show artifacts": string;
+		"Close artifacts": string;
+		Artifacts: string;
+		"Copy HTML": string;
+		"Download HTML": string;
+		"Copy SVG": string;
+		"Download SVG": string;
+		"Copy Markdown": string;
+		"Download Markdown": string;
+		Download: string;
+		"No logs for {filename}": string;
 	}
 }
 
@@ -162,6 +181,25 @@ const translations = {
 		"JavaScript code to execute": "JavaScript code to execute",
 		"Writing JavaScript code...": "Writing JavaScript code...",
 		"Executing JavaScript": "Executing JavaScript",
+		// Artifacts strings
+		"Processing artifact...": "Processing artifact...",
+		Processing: "Processing",
+		Create: "Create",
+		Rewrite: "Rewrite",
+		Get: "Get",
+		Delete: "Delete",
+		"Get logs": "Get logs",
+		"Show artifacts": "Show artifacts",
+		"Close artifacts": "Close artifacts",
+		Artifacts: "Artifacts",
+		"Copy HTML": "Copy HTML",
+		"Download HTML": "Download HTML",
+		"Copy SVG": "Copy SVG",
+		"Download SVG": "Download SVG",
+		"Copy Markdown": "Copy Markdown",
+		"Download Markdown": "Download Markdown",
+		Download: "Download",
+		"No logs for {filename}": "No logs for {filename}",
 	},
 	de: {
 		...defaultGerman,
@@ -243,6 +281,25 @@ const translations = {
 		"JavaScript code to execute": "Auszuführender JavaScript-Code",
 		"Writing JavaScript code...": "Schreibe JavaScript-Code...",
 		"Executing JavaScript": "Führe JavaScript aus",
+		// Artifacts strings
+		"Processing artifact...": "Verarbeite Artefakt...",
+		Processing: "Verarbeitung",
+		Create: "Erstellen",
+		Rewrite: "Überschreiben",
+		Get: "Abrufen",
+		Delete: "Löschen",
+		"Get logs": "Logs abrufen",
+		"Show artifacts": "Artefakte anzeigen",
+		"Close artifacts": "Artefakte schließen",
+		Artifacts: "Artefakte",
+		"Copy HTML": "HTML kopieren",
+		"Download HTML": "HTML herunterladen",
+		"Copy SVG": "SVG kopieren",
+		"Download SVG": "SVG herunterladen",
+		"Copy Markdown": "Markdown kopieren",
+		"Download Markdown": "Markdown herunterladen",
+		Download: "Herunterladen",
+		"No logs for {filename}": "Keine Logs für {filename}",
 	},
 };
 
