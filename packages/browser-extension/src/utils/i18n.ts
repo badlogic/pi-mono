@@ -11,6 +11,39 @@ declare module "@mariozechner/mini-lit" {
 		Format: string;
 		Thinking: string;
 		Vision: string;
+		You: string;
+		Assistant: string;
+		"Thinking...": string;
+		"Type your message...": string;
+		"API Keys Configuration": string;
+		"Configure API keys for LLM providers. Keys are stored locally in your browser.": string;
+		Configured: string;
+		"Not configured": string;
+		"✓ Valid": string;
+		"✗ Invalid": string;
+		"Testing...": string;
+		Update: string;
+		Test: string;
+		Remove: string;
+		Save: string;
+		"Update API key": string;
+		"Enter API key": string;
+		"Type a message...": string;
+		"Failed to fetch file": string;
+		"Invalid source type": string;
+		PDF: string;
+		Document: string;
+		Presentation: string;
+		Spreadsheet: string;
+		Text: string;
+		"Error loading file": string;
+		"No text content available": string;
+		"Failed to load PDF": string;
+		"Failed to load document": string;
+		"Failed to load spreadsheet": string;
+		"No content available": string;
+		"Failed to display text content": string;
+		"API keys are required to use AI models. Get your keys from the provider's website.": string;
 	}
 }
 
@@ -26,6 +59,41 @@ const translations = {
 		Format: "Format",
 		Thinking: "Thinking",
 		Vision: "Vision",
+		You: "You",
+		Assistant: "Assistant",
+		"Thinking...": "Thinking...",
+		"Type your message...": "Type your message...",
+		"API Keys Configuration": "API Keys Configuration",
+		"Configure API keys for LLM providers. Keys are stored locally in your browser.":
+			"Configure API keys for LLM providers. Keys are stored locally in your browser.",
+		Configured: "Configured",
+		"Not configured": "Not configured",
+		"✓ Valid": "✓ Valid",
+		"✗ Invalid": "✗ Invalid",
+		"Testing...": "Testing...",
+		Update: "Update",
+		Test: "Test",
+		Remove: "Remove",
+		Save: "Save",
+		"Update API key": "Update API key",
+		"Enter API key": "Enter API key",
+		"Type a message...": "Type a message...",
+		"Failed to fetch file": "Failed to fetch file",
+		"Invalid source type": "Invalid source type",
+		PDF: "PDF",
+		Document: "Document",
+		Presentation: "Presentation",
+		Spreadsheet: "Spreadsheet",
+		Text: "Text",
+		"Error loading file": "Error loading file",
+		"No text content available": "No text content available",
+		"Failed to load PDF": "Failed to load PDF",
+		"Failed to load document": "Failed to load document",
+		"Failed to load spreadsheet": "Failed to load spreadsheet",
+		"No content available": "No content available",
+		"Failed to display text content": "Failed to display text content",
+		"API keys are required to use AI models. Get your keys from the provider's website.":
+			"API keys are required to use AI models. Get your keys from the provider's website.",
 	},
 	de: {
 		...defaultGerman,
@@ -38,6 +106,41 @@ const translations = {
 		Format: "Formatieren",
 		Thinking: "Thinking",
 		Vision: "Vision",
+		You: "Sie",
+		Assistant: "Assistent",
+		"Thinking...": "Denkt nach...",
+		"Type your message...": "Geben Sie Ihre Nachricht ein...",
+		"API Keys Configuration": "API-Schlüssel-Konfiguration",
+		"Configure API keys for LLM providers. Keys are stored locally in your browser.":
+			"Konfigurieren Sie API-Schlüssel für LLM-Anbieter. Schlüssel werden lokal in Ihrem Browser gespeichert.",
+		Configured: "Konfiguriert",
+		"Not configured": "Nicht konfiguriert",
+		"✓ Valid": "✓ Gültig",
+		"✗ Invalid": "✗ Ungültig",
+		"Testing...": "Testet...",
+		Update: "Aktualisieren",
+		Test: "Testen",
+		Remove: "Entfernen",
+		Save: "Speichern",
+		"Update API key": "API-Schlüssel aktualisieren",
+		"Enter API key": "API-Schlüssel eingeben",
+		"Type a message...": "Nachricht eingeben...",
+		"Failed to fetch file": "Datei konnte nicht abgerufen werden",
+		"Invalid source type": "Ungültiger Quellentyp",
+		PDF: "PDF",
+		Document: "Dokument",
+		Presentation: "Präsentation",
+		Spreadsheet: "Tabelle",
+		Text: "Text",
+		"Error loading file": "Fehler beim Laden der Datei",
+		"No text content available": "Kein Textinhalt verfügbar",
+		"Failed to load PDF": "PDF konnte nicht geladen werden",
+		"Failed to load document": "Dokument konnte nicht geladen werden",
+		"Failed to load spreadsheet": "Tabelle konnte nicht geladen werden",
+		"No content available": "Kein Inhalt verfügbar",
+		"Failed to display text content": "Textinhalt konnte nicht angezeigt werden",
+		"API keys are required to use AI models. Get your keys from the provider's website.":
+			"API-Schlüssel sind erforderlich, um KI-Modelle zu verwenden. Holen Sie sich Ihre Schlüssel von der Website des Anbieters.",
 	},
 };
 

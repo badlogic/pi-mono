@@ -1,5 +1,5 @@
 import { build, context } from "esbuild";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,6 +62,16 @@ const copyStatic = () => {
     }
     copyFileSync(source, destination);
   }
+
+  // Copy PDF.js worker from node_modules (check both local and monorepo root)
+  let pdfWorkerSource = join(packageRoot, "node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
+  if (!existsSync(pdfWorkerSource)) {
+    pdfWorkerSource = join(packageRoot, "../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
+  }
+  const pdfWorkerDestDir = join(outDir, "pdfjs-dist/build");
+  mkdirSync(pdfWorkerDestDir, { recursive: true });
+  const pdfWorkerDest = join(pdfWorkerDestDir, "pdf.worker.min.mjs");
+  copyFileSync(pdfWorkerSource, pdfWorkerDest);
 
   console.log(`Built for ${targetBrowser} in ${outDir}`);
 };

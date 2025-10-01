@@ -3,9 +3,9 @@ import "./ChatPanel.js";
 import "./live-reload.js";
 import { customElement } from "lit/decorators.js";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { Button, Input, icon } from "@mariozechner/mini-lit";
+import { Button, icon } from "@mariozechner/mini-lit";
 import { Settings } from "lucide";
-import { ModelSelector } from "./dialogs/ModelSelector.js";
+import { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
 
 async function getDom() {
 	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -32,16 +32,14 @@ export class Header extends LitElement {
 	render() {
 		return html`
 		<div class="flex items-center px-4 py-2 border-b border-border mb-4">
-			<span class="text-muted-foreground">pi-ai webby</span>
+			<span class="text-muted-foreground">pi-ai</span>
 			<theme-toggle class="ml-auto"></theme-toggle>
 			${Button({
 				variant: "ghost",
 				size: "icon",
 				children: html`${icon(Settings, "sm")}`,
 				onClick: async () => {
-					ModelSelector.open(null, (model) => {
-						console.log("Selected model:", model);
-					});
+					ApiKeysDialog.open();
 				},
 			})}
 		</div>

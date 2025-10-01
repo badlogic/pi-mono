@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../mini-lit"
+		},
+		{
+			"path": "../genai-workshop-new"
+		}
+	],
+	"settings": {}
+}

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Pi Reader Assistant",
+  "name": "pi-ai",
   "description": "Use @mariozechner/pi-ai to summarize and highlight the page you are reading.",
   "version": "0.5.43",
   "action": {
@@ -17,7 +17,7 @@
   },
   "sidebar_action": {
     "default_panel": "sidepanel.html",
-    "default_title": "Pi Reader Assistant",
+    "default_title": "pi-ai",
     "default_icon": {
       "16": "icon-16.png",
       "48": "icon-48.png"
