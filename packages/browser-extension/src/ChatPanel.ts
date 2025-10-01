@@ -1,17 +1,14 @@
 import { html } from "@mariozechner/mini-lit";
-import type { Model } from "@mariozechner/pi-ai";
-import { getModel } from "@mariozechner/pi-ai";
+import { calculateTool, getCurrentTimeTool, getModel } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { ModelSelector } from "./dialogs/ModelSelector.js";
-import "./MessageEditor.js";
-import type { Attachment } from "./utils/attachment-utils.js";
+import "./AgentInterface.js";
+import { AgentSession } from "./state/agent-session.js";
+import { getAuthToken } from "./utils/auth-token.js";
 
 @customElement("pi-chat-panel")
 export class ChatPanel extends LitElement {
-	@state() currentModel: Model<any> | null = null;
-	@state() messageText = "";
-	@state() attachments: Attachment[] = [];
+	@state() private session!: AgentSession;
 
 	createRenderRoot() {
 		return this;
@@ -19,50 +16,42 @@ export class ChatPanel extends LitElement {
 
 	override async connectedCallback() {
 		super.connectedCallback();
-		// Set default model
-		this.currentModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+
+		// Ensure panel fills height and allows flex layout
+		this.style.display = "flex";
+		this.style.flexDirection = "column";
+		this.style.height = "100%";
+		this.style.minHeight = "0";
+
+		// Create agent session with default settings
+		this.session = new AgentSession({
+			initialState: {
+				systemPrompt: "You are a helpful AI assistant.",
+				model: getModel("anthropic", "claude-3-5-haiku-20241022"),
+				tools: [calculateTool, getCurrentTimeTool],
+				thinkingLevel: "off",
+			},
+			authTokenProvider: async () => getAuthToken(),
+			transportMode: "direct", // Use direct mode by default (API keys from KeyStore)
+		});
 	}
 
-	private handleSend = (text: string, attachments: Attachment[]) => {
-		// For now just alert and clear
-		alert(`Message: ${text}\nAttachments: ${attachments.length}`);
-		this.messageText = "";
-		this.attachments = [];
-	};
-
-	private handleModelSelect = () => {
-		ModelSelector.open(this.currentModel, (model) => {
-			this.currentModel = model;
-		});
-	};
-
 	render() {
-		return html`
-			<div class="flex flex-col h-full">
-				<!-- Messages area (empty for now) -->
-				<div class="flex-1 overflow-y-auto p-4">
-					<!-- Messages will go here -->
-				</div>
+		if (!this.session) {
+			return html`<div class="flex items-center justify-center h-full">
+				<div class="text-muted-foreground">Loading...</div>
+			</div>`;
+		}
 
-				<!-- Message editor at the bottom -->
-				<div class="p-4 border-t border-border">
-					<message-editor
-						.value=${this.messageText}
-						.currentModel=${this.currentModel}
-						.attachments=${this.attachments}
-						.showAttachmentButton=${true}
-						.showThinking=${false}
-						.onInput=${(value: string) => {
-							this.messageText = value;
-						}}
-						.onSend=${this.handleSend}
-						.onModelSelect=${this.handleModelSelect}
-						.onFilesChange=${(files: Attachment[]) => {
-							this.attachments = files;
-						}}
-					></message-editor>
-				</div>
-			</div>
+		return html`
+			<agent-interface
+				.session=${this.session}
+				.enableAttachments=${true}
+				.enableModelSelector=${true}
+				.enableThinking=${true}
+				.showThemeToggle=${false}
+				.showDebugToggle=${false}
+			></agent-interface>
 		`;
 	}
 }

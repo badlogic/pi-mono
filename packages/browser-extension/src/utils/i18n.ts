@@ -44,6 +44,30 @@ declare module "@mariozechner/mini-lit" {
 		"No content available": string;
 		"Failed to display text content": string;
 		"API keys are required to use AI models. Get your keys from the provider's website.": string;
+		console: string;
+		"Copy output": string;
+		"Copied!": string;
+		"Error:": string;
+		"Request aborted": string;
+		Call: string;
+		Result: string;
+		"(no result)": string;
+		"Waiting for tool result…": string;
+		"Call was aborted; no result.": string;
+		"No session available": string;
+		"No session set": string;
+		"Preparing tool parameters...": string;
+		"(no output)": string;
+		"Writing expression...": string;
+		Calculating: string;
+		"Getting current time in": string;
+		"Getting current date and time": string;
+		"Writing command...": string;
+		"Running command:": string;
+		"Command failed:": string;
+		"Enter Auth Token": string;
+		"Please enter your auth token.": string;
+		"Auth token is required for proxy transport": string;
 	}
 }
 
@@ -94,6 +118,30 @@ const translations = {
 		"Failed to display text content": "Failed to display text content",
 		"API keys are required to use AI models. Get your keys from the provider's website.":
 			"API keys are required to use AI models. Get your keys from the provider's website.",
+		console: "console",
+		"Copy output": "Copy output",
+		"Copied!": "Copied!",
+		"Error:": "Error:",
+		"Request aborted": "Request aborted",
+		Call: "Call",
+		Result: "Result",
+		"(no result)": "(no result)",
+		"Waiting for tool result…": "Waiting for tool result…",
+		"Call was aborted; no result.": "Call was aborted; no result.",
+		"No session available": "No session available",
+		"No session set": "No session set",
+		"Preparing tool parameters...": "Preparing tool parameters...",
+		"(no output)": "(no output)",
+		"Writing expression...": "Writing expression...",
+		Calculating: "Calculating",
+		"Getting current time in": "Getting current time in",
+		"Getting current date and time": "Getting current date and time",
+		"Writing command...": "Writing command...",
+		"Running command:": "Running command:",
+		"Command failed:": "Command failed:",
+		"Enter Auth Token": "Enter Auth Token",
+		"Please enter your auth token.": "Please enter your auth token.",
+		"Auth token is required for proxy transport": "Auth token is required for proxy transport",
 	},
 	de: {
 		...defaultGerman,
@@ -141,6 +189,30 @@ const translations = {
 		"Failed to display text content": "Textinhalt konnte nicht angezeigt werden",
 		"API keys are required to use AI models. Get your keys from the provider's website.":
 			"API-Schlüssel sind erforderlich, um KI-Modelle zu verwenden. Holen Sie sich Ihre Schlüssel von der Website des Anbieters.",
+		console: "Konsole",
+		"Copy output": "Ausgabe kopieren",
+		"Copied!": "Kopiert!",
+		"Error:": "Fehler:",
+		"Request aborted": "Anfrage abgebrochen",
+		Call: "Aufruf",
+		Result: "Ergebnis",
+		"(no result)": "(kein Ergebnis)",
+		"Waiting for tool result…": "Warte auf Tool-Ergebnis…",
+		"Call was aborted; no result.": "Aufruf wurde abgebrochen; kein Ergebnis.",
+		"No session available": "Keine Sitzung verfügbar",
+		"No session set": "Keine Sitzung gesetzt",
+		"Preparing tool parameters...": "Bereite Tool-Parameter vor...",
+		"(no output)": "(keine Ausgabe)",
+		"Writing expression...": "Schreibe Ausdruck...",
+		Calculating: "Berechne",
+		"Getting current time in": "Hole aktuelle Zeit in",
+		"Getting current date and time": "Hole aktuelles Datum und Uhrzeit",
+		"Writing command...": "Schreibe Befehl...",
+		"Running command:": "Führe Befehl aus:",
+		"Command failed:": "Befehl fehlgeschlagen:",
+		"Enter Auth Token": "Auth-Token eingeben",
+		"Please enter your auth token.": "Bitte geben Sie Ihr Auth-Token ein.",
+		"Auth token is required for proxy transport": "Auth-Token ist für Proxy-Transport erforderlich",
 	},
 };
 

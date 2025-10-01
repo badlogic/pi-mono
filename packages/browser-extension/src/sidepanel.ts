@@ -23,12 +23,6 @@ export class Header extends LitElement {
 		return this;
 	}
 
-	async connectedCallback() {
-		super.connectedCallback();
-		const resp = await fetch("https://genai.mariozechner.at/api/health");
-		console.log(await resp.json());
-	}
-
 	render() {
 		return html`
 		<div class="flex items-center px-4 py-2 border-b border-border mb-4">
@@ -48,9 +42,9 @@ export class Header extends LitElement {
 }
 
 const app = html`
-<div class="w-full h-full flex flex-col bg-background text-foreground">
-	<pi-chat-header></pi-chat-header>
-	<pi-chat-panel></pi-chat-panel>
+<div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
+	<pi-chat-header class="shrink-0"></pi-chat-header>
+	<pi-chat-panel class="flex-1 min-h-0"></pi-chat-panel>
 </div>
 `;
 

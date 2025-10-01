@@ -17,13 +17,18 @@ export class PromptDialog extends DialogBase {
 	@property() isPassword = false;
 
 	@state() private inputValue = "";
-	private resolvePromise?: (value: string | null) => void;
+	private resolvePromise?: (value: string | undefined) => void;
 	private inputRef = createRef<HTMLInputElement>();
 
 	protected override modalWidth = "min(400px, 90vw)";
 	protected override modalHeight = "auto";
 
-	static async ask(title: string, message: string, defaultValue = "", isPassword = false): Promise<string | null> {
+	static async ask(
+		title: string,
+		message: string,
+		defaultValue = "",
+		isPassword = false,
+	): Promise<string | undefined> {
 		const dialog = new PromptDialog();
 		dialog.headerTitle = title;
 		dialog.message = message;
@@ -48,7 +53,7 @@ export class PromptDialog extends DialogBase {
 	}
 
 	private handleCancel() {
-		this.resolvePromise?.(null);
+		this.resolvePromise?.(undefined);
 		this.close();
 	}
 

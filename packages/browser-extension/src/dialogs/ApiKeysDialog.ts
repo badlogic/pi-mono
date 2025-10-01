@@ -190,7 +190,7 @@ export class ApiKeysDialog extends DialogBase {
 							(provider) => html`
 								<div class="space-y-3">
 									<div class="flex items-center gap-2">
-										<span class="text-sm font-medium capitalize">${provider}</span>
+										<span class="text-sm font-medium text-muted-foreground capitalize">${provider}</span>
 										${
 											this.apiKeys[provider]
 												? Badge({ children: i18n("Configured"), variant: "default" })
