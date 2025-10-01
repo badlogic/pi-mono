@@ -1,9 +1,12 @@
-- When receiving the first user message, you MUST read the following files in full, in parallel:
+- When receiving the first user message, ask the user which module(s) they want to work on. Then you MUST read the corresponding README.md files in full, in parallel:
     - README.md
     - packages/ai/README.md
     - packages/tui/README.md
     - packages/agent/README.md
     - packages/pods/README.md
+    - packages/browser-extension/README.md
 - We must NEVER have type any anywhere, unless absolutely, positively necessary.
 - If you are working with an external API, check node_modules for the type definitions as needed instead of assuming things.
 - Always run `npm run check` in the project's root directory after making code changes.
+- You must NEVER run `npm run dev` yourself. Doing is means you failed the user hard.
+-
