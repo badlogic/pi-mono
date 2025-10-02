@@ -68,7 +68,7 @@ const originalConsole = {
 
 // Error handlers
 window.addEventListener("error", (e) => {
-	const text = e.message + " at line " + e.lineno + ":" + e.colno;
+	const text = (e.error?.stack || e.message || String(e)) + " at line " + (e.lineno || "?") + ":" + (e.colno || "?");
 	window.__artifactLogs.push({ type: "error", text });
 	window.parent.postMessage(
 		{
@@ -79,6 +79,7 @@ window.addEventListener("error", (e) => {
 		},
 		"*",
 	);
+	return false;
 });
 
 window.addEventListener("unhandledrejection", (e) => {
@@ -154,7 +155,7 @@ window.addEventListener("message", (event) => {
 			"});\n\n" +
 			"// Error handlers\n" +
 			"window.addEventListener('error', (e) => {\n" +
-			"    const text = e.message + ' at line ' + e.lineno + ':' + e.colno;\n" +
+			"    const text = (e.error?.stack || e.message || String(e)) + ' at line ' + (e.lineno || '?') + ':' + (e.colno || '?');\n" +
 			"    window.__artifactLogs.push({ type: 'error', text });\n" +
 			"    window.parent.postMessage({\n" +
 			"        type: 'console',\n" +
@@ -162,6 +163,7 @@ window.addEventListener("message", (event) => {
 			"        text,\n" +
 			"        artifactId: window.__currentArtifactId\n" +
 			"    }, '*');\n" +
+			"    return false;\n" +
 			"});\n\n" +
 			"window.addEventListener('unhandledrejection', (e) => {\n" +
 			"    const text = 'Unhandled promise rejection: ' + (e.reason?.message || e.reason || 'Unknown error');\n" +
@@ -173,8 +175,11 @@ window.addEventListener("message", (event) => {
 			"        artifactId: window.__currentArtifactId\n" +
 			"    }, '*');\n" +
 			"});\n\n" +
-			"// Send completion when ready\n" +
+			"// Send completion after 2 seconds to collect all logs and errors\n" +
+			"let completionSent = false;\n" +
 			"const sendCompletion = function() {\n" +
+			"    if (completionSent) return;\n" +
+			"    completionSent = true;\n" +
 			"    window.parent.postMessage({\n" +
 			"        type: 'execution-complete',\n" +
 			"        logs: window.__artifactLogs || [],\n" +
@@ -182,10 +187,10 @@ window.addEventListener("message", (event) => {
 			"    }, '*');\n" +
 			"};\n\n" +
 			"if (document.readyState === 'complete' || document.readyState === 'interactive') {\n" +
-			"    setTimeout(sendCompletion, 0);\n" +
+			"    setTimeout(sendCompletion, 2000);\n" +
 			"} else {\n" +
-			"    window.addEventListener('DOMContentLoaded', function() {\n" +
-			"        setTimeout(sendCompletion, 0);\n" +
+			"    window.addEventListener('load', function() {\n" +
+			"        setTimeout(sendCompletion, 2000);\n" +
 			"    });\n" +
 			"}\n" +
 			"</" +

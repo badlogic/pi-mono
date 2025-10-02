@@ -5,7 +5,7 @@ import { FileCode2, Settings } from "lucide";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
 import "./ChatPanel.js";
 import "./live-reload.js";
-import "./components/SandboxIframe.js";
+import "./components/SandboxedIframe.js";
 import type { ChatPanel } from "./ChatPanel.js";
 import { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
 

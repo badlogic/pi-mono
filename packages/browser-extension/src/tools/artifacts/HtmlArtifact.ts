@@ -4,8 +4,10 @@ import { html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import type { SandboxIframe } from "../../components/SandboxedIframe.js";
 import type { Attachment } from "../../utils/attachment-utils.js";
 import { i18n } from "../../utils/i18n.js";
+import "../../components/SandboxedIframe.js";
 import { ArtifactElement } from "./ArtifactElement.js";
 
 @customElement("html-artifact")
@@ -15,11 +17,10 @@ export class HtmlArtifact extends ArtifactElement {
 	@property({ attribute: false }) attachments: Attachment[] = [];
 
 	private _content = "";
-	private iframe?: HTMLIFrameElement;
 	private logs: Array<{ type: "log" | "error"; text: string }> = [];
 
 	// Refs for DOM elements
-	private iframeContainerRef: Ref<HTMLDivElement> = createRef();
+	private sandboxIframeRef: Ref<SandboxIframe> = createRef();
 	private consoleLogsRef: Ref<HTMLDivElement> = createRef();
 	private consoleButtonRef: Ref<HTMLButtonElement> = createRef();
 
@@ -55,16 +56,16 @@ export class HtmlArtifact extends ArtifactElement {
 		const oldValue = this._content;
 		this._content = value;
 		if (oldValue !== value) {
-			// Delay to ensure component is rendered
-			requestAnimationFrame(async () => {
-				this.requestUpdate();
-				await this.updateComplete;
-				this.updateIframe();
-				// Ensure iframe gets attached
-				requestAnimationFrame(() => {
-					this.attachIframeToContainer();
-				});
-			});
+			this.requestUpdate();
+			// Update sandbox iframe if it exists
+			if (this.sandboxIframeRef.value) {
+				this.logs = [];
+				if (this.consoleLogsRef.value) {
+					this.consoleLogsRef.value.innerHTML = "";
+				}
+				this.updateConsoleButton();
+				this.sandboxIframeRef.value.updateContent(value);
+			}
 		}
 	}
 
@@ -72,60 +73,14 @@ export class HtmlArtifact extends ArtifactElement {
 		return this._content;
 	}
 
-	override connectedCallback() {
-		super.connectedCallback();
-		window.addEventListener("message", this.handleMessage);
-		window.addEventListener("message", this.sandboxReadyHandler);
-	}
+	private handleConsoleEvent = (e: CustomEvent) => {
+		this.addLog(e.detail);
+	};
 
-	protected override firstUpdated() {
-		// Create iframe if we have content after first render
-		if (this._content) {
-			this.updateIframe();
-			// Ensure iframe is attached after render completes
-			requestAnimationFrame(() => {
-				this.attachIframeToContainer();
-			});
-		}
-	}
-
-	protected override updated() {
-		// Always try to attach iframe if it exists but isn't in DOM
-		if (this.iframe && !this.iframe.parentElement) {
-			this.attachIframeToContainer();
-		}
-	}
-
-	override disconnectedCallback() {
-		super.disconnectedCallback();
-		window.removeEventListener("message", this.handleMessage);
-		window.removeEventListener("message", this.sandboxReadyHandler);
-		this.iframe?.remove();
-		this.iframe = undefined;
-	}
-
-	private handleMessage = (e: MessageEvent) => {
-		// Only handle messages for this artifact
-		if (e.data.artifactId !== this.filename) return;
-
-		if (e.data.type === "console") {
-			this.addLog({
-				type: e.data.method === "error" ? "error" : "log",
-				text: e.data.text,
-			});
-		} else if (e.data.type === "execution-complete") {
-			// Store final logs
-			this.logs = e.data.logs || [];
-			this.updateConsoleButton();
-
-			// Force reflow when iframe content is ready
-			// This fixes the 0x0 size issue on initial load
-			if (this.iframe) {
-				this.iframe.style.display = "none";
-				this.iframe.offsetHeight; // Force reflow
-				this.iframe.style.display = "";
-			}
-		}
+	private handleExecutionComplete = (e: CustomEvent) => {
+		// Store final logs
+		this.logs = e.detail.logs || [];
+		this.updateConsoleButton();
 	};
 
 	private addLog(log: { type: "log" | "error"; text: string }) {
@@ -153,56 +108,6 @@ export class HtmlArtifact extends ArtifactElement {
 				? `${i18n("console")} <span class="text-destructive">${errorCount} errors</span>`
 				: `${i18n("console")} (${this.logs.length})`;
 		button.innerHTML = `<span>${text}</span><span>${this.consoleOpen ? "▼" : "▶"}</span>`;
-	}
-
-	private updateIframe() {
-		// Clear logs for new content
-		this.logs = [];
-		if (this.consoleLogsRef.value) {
-			this.consoleLogsRef.value.innerHTML = "";
-		}
-		this.updateConsoleButton();
-
-		// Remove and recreate iframe for clean state
-		if (this.iframe) {
-			this.iframe.remove();
-			this.iframe = undefined;
-		}
-		this.createIframe();
-	}
-
-	private sandboxReadyHandler = (e: MessageEvent) => {
-		if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
-			// Sandbox is ready, send content
-			this.iframe?.contentWindow?.postMessage(
-				{
-					type: "loadContent",
-					content: this._content,
-					artifactId: this.filename,
-					attachments: this.attachments,
-				},
-				"*",
-			);
-		}
-	};
-
-	private createIframe() {
-		this.iframe = document.createElement("iframe");
-		this.iframe.sandbox.add("allow-scripts");
-		this.iframe.sandbox.add("allow-modals"); // Allow alert, confirm, prompt
-		this.iframe.className = "w-full h-full border-0";
-		this.iframe.title = this.displayTitle || this.filename;
-		this.iframe.src = chrome.runtime.getURL("sandbox.html");
-		this.attachIframeToContainer();
-	}
-
-	private attachIframeToContainer() {
-		if (!this.iframe || !this.iframeContainerRef.value) return;
-
-		// Only append if not already in the container
-		if (this.iframe.parentElement !== this.iframeContainerRef.value) {
-			this.iframeContainerRef.value.appendChild(this.iframe);
-		}
 	}
 
 	private toggleConsole() {
@@ -237,7 +142,15 @@ export class HtmlArtifact extends ArtifactElement {
 				<div class="flex-1 overflow-hidden relative">
 					<!-- Preview container - always in DOM, just hidden when not active -->
 					<div class="absolute inset-0 flex flex-col" style="display: ${this.viewMode === "preview" ? "flex" : "none"}">
-						<div class="flex-1 relative" ${ref(this.iframeContainerRef)}></div>
+						<sandbox-iframe
+							class="flex-1"
+							.content=${this._content}
+							.artifactId=${this.filename}
+							.attachments=${this.attachments}
+							@console=${this.handleConsoleEvent}
+							@execution-complete=${this.handleExecutionComplete}
+							${ref(this.sandboxIframeRef)}
+						></sandbox-iframe>
 						${
 							this.logs.length > 0
 								? html`
