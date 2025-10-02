@@ -189,6 +189,7 @@ Note: This requires the activeTab permission and only works on http/https pages,
 							// Wrap code in async function to support await
 							const asyncCode = `(async () => { ${code} })()`;
 							// biome-ignore lint/security/noGlobalEval: needed
+							// biome-ignore lint/complexity/noCommaOperator: indirect eval pattern
 							const resultPromise = (0, eval)(asyncCode);
 							// Wait for async code to complete
 							Promise.resolve(resultPromise)

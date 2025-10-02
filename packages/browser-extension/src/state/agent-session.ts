@@ -10,7 +10,6 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AppMessage } from "../Messages.js";
 import type { Attachment } from "../utils/attachment-utils.js";
-import { getAuthToken } from "../utils/auth-token.js";
 import { DirectTransport } from "./transports/DirectTransport.js";
 import { ProxyTransport } from "./transports/ProxyTransport.js";
 import type { AgentRunConfig, AgentTransport } from "./transports/types.js";
