@@ -74,8 +74,8 @@ export class HtmlArtifact extends ArtifactElement {
 
 	override connectedCallback() {
 		super.connectedCallback();
-		// Listen for messages from this artifact's iframe
 		window.addEventListener("message", this.handleMessage);
+		window.addEventListener("message", this.sandboxReadyHandler);
 	}
 
 	protected override firstUpdated() {
@@ -99,7 +99,9 @@ export class HtmlArtifact extends ArtifactElement {
 	override disconnectedCallback() {
 		super.disconnectedCallback();
 		window.removeEventListener("message", this.handleMessage);
+		window.removeEventListener("message", this.sandboxReadyHandler);
 		this.iframe?.remove();
+		this.iframe = undefined;
 	}
 
 	private handleMessage = (e: MessageEvent) => {
@@ -154,158 +156,43 @@ export class HtmlArtifact extends ArtifactElement {
 	}
 
 	private updateIframe() {
-		if (!this.iframe) {
-			this.createIframe();
+		// Clear logs for new content
+		this.logs = [];
+		if (this.consoleLogsRef.value) {
+			this.consoleLogsRef.value.innerHTML = "";
 		}
+		this.updateConsoleButton();
 
+		// Remove and recreate iframe for clean state
 		if (this.iframe) {
-			// Clear logs for new content
-			this.logs = [];
-			if (this.consoleLogsRef.value) {
-				this.consoleLogsRef.value.innerHTML = "";
-			}
-			this.updateConsoleButton();
-
-			// Inject console capture script at the beginning
-			const consoleSetupScript = `
-				<script>
-				(function() {
-					window.__artifactLogs = [];
-					const originalConsole = { log: console.log, error: console.error, warn: console.warn, info: console.info };
-
-					['log', 'error', 'warn', 'info'].forEach(method => {
-						console[method] = function(...args) {
-							const text = args.map(arg => {
-								try { return typeof arg === 'object' ? JSON.stringify(arg) : String(arg); }
-								catch { return String(arg); }
-							}).join(' ');
-							window.__artifactLogs.push({ type: method === 'error' ? 'error' : 'log', text });
-							window.parent.postMessage({
-								type: 'console',
-								method,
-								text,
-								artifactId: '${this.filename}'
-							}, '*');
-							originalConsole[method].apply(console, args);
-						};
-					});
-
-					window.addEventListener('error', (e) => {
-						const text = e.message + ' at line ' + e.lineno + ':' + e.colno;
-						window.__artifactLogs.push({ type: 'error', text });
-						window.parent.postMessage({
-							type: 'console',
-							method: 'error',
-							text,
-							artifactId: '${this.filename}'
-						}, '*');
-					});
-
-					// Capture unhandled promise rejections
-					window.addEventListener('unhandledrejection', (e) => {
-						const text = 'Unhandled promise rejection: ' + (e.reason?.message || e.reason || 'Unknown error');
-						window.__artifactLogs.push({ type: 'error', text });
-						window.parent.postMessage({
-							type: 'console',
-							method: 'error',
-							text,
-							artifactId: '${this.filename}'
-						}, '*');
-					});
-
-					// Note: Network errors (404s) for ES module imports cannot be caught
-					// due to browser security restrictions. These will only appear in the
-					// parent window's console, not in the artifact's logs.
-
-					// Attachment helpers
-					window.attachments = ${JSON.stringify(this.attachments)};
-					window.listFiles = function() {
-						return (window.attachments || []).map(a => ({ id: a.id, fileName: a.fileName, mimeType: a.mimeType, size: a.size }));
-					};
-					window.readTextFile = function(attachmentId) {
-						const a = (window.attachments || []).find(x => x.id === attachmentId);
-						if (!a) throw new Error('Attachment not found: ' + attachmentId);
-						if (a.extractedText) return a.extractedText;
-						try { return atob(a.content); } catch { throw new Error('Failed to decode text content for: ' + attachmentId); }
-					};
-					window.readBinaryFile = function(attachmentId) {
-						const a = (window.attachments || []).find(x => x.id === attachmentId);
-						if (!a) throw new Error('Attachment not found: ' + attachmentId);
-						const bin = atob(a.content);
-						const bytes = new Uint8Array(bin.length);
-						for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-						return bytes;
-					};
-				})();
-				</script>
-			`;
-
-			// Script to send completion message after page loads
-			const completionScript = `
-				<script>
-				(function() {
-					const sendCompletion = function() {
-						window.parent.postMessage({
-							type: 'execution-complete',
-							logs: window.__artifactLogs || [],
-							artifactId: '${this.filename}'
-						}, '*');
-					};
-
-					// Send completion when DOM is ready and all scripts have executed
-					if (document.readyState === 'complete' || document.readyState === 'interactive') {
-						// DOM is already ready, wait for next tick to ensure all scripts have run
-						setTimeout(sendCompletion, 0);
-					} else {
-						window.addEventListener('DOMContentLoaded', function() {
-							// Wait for next tick after DOMContentLoaded to ensure user scripts have run
-							setTimeout(sendCompletion, 0);
-						});
-					}
-				})();
-				</script>
-			`;
-
-			// Add console setup to head and completion script to end of body
-			let enhancedContent = this._content;
-
-			// Ensure iframe content has proper dimensions
-			const dimensionFix = `
-				<style>
-				/* Ensure html and body fill the iframe */
-				html { height: 100%; }
-				body { min-height: 100%; margin: 0; }
-				</style>
-			`;
-
-			// Add dimension fix and console setup to head (or beginning if no head)
-			if (enhancedContent.match(/<head[^>]*>/i)) {
-				enhancedContent = enhancedContent.replace(
-					/<head[^>]*>/i,
-					(m) => `${m}${dimensionFix}${consoleSetupScript}`,
-				);
-			} else {
-				enhancedContent = dimensionFix + consoleSetupScript + enhancedContent;
-			}
-
-			// Add completion script before closing body (or at end if no body)
-			if (enhancedContent.match(/<\/body>/i)) {
-				enhancedContent = enhancedContent.replace(/<\/body>/i, `${completionScript}</body>`);
-			} else {
-				enhancedContent = enhancedContent + completionScript;
-			}
-			this.iframe.srcdoc = enhancedContent;
+			this.iframe.remove();
+			this.iframe = undefined;
 		}
+		this.createIframe();
 	}
 
-	private createIframe() {
-		if (!this.iframe) {
-			this.iframe = document.createElement("iframe");
-			this.iframe.sandbox.add("allow-scripts");
-			this.iframe.className = "w-full h-full border-0";
-			this.iframe.title = this.displayTitle || this.filename;
+	private sandboxReadyHandler = (e: MessageEvent) => {
+		if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
+			// Sandbox is ready, send content
+			this.iframe?.contentWindow?.postMessage(
+				{
+					type: "loadContent",
+					content: this._content,
+					artifactId: this.filename,
+					attachments: this.attachments,
+				},
+				"*",
+			);
 		}
+	};
 
+	private createIframe() {
+		this.iframe = document.createElement("iframe");
+		this.iframe.sandbox.add("allow-scripts");
+		this.iframe.sandbox.add("allow-modals"); // Allow alert, confirm, prompt
+		this.iframe.className = "w-full h-full border-0";
+		this.iframe.title = this.displayTitle || this.filename;
+		this.iframe.src = chrome.runtime.getURL("sandbox.html");
 		this.attachIframeToContainer();
 	}
 

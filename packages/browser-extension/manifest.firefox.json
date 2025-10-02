@@ -1,14 +1,13 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "pi-ai",
   "description": "Use @mariozechner/pi-ai to summarize and highlight the page you are reading.",
   "version": "0.5.43",
-  "action": {
+  "browser_action": {
     "default_title": "Click to open sidebar"
   },
   "background": {
-    "scripts": ["background.js"],
-    "type": "module"
+    "scripts": ["background.js"]
   },
   "icons": {
     "16": "icon-16.png",
@@ -24,12 +23,10 @@
     },
     "open_at_install": false
   },
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://cdn.skypack.dev; object-src 'self'",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
-  ],
-  "host_permissions": [
     "https://*/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
@@ -37,13 +34,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "pi-reader@mariozechner.at",
-      "strict_min_version": "115.0"
+      "strict_min_version": "109.0"
     }
-  },
-  "sandbox": {
-    "pages": ["sandbox.html"]
-  },
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

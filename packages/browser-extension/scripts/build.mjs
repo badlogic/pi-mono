@@ -1,5 +1,5 @@
 import { build, context } from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,8 +51,9 @@ const copyStatic = () => {
     "icon-16.png",
     "icon-48.png",
     "icon-128.png",
+    join("src", "sandbox.html"),
+    join("src", "sandbox.js"),
     join("src", "sidepanel.html"),
-    join("src", "sandbox.html")
   ];
 
   for (const relative of filesToCopy) {
@@ -82,6 +83,16 @@ const run = async () => {
     const ctx = await context(buildOptions);
     await ctx.watch();
     copyStatic();
+
+    for (const file of filesToCopy) {
+      watch(file, (eventType) => {
+        if (eventType === 'change') {
+          console.log(`\n${file} changed, copying static files...`);
+          copyStatic();
+        }
+      });
+    }
+
     process.stdout.write("Watching for changes...\n");
   } else {
     await build(buildOptions);

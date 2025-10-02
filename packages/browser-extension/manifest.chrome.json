@@ -33,6 +33,7 @@
     "pages": ["sandbox.html"]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https: http:; connect-src * data: blob:; img-src * data: blob:; style-src 'self' 'unsafe-inline' https: http:; font-src * data:; worker-src blob:; child-src blob:; object-src 'none'"
   }
 }

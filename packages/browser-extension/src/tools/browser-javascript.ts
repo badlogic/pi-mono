@@ -6,6 +6,10 @@ import type { Attachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
 
+// Cross-browser API compatibility
+// @ts-ignore - browser global exists in Firefox, chrome in Chrome
+const browser = globalThis.browser || globalThis.chrome;
+
 const browserJavaScriptSchema = Type.Object({
 	code: Type.String({ description: "JavaScript code to execute in the active browser tab" }),
 });
@@ -73,8 +77,18 @@ Note: This requires the activeTab permission and only works on http/https pages,
 	parameters: browserJavaScriptSchema,
 	execute: async (_toolCallId: string, args: Static<typeof browserJavaScriptSchema>, _signal?: AbortSignal) => {
 		try {
+			// Check if scripting API is available
+			if (!browser.scripting || !browser.scripting.executeScript) {
+				return {
+					output:
+						"Error: browser.scripting API is not available. Make sure 'scripting' permission is declared in manifest.json",
+					isError: true,
+					details: { files: [] },
+				};
+			}
+
 			// Get the active tab
-			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+			const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
 			if (!tab || !tab.id) {
 				return {
 					output: "Error: No active tab found",
@@ -84,16 +98,20 @@ Note: This requires the activeTab permission and only works on http/https pages,
 			}
 
 			// Check if we can execute scripts on this tab
-			if (tab.url?.startsWith("chrome://") || tab.url?.startsWith("chrome-extension://")) {
+			if (
+				tab.url?.startsWith("chrome://") ||
+				tab.url?.startsWith("chrome-extension://") ||
+				tab.url?.startsWith("about:")
+			) {
 				return {
-					output: `Error: Cannot execute scripts on ${tab.url}. Chrome extension pages and chrome:// URLs are protected.`,
+					output: `Error: Cannot execute scripts on ${tab.url}. Extension pages and internal URLs are protected.`,
 					isError: true,
 					details: { files: [] },
 				};
 			}
 
 			// Execute the JavaScript in the tab context using MAIN world to bypass CSP
-			const results = await chrome.scripting.executeScript({
+			const results = await browser.scripting.executeScript({
 				target: { tabId: tab.id },
 				world: "MAIN", // Execute in page context, bypasses CSP
 				func: (code: string) => {
@@ -171,8 +189,7 @@ Note: This requires the activeTab permission and only works on http/https pages,
 							// Wrap code in async function to support await
 							const asyncCode = `(async () => { ${code} })()`;
 							// biome-ignore lint/security/noGlobalEval: needed
-							const resultPromise = eval(asyncCode);
-
+							const resultPromise = (0, eval)(asyncCode);
 							// Wait for async code to complete
 							Promise.resolve(resultPromise)
 								.then(() => {
