@@ -1,5 +1,8 @@
 import { getProviders } from "@mariozechner/pi-ai";
 
+// @ts-ignore - browser global may exist in Firefox
+declare const browser: any;
+
 /**
  * Interface for API key storage
  */
@@ -11,30 +14,37 @@ export interface KeyStore {
 }
 
 /**
- * Chrome storage implementation of KeyStore
+ * Cross-browser storage implementation of KeyStore
  */
-class ChromeKeyStore implements KeyStore {
+class BrowserKeyStore implements KeyStore {
 	private readonly prefix = "apiKey_";
+	private readonly storage: typeof chrome.storage.local;
+
+	constructor() {
+		// Use browser.storage in Firefox, chrome.storage in Chrome
+		const isFirefox = typeof browser !== "undefined" && browser.storage !== undefined;
+		this.storage = isFirefox ? browser.storage.local : chrome.storage.local;
+	}
 
 	async getKey(provider: string): Promise<string | null> {
 		const key = `${this.prefix}${provider}`;
-		const result = await chrome.storage.local.get(key);
+		const result = await this.storage.get(key);
 		return result[key] || null;
 	}
 
 	async setKey(provider: string, key: string): Promise<void> {
 		const storageKey = `${this.prefix}${provider}`;
-		await chrome.storage.local.set({ [storageKey]: key });
+		await this.storage.set({ [storageKey]: key });
 	}
 
 	async removeKey(provider: string): Promise<void> {
 		const key = `${this.prefix}${provider}`;
-		await chrome.storage.local.remove(key);
+		await this.storage.remove(key);
 	}
 
 	async getAllKeys(): Promise<Record<string, boolean>> {
 		const providers = getProviders();
-		const storage = await chrome.storage.local.get();
+		const storage = await this.storage.get();
 		const result: Record<string, boolean> = {};
 
 		for (const provider of providers) {
@@ -47,4 +57,4 @@ class ChromeKeyStore implements KeyStore {
 }
 
 // Export singleton instance
-export const keyStore = new ChromeKeyStore();
+export const keyStore = new BrowserKeyStore();
