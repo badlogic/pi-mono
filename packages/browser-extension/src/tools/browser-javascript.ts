@@ -80,8 +80,17 @@ Example: First call with just "history.back()", then a second call with other co
 
 Note: This requires the activeTab permission and only works on http/https pages, not on chrome:// URLs.`,
 	parameters: browserJavaScriptSchema,
-	execute: async (_toolCallId: string, args: Static<typeof browserJavaScriptSchema>, _signal?: AbortSignal) => {
+	execute: async (_toolCallId: string, args: Static<typeof browserJavaScriptSchema>, signal?: AbortSignal) => {
 		try {
+			// Check if already aborted
+			if (signal?.aborted) {
+				return {
+					output: "Tool execution was aborted",
+					isError: true,
+					details: { files: [] },
+				};
+			}
+
 			// Check if code contains navigation that will destroy execution context
 			const navigationRegex =
 				/\b(window\.location\s*=|location\.href\s*=|history\.(back|forward|go)\s*\(|window\.open\s*\(|document\.location\s*=)/;
@@ -181,8 +190,8 @@ This ensures reliable execution.`,
 
 			const canUseEval = cspCheckResults[0]?.result?.canEval ?? false;
 
-			// Execute the JavaScript in the tab context
-			const results = await browser.scripting.executeScript({
+			// Execute the JavaScript in the tab context with abort handling
+			const executePromise = browser.scripting.executeScript({
 				target: { tabId: tab.id },
 				world: "MAIN",
 				func: (code: string, useScriptTag: boolean) => {
@@ -344,6 +353,17 @@ This ensures reliable execution.`,
 				args: [args.code, !canUseEval],
 			});
 
+			// Race between execution and abort signal
+			let results: Awaited<typeof executePromise>;
+			if (signal) {
+				const abortPromise = new Promise<never>((_, reject) => {
+					signal.addEventListener("abort", () => reject(new Error("Aborted")));
+				});
+				results = await Promise.race([executePromise, abortPromise]);
+			} else {
+				results = await executePromise;
+			}
+
 			const result = results[0]?.result as
 				| {
 						success: boolean;
@@ -442,6 +462,14 @@ This ensures reliable execution.`,
 			};
 		} catch (error: unknown) {
 			const err = error as Error;
+			// Check if this was an abort
+			if (err.message === "Aborted" || signal?.aborted) {
+				return {
+					output: "Tool execution was aborted by user",
+					isError: true,
+					details: { files: [] },
+				};
+			}
 			return {
 				output: `Error executing script: ${err.message}`,
 				isError: true,
