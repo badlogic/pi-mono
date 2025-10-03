@@ -47,7 +47,7 @@ The code is executed using eval() in the page context, so it can:
 
 Output:
 - console.log() - All output is captured as text
-- await returnFile(filename, content, mimeType?) - Create downloadable files (async function!)
+- await returnFile(filename, content, mimeType?) - Create downloadable files for the user (async function!)
   * Always use await with returnFile
   * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
     If omitted, throws an Error with stack trace pointing to the offending line.
@@ -62,6 +62,8 @@ Output:
       const links = Array.from(document.querySelectorAll('a')).map(a => ({text: a.textContent, href: a.href}));
       const csv = 'text,href\\n' + links.map(l => \`"\${l.text}","\${l.href}"\`).join('\\n');
       await returnFile('links.csv', csv, 'text/csv');
+  * You will not have access to the file content, only the filename, mimeType and size.
+- NOT CAPTURED: returning values via return or a statement does NOT capture output. Use console.log() or returnFile().
 
 Examples:
 - Get page title: document.title
@@ -177,18 +179,47 @@ This ensures reliable execution.`,
 				world: "MAIN",
 				func: () => {
 					// Try to detect if eval is allowed
+					let canEval = false;
 					try {
 						// biome-ignore lint/security/noGlobalEval: CSP detection test
 						// biome-ignore lint/complexity/noCommaOperator: indirect eval pattern
 						(0, eval)("1");
-						return { canEval: true };
+						canEval = true;
 					} catch (e) {
-						return { canEval: false, error: (e as Error).message };
+						// eval blocked
 					}
+
+					// Try to detect if script tag injection works
+					let canUseScriptTag = false;
+					const testId = `__test_${Date.now()}`;
+					const testScript = document.createElement("script");
+					testScript.textContent = `window.${testId} = true;`;
+					try {
+						document.head.appendChild(testScript);
+						// Check if it executed synchronously
+						canUseScriptTag = !!(window as any)[testId];
+						delete (window as any)[testId];
+						testScript.remove();
+					} catch (e) {
+						// script injection failed
+					}
+
+					return { canEval, canUseScriptTag };
 				},
 			});
 
 			const canUseEval = cspCheckResults[0]?.result?.canEval ?? false;
+			const canUseScriptTag = cspCheckResults[0]?.result?.canUseScriptTag ?? false;
+
+			// If neither method works, return error immediately
+			if (!canUseEval && !canUseScriptTag) {
+				return {
+					output:
+						"Cannot execute JavaScript on this page. The page's Content Security Policy blocks both eval() and inline script injection. This is common on sites with strict CSP.",
+					isError: true,
+					details: { files: [] },
+				};
+			}
 
 			// Execute the JavaScript in the tab context with abort handling
 			const executePromise = browser.scripting.executeScript({
@@ -199,6 +230,7 @@ This ensures reliable execution.`,
 						// Capture console output
 						const consoleOutput: Array<{ type: string; args: unknown[] }> = [];
 						const files: Array<{ fileName: string; content: string | Uint8Array; mimeType: string }> = [];
+						let timeoutId: number;
 
 						const originalConsole = {
 							log: console.log,
@@ -266,6 +298,9 @@ This ensures reliable execution.`,
 						};
 
 						const cleanup = () => {
+							// Clear timeout
+							if (timeoutId) clearTimeout(timeoutId);
+
 							// Restore console
 							console.log = originalConsole.log;
 							console.warn = originalConsole.warn;
@@ -294,6 +329,17 @@ This ensures reliable execution.`,
 								files: files,
 							});
 						};
+
+						// Set timeout to prevent hanging indefinitely
+						timeoutId = setTimeout(() => {
+							cleanup();
+							resolve({
+								success: false,
+								error: "Execution timeout",
+								stack: "Code execution did not complete within 30 seconds",
+								console: consoleOutput,
+							});
+						}, 30000) as unknown as number;
 
 						try {
 							if (useScriptTag) {
@@ -350,7 +396,7 @@ This ensures reliable execution.`,
 						}
 					});
 				},
-				args: [args.code, !canUseEval],
+				args: [args.code, canUseScriptTag && !canUseEval],
 			});
 
 			// Race between execution and abort signal
