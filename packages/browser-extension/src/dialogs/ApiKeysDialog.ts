@@ -2,7 +2,7 @@ import { Alert, Badge, Button, DialogHeader, html, type TemplateResult } from "@
 import { type Context, complete, getModel, getProviders } from "@mariozechner/pi-ai";
 import type { PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { Input } from "../Input.js";
+import { Input } from "../components/Input.js";
 import { keyStore } from "../state/KeyStore.js";
 import { i18n } from "../utils/i18n.js";
 import { DialogBase } from "./DialogBase.js";

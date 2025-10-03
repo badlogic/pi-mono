@@ -6,7 +6,7 @@ import { customElement, state } from "lit/decorators.js";
 import { createRef, ref } from "lit/directives/ref.js";
 import { Brain, Image as ImageIcon } from "lucide";
 import { Ollama } from "ollama/dist/browser.mjs";
-import { Input } from "../Input.js";
+import { Input } from "../components/Input.js";
 import { formatModelCost } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
 import { DialogBase } from "./DialogBase.js";

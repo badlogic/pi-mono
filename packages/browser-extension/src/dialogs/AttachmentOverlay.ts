@@ -5,9 +5,9 @@ import { state } from "lit/decorators.js";
 import { Download, X } from "lucide";
 import * as pdfjsLib from "pdfjs-dist";
 import * as XLSX from "xlsx";
-import { i18n } from "./utils/i18n.js";
-import "./ModeToggle.js";
-import type { Attachment } from "./utils/attachment-utils.js";
+import { i18n } from "../utils/i18n.js";
+import "../components/ModeToggle.js";
+import type { Attachment } from "../utils/attachment-utils.js";
 
 type FileType = "image" | "pdf" | "docx" | "pptx" | "excel" | "text";
 

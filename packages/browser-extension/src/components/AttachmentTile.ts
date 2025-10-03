@@ -2,9 +2,9 @@ import { html, icon } from "@mariozechner/mini-lit";
 import { LitElement } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { FileSpreadsheet, FileText, X } from "lucide";
-import { AttachmentOverlay } from "./AttachmentOverlay.js";
-import type { Attachment } from "./utils/attachment-utils.js";
-import { i18n } from "./utils/i18n.js";
+import { AttachmentOverlay } from "../dialogs/AttachmentOverlay.js";
+import type { Attachment } from "../utils/attachment-utils.js";
+import { i18n } from "../utils/i18n.js";
 
 @customElement("attachment-tile")
 export class AttachmentTile extends LitElement {

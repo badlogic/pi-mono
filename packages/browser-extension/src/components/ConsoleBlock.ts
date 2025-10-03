@@ -2,7 +2,7 @@ import { html, icon } from "@mariozechner/mini-lit";
 import { LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 import { Check, Copy } from "lucide";
-import { i18n } from "./utils/i18n.js";
+import { i18n } from "../utils/i18n.js";
 
 export class ConsoleBlock extends LitElement {
 	@property() content: string = "";

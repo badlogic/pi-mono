@@ -1,7 +1,7 @@
 import { html, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
-import "../ConsoleBlock.js"; // Ensure console-block is registered
+import "../components/ConsoleBlock.js"; // Ensure console-block is registered
 import type { Attachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";

@@ -1,8 +1,8 @@
 import { html } from "@mariozechner/mini-lit";
-import { calculateTool, getCurrentTimeTool, getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import "./AgentInterface.js";
+import "./components/AgentInterface.js";
 import { AgentSession } from "./state/agent-session.js";
 import { ArtifactsPanel } from "./tools/artifacts/index.js";
 import { browserJavaScriptTool, createJavaScriptReplTool } from "./tools/index.js";
@@ -103,13 +103,7 @@ export class ChatPanel extends LitElement {
 			initialState: {
 				systemPrompt: this.systemPrompt,
 				model: getModel("anthropic", "claude-3-5-haiku-20241022"),
-				tools: [
-					calculateTool,
-					getCurrentTimeTool,
-					browserJavaScriptTool,
-					javascriptReplTool,
-					this.artifactsPanel.tool,
-				],
+				tools: [browserJavaScriptTool, javascriptReplTool, this.artifactsPanel.tool],
 				thinkingLevel: "off",
 			},
 			authTokenProvider: async () => getAuthToken(),

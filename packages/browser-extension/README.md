@@ -5,7 +5,7 @@ A cross-browser extension that provides an AI-powered reading assistant in a sid
 ## Browser Support
 
 - **Chrome/Edge** - Uses Side Panel API (Manifest V3)
-- **Firefox** - Uses Sidebar Action API (Manifest V3)
+- **Firefox** - Uses Sidebar Action API (Manifest V2)
 - **Opera** - Sidebar support (untested but should work with Firefox manifest)
 
 ## Architecture
@@ -18,9 +18,10 @@ The extension is a full-featured AI chat interface that runs in your browser's s
 2. **Proxy Mode** - Routes requests through a proxy server using an auth token
 
 **Browser Adaptation:**
-- **Chrome/Edge** - Side Panel API for dedicated panel UI
-- **Firefox** - Sidebar Action API for sidebar UI
+- **Chrome/Edge** - Side Panel API for dedicated panel UI, Manifest V3
+- **Firefox** - Sidebar Action API for sidebar UI, Manifest V2
 - **Page Content Access** - Uses `chrome.scripting.executeScript` to extract page text
+- **Cross-browser APIs** - Uses `browser.*` (Firefox) and `chrome.*` (Chrome/Edge) via runtime detection
 
 ### Core Architecture Layers
 
@@ -72,6 +73,10 @@ src/
 │   ├── AttachmentOverlay.ts     # Full-screen attachment viewer
 │   └── ModeToggle.ts             # Toggle between document/text view
 │
+├── Components (reusable utilities)
+│   └── components/
+│       └── SandboxedIframe.ts    # Sandboxed HTML renderer with console capture
+│
 ├── Dialogs (modal interactions)
 │   ├── dialogs/
 │   │   ├── DialogBase.ts         # Base class for all dialogs
@@ -82,7 +87,7 @@ src/
 ├── State Management (business logic)
 │   ├── state/
 │   │   ├── agent-session.ts      # Core state manager (pub/sub pattern)
-│   │   ├── KeyStore.ts           # API key storage (Chrome local storage)
+│   │   ├── KeyStore.ts           # Cross-browser API key storage
 │   │   └── transports/
 │   │       ├── types.ts          # Transport interface definitions
 │   │       ├── DirectTransport.ts   # Direct API calls
@@ -93,11 +98,16 @@ src/
 │   │   ├── types.ts              # ToolRenderer interface
 │   │   ├── renderer-registry.ts  # Global tool renderer registry
 │   │   ├── index.ts              # Tool exports and registration
-│   │   └── renderers/            # Custom tool UI renderers
-│   │       ├── DefaultRenderer.ts    # Fallback for unknown tools
-│   │       ├── CalculateRenderer.ts  # Calculator tool UI
-│   │       ├── GetCurrentTimeRenderer.ts
-│   │       └── BashRenderer.ts       # Bash command execution UI
+│   │   ├── browser-javascript.ts # Execute JS in current tab
+│   │   ├── renderers/            # Custom tool UI renderers
+│   │   │   ├── DefaultRenderer.ts    # Fallback for unknown tools
+│   │   │   ├── CalculateRenderer.ts  # Calculator tool UI
+│   │   │   ├── GetCurrentTimeRenderer.ts
+│   │   │   └── BashRenderer.ts       # Bash command execution UI
+│   │   └── artifacts/            # Artifact tools (HTML, Mermaid, etc.)
+│   │       ├── ArtifactElement.ts    # Base class for artifacts
+│   │       ├── HtmlArtifact.ts       # HTML artifact with sandboxed preview
+│   │       └── MermaidArtifact.ts    # Mermaid diagram rendering
 │
 ├── Utilities (shared helpers)
 │   └── utils/
@@ -109,6 +119,8 @@ src/
 └── Entry Points (browser integration)
     ├── background.ts             # Service worker (opens side panel)
     ├── sidepanel.html            # HTML entry point
+    ├── sandbox.html              # Sandboxed page for artifact HTML
+    ├── sandbox.js                # Sandbox environment setup
     └── live-reload.ts            # Hot reload during development
 ```
 
@@ -163,6 +175,7 @@ import type { ToolRenderer } from "../types.js";
 export class MyCustomRenderer implements ToolRenderer {
   renderParams(params: any, isStreaming?: boolean) {
     // Show tool call parameters (e.g., "Searching for: <query>")
+
     return html`
       <div class="text-sm text-muted-foreground">
         ${isStreaming ? "Processing..." : `Input: ${params.input}`}
@@ -233,9 +246,9 @@ this.session = new AgentSession({
 
 **Message components** control how conversations appear:
 
-- **User messages**: Edit `UserMessage` in `src/Messages.ts`
-- **Assistant messages**: Edit `AssistantMessage` in `src/Messages.ts`
-- **Tool call cards**: Edit `ToolMessage` in `src/Messages.ts`
+- **User messages**: Edit `UserMessage` in [src/Messages.ts](src/Messages.ts)
+- **Assistant messages**: Edit `AssistantMessage` in [src/Messages.ts](src/Messages.ts)
+- **Tool call cards**: Edit `ToolMessage` in [src/Messages.ts](src/Messages.ts)
 - **Markdown rendering**: Comes from `@mariozechner/mini-lit` (can't customize easily)
 - **Code blocks**: Comes from `@mariozechner/mini-lit` (can't customize easily)
 
@@ -266,7 +279,7 @@ Models come from `@mariozechner/pi-ai`. The package supports:
 **To add a provider:**
 
 1. Ensure `@mariozechner/pi-ai` supports it (check package docs)
-2. Add API key configuration in `src/dialogs/ApiKeysDialog.ts`:
+2. Add API key configuration in [src/dialogs/ApiKeysDialog.ts](src/dialogs/ApiKeysDialog.ts):
    - Add provider to `PROVIDERS` array
    - Add test model to `TEST_MODELS` object
 3. Users can then select models via the model selector
@@ -280,13 +293,13 @@ Models come from `@mariozechner/pi-ai`. The package supports:
 **Transport** determines how requests reach AI providers:
 
 #### Direct Mode (Default)
-- **File**: `src/state/transports/DirectTransport.ts`
+- **File**: [src/state/transports/DirectTransport.ts](src/state/transports/DirectTransport.ts)
 - **How it works**: Gets API keys from `KeyStore` → calls provider APIs directly
 - **When to use**: Local development, no proxy server
 - **Configuration**: API keys stored in Chrome local storage
 
 #### Proxy Mode
-- **File**: `src/state/transports/ProxyTransport.ts`
+- **File**: [src/state/transports/ProxyTransport.ts](src/state/transports/ProxyTransport.ts)
 - **How it works**: Gets auth token → sends request to proxy server → proxy calls providers
 - **When to use**: Want to hide API keys, centralized auth, usage tracking
 - **Configuration**: Auth token stored in localStorage, proxy URL hardcoded
@@ -321,7 +334,7 @@ this.session = new AgentSession({
 
 ### "I want to change the system prompt"
 
-**System prompts** guide the AI's behavior. Change in `ChatPanel.ts`:
+**System prompts** guide the AI's behavior. Change in [src/ChatPanel.ts](src/ChatPanel.ts):
 
 ```typescript
 // src/ChatPanel.ts
@@ -344,7 +357,7 @@ const systemPrompt = await chrome.storage.local.get("system-prompt");
 
 ### "I want to add attachment support for a new file type"
 
-**Attachment processing** happens in `src/utils/attachment-utils.ts`:
+**Attachment processing** happens in [src/utils/attachment-utils.ts](src/utils/attachment-utils.ts):
 
 1. **Add file type detection** in `loadAttachment()`:
    ```typescript
@@ -363,12 +376,12 @@ const systemPrompt = await chrome.storage.local.get("system-prompt");
    }
    ```
 
-3. **Update accepted types** in `MessageEditor.ts`:
+3. **Update accepted types** in [src/MessageEditor.ts](src/MessageEditor.ts):
    ```typescript
    acceptedTypes = "image/*,application/pdf,.myext,...";
    ```
 
-4. **Optional: Add preview support** in `AttachmentOverlay.ts`
+4. **Optional: Add preview support** in [src/AttachmentOverlay.ts](src/AttachmentOverlay.ts)
 
 **Supported formats:**
 - Images: All image/* (preview support)
@@ -458,7 +471,7 @@ this.session = new AgentSession({
 
 ### "I want to access the current page content"
 
-Page content extraction is in `sidepanel.ts`:
+Page content extraction is in [src/sidepanel.ts](src/sidepanel.ts):
 
 ```typescript
 // Example: Get page text
@@ -513,9 +526,9 @@ Browser Extension
 3. Select model and start chatting
 
 **Files involved:**
-- `src/state/transports/DirectTransport.ts` - Transport implementation
-- `src/state/KeyStore.ts` - API key storage
-- `src/dialogs/ApiKeysDialog.ts` - API key UI
+- [src/state/transports/DirectTransport.ts](src/state/transports/DirectTransport.ts) - Transport implementation
+- [src/state/KeyStore.ts](src/state/KeyStore.ts) - Cross-browser API key storage
+- [src/dialogs/ApiKeysDialog.ts](src/dialogs/ApiKeysDialog.ts) - API key UI
 
 ---
 
@@ -603,7 +616,7 @@ data: {"type":"done","reason":"stop","usage":{...}}
 - Return 4xx/5xx with JSON: `{"error":"message"}`
 
 **Reference Implementation:**
-See `src/state/transports/ProxyTransport.ts` for full event parsing logic.
+See [src/state/transports/ProxyTransport.ts](src/state/transports/ProxyTransport.ts) for full event parsing logic.
 
 ---
 
@@ -665,12 +678,14 @@ packages/browser-extension/
 │   ├── app.css                 # Tailwind v4 entry point with Claude theme
 │   ├── background.ts           # Service worker for opening side panel
 │   ├── sidepanel.html          # Side panel HTML entry point
-│   └── sidepanel.ts            # Main side panel app with hot reload
+│   ├── sidepanel.ts            # Main side panel app with hot reload
+│   ├── sandbox.html            # Sandboxed page for artifact HTML rendering
+│   └── sandbox.js              # Sandbox environment setup (console capture, helpers)
 ├── scripts/
 │   ├── build.mjs               # esbuild bundler configuration
 │   └── dev-server.mjs          # WebSocket server for hot reloading
-├── manifest.chrome.json        # Chrome/Edge manifest
-├── manifest.firefox.json       # Firefox manifest
+├── manifest.chrome.json        # Chrome/Edge manifest (MV3)
+├── manifest.firefox.json       # Firefox manifest (MV2)
 ├── icon-*.png                  # Extension icons
 ├── dist-chrome/                # Chrome build (git-ignored)
 └── dist-firefox/               # Firefox build (git-ignored)
@@ -736,30 +751,59 @@ packages/browser-extension/
 
 ## Key Files
 
-### `src/sidepanel.ts`
+### [src/sidepanel.ts](src/sidepanel.ts)
 Main application logic:
 - Extracts page content via `chrome.scripting.executeScript`
 - Manages chat UI with mini-lit components
 - Handles WebSocket connection for hot reload
 - Direct AI API calls (no background worker needed)
 
-### `src/app.css`
+### [src/app.css](src/app.css)
 Tailwind v4 configuration:
 - Imports Claude theme from mini-lit
 - Uses `@source` directive to scan mini-lit components
 - Compiled to `dist/app.css` during build
 
-### `scripts/build.mjs`
+### [scripts/build.mjs](scripts/build.mjs)
 Build configuration:
 - Uses esbuild for fast TypeScript bundling
-- Copies static files (HTML, manifest, icons)
+- Copies static files (HTML, manifest, icons, sandbox files)
 - Supports watch mode for development
+- Browser-specific builds (Chrome MV3, Firefox MV2)
 
-### `scripts/dev-server.mjs`
+### [scripts/dev-server.mjs](scripts/dev-server.mjs)
 Hot reload server:
 - WebSocket server on port 8765
 - Watches `dist/` directory for changes
 - Sends reload messages to connected clients
+
+### [src/state/KeyStore.ts](src/state/KeyStore.ts)
+Cross-browser API key storage:
+- Detects browser environment (`browser.storage` vs `chrome.storage`)
+- Stores API keys in local storage
+- Used by DirectTransport for provider authentication
+
+### [src/components/SandboxedIframe.ts](src/components/SandboxedIframe.ts)
+Reusable sandboxed HTML renderer:
+- Creates sandboxed iframe with `allow-scripts` and `allow-modals`
+- Injects runtime scripts using TypeScript `.toString()` pattern
+- Captures console logs and errors via `postMessage`
+- Provides attachment helper functions to sandboxed content
+- Emits `@console` and `@execution-complete` events
+
+### [src/tools/artifacts/HtmlArtifact.ts](src/tools/artifacts/HtmlArtifact.ts)
+HTML artifact renderer:
+- Uses `SandboxedIframe` component for secure HTML preview
+- Toggle between preview and code view
+- Displays console logs and errors in collapsible panel
+- Supports attachments (accessible via `listFiles()`, `readTextFile()`, etc.)
+
+### [src/sandbox.html](src/sandbox.html) and [src/sandbox.js](src/sandbox.js)
+Sandboxed page for artifact HTML:
+- Declared in manifest `sandbox.pages` array
+- Has permissive CSP allowing external scripts and `eval()`
+- Currently used as fallback (most functionality moved to `SandboxedIframe`)
+- Provides helper functions for file access and console capture
 
 ## Working with mini-lit Components
 
@@ -797,3 +841,344 @@ npm run build -w @mariozechner/pi-reader-extension
 ```
 
 This creates an optimized build in `dist/` without hot reload code.
+
+---
+
+## Content Security Policy (CSP) Issues and Workarounds
+
+Browser extensions face strict Content Security Policy restrictions that affect dynamic code execution. This section documents these limitations and the solutions implemented in this extension.
+
+### Overview of CSP Restrictions
+
+**Content Security Policy** prevents unsafe operations like `eval()`, `new Function()`, and inline scripts to protect against XSS attacks. Browser extensions have even stricter CSP rules than regular web pages.
+
+### CSP in Extension Pages (Side Panel, Popup, Options)
+
+**Problem:** Extension pages (like our side panel) cannot use `eval()` or `new Function()` due to manifest CSP restrictions.
+
+**Chrome Manifest V3:**
+```json
+"content_security_policy": {
+  "extension_pages": "script-src 'self'; object-src 'self'"
+}
+```
+- `'unsafe-eval'` is **explicitly forbidden** in MV3 extension pages
+- Attempting to add it causes extension load failure: `"Insecure CSP value "'unsafe-eval'" in directive 'script-src'"`
+
+**Firefox Manifest V2:**
+```json
+"content_security_policy": "script-src 'self' 'wasm-unsafe-eval' ...; object-src 'self'"
+```
+- `'unsafe-eval'` is **forbidden** in Firefox MV2 `script-src`
+- Only `'wasm-unsafe-eval'` is allowed (for WebAssembly)
+
+**Impact on Tool Parameter Validation:**
+
+The `@mariozechner/pi-ai` package uses AJV (Another JSON Schema Validator) to validate tool parameters. AJV compiles JSON schemas into validation functions using `new Function()`, which violates extension CSP.
+
+**Solution:** Detect browser extension environment and disable AJV validation:
+
+```typescript
+// @packages/ai/src/utils/validation.ts
+const isBrowserExtension = typeof globalThis !== "undefined" &&
+  (globalThis as any).chrome?.runtime?.id !== undefined;
+
+let ajv: any = null;
+if (!isBrowserExtension) {
+  try {
+    ajv = new Ajv({ allErrors: true, strict: false });
+    addFormats(ajv);
+  } catch (e) {
+    console.warn("AJV validation disabled due to CSP restrictions");
+  }
+}
+
+export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
+  // Skip validation in browser extension (CSP prevents AJV from working)
+  if (!ajv || isBrowserExtension) {
+    return toolCall.arguments;  // Trust the LLM
+  }
+  // ... normal validation
+}
+```
+
+**Call chain:**
+1. `@packages/ai/src/utils/validation.ts` - Validation logic
+2. `@packages/ai/src/agent/agent-loop.ts` - Calls `validateToolArguments()` in `executeToolCalls()`
+3. `@packages/browser-extension/src/state/transports/DirectTransport.ts` - Uses agent loop
+4. `@packages/browser-extension/src/state/agent-session.ts` - Coordinates transport
+
+**Result:** Tool parameter validation is **disabled in browser extensions**. We trust the LLM to generate valid parameters.
+
+---
+
+### CSP in Sandboxed Pages (HTML Artifacts)
+
+**Problem:** HTML artifacts need to render user-generated HTML with external scripts (e.g., Chart.js, D3.js) and execute dynamic code.
+
+**Solution:** Use sandboxed pages with permissive CSP.
+
+#### How Sandboxed Pages Work
+
+**Chrome Manifest V3:**
+```json
+{
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http:; ..."
+  }
+}
+```
+
+**Firefox Manifest V2:**
+- MV2 doesn't support `sandbox.pages` with external script hosts in CSP
+- We switched to MV2 to whitelist CDN hosts in main CSP:
+```json
+{
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://cdn.skypack.dev; ..."
+}
+```
+
+#### SandboxedIframe Component
+
+The [src/components/SandboxedIframe.ts](src/components/SandboxedIframe.ts) component provides a reusable way to render HTML artifacts:
+
+**Key implementation details:**
+
+1. **Runtime Script Injection:** Instead of relying on `sandbox.html`, we inject runtime scripts directly into the HTML using TypeScript `.toString()`:
+
+```typescript
+private injectRuntimeScripts(htmlContent: string): string {
+  // Define runtime function in TypeScript with proper typing
+  const runtimeFunction = function (artifactId: string, attachments: any[]) {
+    // Console capture
+    window.__artifactLogs = [];
+    const originalConsole = { log: console.log, error: console.error, /* ... */ };
+
+    ['log', 'error', 'warn', 'info'].forEach((method) => {
+      console[method] = function (...args: any[]) {
+        const text = args.map(arg => /* stringify */).join(' ');
+        window.__artifactLogs.push({ type: method === 'error' ? 'error' : 'log', text });
+        window.parent.postMessage({ type: 'console', method, text, artifactId }, '*');
+        originalConsole[method].apply(console, args);
+      };
+    });
+
+    // Error handlers
+    window.addEventListener('error', (e: ErrorEvent) => { /* ... */ });
+    window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => { /* ... */ });
+
+    // Attachment helpers
+    window.listFiles = () => attachments.map(/* ... */);
+    window.readTextFile = (id) => { /* ... */ };
+    window.readBinaryFile = (id) => { /* ... */ };
+  };
+
+  // Convert function to string and inject
+  const runtimeScript = `
+    <script>
+    (${runtimeFunction.toString()})(${JSON.stringify(this.artifactId)}, ${JSON.stringify(this.attachments)});
+    </script>
+  `;
+
+  // Inject at start of <head> or beginning of HTML
+  return htmlContent.replace(/<head[^>]*>/i, (m) => `${m}${runtimeScript}`) || runtimeScript + htmlContent;
+}
+```
+
+2. **Sandbox Attributes:** The iframe uses:
+   - `sandbox="allow-scripts allow-modals"` - **NOT** `allow-same-origin`
+   - Removing `allow-same-origin` prevents sandboxed content from bypassing the sandbox
+   - `postMessage` still works without `allow-same-origin`
+
+3. **Communication:** Parent window listens for messages from iframe:
+   - `{type: "console", method, text, artifactId}` - Console logs
+   - `{type: "execution-complete", logs, artifactId}` - Final logs after page load
+
+4. **Usage in HtmlArtifact:**
+
+```typescript
+// src/tools/artifacts/HtmlArtifact.ts
+render() {
+  return html`
+    <sandbox-iframe
+      class="flex-1"
+      .content=${this._content}
+      .artifactId=${this.filename}
+      .attachments=${this.attachments}
+      @console=${this.handleConsoleEvent}
+      @execution-complete=${this.handleExecutionComplete}
+    ></sandbox-iframe>
+  `;
+}
+```
+
+**Files involved:**
+- [src/components/SandboxedIframe.ts](src/components/SandboxedIframe.ts) - Reusable sandboxed iframe component
+- [src/tools/artifacts/HtmlArtifact.ts](src/tools/artifacts/HtmlArtifact.ts) - Uses SandboxedIframe
+- [src/sandbox.html](src/sandbox.html) - Fallback sandboxed page (mostly unused now)
+- [src/sandbox.js](src/sandbox.js) - Sandbox environment (mostly unused now)
+- [manifest.chrome.json](manifest.chrome.json) - Chrome MV3 sandbox CSP
+- [manifest.firefox.json](manifest.firefox.json) - Firefox MV2 CDN whitelist
+
+---
+
+### CSP in Injected Tab Scripts (browser-javascript Tool)
+
+**Problem:** The `browser-javascript` tool executes AI-generated JavaScript in the current tab. Many sites have strict CSP that blocks `eval()` and `new Function()`.
+
+**Example - Gmail's CSP:**
+```
+script-src 'report-sample' 'nonce-...' 'unsafe-inline' 'strict-dynamic' https: http:;
+require-trusted-types-for 'script';
+```
+
+Gmail uses **Trusted Types** (`require-trusted-types-for 'script'`) which blocks all string-to-code conversions, including:
+- `eval(code)`
+- `new Function(code)`
+- `setTimeout(code)` (with string argument)
+- Setting `innerHTML`, `outerHTML`, `<script>.src`, etc.
+
+**Attempted Solutions:**
+
+1. **Script Execution Worlds:** Chrome provides two worlds for `chrome.scripting.executeScript`:
+   - `MAIN` - Runs in page context, subject to page CSP
+   - `ISOLATED` - Runs in extension context, has permissive CSP
+
+   **Current implementation uses `ISOLATED` world:**
+   ```typescript
+   // src/tools/browser-javascript.ts
+   const results = await browser.scripting.executeScript({
+     target: { tabId: tab.id },
+     world: "ISOLATED",  // Permissive CSP
+     func: (code: string) => {
+       try {
+         const asyncFunc = new Function(`return (async () => { ${code} })()`);
+         return asyncFunc();
+       } catch (error) {
+         // ... error handling
+       }
+     },
+     args: [args.code]
+   });
+   ```
+
+   **Why ISOLATED world:**
+   - Has permissive CSP (allows `eval()`, `new Function()`)
+   - Can still access full DOM
+   - Bypasses page CSP for the injected function itself
+
+2. **Using `new Function()` instead of `eval()`:**
+   - `new Function(code)` is slightly more permissive than `eval(code)`
+   - But still blocked by Trusted Types policy
+
+**Current Limitation:**
+
+Even with `ISOLATED` world and `new Function()`, sites like Gmail with Trusted Types **still block execution**:
+
+```
+Error: Refused to evaluate a string as JavaScript because this document requires 'Trusted Type' assignment.
+```
+
+**Why it still fails:** The Trusted Types policy applies to the entire document, including isolated worlds. Any attempt to convert strings to code is blocked.
+
+**Workaround Options:**
+
+1. **Accept the limitation:** Document that `browser-javascript` won't work on sites with Trusted Types (Gmail, Google Docs, etc.)
+
+2. **Modify page CSP via declarativeNetRequest API:**
+   - Use `chrome.declarativeNetRequest` to strip `require-trusted-types-for` from response headers
+   - Requires `declarativeNetRequest` permission
+   - Needs an allowlist of sites (don't want to disable security everywhere)
+   - **Implementation example:**
+   ```typescript
+   // In background.ts or new csp-modifier.ts
+   chrome.declarativeNetRequest.updateDynamicRules({
+     addRules: [{
+       id: 1,
+       priority: 1,
+       action: {
+         type: "modifyHeaders",
+         responseHeaders: [
+           { header: "content-security-policy", operation: "remove" },
+           { header: "content-security-policy-report-only", operation: "remove" }
+         ]
+       },
+       condition: {
+         urlFilter: "*://mail.google.com/*",  // Example: Gmail
+         resourceTypes: ["main_frame", "sub_frame"]
+       }
+     }],
+     removeRuleIds: [1]  // Remove previous rule
+   });
+   ```
+
+3. **Site-specific allowlist UI:**
+   - Add settings dialog for CSP modification
+   - User enables specific sites
+   - Extension modifies CSP only for allowed sites
+   - Clear warning about security implications
+
+**Current Status:** The `browser-javascript` tool works on most sites but **fails on sites with Trusted Types** (Gmail, Google Workspace, some banking sites, etc.). The CSP modification approach is not currently implemented.
+
+**Files involved:**
+- [src/tools/browser-javascript.ts](src/tools/browser-javascript.ts) - Tab script injection tool
+- [manifest.chrome.json](manifest.chrome.json) - Requires `scripting` and `activeTab` permissions
+- (Future) `src/state/csp-modifier.ts` - Would implement declarativeNetRequest CSP modification
+
+---
+
+### Summary of CSP Issues and Solutions
+
+| Scope | Problem | Solution | Limitations |
+|-------|---------|----------|-------------|
+| **Extension pages** (side panel) | Can't use `eval()` / `new Function()` | Detect extension environment, disable AJV validation | Tool parameters not validated, trust LLM output |
+| **HTML artifacts** | Need to render dynamic HTML with external scripts | Use sandboxed pages with permissive CSP, `SandboxedIframe` component | Works well, no significant limitations |
+| **Tab injection** | Sites with strict CSP block code execution | Use `ISOLATED` world with `new Function()` | Still blocked by Trusted Types, affects Gmail and similar sites |
+| **Tab injection** (future) | Trusted Types blocking | Modify CSP via `declarativeNetRequest` with allowlist | Requires user opt-in, reduces site security |
+
+### Best Practices for Extension Development
+
+1. **Always detect extension environment** before using APIs that require CSP permissions
+2. **Use sandboxed pages** for any user-generated HTML or untrusted content
+3. **Inject runtime scripts via `.toString()`** instead of relying on sandbox.html (better control)
+4. **Use `ISOLATED` world** for tab script execution when possible
+5. **Document CSP limitations** for tools that inject code into tabs
+6. **Consider CSP modification** only as last resort with explicit user consent
+
+### Debugging CSP Issues
+
+**Common error messages:**
+
+1. **Extension pages:**
+   ```
+   Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script
+   ```
+   → Don't use `eval()` / `new Function()` in extension pages, use sandboxed pages instead
+
+2. **Sandboxed iframe:**
+   ```
+   Content Security Policy: The page's settings blocked an inline script (script-src)
+   ```
+   → Check iframe `sandbox` attribute (must include `allow-scripts`)
+   → Check manifest sandbox CSP includes `'unsafe-inline'`
+
+3. **Tab injection:**
+   ```
+   Refused to evaluate a string as JavaScript because this document requires 'Trusted Type' assignment
+   ```
+   → Site uses Trusted Types, `browser-javascript` tool won't work
+   → Consider CSP modification with user consent
+
+**Tools for debugging:**
+
+- Chrome DevTools → Console (see CSP errors)
+- Chrome DevTools → Network → Response Headers (see page CSP)
+- `chrome://extensions/` → Inspect views: side panel (check extension page CSP)
+- Firefox: `about:debugging` → Inspect (check console for CSP violations)
+
+---
+
+This CSP section should help both developers and LLMs understand the security constraints when working on extension features, especially those involving dynamic code execution or user-generated content.

@@ -2,19 +2,19 @@ import { html } from "@mariozechner/mini-lit";
 import type { ToolResultMessage, Usage } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
-import { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
-import { ModelSelector } from "./dialogs/ModelSelector.js";
+import { ApiKeysDialog } from "../dialogs/ApiKeysDialog.js";
+import { ModelSelector } from "../dialogs/ModelSelector.js";
 import type { MessageEditor } from "./MessageEditor.js";
 import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
-import type { AgentSession, AgentSessionEvent } from "./state/agent-session.js";
-import { keyStore } from "./state/KeyStore.js";
+import type { AgentSession, AgentSessionEvent } from "../state/agent-session.js";
+import { keyStore } from "../state/KeyStore.js";
 import "./StreamingMessageContainer.js";
+import type { Attachment } from "../utils/attachment-utils.js";
+import { formatUsage } from "../utils/format.js";
+import { i18n } from "../utils/i18n.js";
 import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
-import type { Attachment } from "./utils/attachment-utils.js";
-import { formatUsage } from "./utils/format.js";
-import { i18n } from "./utils/i18n.js";
 
 @customElement("agent-interface")
 export class AgentInterface extends LitElement {

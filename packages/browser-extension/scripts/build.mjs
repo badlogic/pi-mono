@@ -1,5 +1,5 @@
 import { build, context } from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, rmSync, watch } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, "..");
 const isWatch = process.argv.includes("--watch");
+const staticDir = join(packageRoot, "static");
 
 // Determine target browser from command line arguments
 const targetBrowser = process.argv.includes("--firefox") ? "firefox" : "chrome";
@@ -40,28 +41,23 @@ const buildOptions = {
   }
 };
 
+// Get all files from static directory
+const getStaticFiles = () => {
+  return readdirSync(staticDir).map(file => join("static", file));
+};
+
 const copyStatic = () => {
   // Use browser-specific manifest
   const manifestSource = join(packageRoot, `manifest.${targetBrowser}.json`);
   const manifestDest = join(outDir, "manifest.json");
   copyFileSync(manifestSource, manifestDest);
 
-  // Copy other static files
-  const filesToCopy = [
-    "icon-16.png",
-    "icon-48.png",
-    "icon-128.png",
-    join("src", "sandbox.html"),
-    join("src", "sandbox.js"),
-    join("src", "sidepanel.html"),
-  ];
-
-  for (const relative of filesToCopy) {
+  // Copy all files from static/ directory
+  const staticFiles = getStaticFiles();
+  for (const relative of staticFiles) {
     const source = join(packageRoot, relative);
-    let destination = join(outDir, relative);
-    if (relative.startsWith("src/")) {
-      destination = join(outDir, relative.slice(4)); // Remove "src/" prefix
-    }
+    const filename = relative.replace("static/", "");
+    const destination = join(outDir, filename);
     copyFileSync(source, destination);
   }
 
@@ -84,14 +80,13 @@ const run = async () => {
     await ctx.watch();
     copyStatic();
 
-    for (const file of filesToCopy) {
-      watch(file, (eventType) => {
-        if (eventType === 'change') {
-          console.log(`\n${file} changed, copying static files...`);
-          copyStatic();
-        }
-      });
-    }
+    // Watch the entire static directory
+    watch(staticDir, { recursive: true }, (eventType) => {
+      if (eventType === 'change') {
+        console.log(`\nStatic files changed, copying...`);
+        copyStatic();
+      }
+    });
 
     process.stdout.write("Watching for changes...\n");
   } else {

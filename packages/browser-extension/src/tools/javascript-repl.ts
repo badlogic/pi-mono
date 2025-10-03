@@ -1,143 +1,19 @@
 import { html, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
+import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 
 import { registerToolRenderer } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
-import "../ConsoleBlock.js"; // Ensure console-block is registered
+import "../components/ConsoleBlock.js"; // Ensure console-block is registered
 
-// Core JavaScript REPL execution logic without UI dependencies
-export interface ReplExecuteResult {
-	success: boolean;
-	console?: Array<{ type: string; args: any[] }>;
-	files?: Array<{ fileName: string; content: string | Uint8Array; mimeType: string }>;
-	error?: { message: string; stack: string };
-}
-
-export class ReplExecutor {
-	private iframe: HTMLIFrameElement;
-	private ready: boolean = false;
-	private attachments: any[] = [];
-	// biome-ignore lint/complexity/noBannedTypes: fine here
-	private currentExecution: { resolve: Function; reject: Function } | null = null;
-
-	constructor(attachments: any[]) {
-		this.attachments = attachments;
-		this.iframe = this.createIframe();
-		this.setupMessageHandler();
-		this.initialize();
-	}
-
-	private createIframe(): HTMLIFrameElement {
-		const iframe = document.createElement("iframe");
-		// Use the sandboxed page from the manifest
-		iframe.src = chrome.runtime.getURL("sandbox.html");
-		iframe.style.display = "none";
-		document.body.appendChild(iframe);
-		return iframe;
-	}
-
-	private setupMessageHandler() {
-		const handler = (event: MessageEvent) => {
-			if (event.source !== this.iframe.contentWindow) return;
-
-			if (event.data.type === "ready") {
-				this.ready = true;
-			} else if (event.data.type === "result" && this.currentExecution) {
-				const { resolve } = this.currentExecution;
-				this.currentExecution = null;
-				resolve(event.data);
-				this.cleanup();
-			} else if (event.data.type === "error" && this.currentExecution) {
-				const { resolve } = this.currentExecution;
-				this.currentExecution = null;
-				resolve({
-					success: false,
-					error: event.data.error,
-					console: event.data.console || [],
-				});
-				this.cleanup();
-			}
-		};
-
-		window.addEventListener("message", handler);
-		// Store handler reference for cleanup
-		(this.iframe as any).__messageHandler = handler;
-	}
-
-	private initialize() {
-		// Send attachments once iframe is loaded
-		this.iframe.onload = () => {
-			setTimeout(() => {
-				this.iframe.contentWindow?.postMessage(
-					{
-						type: "setAttachments",
-						attachments: this.attachments,
-					},
-					"*",
-				);
-			}, 100);
-		};
-	}
-
-	cleanup() {
-		// Remove message handler
-		const handler = (this.iframe as any).__messageHandler;
-		if (handler) {
-			window.removeEventListener("message", handler);
-		}
-		// Remove iframe
-		this.iframe.remove();
-
-		// If there's a pending execution, reject it
-		if (this.currentExecution) {
-			this.currentExecution.reject(new Error("Execution aborted"));
-			this.currentExecution = null;
-		}
-	}
-
-	async execute(code: string): Promise<ReplExecuteResult> {
-		return new Promise((resolve, reject) => {
-			this.currentExecution = { resolve, reject };
-
-			// Wait for iframe to be ready
-			const checkReady = () => {
-				if (this.ready) {
-					this.iframe.contentWindow?.postMessage(
-						{
-							type: "execute",
-							code: code,
-						},
-						"*",
-					);
-				} else {
-					setTimeout(checkReady, 10);
-				}
-			};
-			checkReady();
-
-			// Timeout after 30 seconds
-			setTimeout(() => {
-				if (this.currentExecution?.resolve === resolve) {
-					this.currentExecution = null;
-					resolve({
-						success: false,
-						error: { message: "Execution timeout (30s)", stack: "" },
-					});
-					this.cleanup();
-				}
-			}, 30000);
-		});
-	}
-}
-
-// Execute JavaScript code with attachments
+// Execute JavaScript code with attachments using SandboxedIframe
 export async function executeJavaScript(
 	code: string,
 	attachments: any[] = [],
 	signal?: AbortSignal,
-): Promise<{ output: string; files?: Array<{ fileName: string; content: any; mimeType: string }> }> {
+): Promise<{ output: string; files?: SandboxFile[] }> {
 	if (!code) {
 		throw new Error("Code parameter is required");
 	}
@@ -147,35 +23,34 @@ export async function executeJavaScript(
 		throw new Error("Execution aborted");
 	}
 
-	// Create a one-shot executor
-	const executor = new ReplExecutor(attachments);
-
-	// Listen for abort signal
-	const abortHandler = () => {
-		executor.cleanup();
-	};
-	signal?.addEventListener("abort", abortHandler);
+	// Create a SandboxedIframe instance for execution
+	const sandbox = new SandboxIframe();
+	sandbox.style.display = "none";
+	document.body.appendChild(sandbox);
 
 	try {
-		const result = await executor.execute(code);
+		const sandboxId = `repl-${Date.now()}`;
+		const result: SandboxResult = await sandbox.execute(sandboxId, code, attachments, signal);
+
+		// Remove the sandbox iframe after execution
+		sandbox.remove();
 
 		// Return plain text output
 		if (!result.success) {
 			// Return error as plain text
 			return {
-				output: `${"Error:"} ${result.error?.message || "Unknown error"}\n${result.error?.stack || ""}`,
+				output: `Error: ${result.error?.message || "Unknown error"}\n${result.error?.stack || ""}`,
 			};
 		}
 
 		// Build plain text response
 		let output = "";
 
-		// Add console output
+		// Add console output - result.console contains { type: string, text: string } from sandbox.js
 		if (result.console && result.console.length > 0) {
 			for (const entry of result.console) {
-				const prefix = entry.type === "error" ? "[ERROR]" : entry.type === "warn" ? "[WARN]" : "";
-				const line = prefix ? `${prefix} ${entry.args.join(" ")}` : entry.args.join(" ");
-				output += line + "\n";
+				const prefix = entry.type === "error" ? "[ERROR]" : "";
+				output += (prefix ? `${prefix} ` : "") + entry.text + "\n";
 			}
 		}
 
@@ -197,9 +72,9 @@ export async function executeJavaScript(
 			files: result.files,
 		};
 	} catch (error: any) {
+		// Clean up on error
+		sandbox.remove();
 		throw new Error(error.message || "Execution failed");
-	} finally {
-		signal?.removeEventListener("abort", abortHandler);
 	}
 }
 

@@ -10,10 +10,10 @@ import type { AgentToolResult } from "@mariozechner/pi-ai/dist/agent/types.js";
 import { LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { Bug, Loader, Wrench } from "lucide";
-import { renderToolParams, renderToolResult } from "./tools/index.js";
-import type { Attachment } from "./utils/attachment-utils.js";
-import { formatUsage } from "./utils/format.js";
-import { i18n } from "./utils/i18n.js";
+import { renderToolParams, renderToolResult } from "../tools/index.js";
+import type { Attachment } from "../utils/attachment-utils.js";
+import { formatUsage } from "../utils/format.js";
+import { i18n } from "../utils/i18n.js";
 
 export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
 export type AppMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType;

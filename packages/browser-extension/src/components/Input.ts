@@ -1,6 +1,6 @@
 import { type BaseComponentProps, fc, html } from "@mariozechner/mini-lit";
 import { type Ref, ref } from "lit/directives/ref.js";
-import { i18n } from "./utils/i18n.js";
+import { i18n } from "../utils/i18n.js";
 
 export type InputType = "text" | "email" | "password" | "number" | "url" | "tel" | "search";
 export type InputSize = "sm" | "md" | "lg";

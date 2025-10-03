@@ -283,6 +283,10 @@ For text/html artifacts:
 - For addons: import from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js'
 - No localStorage/sessionStorage - use in-memory variables only
 - CSS should be included inline
+- CRITICAL REMINDER FOR HTML ARTIFACTS:
+	- ALWAYS set a background color inline in <style> or directly on body element
+	- Failure to set a background color is a COMPLIANCE ERROR
+	- Background color MUST be explicitly defined to ensure visibility and proper rendering
 - Can embed base64 images directly in img tags
 - Ensure the layout is responsive as the iframe might be resized
 - Note: Network errors (404s) for external scripts may not be captured in logs due to browser security
@@ -299,7 +303,14 @@ For text/markdown:
 For image/svg+xml:
 - Complete SVG markup
 - Will be rendered inline
-- Can embed raster images as base64 in SVG`,
+- Can embed raster images as base64 in SVG
+
+CRITICAL REMINDER FOR ALL ARTIFACTS:
+- Prefer to update existing files rather than creating new ones
+- Keep filenames consistent and descriptive
+- Use appropriate file extensions
+- Ensure HTML artifacts have a defined background color
+`,
 			parameters: artifactsParamsSchema,
 			// Execute mutates our local store and returns a plain output
 			execute: async (_toolCallId: string, args: Static<typeof artifactsParamsSchema>, _signal?: AbortSignal) => {
@@ -696,6 +707,9 @@ For image/svg+xml:
 			this.requestUpdate();
 		}
 
+		// Show the artifact
+		this.showArtifact(params.filename);
+
 		// For HTML files, wait for execution
 		let result = `Updated file ${params.filename}`;
 		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
@@ -730,6 +744,9 @@ For image/svg+xml:
 		if (!options.silent) {
 			this.onArtifactsChange?.();
 		}
+
+		// Show the artifact
+		this.showArtifact(params.filename);
 
 		// For HTML files, wait for execution
 		let result = `Rewrote file ${params.filename}`;

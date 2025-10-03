@@ -57,15 +57,34 @@ export class HtmlArtifact extends ArtifactElement {
 		this._content = value;
 		if (oldValue !== value) {
 			this.requestUpdate();
-			// Update sandbox iframe if it exists
-			if (this.sandboxIframeRef.value) {
+			// Execute content in sandbox if it exists
+			if (this.sandboxIframeRef.value && value) {
 				this.logs = [];
 				if (this.consoleLogsRef.value) {
 					this.consoleLogsRef.value.innerHTML = "";
 				}
 				this.updateConsoleButton();
-				this.sandboxIframeRef.value.updateContent(value);
+				this.executeContent(value);
 			}
+		}
+	}
+
+	private async executeContent(html: string) {
+		const sandbox = this.sandboxIframeRef.value;
+		if (!sandbox) return;
+
+		try {
+			const sandboxId = `artifact-${Date.now()}`;
+			const result = await sandbox.execute(sandboxId, html, this.attachments);
+
+			// Update logs with proper type casting
+			this.logs = (result.console || []).map((log) => ({
+				type: log.type === "error" ? ("error" as const) : ("log" as const),
+				text: log.text,
+			}));
+			this.updateConsoleButton();
+		} catch (error) {
+			console.error("HTML artifact execution failed:", error);
 		}
 	}
 
@@ -73,28 +92,10 @@ export class HtmlArtifact extends ArtifactElement {
 		return this._content;
 	}
 
-	private handleConsoleEvent = (e: CustomEvent) => {
-		this.addLog(e.detail);
-	};
-
-	private handleExecutionComplete = (e: CustomEvent) => {
-		// Store final logs
-		this.logs = e.detail.logs || [];
-		this.updateConsoleButton();
-	};
-
-	private addLog(log: { type: "log" | "error"; text: string }) {
-		this.logs.push(log);
-
-		// Update console button text
-		this.updateConsoleButton();
-
-		// If console is open, append to DOM directly
-		if (this.consoleOpen && this.consoleLogsRef.value) {
-			const logEl = document.createElement("div");
-			logEl.className = `text-xs font-mono ${log.type === "error" ? "text-destructive" : "text-muted-foreground"}`;
-			logEl.textContent = `[${log.type}] ${log.text}`;
-			this.consoleLogsRef.value.appendChild(logEl);
+	override firstUpdated() {
+		// Execute initial content
+		if (this._content && this.sandboxIframeRef.value) {
+			this.executeContent(this._content);
 		}
 	}
 
@@ -142,15 +143,7 @@ export class HtmlArtifact extends ArtifactElement {
 				<div class="flex-1 overflow-hidden relative">
 					<!-- Preview container - always in DOM, just hidden when not active -->
 					<div class="absolute inset-0 flex flex-col" style="display: ${this.viewMode === "preview" ? "flex" : "none"}">
-						<sandbox-iframe
-							class="flex-1"
-							.content=${this._content}
-							.artifactId=${this.filename}
-							.attachments=${this.attachments}
-							@console=${this.handleConsoleEvent}
-							@execution-complete=${this.handleExecutionComplete}
-							${ref(this.sandboxIframeRef)}
-						></sandbox-iframe>
+						<sandbox-iframe class="flex-1" ${ref(this.sandboxIframeRef)}></sandbox-iframe>
 						${
 							this.logs.length > 0
 								? html`

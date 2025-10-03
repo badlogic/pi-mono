@@ -8,7 +8,7 @@ import {
 	type Model,
 	type TextContent,
 } from "@mariozechner/pi-ai";
-import type { AppMessage } from "../Messages.js";
+import type { AppMessage } from "../components/Messages.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { DirectTransport } from "./transports/DirectTransport.js";
 import { ProxyTransport } from "./transports/ProxyTransport.js";
