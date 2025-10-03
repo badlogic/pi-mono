@@ -73,10 +73,62 @@ Examples:
 - Execute page functions: window.myPageFunction()
 - Access React/Vue instances: window.__REACT_DEVTOOLS_GLOBAL_HOOK__, window.$vm
 
+IMPORTANT - Navigation:
+Navigation commands (history.back/forward/go, window.location=, location.href=) destroy the execution context.
+You MUST use them in a separate, single-line tool call with NO other code before or after.
+Example: First call with just "history.back()", then a second call with other code after navigation completes.
+
 Note: This requires the activeTab permission and only works on http/https pages, not on chrome:// URLs.`,
 	parameters: browserJavaScriptSchema,
 	execute: async (_toolCallId: string, args: Static<typeof browserJavaScriptSchema>, _signal?: AbortSignal) => {
 		try {
+			// Check if code contains navigation that will destroy execution context
+			const navigationRegex =
+				/\b(window\.location\s*=|location\.href\s*=|history\.(back|forward|go)\s*\(|window\.open\s*\(|document\.location\s*=)/;
+			const navigationMatch = args.code.match(navigationRegex);
+
+			// Extract just the navigation command if found
+			let navigationCommand: string | null = null;
+			if (navigationMatch) {
+				// Find the line containing the navigation
+				const lines = args.code.split("\n");
+				for (const line of lines) {
+					if (navigationRegex.test(line)) {
+						navigationCommand = line.trim();
+						break;
+					}
+				}
+			}
+
+			// If navigation is detected and there's other code around it, reject and ask for split
+			if (navigationMatch) {
+				const codeWithoutComments = args.code
+					.replace(/\/\/.*$/gm, "")
+					.replace(/\/\*[\s\S]*?\*\//g, "")
+					.trim();
+				const codeLines = codeWithoutComments.split("\n").filter((line) => line.trim().length > 0);
+
+				// If there's more than just the navigation line, reject
+				if (codeLines.length > 1) {
+					return {
+						output: `⚠️ Navigation command detected in multi-line code block.
+
+Navigation commands (history.back/forward/go, window.location assignment, etc.) destroy the execution context, so any code before or after them may not execute properly.
+
+Please split this into TWO separate tool calls:
+
+1. First tool call - navigation only:
+${navigationCommand}
+
+2. Second tool call - everything else (will run on the new page after navigation completes)
+
+This ensures reliable execution.`,
+						isError: true,
+						details: { files: [] },
+					};
+				}
+			}
+
 			// Check if scripting API is available
 			if (!browser.scripting || !browser.scripting.executeScript) {
 				return {
