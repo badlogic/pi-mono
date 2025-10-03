@@ -24,6 +24,9 @@ export class HtmlArtifact extends ArtifactElement {
 	private consoleLogsRef: Ref<HTMLDivElement> = createRef();
 	private consoleButtonRef: Ref<HTMLButtonElement> = createRef();
 
+	// Store message handler so we can remove it
+	private messageHandler?: (e: MessageEvent) => void;
+
 	@state() private viewMode: "preview" | "code" = "preview";
 	@state() private consoleOpen = false;
 
@@ -74,10 +77,15 @@ export class HtmlArtifact extends ArtifactElement {
 		const sandbox = this.sandboxIframeRef.value;
 		if (!sandbox) return;
 
+		// Remove previous message handler if it exists
+		if (this.messageHandler) {
+			window.removeEventListener("message", this.messageHandler);
+		}
+
 		const sandboxId = `artifact-${this.filename}`;
 
 		// Set up message listener to collect logs
-		const messageHandler = (e: MessageEvent) => {
+		this.messageHandler = (e: MessageEvent) => {
 			if (e.data.sandboxId !== sandboxId) return;
 
 			if (e.data.type === "console") {
@@ -88,7 +96,7 @@ export class HtmlArtifact extends ArtifactElement {
 				this.updateConsoleButton();
 			}
 		};
-		window.addEventListener("message", messageHandler);
+		window.addEventListener("message", this.messageHandler);
 
 		// Load content (iframe persists, doesn't get removed)
 		sandbox.loadContent(sandboxId, html, this.attachments);
@@ -96,6 +104,15 @@ export class HtmlArtifact extends ArtifactElement {
 
 	override get content(): string {
 		return this._content;
+	}
+
+	override disconnectedCallback() {
+		super.disconnectedCallback();
+		// Clean up message handler when element is removed from DOM
+		if (this.messageHandler) {
+			window.removeEventListener("message", this.messageHandler);
+			this.messageHandler = undefined;
+		}
 	}
 
 	override firstUpdated() {

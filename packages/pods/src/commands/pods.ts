@@ -141,7 +141,7 @@ export const setupPod = async (
 			const [id, name, memory] = line.split(",").map((s) => s.trim());
 			if (id !== undefined) {
 				gpus.push({
-					id: parseInt(id),
+					id: parseInt(id, 10),
 					name: name || "Unknown",
 					memory: memory || "Unknown",
 				});

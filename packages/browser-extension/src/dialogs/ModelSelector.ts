@@ -1,4 +1,4 @@
-import { Badge, Button, DialogHeader, html, icon, type TemplateResult } from "@mariozechner/mini-lit";
+import { Badge, Button, DialogBase, DialogHeader, html, icon, type TemplateResult } from "@mariozechner/mini-lit";
 import type { Model } from "@mariozechner/pi-ai";
 import { MODELS } from "@mariozechner/pi-ai/dist/models.generated.js";
 import type { PropertyValues } from "lit";
@@ -9,7 +9,6 @@ import { Ollama } from "ollama/dist/browser.mjs";
 import { Input } from "../components/Input.js";
 import { formatModelCost } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
-import { DialogBase } from "./DialogBase.js";
 
 @customElement("agent-model-selector")
 export class ModelSelector extends DialogBase {

@@ -1,6 +1,5 @@
 import { getProviders } from "@mariozechner/pi-ai";
 
-// @ts-ignore - browser global may exist in Firefox
 declare const browser: any;
 
 /**

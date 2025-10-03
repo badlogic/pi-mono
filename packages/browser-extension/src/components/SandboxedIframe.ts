@@ -2,7 +2,6 @@ import { LitElement } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 
-// @ts-ignore - browser global exists in Firefox
 declare const browser: any;
 
 export interface SandboxFile {

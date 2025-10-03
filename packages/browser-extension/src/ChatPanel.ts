@@ -9,7 +9,6 @@ import { browserJavaScriptTool, createJavaScriptReplTool } from "./tools/index.j
 import { registerToolRenderer } from "./tools/renderer-registry.js";
 import { getAuthToken } from "./utils/auth-token.js";
 import { i18n } from "./utils/i18n.js";
-import { longSession, simpleHtml } from "./utils/test-sessions.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
@@ -100,15 +99,15 @@ export class ChatPanel extends LitElement {
 			this.requestUpdate();
 		};
 
-		let initialState = {
+		const initialState = {
 			systemPrompt: this.systemPrompt,
-			model: getModel("anthropic", "claude-3-5-haiku-20241022"),
+			model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
 			tools: [browserJavaScriptTool, javascriptReplTool, this.artifactsPanel.tool],
 			thinkingLevel: "off" as ThinkingLevel,
 			messages: [],
 		} satisfies Partial<AgentSessionState>;
 		// initialState = { ...initialState, ...(simpleHtml as any) };
-		initialState = { ...initialState, ...(longSession as any) };
+		// initialState = { ...initialState, ...(longSession as any) };
 
 		// Create agent session first so attachments provider works
 		this.session = new AgentSession({

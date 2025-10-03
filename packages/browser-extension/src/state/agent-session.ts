@@ -304,6 +304,8 @@ export class AgentSession {
 	}
 
 	private emit(e: AgentSessionEvent) {
-		this.listeners.forEach((l) => l(e));
+		for (const listener of this.listeners) {
+			listener(e);
+		}
 	}
 }

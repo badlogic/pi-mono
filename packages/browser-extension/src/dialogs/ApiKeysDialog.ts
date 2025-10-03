@@ -1,11 +1,10 @@
-import { Alert, Badge, Button, DialogHeader, html, type TemplateResult } from "@mariozechner/mini-lit";
+import { Alert, Badge, Button, DialogBase, DialogHeader, html, type TemplateResult } from "@mariozechner/mini-lit";
 import { type Context, complete, getModel, getProviders } from "@mariozechner/pi-ai";
 import type { PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { Input } from "../components/Input.js";
 import { keyStore } from "../state/KeyStore.js";
 import { i18n } from "../utils/i18n.js";
-import { DialogBase } from "./DialogBase.js";
 
 // Test models for each provider - known to be reliable and cheap
 const TEST_MODELS: Record<string, string> = {

@@ -267,7 +267,7 @@ try {
 						context = args[i + 1];
 						i++;
 					} else if (args[i] === "--gpus" && i + 1 < args.length) {
-						gpus = parseInt(args[i + 1]);
+						gpus = parseInt(args[i + 1], 10);
 						if (Number.isNaN(gpus) || gpus < 1) {
 							console.error(chalk.red("--gpus must be a positive number"));
 							process.exit(1);

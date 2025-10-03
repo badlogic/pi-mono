@@ -72,7 +72,7 @@ describe("Differential Rendering - Dynamic Content", () => {
 			const match = line.match(/Dynamic Item (\d+)/);
 			if (match) {
 				dynamicItemsInBuffer++;
-				allItemNumbers.add(parseInt(match[1]));
+				allItemNumbers.add(parseInt(match[1], 10));
 			}
 		}
 

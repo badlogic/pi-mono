@@ -1,3 +1,4 @@
+// biome-ignore lint/suspicious/noTemplateCurlyInString: Test data contains code snippets with template literals
 export const simpleHtml = {
 	systemPrompt:
 		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accesing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
@@ -2083,6 +2084,161 @@ export const longSession = {
 					cacheRead: 0,
 					cacheWrite: 0,
 					total: 0.09270300000000001,
+				},
+			},
+			stopReason: "stop",
+		},
+		{
+			role: "user",
+			content: [
+				{
+					type: "text",
+					text: "add 2 console log statements to index.html",
+				},
+			],
+		},
+		{
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: "toolu_01WrJNA9ncm1kKvrPLmXEfvV",
+					name: "artifacts",
+					arguments: {
+						command: "update",
+						filename: "index.html",
+						old_str: "    </div>\n</body>\n</html>",
+						new_str:
+							"    </div>\n    <script>\n        console.log('Page loaded successfully!');\n        console.log('Welcome to the simple HTML page');\n    </script>\n</body>\n</html>",
+					},
+				},
+			],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5-20250929",
+			usage: {
+				input: 30699,
+				output: 162,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0.092097,
+					output: 0.00243,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.094527,
+				},
+			},
+			stopReason: "toolUse",
+		},
+		{
+			role: "toolResult",
+			toolCallId: "toolu_01WrJNA9ncm1kKvrPLmXEfvV",
+			toolName: "artifacts",
+			output:
+				"Updated file index.html\n\nExecution timed out. Partial logs:\n[log] Page loaded successfully!\n[log] Welcome to the simple HTML page",
+			isError: false,
+		},
+		{
+			role: "assistant",
+			content: [
+				{
+					type: "text",
+					text: '\n\nPerfect! I\'ve added 2 console log statements to index.html. The logs show they\'re working:\n1. "Page loaded successfully!"\n2. "Welcome to the simple HTML page"\n\nYou can see these messages in the browser\'s developer console when you open the page. ✅',
+				},
+			],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5-20250929",
+			usage: {
+				input: 30906,
+				output: 67,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0.09271800000000001,
+					output: 0.001005,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.09372300000000001,
+				},
+			},
+			stopReason: "stop",
+		},
+		{
+			role: "user",
+			content: [
+				{
+					type: "text",
+					text: "add a third",
+				},
+			],
+		},
+		{
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: "toolu_01DPsTn1gLbZiTDsn44N52Vx",
+					name: "artifacts",
+					arguments: {
+						command: "update",
+						filename: "index.html",
+						old_str:
+							"    <script>\n        console.log('Page loaded successfully!');\n        console.log('Welcome to the simple HTML page');\n    </script>",
+						new_str:
+							"    <script>\n        console.log('Page loaded successfully!');\n        console.log('Welcome to the simple HTML page');\n        console.log('Third console log added!');\n    </script>",
+					},
+				},
+			],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5-20250929",
+			usage: {
+				input: 30979,
+				output: 182,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0.092937,
+					output: 0.0027300000000000002,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.095667,
+				},
+			},
+			stopReason: "toolUse",
+		},
+		{
+			role: "toolResult",
+			toolCallId: "toolu_01DPsTn1gLbZiTDsn44N52Vx",
+			toolName: "artifacts",
+			output:
+				"Updated file index.html\n\nExecution timed out. Partial logs:\n[log] Page loaded successfully!\n[log] Welcome to the simple HTML page\n[log] Third console log added!",
+			isError: false,
+		},
+		{
+			role: "assistant",
+			content: [
+				{
+					type: "text",
+					text: '\n\nDone! Added a third console log statement: "Third console log added!" \n\nAll three logs are now firing successfully! 🎉',
+				},
+			],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5-20250929",
+			usage: {
+				input: 31214,
+				output: 33,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0.093642,
+					output: 0.000495,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.094137,
 				},
 			},
 			stopReason: "stop",

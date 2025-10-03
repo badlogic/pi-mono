@@ -7,7 +7,7 @@ import { registerToolRenderer } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
 
 // Cross-browser API compatibility
-// @ts-ignore - browser global exists in Firefox, chrome in Chrome
+// @ts-expect-error - browser global exists in Firefox, chrome in Chrome
 const browser = globalThis.browser || globalThis.chrome;
 
 const browserJavaScriptSchema = Type.Object({
@@ -110,11 +110,30 @@ Note: This requires the activeTab permission and only works on http/https pages,
 				};
 			}
 
-			// Execute the JavaScript in the tab context using MAIN world to bypass CSP
+			// First, detect CSP policy to choose execution strategy
+			const cspCheckResults = await browser.scripting.executeScript({
+				target: { tabId: tab.id },
+				world: "MAIN",
+				func: () => {
+					// Try to detect if eval is allowed
+					try {
+						// biome-ignore lint/security/noGlobalEval: CSP detection test
+						// biome-ignore lint/complexity/noCommaOperator: indirect eval pattern
+						(0, eval)("1");
+						return { canEval: true };
+					} catch (e) {
+						return { canEval: false, error: (e as Error).message };
+					}
+				},
+			});
+
+			const canUseEval = cspCheckResults[0]?.result?.canEval ?? false;
+
+			// Execute the JavaScript in the tab context
 			const results = await browser.scripting.executeScript({
 				target: { tabId: tab.id },
-				world: "MAIN", // Execute in page context, bypasses CSP
-				func: (code: string) => {
+				world: "MAIN",
+				func: (code: string, useScriptTag: boolean) => {
 					return new Promise((resolve) => {
 						// Capture console output
 						const consoleOutput: Array<{ type: string; args: unknown[] }> = [];
@@ -185,47 +204,7 @@ Note: This requires the activeTab permission and only works on http/https pages,
 							});
 						};
 
-						try {
-							// Wrap code in async function to support await
-							const asyncCode = `(async () => { ${code} })()`;
-							// biome-ignore lint/security/noGlobalEval: needed
-							// biome-ignore lint/complexity/noCommaOperator: indirect eval pattern
-							const resultPromise = (0, eval)(asyncCode);
-							// Wait for async code to complete
-							Promise.resolve(resultPromise)
-								.then(() => {
-									// Restore console
-									console.log = originalConsole.log;
-									console.warn = originalConsole.warn;
-									console.error = originalConsole.error;
-
-									// Clean up returnFile
-									delete (window as any).returnFile;
-
-									resolve({
-										success: true,
-										console: consoleOutput,
-										files: files,
-									});
-								})
-								.catch((error: unknown) => {
-									// Restore console
-									console.log = originalConsole.log;
-									console.warn = originalConsole.warn;
-									console.error = originalConsole.error;
-
-									// Clean up returnFile
-									delete (window as any).returnFile;
-
-									const err = error as Error;
-									resolve({
-										success: false,
-										error: err.message,
-										stack: err.stack,
-										console: consoleOutput,
-									});
-								});
-						} catch (error: unknown) {
+						const cleanup = () => {
 							// Restore console
 							console.log = originalConsole.log;
 							console.warn = originalConsole.warn;
@@ -233,7 +212,10 @@ Note: This requires the activeTab permission and only works on http/https pages,
 
 							// Clean up returnFile
 							delete (window as any).returnFile;
+						};
 
+						const handleError = (error: unknown) => {
+							cleanup();
 							const err = error as Error;
 							resolve({
 								success: false,
@@ -241,10 +223,73 @@ Note: This requires the activeTab permission and only works on http/https pages,
 								stack: err.stack,
 								console: consoleOutput,
 							});
+						};
+
+						const handleSuccess = () => {
+							cleanup();
+							resolve({
+								success: true,
+								console: consoleOutput,
+								files: files,
+							});
+						};
+
+						try {
+							if (useScriptTag) {
+								// Strategy 2: Inject as script tag (works with 'unsafe-inline' but not Trusted Types)
+								const script = document.createElement("script");
+								const uniqueId = `__browserjs_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+								// Wrap code in async IIFE and attach to window for result handling
+								const wrappedCode = `
+									(async () => {
+										try {
+											${code}
+											window.${uniqueId} = { success: true };
+										} catch (error) {
+											window.${uniqueId} = { success: false, error: error.message, stack: error.stack };
+										}
+									})();
+								`;
+
+								script.textContent = wrappedCode;
+
+								// Listen for execution completion
+								const checkCompletion = () => {
+									const result = (window as any)[uniqueId];
+									if (result) {
+										delete (window as any)[uniqueId];
+										script.remove();
+
+										if (result.success === false) {
+											handleError(new Error(result.error));
+										} else {
+											handleSuccess();
+										}
+									} else {
+										setTimeout(checkCompletion, 100);
+									}
+								};
+
+								document.head.appendChild(script);
+								setTimeout(checkCompletion, 100);
+							} else {
+								// Strategy 1: Use eval (fastest, but requires 'unsafe-eval' in CSP)
+								// Wrap code in async function to support await
+								const asyncCode = `(async () => { ${code} })()`;
+								// biome-ignore lint/security/noGlobalEval: needed for code execution
+								// biome-ignore lint/complexity/noCommaOperator: indirect eval pattern
+								const resultPromise = (0, eval)(asyncCode);
+
+								// Wait for async code to complete
+								Promise.resolve(resultPromise).then(handleSuccess).catch(handleError);
+							}
+						} catch (error: unknown) {
+							handleError(error);
 						}
 					});
 				},
-				args: [args.code],
+				args: [args.code, !canUseEval],
 			});
 
 			const result = results[0]?.result as

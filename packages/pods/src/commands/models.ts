@@ -181,7 +181,7 @@ export const startModel = async (
 				"64k": 65536,
 				"128k": 131072,
 			};
-			const maxTokens = contextSizes[options.context.toLowerCase()] || parseInt(options.context);
+			const maxTokens = contextSizes[options.context.toLowerCase()] || parseInt(options.context, 10);
 			vllmArgs = vllmArgs.filter((arg) => !arg.includes("max-model-len"));
 			vllmArgs.push("--max-model-len", String(maxTokens));
 		}
@@ -251,7 +251,7 @@ WRAPPER
 	`;
 
 	const pidResult = await sshExec(pod.ssh, startCmd);
-	const pid = parseInt(pidResult.stdout.trim());
+	const pid = parseInt(pidResult.stdout.trim(), 10);
 	if (!pid) {
 		console.error(chalk.red("Failed to start model runner"));
 		process.exit(1);

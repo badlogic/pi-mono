@@ -1,4 +1,4 @@
-import { PromptDialog } from "../dialogs/PromptDialog.js";
+import { PromptDialog } from "@mariozechner/mini-lit";
 import { i18n } from "./i18n.js";
 
 export async function getAuthToken(): Promise<string | undefined> {
