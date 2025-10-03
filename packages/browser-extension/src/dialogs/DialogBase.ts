@@ -23,6 +23,15 @@ export abstract class DialogBase extends LitElement {
 			}
 		};
 		window.addEventListener("keydown", this.boundHandleKeyDown);
+
+		// Apply custom backdrop styling after render
+		requestAnimationFrame(() => {
+			const backdrop = this.querySelector(".fixed.inset-0");
+			if (backdrop instanceof HTMLElement) {
+				backdrop.classList.remove("bg-black/50");
+				backdrop.classList.add("bg-background/80", "backdrop-blur-sm");
+			}
+		});
 	}
 
 	close() {

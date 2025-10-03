@@ -1,13 +1,15 @@
-import { html } from "@mariozechner/mini-lit";
+import { Badge, html } from "@mariozechner/mini-lit";
 import { getModel } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./components/AgentInterface.js";
-import { AgentSession } from "./state/agent-session.js";
+import { AgentSession, type AgentSessionState, type ThinkingLevel } from "./state/agent-session.js";
 import { ArtifactsPanel } from "./tools/artifacts/index.js";
 import { browserJavaScriptTool, createJavaScriptReplTool } from "./tools/index.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
 import { getAuthToken } from "./utils/auth-token.js";
+import { i18n } from "./utils/i18n.js";
+import { longSession, simpleHtml } from "./utils/test-sessions.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
@@ -17,7 +19,7 @@ export class ChatPanel extends LitElement {
 	@state() private artifactsPanel!: ArtifactsPanel;
 	@state() private hasArtifacts = false;
 	@state() private artifactCount = 0;
-	@state() private showArtifactsPanel = true;
+	@state() private showArtifactsPanel = false;
 	@state() private windowWidth = window.innerWidth;
 	@property({ type: String }) systemPrompt = "You are a helpful AI assistant.";
 
@@ -98,17 +100,26 @@ export class ChatPanel extends LitElement {
 			this.requestUpdate();
 		};
 
-		// Create agent session with default settings
+		let initialState = {
+			systemPrompt: this.systemPrompt,
+			model: getModel("anthropic", "claude-3-5-haiku-20241022"),
+			tools: [browserJavaScriptTool, javascriptReplTool, this.artifactsPanel.tool],
+			thinkingLevel: "off" as ThinkingLevel,
+			messages: [],
+		} satisfies Partial<AgentSessionState>;
+		// initialState = { ...initialState, ...(simpleHtml as any) };
+		initialState = { ...initialState, ...(longSession as any) };
+
+		// Create agent session first so attachments provider works
 		this.session = new AgentSession({
-			initialState: {
-				systemPrompt: this.systemPrompt,
-				model: getModel("anthropic", "claude-3-5-haiku-20241022"),
-				tools: [browserJavaScriptTool, javascriptReplTool, this.artifactsPanel.tool],
-				thinkingLevel: "off",
-			},
+			initialState,
 			authTokenProvider: async () => getAuthToken(),
 			transportMode: "direct", // Use direct mode by default (API keys from KeyStore)
 		});
+
+		// Reconstruct artifacts panel from initial messages (session must exist first)
+		await this.artifactsPanel.reconstructFromMessages(initialState.messages);
+		this.hasArtifacts = this.artifactsPanel.artifacts.size > 0;
 	}
 
 	override disconnectedCallback() {
@@ -136,25 +147,15 @@ export class ChatPanel extends LitElement {
 
 		const isMobile = this.windowWidth < BREAKPOINT;
 
-		// Set panel modes: collapsed when not showing, overlay on mobile
+		// Set panel props
 		if (this.artifactsPanel) {
 			this.artifactsPanel.collapsed = !this.showArtifactsPanel;
 			this.artifactsPanel.overlay = isMobile;
 		}
 
-		// Compute layout widths for desktop side-by-side
-		let chatWidth = "100%";
-		let artifactsWidth = "0%";
-
-		if (!isMobile && this.hasArtifacts && this.showArtifactsPanel) {
-			chatWidth = "50%";
-			artifactsWidth = "50%";
-		}
-
 		return html`
 			<div class="relative w-full h-full overflow-hidden flex">
-				<!-- Chat interface -->
-				<div class="h-full ${isMobile ? "w-full" : ""}" style="${!isMobile ? `width: ${chatWidth};` : ""}">
+				<div class="h-full" style="${!isMobile && this.showArtifactsPanel && this.hasArtifacts ? "width: 50%;" : "width: 100%;"}">
 					<agent-interface
 						.session=${this.session}
 						.enableAttachments=${true}
@@ -165,17 +166,39 @@ export class ChatPanel extends LitElement {
 					></agent-interface>
 				</div>
 
-				<!-- Artifacts panel (desktop side-by-side) -->
+				<!-- Floating pill when artifacts exist and panel is collapsed -->
 				${
-					!isMobile
-						? html`<div class="h-full" style="${this.hasArtifacts && this.showArtifactsPanel ? `width: ${artifactsWidth};` : "width: 0;"}">
-							${this.artifactsPanel}
-						</div>`
+					this.hasArtifacts && !this.showArtifactsPanel
+						? html`
+							<button
+								class="absolute z-30 top-4 left-1/2 -translate-x-1/2 pointer-events-auto"
+								@click=${() => {
+									this.showArtifactsPanel = true;
+									this.requestUpdate();
+								}}
+								title=${i18n("Show artifacts")}
+							>
+								${Badge(html`
+									<span class="inline-flex items-center gap-1">
+										<span>${i18n("Artifacts")}</span>
+										${
+											this.artifactCount > 1
+												? html`<span
+													class="text-[10px] leading-none bg-primary-foreground/20 text-primary-foreground rounded px-1 font-mono tabular-nums"
+													>${this.artifactCount}</span
+												>`
+												: ""
+										}
+									</span>
+								`)}
+							</button>
+						`
 						: ""
 				}
 
-				<!-- Mobile: artifacts panel always rendered (shows pill when collapsed) -->
-				${isMobile ? html`<div class="absolute inset-0 pointer-events-none">${this.artifactsPanel}</div>` : ""}
+				<div class="h-full ${isMobile ? "absolute inset-0 pointer-events-none" : ""}" style="${!isMobile ? (!this.hasArtifacts || !this.showArtifactsPanel ? "display: none;" : "width: 50%;") : ""}">
+					${this.artifactsPanel}
+				</div>
 			</div>
 		`;
 	}

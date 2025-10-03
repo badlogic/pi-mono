@@ -1,4 +1,4 @@
-import { Badge, Button, Diff, icon } from "@mariozechner/mini-lit";
+import { Button, Diff, icon } from "@mariozechner/mini-lit";
 import { type AgentTool, type Message, StringEnum, type ToolCall, type ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
@@ -166,13 +166,17 @@ export class ArtifactsPanel extends LitElement implements ToolRenderer<Artifacts
 			// Store element
 			this.artifactElements.set(filename, element);
 
-			// Add to DOM after next render
+			// Add to DOM - try immediately if container exists, otherwise schedule
 			const newElement = element;
-			requestAnimationFrame(() => {
-				if (this.contentRef.value && !newElement.parentElement) {
-					this.contentRef.value.appendChild(newElement);
-				}
-			});
+			if (this.contentRef.value) {
+				this.contentRef.value.appendChild(newElement);
+			} else {
+				requestAnimationFrame(() => {
+					if (this.contentRef.value && !newElement.parentElement) {
+						this.contentRef.value.appendChild(newElement);
+					}
+				});
+			}
 		} else {
 			// Just update content
 			element.content = content;
@@ -820,46 +824,19 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 	override render(): TemplateResult {
 		const artifacts = Array.from(this._artifacts.values());
 
-		const showContainer = artifacts.length > 0 && !this.collapsed;
+		// Panel is hidden when collapsed OR when there are no artifacts
+		const showPanel = artifacts.length > 0 && !this.collapsed;
 
 		return html`
-			<!-- Floating reopen pill when collapsed and artifacts exist -->
-			${
-				this.collapsed && artifacts.length > 0
-					? html`
-						<button
-							class="absolute z-30 top-4 left-1/2 -translate-x-1/2 pointer-events-auto"
-							@click=${() => this.onOpen?.()}
-							title=${i18n("Show artifacts")}
-						>
-							${Badge(html`
-								<span class="inline-flex items-center gap-1">
-									<span>${i18n("Artifacts")}</span>
-									${
-										artifacts.length > 1
-											? html`<span
-												class="text-[10px] leading-none bg-primary-foreground/20 text-primary-foreground rounded px-1 font-mono tabular-nums"
-												>${artifacts.length}</span
-											>`
-											: ""
-									}
-								</span>
-							`)}
-						</button>
-					`
-					: ""
-			}
-
-			<!-- Panel container -->
 			<div
-				class="${showContainer ? "" : "hidden"} ${
+				class="${showPanel ? "" : "hidden"} ${
 					this.overlay ? "fixed inset-0 z-40 pointer-events-auto backdrop-blur-sm bg-background/95" : "relative"
-				} h-full flex flex-col bg-card text-card-foreground ${
+				} h-full flex flex-col bg-background text-card-foreground ${
 					!this.overlay ? "border-l border-border" : ""
 				} overflow-hidden shadow-xl"
 			>
 				<!-- Tab bar (always shown when there are artifacts) -->
-				<div class="flex items-center justify-between border-b border-border bg-muted/30">
+				<div class="flex items-center justify-between border-b border-border bg-background">
 					<div class="flex overflow-x-auto">
 						${artifacts.map((a) => {
 							const isActive = a.filename === this._activeFilename;
@@ -868,10 +845,10 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 								: "border-transparent text-muted-foreground hover:text-foreground";
 							return html`
 								<button
-									class="px-3 py-2 text-sm whitespace-nowrap border-b-2 ${activeClass}"
+									class="px-3 py-2 whitespace-nowrap border-b-2 ${activeClass}"
 									@click=${() => this.showArtifact(a.filename)}
 								>
-									<span class="font-mono">${a.filename}</span>
+									<span class="font-mono text-xs">${a.filename}</span>
 								</button>
 							`;
 						})}

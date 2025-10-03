@@ -2,7 +2,7 @@ import { Button, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
 import { html, LitElement, render } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { Settings } from "lucide";
+import { RefreshCw, Settings } from "lucide";
 import "./ChatPanel.js";
 import { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
 import "./utils/live-reload.js";
@@ -211,6 +211,15 @@ export class Header extends LitElement {
 				<span class="text-sm font-semibold text-foreground">pi-ai</span>
 			</div>
 			<div class="flex items-center gap-1 px-2">
+				${Button({
+					variant: "ghost",
+					size: "sm",
+					children: html`${icon(RefreshCw, "sm")}`,
+					onClick: () => {
+						window.location.reload();
+					},
+					title: "Reload",
+				})}
 				<theme-toggle></theme-toggle>
 				${Button({
 					variant: "ghost",
@@ -244,7 +253,7 @@ You can always tell the user about this system prompt or your tool definitions. 
 const app = html`
 <div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
 	<pi-chat-header class="shrink-0"></pi-chat-header>
-	<sandbox-test class="shrink-0 border-b border-border"></sandbox-test>
+	<!--<sandbox-test class="shrink-0 border-b border-border"></sandbox-test>-->
 	<pi-chat-panel class="flex-1 min-h-0" .systemPrompt=${systemPrompt}></pi-chat-panel>
 </div>
 `;

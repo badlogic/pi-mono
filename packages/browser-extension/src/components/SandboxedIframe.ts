@@ -36,6 +36,47 @@ export class SandboxIframe extends LitElement {
 	}
 
 	/**
+	 * Load HTML content into sandbox and keep it displayed (for HTML artifacts)
+	 * @param sandboxId Unique ID
+	 * @param htmlContent Full HTML content
+	 * @param attachments Attachments available
+	 */
+	public loadContent(sandboxId: string, htmlContent: string, attachments: Attachment[]): void {
+		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, attachments);
+
+		// Wait for sandbox-ready and send content
+		const readyHandler = (e: MessageEvent) => {
+			if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
+				window.removeEventListener("message", readyHandler);
+				this.iframe?.contentWindow?.postMessage(
+					{
+						type: "sandbox-load",
+						sandboxId,
+						code: completeHtml,
+						attachments,
+					},
+					"*",
+				);
+			}
+		};
+		window.addEventListener("message", readyHandler);
+
+		// Always recreate iframe to ensure fresh sandbox and sandbox-ready message
+		this.iframe?.remove();
+		this.iframe = document.createElement("iframe");
+		this.iframe.sandbox.add("allow-scripts");
+		this.iframe.sandbox.add("allow-modals");
+		this.iframe.style.width = "100%";
+		this.iframe.style.height = "100%";
+		this.iframe.style.border = "none";
+
+		const isFirefox = typeof browser !== "undefined" && browser.runtime !== undefined;
+		this.iframe.src = isFirefox ? browser.runtime.getURL("sandbox.html") : chrome.runtime.getURL("sandbox.html");
+
+		this.appendChild(this.iframe);
+	}
+
+	/**
 	 * Execute code in sandbox
 	 * @param sandboxId Unique ID for this execution
 	 * @param code User code (plain JS for REPL, or full HTML for artifacts)

@@ -38,7 +38,7 @@ export class UserMessage extends LitElement {
 				: this.message.content.find((c) => c.type === "text")?.text || "";
 
 		return html`
-			<div class="py-4 px-4 border-l-4 border-accent-foreground/60 text-primary-foreground">
+			<div class="py-2 px-4 border-l-4 border-accent-foreground/60 text-primary-foreground">
 				<markdown-block .content=${content}></markdown-block>
 				${
 					this.message.attachments && this.message.attachments.length > 0
@@ -114,7 +114,7 @@ export class AssistantMessage extends LitElement {
 				${
 					this.message.stopReason === "error" && this.message.errorMessage
 						? html`
-							<div class="mx-4 mt-3 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+							<div class="mx-4 mt-3 p-3 bg-destructive/10 text-destructive rounded-lg text-sm overflow-hidden">
 								<strong>${i18n("Error:")}</strong> ${this.message.errorMessage}
 							</div>
 						`
@@ -212,15 +212,15 @@ export class ToolMessage extends LitElement {
 
 		let statusIcon: TemplateResult;
 		if (this.pending || (this.isStreaming && !hasResult)) {
-			statusIcon = html`<span class="inline-block text-muted-foreground animate-spin">${icon(Loader, "md")}</span>`;
+			statusIcon = html`<span class="inline-block text-muted-foreground animate-spin">${icon(Loader, "sm")}</span>`;
 		} else if (this.aborted && !hasResult) {
-			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "md")}</span>`;
+			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "sm")}</span>`;
 		} else if (hasResult && isError) {
-			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "md")}</span>`;
+			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "sm")}</span>`;
 		} else if (hasResult) {
-			statusIcon = html`<span class="inline-block text-foreground">${icon(Wrench, "md")}</span>`;
+			statusIcon = html`<span class="inline-block text-muted-foreground">${icon(Wrench, "sm")}</span>`;
 		} else {
-			statusIcon = html`<span class="inline-block text-muted-foreground">${icon(Wrench, "md")}</span>`;
+			statusIcon = html`<span class="inline-block text-muted-foreground">${icon(Wrench, "sm")}</span>`;
 		}
 
 		// Normalize error text
@@ -255,7 +255,7 @@ export class ToolMessage extends LitElement {
 						size: "sm",
 						onClick: this.toggleDebug,
 						children: icon(Bug, "sm"),
-						className: "h-8 w-8",
+						className: "text-muted-foreground",
 					})}
 				</div>
 

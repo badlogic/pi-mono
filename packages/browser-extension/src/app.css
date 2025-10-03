@@ -12,3 +12,26 @@ body {
 	font-size: 16px;
 	-webkit-font-smoothing: antialiased;
 }
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-border) rgba(0, 0, 0, 0);
+}
+
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background-color: var(--color-border);
+	border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background-color: rgba(0, 0, 0, 0);
+}

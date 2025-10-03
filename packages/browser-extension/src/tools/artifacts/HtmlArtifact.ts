@@ -56,36 +56,42 @@ export class HtmlArtifact extends ArtifactElement {
 		const oldValue = this._content;
 		this._content = value;
 		if (oldValue !== value) {
+			// Reset logs when content changes
+			this.logs = [];
+			if (this.consoleLogsRef.value) {
+				this.consoleLogsRef.value.innerHTML = "";
+			}
 			this.requestUpdate();
 			// Execute content in sandbox if it exists
 			if (this.sandboxIframeRef.value && value) {
-				this.logs = [];
-				if (this.consoleLogsRef.value) {
-					this.consoleLogsRef.value.innerHTML = "";
-				}
 				this.updateConsoleButton();
 				this.executeContent(value);
 			}
 		}
 	}
 
-	private async executeContent(html: string) {
+	private executeContent(html: string) {
 		const sandbox = this.sandboxIframeRef.value;
 		if (!sandbox) return;
 
-		try {
-			const sandboxId = `artifact-${Date.now()}`;
-			const result = await sandbox.execute(sandboxId, html, this.attachments);
+		const sandboxId = `artifact-${this.filename}`;
 
-			// Update logs with proper type casting
-			this.logs = (result.console || []).map((log) => ({
-				type: log.type === "error" ? ("error" as const) : ("log" as const),
-				text: log.text,
-			}));
-			this.updateConsoleButton();
-		} catch (error) {
-			console.error("HTML artifact execution failed:", error);
-		}
+		// Set up message listener to collect logs
+		const messageHandler = (e: MessageEvent) => {
+			if (e.data.sandboxId !== sandboxId) return;
+
+			if (e.data.type === "console") {
+				this.logs.push({
+					type: e.data.method === "error" ? "error" : "log",
+					text: e.data.text,
+				});
+				this.updateConsoleButton();
+			}
+		};
+		window.addEventListener("message", messageHandler);
+
+		// Load content (iframe persists, doesn't get removed)
+		sandbox.loadContent(sandboxId, html, this.attachments);
 	}
 
 	override get content(): string {
@@ -95,6 +101,15 @@ export class HtmlArtifact extends ArtifactElement {
 	override firstUpdated() {
 		// Execute initial content
 		if (this._content && this.sandboxIframeRef.value) {
+			this.executeContent(this._content);
+		}
+	}
+
+	override updated(changedProperties: Map<string | number | symbol, unknown>) {
+		super.updated(changedProperties);
+		// If we have content but haven't executed yet (e.g., during reconstruction),
+		// execute when the iframe ref becomes available
+		if (this._content && this.sandboxIframeRef.value && this.logs.length === 0) {
 			this.executeContent(this._content);
 		}
 	}
