@@ -286,11 +286,7 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 
 		return html`
 			<div class="flex flex-col gap-3">
-				${
-					output
-						? html`<div class="font-mono text-xs whitespace-pre-wrap bg-muted/50 p-3 rounded-md border">${output}</div>`
-						: ""
-				}
+				${output ? html`<console-block .content=${output}></console-block>` : ""}
 				${
 					attachments.length
 						? html`<div class="flex flex-wrap gap-2">
