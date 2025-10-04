@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from "@mariozechner/mini-lit";
+import { html, i18n, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
@@ -246,7 +246,7 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 		}
 
 		return html`
-			<div class="text-sm text-muted-foreground mb-2">${"Executing JavaScript"}</div>
+			<div class="text-sm text-muted-foreground mb-2">${i18n("Executing JavaScript")}</div>
 			<code-block .code=${params.code || ""} language="javascript"></code-block>
 		`;
 	},

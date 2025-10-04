@@ -2,14 +2,10 @@ import type { TemplateResult } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { getToolRenderer, registerToolRenderer } from "./renderer-registry.js";
 import { BashRenderer } from "./renderers/BashRenderer.js";
-import { CalculateRenderer } from "./renderers/CalculateRenderer.js";
 import { DefaultRenderer } from "./renderers/DefaultRenderer.js";
-import { GetCurrentTimeRenderer } from "./renderers/GetCurrentTimeRenderer.js";
 import "./javascript-repl.js"; // Auto-registers the renderer
 
 // Register all built-in tool renderers
-registerToolRenderer("calculate", new CalculateRenderer());
-registerToolRenderer("get_current_time", new GetCurrentTimeRenderer());
 registerToolRenderer("bash", new BashRenderer());
 
 const defaultRenderer = new DefaultRenderer();
