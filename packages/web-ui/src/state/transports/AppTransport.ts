@@ -314,7 +314,11 @@ function streamSimpleProxy(
 }
 
 // Proxy transport executes the turn using a remote proxy server
-export class ProxyTransport implements AgentTransport {
+/**
+ * Transport that uses an app server with user authentication tokens.
+ * The server manages user accounts and proxies requests to LLM providers.
+ */
+export class AppTransport implements AgentTransport {
 	// Hardcoded proxy URL for now - will be made configurable later
 	private readonly proxyUrl = "https://genai.mariozechner.at";
 

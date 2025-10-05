@@ -36,3 +36,9 @@ body {
 *::-webkit-scrollbar-thumb:hover {
 	background-color: rgba(0, 0, 0, 0);
 }
+
+/* Fix cursor for dialog close buttons */
+.fixed.inset-0 button[aria-label*="Close"],
+.fixed.inset-0 button[type="button"] {
+	cursor: pointer;
+}

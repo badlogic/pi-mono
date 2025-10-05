@@ -17,7 +17,7 @@
     "check": "npm run typecheck"
   },
   "dependencies": {
-    "@mariozechner/mini-lit": "^0.1.7",
+    "@mariozechner/mini-lit": "^0.1.8",
     "@mariozechner/pi-ai": "^0.5.43",
     "docx-preview": "^0.3.7",
     "jszip": "^3.10.1",

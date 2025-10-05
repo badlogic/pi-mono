@@ -23,6 +23,7 @@ export class ChatPanel extends LitElement {
 	@property({ type: String }) systemPrompt = "You are a helpful AI assistant.";
 	@property({ type: Array }) additionalTools: AgentTool<any, any>[] = [];
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
+	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 
 	private resizeHandler = () => {
 		this.windowWidth = window.innerWidth;
@@ -121,7 +122,7 @@ export class ChatPanel extends LitElement {
 		this.session = new AgentSession({
 			initialState,
 			authTokenProvider: async () => getAuthToken(),
-			transportMode: "direct", // Use direct mode by default (API keys from KeyStore)
+			transportMode: "provider", // Use provider mode by default (API keys from storage, optional CORS proxy)
 		});
 
 		// Reconstruct artifacts panel from initial messages (session must exist first)
@@ -170,6 +171,7 @@ export class ChatPanel extends LitElement {
 							.enableThinking=${true}
 							.showThemeToggle=${false}
 							.showDebugToggle=${false}
+							.onApiKeyRequired=${this.onApiKeyRequired}
 						></agent-interface>
 					</div>
 

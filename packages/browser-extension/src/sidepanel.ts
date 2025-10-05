@@ -1,6 +1,14 @@
 import { Button, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { ApiKeysDialog, ChromeStorageAdapter, LocalStorageKeyStore, setKeyStore } from "@mariozechner/pi-web-ui";
+import {
+	ApiKeyPromptDialog,
+	ApiKeysTab,
+	AppStorage,
+	ChromeStorageBackend,
+	ProxyTab,
+	SettingsDialog,
+	setAppStorage,
+} from "@mariozechner/pi-web-ui";
 import "@mariozechner/pi-web-ui"; // Import all web-ui components
 import { html, LitElement, render } from "lit";
 import { customElement, state } from "lit/decorators.js";
@@ -10,8 +18,12 @@ import "./utils/live-reload.js";
 
 declare const browser: any;
 
-// Initialize browser extension storage
-setKeyStore(new LocalStorageKeyStore(new ChromeStorageAdapter()));
+// Initialize browser extension storage using chrome.storage
+const storage = new AppStorage({
+	settings: new ChromeStorageBackend("settings"),
+	providerKeys: new ChromeStorageBackend("providerKeys"),
+});
+setAppStorage(storage);
 
 // Get sandbox URL for extension CSP restrictions
 const getSandboxUrl = () => {
@@ -68,7 +80,7 @@ export class Header extends LitElement {
 					size: "sm",
 					children: html`${icon(Settings, "sm")}`,
 					onClick: async () => {
-						ApiKeysDialog.open();
+						SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]);
 					},
 				})}
 			</div>
@@ -98,6 +110,10 @@ class App extends LitElement {
 		return this;
 	}
 
+	private async handleApiKeyRequired(provider: string): Promise<boolean> {
+		return await ApiKeyPromptDialog.prompt(provider);
+	}
+
 	private handleNewSession() {
 		// Remove the old chat panel
 		const oldPanel = this.querySelector("pi-chat-panel");
@@ -111,6 +127,7 @@ class App extends LitElement {
 		newPanel.systemPrompt = systemPrompt;
 		newPanel.additionalTools = [browserJavaScriptTool];
 		newPanel.sandboxUrlProvider = getSandboxUrl;
+		newPanel.onApiKeyRequired = (provider: string) => this.handleApiKeyRequired(provider);
 
 		const container = this.querySelector(".w-full");
 		if (container) {
@@ -127,6 +144,7 @@ class App extends LitElement {
 				.systemPrompt=${systemPrompt}
 				.additionalTools=${[browserJavaScriptTool]}
 				.sandboxUrlProvider=${getSandboxUrl}
+				.onApiKeyRequired=${(provider: string) => this.handleApiKeyRequired(provider)}
 			></pi-chat-panel>
 		</div>
 		`;

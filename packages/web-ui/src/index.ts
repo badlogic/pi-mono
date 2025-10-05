@@ -17,23 +17,28 @@ export {
 	type SandboxUrlProvider,
 } from "./components/SandboxedIframe.js";
 export { StreamingMessageContainer } from "./components/StreamingMessageContainer.js";
-export { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
+export { ApiKeyPromptDialog } from "./dialogs/ApiKeyPromptDialog.js";
 export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs
 export { ModelSelector } from "./dialogs/ModelSelector.js";
+export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/SettingsDialog.js";
 export type { AgentSessionState, ThinkingLevel } from "./state/agent-session.js";
 // State management
 export { AgentSession } from "./state/agent-session.js";
-export type { KeyStore } from "./state/key-store.js";
-export { getKeyStore, LocalStorageKeyStore, setKeyStore } from "./state/key-store.js";
-export type { StorageAdapter } from "./state/storage-adapter.js";
-export { ChromeStorageAdapter, LocalStorageAdapter } from "./state/storage-adapter.js";
 
 // Transports
-export { DirectTransport } from "./state/transports/DirectTransport.js";
-export { ProxyTransport } from "./state/transports/ProxyTransport.js";
+export { AppTransport } from "./state/transports/AppTransport.js";
+export { ProviderTransport } from "./state/transports/ProviderTransport.js";
 export type { ProxyAssistantMessageEvent } from "./state/transports/proxy-types.js";
 export type { AgentRunConfig, AgentTransport } from "./state/transports/types.js";
+// Storage
+export { AppStorage, getAppStorage, initAppStorage, setAppStorage } from "./storage/app-storage.js";
+export { ChromeStorageBackend } from "./storage/backends/chrome-storage-backend.js";
+export { IndexedDBBackend } from "./storage/backends/indexeddb-backend.js";
+export { LocalStorageBackend } from "./storage/backends/local-storage-backend.js";
+export { ProviderKeysRepository } from "./storage/repositories/provider-keys-repository.js";
+export { SettingsRepository } from "./storage/repositories/settings-repository.js";
+export type { AppStorageConfig, StorageBackend } from "./storage/types.js";
 // Artifacts
 export { ArtifactElement } from "./tools/artifacts/ArtifactElement.js";
 export { type Artifact, ArtifactsPanel, type ArtifactsParams } from "./tools/artifacts/artifacts.js";

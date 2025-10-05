@@ -10,8 +10,8 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AppMessage } from "../components/Messages.js";
 import type { Attachment } from "../utils/attachment-utils.js";
-import { DirectTransport } from "./transports/DirectTransport.js";
-import { ProxyTransport } from "./transports/ProxyTransport.js";
+import { AppTransport } from "./transports/AppTransport.js";
+import { ProviderTransport } from "./transports/ProviderTransport.js";
 import type { AgentRunConfig, AgentTransport } from "./transports/types.js";
 import type { DebugLogEntry } from "./types.js";
 
@@ -35,7 +35,7 @@ export type AgentSessionEvent =
 	| { type: "error-no-model" }
 	| { type: "error-no-api-key"; provider: string };
 
-export type TransportMode = "direct" | "proxy";
+export type TransportMode = "provider" | "app";
 
 export interface AgentSessionOptions {
 	initialState?: Partial<AgentSessionState>;
@@ -69,12 +69,12 @@ export class AgentSession {
 		this.messagePreprocessor = opts.messagePreprocessor;
 		this.debugListener = opts.debugListener;
 
-		const mode = opts.transportMode || "direct";
+		const mode = opts.transportMode || "provider";
 
-		if (mode === "proxy") {
-			this.transport = new ProxyTransport(async () => this.preprocessMessages());
+		if (mode === "app") {
+			this.transport = new AppTransport(async () => this.preprocessMessages());
 		} else {
-			this.transport = new DirectTransport(async () => this.preprocessMessages());
+			this.transport = new ProviderTransport(async () => this.preprocessMessages());
 		}
 	}
 

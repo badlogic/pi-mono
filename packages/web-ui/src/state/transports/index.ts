@@ -1,3 +1,3 @@
-export * from "./DirectTransport.js";
-export * from "./ProxyTransport.js";
+export * from "./AppTransport.js";
+export * from "./ProviderTransport.js";
 export * from "./types.js";

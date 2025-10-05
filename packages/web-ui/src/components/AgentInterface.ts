@@ -2,14 +2,13 @@ import { html } from "@mariozechner/mini-lit";
 import type { ToolResultMessage, Usage } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
-import { ApiKeysDialog } from "../dialogs/ApiKeysDialog.js";
 import { ModelSelector } from "../dialogs/ModelSelector.js";
 import type { MessageEditor } from "./MessageEditor.js";
 import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
 import type { AgentSession, AgentSessionEvent } from "../state/agent-session.js";
-import { getKeyStore } from "../state/key-store.js";
+import { getAppStorage } from "../storage/app-storage.js";
 import "./StreamingMessageContainer.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
@@ -25,6 +24,8 @@ export class AgentInterface extends LitElement {
 	@property() enableThinking = true;
 	@property() showThemeToggle = false;
 	@property() showDebugToggle = false;
+	// Optional custom API key prompt handler - if not provided, uses default dialog
+	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 
 	// References
 	@query("message-editor") private _messageEditor!: MessageEditor;
@@ -126,8 +127,7 @@ export class AgentInterface extends LitElement {
 			} else if (ev.type === "error-no-model") {
 				// TODO show some UI feedback
 			} else if (ev.type === "error-no-api-key") {
-				// Open API keys dialog to configure the missing key
-				ApiKeysDialog.open();
+				// Handled by onApiKeyRequired callback
 			}
 		});
 	}
@@ -166,15 +166,19 @@ export class AgentInterface extends LitElement {
 
 		// Check if API key exists for the provider (only needed in direct mode)
 		const provider = session.state.model.provider;
-		let apiKey = await getKeyStore().getKey(provider);
+		const apiKey = await getAppStorage().providerKeys.getKey(provider);
 
-		// If no API key, open the API keys dialog
+		// If no API key, prompt for it
 		if (!apiKey) {
-			await ApiKeysDialog.open();
-			// Check again after dialog closes
-			apiKey = await getKeyStore().getKey(provider);
+			if (!this.onApiKeyRequired) {
+				console.error("No API key configured and no onApiKeyRequired handler set");
+				return;
+			}
+
+			const success = await this.onApiKeyRequired(provider);
+
 			// If still no API key, abort the send
-			if (!apiKey) {
+			if (!success) {
 				return;
 			}
 		}

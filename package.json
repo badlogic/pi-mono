@@ -33,6 +33,7 @@
 	},
 	"version": "0.0.1",
 	"dependencies": {
-		"@mariozechner/jailjs": "^0.1.1"
+		"@mariozechner/jailjs": "^0.1.1",
+		"@mariozechner/mini-lit": "^0.1.8"
 	}
 }

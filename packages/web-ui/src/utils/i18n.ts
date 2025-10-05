@@ -98,6 +98,16 @@ declare module "@mariozechner/mini-lit" {
 		Download: string;
 		"No logs for {filename}": string;
 		"API Keys Settings": string;
+		Settings: string;
+		"API Keys": string;
+		Proxy: string;
+		"Use CORS Proxy": string;
+		"Proxy URL": string;
+		"Settings are stored locally in your browser": string;
+		Clear: string;
+		"API Key Required": string;
+		"Enter your API key for {provider}": string;
+		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.": string;
 	}
 }
 
@@ -202,6 +212,17 @@ const translations = {
 		Download: "Download",
 		"No logs for {filename}": "No logs for {filename}",
 		"API Keys Settings": "API Keys Settings",
+		Settings: "Settings",
+		"API Keys": "API Keys",
+		Proxy: "Proxy",
+		"Use CORS Proxy": "Use CORS Proxy",
+		"Proxy URL": "Proxy URL",
+		"Settings are stored locally in your browser": "Settings are stored locally in your browser",
+		Clear: "Clear",
+		"API Key Required": "API Key Required",
+		"Enter your API key for {provider}": "Enter your API key for {provider}",
+		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
+			"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.",
 	},
 	de: {
 		...defaultGerman,
@@ -303,6 +324,17 @@ const translations = {
 		Download: "Herunterladen",
 		"No logs for {filename}": "Keine Logs für {filename}",
 		"API Keys Settings": "API-Schlüssel Einstellungen",
+		Settings: "Einstellungen",
+		"API Keys": "API-Schlüssel",
+		Proxy: "Proxy",
+		"Use CORS Proxy": "CORS-Proxy verwenden",
+		"Proxy URL": "Proxy-URL",
+		"Settings are stored locally in your browser": "Einstellungen werden lokal in Ihrem Browser gespeichert",
+		Clear: "Löschen",
+		"API Key Required": "API-Schlüssel erforderlich",
+		"Enter your API key for {provider}": "Geben Sie Ihren API-Schlüssel für {provider} ein",
+		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
+			"Der CORS-Proxy entfernt CORS-Header aus API-Antworten und ermöglicht browserbasierte Anwendungen, direkte Aufrufe an LLM-Anbieter ohne CORS-Einschränkungen durchzuführen. Er leitet Anfragen an Anbieter weiter und entfernt Header, die sonst Cross-Origin-Anfragen blockieren würden.",
 	},
 };
 

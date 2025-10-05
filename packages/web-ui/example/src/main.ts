@@ -1,9 +1,12 @@
 import { Button, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { ChatPanel, ApiKeysDialog } from "@mariozechner/pi-web-ui";
+import { ApiKeyPromptDialog, ApiKeysTab, ChatPanel, initAppStorage, ProxyTab, SettingsDialog } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
 import { Settings } from "lucide";
 import "./app.css";
+
+// Initialize storage with default configuration (localStorage)
+initAppStorage();
 
 const systemPrompt = `You are a helpful AI assistant with access to various tools.
 
@@ -17,6 +20,9 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 const chatPanel = new ChatPanel();
 chatPanel.systemPrompt = systemPrompt;
 chatPanel.additionalTools = [];
+chatPanel.onApiKeyRequired = async (provider: string) => {
+	return await ApiKeyPromptDialog.prompt(provider);
+};
 
 // Render the app structure
 const appHtml = html`
@@ -32,8 +38,8 @@ const appHtml = html`
 					variant: "ghost",
 					size: "sm",
 					children: icon(Settings, "sm"),
-					onClick: () => ApiKeysDialog.open(),
-					title: "API Keys Settings",
+					onClick: () => SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]),
+					title: "Settings",
 				})}
 			</div>
 		</div>
