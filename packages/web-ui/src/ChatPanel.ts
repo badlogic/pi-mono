@@ -168,7 +168,7 @@ export class ChatPanel extends LitElement {
 							.session=${this.session}
 							.enableAttachments=${true}
 							.enableModelSelector=${true}
-							.enableThinking=${true}
+							.showThinkingSelector=${true}
 							.showThemeToggle=${false}
 							.showDebugToggle=${false}
 							.onApiKeyRequired=${this.onApiKeyRequired}

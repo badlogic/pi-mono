@@ -108,6 +108,11 @@ declare module "@mariozechner/mini-lit" {
 		"API Key Required": string;
 		"Enter your API key for {provider}": string;
 		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.": string;
+		Off: string;
+		Minimal: string;
+		Low: string;
+		Medium: string;
+		High: string;
 	}
 }
 
@@ -223,6 +228,11 @@ const translations = {
 		"Enter your API key for {provider}": "Enter your API key for {provider}",
 		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
 			"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.",
+		Off: "Off",
+		Minimal: "Minimal",
+		Low: "Low",
+		Medium: "Medium",
+		High: "High",
 	},
 	de: {
 		...defaultGerman,
@@ -335,6 +345,11 @@ const translations = {
 		"Enter your API key for {provider}": "Geben Sie Ihren API-Schlüssel für {provider} ein",
 		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
 			"Der CORS-Proxy entfernt CORS-Header aus API-Antworten und ermöglicht browserbasierte Anwendungen, direkte Aufrufe an LLM-Anbieter ohne CORS-Einschränkungen durchzuführen. Er leitet Anfragen an Anbieter weiter und entfernt Header, die sonst Cross-Origin-Anfragen blockieren würden.",
+		Off: "Aus",
+		Minimal: "Minimal",
+		Low: "Niedrig",
+		Medium: "Mittel",
+		High: "Hoch",
 	},
 };
 

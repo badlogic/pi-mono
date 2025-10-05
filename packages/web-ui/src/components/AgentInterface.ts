@@ -21,9 +21,8 @@ export class AgentInterface extends LitElement {
 	@property({ attribute: false }) session?: AgentSession;
 	@property() enableAttachments = true;
 	@property() enableModelSelector = true;
-	@property() enableThinking = true;
+	@property() enableThinkingSelector = true;
 	@property() showThemeToggle = false;
-	@property() showDebugToggle = false;
 	// Optional custom API key prompt handler - if not provided, uses default dialog
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 
@@ -286,7 +285,7 @@ export class AgentInterface extends LitElement {
 							.thinkingLevel=${state.thinkingLevel}
 							.showAttachmentButton=${this.enableAttachments}
 							.showModelSelector=${this.enableModelSelector}
-							.showThinking=${this.enableThinking}
+							.showThinkingSelector=${this.enableThinkingSelector}
 							.onSend=${(input: string, attachments: Attachment[]) => {
 								this.sendMessage(input, attachments);
 							}}
@@ -295,7 +294,7 @@ export class AgentInterface extends LitElement {
 								ModelSelector.open(state.model, (model) => session.setModel(model));
 							}}
 							.onThinkingChange=${
-								this.enableThinking
+								this.enableThinkingSelector
 									? (level: "off" | "minimal" | "low" | "medium" | "high") => {
 											session.setThinkingLevel(level);
 										}

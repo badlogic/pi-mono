@@ -1,9 +1,9 @@
-import { Button, html, icon } from "@mariozechner/mini-lit";
+import { Button, html, icon, Select, type SelectOption } from "@mariozechner/mini-lit";
 import type { Model } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, ref } from "lit/directives/ref.js";
-import { Loader2, Paperclip, Send, Sparkles, Square } from "lucide";
+import { Brain, Loader2, Paperclip, Send, Sparkles, Square } from "lucide";
 import "./AttachmentTile.js";
 import { type Attachment, loadAttachment } from "../utils/attachment-utils.js";
 import { i18n } from "../utils/i18n.js";
@@ -33,13 +33,15 @@ export class MessageEditor extends LitElement {
 
 	@property() isStreaming = false;
 	@property() currentModel?: Model<any>;
+	@property() thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" = "off";
 	@property() showAttachmentButton = true;
 	@property() showModelSelector = true;
-	@property() showThinking = false; // Disabled for now
+	@property() showThinkingSelector = true;
 	@property() onInput?: (value: string) => void;
 	@property() onSend?: (input: string, attachments: Attachment[]) => void;
 	@property() onAbort?: () => void;
 	@property() onModelSelect?: () => void;
+	@property() onThinkingChange?: (level: "off" | "minimal" | "low" | "medium" | "high") => void;
 	@property() onFilesChange?: (files: Attachment[]) => void;
 	@property() attachments: Attachment[] = [];
 	@property() maxFiles = 10;
@@ -150,6 +152,10 @@ export class MessageEditor extends LitElement {
 	}
 
 	override render() {
+		// Check if current model supports thinking/reasoning
+		const model = this.currentModel;
+		const supportsThinking = model?.reasoning === true; // Models with reasoning:true support thinking
+
 		return html`
 			<div class="bg-card rounded-xl border border-border shadow-sm">
 				<!-- Attachments -->
@@ -194,7 +200,7 @@ export class MessageEditor extends LitElement {
 
 				<!-- Button Row -->
 				<div class="px-2 pb-2 flex items-center justify-between">
-					<!-- Left side - attachment and quick action buttons -->
+					<!-- Left side - attachment and thinking selector -->
 					<div class="flex gap-2 items-center">
 						${
 							this.showAttachmentButton
@@ -213,6 +219,30 @@ export class MessageEditor extends LitElement {
 											children: icon(Paperclip, "sm"),
 										})}
 									`
+								: ""
+						}
+						${
+							supportsThinking && this.showThinkingSelector
+								? html`
+									${Select({
+										value: this.thinkingLevel,
+										placeholder: i18n("Off"),
+										options: [
+											{ value: "off", label: i18n("Off"), icon: icon(Brain, "sm") },
+											{ value: "minimal", label: i18n("Minimal"), icon: icon(Brain, "sm") },
+											{ value: "low", label: i18n("Low"), icon: icon(Brain, "sm") },
+											{ value: "medium", label: i18n("Medium"), icon: icon(Brain, "sm") },
+											{ value: "high", label: i18n("High"), icon: icon(Brain, "sm") },
+										] as SelectOption[],
+										onChange: (value: string) => {
+											this.onThinkingChange?.(value as "off" | "minimal" | "low" | "medium" | "high");
+										},
+										width: "80px",
+										size: "sm",
+										variant: "ghost",
+										fitContent: true,
+									})}
+								`
 								: ""
 						}
 					</div>

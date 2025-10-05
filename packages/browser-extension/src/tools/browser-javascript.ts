@@ -309,9 +309,7 @@ This ensures reliable execution.`,
 				);
 
 				return {
-					output:
-						output.trim() ||
-						"Code executed successfully (no output)\n\n⚠️ Note: CSP blocked direct execution. Code ran via JailJS interpreter.",
+					output: output.trim() || "Code executed successfully (no output)",
 					isError: false,
 					details: { files },
 				};
