@@ -1,5 +1,5 @@
 import { type AgentContext, agentLoop, type Message, type PromptConfig, type UserMessage } from "@mariozechner/pi-ai";
-import { keyStore } from "../KeyStore.js";
+import { getKeyStore } from "../key-store.js";
 import type { AgentRunConfig, AgentTransport } from "./types.js";
 
 export class DirectTransport implements AgentTransport {
@@ -7,7 +7,7 @@ export class DirectTransport implements AgentTransport {
 
 	async *run(userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
 		// Get API key from KeyStore
-		const apiKey = await keyStore.getKey(cfg.model.provider);
+		const apiKey = await getKeyStore().getKey(cfg.model.provider);
 		if (!apiKey) {
 			throw new Error("no-api-key");
 		}

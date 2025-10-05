@@ -29,6 +29,14 @@
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
   "sandbox": {
     "pages": ["sandbox.html"]
   },

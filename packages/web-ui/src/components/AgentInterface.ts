@@ -9,7 +9,7 @@ import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
 import type { AgentSession, AgentSessionEvent } from "../state/agent-session.js";
-import { keyStore } from "../state/KeyStore.js";
+import { getKeyStore } from "../state/key-store.js";
 import "./StreamingMessageContainer.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
@@ -166,13 +166,13 @@ export class AgentInterface extends LitElement {
 
 		// Check if API key exists for the provider (only needed in direct mode)
 		const provider = session.state.model.provider;
-		let apiKey = await keyStore.getKey(provider);
+		let apiKey = await getKeyStore().getKey(provider);
 
 		// If no API key, open the API keys dialog
 		if (!apiKey) {
 			await ApiKeysDialog.open();
 			// Check again after dialog closes
-			apiKey = await keyStore.getKey(provider);
+			apiKey = await getKeyStore().getKey(provider);
 			// If still no API key, abort the send
 			if (!apiKey) {
 				return;

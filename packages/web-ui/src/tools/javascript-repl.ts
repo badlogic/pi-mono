@@ -12,6 +12,7 @@ export async function executeJavaScript(
 	code: string,
 	attachments: Attachment[] = [],
 	signal?: AbortSignal,
+	sandboxUrlProvider?: () => string,
 ): Promise<{ output: string; files?: SandboxFile[] }> {
 	if (!code) {
 		throw new Error("Code parameter is required");
@@ -24,6 +25,9 @@ export async function executeJavaScript(
 
 	// Create a SandboxedIframe instance for execution
 	const sandbox = new SandboxIframe();
+	if (sandboxUrlProvider) {
+		sandbox.sandboxUrlProvider = sandboxUrlProvider;
+	}
 	sandbox.style.display = "none";
 	document.body.appendChild(sandbox);
 
@@ -93,11 +97,13 @@ const javascriptReplSchema = Type.Object({
 
 export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchema, JavaScriptReplToolResult> & {
 	attachmentsProvider?: () => Attachment[];
+	sandboxUrlProvider?: () => string;
 } {
 	return {
 		label: "JavaScript REPL",
 		name: "javascript_repl",
 		attachmentsProvider: () => [], // default to empty array
+		sandboxUrlProvider: undefined, // optional, for browser extensions
 		description: `Execute JavaScript code in a sandboxed browser environment with full modern browser capabilities.
 
 Environment: Modern browser with ALL Web APIs available:
@@ -173,7 +179,7 @@ Global variables:
 		parameters: javascriptReplSchema,
 		execute: async function (_toolCallId: string, args: Static<typeof javascriptReplSchema>, signal?: AbortSignal) {
 			const attachments = this.attachmentsProvider?.() || [];
-			const result = await executeJavaScript(args.code, attachments, signal);
+			const result = await executeJavaScript(args.code, attachments, signal, this.sandboxUrlProvider);
 			// Convert files to JSON-serializable with base64 payloads
 			const files = (result.files || []).map((f) => {
 				const toBase64 = (input: string | Uint8Array): { base64: string; size: number } => {

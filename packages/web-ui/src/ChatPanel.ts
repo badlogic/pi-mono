@@ -9,7 +9,6 @@ import { createJavaScriptReplTool } from "./tools/javascript-repl.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
 import { getAuthToken } from "./utils/auth-token.js";
 import { i18n } from "./utils/i18n.js";
-import { simpleHtml } from "./utils/test-sessions.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
@@ -23,6 +22,7 @@ export class ChatPanel extends LitElement {
 	@state() private windowWidth = window.innerWidth;
 	@property({ type: String }) systemPrompt = "You are a helpful AI assistant.";
 	@property({ type: Array }) additionalTools: AgentTool<any, any>[] = [];
+	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 
 	private resizeHandler = () => {
 		this.windowWidth = window.innerWidth;
@@ -45,8 +45,17 @@ export class ChatPanel extends LitElement {
 		this.style.height = "100%";
 		this.style.minHeight = "0";
 
+		// Create JavaScript REPL tool with attachments provider
+		const javascriptReplTool = createJavaScriptReplTool();
+		if (this.sandboxUrlProvider) {
+			javascriptReplTool.sandboxUrlProvider = this.sandboxUrlProvider;
+		}
+
 		// Set up artifacts panel
 		this.artifactsPanel = new ArtifactsPanel();
+		if (this.sandboxUrlProvider) {
+			this.artifactsPanel.sandboxUrlProvider = this.sandboxUrlProvider;
+		}
 		registerToolRenderer("artifacts", this.artifactsPanel);
 
 		// Attachments provider for both REPL and artifacts
@@ -72,11 +81,8 @@ export class ChatPanel extends LitElement {
 			return attachments;
 		};
 
-		this.artifactsPanel.attachmentsProvider = getAttachments;
-
-		// Set up JavaScript REPL tool with attachments provider
-		const javascriptReplTool = createJavaScriptReplTool();
 		javascriptReplTool.attachmentsProvider = getAttachments;
+		this.artifactsPanel.attachmentsProvider = getAttachments;
 
 		this.artifactsPanel.onArtifactsChange = () => {
 			const count = this.artifactsPanel.artifacts?.size ?? 0;
@@ -101,14 +107,14 @@ export class ChatPanel extends LitElement {
 			this.requestUpdate();
 		};
 
-		let initialState = {
+		const initialState = {
 			systemPrompt: this.systemPrompt,
 			model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
 			tools: [...this.additionalTools, javascriptReplTool, this.artifactsPanel.tool],
 			thinkingLevel: "off" as ThinkingLevel,
 			messages: [],
 		} satisfies Partial<AgentSessionState>;
-		initialState = { ...initialState, ...(simpleHtml as any) };
+		// initialState = { ...initialState, ...(simpleHtml as any) };
 		// initialState = { ...initialState, ...(longSession as any) };
 
 		// Create agent session first so attachments provider works

@@ -5,6 +5,10 @@
 /* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind 4 source directive */
 @source "../../../node_modules/@mariozechner/mini-lit/dist";
 
+/* Tell Tailwind to scan web-ui components */
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind 4 source directive */
+@source "../../web-ui/src";
+
 /* Import Tailwind */
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
 @import "tailwindcss";

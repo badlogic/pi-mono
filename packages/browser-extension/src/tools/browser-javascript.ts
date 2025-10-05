@@ -1,10 +1,8 @@
 import { html, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
+import { type Attachment, registerToolRenderer, type ToolRenderer } from "@mariozechner/pi-web-ui";
 import { type Static, Type } from "@sinclair/typebox";
-import "../components/ConsoleBlock.js"; // Ensure console-block is registered
-import type { Attachment } from "../utils/attachment-utils.js";
-import { registerToolRenderer } from "./renderer-registry.js";
-import type { ToolRenderer } from "./types.js";
+import "@mariozechner/pi-web-ui"; // Ensure all components are registered
 
 // Cross-browser API compatibility
 // @ts-expect-error - browser global exists in Firefox, chrome in Chrome
@@ -211,13 +209,111 @@ This ensures reliable execution.`,
 			const canUseEval = cspCheckResults[0]?.result?.canEval ?? false;
 			const canUseScriptTag = cspCheckResults[0]?.result?.canUseScriptTag ?? false;
 
-			// If neither method works, return error immediately
+			// If neither method works, fallback to JailJS via content script
 			if (!canUseEval && !canUseScriptTag) {
+				console.log("[pi-ai] CSP blocks eval and script injection, falling back to JailJS");
+
+				// Send execution request to content script
+				const response = await new Promise<{
+					success: boolean;
+					result?: unknown;
+					console?: Array<{ type: string; args: unknown[] }>;
+					files?: Array<{ fileName: string; content: string | Uint8Array; mimeType: string }>;
+					error?: string;
+					stack?: string;
+				}>((resolve) => {
+					browser.tabs.sendMessage(
+						tab.id,
+						{
+							type: "EXECUTE_CODE",
+							mode: "jailjs",
+							code: args.code,
+						},
+						resolve,
+					);
+				});
+
+				if (!response.success) {
+					return {
+						output: `JailJS Execution Error: ${response.error}\n\nStack:\n${response.stack || "No stack trace"}`,
+						isError: true,
+						details: { files: [] },
+					};
+				}
+
+				// Format console output
+				const formatArg = (arg: unknown): string => {
+					if (arg === null) return "null";
+					if (arg === undefined) return "undefined";
+					if (typeof arg === "string") return arg;
+					if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
+					try {
+						return JSON.stringify(arg, null, 2);
+					} catch {
+						return String(arg);
+					}
+				};
+
+				// Build output with console logs
+				let output = "";
+
+				// Add console output
+				if (response.console && response.console.length > 0) {
+					for (const entry of response.console) {
+						const prefix = entry.type === "error" ? "[ERROR]" : entry.type === "warn" ? "[WARN]" : "";
+						const formattedArgs = entry.args.map(formatArg).join(" ");
+						const line = prefix ? `${prefix} ${formattedArgs}` : formattedArgs;
+						output += line + "\n";
+					}
+				}
+
+				// Add file notifications
+				if (response.files && response.files.length > 0) {
+					output += `\n[Files returned: ${response.files.length}]\n`;
+					for (const file of response.files) {
+						output += `  - ${file.fileName} (${file.mimeType})\n`;
+					}
+				}
+
+				// Convert files to base64 for transport
+				const files = (response.files || []).map(
+					(f: { fileName: string; content: string | Uint8Array; mimeType: string }) => {
+						const toBase64 = (input: string | Uint8Array): { base64: string; size: number } => {
+							if (input instanceof Uint8Array) {
+								let binary = "";
+								const chunk = 0x8000;
+								for (let i = 0; i < input.length; i += chunk) {
+									binary += String.fromCharCode(...input.subarray(i, i + chunk));
+								}
+								return { base64: btoa(binary), size: input.length };
+							} else {
+								const enc = new TextEncoder();
+								const bytes = enc.encode(input);
+								let binary = "";
+								const chunk = 0x8000;
+								for (let i = 0; i < bytes.length; i += chunk) {
+									binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+								}
+								return { base64: btoa(binary), size: bytes.length };
+							}
+						};
+
+						const { base64, size } = toBase64(f.content);
+						return {
+							fileName: f.fileName || "file",
+							mimeType: f.mimeType || "application/octet-stream",
+							size,
+							contentBase64: base64,
+						};
+					},
+				);
+
 				return {
 					output:
-						"Cannot execute JavaScript on this page. The page's Content Security Policy blocks both eval() and inline script injection. This is common on sites with strict CSP.",
-					isError: true,
-					details: { files: [] },
+						output.trim() ||
+						"Code executed successfully (no output)\n\n⚠️ Note: CSP blocked direct execution. Code ran via JailJS interpreter.",
+					isError: false,
+					details: { files },
 				};
 			}
 

@@ -1,12 +1,23 @@
 import { Button, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
+import { ApiKeysDialog, ChromeStorageAdapter, LocalStorageKeyStore, setKeyStore } from "@mariozechner/pi-web-ui";
+import "@mariozechner/pi-web-ui"; // Import all web-ui components
 import { html, LitElement, render } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { Plus, RefreshCw, Settings } from "lucide";
-import "./ChatPanel.js";
-import "./components/SandboxedIframe.js";
-import { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
+import { browserJavaScriptTool } from "./tools/index.js";
 import "./utils/live-reload.js";
+
+declare const browser: any;
+
+// Initialize browser extension storage
+setKeyStore(new LocalStorageKeyStore(new ChromeStorageAdapter()));
+
+// Get sandbox URL for extension CSP restrictions
+const getSandboxUrl = () => {
+	const isFirefox = typeof browser !== "undefined" && browser.runtime !== undefined;
+	return isFirefox ? browser.runtime.getURL("sandbox.html") : chrome.runtime.getURL("sandbox.html");
+};
 
 async function getDom() {
 	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -98,6 +109,8 @@ class App extends LitElement {
 		const newPanel = document.createElement("pi-chat-panel") as any;
 		newPanel.className = "flex-1 min-h-0";
 		newPanel.systemPrompt = systemPrompt;
+		newPanel.additionalTools = [browserJavaScriptTool];
+		newPanel.sandboxUrlProvider = getSandboxUrl;
 
 		const container = this.querySelector(".w-full");
 		if (container) {
@@ -109,7 +122,12 @@ class App extends LitElement {
 		return html`
 		<div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
 			<pi-chat-header class="shrink-0" .onNewSession=${() => this.handleNewSession()}></pi-chat-header>
-			<pi-chat-panel class="flex-1 min-h-0" .systemPrompt=${systemPrompt}></pi-chat-panel>
+			<pi-chat-panel
+				class="flex-1 min-h-0"
+				.systemPrompt=${systemPrompt}
+				.additionalTools=${[browserJavaScriptTool]}
+				.sandboxUrlProvider=${getSandboxUrl}
+			></pi-chat-panel>
 		</div>
 		`;
 	}

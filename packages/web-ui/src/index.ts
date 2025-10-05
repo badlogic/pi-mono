@@ -21,11 +21,13 @@ export { ApiKeysDialog } from "./dialogs/ApiKeysDialog.js";
 export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs
 export { ModelSelector } from "./dialogs/ModelSelector.js";
-
+export type { AgentSessionState, ThinkingLevel } from "./state/agent-session.js";
 // State management
 export { AgentSession } from "./state/agent-session.js";
-export type { KeyStore, StorageAdapter } from "./state/KeyStore.js";
-export { KeyStoreImpl, keyStore } from "./state/KeyStore.js";
+export type { KeyStore } from "./state/key-store.js";
+export { getKeyStore, LocalStorageKeyStore, setKeyStore } from "./state/key-store.js";
+export type { StorageAdapter } from "./state/storage-adapter.js";
+export { ChromeStorageAdapter, LocalStorageAdapter } from "./state/storage-adapter.js";
 
 // Transports
 export { DirectTransport } from "./state/transports/DirectTransport.js";
@@ -41,6 +43,7 @@ export { SvgArtifact } from "./tools/artifacts/SvgArtifact.js";
 export { TextArtifact } from "./tools/artifacts/TextArtifact.js";
 // Tools
 export { getToolRenderer, registerToolRenderer, renderToolParams, renderToolResult } from "./tools/index.js";
+export { createJavaScriptReplTool, javascriptReplTool } from "./tools/javascript-repl.js";
 export { BashRenderer } from "./tools/renderers/BashRenderer.js";
 export { CalculateRenderer } from "./tools/renderers/CalculateRenderer.js";
 // Tool renderers

@@ -3,19 +3,19 @@ import { type Context, complete, getModel, getProviders } from "@mariozechner/pi
 import type { PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { Input } from "../components/Input.js";
-import { keyStore } from "../state/KeyStore.js";
+import { getKeyStore } from "../state/key-store.js";
 import { i18n } from "../utils/i18n.js";
 
 // Test models for each provider - known to be reliable and cheap
 const TEST_MODELS: Record<string, string> = {
 	anthropic: "claude-3-5-haiku-20241022",
 	openai: "gpt-4o-mini",
-	google: "gemini-2.0-flash-exp",
-	groq: "llama-3.3-70b-versatile",
-	openrouter: "openai/gpt-4o-mini",
-	cerebras: "llama3.1-8b",
-	xai: "grok-2-1212",
-	zai: "glm-4-plus",
+	google: "gemini-2.5-flash",
+	groq: "openai/gpt-oss-20b",
+	openrouter: "z-ai/glm-4.6",
+	cerebras: "gpt-oss-120b",
+	xai: "grok-4-fast-non-reasoning",
+	zai: "glm-4.5-air",
 };
 
 @customElement("api-keys-dialog")
@@ -42,7 +42,7 @@ export class ApiKeysDialog extends DialogBase {
 	}
 
 	private async loadKeys() {
-		this.apiKeys = await keyStore.getAllKeys();
+		this.apiKeys = await getKeyStore().getAllKeys();
 	}
 
 	private async testApiKey(provider: string, apiKey: string): Promise<boolean> {
@@ -69,13 +69,7 @@ export class ApiKeysDialog extends DialogBase {
 				maxTokens: 10, // Keep it minimal for testing
 			} as any);
 
-			// Check if response contains expected text
-			const text = response.content
-				.filter((b) => b.type === "text")
-				.map((b) => b.text)
-				.join("");
-
-			return text.toLowerCase().includes("test successful");
+			return true;
 		} catch (error) {
 			console.error(`API key test failed for ${provider}:`, error);
 			return false;
@@ -95,7 +89,7 @@ export class ApiKeysDialog extends DialogBase {
 			const isValid = await this.testApiKey(provider, key);
 
 			if (isValid) {
-				await keyStore.setKey(provider, key);
+				await getKeyStore().setKey(provider, key);
 				this.apiKeyInputs[provider] = ""; // Clear input
 				await this.loadKeys();
 				this.testResults[provider] = "success";
@@ -123,7 +117,7 @@ export class ApiKeysDialog extends DialogBase {
 		this.error = "";
 
 		try {
-			const apiKey = await keyStore.getKey(provider);
+			const apiKey = await getKeyStore().getKey(provider);
 			if (!apiKey) {
 				this.testResults[provider] = "error";
 				this.error = `No API key found for ${provider}`;
@@ -155,7 +149,7 @@ export class ApiKeysDialog extends DialogBase {
 	private async removeKey(provider: string) {
 		if (!confirm(`Remove API key for ${provider}?`)) return;
 
-		await keyStore.removeKey(provider);
+		await getKeyStore().removeKey(provider);
 		this.apiKeyInputs[provider] = "";
 		await this.loadKeys();
 	}

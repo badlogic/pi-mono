@@ -31,5 +31,8 @@
 	"engines": {
 		"node": ">=20.0.0"
 	},
-	"version": "0.0.1"
+	"version": "0.0.1",
+	"dependencies": {
+		"@mariozechner/jailjs": "^0.1.1"
+	}
 }
