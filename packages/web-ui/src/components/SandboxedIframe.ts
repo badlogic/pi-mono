@@ -1,5 +1,5 @@
 import { LitElement } from "lit";
-import { customElement } from "lit/decorators.js";
+import { customElement, property } from "lit/decorators.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 
 export interface SandboxFile {
@@ -15,9 +15,22 @@ export interface SandboxResult {
 	error?: { message: string; stack: string };
 }
 
+/**
+ * Function that returns the URL to the sandbox HTML file.
+ * Used in browser extensions to load sandbox.html via chrome.runtime.getURL().
+ */
+export type SandboxUrlProvider = () => string;
+
 @customElement("sandbox-iframe")
 export class SandboxIframe extends LitElement {
 	private iframe?: HTMLIFrameElement;
+
+	/**
+	 * Optional: Provide a function that returns the sandbox HTML URL.
+	 * If provided, the iframe will use this URL instead of srcdoc.
+	 * This is required for browser extensions with strict CSP.
+	 */
+	@property({ attribute: false }) sandboxUrlProvider?: SandboxUrlProvider;
 
 	createRenderRoot() {
 		return this;
@@ -41,6 +54,48 @@ export class SandboxIframe extends LitElement {
 	public loadContent(sandboxId: string, htmlContent: string, attachments: Attachment[]): void {
 		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, attachments);
 
+		if (this.sandboxUrlProvider) {
+			// Browser extension mode: use sandbox.html with postMessage
+			this.loadViaSandboxUrl(sandboxId, completeHtml, attachments);
+		} else {
+			// Web mode: use srcdoc
+			this.loadViaSrcdoc(completeHtml);
+		}
+	}
+
+	private loadViaSandboxUrl(sandboxId: string, completeHtml: string, attachments: Attachment[]): void {
+		// Wait for sandbox-ready and send content
+		const readyHandler = (e: MessageEvent) => {
+			if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
+				window.removeEventListener("message", readyHandler);
+				this.iframe?.contentWindow?.postMessage(
+					{
+						type: "sandbox-load",
+						sandboxId,
+						code: completeHtml,
+						attachments,
+					},
+					"*",
+				);
+			}
+		};
+		window.addEventListener("message", readyHandler);
+
+		// Always recreate iframe to ensure fresh sandbox and sandbox-ready message
+		this.iframe?.remove();
+		this.iframe = document.createElement("iframe");
+		this.iframe.sandbox.add("allow-scripts");
+		this.iframe.sandbox.add("allow-modals");
+		this.iframe.style.width = "100%";
+		this.iframe.style.height = "100%";
+		this.iframe.style.border = "none";
+
+		this.iframe.src = this.sandboxUrlProvider!();
+
+		this.appendChild(this.iframe);
+	}
+
+	private loadViaSrcdoc(completeHtml: string): void {
 		// Always recreate iframe to ensure fresh sandbox
 		this.iframe?.remove();
 		this.iframe = document.createElement("iframe");
@@ -50,7 +105,7 @@ export class SandboxIframe extends LitElement {
 		this.iframe.style.height = "100%";
 		this.iframe.style.border = "none";
 
-		// Set content directly via srcdoc (no CSP restrictions in web-ui)
+		// Set content directly via srcdoc (no CSP restrictions in web apps)
 		this.iframe.srcdoc = completeHtml;
 
 		this.appendChild(this.iframe);
@@ -125,9 +180,14 @@ export class SandboxIframe extends LitElement {
 				}
 			};
 
+			let readyHandler: ((e: MessageEvent) => void) | undefined;
+
 			const cleanup = () => {
 				window.removeEventListener("message", messageHandler);
 				signal?.removeEventListener("abort", abortHandler);
+				if (readyHandler) {
+					window.removeEventListener("message", readyHandler);
+				}
 				clearTimeout(timeoutId);
 			};
 
@@ -148,19 +208,52 @@ export class SandboxIframe extends LitElement {
 				}
 			}, 30000);
 
-			// NOW create and append iframe AFTER all listeners are set up
-			this.iframe?.remove();
-			this.iframe = document.createElement("iframe");
-			this.iframe.sandbox.add("allow-scripts");
-			this.iframe.sandbox.add("allow-modals");
-			this.iframe.style.width = "100%";
-			this.iframe.style.height = "100%";
-			this.iframe.style.border = "none";
+			if (this.sandboxUrlProvider) {
+				// Browser extension mode: wait for sandbox-ready and send content
+				readyHandler = (e: MessageEvent) => {
+					if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
+						window.removeEventListener("message", readyHandler!);
+						// Send the complete HTML
+						this.iframe?.contentWindow?.postMessage(
+							{
+								type: "sandbox-load",
+								sandboxId,
+								code: completeHtml,
+								attachments,
+							},
+							"*",
+						);
+					}
+				};
+				window.addEventListener("message", readyHandler);
 
-			// Set content via srcdoc BEFORE appending to DOM (no CSP restrictions in web-ui)
-			this.iframe.srcdoc = completeHtml;
+				// Create iframe AFTER all listeners are set up
+				this.iframe?.remove();
+				this.iframe = document.createElement("iframe");
+				this.iframe.sandbox.add("allow-scripts");
+				this.iframe.sandbox.add("allow-modals");
+				this.iframe.style.width = "100%";
+				this.iframe.style.height = "100%";
+				this.iframe.style.border = "none";
 
-			this.appendChild(this.iframe);
+				this.iframe.src = this.sandboxUrlProvider();
+
+				this.appendChild(this.iframe);
+			} else {
+				// Web mode: use srcdoc
+				this.iframe?.remove();
+				this.iframe = document.createElement("iframe");
+				this.iframe.sandbox.add("allow-scripts");
+				this.iframe.sandbox.add("allow-modals");
+				this.iframe.style.width = "100%";
+				this.iframe.style.height = "100%";
+				this.iframe.style.border = "none";
+
+				// Set content via srcdoc BEFORE appending to DOM
+				this.iframe.srcdoc = completeHtml;
+
+				this.appendChild(this.iframe);
+			}
 		});
 	}
 

@@ -1,0 +1,38 @@
+/* Import Claude theme from mini-lit */
+@import "@mariozechner/mini-lit/styles/themes/default.css";
+
+/* Tell Tailwind to scan mini-lit components */
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind 4 source directive */
+@source "../../../node_modules/@mariozechner/mini-lit/dist";
+
+/* Import Tailwind */
+/* biome-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
+@import "tailwindcss";
+
+body {
+	font-size: 16px;
+	-webkit-font-smoothing: antialiased;
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-border) rgba(0, 0, 0, 0);
+}
+
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background-color: var(--color-border);
+	border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background-color: rgba(0, 0, 0, 0);
+}
