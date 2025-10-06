@@ -113,6 +113,28 @@ declare module "@mariozechner/mini-lit" {
 		Low: string;
 		Medium: string;
 		High: string;
+		"Storage Permission Required": string;
+		"This app needs persistent storage to save your conversations": string;
+		"Why is this needed?": string;
+		"Without persistent storage, your browser may delete saved conversations when it needs disk space. Granting this permission ensures your chat history is preserved.": string;
+		"What this means:": string;
+		"Your conversations will be saved locally in your browser": string;
+		"Data will not be deleted automatically to free up space": string;
+		"You can still manually clear data at any time": string;
+		"No data is sent to external servers": string;
+		"Continue Anyway": string;
+		"Requesting...": string;
+		"Grant Permission": string;
+		Sessions: string;
+		"Load a previous conversation": string;
+		"No sessions yet": string;
+		"Delete this session?": string;
+		Today: string;
+		Yesterday: string;
+		"{days} days ago": string;
+		messages: string;
+		tokens: string;
+		"Drop files here": string;
 	}
 }
 
@@ -203,7 +225,6 @@ const translations = {
 		Create: "Create",
 		Rewrite: "Rewrite",
 		Get: "Get",
-		Delete: "Delete",
 		"Get logs": "Get logs",
 		"Show artifacts": "Show artifacts",
 		"Close artifacts": "Close artifacts",
@@ -233,6 +254,33 @@ const translations = {
 		Low: "Low",
 		Medium: "Medium",
 		High: "High",
+		"Storage Permission Required": "Storage Permission Required",
+		"This app needs persistent storage to save your conversations":
+			"This app needs persistent storage to save your conversations",
+		"Why is this needed?": "Why is this needed?",
+		"Without persistent storage, your browser may delete saved conversations when it needs disk space. Granting this permission ensures your chat history is preserved.":
+			"Without persistent storage, your browser may delete saved conversations when it needs disk space. Granting this permission ensures your chat history is preserved.",
+		"What this means:": "What this means:",
+		"Your conversations will be saved locally in your browser":
+			"Your conversations will be saved locally in your browser",
+		"Data will not be deleted automatically to free up space":
+			"Data will not be deleted automatically to free up space",
+		"You can still manually clear data at any time": "You can still manually clear data at any time",
+		"No data is sent to external servers": "No data is sent to external servers",
+		"Continue Anyway": "Continue Anyway",
+		"Requesting...": "Requesting...",
+		"Grant Permission": "Grant Permission",
+		Sessions: "Sessions",
+		"Load a previous conversation": "Load a previous conversation",
+		"No sessions yet": "No sessions yet",
+		"Delete this session?": "Delete this session?",
+		Today: "Today",
+		Yesterday: "Yesterday",
+		"{days} days ago": "{days} days ago",
+		messages: "messages",
+		tokens: "tokens",
+		Delete: "Delete",
+		"Drop files here": "Drop files here",
 	},
 	de: {
 		...defaultGerman,
@@ -320,7 +368,6 @@ const translations = {
 		Create: "Erstellen",
 		Rewrite: "Überschreiben",
 		Get: "Abrufen",
-		Delete: "Löschen",
 		"Get logs": "Logs abrufen",
 		"Show artifacts": "Artefakte anzeigen",
 		"Close artifacts": "Artefakte schließen",
@@ -350,6 +397,33 @@ const translations = {
 		Low: "Niedrig",
 		Medium: "Mittel",
 		High: "Hoch",
+		"Storage Permission Required": "Speicherberechtigung erforderlich",
+		"This app needs persistent storage to save your conversations":
+			"Diese App benötigt dauerhaften Speicher, um Ihre Konversationen zu speichern",
+		"Why is this needed?": "Warum wird das benötigt?",
+		"Without persistent storage, your browser may delete saved conversations when it needs disk space. Granting this permission ensures your chat history is preserved.":
+			"Ohne dauerhaften Speicher kann Ihr Browser gespeicherte Konversationen löschen, wenn Speicherplatz benötigt wird. Diese Berechtigung stellt sicher, dass Ihr Chatverlauf erhalten bleibt.",
+		"What this means:": "Was das bedeutet:",
+		"Your conversations will be saved locally in your browser":
+			"Ihre Konversationen werden lokal in Ihrem Browser gespeichert",
+		"Data will not be deleted automatically to free up space":
+			"Daten werden nicht automatisch gelöscht, um Speicherplatz freizugeben",
+		"You can still manually clear data at any time": "Sie können Daten jederzeit manuell löschen",
+		"No data is sent to external servers": "Keine Daten werden an externe Server gesendet",
+		"Continue Anyway": "Trotzdem fortfahren",
+		"Requesting...": "Anfrage läuft...",
+		"Grant Permission": "Berechtigung erteilen",
+		Sessions: "Sitzungen",
+		"Load a previous conversation": "Frühere Konversation laden",
+		"No sessions yet": "Noch keine Sitzungen",
+		"Delete this session?": "Diese Sitzung löschen?",
+		Today: "Heute",
+		Yesterday: "Gestern",
+		"{days} days ago": "vor {days} Tagen",
+		messages: "Nachrichten",
+		tokens: "Tokens",
+		Delete: "Löschen",
+		"Drop files here": "Dateien hier ablegen",
 	},
 };
 

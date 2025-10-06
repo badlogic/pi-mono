@@ -64,11 +64,8 @@ export class ApiKeyPromptDialog extends DialogBase {
 				children: html`
 					${DialogHeader({
 						title: i18n("API Key Required"),
-						description: i18n("Enter your API key for {provider}").replace("{provider}", this.provider),
 					})}
-					<div class="mt-4">
-						<provider-key-input .provider=${this.provider}></provider-key-input>
-					</div>
+					<provider-key-input .provider=${this.provider}></provider-key-input>
 				`,
 			})}
 		`;

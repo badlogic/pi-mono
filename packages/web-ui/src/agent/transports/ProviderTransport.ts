@@ -7,9 +7,7 @@ import type { AgentRunConfig, AgentTransport } from "./types.js";
  * Optionally routes calls through a CORS proxy if enabled in settings.
  */
 export class ProviderTransport implements AgentTransport {
-	constructor(private readonly getMessages: () => Promise<Message[]>) {}
-
-	async *run(userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
 		// Get API key from storage
 		const apiKey = await getAppStorage().providerKeys.getKey(cfg.model.provider);
 		if (!apiKey) {
@@ -29,9 +27,18 @@ export class ProviderTransport implements AgentTransport {
 			};
 		}
 
+		// Filter out attachments from messages
+		const filteredMessages = messages.map((m) => {
+			if (m.role === "user") {
+				const { attachments, ...rest } = m as any;
+				return rest;
+			}
+			return m;
+		});
+
 		const context: AgentContext = {
 			systemPrompt: cfg.systemPrompt,
-			messages: await this.getMessages(),
+			messages: filteredMessages,
 			tools: cfg.tools,
 		};
 

@@ -1,29 +1,28 @@
 import { Badge, html } from "@mariozechner/mini-lit";
-import { type AgentTool, getModel } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import type { AgentInterface } from "./components/AgentInterface.js";
 import "./components/AgentInterface.js";
-import { AgentSession, type AgentSessionState, type ThinkingLevel } from "./state/agent-session.js";
+import type { Agent } from "./agent/agent.js";
 import { ArtifactsPanel } from "./tools/artifacts/index.js";
 import { createJavaScriptReplTool } from "./tools/javascript-repl.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
-import { getAuthToken } from "./utils/auth-token.js";
 import { i18n } from "./utils/i18n.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
 @customElement("pi-chat-panel")
 export class ChatPanel extends LitElement {
-	@state() private session!: AgentSession;
-	@state() private artifactsPanel!: ArtifactsPanel;
+	@state() private agent?: Agent;
+	@state() private agentInterface?: AgentInterface;
+	@state() private artifactsPanel?: ArtifactsPanel;
 	@state() private hasArtifacts = false;
 	@state() private artifactCount = 0;
 	@state() private showArtifactsPanel = false;
 	@state() private windowWidth = window.innerWidth;
-	@property({ type: String }) systemPrompt = "You are a helpful AI assistant.";
-	@property({ type: Array }) additionalTools: AgentTool<any, any>[] = [];
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
+	@property({ attribute: false }) additionalTools?: any[];
 
 	private resizeHandler = () => {
 		this.windowWidth = window.innerWidth;
@@ -34,19 +33,33 @@ export class ChatPanel extends LitElement {
 		return this;
 	}
 
-	override async connectedCallback() {
+	override connectedCallback() {
 		super.connectedCallback();
-
-		// Listen to window resize
 		window.addEventListener("resize", this.resizeHandler);
-
-		// Ensure panel fills height and allows flex layout
 		this.style.display = "flex";
 		this.style.flexDirection = "column";
 		this.style.height = "100%";
 		this.style.minHeight = "0";
+	}
 
-		// Create JavaScript REPL tool with attachments provider
+	override disconnectedCallback() {
+		super.disconnectedCallback();
+		window.removeEventListener("resize", this.resizeHandler);
+	}
+
+	async setAgent(agent: Agent) {
+		this.agent = agent;
+
+		// Create AgentInterface
+		this.agentInterface = document.createElement("agent-interface") as AgentInterface;
+		this.agentInterface.session = agent;
+		this.agentInterface.enableAttachments = true;
+		this.agentInterface.enableModelSelector = true;
+		this.agentInterface.enableThinkingSelector = true;
+		this.agentInterface.showThemeToggle = false;
+		this.agentInterface.onApiKeyRequired = this.onApiKeyRequired;
+
+		// Create JavaScript REPL tool
 		const javascriptReplTool = createJavaScriptReplTool();
 		if (this.sandboxUrlProvider) {
 			javascriptReplTool.sandboxUrlProvider = this.sandboxUrlProvider;
@@ -59,11 +72,10 @@ export class ChatPanel extends LitElement {
 		}
 		registerToolRenderer("artifacts", this.artifactsPanel);
 
-		// Attachments provider for both REPL and artifacts
+		// Attachments provider
 		const getAttachments = () => {
-			// Get all attachments from conversation messages
 			const attachments: any[] = [];
-			for (const message of this.session.state.messages) {
+			for (const message of this.agent!.state.messages) {
 				if (message.role === "user") {
 					const content = Array.isArray(message.content) ? message.content : [message.content];
 					for (const block of content) {
@@ -86,12 +98,10 @@ export class ChatPanel extends LitElement {
 		this.artifactsPanel.attachmentsProvider = getAttachments;
 
 		this.artifactsPanel.onArtifactsChange = () => {
-			const count = this.artifactsPanel.artifacts?.size ?? 0;
+			const count = this.artifactsPanel?.artifacts?.size ?? 0;
 			const created = count > this.artifactCount;
 			this.hasArtifacts = count > 0;
 			this.artifactCount = count;
-
-			// Auto-open when new artifacts are created
 			if (this.hasArtifacts && created) {
 				this.showArtifactsPanel = true;
 			}
@@ -108,48 +118,27 @@ export class ChatPanel extends LitElement {
 			this.requestUpdate();
 		};
 
-		const initialState = {
-			systemPrompt: this.systemPrompt,
-			model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
-			tools: [...this.additionalTools, javascriptReplTool, this.artifactsPanel.tool],
-			thinkingLevel: "off" as ThinkingLevel,
-			messages: [],
-		} satisfies Partial<AgentSessionState>;
-		// initialState = { ...initialState, ...(simpleHtml as any) };
-		// initialState = { ...initialState, ...(longSession as any) };
+		// Set tools on the agent
+		const tools = [javascriptReplTool, this.artifactsPanel.tool, ...(this.additionalTools || [])];
+		this.agent.setTools(tools);
 
-		// Create agent session first so attachments provider works
-		this.session = new AgentSession({
-			initialState,
-			authTokenProvider: async () => getAuthToken(),
-			transportMode: "provider", // Use provider mode by default (API keys from storage, optional CORS proxy)
-		});
+		// Reconstruct artifacts from existing messages
+		// Temporarily disable the onArtifactsChange callback to prevent auto-opening on load
+		const originalCallback = this.artifactsPanel.onArtifactsChange;
+		this.artifactsPanel.onArtifactsChange = undefined;
+		await this.artifactsPanel.reconstructFromMessages(this.agent.state.messages);
+		this.artifactsPanel.onArtifactsChange = originalCallback;
 
-		// Reconstruct artifacts panel from initial messages (session must exist first)
-		await this.artifactsPanel.reconstructFromMessages(initialState.messages);
 		this.hasArtifacts = this.artifactsPanel.artifacts.size > 0;
-	}
+		this.artifactCount = this.artifactsPanel.artifacts.size;
 
-	override disconnectedCallback() {
-		super.disconnectedCallback();
-		window.removeEventListener("resize", this.resizeHandler);
-	}
-
-	// Expose method to toggle artifacts panel
-	public toggleArtifactsPanel() {
-		this.showArtifactsPanel = !this.showArtifactsPanel;
 		this.requestUpdate();
 	}
 
-	// Check if artifacts panel is currently visible
-	public get artifactsPanelVisible(): boolean {
-		return this.showArtifactsPanel;
-	}
-
 	render() {
-		if (!this.session) {
+		if (!this.agent || !this.agentInterface) {
 			return html`<div class="flex items-center justify-center h-full">
-				<div class="text-muted-foreground">Loading...</div>
+				<div class="text-muted-foreground">No agent set</div>
 			</div>`;
 		}
 
@@ -164,15 +153,7 @@ export class ChatPanel extends LitElement {
 		return html`
 			<div class="relative w-full h-full overflow-hidden flex">
 				<div class="h-full" style="${!isMobile && this.showArtifactsPanel && this.hasArtifacts ? "width: 50%;" : "width: 100%;"}">
-						<agent-interface
-							.session=${this.session}
-							.enableAttachments=${true}
-							.enableModelSelector=${true}
-							.showThinkingSelector=${true}
-							.showThemeToggle=${false}
-							.showDebugToggle=${false}
-							.onApiKeyRequired=${this.onApiKeyRequired}
-						></agent-interface>
+						${this.agentInterface}
 					</div>
 
 					<!-- Floating pill when artifacts exist and panel is collapsed -->

@@ -322,9 +322,7 @@ export class AppTransport implements AgentTransport {
 	// Hardcoded proxy URL for now - will be made configurable later
 	private readonly proxyUrl = "https://genai.mariozechner.at";
 
-	constructor(private readonly getMessages: () => Promise<Message[]>) {}
-
-	async *run(userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
 		const authToken = await getAuthToken();
 		if (!authToken) {
 			throw new Error(i18n("Auth token is required for proxy transport"));
@@ -343,9 +341,18 @@ export class AppTransport implements AgentTransport {
 			);
 		};
 
+		// Filter out attachments from messages
+		const filteredMessages = messages.map((m) => {
+			if (m.role === "user") {
+				const { attachments, ...rest } = m as any;
+				return rest;
+			}
+			return m;
+		});
+
 		const context: AgentContext = {
 			systemPrompt: cfg.systemPrompt,
-			messages: await this.getMessages(),
+			messages: filteredMessages,
 			tools: cfg.tools,
 		};
 

@@ -1,6 +1,14 @@
 // Main chat interface
-export { ChatPanel } from "./ChatPanel.js";
 
+export type { AgentState, ThinkingLevel } from "./agent/agent.js";
+// State management
+export { Agent } from "./agent/agent.js";
+// Transports
+export { AppTransport } from "./agent/transports/AppTransport.js";
+export { ProviderTransport } from "./agent/transports/ProviderTransport.js";
+export type { ProxyAssistantMessageEvent } from "./agent/transports/proxy-types.js";
+export type { AgentRunConfig, AgentTransport } from "./agent/transports/types.js";
+export { ChatPanel } from "./ChatPanel.js";
 // Components
 export { AgentInterface } from "./components/AgentInterface.js";
 export { AttachmentTile } from "./components/AttachmentTile.js";
@@ -9,6 +17,7 @@ export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
 // Message components
+export type { AppMessage } from "./components/Messages.js";
 export { AssistantMessage, ToolMessage, UserMessage } from "./components/Messages.js";
 export {
 	type SandboxFile,
@@ -21,24 +30,25 @@ export { ApiKeyPromptDialog } from "./dialogs/ApiKeyPromptDialog.js";
 export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs
 export { ModelSelector } from "./dialogs/ModelSelector.js";
+export { PersistentStorageDialog } from "./dialogs/PersistentStorageDialog.js";
+export { SessionListDialog } from "./dialogs/SessionListDialog.js";
 export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/SettingsDialog.js";
-export type { AgentSessionState, ThinkingLevel } from "./state/agent-session.js";
-// State management
-export { AgentSession } from "./state/agent-session.js";
-
-// Transports
-export { AppTransport } from "./state/transports/AppTransport.js";
-export { ProviderTransport } from "./state/transports/ProviderTransport.js";
-export type { ProxyAssistantMessageEvent } from "./state/transports/proxy-types.js";
-export type { AgentRunConfig, AgentTransport } from "./state/transports/types.js";
 // Storage
 export { AppStorage, getAppStorage, initAppStorage, setAppStorage } from "./storage/app-storage.js";
 export { ChromeStorageBackend } from "./storage/backends/chrome-storage-backend.js";
 export { IndexedDBBackend } from "./storage/backends/indexeddb-backend.js";
 export { LocalStorageBackend } from "./storage/backends/local-storage-backend.js";
+export { SessionIndexedDBBackend } from "./storage/backends/session-indexeddb-backend.js";
 export { ProviderKeysRepository } from "./storage/repositories/provider-keys-repository.js";
+export { SessionRepository } from "./storage/repositories/session-repository.js";
 export { SettingsRepository } from "./storage/repositories/settings-repository.js";
-export type { AppStorageConfig, StorageBackend } from "./storage/types.js";
+export type {
+	AppStorageConfig,
+	SessionData,
+	SessionMetadata,
+	SessionStorageBackend,
+	StorageBackend,
+} from "./storage/types.js";
 // Artifacts
 export { ArtifactElement } from "./tools/artifacts/ArtifactElement.js";
 export { type Artifact, ArtifactsPanel, type ArtifactsParams } from "./tools/artifacts/artifacts.js";

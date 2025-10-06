@@ -13,7 +13,7 @@
     "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.build.json && tailwindcss -i ./src/app.css -o ./dist/app.css --minify",
     "dev": "concurrently --names \"build,example\" --prefix-colors \"cyan,green\" \"tsc -p tsconfig.build.json --watch\" \"tailwindcss -i ./src/app.css -o ./dist/app.css --watch\" \"npm run dev --prefix example\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && cd example && tsc --noEmit",
     "check": "npm run typecheck"
   },
   "dependencies": {

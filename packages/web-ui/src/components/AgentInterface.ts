@@ -7,7 +7,7 @@ import type { MessageEditor } from "./MessageEditor.js";
 import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
-import type { AgentSession, AgentSessionEvent } from "../state/agent-session.js";
+import type { Agent, AgentEvent } from "../agent/agent.js";
 import { getAppStorage } from "../storage/app-storage.js";
 import "./StreamingMessageContainer.js";
 import type { Attachment } from "../utils/attachment-utils.js";
@@ -18,7 +18,7 @@ import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
 @customElement("agent-interface")
 export class AgentInterface extends LitElement {
 	// Optional external session: when provided, this component becomes a view over the session
-	@property({ attribute: false }) session?: AgentSession;
+	@property({ attribute: false }) session?: Agent;
 	@property() enableAttachments = true;
 	@property() enableModelSelector = true;
 	@property() enableThinkingSelector = true;
@@ -50,6 +50,15 @@ export class AgentInterface extends LitElement {
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
+	}
+
+	override willUpdate(changedProperties: Map<string, any>) {
+		super.willUpdate(changedProperties);
+
+		// Re-subscribe when session property changes
+		if (changedProperties.has("session")) {
+			this.setupSessionSubscription();
+		}
 	}
 
 	override async connectedCallback() {
@@ -84,11 +93,6 @@ export class AgentInterface extends LitElement {
 
 		// Subscribe to external session if provided
 		this.setupSessionSubscription();
-
-		// Attach debug listener if session provided
-		if (this.session) {
-			this.session = this.session; // explicitly set to trigger subscription
-		}
 	}
 
 	override disconnectedCallback() {
@@ -116,7 +120,7 @@ export class AgentInterface extends LitElement {
 			this._unsubscribeSession = undefined;
 		}
 		if (!this.session) return;
-		this._unsubscribeSession = this.session.subscribe(async (ev: AgentSessionEvent) => {
+		this._unsubscribeSession = this.session.subscribe(async (ev: AgentEvent) => {
 			if (ev.type === "state-update") {
 				if (this._streamingContainer) {
 					this._streamingContainer.isStreaming = ev.state.isStreaming;

@@ -50,6 +50,7 @@ export class MessageEditor extends LitElement {
 		"image/*,application/pdf,.docx,.pptx,.xlsx,.xls,.txt,.md,.json,.xml,.html,.css,.js,.ts,.jsx,.tsx,.yml,.yaml";
 
 	@state() processingFiles = false;
+	@state() isDragging = false;
 	private fileInputRef = createRef<HTMLInputElement>();
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
@@ -124,6 +125,62 @@ export class MessageEditor extends LitElement {
 		this.onFilesChange?.(this.attachments);
 	}
 
+	private handleDragOver = (e: DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if (!this.isDragging) {
+			this.isDragging = true;
+		}
+	};
+
+	private handleDragLeave = (e: DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		// Only set isDragging to false if we're leaving the entire component
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = e.clientX;
+		const y = e.clientY;
+		if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+			this.isDragging = false;
+		}
+	};
+
+	private handleDrop = async (e: DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		this.isDragging = false;
+
+		const files = Array.from(e.dataTransfer?.files || []);
+		if (files.length === 0) return;
+
+		if (files.length + this.attachments.length > this.maxFiles) {
+			alert(`Maximum ${this.maxFiles} files allowed`);
+			return;
+		}
+
+		this.processingFiles = true;
+		const newAttachments: Attachment[] = [];
+
+		for (const file of files) {
+			try {
+				if (file.size > this.maxFileSize) {
+					alert(`${file.name} exceeds maximum size of ${Math.round(this.maxFileSize / 1024 / 1024)}MB`);
+					continue;
+				}
+
+				const attachment = await loadAttachment(file);
+				newAttachments.push(attachment);
+			} catch (error) {
+				console.error(`Error processing ${file.name}:`, error);
+				alert(`Failed to process ${file.name}: ${String(error)}`);
+			}
+		}
+
+		this.attachments = [...this.attachments, ...newAttachments];
+		this.onFilesChange?.(this.attachments);
+		this.processingFiles = false;
+	};
+
 	private adjustTextareaHeight() {
 		const textarea = this.textareaRef.value;
 		if (textarea) {
@@ -157,7 +214,23 @@ export class MessageEditor extends LitElement {
 		const supportsThinking = model?.reasoning === true; // Models with reasoning:true support thinking
 
 		return html`
-			<div class="bg-card rounded-xl border border-border shadow-sm">
+			<div
+				class="bg-card rounded-xl border shadow-sm relative ${this.isDragging ? "border-primary border-2 bg-primary/5" : "border-border"}"
+				@dragover=${this.handleDragOver}
+				@dragleave=${this.handleDragLeave}
+				@drop=${this.handleDrop}
+			>
+				<!-- Drag overlay -->
+				${
+					this.isDragging
+						? html`
+					<div class="absolute inset-0 bg-primary/10 rounded-xl pointer-events-none z-10 flex items-center justify-center">
+						<div class="text-primary font-medium">${i18n("Drop files here")}</div>
+					</div>
+				`
+						: ""
+				}
+
 				<!-- Attachments -->
 				${
 					this.attachments.length > 0

@@ -10,17 +10,14 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AppMessage } from "../components/Messages.js";
 import type { Attachment } from "../utils/attachment-utils.js";
-import { AppTransport } from "./transports/AppTransport.js";
-import { ProviderTransport } from "./transports/ProviderTransport.js";
 import type { AgentRunConfig, AgentTransport } from "./transports/types.js";
 import type { DebugLogEntry } from "./types.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
-export interface AgentSessionState {
-	id: string;
+export interface AgentState {
 	systemPrompt: string;
-	model: Model<any> | null;
+	model: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	tools: AgentTool<any>[];
 	messages: AppMessage[];
@@ -30,24 +27,19 @@ export interface AgentSessionState {
 	error?: string;
 }
 
-export type AgentSessionEvent =
-	| { type: "state-update"; state: AgentSessionState }
+export type AgentEvent =
+	| { type: "state-update"; state: AgentState }
 	| { type: "error-no-model" }
 	| { type: "error-no-api-key"; provider: string };
 
-export type TransportMode = "provider" | "app";
-
-export interface AgentSessionOptions {
-	initialState?: Partial<AgentSessionState>;
-	messagePreprocessor?: (messages: AppMessage[]) => Promise<Message[]>;
+export interface AgentOptions {
+	initialState?: Partial<AgentState>;
 	debugListener?: (entry: DebugLogEntry) => void;
-	transportMode?: TransportMode;
-	authTokenProvider?: () => Promise<string | undefined>;
+	transport: AgentTransport;
 }
 
-export class AgentSession {
-	private _state: AgentSessionState = {
-		id: "default",
+export class Agent {
+	private _state: AgentState = {
 		systemPrompt: "",
 		model: getModel("google", "gemini-2.5-flash-lite-preview-06-17"),
 		thinkingLevel: "off",
@@ -58,42 +50,22 @@ export class AgentSession {
 		pendingToolCalls: new Set<string>(),
 		error: undefined,
 	};
-	private listeners = new Set<(e: AgentSessionEvent) => void>();
+	private listeners = new Set<(e: AgentEvent) => void>();
 	private abortController?: AbortController;
 	private transport: AgentTransport;
-	private messagePreprocessor?: (messages: AppMessage[]) => Promise<Message[]>;
 	private debugListener?: (entry: DebugLogEntry) => void;
 
-	constructor(opts: AgentSessionOptions = {}) {
+	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
-		this.messagePreprocessor = opts.messagePreprocessor;
 		this.debugListener = opts.debugListener;
-
-		const mode = opts.transportMode || "provider";
-
-		if (mode === "app") {
-			this.transport = new AppTransport(async () => this.preprocessMessages());
-		} else {
-			this.transport = new ProviderTransport(async () => this.preprocessMessages());
-		}
+		this.transport = opts.transport;
 	}
 
-	private async preprocessMessages(): Promise<Message[]> {
-		const filtered = this._state.messages.map((m) => {
-			if (m.role === "user") {
-				const { attachments, ...rest } = m as AppMessage & { attachments?: Attachment[] };
-				return rest;
-			}
-			return m;
-		});
-		return this.messagePreprocessor ? this.messagePreprocessor(filtered as AppMessage[]) : (filtered as Message[]);
-	}
-
-	get state(): AgentSessionState {
+	get state(): AgentState {
 		return this._state;
 	}
 
-	subscribe(fn: (e: AgentSessionEvent) => void): () => void {
+	subscribe(fn: (e: AgentEvent) => void): () => void {
 		this.listeners.add(fn);
 		fn({ type: "state-update", state: this._state });
 		return () => this.listeners.delete(fn);
@@ -103,7 +75,7 @@ export class AgentSession {
 	setSystemPrompt(v: string) {
 		this.patch({ systemPrompt: v });
 	}
-	setModel(m: Model<any> | null) {
+	setModel(m: Model<any>) {
 		this.patch({ model: m });
 	}
 	setThinkingLevel(l: ThinkingLevel) {
@@ -175,7 +147,12 @@ export class AgentSession {
 			let partial: Message | null = null;
 			let turnDebug: DebugLogEntry | null = null;
 			let turnStart = 0;
-			for await (const ev of this.transport.run(userMessage as Message, cfg, this.abortController.signal)) {
+			for await (const ev of this.transport.run(
+				this._state.messages as Message[],
+				userMessage as Message,
+				cfg,
+				this.abortController.signal,
+			)) {
 				switch (ev.type) {
 					case "turn_start": {
 						turnStart = performance.now();
@@ -298,12 +275,12 @@ export class AgentSession {
 		}
 	}
 
-	private patch(p: Partial<AgentSessionState>): void {
+	private patch(p: Partial<AgentState>): void {
 		this._state = { ...this._state, ...p };
 		this.emit({ type: "state-update", state: this._state });
 	}
 
-	private emit(e: AgentSessionEvent) {
+	private emit(e: AgentEvent) {
 		for (const listener of this.listeners) {
 			listener(e);
 		}

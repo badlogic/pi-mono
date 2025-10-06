@@ -1,5 +1,6 @@
 import { LocalStorageBackend } from "./backends/local-storage-backend.js";
 import { ProviderKeysRepository } from "./repositories/provider-keys-repository.js";
+import { SessionRepository } from "./repositories/session-repository.js";
 import { SettingsRepository } from "./repositories/settings-repository.js";
 import type { AppStorageConfig } from "./types.js";
 
@@ -10,6 +11,7 @@ import type { AppStorageConfig } from "./types.js";
 export class AppStorage {
 	readonly settings: SettingsRepository;
 	readonly providerKeys: ProviderKeysRepository;
+	readonly sessions?: SessionRepository;
 
 	constructor(config: AppStorageConfig = {}) {
 		// Use LocalStorage with prefixes as defaults
@@ -18,6 +20,11 @@ export class AppStorage {
 
 		this.settings = new SettingsRepository(settingsBackend);
 		this.providerKeys = new ProviderKeysRepository(providerKeysBackend);
+
+		// Session storage is optional
+		if (config.sessions) {
+			this.sessions = new SessionRepository(config.sessions);
+		}
 	}
 }
 

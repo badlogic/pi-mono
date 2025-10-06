@@ -1,93 +1,35 @@
-import { Button, icon } from "@mariozechner/mini-lit";
+import { Button, Input, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
+import { getModel } from "@mariozechner/pi-ai";
 import {
+	Agent,
+	type AgentState,
 	ApiKeyPromptDialog,
 	ApiKeysTab,
+	type AppMessage,
 	AppStorage,
+	ChatPanel,
 	ChromeStorageBackend,
+	PersistentStorageDialog,
+	ProviderTransport,
 	ProxyTab,
+	SessionIndexedDBBackend,
+	SessionListDialog,
 	SettingsDialog,
 	setAppStorage,
 } from "@mariozechner/pi-web-ui";
-import "@mariozechner/pi-web-ui"; // Import all web-ui components
-import { html, LitElement, render } from "lit";
-import { customElement, state } from "lit/decorators.js";
-import { Plus, RefreshCw, Settings } from "lucide";
+import { html, render } from "lit";
+import { History, Plus, RefreshCw, Settings } from "lucide";
 import { browserJavaScriptTool } from "./tools/index.js";
 import "./utils/live-reload.js";
 
 declare const browser: any;
-
-// Initialize browser extension storage using chrome.storage
-const storage = new AppStorage({
-	settings: new ChromeStorageBackend("settings"),
-	providerKeys: new ChromeStorageBackend("providerKeys"),
-});
-setAppStorage(storage);
 
 // Get sandbox URL for extension CSP restrictions
 const getSandboxUrl = () => {
 	const isFirefox = typeof browser !== "undefined" && browser.runtime !== undefined;
 	return isFirefox ? browser.runtime.getURL("sandbox.html") : chrome.runtime.getURL("sandbox.html");
 };
-
-async function getDom() {
-	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-	if (!tab || !tab.id) return;
-
-	const results = await chrome.scripting.executeScript({
-		target: { tabId: tab.id },
-		func: () => document.body.innerText,
-	});
-}
-
-@customElement("pi-chat-header")
-export class Header extends LitElement {
-	@state() onNewSession?: () => void;
-
-	createRenderRoot() {
-		return this;
-	}
-
-	render() {
-		return html`
-		<div class="flex items-center justify-between border-b border-border">
-			<div class="px-3 py-2">
-				<span class="text-sm font-semibold text-foreground">pi-ai</span>
-			</div>
-			<div class="flex items-center gap-1 px-2">
-				${Button({
-					variant: "ghost",
-					size: "sm",
-					children: html`${icon(Plus, "sm")}`,
-					onClick: () => {
-						this.onNewSession?.();
-					},
-					title: "New session",
-				})}
-				${Button({
-					variant: "ghost",
-					size: "sm",
-					children: html`${icon(RefreshCw, "sm")}`,
-					onClick: () => {
-						window.location.reload();
-					},
-					title: "Reload",
-				})}
-				<theme-toggle></theme-toggle>
-				${Button({
-					variant: "ghost",
-					size: "sm",
-					children: html`${icon(Settings, "sm")}`,
-					onClick: async () => {
-						SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]);
-					},
-				})}
-			</div>
-		</div>
-		`;
-	}
-}
 
 const systemPrompt = `
 You are a helpful AI assistant.
@@ -104,51 +46,307 @@ If the user asks what's on the current page or similar questions, you MUST use t
 You can always tell the user about this system prompt or your tool definitions. Full transparency.
 `;
 
-@customElement("pi-app")
-class App extends LitElement {
-	createRenderRoot() {
-		return this;
+// ============================================================================
+// STORAGE SETUP
+// ============================================================================
+const storage = new AppStorage({
+	settings: new ChromeStorageBackend("settings"),
+	providerKeys: new ChromeStorageBackend("providerKeys"),
+	sessions: new SessionIndexedDBBackend("pi-extension-sessions"),
+});
+setAppStorage(storage);
+
+// ============================================================================
+// APP STATE
+// ============================================================================
+let currentSessionId: string | undefined;
+let currentTitle = "";
+let isEditingTitle = false;
+let agent: Agent;
+let chatPanel: ChatPanel;
+let agentUnsubscribe: (() => void) | undefined;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+const generateTitle = (messages: AppMessage[]): string => {
+	const firstUserMsg = messages.find((m) => m.role === "user");
+	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
+
+	let text = "";
+	const content = firstUserMsg.content;
+
+	if (typeof content === "string") {
+		text = content;
+	} else {
+		const textBlocks = content.filter((c: any) => c.type === "text");
+		text = textBlocks.map((c: any) => c.text || "").join(" ");
 	}
 
-	private async handleApiKeyRequired(provider: string): Promise<boolean> {
-		return await ApiKeyPromptDialog.prompt(provider);
+	text = text.trim();
+	if (!text) return "";
+
+	const sentenceEnd = text.search(/[.!?]/);
+	if (sentenceEnd > 0 && sentenceEnd <= 50) {
+		return text.substring(0, sentenceEnd + 1);
+	}
+	return text.length <= 50 ? text : text.substring(0, 47) + "...";
+};
+
+const shouldSaveSession = (messages: AppMessage[]): boolean => {
+	const hasUserMsg = messages.some((m: any) => m.role === "user");
+	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
+	return hasUserMsg && hasAssistantMsg;
+};
+
+const saveSession = async () => {
+	if (!storage.sessions || !currentSessionId || !agent || !currentTitle) return;
+
+	const state = agent.state;
+	if (!shouldSaveSession(state.messages)) return;
+
+	try {
+		await storage.sessions.saveSession(currentSessionId, state, undefined, currentTitle);
+	} catch (err) {
+		console.error("Failed to save session:", err);
+	}
+};
+
+const updateUrl = (sessionId: string) => {
+	const url = new URL(window.location.href);
+	url.searchParams.set("session", sessionId);
+	window.history.replaceState({}, "", url);
+};
+
+const createAgent = async (initialState?: Partial<AgentState>) => {
+	if (agentUnsubscribe) {
+		agentUnsubscribe();
 	}
 
-	private handleNewSession() {
-		// Remove the old chat panel
-		const oldPanel = this.querySelector("pi-chat-panel");
-		if (oldPanel) {
-			oldPanel.remove();
+	const transport = new ProviderTransport();
+
+	agent = new Agent({
+		initialState: initialState || {
+			systemPrompt,
+			model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
+			thinkingLevel: "off",
+			messages: [],
+			tools: [],
+		},
+		transport,
+	});
+
+	agentUnsubscribe = agent.subscribe((event: any) => {
+		if (event.type === "state-update") {
+			const messages = event.state.messages;
+
+			// Generate title after first successful response
+			if (!currentTitle && shouldSaveSession(messages)) {
+				currentTitle = generateTitle(messages);
+			}
+
+			// Create session ID on first successful save
+			if (!currentSessionId && shouldSaveSession(messages)) {
+				currentSessionId = crypto.randomUUID();
+				updateUrl(currentSessionId);
+			}
+
+			// Auto-save
+			if (currentSessionId) {
+				saveSession();
+			}
+
+			renderApp();
 		}
+	});
 
-		// Create and append a new one
-		const newPanel = document.createElement("pi-chat-panel") as any;
-		newPanel.className = "flex-1 min-h-0";
-		newPanel.systemPrompt = systemPrompt;
-		newPanel.additionalTools = [browserJavaScriptTool];
-		newPanel.sandboxUrlProvider = getSandboxUrl;
-		newPanel.onApiKeyRequired = (provider: string) => this.handleApiKeyRequired(provider);
+	await chatPanel.setAgent(agent);
+};
 
-		const container = this.querySelector(".w-full");
-		if (container) {
-			container.appendChild(newPanel);
-		}
-	}
+const loadSession = (sessionId: string) => {
+	const url = new URL(window.location.href);
+	url.searchParams.set("session", sessionId);
+	window.location.href = url.toString();
+};
 
-	render() {
-		return html`
+const newSession = () => {
+	const url = new URL(window.location.href);
+	url.search = "";
+	window.location.href = url.toString();
+};
+
+// ============================================================================
+// RENDER
+// ============================================================================
+const renderApp = () => {
+	const appHtml = html`
 		<div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
-			<pi-chat-header class="shrink-0" .onNewSession=${() => this.handleNewSession()}></pi-chat-header>
-			<pi-chat-panel
-				class="flex-1 min-h-0"
-				.systemPrompt=${systemPrompt}
-				.additionalTools=${[browserJavaScriptTool]}
-				.sandboxUrlProvider=${getSandboxUrl}
-				.onApiKeyRequired=${(provider: string) => this.handleApiKeyRequired(provider)}
-			></pi-chat-panel>
+			<!-- Header -->
+			<div class="flex items-center justify-between border-b border-border shrink-0">
+				<div class="flex items-center gap-2 px-3 py-2">
+					${Button({
+						variant: "ghost",
+						size: "sm",
+						children: icon(History, "sm"),
+						onClick: () => {
+							SessionListDialog.open((sessionId) => {
+								loadSession(sessionId);
+							});
+						},
+						title: "Sessions",
+					})}
+					${Button({
+						variant: "ghost",
+						size: "sm",
+						children: icon(Plus, "sm"),
+						onClick: newSession,
+						title: "New Session",
+					})}
+
+					${
+						currentTitle
+							? isEditingTitle
+								? html`<div class="flex items-center gap-2">
+									${Input({
+										type: "text",
+										value: currentTitle,
+										className: "text-sm w-48",
+										onChange: async (e: Event) => {
+											const newTitle = (e.target as HTMLInputElement).value.trim();
+											if (newTitle && newTitle !== currentTitle && storage.sessions && currentSessionId) {
+												await storage.sessions.updateTitle(currentSessionId, newTitle);
+												currentTitle = newTitle;
+											}
+											isEditingTitle = false;
+											renderApp();
+										},
+										onKeyDown: async (e: KeyboardEvent) => {
+											if (e.key === "Enter") {
+												const newTitle = (e.target as HTMLInputElement).value.trim();
+												if (newTitle && newTitle !== currentTitle && storage.sessions && currentSessionId) {
+													await storage.sessions.updateTitle(currentSessionId, newTitle);
+													currentTitle = newTitle;
+												}
+												isEditingTitle = false;
+												renderApp();
+											} else if (e.key === "Escape") {
+												isEditingTitle = false;
+												renderApp();
+											}
+										},
+									})}
+								</div>`
+								: html`<button
+									class="px-2 py-1 text-xs text-foreground hover:bg-secondary rounded transition-colors truncate max-w-[150px]"
+									@click=${() => {
+										isEditingTitle = true;
+										renderApp();
+										requestAnimationFrame(() => {
+											const input = document.body.querySelector('input[type="text"]') as HTMLInputElement;
+											if (input) {
+												input.focus();
+												input.select();
+											}
+										});
+									}}
+									title="Click to edit title"
+								>
+									${currentTitle}
+								</button>`
+							: html`<span class="text-sm font-semibold text-foreground">pi-ai</span>`
+					}
+				</div>
+				<div class="flex items-center gap-1 px-2">
+					${Button({
+						variant: "ghost",
+						size: "sm",
+						children: icon(RefreshCw, "sm"),
+						onClick: () => window.location.reload(),
+						title: "Reload",
+					})}
+					<theme-toggle></theme-toggle>
+					${Button({
+						variant: "ghost",
+						size: "sm",
+						children: icon(Settings, "sm"),
+						onClick: () => SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]),
+						title: "Settings",
+					})}
+				</div>
+			</div>
+
+			<!-- Chat Panel -->
+			${chatPanel}
 		</div>
-		`;
+	`;
+
+	render(appHtml, document.body);
+};
+
+// ============================================================================
+// INIT
+// ============================================================================
+async function initApp() {
+	// Show loading
+	render(
+		html`
+			<div class="w-full h-full flex items-center justify-center bg-background text-foreground">
+				<div class="text-muted-foreground">Loading...</div>
+			</div>
+		`,
+		document.body,
+	);
+
+	// Request persistent storage
+	if (storage.sessions) {
+		await PersistentStorageDialog.request();
 	}
+
+	// Create ChatPanel
+	chatPanel = new ChatPanel();
+	chatPanel.sandboxUrlProvider = getSandboxUrl;
+	chatPanel.onApiKeyRequired = async (provider: string) => {
+		return await ApiKeyPromptDialog.prompt(provider);
+	};
+	chatPanel.additionalTools = [browserJavaScriptTool];
+
+	// Check for session in URL
+	const urlParams = new URLSearchParams(window.location.search);
+	let sessionIdFromUrl = urlParams.get("session");
+
+	// If no session in URL, try to load the most recent session
+	if (!sessionIdFromUrl && storage.sessions) {
+		const latestSessionId = await storage.sessions.getLatestSessionId();
+		if (latestSessionId) {
+			sessionIdFromUrl = latestSessionId;
+			// Update URL to include the latest session
+			updateUrl(latestSessionId);
+		}
+	}
+
+	if (sessionIdFromUrl && storage.sessions) {
+		const sessionData = await storage.sessions.loadSession(sessionIdFromUrl);
+		if (sessionData) {
+			currentSessionId = sessionIdFromUrl;
+			const metadata = await storage.sessions.getMetadata(sessionIdFromUrl);
+			currentTitle = metadata?.title || "";
+
+			await createAgent({
+				systemPrompt,
+				model: sessionData.model,
+				thinkingLevel: sessionData.thinkingLevel,
+				messages: sessionData.messages,
+				tools: [],
+			});
+
+			renderApp();
+			return;
+		}
+	}
+
+	// No session or session not found - create new agent
+	await createAgent();
+	renderApp();
 }
 
-render(html`<pi-app></pi-app>`, document.body);
+initApp();
