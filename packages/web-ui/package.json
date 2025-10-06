@@ -17,7 +17,6 @@
     "check": "npm run typecheck"
   },
   "dependencies": {
-    "@mariozechner/mini-lit": "^0.1.8",
     "@mariozechner/pi-ai": "^0.5.43",
     "docx-preview": "^0.3.7",
     "jszip": "^3.10.1",
@@ -26,7 +25,11 @@
     "pdfjs-dist": "^5.4.149",
     "xlsx": "^0.18.5"
   },
+  "peerDependencies": {
+    "@mariozechner/mini-lit": "^0.1.8"
+  },
   "devDependencies": {
+    "@mariozechner/mini-lit": "^0.1.8",
     "@tailwindcss/cli": "^4.0.0-beta.14",
     "concurrently": "^9.2.1",
     "typescript": "^5.7.3"

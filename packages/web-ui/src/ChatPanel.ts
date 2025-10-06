@@ -141,6 +141,7 @@ export class ChatPanel extends LitElement {
 		this.artifactCount = this.artifactsPanel.artifacts.size;
 
 		this.requestUpdate();
+		console.log("ChatPanel: Agent set with tools:", tools);
 	}
 
 	render() {
