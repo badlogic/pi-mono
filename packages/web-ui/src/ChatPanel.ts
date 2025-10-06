@@ -152,15 +152,6 @@ export class ChatPanel extends LitElement {
 
 		const isMobile = this.windowWidth < BREAKPOINT;
 
-		console.log("[ChatPanel Debug]", {
-			windowWidth: this.windowWidth,
-			breakpoint: BREAKPOINT,
-			isMobile,
-			showArtifactsPanel: this.showArtifactsPanel,
-			hasArtifacts: this.hasArtifacts,
-			artifactCount: this.artifactCount,
-		});
-
 		// Set panel props
 		if (this.artifactsPanel) {
 			this.artifactsPanel.collapsed = !this.showArtifactsPanel;
