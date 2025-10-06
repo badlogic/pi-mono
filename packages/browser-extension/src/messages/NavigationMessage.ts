@@ -44,7 +44,7 @@ const navigationRenderer: MessageRenderer<NavigationMessage> = {
 		return html`
 			<div class="mx-4 my-2">
 				<button
-					class="inline-flex items-center gap-2 px-3 py-2 text-sm text-foreground bg-accent/50 border-2 border-accent rounded-lg hover:bg-accent transition-colors max-w-full cursor-pointer shadow-sm"
+					class="inline-flex items-center gap-2 px-3 py-2 text-sm text-primary-foreground bg-primary/90 border-2 border-primary rounded-lg hover:bg-primary transition-colors max-w-full cursor-pointer shadow-md"
 					@click=${() => {
 						chrome.tabs.create({ url: nav.url });
 					}}
