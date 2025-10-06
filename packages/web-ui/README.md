@@ -205,7 +205,7 @@ setAppStorage(storage);
 - `LocalStorageBackend` - Uses browser localStorage
 - `IndexedDBBackend` - Uses IndexedDB for larger data
 - `SessionIndexedDBBackend` - Specialized for session storage
-- `ChromeStorageBackend` - For browser extensions using chrome.storage API
+- `WebExtensionStorageBackend` - For browser extensions using chrome.storage API
 
 ### Session Management
 
@@ -293,11 +293,11 @@ await PersistentStorageDialog.request();
 ### Browser Extension
 
 ```typescript
-import { AppStorage, ChromeStorageBackend, Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
+import { AppStorage, WebExtensionStorageBackend, Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
 
 const storage = new AppStorage({
-  providerKeys: new ChromeStorageBackend(),
-  settings: new ChromeStorageBackend(),
+  providerKeys: new WebExtensionStorageBackend(),
+  settings: new WebExtensionStorageBackend(),
 });
 setAppStorage(storage);
 ```

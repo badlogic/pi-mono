@@ -43,10 +43,10 @@ export { SessionListDialog } from "./dialogs/SessionListDialog.js";
 export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/SettingsDialog.js";
 // Storage
 export { AppStorage, getAppStorage, initAppStorage, setAppStorage } from "./storage/app-storage.js";
-export { ChromeStorageBackend } from "./storage/backends/chrome-storage-backend.js";
 export { IndexedDBBackend } from "./storage/backends/indexeddb-backend.js";
 export { LocalStorageBackend } from "./storage/backends/local-storage-backend.js";
 export { SessionIndexedDBBackend } from "./storage/backends/session-indexeddb-backend.js";
+export { WebExtensionStorageBackend } from "./storage/backends/web-extension-storage-backend.js";
 export { ProviderKeysRepository } from "./storage/repositories/provider-keys-repository.js";
 export { SessionRepository } from "./storage/repositories/session-repository.js";
 export { SettingsRepository } from "./storage/repositories/settings-repository.js";
