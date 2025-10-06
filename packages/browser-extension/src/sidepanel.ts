@@ -19,7 +19,7 @@ import {
 	setAppStorage,
 } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
-import { History, Plus, RefreshCw, Settings } from "lucide";
+import { History, Plus, Settings } from "lucide";
 import { browserJavaScriptTool } from "./tools/index.js";
 import "./utils/live-reload.js";
 
@@ -257,13 +257,6 @@ const renderApp = () => {
 					}
 				</div>
 				<div class="flex items-center gap-1 px-2">
-					${Button({
-						variant: "ghost",
-						size: "sm",
-						children: icon(RefreshCw, "sm"),
-						onClick: () => window.location.reload(),
-						title: "Reload",
-					})}
 					<theme-toggle></theme-toggle>
 					${Button({
 						variant: "ghost",
