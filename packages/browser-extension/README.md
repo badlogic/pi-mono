@@ -1182,3 +1182,7 @@ Error: Refused to evaluate a string as JavaScript because this document requires
 ---
 
 This CSP section should help both developers and LLMs understand the security constraints when working on extension features, especially those involving dynamic code execution or user-generated content.
+
+## Known Bugs
+
+- **PersistentStorageDialog**: Currently broken and commented out in sidepanel.ts. The dialog for requesting persistent storage does not work correctly and needs to be fixed.

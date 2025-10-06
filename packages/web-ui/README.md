@@ -322,6 +322,10 @@ setAppStorage(storage);
 
 See [src/index.ts](src/index.ts) for the full public API.
 
+## Known Bugs
+
+- **PersistentStorageDialog**: Currently broken and commented out in examples. The dialog for requesting persistent storage does not work correctly and needs to be fixed.
+
 ## License
 
 MIT

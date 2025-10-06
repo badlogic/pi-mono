@@ -12,6 +12,8 @@ export class SessionListDialog extends DialogBase {
 
 	private onSelectCallback?: (sessionId: string) => void;
 	private onDeleteCallback?: (sessionId: string) => void;
+	private deletedSessions = new Set<string>();
+	private closedViaSelection = false;
 
 	protected modalWidth = "min(600px, 90vw)";
 	protected modalHeight = "min(700px, 90vh)";
@@ -57,16 +59,26 @@ export class SessionListDialog extends DialogBase {
 			await storage.sessions.deleteSession(sessionId);
 			await this.loadSessions();
 
-			// Notify callback that session was deleted
-			if (this.onDeleteCallback) {
-				this.onDeleteCallback(sessionId);
-			}
+			// Track deleted session
+			this.deletedSessions.add(sessionId);
 		} catch (err) {
 			console.error("Failed to delete session:", err);
 		}
 	}
 
+	override close() {
+		super.close();
+
+		// Only notify about deleted sessions if dialog wasn't closed via selection
+		if (!this.closedViaSelection && this.onDeleteCallback && this.deletedSessions.size > 0) {
+			for (const sessionId of this.deletedSessions) {
+				this.onDeleteCallback(sessionId);
+			}
+		}
+	}
+
 	private handleSelect(sessionId: string) {
+		this.closedViaSelection = true;
 		if (this.onSelectCallback) {
 			this.onSelectCallback(sessionId);
 		}

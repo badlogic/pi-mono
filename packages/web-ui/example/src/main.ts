@@ -9,7 +9,7 @@ import {
 	type AppMessage,
 	AppStorage,
 	ChatPanel,
-	PersistentStorageDialog,
+	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderTransport,
 	ProxyTab,
 	SessionIndexedDBBackend,
@@ -192,7 +192,7 @@ const renderApp = () => {
 									await loadSession(sessionId);
 								},
 								(deletedSessionId) => {
-									// If the deleted session is the current one, start a new session
+									// Only reload if the current session was deleted
 									if (deletedSessionId === currentSessionId) {
 										newSession();
 									}
@@ -311,10 +311,11 @@ async function initApp() {
 		app,
 	);
 
+	// TODO: Fix PersistentStorageDialog - currently broken
 	// Request persistent storage
-	if (storage.sessions) {
-		await PersistentStorageDialog.request();
-	}
+	// if (storage.sessions) {
+	// 	await PersistentStorageDialog.request();
+	// }
 
 	// Create ChatPanel
 	chatPanel = new ChatPanel();

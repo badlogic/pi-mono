@@ -10,7 +10,7 @@ import {
 	AppStorage,
 	ChatPanel,
 	ChromeStorageBackend,
-	PersistentStorageDialog,
+	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderTransport,
 	ProxyTab,
 	SessionIndexedDBBackend,
@@ -71,9 +71,9 @@ let agent: Agent;
 let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
-// Track last navigation for inserting navigation messages
-let lastSubmittedUrl: string | undefined;
-let lastSubmittedTabIndex: number | undefined;
+// Track current active tab for real-time navigation updates
+let currentTabUrl: string | undefined;
+let currentTabIndex: number | undefined;
 
 // ============================================================================
 // HELPERS
@@ -204,7 +204,7 @@ const renderApp = () => {
 									loadSession(sessionId);
 								},
 								(deletedSessionId) => {
-									// If the deleted session is the current one, start a new session
+									// Only reload if the current session was deleted
 									if (deletedSessionId === currentSessionId) {
 										newSession();
 									}
@@ -295,6 +295,41 @@ const renderApp = () => {
 };
 
 // ============================================================================
+// TAB NAVIGATION TRACKING
+// ============================================================================
+
+// Listen for tab updates to insert navigation messages in real-time
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+	// Only care about URL changes on the active tab
+	if (changeInfo.url && tab.active && tab.url) {
+		handleTabNavigation(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+	}
+});
+
+// Listen for tab activation (user switches tabs)
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+	const tab = await chrome.tabs.get(activeInfo.tabId);
+	if (tab.url) {
+		handleTabNavigation(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+	}
+});
+
+function handleTabNavigation(url: string, title: string, favicon?: string, tabIndex?: number) {
+	// Update current tab tracking
+	const urlChanged = currentTabUrl !== url;
+	const tabChanged = currentTabIndex !== tabIndex;
+
+	currentTabUrl = url;
+	currentTabIndex = tabIndex;
+
+	// Only insert navigation message if something changed and we have an agent
+	if ((urlChanged || tabChanged) && agent) {
+		const navMessage = createNavigationMessage(url, title, favicon, tabIndex);
+		agent.appendMessage(navMessage);
+	}
+}
+
+// ============================================================================
 // INIT
 // ============================================================================
 async function initApp() {
@@ -308,10 +343,11 @@ async function initApp() {
 		document.body,
 	);
 
+	// TODO: Fix PersistentStorageDialog - currently broken
 	// Request persistent storage
-	if (storage.sessions) {
-		await PersistentStorageDialog.request();
-	}
+	// if (storage.sessions) {
+	// 	await PersistentStorageDialog.request();
+	// }
 
 	// Create ChatPanel
 	chatPanel = new ChatPanel();
@@ -322,20 +358,32 @@ async function initApp() {
 	chatPanel.onBeforeSend = async () => {
 		// Get current tab info
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab || !tab.url) return;
+		if (!tab?.url) return;
 
-		// Check if navigation changed since last submit
-		if (lastSubmittedUrl !== tab.url || lastSubmittedTabIndex !== tab.index) {
-			// Insert navigation message
+		// Find last navigation message in messages (reverse loop)
+		const messages = agent.state.messages;
+		let lastNavMessage: ReturnType<typeof createNavigationMessage> | undefined;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].role === "navigation") {
+				lastNavMessage = messages[i] as ReturnType<typeof createNavigationMessage>;
+				break;
+			}
+		}
+
+		// Only insert if URL or tab changed
+		if (lastNavMessage?.url !== tab.url || lastNavMessage?.tabIndex !== tab.index) {
 			const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
 			agent.appendMessage(navMessage);
-
-			// Update tracking
-			lastSubmittedUrl = tab.url;
-			lastSubmittedTabIndex = tab.index;
 		}
 	};
 	chatPanel.additionalTools = [browserJavaScriptTool];
+
+	// Initialize current tab state
+	const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (currentTab?.url) {
+		currentTabUrl = currentTab.url;
+		currentTabIndex = currentTab.index;
+	}
 
 	// Check for session in URL
 	const urlParams = new URLSearchParams(window.location.search);
