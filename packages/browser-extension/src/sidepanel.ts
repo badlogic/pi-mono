@@ -20,8 +20,13 @@ import {
 } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
 import { History, Plus, Settings } from "lucide";
+import { browserMessageTransformer } from "./message-transformer.js";
+import { createNavigationMessage, registerNavigationRenderer } from "./messages/NavigationMessage.js";
 import { browserJavaScriptTool } from "./tools/index.js";
 import "./utils/live-reload.js";
+
+// Register custom message renderers
+registerNavigationRenderer();
 
 declare const browser: any;
 
@@ -65,6 +70,10 @@ let isEditingTitle = false;
 let agent: Agent;
 let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
+
+// Track last navigation for inserting navigation messages
+let lastSubmittedUrl: string | undefined;
+let lastSubmittedTabIndex: number | undefined;
 
 // ============================================================================
 // HELPERS
@@ -134,6 +143,7 @@ const createAgent = async (initialState?: Partial<AgentState>) => {
 			tools: [],
 		},
 		transport,
+		messageTransformer: browserMessageTransformer,
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {
@@ -308,6 +318,22 @@ async function initApp() {
 	chatPanel.sandboxUrlProvider = getSandboxUrl;
 	chatPanel.onApiKeyRequired = async (provider: string) => {
 		return await ApiKeyPromptDialog.prompt(provider);
+	};
+	chatPanel.onBeforeSend = async () => {
+		// Get current tab info
+		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		if (!tab || !tab.url) return;
+
+		// Check if navigation changed since last submit
+		if (lastSubmittedUrl !== tab.url || lastSubmittedTabIndex !== tab.index) {
+			// Insert navigation message
+			const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+			agent.appendMessage(navMessage);
+
+			// Update tracking
+			lastSubmittedUrl = tab.url;
+			lastSubmittedTabIndex = tab.index;
+		}
 	};
 	chatPanel.additionalTools = [browserJavaScriptTool];
 

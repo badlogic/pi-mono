@@ -25,6 +25,10 @@ export class AgentInterface extends LitElement {
 	@property() showThemeToggle = false;
 	// Optional custom API key prompt handler - if not provided, uses default dialog
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
+	// Optional callback called before sending a message
+	@property({ attribute: false }) onBeforeSend?: () => void | Promise<void>;
+	// Optional callback called before executing a tool call - return false to prevent execution
+	@property({ attribute: false }) onBeforeToolCall?: (toolName: string, args: any) => boolean | Promise<boolean>;
 
 	// References
 	@query("message-editor") private _messageEditor!: MessageEditor;
@@ -184,6 +188,11 @@ export class AgentInterface extends LitElement {
 			if (!success) {
 				return;
 			}
+		}
+
+		// Call onBeforeSend hook before sending
+		if (this.onBeforeSend) {
+			await this.onBeforeSend();
 		}
 
 		// Only clear editor after we know we can send

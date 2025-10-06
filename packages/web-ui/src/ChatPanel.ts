@@ -22,6 +22,7 @@ export class ChatPanel extends LitElement {
 	@state() private windowWidth = window.innerWidth;
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
+	@property({ attribute: false }) onBeforeSend?: () => void | Promise<void>;
 	@property({ attribute: false }) additionalTools?: any[];
 
 	private resizeHandler = () => {
@@ -58,6 +59,7 @@ export class ChatPanel extends LitElement {
 		this.agentInterface.enableThinkingSelector = true;
 		this.agentInterface.showThemeToggle = false;
 		this.agentInterface.onApiKeyRequired = this.onApiKeyRequired;
+		this.agentInterface.onBeforeSend = this.onBeforeSend;
 
 		// Create JavaScript REPL tool
 		const javascriptReplTool = createJavaScriptReplTool();
