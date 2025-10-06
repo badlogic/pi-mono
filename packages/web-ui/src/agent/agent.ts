@@ -13,6 +13,23 @@ import type { Attachment } from "../utils/attachment-utils.js";
 import type { AgentRunConfig, AgentTransport } from "./transports/types.js";
 import type { DebugLogEntry } from "./types.js";
 
+// Default transformer: Keep only LLM-compatible messages, strip app-specific fields
+function defaultMessageTransformer(messages: AppMessage[]): Message[] {
+	return messages
+		.filter((m) => {
+			// Only keep standard LLM message roles
+			return m.role === "user" || m.role === "assistant" || m.role === "toolResult";
+		})
+		.map((m) => {
+			if (m.role === "user") {
+				// Strip attachments field (app-specific)
+				const { attachments, ...rest } = m as any;
+				return rest as Message;
+			}
+			return m as Message;
+		});
+}
+
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
 export interface AgentState {
@@ -36,6 +53,8 @@ export interface AgentOptions {
 	initialState?: Partial<AgentState>;
 	debugListener?: (entry: DebugLogEntry) => void;
 	transport: AgentTransport;
+	// Transform app messages to LLM-compatible messages before sending to transport
+	messageTransformer?: (messages: AppMessage[]) => Message[];
 }
 
 export class Agent {
@@ -54,11 +73,13 @@ export class Agent {
 	private abortController?: AbortController;
 	private transport: AgentTransport;
 	private debugListener?: (entry: DebugLogEntry) => void;
+	private messageTransformer: (messages: AppMessage[]) => Message[];
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
 		this.debugListener = opts.debugListener;
 		this.transport = opts.transport;
+		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
 	}
 
 	get state(): AgentState {
@@ -147,8 +168,12 @@ export class Agent {
 			let partial: Message | null = null;
 			let turnDebug: DebugLogEntry | null = null;
 			let turnStart = 0;
+
+			// Transform app messages to LLM-compatible messages
+			const llmMessages = this.messageTransformer(this._state.messages);
+
 			for await (const ev of this.transport.run(
-				this._state.messages as Message[],
+				llmMessages,
 				userMessage as Message,
 				cfg,
 				this.abortController.signal,
@@ -156,11 +181,10 @@ export class Agent {
 				switch (ev.type) {
 					case "turn_start": {
 						turnStart = performance.now();
-						// Build request context snapshot
-						const existing = this._state.messages as Message[];
+						// Build request context snapshot (use transformed messages)
 						const ctx: Context = {
 							systemPrompt: this._state.systemPrompt,
-							messages: [...existing],
+							messages: [...llmMessages],
 							tools: this._state.tools,
 						};
 						turnDebug = {

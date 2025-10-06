@@ -189,9 +189,17 @@ const renderApp = () => {
 						size: "sm",
 						children: icon(History, "sm"),
 						onClick: () => {
-							SessionListDialog.open((sessionId) => {
-								loadSession(sessionId);
-							});
+							SessionListDialog.open(
+								(sessionId) => {
+									loadSession(sessionId);
+								},
+								(deletedSessionId) => {
+									// If the deleted session is the current one, start a new session
+									if (deletedSessionId === currentSessionId) {
+										newSession();
+									}
+								},
+							);
 						},
 						title: "Sessions",
 					})}
@@ -334,10 +342,14 @@ async function initApp() {
 
 			renderApp();
 			return;
+		} else {
+			// Session doesn't exist, redirect to new session
+			newSession();
+			return;
 		}
 	}
 
-	// No session or session not found - create new agent
+	// No session - create new agent
 	await createAgent();
 	renderApp();
 }

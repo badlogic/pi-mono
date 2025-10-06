@@ -3,9 +3,10 @@ import "@mariozechner/mini-lit/dist/ThemeToggle.js";
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	Agent,
-	AgentState,
+	type AgentState,
 	ApiKeyPromptDialog,
 	ApiKeysTab,
+	type AppMessage,
 	AppStorage,
 	ChatPanel,
 	PersistentStorageDialog,
@@ -16,10 +17,13 @@ import {
 	setAppStorage,
 	SettingsDialog,
 } from "@mariozechner/pi-web-ui";
-import type { AppMessage } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
-import { History, Plus, Settings } from "lucide";
+import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";
+import { createSystemNotification, customMessageTransformer, registerCustomMessageRenderers } from "./custom-messages.js";
+
+// Register custom message renderers
+registerCustomMessageRenderers();
 
 const storage = new AppStorage({
 	sessions: new SessionIndexedDBBackend("pi-web-ui-sessions"),
@@ -104,6 +108,8 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 			tools: [],
 		},
 		transport,
+		// Custom transformer: convert system notifications to user messages with <system> tags
+		messageTransformer: customMessageTransformer,
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {
@@ -133,13 +139,13 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 	await chatPanel.setAgent(agent);
 };
 
-const loadSession = async (sessionId: string) => {
-	if (!storage.sessions) return;
+const loadSession = async (sessionId: string): Promise<boolean> => {
+	if (!storage.sessions) return false;
 
 	const sessionData = await storage.sessions.loadSession(sessionId);
 	if (!sessionData) {
 		console.error("Session not found:", sessionId);
-		return;
+		return false;
 	}
 
 	currentSessionId = sessionId;
@@ -155,6 +161,7 @@ const loadSession = async (sessionId: string) => {
 
 	updateUrl(sessionId);
 	renderApp();
+	return true;
 };
 
 const newSession = () => {
@@ -180,9 +187,17 @@ const renderApp = () => {
 						size: "sm",
 						children: icon(History, "sm"),
 						onClick: () => {
-							SessionListDialog.open(async (sessionId) => {
-								await loadSession(sessionId);
-							});
+							SessionListDialog.open(
+								async (sessionId) => {
+									await loadSession(sessionId);
+								},
+								(deletedSessionId) => {
+									// If the deleted session is the current one, start a new session
+									if (deletedSessionId === currentSessionId) {
+										newSession();
+									}
+								},
+							);
 						},
 						title: "Sessions",
 					})}
@@ -246,6 +261,20 @@ const renderApp = () => {
 						: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`}
 				</div>
 				<div class="flex items-center gap-1 px-2">
+					${Button({
+						variant: "ghost",
+						size: "sm",
+						children: icon(Bell, "sm"),
+						onClick: () => {
+							// Demo: Inject custom message
+							if (agent) {
+								agent.appendMessage(
+									createSystemNotification("This is a custom message! It appears in the UI but is never sent to the LLM."),
+								);
+							}
+						},
+						title: "Demo: Add Custom Notification",
+					})}
 					<theme-toggle></theme-toggle>
 					${Button({
 						variant: "ghost",
@@ -298,7 +327,12 @@ async function initApp() {
 	const sessionIdFromUrl = urlParams.get("session");
 
 	if (sessionIdFromUrl) {
-		await loadSession(sessionIdFromUrl);
+		const loaded = await loadSession(sessionIdFromUrl);
+		if (!loaded) {
+			// Session doesn't exist, redirect to new session
+			newSession();
+			return;
+		}
 	} else {
 		await createAgent();
 	}

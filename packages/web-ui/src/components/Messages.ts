@@ -16,7 +16,23 @@ import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
 
 export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
-export type AppMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType;
+
+// Base message union
+type BaseMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType;
+
+// Extensible interface - apps can extend via declaration merging
+// Example:
+// declare module "@mariozechner/pi-web-ui" {
+//   interface CustomMessages {
+//     "system-notification": SystemNotificationMessage;
+//   }
+// }
+export interface CustomMessages {
+	// Empty by default - apps extend via declaration merging
+}
+
+// AppMessage is union of base messages + custom messages
+export type AppMessage = BaseMessage | CustomMessages[keyof CustomMessages];
 
 @customElement("user-message")
 export class UserMessage extends LitElement {

@@ -2,15 +2,16 @@ import { html } from "@mariozechner/mini-lit";
 import type {
 	AgentTool,
 	AssistantMessage as AssistantMessageType,
-	Message,
 	ToolResultMessage as ToolResultMessageType,
 } from "@mariozechner/pi-ai";
 import { LitElement, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
+import type { AppMessage } from "./Messages.js";
+import { renderMessage } from "./message-renderer-registry.js";
 
 export class MessageList extends LitElement {
-	@property({ type: Array }) messages: Message[] = [];
+	@property({ type: Array }) messages: AppMessage[] = [];
 	@property({ type: Array }) tools: AgentTool[] = [];
 	@property({ type: Object }) pendingToolCalls?: Set<string>;
 	@property({ type: Boolean }) isStreaming: boolean = false;
@@ -36,6 +37,15 @@ export class MessageList extends LitElement {
 		const items: Array<{ key: string; template: TemplateResult }> = [];
 		let index = 0;
 		for (const msg of this.messages) {
+			// Try custom renderer first
+			const customTemplate = renderMessage(msg);
+			if (customTemplate) {
+				items.push({ key: `msg:${index}`, template: customTemplate });
+				index++;
+				continue;
+			}
+
+			// Fall back to built-in renderers
 			if (msg.role === "user") {
 				items.push({
 					key: `msg:${index}`,
@@ -58,7 +68,7 @@ export class MessageList extends LitElement {
 				index++;
 			} else {
 				// Skip standalone toolResult messages; they are rendered via paired tool-message above
-				// For completeness, other roles are not expected
+				// Skip unknown roles
 			}
 		}
 		return items;

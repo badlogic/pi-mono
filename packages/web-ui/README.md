@@ -6,13 +6,13 @@ Built with [mini-lit](https://github.com/mariozechner/mini-lit) web components a
 
 ## Features
 
-- 🎨 **Modern Chat Interface** - Complete chat UI with message history, streaming responses, and tool execution
-- 🔧 **Tool Support** - Built-in renderers for calculator, bash, time, and custom tools
-- 📎 **Attachments** - PDF, Office documents, images with preview and text extraction
-- 🎭 **Artifacts** - HTML, SVG, Markdown, and text artifact rendering with sandboxed execution
-- 🔌 **Pluggable Transports** - Direct API calls or proxy server support
-- 🌐 **Platform Agnostic** - Works in browser extensions, web apps, VS Code extensions, Electron apps
-- 🎯 **TypeScript** - Full type safety with TypeScript
+- Modern Chat Interface - Complete chat UI with message history, streaming responses, and tool execution
+- Tool Support - Built-in renderers for calculator, bash, time, and custom tools
+- Attachments - PDF, Office documents, images with preview and text extraction
+- Artifacts - HTML, SVG, Markdown, and text artifact rendering with sandboxed execution
+- Pluggable Transports - Direct API calls or proxy server support
+- Platform Agnostic - Works in browser extensions, web apps, VS Code extensions, Electron apps
+- TypeScript - Full type safety with TypeScript
 
 ## Installation
 
@@ -25,14 +25,35 @@ npm install @mariozechner/pi-web-ui
 See the [example](./example) directory for a complete working application.
 
 ```typescript
-import { ChatPanel } from '@mariozechner/pi-web-ui';
-import { calculateTool, getCurrentTimeTool } from '@mariozechner/pi-ai';
+import { Agent, ChatPanel, ProviderTransport, AppStorage,
+         SessionIndexedDBBackend, setAppStorage } from '@mariozechner/pi-web-ui';
+import { getModel } from '@mariozechner/pi-ai';
 import '@mariozechner/pi-web-ui/app.css';
 
-// Create a chat panel
+// Set up storage
+const storage = new AppStorage({
+  sessions: new SessionIndexedDBBackend('my-app-sessions'),
+});
+setAppStorage(storage);
+
+// Create transport
+const transport = new ProviderTransport();
+
+// Create agent
+const agent = new Agent({
+  initialState: {
+    systemPrompt: 'You are a helpful assistant.',
+    model: getModel('anthropic', 'claude-sonnet-4-5-20250929'),
+    thinkingLevel: 'off',
+    messages: [],
+    tools: [],
+  },
+  transport,
+});
+
+// Create chat panel and attach agent
 const chatPanel = new ChatPanel();
-chatPanel.systemPrompt = 'You are a helpful assistant.';
-chatPanel.additionalTools = [calculateTool, getCurrentTimeTool];
+await chatPanel.setAgent(agent);
 
 document.body.appendChild(chatPanel);
 ```
@@ -49,96 +70,94 @@ npm run dev
 
 ### ChatPanel
 
-The main chat interface component. Manages agent sessions, model selection, and conversation flow.
+The main chat interface component. Displays messages, handles input, and coordinates with the Agent.
 
 ```typescript
-import { ChatPanel } from '@mariozechner/pi-web-ui';
+import { ChatPanel, ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
 
-const panel = new ChatPanel({
-  initialModel: 'anthropic/claude-sonnet-4-20250514',
-  systemPrompt: 'You are a helpful assistant.',
-  transportMode: 'direct', // or 'proxy'
+const chatPanel = new ChatPanel();
+
+// Optional: Handle API key prompts
+chatPanel.onApiKeyRequired = async (provider: string) => {
+  return await ApiKeyPromptDialog.prompt(provider);
+};
+
+// Attach an agent
+await chatPanel.setAgent(agent);
+```
+
+### Agent
+
+Core state manager that handles conversation state, tool execution, and streaming.
+
+```typescript
+import { Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
+import { getModel } from '@mariozechner/pi-ai';
+
+const agent = new Agent({
+  initialState: {
+    model: getModel('anthropic', 'claude-sonnet-4-5-20250929'),
+    systemPrompt: 'You are a helpful assistant.',
+    thinkingLevel: 'off',
+    messages: [],
+    tools: [],
+  },
+  transport: new ProviderTransport(),
 });
+
+// Subscribe to events
+agent.subscribe((event) => {
+  if (event.type === 'state-update') {
+    console.log('Messages:', event.state.messages);
+  }
+});
+
+// Send a message
+await agent.send('Hello!');
 ```
 
 ### AgentInterface
 
-Lower-level chat interface for custom implementations.
+Lower-level chat interface for custom implementations. Used internally by ChatPanel.
 
 ```typescript
 import { AgentInterface } from '@mariozechner/pi-web-ui';
 
 const chat = new AgentInterface();
-chat.session = myAgentSession;
+await chat.setAgent(agent);
 ```
 
-## State Management
-
-### AgentSession
-
-Manages conversation state, tool execution, and streaming.
-
-```typescript
-import { AgentSession, DirectTransport } from '@mariozechner/pi-web-ui';
-import { getModel, calculateTool, getCurrentTimeTool } from '@mariozechner/pi-ai';
-
-const session = new AgentSession({
-  initialState: {
-    model: getModel('anthropic', 'claude-3-5-haiku-20241022'),
-    systemPrompt: 'You are a helpful assistant.',
-    tools: [calculateTool, getCurrentTimeTool],
-    messages: [],
-  },
-  transportMode: 'direct',
-});
-
-// Subscribe to state changes
-session.subscribe((state) => {
-  console.log('Messages:', state.messages);
-  console.log('Streaming:', state.streaming);
-});
-
-// Send a message
-await session.send('What is 25 * 18?');
-```
-
-### Transports
+## Transports
 
 Transport layers handle communication with AI providers.
 
-#### DirectTransport
+### ProviderTransport
 
-Calls AI provider APIs directly from the browser using API keys stored locally.
+The main transport that calls AI provider APIs using stored API keys.
 
 ```typescript
-import { DirectTransport, KeyStore } from '@mariozechner/pi-web-ui';
+import { ProviderTransport } from '@mariozechner/pi-web-ui';
 
-// Set API keys
-const keyStore = new KeyStore();
-await keyStore.setKey('anthropic', 'sk-ant-...');
-await keyStore.setKey('openai', 'sk-...');
+const transport = new ProviderTransport();
 
-// Use direct transport (default)
-const session = new AgentSession({
-  transportMode: 'direct',
-  // ...
+const agent = new Agent({
+  initialState: { /* ... */ },
+  transport,
 });
 ```
 
-#### ProxyTransport
+### AppTransport
 
-Routes requests through a proxy server using auth tokens.
+Alternative transport for proxying requests through a custom server.
 
 ```typescript
-import { ProxyTransport, setAuthToken } from '@mariozechner/pi-web-ui';
+import { AppTransport } from '@mariozechner/pi-web-ui';
 
-// Set auth token
-setAuthToken('your-auth-token');
+const transport = new AppTransport();
 
-// Use proxy transport
-const session = new AgentSession({
-  transportMode: 'proxy',
-  // ...
+const agent = new Agent({
+  initialState: { /* ... */ },
+  transport,
 });
 ```
 
@@ -163,22 +182,46 @@ const myRenderer: ToolRenderer = {
 registerToolRenderer('my_tool', myRenderer);
 ```
 
-## Artifacts
+## Storage
 
-Render rich content with sandboxed execution.
+The package provides flexible storage backends for API keys, settings, and session persistence.
+
+### AppStorage
+
+Central storage configuration for the application.
 
 ```typescript
-import { artifactTools } from '@mariozechner/pi-web-ui';
-import { getModel } from '@mariozechner/pi-ai';
+import { AppStorage, setAppStorage, SessionIndexedDBBackend } from '@mariozechner/pi-web-ui';
 
-const session = new AgentSession({
-  initialState: {
-    tools: [...artifactTools],
-    // ...
-  }
+const storage = new AppStorage({
+  sessions: new SessionIndexedDBBackend('my-app-sessions'),
 });
 
-// AI can now create HTML artifacts, SVG diagrams, etc.
+setAppStorage(storage);
+```
+
+### Available Backends
+
+- `LocalStorageBackend` - Uses browser localStorage
+- `IndexedDBBackend` - Uses IndexedDB for larger data
+- `SessionIndexedDBBackend` - Specialized for session storage
+- `ChromeStorageBackend` - For browser extensions using chrome.storage API
+
+### Session Management
+
+```typescript
+import { getAppStorage } from '@mariozechner/pi-web-ui';
+
+const storage = getAppStorage();
+
+// Save session
+await storage.sessions?.saveSession(sessionId, agentState, undefined, title);
+
+// Load session
+const sessionData = await storage.sessions?.loadSession(sessionId);
+
+// List sessions
+const sessions = await storage.sessions?.listSessions();
 ```
 
 ## Styling
@@ -198,50 +241,82 @@ Or customize with your own Tailwind config:
 @tailwind utilities;
 ```
 
+## Dialogs
+
+The package includes several dialog components for common interactions.
+
+### SettingsDialog
+
+Settings dialog with tabbed interface for API keys, proxy configuration, etc.
+
+```typescript
+import { SettingsDialog, ApiKeysTab, ProxyTab } from '@mariozechner/pi-web-ui';
+
+// Open settings with tabs
+SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]);
+```
+
+### SessionListDialog
+
+Display and load saved sessions.
+
+```typescript
+import { SessionListDialog } from '@mariozechner/pi-web-ui';
+
+SessionListDialog.open(async (sessionId) => {
+  await loadSession(sessionId);
+});
+```
+
+### ApiKeyPromptDialog
+
+Prompt user for API key when needed.
+
+```typescript
+import { ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
+
+const apiKey = await ApiKeyPromptDialog.prompt('anthropic');
+```
+
+### PersistentStorageDialog
+
+Request persistent storage permission.
+
+```typescript
+import { PersistentStorageDialog } from '@mariozechner/pi-web-ui';
+
+await PersistentStorageDialog.request();
+```
+
 ## Platform Integration
 
 ### Browser Extension
 
 ```typescript
-import { ChatPanel, KeyStore } from '@mariozechner/pi-web-ui';
+import { AppStorage, ChromeStorageBackend, Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
 
-// Use chrome.storage for persistence
-const keyStore = new KeyStore({
-  get: async (key) => {
-    const result = await chrome.storage.local.get(key);
-    return result[key];
-  },
-  set: async (key, value) => {
-    await chrome.storage.local.set({ [key]: value });
-  }
+const storage = new AppStorage({
+  providerKeys: new ChromeStorageBackend(),
+  settings: new ChromeStorageBackend(),
 });
+setAppStorage(storage);
 ```
 
 ### Web Application
 
 ```typescript
-import { ChatPanel } from '@mariozechner/pi-web-ui';
+import { AppStorage, SessionIndexedDBBackend, setAppStorage } from '@mariozechner/pi-web-ui';
 
-// Uses localStorage by default
-const panel = new ChatPanel();
-document.querySelector('#app').appendChild(panel);
-```
-
-### VS Code Extension
-
-```typescript
-import { AgentSession, DirectTransport } from '@mariozechner/pi-web-ui';
-
-// Custom storage using VS Code's globalState
-const storage = {
-  get: async (key) => context.globalState.get(key),
-  set: async (key, value) => context.globalState.update(key, value)
-};
+const storage = new AppStorage({
+  sessions: new SessionIndexedDBBackend('my-app-sessions'),
+});
+setAppStorage(storage);
 ```
 
 ## Examples
 
-See the [browser-extension](../browser-extension) package for a complete implementation example.
+- [example/](./example) - Complete web application with session management
+- [browser-extension](../browser-extension) - Browser extension implementation
 
 ## API Reference
 

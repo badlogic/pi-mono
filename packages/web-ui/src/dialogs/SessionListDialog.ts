@@ -11,13 +11,15 @@ export class SessionListDialog extends DialogBase {
 	@state() private loading = true;
 
 	private onSelectCallback?: (sessionId: string) => void;
+	private onDeleteCallback?: (sessionId: string) => void;
 
 	protected modalWidth = "min(600px, 90vw)";
 	protected modalHeight = "min(700px, 90vh)";
 
-	static async open(onSelect: (sessionId: string) => void) {
+	static async open(onSelect: (sessionId: string) => void, onDelete?: (sessionId: string) => void) {
 		const dialog = new SessionListDialog();
 		dialog.onSelectCallback = onSelect;
+		dialog.onDeleteCallback = onDelete;
 		dialog.open();
 		await dialog.loadSessions();
 	}
@@ -54,6 +56,11 @@ export class SessionListDialog extends DialogBase {
 
 			await storage.sessions.deleteSession(sessionId);
 			await this.loadSessions();
+
+			// Notify callback that session was deleted
+			if (this.onDeleteCallback) {
+				this.onDeleteCallback(sessionId);
+			}
 		} catch (err) {
 			console.error("Failed to delete session:", err);
 		}

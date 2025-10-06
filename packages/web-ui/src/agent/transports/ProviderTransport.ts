@@ -27,18 +27,10 @@ export class ProviderTransport implements AgentTransport {
 			};
 		}
 
-		// Filter out attachments from messages
-		const filteredMessages = messages.map((m) => {
-			if (m.role === "user") {
-				const { attachments, ...rest } = m as any;
-				return rest;
-			}
-			return m;
-		});
-
+		// Messages are already LLM-compatible (filtered by Agent)
 		const context: AgentContext = {
 			systemPrompt: cfg.systemPrompt,
-			messages: filteredMessages,
+			messages,
 			tools: cfg.tools,
 		};
 
