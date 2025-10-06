@@ -316,7 +316,7 @@ setAppStorage(storage);
 ## Examples
 
 - [example/](./example) - Complete web application with session management
-- [browser-extension](../browser-extension) - Browser extension implementation
+- [sitegeist](https://github.com/badlogic/sitegeist) - Browser extension for AI-powered web navigation
 
 ## API Reference
 

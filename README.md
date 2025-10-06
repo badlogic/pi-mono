@@ -6,11 +6,13 @@ A collection of tools for managing LLM deployments and building AI agents.
 
 - **[@mariozechner/pi-ai](packages/ai)** - Unified multi-provider LLM API
 - **[@mariozechner/pi-web-ui](packages/web-ui)** - Web components for building AI chat interfaces
-- **[@mariozechner/pi-browser-extension](packages/browser-extension)** - Browser extension for AI assistance
 - **[@mariozechner/pi-proxy](packages/proxy)** - CORS proxy for browser-based LLM API calls
 - **[@mariozechner/pi-tui](packages/tui)** - Terminal UI library with differential rendering
 - **[@mariozechner/pi-agent](packages/agent)** - General-purpose agent with tool calling and session persistence
 - **[@mariozechner/pi](packages/pods)** - CLI for managing vLLM deployments on GPU pods
+
+**Related:**
+- **[sitegeist](https://github.com/badlogic/sitegeist)** - Browser extension for AI-powered web navigation (uses pi-ai and pi-web-ui)
 
 ## Development
 

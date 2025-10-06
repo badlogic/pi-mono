@@ -10,6 +10,5 @@
 			"@mariozechner/pi": ["./packages/pods/src/index.ts"]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*"],
-	"exclude": ["packages/browser-extension/**/*"]
+	"include": ["packages/*/src/**/*", "packages/*/test/**/*"]
 }
