@@ -298,11 +298,12 @@ const renderApp = () => {
 // TAB NAVIGATION TRACKING
 // ============================================================================
 
-// Listen for tab updates to insert navigation messages in real-time
+// Listen for tab updates to track current tab state (don't insert messages yet)
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 	// Only care about URL changes on the active tab
 	if (changeInfo.url && tab.active && tab.url) {
-		handleTabNavigation(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+		currentTabUrl = tab.url;
+		currentTabIndex = tab.index;
 	}
 });
 
@@ -310,24 +311,10 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
 	const tab = await chrome.tabs.get(activeInfo.tabId);
 	if (tab.url) {
-		handleTabNavigation(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+		currentTabUrl = tab.url;
+		currentTabIndex = tab.index;
 	}
 });
-
-function handleTabNavigation(url: string, title: string, favicon?: string, tabIndex?: number) {
-	// Update current tab tracking
-	const urlChanged = currentTabUrl !== url;
-	const tabChanged = currentTabIndex !== tabIndex;
-
-	currentTabUrl = url;
-	currentTabIndex = tabIndex;
-
-	// Only insert navigation message if something changed and we have an agent
-	if ((urlChanged || tabChanged) && agent) {
-		const navMessage = createNavigationMessage(url, title, favicon, tabIndex);
-		agent.appendMessage(navMessage);
-	}
-}
 
 // ============================================================================
 // INIT
