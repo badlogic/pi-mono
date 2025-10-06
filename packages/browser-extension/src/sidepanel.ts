@@ -181,7 +181,7 @@ const loadSession = (sessionId: string) => {
 
 const newSession = () => {
 	const url = new URL(window.location.href);
-	url.search = "";
+	url.search = "?new=true";
 	window.location.href = url.toString();
 };
 
@@ -340,9 +340,10 @@ async function initApp() {
 	// Check for session in URL
 	const urlParams = new URLSearchParams(window.location.search);
 	let sessionIdFromUrl = urlParams.get("session");
+	const isNewSession = urlParams.get("new") === "true";
 
-	// If no session in URL, try to load the most recent session
-	if (!sessionIdFromUrl && storage.sessions) {
+	// If no session in URL and not explicitly creating new, try to load the most recent session
+	if (!sessionIdFromUrl && !isNewSession && storage.sessions) {
 		const latestSessionId = await storage.sessions.getLatestSessionId();
 		if (latestSessionId) {
 			sessionIdFromUrl = latestSessionId;
