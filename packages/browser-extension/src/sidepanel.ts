@@ -71,10 +71,6 @@ let agent: Agent;
 let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
-// Track current active tab for real-time navigation updates
-let currentTabUrl: string | undefined;
-let currentTabIndex: number | undefined;
-
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -302,7 +298,8 @@ const renderApp = () => {
 // Listen for tab updates and insert navigation messages immediately
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 	// Only care about URL changes on the active tab
-	if (changeInfo.url && tab.active && tab.url && agent) {
+	// Ignore chrome-extension:// URLs (extension internal pages)
+	if (changeInfo.url && tab.active && tab.url && agent && !tab.url.startsWith("chrome-extension://")) {
 		const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
 		agent.appendMessage(navMessage);
 	}
@@ -311,7 +308,8 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 // Listen for tab activation (user switches tabs)
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
 	const tab = await chrome.tabs.get(activeInfo.tabId);
-	if (tab.url && agent) {
+	// Ignore chrome-extension:// URLs (extension internal pages)
+	if (tab.url && agent && !tab.url.startsWith("chrome-extension://")) {
 		const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
 		agent.appendMessage(navMessage);
 	}
@@ -344,13 +342,6 @@ async function initApp() {
 		return await ApiKeyPromptDialog.prompt(provider);
 	};
 	chatPanel.additionalTools = [browserJavaScriptTool];
-
-	// Initialize current tab state
-	const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-	if (currentTab?.url) {
-		currentTabUrl = currentTab.url;
-		currentTabIndex = currentTab.index;
-	}
 
 	// Check for session in URL
 	const urlParams = new URLSearchParams(window.location.search);

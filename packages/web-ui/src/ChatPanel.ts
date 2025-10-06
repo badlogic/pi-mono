@@ -19,7 +19,7 @@ export class ChatPanel extends LitElement {
 	@state() private hasArtifacts = false;
 	@state() private artifactCount = 0;
 	@state() private showArtifactsPanel = false;
-	@state() private windowWidth = window.innerWidth;
+	@state() private windowWidth = 0;
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 	@property({ attribute: false }) onBeforeSend?: () => void | Promise<void>;
@@ -36,11 +36,17 @@ export class ChatPanel extends LitElement {
 
 	override connectedCallback() {
 		super.connectedCallback();
+		this.windowWidth = window.innerWidth; // Set initial width after connection
 		window.addEventListener("resize", this.resizeHandler);
 		this.style.display = "flex";
 		this.style.flexDirection = "column";
 		this.style.height = "100%";
 		this.style.minHeight = "0";
+		// Update width after initial render
+		requestAnimationFrame(() => {
+			this.windowWidth = window.innerWidth;
+			this.requestUpdate();
+		});
 	}
 
 	override disconnectedCallback() {
@@ -145,6 +151,15 @@ export class ChatPanel extends LitElement {
 		}
 
 		const isMobile = this.windowWidth < BREAKPOINT;
+
+		console.log("[ChatPanel Debug]", {
+			windowWidth: this.windowWidth,
+			breakpoint: BREAKPOINT,
+			isMobile,
+			showArtifactsPanel: this.showArtifactsPanel,
+			hasArtifacts: this.hasArtifacts,
+			artifactCount: this.artifactCount,
+		});
 
 		// Set panel props
 		if (this.artifactsPanel) {
