@@ -293,10 +293,10 @@ export class Agent {
 			this.patch({ isStreaming: false, streamMessage: null, pendingToolCalls: new Set<string>() });
 			this.abortController = undefined;
 		}
-		{
+		/*{
 			const { systemPrompt, model, messages } = this._state;
 			console.log("final state:", { systemPrompt, model, messages });
-		}
+		}*/
 	}
 
 	private patch(p: Partial<AgentState>): void {

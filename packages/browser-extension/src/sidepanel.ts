@@ -75,9 +75,39 @@ let agentUnsubscribe: (() => void) | undefined;
 let currentTabUrl: string | undefined;
 let currentTabIndex: number | undefined;
 
+// Track if agent is busy (streaming or executing tools)
+let isAgentBusy = false;
+
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+/**
+ * Check if URL changed and insert navigation message if needed
+ */
+const checkAndInsertNavMessage = async () => {
+	if (!agent) return;
+
+	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (!tab?.url) return;
+
+	// Find last navigation message in messages (reverse loop)
+	const messages = agent.state.messages;
+	let lastNavMessage: ReturnType<typeof createNavigationMessage> | undefined;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i].role === "navigation") {
+			lastNavMessage = messages[i] as ReturnType<typeof createNavigationMessage>;
+			break;
+		}
+	}
+
+	// Only insert if URL or tab changed
+	if (lastNavMessage?.url !== tab.url || lastNavMessage?.tabIndex !== tab.index) {
+		const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
+		agent.appendMessage(navMessage);
+	}
+};
+
 const generateTitle = (messages: AppMessage[]): string => {
 	const firstUserMsg = messages.find((m) => m.role === "user");
 	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
@@ -149,6 +179,15 @@ const createAgent = async (initialState?: Partial<AgentState>) => {
 	agentUnsubscribe = agent.subscribe((event: any) => {
 		if (event.type === "state-update") {
 			const messages = event.state.messages;
+
+			// Track agent busy state (streaming or executing tools)
+			const wasBusy = isAgentBusy;
+			isAgentBusy = event.state.isStreaming || event.state.pendingToolCalls.size > 0;
+
+			// If agent just finished being busy, check for URL changes and insert nav message
+			if (wasBusy && !isAgentBusy) {
+				checkAndInsertNavMessage();
+			}
 
 			// Generate title after first successful response
 			if (!currentTitle && shouldSaveSession(messages)) {
@@ -343,25 +382,8 @@ async function initApp() {
 		return await ApiKeyPromptDialog.prompt(provider);
 	};
 	chatPanel.onBeforeSend = async () => {
-		// Get current tab info
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab?.url) return;
-
-		// Find last navigation message in messages (reverse loop)
-		const messages = agent.state.messages;
-		let lastNavMessage: ReturnType<typeof createNavigationMessage> | undefined;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			if (messages[i].role === "navigation") {
-				lastNavMessage = messages[i] as ReturnType<typeof createNavigationMessage>;
-				break;
-			}
-		}
-
-		// Only insert if URL or tab changed
-		if (lastNavMessage?.url !== tab.url || lastNavMessage?.tabIndex !== tab.index) {
-			const navMessage = createNavigationMessage(tab.url, tab.title || "Untitled", tab.favIconUrl, tab.index);
-			agent.appendMessage(navMessage);
-		}
+		// Check for URL changes and insert nav message if needed
+		await checkAndInsertNavMessage();
 	};
 	chatPanel.additionalTools = [browserJavaScriptTool];
 
