@@ -6,11 +6,10 @@ import type {
 	ToolResultMessage as ToolResultMessageType,
 	UserMessage as UserMessageType,
 } from "@mariozechner/pi-ai";
-import type { AgentToolResult } from "@mariozechner/pi-ai/dist/agent/types.js";
 import { LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { Bug, Loader, Wrench } from "lucide";
-import { renderToolParams, renderToolResult } from "../tools/index.js";
+import { renderTool } from "../tools/index.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
@@ -149,7 +148,7 @@ export class AssistantMessage extends LitElement {
 @customElement("tool-message-debug")
 export class ToolMessageDebugView extends LitElement {
 	@property({ type: Object }) callArgs: any;
-	@property({ type: String }) result?: AgentToolResult<any>;
+	@property({ type: Object }) result?: ToolResultMessageType;
 	@property({ type: Boolean }) hasResult: boolean = false;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
@@ -205,7 +204,6 @@ export class ToolMessage extends LitElement {
 	@property({ type: Boolean }) pending: boolean = false;
 	@property({ type: Boolean }) aborted: boolean = false;
 	@property({ type: Boolean }) isStreaming: boolean = false;
-	@state() private _showDebug = false;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -216,94 +214,15 @@ export class ToolMessage extends LitElement {
 		this.style.display = "block";
 	}
 
-	private toggleDebug = () => {
-		this._showDebug = !this._showDebug;
-	};
-
 	override render() {
-		const toolLabel = this.tool?.label || this.toolCall.name;
 		const toolName = this.tool?.name || this.toolCall.name;
-		const isError = this.result?.isError === true;
-		const hasResult = !!this.result;
 
-		let statusIcon: TemplateResult;
-		if (this.pending || (this.isStreaming && !hasResult)) {
-			statusIcon = html`<span class="inline-block text-muted-foreground animate-spin">${icon(Loader, "sm")}</span>`;
-		} else if (this.aborted && !hasResult) {
-			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "sm")}</span>`;
-		} else if (hasResult && isError) {
-			statusIcon = html`<span class="inline-block text-destructive">${icon(Wrench, "sm")}</span>`;
-		} else if (hasResult) {
-			statusIcon = html`<span class="inline-block text-muted-foreground">${icon(Wrench, "sm")}</span>`;
-		} else {
-			statusIcon = html`<span class="inline-block text-muted-foreground">${icon(Wrench, "sm")}</span>`;
-		}
-
-		// Normalize error text
-		let errorMessage = this.result?.output || "";
-		if (isError) {
-			try {
-				const parsed = JSON.parse(errorMessage);
-				if ((parsed as any).error) errorMessage = (parsed as any).error;
-				else if ((parsed as any).message) errorMessage = (parsed as any).message;
-			} catch {}
-			errorMessage = errorMessage.replace(/^(Tool )?Error:\s*/i, "");
-			errorMessage = errorMessage.replace(/^Error:\s*/i, "");
-		}
-
-		const paramsTpl = renderToolParams(
-			toolName,
-			this.toolCall.arguments,
-			this.isStreaming || (this.pending && !hasResult),
-		);
-		const resultTpl =
-			hasResult && !isError ? renderToolResult(toolName, this.toolCall.arguments, this.result!) : undefined;
+		// Render tool content (renderer handles errors and styling)
+		const toolContent = renderTool(toolName, this.toolCall.arguments, this.result, this.isStreaming || this.pending);
 
 		return html`
-			<div class="p-2.5 border border-border rounded-md bg-card text-card-foreground">
-				<div class="flex items-center justify-between text-xs text-muted-foreground">
-					<div class="flex items-center gap-2">
-						${statusIcon}
-						<span class="font-medium">${toolLabel}</span>
-					</div>
-					${Button({
-						variant: this._showDebug ? "default" : "ghost",
-						size: "sm",
-						onClick: this.toggleDebug,
-						children: icon(Bug, "sm"),
-						className: "text-muted-foreground",
-					})}
-				</div>
-
-				${
-					this._showDebug
-						? html`<tool-message-debug
-							.callArgs=${this.toolCall.arguments}
-							.result=${this.result}
-							.hasResult=${!!this.result}
-						></tool-message-debug>`
-						: html`
-							<div class="mt-2 text-sm text-muted-foreground">${paramsTpl}</div>
-							${
-								this.pending && !hasResult
-									? html`<div class="mt-2 text-sm text-muted-foreground">${i18n("Waiting for tool result…")}</div>`
-									: ""
-							}
-							${
-								this.aborted && !hasResult
-									? html`<div class="mt-2 text-sm text-muted-foreground">${i18n("Call was aborted; no result.")}</div>`
-									: ""
-							}
-							${
-								hasResult && isError
-									? html`<div class="mt-2 p-2 border border-destructive rounded bg-destructive/10 text-sm text-destructive">
-										${errorMessage}
-									</div>`
-									: ""
-							}
-							${resultTpl ? html`<div class="mt-2">${resultTpl}</div>` : ""}
-						`
-				}
+			<div class="p-2.5 border border-border rounded-md bg-card text-card-foreground shadow-xs">
+				${toolContent}
 			</div>
 		`;
 	}

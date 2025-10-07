@@ -59,11 +59,13 @@ declare module "@mariozechner/mini-lit" {
 		"Preparing tool parameters...": string;
 		"(no output)": string;
 		"Writing expression...": string;
+		"Waiting for expression...": string;
 		Calculating: string;
 		"Getting current time in": string;
 		"Getting current date and time": string;
+		"Waiting for command...": string;
 		"Writing command...": string;
-		"Running command:": string;
+		"Running command...": string;
 		"Command failed:": string;
 		"Enter Auth Token": string;
 		"Please enter your auth token.": string;
@@ -78,8 +80,32 @@ declare module "@mariozechner/mini-lit" {
 		"JavaScript code to execute": string;
 		"Writing JavaScript code...": string;
 		"Executing JavaScript": string;
+		"Preparing JavaScript...": string;
+		"Preparing command...": string;
+		"Preparing calculation...": string;
+		"Preparing tool...": string;
+		"Getting time...": string;
 		// Artifacts strings
 		"Processing artifact...": string;
+		"Preparing artifact...": string;
+		"Processing artifact": string;
+		"Processed artifact": string;
+		"Creating artifact": string;
+		"Created artifact": string;
+		"Updating artifact": string;
+		"Updated artifact": string;
+		"Rewriting artifact": string;
+		"Rewrote artifact": string;
+		"Getting artifact": string;
+		"Got artifact": string;
+		"Deleting artifact": string;
+		"Deleted artifact": string;
+		"Getting logs": string;
+		"Got logs": string;
+		"An error occurred": string;
+		"Copy logs": string;
+		"Autoscroll enabled": string;
+		"Autoscroll disabled": string;
 		Processing: string;
 		Create: string;
 		Rewrite: string;
@@ -199,13 +225,15 @@ export const translations = {
 		"No session set": "No session set",
 		"Preparing tool parameters...": "Preparing tool parameters...",
 		"(no output)": "(no output)",
+		"Waiting for expression...": "Waiting for expression...",
 		"Writing expression...": "Writing expression...",
 		Calculating: "Calculating",
 		"Getting current time in": "Getting current time in",
 		"Getting current date and time": "Getting current date and time",
+		"Waiting for command...": "Waiting for command...",
 		"Writing command...": "Writing command...",
-		"Running command:": "Running command:",
-		"Command failed:": "Command failed:",
+		"Running command...": "Running command...",
+		"Command failed": "Command failed",
 		"Enter Auth Token": "Enter Auth Token",
 		"Please enter your auth token.": "Please enter your auth token.",
 		"Auth token is required for proxy transport": "Auth token is required for proxy transport",
@@ -219,8 +247,32 @@ export const translations = {
 		"JavaScript code to execute": "JavaScript code to execute",
 		"Writing JavaScript code...": "Writing JavaScript code...",
 		"Executing JavaScript": "Executing JavaScript",
+		"Preparing JavaScript...": "Preparing JavaScript...",
+		"Preparing command...": "Preparing command...",
+		"Preparing calculation...": "Preparing calculation...",
+		"Preparing tool...": "Preparing tool...",
+		"Getting time...": "Getting time...",
 		// Artifacts strings
 		"Processing artifact...": "Processing artifact...",
+		"Preparing artifact...": "Preparing artifact...",
+		"Processing artifact": "Processing artifact",
+		"Processed artifact": "Processed artifact",
+		"Creating artifact": "Creating artifact",
+		"Created artifact": "Created artifact",
+		"Updating artifact": "Updating artifact",
+		"Updated artifact": "Updated artifact",
+		"Rewriting artifact": "Rewriting artifact",
+		"Rewrote artifact": "Rewrote artifact",
+		"Getting artifact": "Getting artifact",
+		"Got artifact": "Got artifact",
+		"Deleting artifact": "Deleting artifact",
+		"Deleted artifact": "Deleted artifact",
+		"Getting logs": "Getting logs",
+		"Got logs": "Got logs",
+		"An error occurred": "An error occurred",
+		"Copy logs": "Copy logs",
+		"Autoscroll enabled": "Autoscroll enabled",
+		"Autoscroll disabled": "Autoscroll disabled",
 		Processing: "Processing",
 		Create: "Create",
 		Rewrite: "Rewrite",
@@ -281,6 +333,7 @@ export const translations = {
 		tokens: "tokens",
 		Delete: "Delete",
 		"Drop files here": "Drop files here",
+		"Command failed:": "Command failed:",
 	},
 	de: {
 		...defaultGerman,
@@ -342,13 +395,15 @@ export const translations = {
 		"No session set": "Keine Sitzung gesetzt",
 		"Preparing tool parameters...": "Bereite Tool-Parameter vor...",
 		"(no output)": "(keine Ausgabe)",
+		"Waiting for expression...": "Warte auf Ausdruck",
 		"Writing expression...": "Schreibe Ausdruck...",
 		Calculating: "Berechne",
 		"Getting current time in": "Hole aktuelle Zeit in",
 		"Getting current date and time": "Hole aktuelles Datum und Uhrzeit",
+		"Waiting for command...": "Warte auf Befehl...",
 		"Writing command...": "Schreibe Befehl...",
-		"Running command:": "Führe Befehl aus:",
-		"Command failed:": "Befehl fehlgeschlagen:",
+		"Running command...": "Führe Befehl aus...",
+		"Command failed": "Befehl fehlgeschlagen",
 		"Enter Auth Token": "Auth-Token eingeben",
 		"Please enter your auth token.": "Bitte geben Sie Ihr Auth-Token ein.",
 		"Auth token is required for proxy transport": "Auth-Token ist für Proxy-Transport erforderlich",
@@ -362,8 +417,32 @@ export const translations = {
 		"JavaScript code to execute": "Auszuführender JavaScript-Code",
 		"Writing JavaScript code...": "Schreibe JavaScript-Code...",
 		"Executing JavaScript": "Führe JavaScript aus",
+		"Preparing JavaScript...": "Bereite JavaScript vor...",
+		"Preparing command...": "Bereite Befehl vor...",
+		"Preparing calculation...": "Bereite Berechnung vor...",
+		"Preparing tool...": "Bereite Tool vor...",
+		"Getting time...": "Hole Zeit...",
 		// Artifacts strings
 		"Processing artifact...": "Verarbeite Artefakt...",
+		"Preparing artifact...": "Bereite Artefakt vor...",
+		"Processing artifact": "Verarbeite Artefakt",
+		"Processed artifact": "Artefakt verarbeitet",
+		"Creating artifact": "Erstelle Artefakt",
+		"Created artifact": "Artefakt erstellt",
+		"Updating artifact": "Aktualisiere Artefakt",
+		"Updated artifact": "Artefakt aktualisiert",
+		"Rewriting artifact": "Überschreibe Artefakt",
+		"Rewrote artifact": "Artefakt überschrieben",
+		"Getting artifact": "Hole Artefakt",
+		"Got artifact": "Artefakt geholt",
+		"Deleting artifact": "Lösche Artefakt",
+		"Deleted artifact": "Artefakt gelöscht",
+		"Getting logs": "Hole Logs",
+		"Got logs": "Logs geholt",
+		"An error occurred": "Ein Fehler ist aufgetreten",
+		"Copy logs": "Logs kopieren",
+		"Autoscroll enabled": "Automatisches Scrollen aktiviert",
+		"Autoscroll disabled": "Automatisches Scrollen deaktiviert",
 		Processing: "Verarbeitung",
 		Create: "Erstellen",
 		Rewrite: "Überschreiben",
@@ -424,6 +503,7 @@ export const translations = {
 		tokens: "Tokens",
 		Delete: "Löschen",
 		"Drop files here": "Dateien hier ablegen",
+		"Command failed:": "Befehl fehlgeschlagen:",
 	},
 };
 

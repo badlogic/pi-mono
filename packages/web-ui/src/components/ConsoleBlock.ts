@@ -6,6 +6,7 @@ import { i18n } from "../utils/i18n.js";
 
 export class ConsoleBlock extends LitElement {
 	@property() content: string = "";
+	@property() variant: "default" | "error" = "default";
 	@state() private copied = false;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
@@ -38,6 +39,9 @@ export class ConsoleBlock extends LitElement {
 	}
 
 	override render() {
+		const isError = this.variant === "error";
+		const textClass = isError ? "text-destructive" : "text-foreground";
+
 		return html`
 			<div class="border border-border rounded-lg overflow-hidden">
 				<div class="flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border">
@@ -52,7 +56,7 @@ export class ConsoleBlock extends LitElement {
 					</button>
 				</div>
 				<div class="console-scroll overflow-auto max-h-64">
-					<pre class="!bg-background !border-0 !rounded-none m-0 p-3 text-xs text-foreground font-mono whitespace-pre-wrap">
+					<pre class="!bg-background !border-0 !rounded-none m-0 p-3 text-xs ${textClass} font-mono whitespace-pre-wrap">
 ${this.content || ""}</pre
 					>
 				</div>

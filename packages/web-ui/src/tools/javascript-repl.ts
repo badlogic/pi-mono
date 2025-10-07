@@ -1,10 +1,11 @@
 import { html, i18n, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
+import { Code } from "lucide";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 
-import { registerToolRenderer } from "./renderer-registry.js";
+import { registerToolRenderer, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
 
 // Execute JavaScript code with attachments using SandboxedIframe
@@ -92,6 +93,7 @@ export type JavaScriptReplToolResult = {
 };
 
 const javascriptReplSchema = Type.Object({
+	title: Type.String({ description: "Brief title describing what the code snippet tries to achieve" }),
 	code: Type.String({ description: "JavaScript code to execute" }),
 });
 
@@ -245,63 +247,76 @@ interface JavaScriptReplResult {
 }
 
 export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScriptReplResult> = {
-	renderParams(params: JavaScriptReplParams, isStreaming?: boolean): TemplateResult {
-		if (isStreaming && (!params.code || params.code.length === 0)) {
-			return html`<div class="text-sm text-muted-foreground">Writing JavaScript code...</div>`;
+	render(
+		params: JavaScriptReplParams | undefined,
+		result: ToolResultMessage<JavaScriptReplResult> | undefined,
+		isStreaming?: boolean,
+	): TemplateResult {
+		// Determine status
+		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "inprogress";
+
+		// With result: show params + result
+		if (result && params) {
+			const output = result.output || "";
+			const files = result.details?.files || [];
+
+			const attachments: Attachment[] = files.map((f, i) => {
+				// Decode base64 content for text files to show in overlay
+				let extractedText: string | undefined;
+				const isTextBased =
+					f.mimeType?.startsWith("text/") ||
+					f.mimeType === "application/json" ||
+					f.mimeType === "application/javascript" ||
+					f.mimeType?.includes("xml");
+
+				if (isTextBased && f.contentBase64) {
+					try {
+						extractedText = atob(f.contentBase64);
+					} catch (e) {
+						console.warn("Failed to decode base64 content for", f.fileName);
+					}
+				}
+
+				return {
+					id: `repl-${Date.now()}-${i}`,
+					type: f.mimeType?.startsWith("image/") ? "image" : "document",
+					fileName: f.fileName || `file-${i}`,
+					mimeType: f.mimeType || "application/octet-stream",
+					size: f.size ?? 0,
+					content: f.contentBase64,
+					preview: f.mimeType?.startsWith("image/") ? f.contentBase64 : undefined,
+					extractedText,
+				};
+			});
+
+			return html`
+				<div class="space-y-3">
+					${renderHeader(state, Code, i18n("Executing JavaScript"))}
+					<code-block .code=${params.code || ""} language="javascript"></code-block>
+					${output ? html`<console-block .content=${output} .variant=${result.isError ? "error" : "default"}></console-block>` : ""}
+					${
+						attachments.length
+							? html`<div class="flex flex-wrap gap-2">
+								${attachments.map((att) => html`<attachment-tile .attachment=${att}></attachment-tile>`)}
+						  </div>`
+							: ""
+					}
+				</div>
+			`;
 		}
 
-		return html`
-			<div class="text-sm text-muted-foreground mb-2">${i18n("Executing JavaScript")}</div>
-			<code-block .code=${params.code || ""} language="javascript"></code-block>
-		`;
-	},
+		// Just params (streaming or waiting for result)
+		if (params) {
+			return html`
+				<div class="space-y-3">
+					${renderHeader(state, Code, i18n("Executing JavaScript"))}
+					${params.code ? html`<code-block .code=${params.code} language="javascript"></code-block>` : ""}
+				</div>
+			`;
+		}
 
-	renderResult(_params: JavaScriptReplParams, result: ToolResultMessage<JavaScriptReplResult>): TemplateResult {
-		// Console output is in the main output field, files are in details
-		const output = result.output || "";
-		const files = result.details?.files || [];
-
-		const attachments: Attachment[] = files.map((f, i) => {
-			// Decode base64 content for text files to show in overlay
-			let extractedText: string | undefined;
-			const isTextBased =
-				f.mimeType?.startsWith("text/") ||
-				f.mimeType === "application/json" ||
-				f.mimeType === "application/javascript" ||
-				f.mimeType?.includes("xml");
-
-			if (isTextBased && f.contentBase64) {
-				try {
-					extractedText = atob(f.contentBase64);
-				} catch (e) {
-					console.warn("Failed to decode base64 content for", f.fileName);
-				}
-			}
-
-			return {
-				id: `repl-${Date.now()}-${i}`,
-				type: f.mimeType?.startsWith("image/") ? "image" : "document",
-				fileName: f.fileName || `file-${i}`,
-				mimeType: f.mimeType || "application/octet-stream",
-				size: f.size ?? 0,
-				content: f.contentBase64,
-				preview: f.mimeType?.startsWith("image/") ? f.contentBase64 : undefined,
-				extractedText,
-			};
-		});
-
-		return html`
-			<div class="flex flex-col gap-3">
-				${output ? html`<console-block .content=${output}></console-block>` : ""}
-				${
-					attachments.length
-						? html`<div class="flex flex-wrap gap-2">
-							${attachments.map((att) => html`<attachment-tile .attachment=${att}></attachment-tile>`)}
-					  </div>`
-						: ""
-				}
-			</div>
-		`;
+		// No params or result yet
+		return renderHeader(state, Code, i18n("Preparing JavaScript..."));
 	},
 };
 

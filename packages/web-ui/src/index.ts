@@ -13,6 +13,7 @@ export { ChatPanel } from "./ChatPanel.js";
 export { AgentInterface } from "./components/AgentInterface.js";
 export { AttachmentTile } from "./components/AttachmentTile.js";
 export { ConsoleBlock } from "./components/ConsoleBlock.js";
+export { ExpandableSection } from "./components/ExpandableSection.js";
 export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
@@ -60,13 +61,15 @@ export type {
 // Artifacts
 export { ArtifactElement } from "./tools/artifacts/ArtifactElement.js";
 export { type Artifact, ArtifactsPanel, type ArtifactsParams } from "./tools/artifacts/artifacts.js";
+export { ArtifactsToolRenderer } from "./tools/artifacts/artifacts-tool-renderer.js";
 export { HtmlArtifact } from "./tools/artifacts/HtmlArtifact.js";
 export { MarkdownArtifact } from "./tools/artifacts/MarkdownArtifact.js";
 export { SvgArtifact } from "./tools/artifacts/SvgArtifact.js";
 export { TextArtifact } from "./tools/artifacts/TextArtifact.js";
 // Tools
-export { getToolRenderer, registerToolRenderer, renderToolParams, renderToolResult } from "./tools/index.js";
+export { getToolRenderer, registerToolRenderer, renderTool } from "./tools/index.js";
 export { createJavaScriptReplTool, javascriptReplTool } from "./tools/javascript-repl.js";
+export { renderHeader } from "./tools/renderer-registry.js";
 export { BashRenderer } from "./tools/renderers/BashRenderer.js";
 export { CalculateRenderer } from "./tools/renderers/CalculateRenderer.js";
 // Tool renderers

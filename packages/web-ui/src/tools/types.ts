@@ -2,6 +2,9 @@ import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import type { TemplateResult } from "lit";
 
 export interface ToolRenderer<TParams = any, TDetails = any> {
-	renderParams(params: TParams, isStreaming?: boolean): TemplateResult;
-	renderResult(params: TParams, result: ToolResultMessage<TDetails>): TemplateResult;
+	render(
+		params: TParams | undefined,
+		result: ToolResultMessage<TDetails> | undefined,
+		isStreaming?: boolean,
+	): TemplateResult;
 }

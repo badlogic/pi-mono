@@ -4,7 +4,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { AgentInterface } from "./components/AgentInterface.js";
 import "./components/AgentInterface.js";
 import type { Agent } from "./agent/agent.js";
-import { ArtifactsPanel } from "./tools/artifacts/index.js";
+import { ArtifactsPanel, ArtifactsToolRenderer } from "./tools/artifacts/index.js";
 import { createJavaScriptReplTool } from "./tools/javascript-repl.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
 import { i18n } from "./utils/i18n.js";
@@ -78,7 +78,8 @@ export class ChatPanel extends LitElement {
 		if (this.sandboxUrlProvider) {
 			this.artifactsPanel.sandboxUrlProvider = this.sandboxUrlProvider;
 		}
-		registerToolRenderer("artifacts", this.artifactsPanel);
+		// Register the standalone tool renderer (not the panel itself)
+		registerToolRenderer("artifacts", new ArtifactsToolRenderer());
 
 		// Attachments provider
 		const getAttachments = () => {

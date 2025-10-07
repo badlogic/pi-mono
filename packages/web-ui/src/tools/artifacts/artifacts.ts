@@ -1,4 +1,4 @@
-import { Button, Diff, icon } from "@mariozechner/mini-lit";
+import { Button, icon } from "@mariozechner/mini-lit";
 import { type AgentTool, type Message, StringEnum, type ToolCall, type ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
@@ -7,14 +7,12 @@ import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
 import type { Attachment } from "../../utils/attachment-utils.js";
 import { i18n } from "../../utils/i18n.js";
-import type { ToolRenderer } from "../types.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { HtmlArtifact } from "./HtmlArtifact.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
-import "@mariozechner/mini-lit/dist/CodeBlock.js";
 
 // Simple artifact model
 export interface Artifact {
@@ -38,13 +36,8 @@ const artifactsParamsSchema = Type.Object({
 });
 export type ArtifactsParams = Static<typeof artifactsParamsSchema>;
 
-// Minimal helper to render plain text outputs consistently
-function plainOutput(text: string): TemplateResult {
-	return html`<div class="text-xs text-muted-foreground whitespace-pre-wrap font-mono">${text}</div>`;
-}
-
 @customElement("artifacts-panel")
-export class ArtifactsPanel extends LitElement implements ToolRenderer<ArtifactsParams, undefined> {
+export class ArtifactsPanel extends LitElement {
 	@state() private _artifacts = new Map<string, Artifact>();
 	@state() private _activeFilename: string | null = null;
 
@@ -105,43 +98,6 @@ export class ArtifactsPanel extends LitElement implements ToolRenderer<Artifacts
 		if (ext === "svg") return "svg";
 		if (ext === "md" || ext === "markdown") return "markdown";
 		return "text";
-	}
-
-	// Helper to determine language for syntax highlighting
-	private getLanguageFromFilename(filename?: string): string {
-		if (!filename) return "text";
-		const ext = filename.split(".").pop()?.toLowerCase();
-		const languageMap: Record<string, string> = {
-			js: "javascript",
-			jsx: "javascript",
-			ts: "typescript",
-			tsx: "typescript",
-			html: "html",
-			css: "css",
-			scss: "scss",
-			json: "json",
-			py: "python",
-			md: "markdown",
-			svg: "xml",
-			xml: "xml",
-			yaml: "yaml",
-			yml: "yaml",
-			sh: "bash",
-			bash: "bash",
-			sql: "sql",
-			java: "java",
-			c: "c",
-			cpp: "cpp",
-			cs: "csharp",
-			go: "go",
-			rs: "rust",
-			php: "php",
-			rb: "ruby",
-			swift: "swift",
-			kt: "kotlin",
-			r: "r",
-		};
-		return languageMap[ext || ""] || "text";
 	}
 
 	// Get or create artifact element
@@ -328,153 +284,6 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 				return { output, details: undefined };
 			},
 		};
-	}
-
-	// ToolRenderer implementation
-	renderParams(params: ArtifactsParams, isStreaming?: boolean): TemplateResult {
-		if (isStreaming && !params.command) {
-			return html`<div class="text-sm text-muted-foreground">${i18n("Processing artifact...")}</div>`;
-		}
-
-		let commandLabel = i18n("Processing");
-		if (params.command) {
-			switch (params.command) {
-				case "create":
-					commandLabel = i18n("Create");
-					break;
-				case "update":
-					commandLabel = i18n("Update");
-					break;
-				case "rewrite":
-					commandLabel = i18n("Rewrite");
-					break;
-				case "get":
-					commandLabel = i18n("Get");
-					break;
-				case "delete":
-					commandLabel = i18n("Delete");
-					break;
-				case "logs":
-					commandLabel = i18n("Get logs");
-					break;
-				default:
-					commandLabel = params.command.charAt(0).toUpperCase() + params.command.slice(1);
-			}
-		}
-		const filename = params.filename || "";
-
-		switch (params.command) {
-			case "create":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<div>
-							<span class="font-medium">${i18n("Create")}</span>
-							<span class="text-muted-foreground ml-1">${filename}</span>
-						</div>
-						${
-							params.content
-								? html`<code-block
-									.code=${params.content}
-									language=${this.getLanguageFromFilename(params.filename)}
-									class="mt-2"
-								></code-block>`
-								: ""
-						}
-					</div>
-				`;
-			case "update":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<div>
-							<span class="font-medium">${i18n("Update")}</span>
-							<span class="text-muted-foreground ml-1">${filename}</span>
-						</div>
-						${
-							params.old_str !== undefined && params.new_str !== undefined
-								? Diff({ oldText: params.old_str, newText: params.new_str, className: "mt-2" })
-								: ""
-						}
-					</div>
-				`;
-			case "rewrite":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<div>
-							<span class="font-medium">${i18n("Rewrite")}</span>
-							<span class="text-muted-foreground ml-1">${filename}</span>
-						</div>
-						${
-							params.content
-								? html`<code-block
-									.code=${params.content}
-									language=${this.getLanguageFromFilename(params.filename)}
-									class="mt-2"
-								></code-block>`
-								: ""
-						}
-					</div>
-				`;
-			case "get":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<span class="font-medium">${i18n("Get")}</span>
-						<span class="text-muted-foreground ml-1">${filename}</span>
-					</div>
-				`;
-			case "delete":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<span class="font-medium">${i18n("Delete")}</span>
-						<span class="text-muted-foreground ml-1">${filename}</span>
-					</div>
-				`;
-			case "logs":
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<span class="font-medium">${i18n("Get logs")}</span>
-						<span class="text-muted-foreground ml-1">${filename}</span>
-					</div>
-				`;
-			default:
-				// Fallback for any command not yet handled during streaming
-				return html`
-					<div
-						class="text-sm cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1"
-						@click=${() => this.openArtifact(params.filename)}
-					>
-						<span class="font-medium">${commandLabel}</span>
-						<span class="text-muted-foreground ml-1">${filename}</span>
-					</div>
-				`;
-		}
-	}
-
-	renderResult(params: ArtifactsParams, result: ToolResultMessage<undefined>): TemplateResult {
-		// Make result clickable to focus the referenced file when applicable
-		const content = result.output || i18n("(no output)");
-		return html`
-			<div class="cursor-pointer hover:bg-muted/50 rounded-sm px-2 py-1" @click=${() => this.openArtifact(params.filename)}>
-				${plainOutput(content)}
-			</div>
-		`;
 	}
 
 	// Re-apply artifacts by scanning a message list (optional utility)

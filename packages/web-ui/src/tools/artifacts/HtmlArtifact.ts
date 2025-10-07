@@ -9,6 +9,8 @@ import type { Attachment } from "../../utils/attachment-utils.js";
 import { i18n } from "../../utils/i18n.js";
 import "../../components/SandboxedIframe.js";
 import { ArtifactElement } from "./ArtifactElement.js";
+import type { Console } from "./Console.js";
+import "./Console.js";
 
 @customElement("html-artifact")
 export class HtmlArtifact extends ArtifactElement {
@@ -22,14 +24,12 @@ export class HtmlArtifact extends ArtifactElement {
 
 	// Refs for DOM elements
 	private sandboxIframeRef: Ref<SandboxIframe> = createRef();
-	private consoleLogsRef: Ref<HTMLDivElement> = createRef();
-	private consoleButtonRef: Ref<HTMLButtonElement> = createRef();
+	private consoleRef: Ref<Console> = createRef();
 
 	// Store message handler so we can remove it
 	private messageHandler?: (e: MessageEvent) => void;
 
 	@state() private viewMode: "preview" | "code" = "preview";
-	@state() private consoleOpen = false;
 
 	private setViewMode(mode: "preview" | "code") {
 		this.viewMode = mode;
@@ -62,13 +62,9 @@ export class HtmlArtifact extends ArtifactElement {
 		if (oldValue !== value) {
 			// Reset logs when content changes
 			this.logs = [];
-			if (this.consoleLogsRef.value) {
-				this.consoleLogsRef.value.innerHTML = "";
-			}
 			this.requestUpdate();
 			// Execute content in sandbox if it exists
 			if (this.sandboxIframeRef.value && value) {
-				this.updateConsoleButton();
 				this.executeContent(value);
 			}
 		}
@@ -95,11 +91,15 @@ export class HtmlArtifact extends ArtifactElement {
 			if (e.data.sandboxId !== sandboxId) return;
 
 			if (e.data.type === "console") {
-				this.logs.push({
-					type: e.data.method === "error" ? "error" : "log",
-					text: e.data.text,
-				});
-				this.updateConsoleButton();
+				// Create new array reference for Lit reactivity
+				this.logs = [
+					...this.logs,
+					{
+						type: e.data.method === "error" ? "error" : "log",
+						text: e.data.text,
+					},
+				];
+				this.requestUpdate(); // Re-render to show console
 			}
 		};
 		window.addEventListener("message", this.messageHandler);
@@ -137,39 +137,6 @@ export class HtmlArtifact extends ArtifactElement {
 		}
 	}
 
-	private updateConsoleButton() {
-		const button = this.consoleButtonRef.value;
-		if (!button) return;
-
-		const errorCount = this.logs.filter((l) => l.type === "error").length;
-		const text =
-			errorCount > 0
-				? `${i18n("console")} <span class="text-destructive">${errorCount} errors</span>`
-				: `${i18n("console")} (${this.logs.length})`;
-		button.innerHTML = `<span>${text}</span><span>${this.consoleOpen ? "▼" : "▶"}</span>`;
-	}
-
-	private toggleConsole() {
-		this.consoleOpen = !this.consoleOpen;
-		this.requestUpdate();
-
-		// Populate console logs if opening
-		if (this.consoleOpen) {
-			requestAnimationFrame(() => {
-				if (this.consoleLogsRef.value) {
-					// Populate with existing logs
-					this.consoleLogsRef.value.innerHTML = "";
-					this.logs.forEach((log) => {
-						const logEl = document.createElement("div");
-						logEl.className = `text-xs font-mono ${log.type === "error" ? "text-destructive" : "text-muted-foreground"}`;
-						logEl.textContent = `[${log.type}] ${log.text}`;
-						this.consoleLogsRef.value!.appendChild(logEl);
-					});
-				}
-			});
-		}
-	}
-
 	public getLogs(): string {
 		if (this.logs.length === 0) return i18n("No logs for {filename}").replace("{filename}", this.filename);
 		return this.logs.map((l) => `[${l.type}] ${l.text}`).join("\n");
@@ -184,26 +151,7 @@ export class HtmlArtifact extends ArtifactElement {
 						<sandbox-iframe class="flex-1" ${ref(this.sandboxIframeRef)}></sandbox-iframe>
 						${
 							this.logs.length > 0
-								? html`
-									<div class="border-t border-border">
-										<button
-											@click=${() => this.toggleConsole()}
-											class="w-full px-3 py-1 text-xs text-left hover:bg-muted flex items-center justify-between"
-											${ref(this.consoleButtonRef)}
-										>
-											<span
-												>${i18n("console")}
-												${
-													this.logs.filter((l) => l.type === "error").length > 0
-														? html`<span class="text-destructive">${this.logs.filter((l) => l.type === "error").length} errors</span>`
-														: `(${this.logs.length})`
-												}</span
-											>
-											<span>${this.consoleOpen ? "▼" : "▶"}</span>
-										</button>
-										${this.consoleOpen ? html` <div class="max-h-48 overflow-y-auto bg-muted/50 p-2" ${ref(this.consoleLogsRef)}></div> ` : ""}
-									</div>
-								`
+								? html`<artifact-console .logs=${this.logs} ${ref(this.consoleRef)}></artifact-console>`
 								: ""
 						}
 					</div>

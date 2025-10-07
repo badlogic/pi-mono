@@ -1,6 +1,8 @@
 import { html, type TemplateResult } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
+import { Calculator } from "lucide";
 import { i18n } from "../../utils/i18n.js";
+import { renderHeader } from "../renderer-registry.js";
 import type { ToolRenderer } from "../types.js";
 
 interface CalculateParams {
@@ -9,41 +11,38 @@ interface CalculateParams {
 
 // Calculate tool has undefined details (only uses output)
 export class CalculateRenderer implements ToolRenderer<CalculateParams, undefined> {
-	renderParams(params: CalculateParams, isStreaming?: boolean): TemplateResult {
-		if (isStreaming && !params.expression) {
-			return html`<div class="text-sm text-muted-foreground">${i18n("Writing expression...")}</div>`;
+	render(params: CalculateParams | undefined, result: ToolResultMessage<undefined> | undefined): TemplateResult {
+		const state = result ? (result.isError ? "error" : "complete") : "inprogress";
+
+		// Full params + full result
+		if (result && params?.expression) {
+			const output = result.output || "";
+
+			// Error: show expression in header, error below
+			if (result.isError) {
+				return html`
+					<div class="space-y-3">
+						${renderHeader(state, Calculator, params.expression)}
+						<div class="text-sm text-destructive">${output}</div>
+					</div>
+				`;
+			}
+
+			// Success: show expression = result in header
+			return renderHeader(state, Calculator, `${params.expression} = ${output}`);
 		}
 
-		return html`
-			<div class="text-sm text-muted-foreground">
-				<span>${i18n("Calculating")}</span>
-				<code class="mx-1 px-1.5 py-0.5 bg-muted rounded text-xs font-mono">${params.expression}</code>
-			</div>
-		`;
-	}
-
-	renderResult(_params: CalculateParams, result: ToolResultMessage<undefined>): TemplateResult {
-		// Parse the output to make it look nicer
-		const output = result.output || "";
-		const isError = result.isError === true;
-
-		if (isError) {
-			return html`<div class="text-sm text-destructive">${output}</div>`;
+		// Full params, no result: just show header with expression in it
+		if (params?.expression) {
+			return renderHeader(state, Calculator, `${i18n("Calculating")} ${params.expression}`);
 		}
 
-		// Try to split on = to show expression and result separately
-		const parts = output.split(" = ");
-		if (parts.length === 2) {
-			return html`
-				<div class="text-sm font-mono">
-					<span class="text-muted-foreground">${parts[0]}</span>
-					<span class="text-muted-foreground mx-1">=</span>
-					<span class="text-foreground font-semibold">${parts[1]}</span>
-				</div>
-			`;
+		// Partial params (empty expression), no result
+		if (params && !params.expression) {
+			return renderHeader(state, Calculator, i18n("Writing expression..."));
 		}
 
-		// Fallback to showing the whole output
-		return html`<div class="text-sm font-mono text-foreground">${output}</div>`;
+		// No params, no result
+		return renderHeader(state, Calculator, i18n("Waiting for expression..."));
 	}
 }

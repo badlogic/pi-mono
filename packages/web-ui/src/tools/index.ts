@@ -11,25 +11,19 @@ registerToolRenderer("bash", new BashRenderer());
 const defaultRenderer = new DefaultRenderer();
 
 /**
- * Render tool call parameters
+ * Render tool - unified function that handles params, result, and streaming state
  */
-export function renderToolParams(toolName: string, params: any, isStreaming?: boolean): TemplateResult {
+export function renderTool(
+	toolName: string,
+	params: any | undefined,
+	result: ToolResultMessage | undefined,
+	isStreaming?: boolean,
+): TemplateResult {
 	const renderer = getToolRenderer(toolName);
 	if (renderer) {
-		return renderer.renderParams(params, isStreaming);
+		return renderer.render(params, result, isStreaming);
 	}
-	return defaultRenderer.renderParams(params, isStreaming);
-}
-
-/**
- * Render tool result
- */
-export function renderToolResult(toolName: string, params: any, result: ToolResultMessage): TemplateResult {
-	const renderer = getToolRenderer(toolName);
-	if (renderer) {
-		return renderer.renderResult(params, result);
-	}
-	return defaultRenderer.renderResult(params, result);
+	return defaultRenderer.render(params, result, isStreaming);
 }
 
 export { registerToolRenderer, getToolRenderer };
