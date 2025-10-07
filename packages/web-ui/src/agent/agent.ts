@@ -54,7 +54,7 @@ export interface AgentOptions {
 	debugListener?: (entry: DebugLogEntry) => void;
 	transport: AgentTransport;
 	// Transform app messages to LLM-compatible messages before sending to transport
-	messageTransformer?: (messages: AppMessage[]) => Message[];
+	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 }
 
 export class Agent {
@@ -73,7 +73,7 @@ export class Agent {
 	private abortController?: AbortController;
 	private transport: AgentTransport;
 	private debugListener?: (entry: DebugLogEntry) => void;
-	private messageTransformer: (messages: AppMessage[]) => Message[];
+	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -170,7 +170,7 @@ export class Agent {
 			let turnStart = 0;
 
 			// Transform app messages to LLM-compatible messages
-			const llmMessages = this.messageTransformer(this._state.messages);
+			const llmMessages = await this.messageTransformer(this._state.messages);
 
 			for await (const ev of this.transport.run(
 				llmMessages,

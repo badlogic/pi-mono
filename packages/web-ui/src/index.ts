@@ -78,4 +78,4 @@ export type { Attachment } from "./utils/attachment-utils.js";
 export { loadAttachment } from "./utils/attachment-utils.js";
 export { clearAuthToken, getAuthToken } from "./utils/auth-token.js";
 export { formatCost, formatModelCost, formatTokenCount, formatUsage } from "./utils/format.js";
-export { i18n, setLanguage } from "./utils/i18n.js";
+export { i18n, setLanguage, translations } from "./utils/i18n.js";

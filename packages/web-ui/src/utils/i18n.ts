@@ -138,7 +138,7 @@ declare module "@mariozechner/mini-lit" {
 	}
 }
 
-const translations = {
+export const translations = {
 	en: {
 		...defaultEnglish,
 		Free: "Free",
