@@ -4,15 +4,15 @@ import { type Static, Type } from "@sinclair/typebox";
 import { createRef, ref } from "lit/directives/ref.js";
 import { Code } from "lucide";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
+import type { SandboxRuntimeProvider } from "../components/sandbox/SandboxRuntimeProvider.js";
 import type { Attachment } from "../utils/attachment-utils.js";
-
 import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
 
 // Execute JavaScript code with attachments using SandboxedIframe
 export async function executeJavaScript(
 	code: string,
-	attachments: Attachment[] = [],
+	runtimeProviders: SandboxRuntimeProvider[],
 	signal?: AbortSignal,
 	sandboxUrlProvider?: () => string,
 ): Promise<{ output: string; files?: SandboxFile[] }> {
@@ -34,8 +34,11 @@ export async function executeJavaScript(
 	document.body.appendChild(sandbox);
 
 	try {
-		const sandboxId = `repl-${Date.now()}`;
-		const result: SandboxResult = await sandbox.execute(sandboxId, code, attachments, signal);
+		const sandboxId = `repl-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+		// Pass providers to execute (router handles all message routing)
+		// No additional consumers needed - execute() has its own internal consumer
+		const result: SandboxResult = await sandbox.execute(sandboxId, code, runtimeProviders, [], signal);
 
 		// Remove the sandbox iframe after execution
 		sandbox.remove();
@@ -114,13 +117,13 @@ interface JavaScriptReplResult {
 }
 
 export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchema, JavaScriptReplToolResult> & {
-	attachmentsProvider?: () => Attachment[];
+	runtimeProvidersFactory?: () => SandboxRuntimeProvider[];
 	sandboxUrlProvider?: () => string;
 } {
 	return {
 		label: "JavaScript REPL",
 		name: "javascript_repl",
-		attachmentsProvider: () => [], // default to empty array
+		runtimeProvidersFactory: () => [], // default to empty array
 		sandboxUrlProvider: undefined, // optional, for browser extensions
 		description: `Execute JavaScript code in a sandboxed browser environment with full modern browser capabilities.
 
@@ -196,8 +199,12 @@ Global variables:
 - All standard browser globals (window, document, fetch, etc.)`,
 		parameters: javascriptReplSchema,
 		execute: async function (_toolCallId: string, args: Static<typeof javascriptReplSchema>, signal?: AbortSignal) {
-			const attachments = this.attachmentsProvider?.() || [];
-			const result = await executeJavaScript(args.code, attachments, signal, this.sandboxUrlProvider);
+			const result = await executeJavaScript(
+				args.code,
+				this.runtimeProvidersFactory?.() ?? [],
+				signal,
+				this.sandboxUrlProvider,
+			);
 			// Convert files to JSON-serializable with base64 payloads
 			const files = (result.files || []).map((f) => {
 				const toBase64 = (input: string | Uint8Array): { base64: string; size: number } => {

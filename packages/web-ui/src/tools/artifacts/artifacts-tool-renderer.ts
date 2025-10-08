@@ -93,7 +93,11 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 
 			// For create/update/rewrite errors, show code block + console/error
 			if (command === "create" || command === "update" || command === "rewrite") {
-				const content = command === "update" ? params?.new_str || params?.old_str || "" : params?.content || "";
+				const content = params?.content || "";
+				const { old_str, new_str } = params || {};
+				const isDiff = command === "update";
+				const diffContent =
+					old_str !== undefined && new_str !== undefined ? Diff({ oldText: old_str, newText: new_str }) : "";
 
 				const isHtml = filename?.endsWith(".html");
 
@@ -101,7 +105,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 					<div>
 						${renderCollapsibleHeader(state, FileCode2, renderHeaderWithPill(headerText, filename), contentRef, chevronRef, false)}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
-							${content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
+							${isDiff ? diffContent : content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
 							${
 								isHtml
 									? html`<console-block .content=${result.output || i18n("An error occurred")} variant="error"></console-block>`
@@ -156,7 +160,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			}
 
 			// CREATE/UPDATE/REWRITE: always show code block, + console block for .html files
-			if (command === "create" || command === "update" || command === "rewrite") {
+			if (command === "create" || command === "rewrite") {
 				const codeContent = content || "";
 				const isHtml = filename?.endsWith(".html");
 				const logs = result.output || "";
@@ -166,6 +170,20 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 						${renderCollapsibleHeader(state, FileCode2, renderHeaderWithPill(headerText, filename), contentRef, chevronRef, false)}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
 							${codeContent ? html`<code-block .code=${codeContent} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
+							${isHtml && logs ? html`<console-block .content=${logs}></console-block>` : ""}
+						</div>
+					</div>
+				`;
+			}
+
+			if (command === "update") {
+				const isHtml = filename?.endsWith(".html");
+				const logs = result.output || "";
+				return html`
+					<div>
+						${renderCollapsibleHeader(state, FileCode2, renderHeaderWithPill(headerText, filename), contentRef, chevronRef, false)}
+						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
+							${Diff({ oldText: params.old_str || "", newText: params.new_str || "" })}
 							${isHtml && logs ? html`<console-block .content=${logs}></console-block>` : ""}
 						</div>
 					</div>

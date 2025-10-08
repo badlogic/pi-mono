@@ -6,7 +6,7 @@ import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
-import type { Attachment } from "../../utils/attachment-utils.js";
+import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { HtmlArtifact } from "./HtmlArtifact.js";
@@ -45,8 +45,8 @@ export class ArtifactsPanel extends LitElement {
 	private artifactElements = new Map<string, ArtifactElement>();
 	private contentRef: Ref<HTMLDivElement> = createRef();
 
-	// External provider for attachments (decouples panel from AgentInterface)
-	@property({ attribute: false }) attachmentsProvider?: () => Attachment[];
+	// External factory for runtime providers (decouples panel from AgentInterface)
+	@property({ attribute: false }) runtimeProvidersFactory?: () => SandboxRuntimeProvider[];
 	// Sandbox URL provider for browser extensions (optional)
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	// Callbacks
@@ -108,7 +108,8 @@ export class ArtifactsPanel extends LitElement {
 			const type = this.getFileType(filename);
 			if (type === "html") {
 				element = new HtmlArtifact();
-				(element as HtmlArtifact).attachments = this.attachmentsProvider?.() || [];
+				const runtimeProviders = this.runtimeProvidersFactory?.() || [];
+				(element as HtmlArtifact).runtimeProviders = runtimeProviders;
 				if (this.sandboxUrlProvider) {
 					(element as HtmlArtifact).sandboxUrlProvider = this.sandboxUrlProvider;
 				}
@@ -144,7 +145,8 @@ export class ArtifactsPanel extends LitElement {
 			element.content = content;
 			element.displayTitle = title;
 			if (element instanceof HtmlArtifact) {
-				element.attachments = this.attachmentsProvider?.() || [];
+				const runtimeProviders = this.runtimeProvidersFactory?.() || [];
+				element.runtimeProviders = runtimeProviders;
 			}
 		}
 
@@ -414,46 +416,11 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		}
 
 		return new Promise((resolve) => {
-			let resolved = false;
-
-			// Listen for the execution-complete message
-			const messageHandler = (event: MessageEvent) => {
-				if (event.data?.type === "execution-complete" && event.data?.artifactId === filename) {
-					if (!resolved) {
-						resolved = true;
-						window.removeEventListener("message", messageHandler);
-
-						// Get the logs from the element
-						const logs = element.getLogs();
-						if (logs.includes("[error]")) {
-							resolve(`\n\nExecution completed with errors:\n${logs}`);
-						} else if (logs !== `No logs for ${filename}`) {
-							resolve(`\n\nExecution logs:\n${logs}`);
-						} else {
-							resolve("");
-						}
-					}
-				}
-			};
-
-			window.addEventListener("message", messageHandler);
-
-			// Fallback timeout in case the message never arrives
+			// Fallback timeout - just get logs after execution should complete
 			setTimeout(() => {
-				if (!resolved) {
-					resolved = true;
-					window.removeEventListener("message", messageHandler);
-
-					// Get whatever logs we have so far
-					const logs = element.getLogs();
-					if (logs.includes("[error]")) {
-						resolve(`\n\nExecution timed out with errors:\n${logs}`);
-					} else if (logs !== `No logs for ${filename}`) {
-						resolve(`\n\nExecution timed out. Partial logs:\n${logs}`);
-					} else {
-						resolve("");
-					}
-				}
+				// Get whatever logs we have
+				const logs = element.getLogs();
+				resolve(logs);
 			}, 1500);
 		});
 	}
@@ -568,7 +535,7 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		this.showArtifact(params.filename);
 
 		// For HTML files, wait for execution
-		let result = `Rewrote file ${params.filename}`;
+		let result = "";
 		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
 			const logs = await this.waitForHtmlExecution(params.filename);
 			result += logs;

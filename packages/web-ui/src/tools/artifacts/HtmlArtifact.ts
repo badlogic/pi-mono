@@ -5,7 +5,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { SandboxIframe } from "../../components/SandboxedIframe.js";
-import type { Attachment } from "../../utils/attachment-utils.js";
+import { type MessageConsumer, SANDBOX_MESSAGE_ROUTER } from "../../components/sandbox/SandboxMessageRouter.js";
+import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
 import { i18n } from "../../utils/i18n.js";
 import "../../components/SandboxedIframe.js";
 import { ArtifactElement } from "./ArtifactElement.js";
@@ -16,7 +17,7 @@ import "./Console.js";
 export class HtmlArtifact extends ArtifactElement {
 	@property() override filename = "";
 	@property({ attribute: false }) override displayTitle = "";
-	@property({ attribute: false }) attachments: Attachment[] = [];
+	@property({ attribute: false }) runtimeProviders: SandboxRuntimeProvider[] = [];
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 
 	private _content = "";
@@ -25,9 +26,6 @@ export class HtmlArtifact extends ArtifactElement {
 	// Refs for DOM elements
 	private sandboxIframeRef: Ref<SandboxIframe> = createRef();
 	private consoleRef: Ref<Console> = createRef();
-
-	// Store message handler so we can remove it
-	private messageHandler?: (e: MessageEvent) => void;
 
 	@state() private viewMode: "preview" | "code" = "preview";
 
@@ -47,11 +45,17 @@ export class HtmlArtifact extends ArtifactElement {
 		copyButton.title = i18n("Copy HTML");
 		copyButton.showText = false;
 
+		// Generate standalone HTML with all runtime code injected for download
+		const sandbox = this.sandboxIframeRef.value;
+		const sandboxId = `artifact-${this.filename}`;
+		const downloadContent =
+			sandbox?.prepareHtmlDocument(sandboxId, this._content, this.runtimeProviders || []) || this._content;
+
 		return html`
 			<div class="flex items-center gap-2">
 				${toggle}
 				${copyButton}
-				${DownloadButton({ content: this._content, filename: this.filename, mimeType: "text/html", title: i18n("Download HTML") })}
+				${DownloadButton({ content: downloadContent, filename: this.filename, mimeType: "text/html", title: i18n("Download HTML") })}
 			</div>
 		`;
 	}
@@ -79,33 +83,29 @@ export class HtmlArtifact extends ArtifactElement {
 			sandbox.sandboxUrlProvider = this.sandboxUrlProvider;
 		}
 
-		// Remove previous message handler if it exists
-		if (this.messageHandler) {
-			window.removeEventListener("message", this.messageHandler);
-		}
-
 		const sandboxId = `artifact-${this.filename}`;
 
-		// Set up message listener to collect logs
-		this.messageHandler = (e: MessageEvent) => {
-			if (e.data.sandboxId !== sandboxId) return;
-
-			if (e.data.type === "console") {
-				// Create new array reference for Lit reactivity
-				this.logs = [
-					...this.logs,
-					{
-						type: e.data.method === "error" ? "error" : "log",
-						text: e.data.text,
-					},
-				];
-				this.requestUpdate(); // Re-render to show console
-			}
+		// Create consumer for console messages
+		const consumer: MessageConsumer = {
+			handleMessage: (message: any): boolean => {
+				if (message.type === "console") {
+					// Create new array reference for Lit reactivity
+					this.logs = [
+						...this.logs,
+						{
+							type: message.method === "error" ? "error" : "log",
+							text: message.text,
+						},
+					];
+					this.requestUpdate(); // Re-render to show console
+					return true;
+				}
+				return false;
+			},
 		};
-		window.addEventListener("message", this.messageHandler);
 
-		// Load content (iframe persists, doesn't get removed)
-		sandbox.loadContent(sandboxId, html, this.attachments);
+		// Load content - this handles sandbox registration, consumer registration, and iframe creation
+		sandbox.loadContent(sandboxId, html, this.runtimeProviders, [consumer]);
 	}
 
 	override get content(): string {
@@ -114,11 +114,9 @@ export class HtmlArtifact extends ArtifactElement {
 
 	override disconnectedCallback() {
 		super.disconnectedCallback();
-		// Clean up message handler when element is removed from DOM
-		if (this.messageHandler) {
-			window.removeEventListener("message", this.messageHandler);
-			this.messageHandler = undefined;
-		}
+		// Unregister sandbox when element is removed from DOM
+		const sandboxId = `artifact-${this.filename}`;
+		SANDBOX_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
 	}
 
 	override firstUpdated() {

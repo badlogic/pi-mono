@@ -1,12 +1,15 @@
 import { Badge, html } from "@mariozechner/mini-lit";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { AgentInterface } from "./components/AgentInterface.js";
-import "./components/AgentInterface.js";
 import type { Agent } from "./agent/agent.js";
+import "./components/AgentInterface.js";
+import type { AgentInterface } from "./components/AgentInterface.js";
+import { AttachmentsRuntimeProvider } from "./components/sandbox/AttachmentsRuntimeProvider.js";
+import type { SandboxRuntimeProvider } from "./components/sandbox/SandboxRuntimeProvider.js";
 import { ArtifactsPanel, ArtifactsToolRenderer } from "./tools/artifacts/index.js";
 import { createJavaScriptReplTool } from "./tools/javascript-repl.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
+import type { Attachment } from "./utils/attachment-utils.js";
 import { i18n } from "./utils/i18n.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
@@ -20,6 +23,21 @@ export class ChatPanel extends LitElement {
 	@state() private artifactCount = 0;
 	@state() private showArtifactsPanel = false;
 	@state() private windowWidth = 0;
+	@property({ attribute: false }) runtimeProvidersFactory = () => {
+		const attachments: Attachment[] = [];
+		for (const message of this.agent!.state.messages) {
+			if (message.role === "user") {
+				message.attachments?.forEach((a) => {
+					attachments.push(a);
+				});
+			}
+		}
+		const providers: SandboxRuntimeProvider[] = [];
+		if (attachments.length > 0) {
+			providers.push(new AttachmentsRuntimeProvider(attachments));
+		}
+		return providers;
+	};
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 	@property({ attribute: false }) onBeforeSend?: () => void | Promise<void>;
@@ -81,30 +99,9 @@ export class ChatPanel extends LitElement {
 		// Register the standalone tool renderer (not the panel itself)
 		registerToolRenderer("artifacts", new ArtifactsToolRenderer(this.artifactsPanel));
 
-		// Attachments provider
-		const getAttachments = () => {
-			const attachments: any[] = [];
-			for (const message of this.agent!.state.messages) {
-				if (message.role === "user") {
-					const content = Array.isArray(message.content) ? message.content : [message.content];
-					for (const block of content) {
-						if (typeof block !== "string" && block.type === "image") {
-							attachments.push({
-								id: `image-${attachments.length}`,
-								fileName: "image.png",
-								mimeType: block.mimeType || "image/png",
-								size: 0,
-								content: block.data,
-							});
-						}
-					}
-				}
-			}
-			return attachments;
-		};
-
-		javascriptReplTool.attachmentsProvider = getAttachments;
-		this.artifactsPanel.attachmentsProvider = getAttachments;
+		// Runtime providers factory
+		javascriptReplTool.runtimeProvidersFactory = this.runtimeProvidersFactory;
+		this.artifactsPanel.runtimeProvidersFactory = this.runtimeProvidersFactory;
 
 		this.artifactsPanel.onArtifactsChange = () => {
 			const count = this.artifactsPanel?.artifacts?.size ?? 0;
