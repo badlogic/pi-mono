@@ -69,7 +69,7 @@ export { TextArtifact } from "./tools/artifacts/TextArtifact.js";
 // Tools
 export { getToolRenderer, registerToolRenderer, renderTool } from "./tools/index.js";
 export { createJavaScriptReplTool, javascriptReplTool } from "./tools/javascript-repl.js";
-export { renderHeader } from "./tools/renderer-registry.js";
+export { renderCollapsibleHeader, renderHeader } from "./tools/renderer-registry.js";
 export { BashRenderer } from "./tools/renderers/BashRenderer.js";
 export { CalculateRenderer } from "./tools/renderers/CalculateRenderer.js";
 // Tool renderers

@@ -1,11 +1,12 @@
 import { html, i18n, type TemplateResult } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
+import { createRef, ref } from "lit/directives/ref.js";
 import { Code } from "lucide";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 
-import { registerToolRenderer, renderHeader } from "./renderer-registry.js";
+import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
 
 // Execute JavaScript code with attachments using SandboxedIframe
@@ -93,9 +94,24 @@ export type JavaScriptReplToolResult = {
 };
 
 const javascriptReplSchema = Type.Object({
-	title: Type.String({ description: "Brief title describing what the code snippet tries to achieve" }),
+	title: Type.String({
+		description:
+			"Brief title describing what the code snippet tries to achieve in active form, e.g. 'Calculating sum'",
+	}),
 	code: Type.String({ description: "JavaScript code to execute" }),
 });
+
+export type JavaScriptReplParams = Static<typeof javascriptReplSchema>;
+
+interface JavaScriptReplResult {
+	output?: string;
+	files?: Array<{
+		fileName: string;
+		mimeType: string;
+		size: number;
+		contentBase64: string;
+	}>;
+}
 
 export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchema, JavaScriptReplToolResult> & {
 	attachmentsProvider?: () => Attachment[];
@@ -230,22 +246,6 @@ Global variables:
 // Export a default instance for backward compatibility
 export const javascriptReplTool = createJavaScriptReplTool();
 
-// JavaScript REPL renderer with streaming support
-
-interface JavaScriptReplParams {
-	code: string;
-}
-
-interface JavaScriptReplResult {
-	output?: string;
-	files?: Array<{
-		fileName: string;
-		mimeType: string;
-		size: number;
-		contentBase64: string;
-	}>;
-}
-
 export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScriptReplResult> = {
 	render(
 		params: JavaScriptReplParams | undefined,
@@ -254,6 +254,10 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 	): TemplateResult {
 		// Determine status
 		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "inprogress";
+
+		// Create refs for collapsible code section
+		const codeContentRef = createRef<HTMLDivElement>();
+		const codeChevronRef = createRef<HTMLSpanElement>();
 
 		// With result: show params + result
 		if (result && params) {
@@ -290,13 +294,15 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 			});
 
 			return html`
-				<div class="space-y-3">
-					${renderHeader(state, Code, i18n("Executing JavaScript"))}
-					<code-block .code=${params.code || ""} language="javascript"></code-block>
-					${output ? html`<console-block .content=${output} .variant=${result.isError ? "error" : "default"}></console-block>` : ""}
+				<div>
+					${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
+					<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
+						<code-block .code=${params.code || ""} language="javascript"></code-block>
+						${output ? html`<console-block .content=${output} .variant=${result.isError ? "error" : "default"}></console-block>` : ""}
+					</div>
 					${
 						attachments.length
-							? html`<div class="flex flex-wrap gap-2">
+							? html`<div class="flex flex-wrap gap-2 mt-3">
 								${attachments.map((att) => html`<attachment-tile .attachment=${att}></attachment-tile>`)}
 						  </div>`
 							: ""
@@ -308,9 +314,11 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 		// Just params (streaming or waiting for result)
 		if (params) {
 			return html`
-				<div class="space-y-3">
-					${renderHeader(state, Code, i18n("Executing JavaScript"))}
-					${params.code ? html`<code-block .code=${params.code} language="javascript"></code-block>` : ""}
+				<div>
+					${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
+					<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+						${params.code ? html`<code-block .code=${params.code} language="javascript"></code-block>` : ""}
+					</div>
 				</div>
 			`;
 		}

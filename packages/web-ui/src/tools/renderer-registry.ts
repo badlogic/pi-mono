@@ -1,5 +1,7 @@
-import { html, icon, type TemplateResult } from "@mariozechner/mini-lit";
-import { Loader } from "lucide";
+import { html, icon, iconDOM, type TemplateResult } from "@mariozechner/mini-lit";
+import type { Ref } from "lit/directives/ref.js";
+import { ref } from "lit/directives/ref.js";
+import { ChevronDown, ChevronRight, Loader } from "lucide";
 import type { ToolRenderer } from "./types.js";
 
 // Registry of tool renderers
@@ -53,4 +55,60 @@ export function renderHeader(state: "inprogress" | "complete" | "error", toolIco
 				</div>
 			`;
 	}
+}
+
+/**
+ * Helper to render a collapsible header for tool renderers
+ * Same as renderHeader but with a chevron button that toggles visibility of content
+ */
+export function renderCollapsibleHeader(
+	state: "inprogress" | "complete" | "error",
+	toolIcon: any,
+	text: string,
+	contentRef: Ref<HTMLElement>,
+	chevronRef: Ref<HTMLElement>,
+	defaultExpanded = false,
+): TemplateResult {
+	const statusIcon = (iconComponent: any, color: string) =>
+		html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
+
+	const toggleContent = (e: Event) => {
+		e.preventDefault();
+		const content = contentRef.value;
+		const chevron = chevronRef.value;
+		if (content && chevron) {
+			const isCollapsed = content.classList.contains("max-h-0");
+			if (isCollapsed) {
+				content.classList.remove("max-h-0");
+				content.classList.add("max-h-[2000px]", "mt-3");
+				chevron.innerHTML = iconDOM(ChevronDown, "sm").outerHTML;
+			} else {
+				content.classList.remove("max-h-[2000px]", "mt-3");
+				content.classList.add("max-h-0");
+				chevron.innerHTML = iconDOM(ChevronRight, "sm").outerHTML;
+			}
+		}
+	};
+
+	const toolIconColor =
+		state === "complete"
+			? "text-green-600 dark:text-green-500"
+			: state === "error"
+				? "text-destructive"
+				: "text-foreground";
+
+	return html`
+		<div class="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+			<div class="flex items-center gap-2">
+				${state === "inprogress" ? statusIcon(Loader, "text-foreground animate-spin") : ""}
+				${statusIcon(toolIcon, toolIconColor)}
+				<span>${text}</span>
+			</div>
+			<button @click=${toggleContent} class="hover:text-foreground transition-colors">
+				<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
+					${icon(defaultExpanded ? ChevronDown : ChevronRight, "sm")}
+				</span>
+			</button>
+		</div>
+	`;
 }
