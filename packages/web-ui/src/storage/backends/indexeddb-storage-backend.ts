@@ -64,7 +64,13 @@ export class IndexedDBStorageBackend implements StorageBackend {
 		const db = await this.getDB();
 		const tx = db.transaction(storeName, "readwrite");
 		const store = tx.objectStore(storeName);
-		await this.promisifyRequest(store.put(value, key));
+		// If store has keyPath, only pass value (in-line key)
+		// Otherwise pass both value and key (out-of-line key)
+		if (store.keyPath) {
+			await this.promisifyRequest(store.put(value));
+		} else {
+			await this.promisifyRequest(store.put(value, key));
+		}
 	}
 
 	async delete(storeName: string, key: string): Promise<void> {
@@ -121,7 +127,13 @@ export class IndexedDBStorageBackend implements StorageBackend {
 			},
 			set: async <T>(storeName: string, key: string, value: T) => {
 				const store = idbTx.objectStore(storeName);
-				await this.promisifyRequest(store.put(value, key));
+				// If store has keyPath, only pass value (in-line key)
+				// Otherwise pass both value and key (out-of-line key)
+				if (store.keyPath) {
+					await this.promisifyRequest(store.put(value));
+				} else {
+					await this.promisifyRequest(store.put(value, key));
+				}
 			},
 			delete: async (storeName: string, key: string) => {
 				const store = idbTx.objectStore(storeName);
