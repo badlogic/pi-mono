@@ -79,7 +79,7 @@ export class ChatPanel extends LitElement {
 			this.artifactsPanel.sandboxUrlProvider = this.sandboxUrlProvider;
 		}
 		// Register the standalone tool renderer (not the panel itself)
-		registerToolRenderer("artifacts", new ArtifactsToolRenderer());
+		registerToolRenderer("artifacts", new ArtifactsToolRenderer(this.artifactsPanel));
 
 		// Attachments provider
 		const getAttachments = () => {

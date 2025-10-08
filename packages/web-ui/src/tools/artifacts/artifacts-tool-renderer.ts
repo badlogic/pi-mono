@@ -7,7 +7,8 @@ import "../../components/ConsoleBlock.js";
 import { i18n } from "../../utils/i18n.js";
 import { renderCollapsibleHeader, renderHeader } from "../renderer-registry.js";
 import type { ToolRenderer } from "../types.js";
-import type { ArtifactsParams } from "./artifacts.js";
+import { ArtifactPill } from "./ArtifactPill.js";
+import type { ArtifactsPanel, ArtifactsParams } from "./artifacts.js";
 
 // Helper to determine language for syntax highlighting
 function getLanguageFromFilename(filename?: string): string {
@@ -47,6 +48,8 @@ function getLanguageFromFilename(filename?: string): string {
 }
 
 export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, undefined> {
+	constructor(public artifactsPanel?: ArtifactsPanel) {}
+
 	render(
 		params: ArtifactsParams | undefined,
 		result: ToolResultMessage<undefined> | undefined,
@@ -71,6 +74,11 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			return labels[command] || { streaming: i18n("Processing artifact"), complete: i18n("Processed artifact") };
 		};
 
+		// Helper to render artifact pill if filename present
+		const renderPill = (filename?: string): TemplateResult | string => {
+			return filename ? ArtifactPill(filename, this.artifactsPanel) : "";
+		};
+
 		// Error handling
 		if (result?.isError) {
 			const command = params?.command;
@@ -78,7 +86,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			const labels = command
 				? getCommandLabels(command)
 				: { streaming: i18n("Processing artifact"), complete: i18n("Processed artifact") };
-			const headerText = filename ? `${labels.streaming} ${filename}` : labels.streaming;
+			const headerText = labels.streaming;
 
 			// For create/update/rewrite errors, show code block + console/error
 			if (command === "create" || command === "update" || command === "rewrite") {
@@ -89,6 +97,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				return html`
 					<div>
 						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
 							${content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
 							${
@@ -116,7 +125,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			const labels = command
 				? getCommandLabels(command)
 				: { streaming: i18n("Processing artifact"), complete: i18n("Processed artifact") };
-			const headerText = filename ? `${labels.complete} ${filename}` : labels.complete;
+			const headerText = labels.complete;
 
 			// GET command: show code block with file content
 			if (command === "get") {
@@ -124,6 +133,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				return html`
 					<div>
 						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
 							<code-block .code=${fileContent} language=${getLanguageFromFilename(filename)}></code-block>
 						</div>
@@ -137,6 +147,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				return html`
 					<div>
 						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
 							<console-block .content=${logs}></console-block>
 						</div>
@@ -153,6 +164,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				return html`
 					<div>
 						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
 							${codeContent ? html`<code-block .code=${codeContent} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
 							${isHtml && logs ? html`<console-block .content=${logs}></console-block>` : ""}
@@ -165,6 +177,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			return html`
 				<div class="space-y-3">
 					${renderHeader(state, FileCode2, headerText)}
+					${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 				</div>
 			`;
 		}
@@ -179,7 +192,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			}
 
 			const labels = getCommandLabels(command);
-			const headerText = filename ? `${labels.streaming} ${filename}` : labels.streaming;
+			const headerText = labels.streaming;
 
 			// Render based on command type
 			switch (command) {
@@ -188,6 +201,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 					return html`
 						<div>
 							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
 								${
 									content
@@ -202,6 +216,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 					return html`
 						<div>
 							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
 								${
 									old_str !== undefined && new_str !== undefined
@@ -217,13 +232,19 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 					return html`
 						<div>
 							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
 							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300"></div>
 						</div>
 					`;
 
 				case "delete":
 				default:
-					return renderHeader(state, FileCode2, headerText);
+					return html`
+						<div>
+							${renderHeader(state, FileCode2, headerText)}
+							${renderPill(filename) ? html`<div class="mt-2">${renderPill(filename)}</div>` : ""}
+						</div>
+					`;
 			}
 		}
 
