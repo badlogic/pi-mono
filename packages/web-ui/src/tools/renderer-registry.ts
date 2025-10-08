@@ -25,7 +25,11 @@ export function getToolRenderer(toolName: string): ToolRenderer | undefined {
  * Helper to render a header for tool renderers
  * Shows icon on left when complete/error, spinner on right when in progress
  */
-export function renderHeader(state: "inprogress" | "complete" | "error", toolIcon: any, text: string): TemplateResult {
+export function renderHeader(
+	state: "inprogress" | "complete" | "error",
+	toolIcon: any,
+	text: string | TemplateResult,
+): TemplateResult {
 	const statusIcon = (iconComponent: any, color: string) =>
 		html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
 
@@ -35,7 +39,7 @@ export function renderHeader(state: "inprogress" | "complete" | "error", toolIco
 				<div class="flex items-center justify-between gap-2 text-sm text-muted-foreground">
 					<div class="flex items-center gap-2">
 						${statusIcon(toolIcon, "text-foreground")}
-						<span>${text}</span>
+						${text}
 					</div>
 					${statusIcon(Loader, "text-foreground animate-spin")}
 				</div>
@@ -44,14 +48,14 @@ export function renderHeader(state: "inprogress" | "complete" | "error", toolIco
 			return html`
 				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					${statusIcon(toolIcon, "text-green-600 dark:text-green-500")}
-					<span>${text}</span>
+					${text}
 				</div>
 			`;
 		case "error":
 			return html`
 				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					${statusIcon(toolIcon, "text-destructive")}
-					<span>${text}</span>
+					${text}
 				</div>
 			`;
 	}
@@ -64,7 +68,7 @@ export function renderHeader(state: "inprogress" | "complete" | "error", toolIco
 export function renderCollapsibleHeader(
 	state: "inprogress" | "complete" | "error",
 	toolIcon: any,
-	text: string,
+	text: string | TemplateResult,
 	contentRef: Ref<HTMLElement>,
 	chevronRef: Ref<HTMLElement>,
 	defaultExpanded = false,
@@ -102,7 +106,7 @@ export function renderCollapsibleHeader(
 			<div class="flex items-center gap-2">
 				${state === "inprogress" ? statusIcon(Loader, "text-foreground animate-spin") : ""}
 				${statusIcon(toolIcon, toolIconColor)}
-				<span>${text}</span>
+				${text}
 			</div>
 			<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
 				${icon(defaultExpanded ? ChevronDown : ChevronRight, "sm")}

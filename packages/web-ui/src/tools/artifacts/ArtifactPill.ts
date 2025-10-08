@@ -10,14 +10,14 @@ export function ArtifactPill(filename: string, artifactsPanel?: ArtifactsPanel):
 	};
 
 	return html`
-		<div
-			class="inline-flex items-center gap-2 px-2 py-1 text-xs bg-muted/50 border border-border rounded ${
+		<span
+			class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-muted/50 border border-border rounded ${
 				artifactsPanel ? "cursor-pointer hover:bg-muted transition-colors" : ""
 			}"
 			@click=${artifactsPanel ? handleClick : null}
 		>
 			${icon(FileCode2, "sm")}
-			<span class="font-mono text-foreground">${filename}</span>
-		</div>
+			<span class="text-foreground">${filename}</span>
+		</span>
 	`;
 }
