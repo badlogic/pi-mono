@@ -98,17 +98,15 @@ export function renderCollapsibleHeader(
 				: "text-foreground";
 
 	return html`
-		<div class="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+		<button @click=${toggleContent} class="flex items-center justify-between gap-2 text-sm text-muted-foreground w-full text-left hover:text-foreground transition-colors">
 			<div class="flex items-center gap-2">
 				${state === "inprogress" ? statusIcon(Loader, "text-foreground animate-spin") : ""}
 				${statusIcon(toolIcon, toolIconColor)}
 				<span>${text}</span>
 			</div>
-			<button @click=${toggleContent} class="hover:text-foreground transition-colors">
-				<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
-					${icon(defaultExpanded ? ChevronDown : ChevronRight, "sm")}
-				</span>
-			</button>
-		</div>
+			<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
+				${icon(defaultExpanded ? ChevronDown : ChevronRight, "sm")}
+			</span>
+		</button>
 	`;
 }
