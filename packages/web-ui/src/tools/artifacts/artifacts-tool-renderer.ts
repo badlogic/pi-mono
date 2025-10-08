@@ -55,7 +55,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 		result: ToolResultMessage<undefined> | undefined,
 		isStreaming?: boolean,
 	): TemplateResult {
-		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "inprogress";
+		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "complete";
 
 		// Create refs for collapsible sections
 		const contentRef = createRef<HTMLDivElement>();

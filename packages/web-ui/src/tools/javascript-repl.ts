@@ -253,7 +253,7 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 		isStreaming?: boolean,
 	): TemplateResult {
 		// Determine status
-		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "inprogress";
+		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "complete";
 
 		// Create refs for collapsible code section
 		const codeContentRef = createRef<HTMLDivElement>();
