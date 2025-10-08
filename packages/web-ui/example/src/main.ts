@@ -9,10 +9,10 @@ import {
 	type AppMessage,
 	AppStorage,
 	ChatPanel,
+	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderTransport,
 	ProxyTab,
-	SessionIndexedDBBackend,
 	SessionListDialog,
 	setAppStorage,
 	SettingsDialog,
@@ -25,9 +25,17 @@ import { createSystemNotification, customMessageTransformer, registerCustomMessa
 // Register custom message renderers
 registerCustomMessageRenderers();
 
-const storage = new AppStorage({
-	sessions: new SessionIndexedDBBackend("pi-web-ui-sessions"),
+const backend = new IndexedDBStorageBackend({
+	dbName: "pi-web-ui-example",
+	version: 1,
+	stores: [
+		{ name: "sessions-metadata", keyPath: "id", indices: [{ name: "lastModified", keyPath: "lastModified" }] },
+		{ name: "sessions-data", keyPath: "id" },
+		{ name: "settings" },
+		{ name: "provider-keys" },
+	],
 });
+const storage = new AppStorage(backend);
 setAppStorage(storage);
 
 let currentSessionId: string | undefined;
@@ -74,7 +82,43 @@ const saveSession = async () => {
 	if (!shouldSaveSession(state.messages)) return;
 
 	try {
-		await storage.sessions.saveSession(currentSessionId, state, undefined, currentTitle);
+		// Create session data
+		const sessionData = {
+			id: currentSessionId,
+			title: currentTitle,
+			model: state.model!,
+			thinkingLevel: state.thinkingLevel,
+			messages: state.messages,
+			createdAt: new Date().toISOString(),
+			lastModified: new Date().toISOString(),
+		};
+
+		// Create session metadata
+		const metadata = {
+			id: currentSessionId,
+			title: currentTitle,
+			createdAt: sessionData.createdAt,
+			lastModified: sessionData.lastModified,
+			messageCount: state.messages.length,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0,
+				},
+			},
+			modelId: state.model?.id || null,
+			thinkingLevel: state.thinkingLevel,
+			preview: generateTitle(state.messages),
+		};
+
+		await storage.sessions.saveSession(sessionData, metadata);
 	} catch (err) {
 		console.error("Failed to save session:", err);
 	}
@@ -142,7 +186,7 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 const loadSession = async (sessionId: string): Promise<boolean> => {
 	if (!storage.sessions) return false;
 
-	const sessionData = await storage.sessions.loadSession(sessionId);
+	const sessionData = await storage.sessions.getSession(sessionId);
 	if (!sessionData) {
 		console.error("Session not found:", sessionId);
 		return false;

@@ -30,13 +30,7 @@ export class SessionListDialog extends DialogBase {
 		this.loading = true;
 		try {
 			const storage = getAppStorage();
-			if (!storage.sessions) {
-				console.error("Session storage not available");
-				this.sessions = [];
-				return;
-			}
-
-			this.sessions = await storage.sessions.listSessions();
+			this.sessions = await storage.sessions.getAllMetadata();
 		} catch (err) {
 			console.error("Failed to load sessions:", err);
 			this.sessions = [];

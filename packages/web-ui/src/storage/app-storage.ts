@@ -1,30 +1,60 @@
-import { LocalStorageBackend } from "./backends/local-storage-backend.js";
-import { ProviderKeysRepository } from "./repositories/provider-keys-repository.js";
-import { SessionRepository } from "./repositories/session-repository.js";
-import { SettingsRepository } from "./repositories/settings-repository.js";
-import type { AppStorageConfig } from "./types.js";
+import { SessionsRepository } from "./sessions-repository.js";
+import type { StorageBackend } from "./types.js";
 
 /**
- * High-level storage API aggregating all repositories.
- * Apps configure backends and use repositories through this interface.
+ * High-level storage API providing access to all storage operations.
+ * Subclasses can extend this to add domain-specific repositories.
  */
 export class AppStorage {
-	readonly settings: SettingsRepository;
-	readonly providerKeys: ProviderKeysRepository;
-	readonly sessions?: SessionRepository;
+	readonly backend: StorageBackend;
+	readonly sessions: SessionsRepository;
 
-	constructor(config: AppStorageConfig = {}) {
-		// Use LocalStorage with prefixes as defaults
-		const settingsBackend = config.settings ?? new LocalStorageBackend("settings");
-		const providerKeysBackend = config.providerKeys ?? new LocalStorageBackend("providerKeys");
+	constructor(backend: StorageBackend) {
+		this.backend = backend;
+		this.sessions = new SessionsRepository(backend);
+	}
 
-		this.settings = new SettingsRepository(settingsBackend);
-		this.providerKeys = new ProviderKeysRepository(providerKeysBackend);
+	// Settings access (delegates to "settings" store)
+	async getSetting<T>(key: string): Promise<T | null> {
+		return this.backend.get("settings", key);
+	}
 
-		// Session storage is optional
-		if (config.sessions) {
-			this.sessions = new SessionRepository(config.sessions);
-		}
+	async setSetting<T>(key: string, value: T): Promise<void> {
+		await this.backend.set("settings", key, value);
+	}
+
+	async deleteSetting(key: string): Promise<void> {
+		await this.backend.delete("settings", key);
+	}
+
+	async listSettings(): Promise<string[]> {
+		return this.backend.keys("settings");
+	}
+
+	// Provider keys access (delegates to "provider-keys" store)
+	async getProviderKey(provider: string): Promise<string | null> {
+		return this.backend.get("provider-keys", provider);
+	}
+
+	async setProviderKey(provider: string, key: string): Promise<void> {
+		await this.backend.set("provider-keys", provider, key);
+	}
+
+	async deleteProviderKey(provider: string): Promise<void> {
+		await this.backend.delete("provider-keys", provider);
+	}
+
+	async listProviderKeys(): Promise<string[]> {
+		return this.backend.keys("provider-keys");
+	}
+
+	// Quota management
+	async getQuotaInfo(): Promise<{ usage: number; quota: number; percent: number }> {
+		return this.backend.getQuotaInfo();
+	}
+
+	async requestPersistence(): Promise<boolean> {
+		return this.backend.requestPersistence();
 	}
 }
 
@@ -47,14 +77,4 @@ export function getAppStorage(): AppStorage {
  */
 export function setAppStorage(storage: AppStorage): void {
 	globalAppStorage = storage;
-}
-
-/**
- * Initialize AppStorage with default configuration if not already set.
- */
-export function initAppStorage(config: AppStorageConfig = {}): AppStorage {
-	if (!globalAppStorage) {
-		globalAppStorage = new AppStorage(config);
-	}
-	return globalAppStorage;
 }

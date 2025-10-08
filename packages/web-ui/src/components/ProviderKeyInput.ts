@@ -35,7 +35,7 @@ export class ProviderKeyInput extends LitElement {
 
 	private async checkKeyStatus() {
 		try {
-			const key = await getAppStorage().providerKeys.getKey(this.provider);
+			const key = await getAppStorage().getProviderKey(this.provider);
 			this.hasKey = !!key;
 		} catch (error) {
 			console.error("Failed to check key status:", error);
@@ -51,8 +51,8 @@ export class ProviderKeyInput extends LitElement {
 			if (!model) return false;
 
 			// Check if CORS proxy is enabled and apply it
-			const proxyEnabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
-			const proxyUrl = await getAppStorage().settings.get<string>("proxy.url");
+			const proxyEnabled = await getAppStorage().getSetting<boolean>("proxy.enabled");
+			const proxyUrl = await getAppStorage().getSetting<string>("proxy.url");
 
 			if (proxyEnabled && proxyUrl && model.baseUrl) {
 				model = {
@@ -89,7 +89,7 @@ export class ProviderKeyInput extends LitElement {
 
 		if (success) {
 			try {
-				await getAppStorage().providerKeys.setKey(this.provider, this.keyInput);
+				await getAppStorage().setProviderKey(this.provider, this.keyInput);
 				this.hasKey = true;
 				this.keyInput = "";
 				this.requestUpdate();
@@ -112,7 +112,7 @@ export class ProviderKeyInput extends LitElement {
 
 	private async removeKey() {
 		try {
-			await getAppStorage().providerKeys.removeKey(this.provider);
+			await getAppStorage().deleteProviderKey(this.provider);
 			this.hasKey = false;
 			this.keyInput = "";
 			this.requestUpdate();
