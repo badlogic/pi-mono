@@ -1,5 +1,6 @@
 import { Button, icon } from "@mariozechner/mini-lit";
-import { type AgentTool, type Message, StringEnum, type ToolCall, type ToolResultMessage } from "@mariozechner/pi-ai";
+import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
+import { type AgentTool, type Message, StringEnum, type ToolCall } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -12,7 +13,6 @@ import { HtmlArtifact } from "./HtmlArtifact.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
-import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
 
 // Simple artifact model
 export interface Artifact {

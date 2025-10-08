@@ -179,6 +179,7 @@ export class SettingsDialog extends LitElement {
 			},
 			width: "min(1000px, 90vw)",
 			height: "min(800px, 90vh)",
+			backdropClassName: "bg-black/50 backdrop-blur-sm",
 			children: html`
 				${DialogContent({
 					className: "h-full p-6",

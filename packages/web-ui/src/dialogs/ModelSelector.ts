@@ -101,7 +101,7 @@ export class ModelSelector extends DialogBase {
 
 			// Fetch details for each model and convert to Model format
 			const ollamaModelPromises: Promise<Model<any> | null>[] = models
-				.map(async (model) => {
+				.map(async (model: any) => {
 					try {
 						// Get model details
 						const details = await ollama.show({
@@ -144,7 +144,7 @@ export class ModelSelector extends DialogBase {
 						return null;
 					}
 				})
-				.filter((m) => m !== null);
+				.filter((m: any) => m !== null);
 
 			const results = await Promise.all(ollamaModelPromises);
 			this.ollamaModels = results.filter((m): m is Model<any> => m !== null);

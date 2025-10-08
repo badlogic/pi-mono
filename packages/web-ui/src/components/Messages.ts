@@ -1,4 +1,4 @@
-import { Button, html, icon } from "@mariozechner/mini-lit";
+import { html } from "@mariozechner/mini-lit";
 import type {
 	AgentTool,
 	AssistantMessage as AssistantMessageType,
@@ -7,8 +7,7 @@ import type {
 	UserMessage as UserMessageType,
 } from "@mariozechner/pi-ai";
 import { LitElement, type TemplateResult } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
-import { Bug, Loader, Wrench } from "lucide";
+import { customElement, property } from "lit/decorators.js";
 import { renderTool } from "../tools/index.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";

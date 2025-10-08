@@ -1,8 +1,8 @@
-import { Diff, html, icon, iconDOM, type TemplateResult } from "@mariozechner/mini-lit";
+import { Diff, html, type TemplateResult } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/CodeBlock.js";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { createRef, ref } from "lit/directives/ref.js";
-import { ChevronDown, ChevronRight, FileCode2, Loader } from "lucide";
+import { FileCode2 } from "lucide";
 import "../../components/ConsoleBlock.js";
 import { i18n } from "../../utils/i18n.js";
 import { renderCollapsibleHeader, renderHeader } from "../renderer-registry.js";
@@ -232,7 +232,6 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 						</div>
 					`;
 
-				case "delete":
 				default:
 					return html`
 						<div>

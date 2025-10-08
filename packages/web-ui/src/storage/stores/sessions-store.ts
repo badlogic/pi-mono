@@ -83,4 +83,51 @@ export class SessionsStore extends Store {
 	async requestPersistence(): Promise<boolean> {
 		return this.getBackend().requestPersistence();
 	}
+
+	// Alias methods for backward compatibility
+	async saveSession(id: string, state: any, metadata: SessionMetadata | undefined, title?: string): Promise<void> {
+		// If metadata is provided, use it; otherwise create it from state
+		const meta: SessionMetadata = metadata || {
+			id,
+			title: title || "",
+			createdAt: new Date().toISOString(),
+			lastModified: new Date().toISOString(),
+			messageCount: state.messages?.length || 0,
+			usage: state.usage || {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			modelId: state.model?.id || null,
+			thinkingLevel: state.thinkingLevel || "off",
+			preview: "",
+		};
+
+		const data: SessionData = {
+			id,
+			title: title || meta.title,
+			model: state.model,
+			thinkingLevel: state.thinkingLevel,
+			messages: state.messages || [],
+			createdAt: meta.createdAt,
+			lastModified: new Date().toISOString(),
+		};
+
+		await this.save(data, meta);
+	}
+
+	async loadSession(id: string): Promise<SessionData | null> {
+		return this.get(id);
+	}
+
+	async getLatestSessionId(): Promise<string | null> {
+		const allMetadata = await this.getAllMetadata();
+		if (allMetadata.length === 0) return null;
+
+		// Sort by lastModified descending
+		allMetadata.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
+		return allMetadata[0].id;
+	}
 }

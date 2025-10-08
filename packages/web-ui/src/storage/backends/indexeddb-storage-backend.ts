@@ -17,7 +17,7 @@ export class IndexedDBStorageBackend implements StorageBackend {
 				request.onerror = () => reject(request.error);
 				request.onsuccess = () => resolve(request.result);
 
-				request.onupgradeneeded = (event) => {
+				request.onupgradeneeded = (_event) => {
 					const db = request.result;
 
 					// Create object stores from config
@@ -145,7 +145,7 @@ export class IndexedDBStorageBackend implements StorageBackend {
 	}
 
 	async getQuotaInfo(): Promise<{ usage: number; quota: number; percent: number }> {
-		if (navigator.storage && navigator.storage.estimate) {
+		if (navigator.storage?.estimate) {
 			const estimate = await navigator.storage.estimate();
 			return {
 				usage: estimate.usage || 0,
@@ -157,7 +157,7 @@ export class IndexedDBStorageBackend implements StorageBackend {
 	}
 
 	async requestPersistence(): Promise<boolean> {
-		if (navigator.storage && navigator.storage.persist) {
+		if (navigator.storage?.persist) {
 			return await navigator.storage.persist();
 		}
 		return false;
