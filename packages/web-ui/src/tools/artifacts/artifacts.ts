@@ -167,7 +167,7 @@ export class ArtifactsPanel extends LitElement {
 	}
 
 	// Open panel and focus an artifact tab by filename
-	private openArtifact(filename: string) {
+	public openArtifact(filename: string) {
 		if (this._artifacts.has(filename)) {
 			this.showArtifact(filename);
 			// Ask host to open panel (AgentInterface demo listens to onOpen)

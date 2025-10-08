@@ -6,7 +6,7 @@ export function ArtifactPill(filename: string, artifactsPanel?: ArtifactsPanel):
 	const handleClick = () => {
 		if (!artifactsPanel) return;
 		// openArtifact will show the artifact and call onOpen() to open the panel if needed
-		(artifactsPanel as any).openArtifact(filename);
+		artifactsPanel.openArtifact(filename);
 	};
 
 	return html`
