@@ -1,10 +1,11 @@
 import { Diff, html, type TemplateResult } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/CodeBlock.js";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
+import { createRef, ref } from "lit/directives/ref.js";
 import { FileCode2 } from "lucide";
 import "../../components/ConsoleBlock.js";
 import { i18n } from "../../utils/i18n.js";
-import { renderHeader } from "../renderer-registry.js";
+import { renderCollapsibleHeader, renderHeader } from "../renderer-registry.js";
 import type { ToolRenderer } from "../types.js";
 import type { ArtifactsParams } from "./artifacts.js";
 
@@ -51,7 +52,11 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 		result: ToolResultMessage<undefined> | undefined,
 		isStreaming?: boolean,
 	): TemplateResult {
-		const state = result ? (result.isError ? "error" : "complete") : "inprogress";
+		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "inprogress";
+
+		// Create refs for collapsible sections
+		const contentRef = createRef<HTMLDivElement>();
+		const chevronRef = createRef<HTMLSpanElement>();
 
 		// Helper to get command labels
 		const getCommandLabels = (command: string): { streaming: string; complete: string } => {
@@ -82,14 +87,16 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				const isHtml = filename?.endsWith(".html");
 
 				return html`
-					<div class="space-y-3">
-						${renderHeader(state, FileCode2, headerText)}
-						${content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
-						${
-							isHtml
-								? html`<console-block .content=${result.output || i18n("An error occurred")} variant="error"></console-block>`
-								: html`<div class="text-sm text-destructive">${result.output || i18n("An error occurred")}</div>`
-						}
+					<div>
+						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
+							${content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
+							${
+								isHtml
+									? html`<console-block .content=${result.output || i18n("An error occurred")} variant="error"></console-block>`
+									: html`<div class="text-sm text-destructive">${result.output || i18n("An error occurred")}</div>`
+							}
+						</div>
 					</div>
 				`;
 			}
@@ -115,9 +122,11 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			if (command === "get") {
 				const fileContent = result.output || i18n("(no output)");
 				return html`
-					<div class="space-y-3">
-						${renderHeader(state, FileCode2, headerText)}
-						<code-block .code=${fileContent} language=${getLanguageFromFilename(filename)}></code-block>
+					<div>
+						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+							<code-block .code=${fileContent} language=${getLanguageFromFilename(filename)}></code-block>
+						</div>
 					</div>
 				`;
 			}
@@ -126,9 +135,11 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			if (command === "logs") {
 				const logs = result.output || i18n("(no output)");
 				return html`
-					<div class="space-y-3">
-						${renderHeader(state, FileCode2, headerText)}
-						<console-block .content=${logs}></console-block>
+					<div>
+						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+							<console-block .content=${logs}></console-block>
+						</div>
 					</div>
 				`;
 			}
@@ -140,10 +151,12 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				const logs = result.output || "";
 
 				return html`
-					<div class="space-y-3">
-						${renderHeader(state, FileCode2, headerText)}
-						${codeContent ? html`<code-block .code=${codeContent} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
-						${isHtml && logs ? html`<console-block .content=${logs}></console-block>` : ""}
+					<div>
+						${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+						<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
+							${codeContent ? html`<code-block .code=${codeContent} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
+							${isHtml && logs ? html`<console-block .content=${logs}></console-block>` : ""}
+						</div>
 					</div>
 				`;
 			}
@@ -173,31 +186,42 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				case "create":
 				case "rewrite":
 					return html`
-						<div class="space-y-3">
-							${renderHeader(state, FileCode2, headerText)}
-							${
-								content
-									? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)} class="mt-2"></code-block>`
-									: ""
-							}
+						<div>
+							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+								${
+									content
+										? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>`
+										: ""
+								}
+							</div>
 						</div>
 					`;
 
 				case "update":
 					return html`
-						<div class="space-y-3">
-							${renderHeader(state, FileCode2, headerText)}
-							${
-								old_str !== undefined && new_str !== undefined
-									? Diff({ oldText: old_str, newText: new_str, className: "mt-2" })
-									: ""
-							}
+						<div>
+							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+								${
+									old_str !== undefined && new_str !== undefined
+										? Diff({ oldText: old_str, newText: new_str })
+										: ""
+								}
+							</div>
 						</div>
 					`;
 
 				case "get":
-				case "delete":
 				case "logs":
+					return html`
+						<div>
+							${renderCollapsibleHeader(state, FileCode2, headerText, contentRef, chevronRef, false)}
+							<div ${ref(contentRef)} class="max-h-0 overflow-hidden transition-all duration-300"></div>
+						</div>
+					`;
+
+				case "delete":
 				default:
 					return renderHeader(state, FileCode2, headerText);
 			}
