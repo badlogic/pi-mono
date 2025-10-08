@@ -3,8 +3,10 @@ import { FileCode2 } from "lucide";
 import type { ArtifactsPanel } from "./artifacts.js";
 
 export function ArtifactPill(filename: string, artifactsPanel?: ArtifactsPanel): TemplateResult {
-	const handleClick = () => {
+	const handleClick = (e: Event) => {
 		if (!artifactsPanel) return;
+		e.preventDefault();
+		e.stopPropagation();
 		// openArtifact will show the artifact and call onOpen() to open the panel if needed
 		artifactsPanel.openArtifact(filename);
 	};
