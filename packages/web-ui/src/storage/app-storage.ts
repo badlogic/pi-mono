@@ -1,54 +1,30 @@
-import { SessionsRepository } from "./sessions-repository.js";
+import type { ProviderKeysStore } from "./stores/provider-keys-store.js";
+import type { SessionsStore } from "./stores/sessions-store.js";
+import type { SettingsStore } from "./stores/settings-store.js";
 import type { StorageBackend } from "./types.js";
 
 /**
  * High-level storage API providing access to all storage operations.
- * Subclasses can extend this to add domain-specific repositories.
+ * Subclasses can extend this to add domain-specific stores.
  */
 export class AppStorage {
 	readonly backend: StorageBackend;
-	readonly sessions: SessionsRepository;
+	readonly settings: SettingsStore;
+	readonly providerKeys: ProviderKeysStore;
+	readonly sessions: SessionsStore;
 
-	constructor(backend: StorageBackend) {
+	constructor(
+		settings: SettingsStore,
+		providerKeys: ProviderKeysStore,
+		sessions: SessionsStore,
+		backend: StorageBackend,
+	) {
+		this.settings = settings;
+		this.providerKeys = providerKeys;
+		this.sessions = sessions;
 		this.backend = backend;
-		this.sessions = new SessionsRepository(backend);
 	}
 
-	// Settings access (delegates to "settings" store)
-	async getSetting<T>(key: string): Promise<T | null> {
-		return this.backend.get("settings", key);
-	}
-
-	async setSetting<T>(key: string, value: T): Promise<void> {
-		await this.backend.set("settings", key, value);
-	}
-
-	async deleteSetting(key: string): Promise<void> {
-		await this.backend.delete("settings", key);
-	}
-
-	async listSettings(): Promise<string[]> {
-		return this.backend.keys("settings");
-	}
-
-	// Provider keys access (delegates to "provider-keys" store)
-	async getProviderKey(provider: string): Promise<string | null> {
-		return this.backend.get("provider-keys", provider);
-	}
-
-	async setProviderKey(provider: string, key: string): Promise<void> {
-		await this.backend.set("provider-keys", provider, key);
-	}
-
-	async deleteProviderKey(provider: string): Promise<void> {
-		await this.backend.delete("provider-keys", provider);
-	}
-
-	async listProviderKeys(): Promise<string[]> {
-		return this.backend.keys("provider-keys");
-	}
-
-	// Quota management
 	async getQuotaInfo(): Promise<{ usage: number; quota: number; percent: number }> {
 		return this.backend.getQuotaInfo();
 	}

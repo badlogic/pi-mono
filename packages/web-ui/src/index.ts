@@ -45,7 +45,10 @@ export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/Set
 // Storage
 export { AppStorage, getAppStorage, setAppStorage } from "./storage/app-storage.js";
 export { IndexedDBStorageBackend } from "./storage/backends/indexeddb-storage-backend.js";
-export { SessionsRepository } from "./storage/sessions-repository.js";
+export { Store } from "./storage/store.js";
+export { ProviderKeysStore } from "./storage/stores/provider-keys-store.js";
+export { SessionsStore } from "./storage/stores/sessions-store.js";
+export { SettingsStore } from "./storage/stores/settings-store.js";
 export type {
 	IndexConfig,
 	IndexedDBConfig,

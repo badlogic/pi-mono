@@ -56,8 +56,8 @@ export class ProxyTab extends SettingsTab {
 		// Load proxy settings when tab is connected
 		try {
 			const storage = getAppStorage();
-			const enabled = await storage.getSetting<boolean>("proxy.enabled");
-			const url = await storage.getSetting<string>("proxy.url");
+			const enabled = await storage.settings.get<boolean>("proxy.enabled");
+			const url = await storage.settings.get<string>("proxy.url");
 
 			if (enabled !== null) this.proxyEnabled = enabled;
 			if (url !== null) this.proxyUrl = url;
@@ -69,8 +69,8 @@ export class ProxyTab extends SettingsTab {
 	private async saveProxySettings() {
 		try {
 			const storage = getAppStorage();
-			await storage.setSetting("proxy.enabled", this.proxyEnabled);
-			await storage.setSetting("proxy.url", this.proxyUrl);
+			await storage.settings.set("proxy.enabled", this.proxyEnabled);
+			await storage.settings.set("proxy.url", this.proxyUrl);
 		} catch (error) {
 			console.error("Failed to save proxy settings:", error);
 		}

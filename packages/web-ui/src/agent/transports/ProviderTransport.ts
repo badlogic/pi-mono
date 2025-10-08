@@ -9,14 +9,14 @@ import type { AgentRunConfig, AgentTransport } from "./types.js";
 export class ProviderTransport implements AgentTransport {
 	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
 		// Get API key from storage
-		const apiKey = await getAppStorage().getProviderKey(cfg.model.provider);
+		const apiKey = await getAppStorage().providerKeys.get(cfg.model.provider);
 		if (!apiKey) {
 			throw new Error("no-api-key");
 		}
 
 		// Check if CORS proxy is enabled
-		const proxyEnabled = await getAppStorage().getSetting<boolean>("proxy.enabled");
-		const proxyUrl = await getAppStorage().getSetting<string>("proxy.url");
+		const proxyEnabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
+		const proxyUrl = await getAppStorage().settings.get<string>("proxy.url");
 
 		// Clone model and modify baseUrl if proxy is enabled
 		let model = cfg.model;

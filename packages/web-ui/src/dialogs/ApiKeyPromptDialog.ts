@@ -29,7 +29,7 @@ export class ApiKeyPromptDialog extends DialogBase {
 
 		// Poll for key existence - when key is added, resolve and close
 		const checkInterval = setInterval(async () => {
-			const hasKey = !!(await getAppStorage().getProviderKey(this.provider));
+			const hasKey = !!(await getAppStorage().providerKeys.get(this.provider));
 			if (hasKey) {
 				clearInterval(checkInterval);
 				if (this.resolvePromise) {

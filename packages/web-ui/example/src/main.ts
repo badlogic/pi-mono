@@ -11,11 +11,14 @@ import {
 	ChatPanel,
 	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
+	ProviderKeysStore,
 	ProviderTransport,
 	ProxyTab,
 	SessionListDialog,
+	SessionsStore,
 	setAppStorage,
 	SettingsDialog,
+	SettingsStore,
 } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
@@ -25,17 +28,28 @@ import { createSystemNotification, customMessageTransformer, registerCustomMessa
 // Register custom message renderers
 registerCustomMessageRenderers();
 
+// Create stores
+const settings = new SettingsStore();
+const providerKeys = new ProviderKeysStore();
+const sessions = new SessionsStore();
+
+// Gather configs
+const configs = [settings.getConfig(), SessionsStore.getMetadataConfig(), providerKeys.getConfig(), sessions.getConfig()];
+
+// Create backend
 const backend = new IndexedDBStorageBackend({
 	dbName: "pi-web-ui-example",
 	version: 1,
-	stores: [
-		{ name: "sessions-metadata", keyPath: "id", indices: [{ name: "lastModified", keyPath: "lastModified" }] },
-		{ name: "sessions-data", keyPath: "id" },
-		{ name: "settings" },
-		{ name: "provider-keys" },
-	],
+	stores: configs,
 });
-const storage = new AppStorage(backend);
+
+// Wire backend to stores
+settings.setBackend(backend);
+providerKeys.setBackend(backend);
+sessions.setBackend(backend);
+
+// Create and set app storage
+const storage = new AppStorage(settings, providerKeys, sessions, backend);
 setAppStorage(storage);
 
 let currentSessionId: string | undefined;
@@ -118,7 +132,7 @@ const saveSession = async () => {
 			preview: generateTitle(state.messages),
 		};
 
-		await storage.sessions.saveSession(sessionData, metadata);
+		await storage.sessions.save(sessionData, metadata);
 	} catch (err) {
 		console.error("Failed to save session:", err);
 	}
@@ -186,7 +200,7 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 const loadSession = async (sessionId: string): Promise<boolean> => {
 	if (!storage.sessions) return false;
 
-	const sessionData = await storage.sessions.getSession(sessionId);
+	const sessionData = await storage.sessions.get(sessionId);
 	if (!sessionData) {
 		console.error("Session not found:", sessionId);
 		return false;

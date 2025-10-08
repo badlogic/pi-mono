@@ -173,7 +173,7 @@ export class AgentInterface extends LitElement {
 
 		// Check if API key exists for the provider (only needed in direct mode)
 		const provider = session.state.model.provider;
-		const apiKey = await getAppStorage().getProviderKey(provider);
+		const apiKey = await getAppStorage().providerKeys.get(provider);
 
 		// If no API key, prompt for it
 		if (!apiKey) {
