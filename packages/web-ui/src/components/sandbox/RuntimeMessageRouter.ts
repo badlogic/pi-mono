@@ -183,6 +183,8 @@ export class RuntimeMessageRouter {
 				const context = this.sandboxes.get(sandboxId);
 				if (!context) return false;
 
+				console.log("Router received user script message for sandbox:", sandboxId, message);
+
 				const respond = (response: any) => {
 					sendResponse({
 						...response,
@@ -210,6 +212,7 @@ export class RuntimeMessageRouter {
 			};
 
 			chrome.runtime.onUserScriptMessage.addListener(this.userScriptMessageListener);
+			console.log("[RuntimeMessageRouter] Registered chrome.runtime.onUserScriptMessage listener");
 		}
 	}
 }

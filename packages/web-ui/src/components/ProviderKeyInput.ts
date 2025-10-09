@@ -67,7 +67,7 @@ export class ProviderKeyInput extends LitElement {
 
 			const result = await complete(model, context, {
 				apiKey,
-				maxTokens: 10,
+				maxTokens: 200,
 			} as any);
 
 			return result.stopReason === "stop";
