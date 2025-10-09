@@ -347,8 +347,7 @@ export class SandboxIframe extends LitElement {
 
 				await window.complete(null, returnValue);
 			} catch (error) {
-				console.error(error?.stack || error?.message || String(error));
-
+	
 				// Call completion callbacks before complete() (error path)
 				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
 					try {

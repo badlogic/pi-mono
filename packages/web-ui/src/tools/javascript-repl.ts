@@ -63,6 +63,12 @@ export async function executeJavaScript(
 			}
 		}
 
+		// Add return value if present
+		if (result.returnValue !== undefined) {
+			if (output) output += "\n";
+			output += `=> ${typeof result.returnValue === "object" ? JSON.stringify(result.returnValue, null, 2) : result.returnValue}`;
+		}
+
 		// Add file notifications
 		if (result.files && result.files.length > 0) {
 			output += `\n[Files returned: ${result.files.length}]\n`;
