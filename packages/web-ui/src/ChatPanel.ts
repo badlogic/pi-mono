@@ -112,34 +112,7 @@ export class ChatPanel extends LitElement {
 			}
 
 			// Add artifacts provider (always available)
-			providers.push(
-				new ArtifactsRuntimeProvider(
-					() => this.artifactsPanel!.artifacts,
-					async (filename: string, content: string) => {
-						await this.artifactsPanel!.tool.execute("", {
-							command: "create",
-							filename,
-							content,
-						});
-					},
-					async (filename: string, content: string) => {
-						await this.artifactsPanel!.tool.execute("", {
-							command: "rewrite",
-							filename,
-							content,
-						});
-					},
-					async (filename: string) => {
-						await this.artifactsPanel!.tool.execute("", {
-							command: "delete",
-							filename,
-						});
-					},
-					(message: any) => {
-						this.agent!.appendMessage(message);
-					},
-				),
-			);
+			providers.push(new ArtifactsRuntimeProvider(this.artifactsPanel!, this.agent!));
 
 			return providers;
 		};

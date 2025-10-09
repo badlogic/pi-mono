@@ -1,6 +1,18 @@
 import { ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION } from "../../prompts/tool-prompts.js";
 import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 
+// Define minimal interface for ArtifactsPanel to avoid circular dependencies
+interface ArtifactsPanelLike {
+	artifacts: Map<string, { content: string }>;
+	tool: {
+		execute(toolCallId: string, args: { command: string; filename: string; content?: string }): Promise<any>;
+	};
+}
+
+interface AgentLike {
+	appendMessage(message: any): void;
+}
+
 /**
  * Artifacts Runtime Provider
  *
@@ -10,18 +22,14 @@ import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
  */
 export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 	constructor(
-		private getArtifactsFn: () => Map<string, { content: string }>,
-		private createArtifactFn: (filename: string, content: string, title?: string) => Promise<void>,
-		private updateArtifactFn: (filename: string, content: string, title?: string) => Promise<void>,
-		private deleteArtifactFn: (filename: string) => Promise<void>,
-		private appendMessageFn?: (message: any) => void,
+		private artifactsPanel: ArtifactsPanelLike,
+		private agent?: AgentLike,
 	) {}
 
 	getData(): Record<string, any> {
 		// Inject artifact snapshot for offline mode
 		const snapshot: Record<string, string> = {};
-		const artifacts = this.getArtifactsFn();
-		artifacts.forEach((artifact, filename) => {
+		this.artifactsPanel.artifacts.forEach((artifact, filename) => {
 			snapshot[filename] = artifact.content;
 		});
 		return { artifacts: snapshot };
@@ -153,15 +161,13 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 		try {
 			switch (action) {
 				case "has": {
-					const artifacts = this.getArtifactsFn();
-					const exists = artifacts.has(filename);
+					const exists = this.artifactsPanel.artifacts.has(filename);
 					respond({ success: true, result: exists });
 					break;
 				}
 
 				case "get": {
-					const artifacts = this.getArtifactsFn();
-					const artifact = artifacts.get(filename);
+					const artifact = this.artifactsPanel.artifacts.get(filename);
 					if (!artifact) {
 						respond({ success: false, error: `Artifact not found: ${filename}` });
 					} else {
@@ -172,8 +178,12 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 				case "create": {
 					try {
-						await this.createArtifactFn(filename, content, filename);
-						this.appendMessageFn?.({
+						await this.artifactsPanel.tool.execute("", {
+							command: "create",
+							filename,
+							content,
+						});
+						this.agent?.appendMessage({
 							role: "artifact",
 							action: "create",
 							filename,
@@ -190,8 +200,12 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 				case "update": {
 					try {
-						await this.updateArtifactFn(filename, content, filename);
-						this.appendMessageFn?.({
+						await this.artifactsPanel.tool.execute("", {
+							command: "rewrite",
+							filename,
+							content,
+						});
+						this.agent?.appendMessage({
 							role: "artifact",
 							action: "update",
 							filename,
@@ -207,8 +221,11 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 				case "delete": {
 					try {
-						await this.deleteArtifactFn(filename);
-						this.appendMessageFn?.({
+						await this.artifactsPanel.tool.execute("", {
+							command: "delete",
+							filename,
+						});
+						this.agent?.appendMessage({
 							role: "artifact",
 							action: "delete",
 							filename,
