@@ -12,6 +12,7 @@ import { buildArtifactsDescription } from "../../prompts/tool-prompts.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { HtmlArtifact } from "./HtmlArtifact.js";
+import { ImageArtifact } from "./ImageArtifact.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
@@ -92,11 +93,21 @@ export class ArtifactsPanel extends LitElement {
 	}
 
 	// Helper to determine file type from extension
-	private getFileType(filename: string): "html" | "svg" | "markdown" | "text" {
+	private getFileType(filename: string): "html" | "svg" | "markdown" | "image" | "text" {
 		const ext = filename.split(".").pop()?.toLowerCase();
 		if (ext === "html") return "html";
 		if (ext === "svg") return "svg";
 		if (ext === "md" || ext === "markdown") return "markdown";
+		if (
+			ext === "png" ||
+			ext === "jpg" ||
+			ext === "jpeg" ||
+			ext === "gif" ||
+			ext === "webp" ||
+			ext === "bmp" ||
+			ext === "ico"
+		)
+			return "image";
 		return "text";
 	}
 
@@ -117,6 +128,8 @@ export class ArtifactsPanel extends LitElement {
 				element = new SvgArtifact();
 			} else if (type === "markdown") {
 				element = new MarkdownArtifact();
+			} else if (type === "image") {
+				element = new ImageArtifact();
 			} else {
 				element = new TextArtifact();
 			}

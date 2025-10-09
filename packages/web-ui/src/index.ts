@@ -66,6 +66,7 @@ export { ArtifactPill } from "./tools/artifacts/ArtifactPill.js";
 export { type Artifact, ArtifactsPanel, type ArtifactsParams } from "./tools/artifacts/artifacts.js";
 export { ArtifactsToolRenderer } from "./tools/artifacts/artifacts-tool-renderer.js";
 export { HtmlArtifact } from "./tools/artifacts/HtmlArtifact.js";
+export { ImageArtifact } from "./tools/artifacts/ImageArtifact.js";
 export { MarkdownArtifact } from "./tools/artifacts/MarkdownArtifact.js";
 export { SvgArtifact } from "./tools/artifacts/SvgArtifact.js";
 export { TextArtifact } from "./tools/artifacts/TextArtifact.js";
