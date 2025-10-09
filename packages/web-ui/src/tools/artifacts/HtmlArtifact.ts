@@ -101,8 +101,21 @@ export class HtmlArtifact extends ArtifactElement {
 			},
 		};
 
+		// Inject window.complete() call at the end of the HTML to signal when page is loaded
+		// HTML artifacts don't time out - they call complete() when ready
+		let modifiedHtml = html;
+		if (modifiedHtml.includes("</html>")) {
+			modifiedHtml = modifiedHtml.replace(
+				"</html>",
+				"<script>if (window.complete) window.complete();</script></html>",
+			);
+		} else {
+			// If no closing </html> tag, append the script
+			modifiedHtml += "<script>if (window.complete) window.complete();</script>";
+		}
+
 		// Load content - this handles sandbox registration, consumer registration, and iframe creation
-		sandbox.loadContent(sandboxId, html, this.runtimeProviders, [consumer]);
+		sandbox.loadContent(sandboxId, modifiedHtml, this.runtimeProviders, [consumer]);
 	}
 
 	override get content(): string {
