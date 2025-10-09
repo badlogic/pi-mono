@@ -143,15 +143,6 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					}
 				}
 			};
-
-			// Fallback timeout for HTML artifacts that don't call complete()
-			if (document.readyState === "complete" || document.readyState === "interactive") {
-				setTimeout(() => (window as any).complete(), 2000);
-			} else {
-				window.addEventListener("load", () => {
-					setTimeout(() => (window as any).complete(), 2000);
-				});
-			}
 		};
 	}
 

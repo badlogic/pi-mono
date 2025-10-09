@@ -329,9 +329,29 @@ export class SandboxIframe extends LitElement {
 		(async () => {
 			try {
 				${userCode}
+
+				// Call completion callbacks before complete()
+				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
+					try {
+						await Promise.all(window.__completionCallbacks.map(cb => cb(true)));
+					} catch (e) {
+						console.error('Completion callback error:', e);
+					}
+				}
+
 				window.complete();
 			} catch (error) {
 				console.error(error?.stack || error?.message || String(error));
+
+				// Call completion callbacks before complete() (error path)
+				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
+					try {
+						await Promise.all(window.__completionCallbacks.map(cb => cb(false)));
+					} catch (e) {
+						console.error('Completion callback error:', e);
+					}
+				}
+
 				window.complete({
 					message: error?.message || String(error),
 					stack: error?.stack || new Error().stack
