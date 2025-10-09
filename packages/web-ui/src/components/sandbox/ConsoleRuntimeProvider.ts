@@ -128,19 +128,15 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 				if ((window as any).sendRuntimeMessage) {
 					if (finalError) {
-						console.log("Reporting execution error:", finalError);
 						await (window as any).sendRuntimeMessage({
 							type: "execution-error",
 							error: finalError,
 						});
-						console.log("Execution completed");
 					} else {
-						console.log("Reporting execution complete");
 						await (window as any).sendRuntimeMessage({
 							type: "execution-complete",
 							returnValue,
 						});
-						console.log("Execution completed");
 					}
 				}
 			};
