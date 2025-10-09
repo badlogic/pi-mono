@@ -194,7 +194,11 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 		}
 	});
 
-	await chatPanel.setAgent(agent);
+	await chatPanel.setAgent(agent, {
+		onApiKeyRequired: async (provider: string) => {
+			return await ApiKeyPromptDialog.prompt(provider);
+		}
+	});
 };
 
 const loadSession = async (sessionId: string): Promise<boolean> => {
@@ -377,9 +381,6 @@ async function initApp() {
 
 	// Create ChatPanel
 	chatPanel = new ChatPanel();
-	chatPanel.onApiKeyRequired = async (provider: string) => {
-		return await ApiKeyPromptDialog.prompt(provider);
-	};
 
 	// Check for session in URL
 	const urlParams = new URLSearchParams(window.location.search);

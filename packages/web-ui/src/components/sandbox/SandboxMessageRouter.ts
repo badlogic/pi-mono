@@ -8,7 +8,7 @@ export interface MessageConsumer {
 	 * Handle a message from a sandbox.
 	 * @returns true if message was consumed (stops propagation), false otherwise
 	 */
-	handleMessage(message: any): boolean;
+	handleMessage(message: any): Promise<boolean>;
 }
 
 /**
@@ -111,7 +111,7 @@ export class SandboxMessageRouter {
 	private setupListener(): void {
 		if (this.messageListener) return;
 
-		this.messageListener = (e: MessageEvent) => {
+		this.messageListener = async (e: MessageEvent) => {
 			const { sandboxId } = e.data;
 			if (!sandboxId) return;
 
@@ -129,14 +129,14 @@ export class SandboxMessageRouter {
 			// 1. Try provider handlers first (for bidirectional comm like memory)
 			for (const provider of context.providers) {
 				if (provider.handleMessage) {
-					const handled = provider.handleMessage(e.data, respond);
+					const handled = await provider.handleMessage(e.data, respond);
 					if (handled) return; // Stop if handled
 				}
 			}
 
 			// 2. Broadcast to consumers (for one-way messages like console)
 			for (const consumer of context.consumers) {
-				const consumed = consumer.handleMessage(e.data);
+				const consumed = await consumer.handleMessage(e.data);
 				if (consumed) break; // Stop if consumed
 			}
 		};

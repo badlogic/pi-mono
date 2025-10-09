@@ -9,7 +9,6 @@ import { ArtifactElement } from "./ArtifactElement.js";
 @customElement("svg-artifact")
 export class SvgArtifact extends ArtifactElement {
 	@property() override filename = "";
-	@property({ attribute: false }) override displayTitle = "";
 
 	private _content = "";
 	override get content(): string {

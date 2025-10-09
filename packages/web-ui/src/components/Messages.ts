@@ -15,8 +15,18 @@ import { i18n } from "../utils/i18n.js";
 
 export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
 
+// Artifact message type for session persistence
+export interface ArtifactMessage {
+	role: "artifact";
+	action: "create" | "update" | "delete";
+	filename: string;
+	content?: string;
+	title?: string;
+	timestamp: string;
+}
+
 // Base message union
-type BaseMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType;
+type BaseMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType | ArtifactMessage;
 
 // Extensible interface - apps can extend via declaration merging
 // Example:

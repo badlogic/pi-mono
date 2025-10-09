@@ -26,5 +26,11 @@ export interface SandboxRuntimeProvider {
 	 * @param respond - Function to send a response back to the sandbox
 	 * @returns true if message was handled, false otherwise
 	 */
-	handleMessage?(message: any, respond: (response: any) => void): boolean;
+	handleMessage?(message: any, respond: (response: any) => void): Promise<boolean>;
+
+	/**
+	 * Optional documentation describing what globals/functions this provider injects.
+	 * This will be appended to tool descriptions dynamically so the LLM knows what's available.
+	 */
+	getDescription?(): string;
 }

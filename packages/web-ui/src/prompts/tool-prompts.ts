@@ -1,0 +1,251 @@
+/**
+ * Centralized tool prompts/descriptions.
+ * Each prompt is either a string constant or a template function.
+ */
+
+// ============================================================================
+// JavaScript REPL Tool
+// ============================================================================
+
+export const JAVASCRIPT_REPL_BASE_DESCRIPTION = `Execute JavaScript code in a sandboxed browser environment with full modern browser capabilities.
+
+Environment: Modern browser with ALL Web APIs available:
+- ES2023+ JavaScript (async/await, optional chaining, nullish coalescing, etc.)
+- DOM APIs (document, window, Canvas, WebGL, etc.)
+- Fetch API for HTTP requests
+
+Loading external libraries via dynamic imports (use esm.run):
+- XLSX (Excel files): const XLSX = await import('https://esm.run/xlsx');
+- Papa Parse (CSV): const Papa = (await import('https://esm.run/papaparse')).default;
+- Lodash: const _ = await import('https://esm.run/lodash-es');
+- D3.js: const d3 = await import('https://esm.run/d3');
+- Chart.js: const Chart = (await import('https://esm.run/chart.js/auto')).default;
+- Three.js: const THREE = await import('https://esm.run/three');
+- Any npm package: await import('https://esm.run/package-name')
+
+IMPORTANT for graphics/canvas:
+- Use fixed dimensions like 400x400 or 800x600, NOT window.innerWidth/Height
+- For Three.js: renderer.setSize(400, 400) and camera aspect ratio of 1
+- For Chart.js: Set options: { responsive: false, animation: false } to ensure immediate rendering
+- Web Storage (localStorage, sessionStorage, IndexedDB)
+- Web Workers, WebAssembly, WebSockets
+- Media APIs (Audio, Video, WebRTC)
+- File APIs (Blob, FileReader, etc.)
+- Crypto API for cryptography
+- And much more - anything a modern browser supports!
+
+Output:
+- console.log() - All output is captured as text`;
+
+export const JAVASCRIPT_REPL_CHART_EXAMPLE = `
+    - Chart.js example:
+      const Chart = (await import('https://esm.run/chart.js/auto')).default;
+      const canvas = document.createElement('canvas');
+      canvas.width = 400; canvas.height = 300;
+      document.body.appendChild(canvas);
+      new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: ['Jan', 'Feb', 'Mar', 'Apr'],
+          datasets: [{ label: 'Sales', data: [10, 20, 15, 25], borderColor: 'blue' }]
+        },
+        options: { responsive: false, animation: false }
+      });
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      await returnFile('chart.png', blob, 'image/png');`;
+
+export const JAVASCRIPT_REPL_FOOTER = `
+
+- All standard browser globals (window, document, fetch, etc.)`;
+
+/**
+ * Build complete JavaScript REPL description with optional provider docs.
+ */
+export function buildJavaScriptReplDescription(providerDocs?: string): string {
+	return (
+		JAVASCRIPT_REPL_BASE_DESCRIPTION +
+		(providerDocs ? "\n" + providerDocs + JAVASCRIPT_REPL_CHART_EXAMPLE : "") +
+		JAVASCRIPT_REPL_FOOTER
+	);
+}
+
+// ============================================================================
+// Artifacts Tool
+// ============================================================================
+
+export const ARTIFACTS_BASE_DESCRIPTION = `Creates and manages file artifacts. Each artifact is a file with a filename and content.
+
+IMPORTANT: Always prefer updating existing files over creating new ones. Check available files first.
+
+Commands:
+1. create: Create a new file
+   - filename: Name with extension (required, e.g., 'index.html', 'script.js', 'README.md')
+   - title: Display name for the tab (optional, defaults to filename)
+   - content: File content (required)
+
+2. update: Update part of an existing file
+   - filename: File to update (required)
+   - old_str: Exact string to replace (required)
+   - new_str: Replacement string (required)
+
+3. rewrite: Completely replace a file's content
+   - filename: File to rewrite (required)
+   - content: New content (required)
+   - title: Optionally update display title
+
+4. get: Retrieve the full content of a file
+   - filename: File to retrieve (required)
+   - Returns the complete file content
+
+5. delete: Delete a file
+   - filename: File to delete (required)
+
+6. logs: Get console logs and errors (HTML files only)
+   - filename: HTML file to get logs for (required)
+   - Returns all console output and runtime errors`;
+
+export const ARTIFACTS_RUNTIME_EXAMPLE = `- Example HTML artifact that processes a CSV attachment:
+  <script>
+    // List available files
+    const files = listFiles();
+    console.log('Available files:', files);
+
+    // Find CSV file
+    const csvFile = files.find(f => f.mimeType === 'text/csv');
+    if (csvFile) {
+      const csvContent = readTextFile(csvFile.id);
+      // Process CSV data...
+    }
+
+    // Display image
+    const imageFile = files.find(f => f.mimeType.startsWith('image/'));
+    if (imageFile) {
+      const bytes = readBinaryFile(imageFile.id);
+      const blob = new Blob([bytes], {type: imageFile.mimeType});
+      const url = URL.createObjectURL(blob);
+      document.body.innerHTML = '<img src="' + url + '">';
+    }
+  </script>
+`;
+
+export const ARTIFACTS_HTML_SECTION = `
+For text/html artifacts:
+- Must be a single self-contained file
+- External scripts: Use CDNs like https://esm.sh, https://unpkg.com, or https://cdnjs.cloudflare.com
+- Preferred: Use https://esm.sh for npm packages (e.g., https://esm.sh/three for Three.js)
+- For ES modules, use: <script type="module">import * as THREE from 'https://esm.sh/three';</script>
+- For Three.js specifically: import from 'https://esm.sh/three' or 'https://esm.sh/three@0.160.0'
+- For addons: import from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js'
+- No localStorage/sessionStorage - use in-memory variables only
+- CSS should be included inline
+- CRITICAL REMINDER FOR HTML ARTIFACTS:
+	- ALWAYS set a background color inline in <style> or directly on body element
+	- Failure to set a background color is a COMPLIANCE ERROR
+	- Background color MUST be explicitly defined to ensure visibility and proper rendering
+- Can embed base64 images directly in img tags
+- Ensure the layout is responsive as the iframe might be resized
+- Note: Network errors (404s) for external scripts may not be captured in logs due to browser security
+
+For application/vnd.ant.code artifacts:
+- Include the language parameter for syntax highlighting
+- Supports all major programming languages
+
+For text/markdown:
+- Standard markdown syntax
+- Will be rendered with full formatting
+- Can include base64 images using markdown syntax
+
+For image/svg+xml:
+- Complete SVG markup
+- Will be rendered inline
+- Can embed raster images as base64 in SVG
+
+CRITICAL REMINDER FOR ALL ARTIFACTS:
+- Prefer to update existing files rather than creating new ones
+- Keep filenames consistent and descriptive
+- Use appropriate file extensions
+- Ensure HTML artifacts have a defined background color`;
+
+/**
+ * Build complete artifacts description with optional provider docs.
+ */
+export function buildArtifactsDescription(providerDocs?: string): string {
+	const runtimeSection = providerDocs
+		? `
+
+For text/html artifacts with runtime capabilities:${providerDocs}
+${ARTIFACTS_RUNTIME_EXAMPLE}
+`
+		: "";
+
+	return ARTIFACTS_BASE_DESCRIPTION + runtimeSection + ARTIFACTS_HTML_SECTION;
+}
+
+// ============================================================================
+// Artifacts Runtime Provider
+// ============================================================================
+
+export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION = `
+Artifact Management (persistent session files you can access/modify programmatically):
+- await hasArtifact(filename) - Check if artifact exists, returns boolean
+  * Example: if (await hasArtifact('data.json')) { ... }
+- await getArtifact(filename) - Read artifact content, returns string or object
+  * Auto-parses .json files to objects, otherwise returns raw string content
+  * Example: const data = await getArtifact('data.json'); // Returns parsed object
+  * Example: const markdown = await getArtifact('notes.md'); // Returns string
+- await createArtifact(filename, content) - Create new persistent artifact
+  * Auto-stringifies objects for .json files
+  * Example: await createArtifact('data.json', {items: []}) // Auto-stringifies
+  * Example: await createArtifact('research-notes.md', '# Research Notes\\n', 'text/markdown')
+- await updateArtifact(filename, content) - Completely replace artifact content
+  * Auto-stringifies objects for .json files
+  * Full content replacement (not diff-based)
+  * Example: const data = await getArtifact('data.json'); data.items.push(newItem); await updateArtifact('data.json', data);
+  * Example: await updateArtifact('research-notes.md', updatedMarkdown, 'text/markdown')
+- await deleteArtifact(filename) - Delete an artifact
+  * Example: await deleteArtifact('old-notes.md')
+
+Powerful pattern for evolving data:
+  const data = await hasArtifact('data.json') ? await getArtifact('data.json') : {items: []};
+  data.items.push(newScrapedItem);
+  await (await hasArtifact('data.json') ? updateArtifact : createArtifact)('data.json', data);
+
+Binary data must be converted to a base64 string before passing to createArtifact or updateArtifact.
+Example:
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  const arrayBuffer = await blob.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  await createArtifact('image.png', base64);
+`;
+
+// ============================================================================
+// Attachments Runtime Provider
+// ============================================================================
+
+export const ATTACHMENTS_RUNTIME_DESCRIPTION = `
+Global variables:
+- attachments[] - Array of attachment objects from user messages
+  * Properties:
+    - id: string (unique identifier)
+    - fileName: string (e.g., "data.xlsx")
+    - mimeType: string (e.g., "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    - size: number (bytes)
+  * Helper functions:
+    - listFiles() - Returns array of {id, fileName, mimeType, size} for all attachments
+    - readTextFile(attachmentId) - Returns text content of attachment (for CSV, JSON, text files)
+    - readBinaryFile(attachmentId) - Returns Uint8Array of binary data (for images, Excel, etc.)
+  * Examples:
+    - const files = listFiles();
+    - const csvContent = readTextFile(files[0].id); // Read CSV as text
+    - const xlsxBytes = readBinaryFile(files[0].id); // Read Excel as binary
+- await returnFile(filename, content, mimeType?) - Create downloadable files (async function!)
+  * Always use await with returnFile
+  * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
+    If omitted, the REPL throws an Error with stack trace pointing to the offending line.
+  * Strings without a MIME default to text/plain.
+  * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
+  * Canvas images: Use toBlob() with await Promise wrapper
+  * Examples:
+    - await returnFile('data.txt', 'Hello World', 'text/plain')
+    - await returnFile('data.json', {key: 'value'}, 'application/json')
+    - await returnFile('data.csv', 'name,age\\nJohn,30', 'text/csv')`;

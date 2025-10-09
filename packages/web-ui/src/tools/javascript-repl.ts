@@ -5,6 +5,7 @@ import { createRef, ref } from "lit/directives/ref.js";
 import { Code } from "lucide";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
 import type { SandboxRuntimeProvider } from "../components/sandbox/SandboxRuntimeProvider.js";
+import { buildJavaScriptReplDescription } from "../prompts/tool-prompts.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer } from "./types.js";
@@ -125,78 +126,16 @@ export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchem
 		name: "javascript_repl",
 		runtimeProvidersFactory: () => [], // default to empty array
 		sandboxUrlProvider: undefined, // optional, for browser extensions
-		description: `Execute JavaScript code in a sandboxed browser environment with full modern browser capabilities.
+		get description() {
+			// Get dynamic provider descriptions
+			const providers = this.runtimeProvidersFactory?.() || [];
+			const providerDocs = providers
+				.map((p) => p.getDescription?.())
+				.filter(Boolean)
+				.join("\n");
 
-Environment: Modern browser with ALL Web APIs available:
-- ES2023+ JavaScript (async/await, optional chaining, nullish coalescing, etc.)
-- DOM APIs (document, window, Canvas, WebGL, etc.)
-- Fetch API for HTTP requests
-
-Loading external libraries via dynamic imports (use esm.run):
-- XLSX (Excel files): const XLSX = await import('https://esm.run/xlsx');
-- Papa Parse (CSV): const Papa = (await import('https://esm.run/papaparse')).default;
-- Lodash: const _ = await import('https://esm.run/lodash-es');
-- D3.js: const d3 = await import('https://esm.run/d3');
-- Chart.js: const Chart = (await import('https://esm.run/chart.js/auto')).default;
-- Three.js: const THREE = await import('https://esm.run/three');
-- Any npm package: await import('https://esm.run/package-name')
-
-IMPORTANT for graphics/canvas:
-- Use fixed dimensions like 400x400 or 800x600, NOT window.innerWidth/Height
-- For Three.js: renderer.setSize(400, 400) and camera aspect ratio of 1
-- For Chart.js: Set options: { responsive: false, animation: false } to ensure immediate rendering
-- Web Storage (localStorage, sessionStorage, IndexedDB)
-- Web Workers, WebAssembly, WebSockets
-- Media APIs (Audio, Video, WebRTC)
-- File APIs (Blob, FileReader, etc.)
-- Crypto API for cryptography
-- And much more - anything a modern browser supports!
-
-Output:
-- console.log() - All output is captured as text
-- await returnFile(filename, content, mimeType?) - Create downloadable files (async function!)
-  * Always use await with returnFile
-  * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
-    If omitted, the REPL throws an Error with stack trace pointing to the offending line.
-  * Strings without a MIME default to text/plain.
-  * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
-  * Canvas images: Use toBlob() with await Promise wrapper
-  * Examples:
-    - await returnFile('data.txt', 'Hello World', 'text/plain')
-    - await returnFile('data.json', {key: 'value'}, 'application/json')
-    - await returnFile('data.csv', 'name,age\\nJohn,30', 'text/csv')
-    - Chart.js example:
-      const Chart = (await import('https://esm.run/chart.js/auto')).default;
-      const canvas = document.createElement('canvas');
-      canvas.width = 400; canvas.height = 300;
-      document.body.appendChild(canvas);
-      new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr'],
-          datasets: [{ label: 'Sales', data: [10, 20, 15, 25], borderColor: 'blue' }]
-        },
-        options: { responsive: false, animation: false }
-      });
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      await returnFile('chart.png', blob, 'image/png');
-
-Global variables:
-- attachments[] - Array of attachment objects from user messages
-  * Properties:
-    - id: string (unique identifier)
-    - fileName: string (e.g., "data.xlsx")
-    - mimeType: string (e.g., "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    - size: number (bytes)
-  * Helper functions:
-    - listFiles() - Returns array of {id, fileName, mimeType, size} for all attachments
-    - readTextFile(attachmentId) - Returns text content of attachment (for CSV, JSON, text files)
-    - readBinaryFile(attachmentId) - Returns Uint8Array of binary data (for images, Excel, etc.)
-  * Examples:
-    - const files = listFiles();
-    - const csvContent = readTextFile(files[0].id); // Read CSV as text
-    - const xlsxBytes = readBinaryFile(files[0].id); // Read Excel as binary
-- All standard browser globals (window, document, fetch, etc.)`,
+			return buildJavaScriptReplDescription(providerDocs || undefined);
+		},
 		parameters: javascriptReplSchema,
 		execute: async function (_toolCallId: string, args: Static<typeof javascriptReplSchema>, signal?: AbortSignal) {
 			const result = await executeJavaScript(

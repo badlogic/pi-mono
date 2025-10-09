@@ -16,7 +16,6 @@ import "./Console.js";
 @customElement("html-artifact")
 export class HtmlArtifact extends ArtifactElement {
 	@property() override filename = "";
-	@property({ attribute: false }) override displayTitle = "";
 	@property({ attribute: false }) runtimeProviders: SandboxRuntimeProvider[] = [];
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 
@@ -87,7 +86,7 @@ export class HtmlArtifact extends ArtifactElement {
 
 		// Create consumer for console messages
 		const consumer: MessageConsumer = {
-			handleMessage: (message: any): boolean => {
+			handleMessage: async (message: any): Promise<boolean> => {
 				if (message.type === "console") {
 					// Create new array reference for Lit reactivity
 					this.logs = [

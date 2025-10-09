@@ -6,7 +6,9 @@ import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
+import type { ArtifactMessage } from "../../components/Messages.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
+import { buildArtifactsDescription } from "../../prompts/tool-prompts.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { HtmlArtifact } from "./HtmlArtifact.js";
@@ -17,7 +19,6 @@ import { TextArtifact } from "./TextArtifact.js";
 // Simple artifact model
 export interface Artifact {
 	filename: string;
-	title: string;
 	content: string;
 	createdAt: Date;
 	updatedAt: Date;
@@ -29,7 +30,6 @@ const artifactsParamsSchema = Type.Object({
 		description: "The operation to perform",
 	}),
 	filename: Type.String({ description: "Filename including extension (e.g., 'index.html', 'script.js')" }),
-	title: Type.Optional(Type.String({ description: "Display title for the tab (defaults to filename)" })),
 	content: Type.Optional(Type.String({ description: "File content" })),
 	old_str: Type.Optional(Type.String({ description: "String to replace (for update command)" })),
 	new_str: Type.Optional(Type.String({ description: "Replacement string (for update command)" })),
@@ -101,7 +101,7 @@ export class ArtifactsPanel extends LitElement {
 	}
 
 	// Get or create artifact element
-	private getOrCreateArtifactElement(filename: string, content: string, title: string): ArtifactElement {
+	private getOrCreateArtifactElement(filename: string, content: string): ArtifactElement {
 		let element = this.artifactElements.get(filename);
 
 		if (!element) {
@@ -121,7 +121,6 @@ export class ArtifactsPanel extends LitElement {
 				element = new TextArtifact();
 			}
 			element.filename = filename;
-			element.displayTitle = title;
 			element.content = content;
 			element.style.display = "none";
 			element.style.height = "100%";
@@ -143,7 +142,6 @@ export class ArtifactsPanel extends LitElement {
 		} else {
 			// Just update content
 			element.content = content;
-			element.displayTitle = title;
 			if (element instanceof HtmlArtifact) {
 				const runtimeProviders = this.runtimeProvidersFactory?.() || [];
 				element.runtimeProviders = runtimeProviders;
@@ -179,106 +177,20 @@ export class ArtifactsPanel extends LitElement {
 
 	// Build the AgentTool (no details payload; return only output strings)
 	public get tool(): AgentTool<typeof artifactsParamsSchema, undefined> {
+		const self = this;
 		return {
 			label: "Artifacts",
 			name: "artifacts",
-			description: `Creates and manages file artifacts. Each artifact is a file with a filename and content.
+			get description() {
+				// Get dynamic provider descriptions
+				const providers = self.runtimeProvidersFactory?.() || [];
+				const providerDocs = providers
+					.map((p) => p.getDescription?.())
+					.filter(Boolean)
+					.join("\n");
 
-IMPORTANT: Always prefer updating existing files over creating new ones. Check available files first.
-
-Commands:
-1. create: Create a new file
-   - filename: Name with extension (required, e.g., 'index.html', 'script.js', 'README.md')
-   - title: Display name for the tab (optional, defaults to filename)
-   - content: File content (required)
-
-2. update: Update part of an existing file
-   - filename: File to update (required)
-   - old_str: Exact string to replace (required)
-   - new_str: Replacement string (required)
-
-3. rewrite: Completely replace a file's content
-   - filename: File to rewrite (required)
-   - content: New content (required)
-   - title: Optionally update display title
-
-4. get: Retrieve the full content of a file
-   - filename: File to retrieve (required)
-   - Returns the complete file content
-
-5. delete: Delete a file
-   - filename: File to delete (required)
-
-6. logs: Get console logs and errors (HTML files only)
-   - filename: HTML file to get logs for (required)
-   - Returns all console output and runtime errors
-
-For text/html artifacts with attachments:
-- HTML artifacts automatically have access to user attachments via JavaScript
-- Available global functions in HTML artifacts:
-  * listFiles() - Returns array of {id, fileName, mimeType, size} for all attachments
-  * readTextFile(attachmentId) - Returns text content of attachment (for CSV, JSON, text files)
-  * readBinaryFile(attachmentId) - Returns Uint8Array of binary data (for images, Excel, etc.)
-- Example HTML artifact that processes a CSV attachment:
-  <script>
-    // List available files
-    const files = listFiles();
-    console.log('Available files:', files);
-
-    // Find CSV file
-    const csvFile = files.find(f => f.mimeType === 'text/csv');
-    if (csvFile) {
-      const csvContent = readTextFile(csvFile.id);
-      // Process CSV data...
-    }
-
-    // Display image
-    const imageFile = files.find(f => f.mimeType.startsWith('image/'));
-    if (imageFile) {
-      const bytes = readBinaryFile(imageFile.id);
-      const blob = new Blob([bytes], {type: imageFile.mimeType});
-      const url = URL.createObjectURL(blob);
-      document.body.innerHTML = '<img src="' + url + '">';
-    }
-  </script>
-
-For text/html artifacts:
-- Must be a single self-contained file
-- External scripts: Use CDNs like https://esm.sh, https://unpkg.com, or https://cdnjs.cloudflare.com
-- Preferred: Use https://esm.sh for npm packages (e.g., https://esm.sh/three for Three.js)
-- For ES modules, use: <script type="module">import * as THREE from 'https://esm.sh/three';</script>
-- For Three.js specifically: import from 'https://esm.sh/three' or 'https://esm.sh/three@0.160.0'
-- For addons: import from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js'
-- No localStorage/sessionStorage - use in-memory variables only
-- CSS should be included inline
-- CRITICAL REMINDER FOR HTML ARTIFACTS:
-	- ALWAYS set a background color inline in <style> or directly on body element
-	- Failure to set a background color is a COMPLIANCE ERROR
-	- Background color MUST be explicitly defined to ensure visibility and proper rendering
-- Can embed base64 images directly in img tags
-- Ensure the layout is responsive as the iframe might be resized
-- Note: Network errors (404s) for external scripts may not be captured in logs due to browser security
-
-For application/vnd.ant.code artifacts:
-- Include the language parameter for syntax highlighting
-- Supports all major programming languages
-
-For text/markdown:
-- Standard markdown syntax
-- Will be rendered with full formatting
-- Can include base64 images using markdown syntax
-
-For image/svg+xml:
-- Complete SVG markup
-- Will be rendered inline
-- Can embed raster images as base64 in SVG
-
-CRITICAL REMINDER FOR ALL ARTIFACTS:
-- Prefer to update existing files rather than creating new ones
-- Keep filenames consistent and descriptive
-- Use appropriate file extensions
-- Ensure HTML artifacts have a defined background color
-`,
+				return buildArtifactsDescription(providerDocs || undefined);
+			},
 			parameters: artifactsParamsSchema,
 			// Execute mutates our local store and returns a plain output
 			execute: async (_toolCallId: string, args: Static<typeof artifactsParamsSchema>, _signal?: AbortSignal) => {
@@ -289,7 +201,9 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 	}
 
 	// Re-apply artifacts by scanning a message list (optional utility)
-	public async reconstructFromMessages(messages: Array<Message | { role: "aborted" }>): Promise<void> {
+	public async reconstructFromMessages(
+		messages: Array<Message | { role: "aborted" } | { role: "artifact" }>,
+	): Promise<void> {
 		const toolCalls = new Map<string, ToolCall>();
 		const artifactToolName = "artifacts";
 
@@ -307,7 +221,34 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		// 2) Build an ordered list of successful artifact operations
 		const operations: Array<ArtifactsParams> = [];
 		for (const m of messages) {
-			if ((m as any).role === "toolResult" && (m as any).toolName === artifactToolName && !(m as any).isError) {
+			// Handle artifact messages (from programmatic operations like browser_javascript)
+			if ((m as any).role === "artifact") {
+				const artifactMsg = m as ArtifactMessage;
+				switch (artifactMsg.action) {
+					case "create":
+						operations.push({
+							command: "create",
+							filename: artifactMsg.filename,
+							content: artifactMsg.content,
+						});
+						break;
+					case "update":
+						operations.push({
+							command: "rewrite",
+							filename: artifactMsg.filename,
+							content: artifactMsg.content,
+						});
+						break;
+					case "delete":
+						operations.push({
+							command: "delete",
+							filename: artifactMsg.filename,
+						});
+						break;
+				}
+			}
+			// Handle tool result messages (from artifacts tool calls)
+			else if ((m as any).role === "toolResult" && (m as any).toolName === artifactToolName && !(m as any).isError) {
 				const toolCallId = (m as any).toolCallId as string;
 				const call = toolCalls.get(toolCallId);
 				if (!call) continue;
@@ -318,30 +259,27 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		}
 
 		// 3) Compute final state per filename by simulating operations in-memory
-		type FinalArtifact = { title: string; content: string };
-		const finalArtifacts = new Map<string, FinalArtifact>();
+		const finalArtifacts = new Map<string, string>();
 		for (const op of operations) {
 			const filename = op.filename;
 			switch (op.command) {
 				case "create": {
 					if (op.content) {
-						finalArtifacts.set(filename, { title: op.title || filename, content: op.content });
+						finalArtifacts.set(filename, op.content);
 					}
 					break;
 				}
 				case "rewrite": {
 					if (op.content) {
-						// If file didn't exist earlier but rewrite succeeded, treat as fresh content
-						const existing = finalArtifacts.get(filename);
-						finalArtifacts.set(filename, { title: op.title || existing?.title || filename, content: op.content });
+						finalArtifacts.set(filename, op.content);
 					}
 					break;
 				}
 				case "update": {
-					const existing = finalArtifacts.get(filename);
+					let existing = finalArtifacts.get(filename);
 					if (!existing) break; // skip invalid update (shouldn't happen for successful results)
 					if (op.old_str !== undefined && op.new_str !== undefined) {
-						existing.content = existing.content.replace(op.old_str, op.new_str);
+						existing = existing.replace(op.old_str, op.new_str);
 						finalArtifacts.set(filename, existing);
 					}
 					break;
@@ -367,8 +305,8 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		this._artifacts = new Map(this._artifacts);
 
 		// 5) Create artifacts in a single pass without waiting for iframe execution or tab switching
-		for (const [filename, { title, content }] of finalArtifacts.entries()) {
-			const createParams: ArtifactsParams = { command: "create", filename, title, content } as const;
+		for (const [filename, content] of finalArtifacts.entries()) {
+			const createParams: ArtifactsParams = { command: "create", filename, content } as const;
 			try {
 				await this.createArtifact(createParams, { skipWait: true, silent: true });
 			} catch {
@@ -436,10 +374,8 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 			return `Error: File ${params.filename} already exists`;
 		}
 
-		const title = params.title || params.filename;
 		const artifact: Artifact = {
 			filename: params.filename,
-			title: title,
 			content: params.content,
 			createdAt: new Date(),
 			updatedAt: new Date(),
@@ -448,7 +384,7 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		this._artifacts = new Map(this._artifacts);
 
 		// Create or update element
-		this.getOrCreateArtifactElement(params.filename, params.content, title);
+		this.getOrCreateArtifactElement(params.filename, params.content);
 		if (!options.silent) {
 			this.showArtifact(params.filename);
 			this.onArtifactsChange?.();
@@ -487,7 +423,7 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		this._artifacts.set(params.filename, artifact);
 
 		// Update element
-		this.getOrCreateArtifactElement(params.filename, artifact.content, artifact.title);
+		this.getOrCreateArtifactElement(params.filename, artifact.content);
 		if (!options.silent) {
 			this.onArtifactsChange?.();
 			this.requestUpdate();
@@ -521,12 +457,11 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 		}
 
 		artifact.content = params.content;
-		if (params.title) artifact.title = params.title;
 		artifact.updatedAt = new Date();
 		this._artifacts.set(params.filename, artifact);
 
 		// Update element
-		this.getOrCreateArtifactElement(params.filename, artifact.content, artifact.title);
+		this.getOrCreateArtifactElement(params.filename, artifact.content);
 		if (!options.silent) {
 			this.onArtifactsChange?.();
 		}

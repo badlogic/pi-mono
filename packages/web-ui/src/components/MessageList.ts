@@ -37,6 +37,11 @@ export class MessageList extends LitElement {
 		const items: Array<{ key: string; template: TemplateResult }> = [];
 		let index = 0;
 		for (const msg of this.messages) {
+			// Skip artifact messages - they're for session persistence only, not UI display
+			if (msg.role === "artifact") {
+				continue;
+			}
+
 			// Try custom renderer first
 			const customTemplate = renderMessage(msg);
 			if (customTemplate) {

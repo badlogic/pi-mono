@@ -78,6 +78,11 @@ export function createSystemNotification(
 export function customMessageTransformer(messages: AppMessage[]): Message[] {
 	return messages
 		.filter((m) => {
+			// Filter out artifact messages - they're for session reconstruction only
+			if (m.role === "artifact") {
+				return false;
+			}
+
 			// Keep LLM-compatible messages + custom messages
 			return (
 				m.role === "user" ||

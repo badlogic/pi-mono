@@ -56,7 +56,6 @@ const CODE_EXTENSIONS = [
 @customElement("text-artifact")
 export class TextArtifact extends ArtifactElement {
 	@property() override filename = "";
-	@property({ attribute: false }) override displayTitle = "";
 
 	private _content = "";
 	override get content(): string {

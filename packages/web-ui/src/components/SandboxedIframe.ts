@@ -169,7 +169,7 @@ export class SandboxIframe extends LitElement {
 		return new Promise((resolve, reject) => {
 			// 4. Create execution consumer for lifecycle messages
 			const executionConsumer: MessageConsumer = {
-				handleMessage(message: any): boolean {
+				async handleMessage(message: any): Promise<boolean> {
 					if (message.type === "console") {
 						logs.push({
 							type: message.method === "error" ? "error" : "log",
