@@ -5,7 +5,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { SandboxIframe } from "../../components/SandboxedIframe.js";
-import { type MessageConsumer, SANDBOX_MESSAGE_ROUTER } from "../../components/sandbox/SandboxMessageRouter.js";
+import { type MessageConsumer, RUNTIME_MESSAGE_ROUTER } from "../../components/sandbox/RuntimeMessageRouter.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
 import { i18n } from "../../utils/i18n.js";
 import "../../components/SandboxedIframe.js";
@@ -48,7 +48,7 @@ export class HtmlArtifact extends ArtifactElement {
 		const sandbox = this.sandboxIframeRef.value;
 		const sandboxId = `artifact-${this.filename}`;
 		const downloadContent =
-			sandbox?.prepareHtmlDocument(sandboxId, this._content, this.runtimeProviders || []) || this._content;
+			sandbox?.prepareHtmlDocument(sandboxId, this._content, this.runtimeProviders || [], true) || this._content;
 
 		return html`
 			<div class="flex items-center gap-2">
@@ -115,7 +115,7 @@ export class HtmlArtifact extends ArtifactElement {
 		super.disconnectedCallback();
 		// Unregister sandbox when element is removed from DOM
 		const sandboxId = `artifact-${this.filename}`;
-		SANDBOX_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
+		RUNTIME_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
 	}
 
 	override firstUpdated() {

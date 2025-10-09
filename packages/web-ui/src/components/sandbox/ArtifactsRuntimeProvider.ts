@@ -6,6 +6,7 @@ import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
  *
  * Provides programmatic access to session artifacts from sandboxed code.
  * Allows code to create, read, update, and delete artifacts dynamically.
+ * Supports both online (extension) and offline (downloaded HTML) modes.
  */
 export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 	constructor(
@@ -17,54 +18,59 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 	) {}
 
 	getData(): Record<string, any> {
-		// No initial data injection needed - artifacts are accessed via async functions
-		return {};
+		// Inject artifact snapshot for offline mode
+		const snapshot: Record<string, string> = {};
+		const artifacts = this.getArtifactsFn();
+		artifacts.forEach((artifact, filename) => {
+			snapshot[filename] = artifact.content;
+		});
+		return { artifacts: snapshot };
 	}
 
 	getRuntime(): (sandboxId: string) => void {
 		// This function will be stringified, so no external references!
-		return (sandboxId: string) => {
-			// Helper to send message and wait for response
-			const sendArtifactMessage = (action: string, data: any): Promise<any> => {
-				console.log("Sending artifact message:", action, data);
-				return new Promise((resolve, reject) => {
-					const messageId = `artifact_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-					const handler = (event: MessageEvent) => {
-						if (event.data.type === "artifact-response" && event.data.messageId === messageId) {
-							window.removeEventListener("message", handler);
-							if (event.data.success) {
-								resolve(event.data.result);
-							} else {
-								reject(new Error(event.data.error || "Artifact operation failed"));
-							}
-						}
-					};
-
-					window.addEventListener("message", handler);
-
-					window.parent.postMessage(
-						{
-							type: "artifact-operation",
-							sandboxId,
-							messageId,
-							action,
-							data,
-						},
-						"*",
-					);
-				});
-			};
-
+		return (_sandboxId: string) => {
 			// Auto-parse/stringify for .json files
 			const isJsonFile = (filename: string) => filename.endsWith(".json");
 
 			(window as any).hasArtifact = async (filename: string): Promise<boolean> => {
-				return await sendArtifactMessage("has", { filename });
+				// Online: ask extension
+				if ((window as any).sendRuntimeMessage) {
+					const response = await (window as any).sendRuntimeMessage({
+						type: "artifact-operation",
+						action: "has",
+						filename,
+					});
+					if (!response.success) throw new Error(response.error);
+					return response.result;
+				}
+				// Offline: check snapshot
+				else {
+					return !!(window as any).artifacts?.[filename];
+				}
 			};
 
 			(window as any).getArtifact = async (filename: string): Promise<any> => {
-				const content = await sendArtifactMessage("get", { filename });
+				let content: string;
+
+				// Online: ask extension
+				if ((window as any).sendRuntimeMessage) {
+					const response = await (window as any).sendRuntimeMessage({
+						type: "artifact-operation",
+						action: "get",
+						filename,
+					});
+					if (!response.success) throw new Error(response.error);
+					content = response.result;
+				}
+				// Offline: read snapshot
+				else {
+					if (!(window as any).artifacts?.[filename]) {
+						throw new Error(`Artifact not found (offline mode): ${filename}`);
+					}
+					content = (window as any).artifacts[filename];
+				}
+
 				// Auto-parse .json files
 				if (isJsonFile(filename)) {
 					try {
@@ -77,45 +83,62 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 			};
 
 			(window as any).createArtifact = async (filename: string, content: any, mimeType?: string): Promise<void> => {
-				let finalContent = content;
-				let finalMimeType = mimeType;
+				if (!(window as any).sendRuntimeMessage) {
+					throw new Error("Cannot create artifacts in offline mode (read-only)");
+				}
 
+				let finalContent = content;
 				// Auto-stringify .json files
 				if (isJsonFile(filename) && typeof content !== "string") {
 					finalContent = JSON.stringify(content, null, 2);
-					finalMimeType = mimeType || "application/json";
-				} else if (typeof content === "string") {
-					finalContent = content;
-					finalMimeType = mimeType || "text/plain";
-				} else {
+				} else if (typeof content !== "string") {
 					finalContent = JSON.stringify(content, null, 2);
-					finalMimeType = mimeType || "application/json";
 				}
 
-				await sendArtifactMessage("create", { filename, content: finalContent, mimeType: finalMimeType });
+				const response = await (window as any).sendRuntimeMessage({
+					type: "artifact-operation",
+					action: "create",
+					filename,
+					content: finalContent,
+					mimeType,
+				});
+				if (!response.success) throw new Error(response.error);
 			};
 
 			(window as any).updateArtifact = async (filename: string, content: any, mimeType?: string): Promise<void> => {
-				let finalContent = content;
-				let finalMimeType = mimeType;
+				if (!(window as any).sendRuntimeMessage) {
+					throw new Error("Cannot update artifacts in offline mode (read-only)");
+				}
 
+				let finalContent = content;
 				// Auto-stringify .json files
 				if (isJsonFile(filename) && typeof content !== "string") {
 					finalContent = JSON.stringify(content, null, 2);
-					finalMimeType = mimeType || "application/json";
-				} else if (typeof content === "string") {
-					finalContent = content;
-					finalMimeType = mimeType || "text/plain";
-				} else {
+				} else if (typeof content !== "string") {
 					finalContent = JSON.stringify(content, null, 2);
-					finalMimeType = mimeType || "application/json";
 				}
 
-				await sendArtifactMessage("update", { filename, content: finalContent, mimeType: finalMimeType });
+				const response = await (window as any).sendRuntimeMessage({
+					type: "artifact-operation",
+					action: "update",
+					filename,
+					content: finalContent,
+					mimeType,
+				});
+				if (!response.success) throw new Error(response.error);
 			};
 
 			(window as any).deleteArtifact = async (filename: string): Promise<void> => {
-				await sendArtifactMessage("delete", { filename });
+				if (!(window as any).sendRuntimeMessage) {
+					throw new Error("Cannot delete artifacts in offline mode (read-only)");
+				}
+
+				const response = await (window as any).sendRuntimeMessage({
+					type: "artifact-operation",
+					action: "delete",
+					filename,
+				});
+				if (!response.success) throw new Error(response.error);
 			};
 		};
 	}
@@ -125,103 +148,86 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 			return false;
 		}
 
-		const { action, data, messageId } = message;
-
-		const sendResponse = (success: boolean, result?: any, error?: string) => {
-			respond({
-				type: "artifact-response",
-				messageId,
-				success,
-				result,
-				error,
-			});
-		};
+		const { action, filename, content, mimeType } = message;
 
 		try {
 			switch (action) {
 				case "has": {
 					const artifacts = this.getArtifactsFn();
-					const exists = artifacts.has(data.filename);
-					sendResponse(true, exists);
+					const exists = artifacts.has(filename);
+					respond({ success: true, result: exists });
 					break;
 				}
 
 				case "get": {
 					const artifacts = this.getArtifactsFn();
-					const artifact = artifacts.get(data.filename);
+					const artifact = artifacts.get(filename);
 					if (!artifact) {
-						sendResponse(false, undefined, `Artifact not found: ${data.filename}`);
+						respond({ success: false, error: `Artifact not found: ${filename}` });
 					} else {
-						sendResponse(true, artifact.content);
+						respond({ success: true, result: artifact.content });
 					}
 					break;
 				}
 
 				case "create": {
 					try {
-						// Note: mimeType parameter is ignored - artifact type is inferred from filename extension
-						// Third parameter is title, defaults to filename
-						await this.createArtifactFn(data.filename, data.content, data.filename);
-						// Append artifact message for session persistence
+						await this.createArtifactFn(filename, content, filename);
 						this.appendMessageFn?.({
 							role: "artifact",
 							action: "create",
-							filename: data.filename,
-							content: data.content,
-							title: data.filename,
+							filename,
+							content,
+							title: filename,
 							timestamp: new Date().toISOString(),
 						});
-						sendResponse(true);
+						respond({ success: true });
 					} catch (err: any) {
-						sendResponse(false, undefined, err.message);
+						respond({ success: false, error: err.message });
 					}
 					break;
 				}
 
 				case "update": {
 					try {
-						// Note: mimeType parameter is ignored - artifact type is inferred from filename extension
-						// Third parameter is title, defaults to filename
-						await this.updateArtifactFn(data.filename, data.content, data.filename);
-						// Append artifact message for session persistence
+						await this.updateArtifactFn(filename, content, filename);
 						this.appendMessageFn?.({
 							role: "artifact",
 							action: "update",
-							filename: data.filename,
-							content: data.content,
+							filename,
+							content,
 							timestamp: new Date().toISOString(),
 						});
-						sendResponse(true);
+						respond({ success: true });
 					} catch (err: any) {
-						sendResponse(false, undefined, err.message);
+						respond({ success: false, error: err.message });
 					}
 					break;
 				}
 
 				case "delete": {
 					try {
-						await this.deleteArtifactFn(data.filename);
-						// Append artifact message for session persistence
+						await this.deleteArtifactFn(filename);
 						this.appendMessageFn?.({
 							role: "artifact",
 							action: "delete",
-							filename: data.filename,
+							filename,
 							timestamp: new Date().toISOString(),
 						});
-						sendResponse(true);
+						respond({ success: true });
 					} catch (err: any) {
-						sendResponse(false, undefined, err.message);
+						respond({ success: false, error: err.message });
 					}
 					break;
 				}
 
 				default:
-					sendResponse(false, undefined, `Unknown artifact action: ${action}`);
+					respond({ success: false, error: `Unknown artifact action: ${action}` });
 			}
 
 			return true;
 		} catch (error: any) {
-			sendResponse(false, undefined, error.message);
+			respond({ success: false, error: error.message });
 			return true;
 		}
 	}

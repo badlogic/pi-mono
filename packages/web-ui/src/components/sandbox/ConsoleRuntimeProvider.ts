@@ -1,19 +1,30 @@
 import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 
+export interface ConsoleLog {
+	type: "log" | "warn" | "error" | "info";
+	text: string;
+	args?: unknown[];
+}
+
 /**
  * Console Runtime Provider
  *
  * REQUIRED provider that should always be included first.
  * Provides console capture, error handling, and execution lifecycle management.
+ * Collects console output for retrieval by caller.
  */
 export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
+	private logs: ConsoleLog[] = [];
+	private completionError: { message: string; stack: string } | null = null;
+	private completed = false;
+
 	getData(): Record<string, any> {
 		// No data needed
 		return {};
 	}
 
 	getRuntime(): (sandboxId: string) => void {
-		return (sandboxId: string) => {
+		return (_sandboxId: string) => {
 			// Console capture
 			const originalConsole = {
 				log: console.log,
@@ -34,16 +45,21 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 						})
 						.join(" ");
 
-					window.parent.postMessage(
-						{
-							type: "console",
-							sandboxId,
-							method,
-							text,
-						},
-						"*",
-					);
+					// Send to extension if available (online mode)
+					if ((window as any).sendRuntimeMessage) {
+						(window as any)
+							.sendRuntimeMessage({
+								type: "console",
+								method,
+								text,
+								args, // Send raw args for provider collection
+							})
+							.catch(() => {
+								// Ignore errors in fire-and-forget console messages
+							});
+					}
 
+					// Always log locally too
 					(originalConsole as any)[method].apply(console, args);
 				};
 			});
@@ -61,15 +77,15 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					stack: e.error?.stack || text,
 				};
 
-				window.parent.postMessage(
-					{
-						type: "console",
-						sandboxId,
-						method: "error",
-						text,
-					},
-					"*",
-				);
+				if ((window as any).sendRuntimeMessage) {
+					(window as any)
+						.sendRuntimeMessage({
+							type: "console",
+							method: "error",
+							text,
+						})
+						.catch(() => {});
+				}
 			});
 
 			window.addEventListener("unhandledrejection", (e) => {
@@ -80,15 +96,15 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					stack: e.reason?.stack || text,
 				};
 
-				window.parent.postMessage(
-					{
-						type: "console",
-						sandboxId,
-						method: "error",
-						text,
-					},
-					"*",
-				);
+				if ((window as any).sendRuntimeMessage) {
+					(window as any)
+						.sendRuntimeMessage({
+							type: "console",
+							method: "error",
+							text,
+						})
+						.catch(() => {});
+				}
 			});
 
 			// Expose complete() method for user code to call
@@ -99,23 +115,21 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 				const finalError = error || lastError;
 
-				if (finalError) {
-					window.parent.postMessage(
-						{
-							type: "execution-error",
-							sandboxId,
-							error: finalError,
-						},
-						"*",
-					);
-				} else {
-					window.parent.postMessage(
-						{
-							type: "execution-complete",
-							sandboxId,
-						},
-						"*",
-					);
+				if ((window as any).sendRuntimeMessage) {
+					if (finalError) {
+						(window as any)
+							.sendRuntimeMessage({
+								type: "execution-error",
+								error: finalError,
+							})
+							.catch(() => {});
+					} else {
+						(window as any)
+							.sendRuntimeMessage({
+								type: "execution-complete",
+							})
+							.catch(() => {});
+					}
 				}
 			};
 
@@ -128,5 +142,67 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 				});
 			}
 		};
+	}
+
+	async handleMessage(message: any, _respond: (response: any) => void): Promise<boolean> {
+		if (message.type === "console") {
+			// Collect console output
+			this.logs.push({
+				type:
+					message.method === "error"
+						? "error"
+						: message.method === "warn"
+							? "warn"
+							: message.method === "info"
+								? "info"
+								: "log",
+				text: message.text,
+				args: message.args,
+			});
+			return true;
+		}
+
+		if (message.type === "execution-complete") {
+			this.completed = true;
+			return true;
+		}
+
+		if (message.type === "execution-error") {
+			this.completed = true;
+			this.completionError = message.error;
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get collected console logs
+	 */
+	getLogs(): ConsoleLog[] {
+		return this.logs;
+	}
+
+	/**
+	 * Get completion status
+	 */
+	isCompleted(): boolean {
+		return this.completed;
+	}
+
+	/**
+	 * Get completion error if any
+	 */
+	getCompletionError(): { message: string; stack: string } | null {
+		return this.completionError;
+	}
+
+	/**
+	 * Reset state for reuse
+	 */
+	reset(): void {
+		this.logs = [];
+		this.completionError = null;
+		this.completed = false;
 	}
 }

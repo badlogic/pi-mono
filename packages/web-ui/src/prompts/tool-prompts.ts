@@ -52,7 +52,7 @@ export const JAVASCRIPT_REPL_CHART_EXAMPLE = `
         options: { responsive: false, animation: false }
       });
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      await returnFile('chart.png', blob, 'image/png');`;
+      await returnDownloadableFile('chart.png', blob, 'image/png');`;
 
 export const JAVASCRIPT_REPL_FOOTER = `
 
@@ -107,20 +107,20 @@ Commands:
 export const ARTIFACTS_RUNTIME_EXAMPLE = `- Example HTML artifact that processes a CSV attachment:
   <script>
     // List available files
-    const files = listFiles();
+    const files = listAttachments();
     console.log('Available files:', files);
 
     // Find CSV file
     const csvFile = files.find(f => f.mimeType === 'text/csv');
     if (csvFile) {
-      const csvContent = readTextFile(csvFile.id);
+      const csvContent = readTextAttachment(csvFile.id);
       // Process CSV data...
     }
 
     // Display image
     const imageFile = files.find(f => f.mimeType.startsWith('image/'));
     if (imageFile) {
-      const bytes = readBinaryFile(imageFile.id);
+      const bytes = readBinaryAttachment(imageFile.id);
       const blob = new Blob([bytes], {type: imageFile.mimeType});
       const url = URL.createObjectURL(blob);
       document.body.innerHTML = '<img src="' + url + '">';
@@ -223,29 +223,37 @@ Example:
 // ============================================================================
 
 export const ATTACHMENTS_RUNTIME_DESCRIPTION = `
-Global variables:
-- attachments[] - Array of attachment objects from user messages
-  * Properties:
-    - id: string (unique identifier)
-    - fileName: string (e.g., "data.xlsx")
-    - mimeType: string (e.g., "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    - size: number (bytes)
-  * Helper functions:
-    - listFiles() - Returns array of {id, fileName, mimeType, size} for all attachments
-    - readTextFile(attachmentId) - Returns text content of attachment (for CSV, JSON, text files)
-    - readBinaryFile(attachmentId) - Returns Uint8Array of binary data (for images, Excel, etc.)
-  * Examples:
-    - const files = listFiles();
-    - const csvContent = readTextFile(files[0].id); // Read CSV as text
-    - const xlsxBytes = readBinaryFile(files[0].id); // Read Excel as binary
-- await returnFile(filename, content, mimeType?) - Create downloadable files (async function!)
-  * Always use await with returnFile
+User Attachments (files the user added to the conversation):
+- listAttachments() - List all attachments, returns array of {id, fileName, mimeType, size}
+  * Example: const files = listAttachments(); // [{id: '...', fileName: 'data.xlsx', mimeType: '...', size: 12345}]
+- readTextAttachment(attachmentId) - Read attachment as text, returns string
+  * Use for: CSV, JSON, TXT, XML, and other text-based files
+  * Example: const csvContent = readTextAttachment(files[0].id);
+  * Example: const json = JSON.parse(readTextAttachment(jsonFile.id));
+- readBinaryAttachment(attachmentId) - Read attachment as binary data, returns Uint8Array
+  * Use for: Excel (.xlsx), images, PDFs, and other binary files
+  * Example: const xlsxBytes = readBinaryAttachment(files[0].id);
+  * Example: const XLSX = await import('https://esm.run/xlsx'); const workbook = XLSX.read(xlsxBytes);
+
+Downloadable Files (one-time downloads for the user - YOU cannot read these back):
+- await returnDownloadableFile(filename, content, mimeType?) - Create downloadable file (async!)
+  * Use for: Processed/transformed data, generated images, analysis results
+  * Important: This creates a download for the user. You will NOT be able to access this file's content later.
+  * If you need to access the data later, use createArtifact() instead (if available).
+  * Always use await with returnDownloadableFile
   * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
-    If omitted, the REPL throws an Error with stack trace pointing to the offending line.
+    If omitted, throws an Error with stack trace pointing to the offending line.
   * Strings without a MIME default to text/plain.
   * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
   * Canvas images: Use toBlob() with await Promise wrapper
   * Examples:
-    - await returnFile('data.txt', 'Hello World', 'text/plain')
-    - await returnFile('data.json', {key: 'value'}, 'application/json')
-    - await returnFile('data.csv', 'name,age\\nJohn,30', 'text/csv')`;
+    - await returnDownloadableFile('cleaned-data.csv', csvString, 'text/csv')
+    - await returnDownloadableFile('analysis.json', {results: [...]}, 'application/json')
+    - await returnDownloadableFile('chart.png', blob, 'image/png')
+
+Common pattern - Process attachment and create download:
+  const files = listAttachments();
+  const csvFile = files.find(f => f.fileName.endsWith('.csv'));
+  const csvData = readTextAttachment(csvFile.id);
+  // Process csvData...
+  await returnDownloadableFile('processed-' + csvFile.fileName, processedData, 'text/csv');`;

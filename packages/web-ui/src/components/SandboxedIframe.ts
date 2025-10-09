@@ -1,7 +1,8 @@
 import { LitElement } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { ConsoleRuntimeProvider } from "./sandbox/ConsoleRuntimeProvider.js";
-import { type MessageConsumer, SANDBOX_MESSAGE_ROUTER } from "./sandbox/SandboxMessageRouter.js";
+import { RuntimeMessageBridge } from "./sandbox/RuntimeMessageBridge.js";
+import { type MessageConsumer, RUNTIME_MESSAGE_ROUTER } from "./sandbox/RuntimeMessageRouter.js";
 import type { SandboxRuntimeProvider } from "./sandbox/SandboxRuntimeProvider.js";
 
 export interface SandboxFile {
@@ -65,16 +66,17 @@ export class SandboxIframe extends LitElement {
 	): void {
 		// Unregister previous sandbox if exists
 		try {
-			SANDBOX_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
+			RUNTIME_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
 		} catch {
 			// Sandbox might not exist, that's ok
 		}
 
 		providers = [new ConsoleRuntimeProvider(), ...providers];
 
-		SANDBOX_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
+		RUNTIME_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
 
-		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, providers);
+		// loadContent is always used for HTML artifacts
+		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, providers, true);
 
 		// Remove previous iframe if exists
 		this.iframe?.remove();
@@ -99,7 +101,7 @@ export class SandboxIframe extends LitElement {
 		this.iframe.src = this.sandboxUrlProvider!();
 
 		// Update router with iframe reference BEFORE appending to DOM
-		SANDBOX_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
+		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
 		// Listen for sandbox-ready message directly
 		const readyHandler = (e: MessageEvent) => {
@@ -134,7 +136,7 @@ export class SandboxIframe extends LitElement {
 		this.iframe.srcdoc = completeHtml;
 
 		// Update router with iframe reference BEFORE appending to DOM
-		SANDBOX_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
+		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
 		this.appendChild(this.iframe);
 	}
@@ -154,13 +156,14 @@ export class SandboxIframe extends LitElement {
 		providers: SandboxRuntimeProvider[] = [],
 		consumers: MessageConsumer[] = [],
 		signal?: AbortSignal,
+		isHtmlArtifact: boolean = false,
 	): Promise<SandboxResult> {
 		if (signal?.aborted) {
 			throw new Error("Execution aborted");
 		}
 
 		providers = [new ConsoleRuntimeProvider(), ...providers];
-		SANDBOX_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
+		RUNTIME_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
 
 		const logs: Array<{ type: string; text: string }> = [];
 		const files: SandboxFile[] = [];
@@ -198,10 +201,10 @@ export class SandboxIframe extends LitElement {
 				},
 			};
 
-			SANDBOX_MESSAGE_ROUTER.addConsumer(sandboxId, executionConsumer);
+			RUNTIME_MESSAGE_ROUTER.addConsumer(sandboxId, executionConsumer);
 
 			const cleanup = () => {
-				SANDBOX_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
+				RUNTIME_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
 				signal?.removeEventListener("abort", abortHandler);
 				clearTimeout(timeoutId);
 				this.iframe?.remove();
@@ -236,7 +239,7 @@ export class SandboxIframe extends LitElement {
 			}, 30000);
 
 			// 4. Prepare HTML and create iframe
-			const completeHtml = this.prepareHtmlDocument(sandboxId, code, providers);
+			const completeHtml = this.prepareHtmlDocument(sandboxId, code, providers, isHtmlArtifact);
 
 			if (this.sandboxUrlProvider) {
 				// Browser extension mode: wait for sandbox-ready
@@ -246,7 +249,7 @@ export class SandboxIframe extends LitElement {
 				this.iframe.src = this.sandboxUrlProvider();
 
 				// Update router with iframe reference BEFORE appending to DOM
-				SANDBOX_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
+				RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
 				// Listen for sandbox-ready message directly
 				const readyHandler = (e: MessageEvent) => {
@@ -276,7 +279,7 @@ export class SandboxIframe extends LitElement {
 				this.iframe.srcdoc = completeHtml;
 
 				// Update router with iframe reference BEFORE appending to DOM
-				SANDBOX_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
+				RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
 				this.appendChild(this.iframe);
 			}
@@ -287,14 +290,18 @@ export class SandboxIframe extends LitElement {
 	 * Prepare complete HTML document with runtime + user code
 	 * PUBLIC so HtmlArtifact can use it for download button
 	 */
-	public prepareHtmlDocument(sandboxId: string, userCode: string, providers: SandboxRuntimeProvider[] = []): string {
+	public prepareHtmlDocument(
+		sandboxId: string,
+		userCode: string,
+		providers: SandboxRuntimeProvider[] = [],
+		isHtmlArtifact: boolean = false,
+	): string {
 		// Runtime script that will be injected
 		const runtime = this.getRuntimeScript(sandboxId, providers);
 
-		// Check if user provided full HTML
-		const hasHtmlTag = /<html[^>]*>/i.test(userCode);
-
-		if (hasHtmlTag) {
+		// Only check for HTML tags if explicitly marked as HTML artifact
+		// For javascript_repl, userCode is JavaScript that may contain HTML in string literals
+		if (isHtmlArtifact) {
 			// HTML Artifact - inject runtime into existing HTML
 			const headMatch = userCode.match(/<head[^>]*>/i);
 			if (headMatch) {
@@ -347,20 +354,31 @@ export class SandboxIframe extends LitElement {
 			Object.assign(allData, provider.getData());
 		}
 
+		// Generate bridge code
+		const bridgeCode = RuntimeMessageBridge.generateBridgeCode({
+			context: "sandbox-iframe",
+			sandboxId,
+		});
+
 		// Collect all runtime functions - pass sandboxId as string literal
 		const runtimeFunctions: string[] = [];
 		for (const provider of providers) {
 			runtimeFunctions.push(`(${provider.getRuntime().toString()})(${JSON.stringify(sandboxId)});`);
 		}
 
-		// Build script
+		// Build script with HTML escaping
+		// Escape </script> to prevent premature tag closure in HTML parser
 		const dataInjection = Object.entries(allData)
-			.map(([key, value]) => `window.${key} = ${JSON.stringify(value)};`)
+			.map(([key, value]) => {
+				const jsonStr = JSON.stringify(value).replace(/<\/script/gi, "<\\/script");
+				return `window.${key} = ${jsonStr};`;
+			})
 			.join("\n");
 
 		return `<script>
 window.sandboxId = ${JSON.stringify(sandboxId)};
 ${dataInjection}
+${bridgeCode}
 ${runtimeFunctions.join("\n")}
 </script>`;
 	}

@@ -35,6 +35,17 @@ export {
 	type SandboxUrlProvider,
 } from "./components/SandboxedIframe.js";
 export { StreamingMessageContainer } from "./components/StreamingMessageContainer.js";
+// Sandbox Runtime Providers
+export { ArtifactsRuntimeProvider } from "./components/sandbox/ArtifactsRuntimeProvider.js";
+export { AttachmentsRuntimeProvider } from "./components/sandbox/AttachmentsRuntimeProvider.js";
+export { type ConsoleLog, ConsoleRuntimeProvider } from "./components/sandbox/ConsoleRuntimeProvider.js";
+export {
+	type DownloadableFile,
+	FileDownloadRuntimeProvider,
+} from "./components/sandbox/FileDownloadRuntimeProvider.js";
+export { RuntimeMessageBridge } from "./components/sandbox/RuntimeMessageBridge.js";
+export { RUNTIME_MESSAGE_ROUTER } from "./components/sandbox/RuntimeMessageRouter.js";
+export type { SandboxRuntimeProvider } from "./components/sandbox/SandboxRuntimeProvider.js";
 export { ApiKeyPromptDialog } from "./dialogs/ApiKeyPromptDialog.js";
 export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs
