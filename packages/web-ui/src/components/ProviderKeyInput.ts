@@ -45,7 +45,8 @@ export class ProviderKeyInput extends LitElement {
 	private async testApiKey(provider: string, apiKey: string): Promise<boolean> {
 		try {
 			const modelId = TEST_MODELS[provider];
-			if (!modelId) return false;
+			// Returning true here for Ollama and friends. Can' know which model to use for testing
+			if (!modelId) return true;
 
 			let model = getModel(provider as any, modelId);
 			if (!model) return false;

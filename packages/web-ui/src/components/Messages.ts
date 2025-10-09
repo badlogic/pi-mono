@@ -112,7 +112,8 @@ export class AssistantMessage extends LitElement {
 					const tool = this.tools?.find((t) => t.name === chunk.name);
 					const pending = this.pendingToolCalls?.has(chunk.id) ?? false;
 					const result = this.toolResultsById?.get(chunk.id);
-					const aborted = !pending && !result && !this.isStreaming;
+					// A tool call is aborted if the message was aborted and there's no result for this tool call
+					const aborted = this.message.stopReason === "aborted" && !result;
 					orderedParts.push(
 						html`<tool-message
 							.tool=${tool}
@@ -227,7 +228,15 @@ export class ToolMessage extends LitElement {
 		const toolName = this.tool?.name || this.toolCall.name;
 
 		// Render tool content (renderer handles errors and styling)
-		const toolContent = renderTool(toolName, this.toolCall.arguments, this.result, this.isStreaming || this.pending);
+		const result: ToolResultMessageType<any> | undefined = this.aborted
+			? { role: "toolResult", isError: true, output: "", toolCallId: this.toolCall.id, toolName: this.toolCall.name }
+			: this.result;
+		const toolContent = renderTool(
+			toolName,
+			this.toolCall.arguments,
+			result,
+			!this.aborted && (this.isStreaming || this.pending),
+		);
 
 		return html`
 			<div class="p-2.5 border border-border rounded-md bg-card text-card-foreground shadow-xs">
