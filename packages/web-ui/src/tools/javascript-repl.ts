@@ -59,9 +59,8 @@ export async function executeJavaScript(
 			if (output) output += "\n";
 			output += `Error: ${result.error?.message || "Unknown error"}\n${result.error?.stack || ""}`;
 
-			return {
-				output: output.trim(),
-			};
+			// Throw error so tool call is marked as failed
+			throw new Error(output.trim());
 		}
 
 		// Add return value if present
