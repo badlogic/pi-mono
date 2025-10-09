@@ -219,6 +219,27 @@ Example:
 `;
 
 // ============================================================================
+// Downloadable File Runtime Provider
+// ============================================================================
+
+export const DOWNLOADABLE_FILE_RUNTIME_DESCRIPTION = `
+Downloadable Files (one-time downloads for the user - YOU cannot read these back):
+- await returnDownloadableFile(filename, content, mimeType?) - Create downloadable file (async!)
+  * Use for: Processed/transformed data, generated images, analysis results
+  * Important: This creates a download for the user. You will NOT be able to access this file's content later.
+  * If you need to access the data later, use createArtifact() instead (if available).
+  * Always use await with returnDownloadableFile
+  * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
+    If omitted, throws an Error with stack trace pointing to the offending line.
+  * Strings without a MIME default to text/plain.
+  * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
+  * Canvas images: Use toBlob() with await Promise wrapper
+  * Examples:
+    - await returnDownloadableFile('cleaned-data.csv', csvString, 'text/csv')
+    - await returnDownloadableFile('analysis.json', {results: [...]}, 'application/json')
+    - await returnDownloadableFile('chart.png', blob, 'image/png')`;
+
+// ============================================================================
 // Attachments Runtime Provider
 // ============================================================================
 
@@ -234,22 +255,6 @@ User Attachments (files the user added to the conversation):
   * Use for: Excel (.xlsx), images, PDFs, and other binary files
   * Example: const xlsxBytes = readBinaryAttachment(files[0].id);
   * Example: const XLSX = await import('https://esm.run/xlsx'); const workbook = XLSX.read(xlsxBytes);
-
-Downloadable Files (one-time downloads for the user - YOU cannot read these back):
-- await returnDownloadableFile(filename, content, mimeType?) - Create downloadable file (async!)
-  * Use for: Processed/transformed data, generated images, analysis results
-  * Important: This creates a download for the user. You will NOT be able to access this file's content later.
-  * If you need to access the data later, use createArtifact() instead (if available).
-  * Always use await with returnDownloadableFile
-  * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
-    If omitted, throws an Error with stack trace pointing to the offending line.
-  * Strings without a MIME default to text/plain.
-  * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
-  * Canvas images: Use toBlob() with await Promise wrapper
-  * Examples:
-    - await returnDownloadableFile('cleaned-data.csv', csvString, 'text/csv')
-    - await returnDownloadableFile('analysis.json', {results: [...]}, 'application/json')
-    - await returnDownloadableFile('chart.png', blob, 'image/png')
 
 Common pattern - Process attachment and create download:
   const files = listAttachments();

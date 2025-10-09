@@ -54,7 +54,10 @@ export { PersistentStorageDialog } from "./dialogs/PersistentStorageDialog.js";
 export { SessionListDialog } from "./dialogs/SessionListDialog.js";
 export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/SettingsDialog.js";
 // Prompts
-export { ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION } from "./prompts/tool-prompts.js";
+export {
+	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION,
+	DOWNLOADABLE_FILE_RUNTIME_DESCRIPTION,
+} from "./prompts/tool-prompts.js";
 // Storage
 export { AppStorage, getAppStorage, setAppStorage } from "./storage/app-storage.js";
 export { IndexedDBStorageBackend } from "./storage/backends/indexeddb-storage-backend.js";

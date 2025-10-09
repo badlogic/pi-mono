@@ -27,6 +27,7 @@ export class RuntimeMessageBridge {
 	private static generateSandboxBridge(sandboxId: string): string {
 		// Returns stringified function that uses window.parent.postMessage
 		return `
+window.__completionCallbacks = [];
 window.sendRuntimeMessage = async (message) => {
     const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
@@ -57,17 +58,24 @@ window.sendRuntimeMessage = async (message) => {
         }, 30000);
     });
 };
+window.onCompleted = (callback) => {
+    window.__completionCallbacks.push(callback);
+};
 `.trim();
 	}
 
 	private static generateUserScriptBridge(sandboxId: string): string {
 		// Returns stringified function that uses chrome.runtime.sendMessage
 		return `
+window.__completionCallbacks = [];
 window.sendRuntimeMessage = async (message) => {
     return await chrome.runtime.sendMessage({
         ...message,
         sandboxId: ${JSON.stringify(sandboxId)}
     });
+};
+window.onCompleted = (callback) => {
+    window.__completionCallbacks.push(callback);
 };
 `.trim();
 	}

@@ -25,13 +25,16 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 	getRuntime(): (sandboxId: string) => void {
 		return (_sandboxId: string) => {
-			// Console capture
+			// Console capture with immediate send + completion batch pattern
 			const originalConsole = {
 				log: console.log,
 				error: console.error,
 				warn: console.warn,
 				info: console.info,
 			};
+
+			// Track pending logs (not yet confirmed sent)
+			const pendingLogs: Array<{ method: string; text: string; args: any[] }> = [];
 
 			["log", "error", "warn", "info"].forEach((method) => {
 				(console as any)[method] = (...args: any[]) => {
@@ -45,7 +48,12 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 						})
 						.join(" ");
 
-					// Send to extension if available (online mode)
+					const logEntry = { method, text, args };
+
+					// Add to pending logs
+					pendingLogs.push(logEntry);
+
+					// Try to send immediately (fire-and-forget)
 					if ((window as any).sendRuntimeMessage) {
 						(window as any)
 							.sendRuntimeMessage({
@@ -54,8 +62,15 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 								text,
 								args, // Send raw args for provider collection
 							})
+							.then(() => {
+								// Remove from pending on successful send
+								const index = pendingLogs.indexOf(logEntry);
+								if (index !== -1) {
+									pendingLogs.splice(index, 1);
+								}
+							})
 							.catch(() => {
-								// Ignore errors in fire-and-forget console messages
+								// Keep in pending array if send fails
 							});
 					}
 
@@ -63,6 +78,25 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					(originalConsole as any)[method].apply(console, args);
 				};
 			});
+
+			// Register completion callback to send any remaining logs
+			if ((window as any).onCompleted) {
+				(window as any).onCompleted(async (_success: boolean) => {
+					// Send any logs that haven't been sent yet
+					if (pendingLogs.length > 0 && (window as any).sendRuntimeMessage) {
+						await Promise.all(
+							pendingLogs.map((logEntry) =>
+								(window as any).sendRuntimeMessage({
+									type: "console",
+									method: logEntry.method,
+									text: logEntry.text,
+									args: logEntry.args,
+								}),
+							),
+						);
+					}
+				});
+			}
 
 			// Track errors for HTML artifacts
 			let lastError: { message: string; stack: string } | null = null;
