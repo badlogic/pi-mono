@@ -328,7 +328,17 @@ export class SandboxIframe extends LitElement {
 	<script type="module">
 		(async () => {
 			try {
-				${userCode}
+				// Wrap user code in async function to capture return value
+				const userCodeFunc = async () => {
+					${userCode}
+				};
+
+				const returnValue = await userCodeFunc();
+
+				// Log return value if present
+				if (returnValue !== undefined) {
+					console.log('Return value:', returnValue);
+				}
 
 				// Call completion callbacks before complete()
 				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
