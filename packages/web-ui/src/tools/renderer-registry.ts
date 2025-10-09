@@ -1,7 +1,7 @@
-import { html, icon, iconDOM, type TemplateResult } from "@mariozechner/mini-lit";
+import { html, icon, type TemplateResult } from "@mariozechner/mini-lit";
 import type { Ref } from "lit/directives/ref.js";
 import { ref } from "lit/directives/ref.js";
-import { ChevronDown, ChevronRight, Loader } from "lucide";
+import { ChevronRight, Loader } from "lucide";
 import type { ToolRenderer } from "./types.js";
 
 // Registry of tool renderers
@@ -85,11 +85,11 @@ export function renderCollapsibleHeader(
 			if (isCollapsed) {
 				content.classList.remove("max-h-0");
 				content.classList.add("max-h-[2000px]", "mt-3");
-				chevron.innerHTML = iconDOM(ChevronDown, "sm").outerHTML;
+				chevron.classList.add("rotate-90");
 			} else {
 				content.classList.remove("max-h-[2000px]", "mt-3");
 				content.classList.add("max-h-0");
-				chevron.innerHTML = iconDOM(ChevronRight, "sm").outerHTML;
+				chevron.classList.remove("rotate-90");
 			}
 		}
 	};
@@ -108,8 +108,8 @@ export function renderCollapsibleHeader(
 				${statusIcon(toolIcon, toolIconColor)}
 				${text}
 			</div>
-			<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
-				${icon(defaultExpanded ? ChevronDown : ChevronRight, "sm")}
+			<span class="inline-block text-muted-foreground transition-transform duration-300 ${defaultExpanded ? "rotate-90" : ""}" ${ref(chevronRef)}>
+				${icon(ChevronRight, "sm")}
 			</span>
 		</button>
 	`;
