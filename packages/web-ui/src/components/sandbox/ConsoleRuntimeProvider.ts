@@ -166,13 +166,6 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			return true;
 		}
 
-		// Don't handle execution-complete/error - let executionConsumer handle those
-		// We just need to respond to allow the message to proceed
-		if (message.type === "execution-complete" || message.type === "execution-error") {
-			respond({ success: true });
-			return false; // Don't stop propagation
-		}
-
 		return false;
 	}
 

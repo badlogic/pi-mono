@@ -153,15 +153,15 @@ export class RuntimeMessageRouter {
 				// 1. Try provider handlers first (for bidirectional comm)
 				for (const provider of context.providers) {
 					if (provider.handleMessage) {
-						const handled = await provider.handleMessage(e.data, respond);
-						if (handled) return; // Stop if handled
+						await provider.handleMessage(e.data, respond);
+						// Don't stop - let consumers also handle the message
 					}
 				}
 
-				// 2. Broadcast to consumers (for one-way messages like console)
+				// 2. Broadcast to consumers (one-way messages or lifecycle events)
 				for (const consumer of context.consumers) {
-					const consumed = await consumer.handleMessage(e.data);
-					if (consumed) break; // Stop if consumed
+					await consumer.handleMessage(e.data);
+					// Don't stop - let all consumers see the message
 				}
 			};
 
