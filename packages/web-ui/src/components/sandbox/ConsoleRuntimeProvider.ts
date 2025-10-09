@@ -146,7 +146,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, _respond: (response: any) => void): Promise<boolean> {
+	async handleMessage(message: any, respond: (response: any) => void): Promise<boolean> {
 		if (message.type === "console") {
 			// Collect console output
 			this.logs.push({
@@ -161,17 +161,21 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 				text: message.text,
 				args: message.args,
 			});
+			// Acknowledge receipt
+			respond({ success: true });
 			return true;
 		}
 
 		if (message.type === "execution-complete") {
 			this.completed = true;
+			respond({ success: true });
 			return true;
 		}
 
 		if (message.type === "execution-error") {
 			this.completed = true;
 			this.completionError = message.error;
+			respond({ success: true });
 			return true;
 		}
 
