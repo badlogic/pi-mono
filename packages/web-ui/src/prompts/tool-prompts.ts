@@ -193,29 +193,26 @@ Artifact Management (persistent session files you can access/modify programmatic
   * Auto-parses .json files to objects, otherwise returns raw string content
   * Example: const data = await getArtifact('data.json'); // Returns parsed object
   * Example: const markdown = await getArtifact('notes.md'); // Returns string
-- await createArtifact(filename, content) - Create new persistent artifact
+- await createOrUpdateArtifact(filename, content, mimeType?) - Create or update a persistent artifact
+  * Automatically creates if new, updates if exists (no need to check hasArtifact first)
   * Auto-stringifies objects for .json files
-  * Example: await createArtifact('data.json', {items: []}) // Auto-stringifies
-  * Example: await createArtifact('research-notes.md', '# Research Notes\\n', 'text/markdown')
-- await updateArtifact(filename, content) - Completely replace artifact content
-  * Auto-stringifies objects for .json files
-  * Full content replacement (not diff-based)
-  * Example: const data = await getArtifact('data.json'); data.items.push(newItem); await updateArtifact('data.json', data);
-  * Example: await updateArtifact('research-notes.md', updatedMarkdown, 'text/markdown')
+  * Example: await createOrUpdateArtifact('data.json', {items: []}) // Auto-stringifies
+  * Example: await createOrUpdateArtifact('research-notes.md', '# Research Notes\\n', 'text/markdown')
+  * Full content replacement (not diff-based) when updating
 - await deleteArtifact(filename) - Delete an artifact
   * Example: await deleteArtifact('old-notes.md')
 
 Powerful pattern for evolving data:
   const data = await hasArtifact('data.json') ? await getArtifact('data.json') : {items: []};
   data.items.push(newScrapedItem);
-  await (await hasArtifact('data.json') ? updateArtifact : createArtifact)('data.json', data);
+  await createOrUpdateArtifact('data.json', data);
 
-Binary data must be converted to a base64 string before passing to createArtifact or updateArtifact.
+Binary data must be converted to a base64 string before passing to createOrUpdateArtifact.
 Example:
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   const arrayBuffer = await blob.arrayBuffer();
   const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-  await createArtifact('image.png', base64);
+  await createOrUpdateArtifact('image.png', base64);
 `;
 
 // ============================================================================

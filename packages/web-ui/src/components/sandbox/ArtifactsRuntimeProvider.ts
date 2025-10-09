@@ -90,9 +90,13 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 				return content;
 			};
 
-			(window as any).createArtifact = async (filename: string, content: any, mimeType?: string): Promise<void> => {
+			(window as any).createOrUpdateArtifact = async (
+				filename: string,
+				content: any,
+				mimeType?: string,
+			): Promise<void> => {
 				if (!(window as any).sendRuntimeMessage) {
-					throw new Error("Cannot create artifacts in offline mode (read-only)");
+					throw new Error("Cannot create/update artifacts in offline mode (read-only)");
 				}
 
 				let finalContent = content;
@@ -105,30 +109,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 				const response = await (window as any).sendRuntimeMessage({
 					type: "artifact-operation",
-					action: "create",
-					filename,
-					content: finalContent,
-					mimeType,
-				});
-				if (!response.success) throw new Error(response.error);
-			};
-
-			(window as any).updateArtifact = async (filename: string, content: any, mimeType?: string): Promise<void> => {
-				if (!(window as any).sendRuntimeMessage) {
-					throw new Error("Cannot update artifacts in offline mode (read-only)");
-				}
-
-				let finalContent = content;
-				// Auto-stringify .json files
-				if (isJsonFile(filename) && typeof content !== "string") {
-					finalContent = JSON.stringify(content, null, 2);
-				} else if (typeof content !== "string") {
-					finalContent = JSON.stringify(content, null, 2);
-				}
-
-				const response = await (window as any).sendRuntimeMessage({
-					type: "artifact-operation",
-					action: "update",
+					action: "createOrUpdate",
 					filename,
 					content: finalContent,
 					mimeType,
@@ -176,40 +157,23 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 					break;
 				}
 
-				case "create": {
+				case "createOrUpdate": {
 					try {
-						await this.artifactsPanel.tool.execute("", {
-							command: "create",
-							filename,
-							content,
-						});
-						this.agent?.appendMessage({
-							role: "artifact",
-							action: "create",
-							filename,
-							content,
-							title: filename,
-							timestamp: new Date().toISOString(),
-						});
-						respond({ success: true });
-					} catch (err: any) {
-						respond({ success: false, error: err.message });
-					}
-					break;
-				}
+						const exists = this.artifactsPanel.artifacts.has(filename);
+						const command = exists ? "rewrite" : "create";
+						const action = exists ? "update" : "create";
 
-				case "update": {
-					try {
 						await this.artifactsPanel.tool.execute("", {
-							command: "rewrite",
+							command,
 							filename,
 							content,
 						});
 						this.agent?.appendMessage({
 							role: "artifact",
-							action: "update",
+							action,
 							filename,
 							content,
+							...(action === "create" && { title: filename }),
 							timestamp: new Date().toISOString(),
 						});
 						respond({ success: true });
