@@ -9,9 +9,9 @@ declare const chrome: any;
 export interface MessageConsumer {
 	/**
 	 * Handle a message from a sandbox.
-	 * @returns true if message was consumed (stops propagation), false otherwise
+	 * All consumers receive all messages - decide internally what to handle.
 	 */
-	handleMessage(message: any): Promise<boolean>;
+	handleMessage(message: any): Promise<void>;
 }
 
 /**
@@ -59,7 +59,7 @@ export class RuntimeMessageRouter {
 
 		// Setup global listener if not already done
 		this.setupListener();
-		console.log("Registered sandbox:", sandboxId);
+		console.log(`Registered sandbox: ${sandboxId}, providers: ${providers.length}, consumers: ${consumers.length}`);
 	}
 
 	/**
@@ -132,10 +132,20 @@ export class RuntimeMessageRouter {
 				const { sandboxId, messageId } = e.data;
 				if (!sandboxId) return;
 
-				console.log("Router received message for sandbox:", sandboxId, e.data);
+				console.log(
+					"[ROUTER] Received message for sandbox:",
+					sandboxId,
+					"type:",
+					e.data.type,
+					"full message:",
+					e.data,
+				);
 
 				const context = this.sandboxes.get(sandboxId);
-				if (!context) return;
+				if (!context) {
+					console.log("[ROUTER] No context found for sandbox:", sandboxId);
+					return;
+				}
 
 				// Create respond() function for bidirectional communication
 				const respond = (response: any) => {
@@ -151,15 +161,19 @@ export class RuntimeMessageRouter {
 				};
 
 				// 1. Try provider handlers first (for bidirectional comm)
+				console.log("[ROUTER] Broadcasting to", context.providers.length, "providers");
 				for (const provider of context.providers) {
 					if (provider.handleMessage) {
+						console.log("[ROUTER] Calling provider.handleMessage for", provider.constructor.name);
 						await provider.handleMessage(e.data, respond);
 						// Don't stop - let consumers also handle the message
 					}
 				}
 
 				// 2. Broadcast to consumers (one-way messages or lifecycle events)
+				console.log("[ROUTER] Broadcasting to", context.consumers.size, "consumers");
 				for (const consumer of context.consumers) {
+					console.log("[ROUTER] Calling consumer.handleMessage");
 					await consumer.handleMessage(e.data);
 					// Don't stop - let all consumers see the message
 				}
@@ -194,17 +208,18 @@ export class RuntimeMessageRouter {
 
 				// Route to providers (async)
 				(async () => {
+					// 1. Try provider handlers first (for bidirectional comm)
 					for (const provider of context.providers) {
 						if (provider.handleMessage) {
-							const handled = await provider.handleMessage(message, respond);
-							if (handled) return;
+							await provider.handleMessage(message, respond);
+							// Don't stop - let consumers also handle the message
 						}
 					}
 
-					// Broadcast to consumers
+					// 2. Broadcast to consumers (one-way messages or lifecycle events)
 					for (const consumer of context.consumers) {
-						const consumed = await consumer.handleMessage(message);
-						if (consumed) break;
+						await consumer.handleMessage(message);
+						// Don't stop - let all consumers see the message
 					}
 				})();
 

@@ -221,14 +221,7 @@ export class ChatPanel extends LitElement {
 									${Badge(html`
 										<span class="inline-flex items-center gap-1">
 											<span>${i18n("Artifacts")}</span>
-											${
-												this.artifactCount > 1
-													? html`<span
-														class="text-[10px] leading-none bg-primary-foreground/20 text-primary-foreground rounded px-1 font-mono tabular-nums"
-														>${this.artifactCount}</span
-													>`
-													: ""
-											}
+											<span class="text-[10px] leading-none bg-primary-foreground/20 text-primary-foreground rounded px-1 font-mono tabular-nums">${this.artifactCount}</span>
 										</span>
 									`)}
 								</button>

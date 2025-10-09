@@ -77,20 +77,17 @@ export class FileDownloadRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<boolean> {
-		if (message.type !== "file-returned") {
-			return false;
+	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
+		if (message.type === "file-returned") {
+			// Collect file for caller
+			this.files.push({
+				fileName: message.fileName,
+				content: message.content,
+				mimeType: message.mimeType,
+			});
+
+			respond({ success: true });
 		}
-
-		// Collect file for caller
-		this.files.push({
-			fileName: message.fileName,
-			content: message.content,
-			mimeType: message.mimeType,
-		});
-
-		respond({ success: true });
-		return true;
 	}
 
 	/**

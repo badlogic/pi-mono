@@ -25,7 +25,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 	getRuntime(): (sandboxId: string) => void {
 		return (_sandboxId: string) => {
-			// Console capture with immediate send + completion batch pattern
+			// Console capture with immediate send pattern
 			const originalConsole = {
 				log: console.log,
 				error: console.error,
@@ -33,8 +33,8 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 				info: console.info,
 			};
 
-			// Collect logs locally, send at completion
-			const collectedLogs: Array<{ method: string; text: string; args: any[] }> = [];
+			// Track pending send promises to wait for them in onCompleted
+			const pendingSends: Promise<any>[] = [];
 
 			["log", "error", "warn", "info"].forEach((method) => {
 				(console as any)[method] = (...args: any[]) => {
@@ -48,29 +48,30 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 						})
 						.join(" ");
 
-					// Collect log for batch send at completion
-					collectedLogs.push({ method, text, args });
-
 					// Always log locally too
 					(originalConsole as any)[method].apply(console, args);
+
+					// Send immediately and track the promise
+					if ((window as any).sendRuntimeMessage) {
+						const sendPromise = (window as any)
+							.sendRuntimeMessage({
+								type: "console",
+								method,
+								text,
+								args,
+							})
+							.catch(() => {});
+						pendingSends.push(sendPromise);
+					}
 				};
 			});
 
-			// Register completion callback to send all collected logs
+			// Register completion callback to wait for all pending sends
 			if ((window as any).onCompleted) {
 				(window as any).onCompleted(async (_success: boolean) => {
-					// Send all collected logs
-					if (collectedLogs.length > 0 && (window as any).sendRuntimeMessage) {
-						await Promise.all(
-							collectedLogs.map((logEntry) =>
-								(window as any).sendRuntimeMessage({
-									type: "console",
-									method: logEntry.method,
-									text: logEntry.text,
-									args: logEntry.args,
-								}),
-							),
-						);
+					// Wait for all pending console sends to complete
+					if (pendingSends.length > 0) {
+						await Promise.all(pendingSends);
 					}
 				});
 			}
@@ -78,7 +79,8 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			// Track errors for HTML artifacts
 			let lastError: { message: string; stack: string } | null = null;
 
-			// Error handlers
+			// Error handlers - track errors but don't log them
+			// (they'll be shown via execution-error message)
 			window.addEventListener("error", (e) => {
 				const text =
 					(e.error?.stack || e.message || String(e)) + " at line " + (e.lineno || "?") + ":" + (e.colno || "?");
@@ -87,16 +89,6 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					message: e.error?.message || e.message || String(e),
 					stack: e.error?.stack || text,
 				};
-
-				if ((window as any).sendRuntimeMessage) {
-					(window as any)
-						.sendRuntimeMessage({
-							type: "console",
-							method: "error",
-							text,
-						})
-						.catch(() => {});
-				}
 			});
 
 			window.addEventListener("unhandledrejection", (e) => {
@@ -106,16 +98,6 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					message: e.reason?.message || String(e.reason) || "Unhandled promise rejection",
 					stack: e.reason?.stack || text,
 				};
-
-				if ((window as any).sendRuntimeMessage) {
-					(window as any)
-						.sendRuntimeMessage({
-							type: "console",
-							method: "error",
-							text,
-						})
-						.catch(() => {});
-				}
 			});
 
 			// Expose complete() method for user code to call
@@ -143,7 +125,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<boolean> {
+	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
 		if (message.type === "console") {
 			// Collect console output
 			this.logs.push({
@@ -160,10 +142,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			});
 			// Acknowledge receipt
 			respond({ success: true });
-			return true;
 		}
-
-		return false;
 	}
 
 	/**

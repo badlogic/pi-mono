@@ -44,23 +44,24 @@ export async function executeJavaScript(
 		// Remove the sandbox iframe after execution
 		sandbox.remove();
 
-		// Return plain text output
-		if (!result.success) {
-			// Return error as plain text
-			return {
-				output: `Error: ${result.error?.message || "Unknown error"}\n${result.error?.stack || ""}`,
-			};
-		}
-
 		// Build plain text response
 		let output = "";
 
 		// Add console output - result.console contains { type: string, text: string } from sandbox.js
 		if (result.console && result.console.length > 0) {
 			for (const entry of result.console) {
-				const prefix = entry.type === "error" ? "[ERROR]" : "";
-				output += (prefix ? `${prefix} ` : "") + entry.text + "\n";
+				output += entry.text + "\n";
 			}
+		}
+
+		// Add error if execution failed
+		if (!result.success) {
+			if (output) output += "\n";
+			output += `Error: ${result.error?.message || "Unknown error"}\n${result.error?.stack || ""}`;
+
+			return {
+				output: output.trim(),
+			};
 		}
 
 		// Add return value if present

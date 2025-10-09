@@ -20,13 +20,12 @@ export interface SandboxRuntimeProvider {
 
 	/**
 	 * Optional message handler for bidirectional communication.
-	 * Return true if the message was handled, false to let other handlers try.
+	 * All providers receive all messages - decide internally what to handle.
 	 *
 	 * @param message - The message from the sandbox
 	 * @param respond - Function to send a response back to the sandbox
-	 * @returns true if message was handled, false otherwise
 	 */
-	handleMessage?(message: any, respond: (response: any) => void): Promise<boolean>;
+	handleMessage?(message: any, respond: (response: any) => void): Promise<void>;
 
 	/**
 	 * Optional documentation describing what globals/functions this provider injects.

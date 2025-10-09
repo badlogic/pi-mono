@@ -163,42 +163,37 @@ export class SandboxIframe extends LitElement {
 			throw new Error("Execution aborted");
 		}
 
-		providers = [new ConsoleRuntimeProvider(), ...providers];
+		const consoleProvider = new ConsoleRuntimeProvider();
+		providers = [consoleProvider, ...providers];
 		RUNTIME_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
 
-		const logs: Array<{ type: string; text: string }> = [];
 		const files: SandboxFile[] = [];
 		let completed = false;
 
 		return new Promise((resolve, reject) => {
 			// 4. Create execution consumer for lifecycle messages
 			const executionConsumer: MessageConsumer = {
-				async handleMessage(message: any): Promise<boolean> {
-					if (message.type === "console") {
-						logs.push({
-							type: message.method === "error" ? "error" : "log",
-							text: message.text,
-						});
-						return true;
-					} else if (message.type === "file-returned") {
+				async handleMessage(message: any): Promise<void> {
+					if (message.type === "file-returned") {
 						files.push({
 							fileName: message.fileName,
 							content: message.content,
 							mimeType: message.mimeType,
 						});
-						return true;
 					} else if (message.type === "execution-complete") {
 						completed = true;
 						cleanup();
-						resolve({ success: true, console: logs, files, returnValue: message.returnValue });
-						return true;
+						resolve({
+							success: true,
+							console: consoleProvider.getLogs(),
+							files,
+							returnValue: message.returnValue,
+						});
 					} else if (message.type === "execution-error") {
 						completed = true;
 						cleanup();
-						resolve({ success: false, console: logs, error: message.error, files });
-						return true;
+						resolve({ success: false, console: consoleProvider.getLogs(), error: message.error, files });
 					}
-					return false;
 				},
 			};
 
@@ -232,7 +227,7 @@ export class SandboxIframe extends LitElement {
 					cleanup();
 					resolve({
 						success: false,
-						console: logs,
+						console: consoleProvider.getLogs(),
 						error: { message: "Execution timeout (30s)", stack: "" },
 						files,
 					});
@@ -347,7 +342,7 @@ export class SandboxIframe extends LitElement {
 
 				await window.complete(null, returnValue);
 			} catch (error) {
-	
+
 				// Call completion callbacks before complete() (error path)
 				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
 					try {

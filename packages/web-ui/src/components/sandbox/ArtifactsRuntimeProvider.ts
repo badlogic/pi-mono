@@ -143,9 +143,9 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<boolean> {
+	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
 		if (message.type !== "artifact-operation") {
-			return false;
+			return;
 		}
 
 		const { action, filename, content, mimeType } = message;
@@ -224,11 +224,8 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 				default:
 					respond({ success: false, error: `Unknown artifact action: ${action}` });
 			}
-
-			return true;
 		} catch (error: any) {
 			respond({ success: false, error: error.message });
-			return true;
 		}
 	}
 

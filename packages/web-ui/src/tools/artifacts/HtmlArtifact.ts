@@ -86,7 +86,7 @@ export class HtmlArtifact extends ArtifactElement {
 
 		// Create consumer for console messages
 		const consumer: MessageConsumer = {
-			handleMessage: async (message: any): Promise<boolean> => {
+			handleMessage: async (message: any): Promise<void> => {
 				if (message.type === "console") {
 					// Create new array reference for Lit reactivity
 					this.logs = [
@@ -97,9 +97,7 @@ export class HtmlArtifact extends ArtifactElement {
 						},
 					];
 					this.requestUpdate(); // Re-render to show console
-					return true;
 				}
-				return false;
 			},
 		};
 
