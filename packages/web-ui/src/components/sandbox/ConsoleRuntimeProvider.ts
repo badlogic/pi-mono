@@ -33,8 +33,8 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 				info: console.info,
 			};
 
-			// Track pending logs (not yet confirmed sent)
-			const pendingLogs: Array<{ method: string; text: string; args: any[] }> = [];
+			// Collect logs locally, send at completion
+			const collectedLogs: Array<{ method: string; text: string; args: any[] }> = [];
 
 			["log", "error", "warn", "info"].forEach((method) => {
 				(console as any)[method] = (...args: any[]) => {
@@ -48,44 +48,21 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 						})
 						.join(" ");
 
-					const logEntry = { method, text, args };
-
-					// Add to pending logs
-					pendingLogs.push(logEntry);
-
-					// Try to send immediately (fire-and-forget)
-					if ((window as any).sendRuntimeMessage) {
-						(window as any)
-							.sendRuntimeMessage({
-								type: "console",
-								method,
-								text,
-								args, // Send raw args for provider collection
-							})
-							.then(() => {
-								// Remove from pending on successful send
-								const index = pendingLogs.indexOf(logEntry);
-								if (index !== -1) {
-									pendingLogs.splice(index, 1);
-								}
-							})
-							.catch(() => {
-								// Keep in pending array if send fails
-							});
-					}
+					// Collect log for batch send at completion
+					collectedLogs.push({ method, text, args });
 
 					// Always log locally too
 					(originalConsole as any)[method].apply(console, args);
 				};
 			});
 
-			// Register completion callback to send any remaining logs
+			// Register completion callback to send all collected logs
 			if ((window as any).onCompleted) {
 				(window as any).onCompleted(async (_success: boolean) => {
-					// Send any logs that haven't been sent yet
-					if (pendingLogs.length > 0 && (window as any).sendRuntimeMessage) {
+					// Send all collected logs
+					if (collectedLogs.length > 0 && (window as any).sendRuntimeMessage) {
 						await Promise.all(
-							pendingLogs.map((logEntry) =>
+							collectedLogs.map((logEntry) =>
 								(window as any).sendRuntimeMessage({
 									type: "console",
 									method: logEntry.method,
