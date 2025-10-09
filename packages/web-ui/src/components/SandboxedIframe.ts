@@ -339,7 +339,7 @@ export class SandboxIframe extends LitElement {
 					}
 				}
 
-				window.complete();
+				await window.complete();
 			} catch (error) {
 				console.error(error?.stack || error?.message || String(error));
 
@@ -352,7 +352,7 @@ export class SandboxIframe extends LitElement {
 					}
 				}
 
-				window.complete({
+				await window.complete({
 					message: error?.message || String(error),
 					stack: error?.stack || new Error().stack
 				});

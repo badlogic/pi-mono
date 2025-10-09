@@ -120,7 +120,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 			// Expose complete() method for user code to call
 			let completionSent = false;
-			(window as any).complete = (error?: { message: string; stack: string }) => {
+			(window as any).complete = async (error?: { message: string; stack: string }) => {
 				if (completionSent) return;
 				completionSent = true;
 
@@ -128,18 +128,14 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 				if ((window as any).sendRuntimeMessage) {
 					if (finalError) {
-						(window as any)
-							.sendRuntimeMessage({
-								type: "execution-error",
-								error: finalError,
-							})
-							.catch(() => {});
+						await (window as any).sendRuntimeMessage({
+							type: "execution-error",
+							error: finalError,
+						});
 					} else {
-						(window as any)
-							.sendRuntimeMessage({
-								type: "execution-complete",
-							})
-							.catch(() => {});
+						await (window as any).sendRuntimeMessage({
+							type: "execution-complete",
+						});
 					}
 				}
 			};
