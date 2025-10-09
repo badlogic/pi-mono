@@ -128,14 +128,18 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 				if ((window as any).sendRuntimeMessage) {
 					if (finalError) {
+						console.log("Reporting execution error:", finalError);
 						await (window as any).sendRuntimeMessage({
 							type: "execution-error",
 							error: finalError,
 						});
+						console.log("Execution completed");
 					} else {
+						console.log("Reporting execution complete");
 						await (window as any).sendRuntimeMessage({
 							type: "execution-complete",
 						});
+						console.log("Execution completed");
 					}
 				}
 			};
@@ -162,17 +166,11 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			return true;
 		}
 
-		if (message.type === "execution-complete") {
-			this.completed = true;
+		// Don't handle execution-complete/error - let executionConsumer handle those
+		// We just need to respond to allow the message to proceed
+		if (message.type === "execution-complete" || message.type === "execution-error") {
 			respond({ success: true });
-			return true;
-		}
-
-		if (message.type === "execution-error") {
-			this.completed = true;
-			this.completionError = message.error;
-			respond({ success: true });
-			return true;
+			return false; // Don't stop propagation
 		}
 
 		return false;
