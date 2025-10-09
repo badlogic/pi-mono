@@ -187,14 +187,14 @@ ${ARTIFACTS_RUNTIME_EXAMPLE}
 
 export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION = `
 Artifact Management (persistent session files you can access/modify programmatically):
-- await hasArtifact(filename) - Check if artifact exists, returns boolean
-  * Example: if (await hasArtifact('data.json')) { ... }
+- await listArtifacts() - Get list of all artifact filenames, returns string[]
+  * Example: const files = await listArtifacts(); // ['data.json', 'notes.md', 'chart.png']
 - await getArtifact(filename) - Read artifact content, returns string or object
   * Auto-parses .json files to objects, otherwise returns raw string content
   * Example: const data = await getArtifact('data.json'); // Returns parsed object
   * Example: const markdown = await getArtifact('notes.md'); // Returns string
 - await createOrUpdateArtifact(filename, content, mimeType?) - Create or update a persistent artifact
-  * Automatically creates if new, updates if exists (no need to check hasArtifact first)
+  * Automatically creates if new, updates if exists
   * Auto-stringifies objects for .json files
   * Example: await createOrUpdateArtifact('data.json', {items: []}) // Auto-stringifies
   * Example: await createOrUpdateArtifact('research-notes.md', '# Research Notes\\n', 'text/markdown')
@@ -203,7 +203,8 @@ Artifact Management (persistent session files you can access/modify programmatic
   * Example: await deleteArtifact('old-notes.md')
 
 Powerful pattern for evolving data:
-  const data = await hasArtifact('data.json') ? await getArtifact('data.json') : {items: []};
+  const files = await listArtifacts();
+  const data = files.includes('data.json') ? await getArtifact('data.json') : {items: []};
   data.items.push(newScrapedItem);
   await createOrUpdateArtifact('data.json', data);
 

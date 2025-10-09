@@ -41,20 +41,19 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 			// Auto-parse/stringify for .json files
 			const isJsonFile = (filename: string) => filename.endsWith(".json");
 
-			(window as any).hasArtifact = async (filename: string): Promise<boolean> => {
+			(window as any).listArtifacts = async (): Promise<string[]> => {
 				// Online: ask extension
 				if ((window as any).sendRuntimeMessage) {
 					const response = await (window as any).sendRuntimeMessage({
 						type: "artifact-operation",
-						action: "has",
-						filename,
+						action: "list",
 					});
 					if (!response.success) throw new Error(response.error);
 					return response.result;
 				}
-				// Offline: check snapshot
+				// Offline: return snapshot keys
 				else {
-					return !!(window as any).artifacts?.[filename];
+					return Object.keys((window as any).artifacts || {});
 				}
 			};
 
@@ -141,9 +140,9 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 		try {
 			switch (action) {
-				case "has": {
-					const exists = this.artifactsPanel.artifacts.has(filename);
-					respond({ success: true, result: exists });
+				case "list": {
+					const filenames = Array.from(this.artifactsPanel.artifacts.keys());
+					respond({ success: true, result: filenames });
 					break;
 				}
 
