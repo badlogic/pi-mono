@@ -16,6 +16,7 @@ export interface SandboxResult {
 	console: Array<{ type: string; text: string }>;
 	files?: SandboxFile[];
 	error?: { message: string; stack: string };
+	returnValue?: any;
 }
 
 /**
@@ -189,7 +190,7 @@ export class SandboxIframe extends LitElement {
 					} else if (message.type === "execution-complete") {
 						completed = true;
 						cleanup();
-						resolve({ success: true, console: logs, files });
+						resolve({ success: true, console: logs, files, returnValue: message.returnValue });
 						return true;
 					} else if (message.type === "execution-error") {
 						completed = true;
@@ -335,11 +336,6 @@ export class SandboxIframe extends LitElement {
 
 				const returnValue = await userCodeFunc();
 
-				// Log return value if present
-				if (returnValue !== undefined) {
-					console.log('Return value:', returnValue);
-				}
-
 				// Call completion callbacks before complete()
 				if (window.__completionCallbacks && window.__completionCallbacks.length > 0) {
 					try {
@@ -349,7 +345,7 @@ export class SandboxIframe extends LitElement {
 					}
 				}
 
-				await window.complete();
+				await window.complete(null, returnValue);
 			} catch (error) {
 				console.error(error?.stack || error?.message || String(error));
 
