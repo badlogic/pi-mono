@@ -186,27 +186,38 @@ ${ARTIFACTS_RUNTIME_EXAMPLE}
 // ============================================================================
 
 export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION = `
-Artifact Management (persistent session files you can access/modify programmatically):
-- await listArtifacts() - Get list of all artifact filenames, returns string[]
-  * Example: const files = await listArtifacts(); // ['data.json', 'notes.md', 'chart.png']
-- await getArtifact(filename) - Read artifact content, returns string or object
-  * Auto-parses .json files to objects, otherwise returns raw string content
-  * Example: const data = await getArtifact('data.json'); // Returns parsed object
-  * Example: const markdown = await getArtifact('notes.md'); // Returns string
-- await createOrUpdateArtifact(filename, content, mimeType?) - Create or update a persistent artifact
-  * Automatically creates if new, updates if exists
-  * Auto-stringifies objects for .json files
-  * Example: await createOrUpdateArtifact('data.json', {items: []}) // Auto-stringifies
-  * Example: await createOrUpdateArtifact('research-notes.md', '# Research Notes\\n', 'text/markdown')
-  * Full content replacement (not diff-based) when updating
-- await deleteArtifact(filename) - Delete an artifact
-  * Example: await deleteArtifact('old-notes.md')
+Artifact Management from within executed code (HTML/JavaScript REPL).
 
-Powerful pattern for evolving data:
-  const files = await listArtifacts();
-  const data = files.includes('data.json') ? await getArtifact('data.json') : {items: []};
-  data.items.push(newScrapedItem);
-  await createOrUpdateArtifact('data.json', data);
+WHEN TO USE THESE FUNCTIONS:
+- ONLY when writing code that programmatically generates/transforms data
+- Examples: Web scraping results, processed CSV data, generated charts saved as JSON
+- The artifact content is CREATED BY THE CODE, not by you directly
+
+DO NOT USE THESE FUNCTIONS FOR:
+- Summaries or notes YOU write (use artifacts tool instead)
+- Content YOU author directly (use artifacts tool instead)
+
+Functions:
+- await listArtifacts() - Get list of all artifact filenames, returns string[]
+  * Example: const files = await listArtifacts(); // ['data.json', 'notes.md']
+
+- await getArtifact(filename) - Read artifact content, returns string or object
+  * Auto-parses .json files to objects
+  * Example: const data = await getArtifact('data.json'); // Returns parsed object
+
+- await createOrUpdateArtifact(filename, content, mimeType?) - Create/update artifact FROM CODE
+  * ONLY use when the content is generated programmatically by your code
+  * Auto-stringifies objects for .json files
+  * Example: await createOrUpdateArtifact('scraped-data.json', results)
+  * Example: await createOrUpdateArtifact('chart.png', base64ImageData, 'image/png')
+
+- await deleteArtifact(filename) - Delete an artifact
+  * Example: await deleteArtifact('temp.json')
+
+Example - Scraping data and saving it:
+  const response = await fetch('https://api.example.com/data');
+  const data = await response.json();
+  await createOrUpdateArtifact('api-results.json', data);
 
 Binary data must be converted to a base64 string before passing to createOrUpdateArtifact.
 Example:
