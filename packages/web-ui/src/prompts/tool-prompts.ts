@@ -75,23 +75,34 @@ export function buildJavaScriptReplDescription(providerDocs?: string): string {
 
 export const ARTIFACTS_BASE_DESCRIPTION = `Creates and manages file artifacts. Each artifact is a file with a filename and content.
 
-IMPORTANT: Always prefer updating existing files over creating new ones. Check available files first.
+CRITICAL - ARTIFACT UPDATE WORKFLOW:
+1. Creating new file? → Use 'create'
+2. Changing specific section(s)? → Use 'update' (PREFERRED - token efficient)
+3. Complete structural overhaul? → Use 'rewrite' (last resort only)
+
+❌ NEVER regenerate entire documents to change small sections
+✅ ALWAYS use 'update' for targeted edits (adding sources, fixing sections, appending to lists)
 
 Commands:
 1. create: Create a new file
-   - filename: Name with extension (required, e.g., 'index.html', 'script.js', 'README.md')
+   - filename: Name with extension (required, e.g., 'summary.md', 'index.html')
    - title: Display name for the tab (optional, defaults to filename)
    - content: File content (required)
+   - Use for: Brand new files only
 
-2. update: Update part of an existing file
+2. update: Update part of an existing file (PREFERRED for edits)
    - filename: File to update (required)
-   - old_str: Exact string to replace (required)
+   - old_str: Exact string to replace (required, can be multi-line)
    - new_str: Replacement string (required)
+   - Use for: Adding sources, fixing typos, updating sections, appending content
+   - Token efficient - only transmits the changed portion
+   - Example: Adding source link to a section
 
-3. rewrite: Completely replace a file's content
+3. rewrite: Completely replace a file's content (LAST RESORT)
    - filename: File to rewrite (required)
    - content: New content (required)
-   - title: Optionally update display title
+   - Use ONLY when: Complete structural overhaul needed
+   - DO NOT use for: Adding one line, fixing one section, appending content
 
 4. get: Retrieve the full content of a file
    - filename: File to retrieve (required)
@@ -102,7 +113,11 @@ Commands:
 
 6. logs: Get console logs and errors (HTML files only)
    - filename: HTML file to get logs for (required)
-   - Returns all console output and runtime errors`;
+
+ANTI-PATTERNS TO AVOID:
+❌ Using 'get' + modifying content + 'rewrite' to change one section
+❌ Using createOrUpdateArtifact() in code for manual edits YOU make
+✅ Use 'update' command for surgical, targeted modifications`;
 
 export const ARTIFACTS_RUNTIME_EXAMPLE = `- Example HTML artifact that processes a CSV attachment:
   <script>
