@@ -28,8 +28,6 @@ Execute JavaScript code in a sandboxed browser environment with full Web APIs.
 - CSV: const Papa = (await import('https://esm.run/papaparse')).default;
 - Chart.js: const Chart = (await import('https://esm.run/chart.js/auto')).default;
 - Three.js: const THREE = await import('https://esm.run/three');
-- Lodash: const _ = await import('https://esm.run/lodash-es');
-- D3.js: const d3 = await import('https://esm.run/d3');
 
 ## Important Notes
 - Graphics: Use fixed dimensions (800x600), NOT window.innerWidth/Height

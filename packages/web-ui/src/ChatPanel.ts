@@ -18,9 +18,9 @@ const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
 @customElement("pi-chat-panel")
 export class ChatPanel extends LitElement {
-	@state() private agent?: Agent;
-	@state() private agentInterface?: AgentInterface;
-	@state() private artifactsPanel?: ArtifactsPanel;
+	@state() public agent?: Agent;
+	@state() public agentInterface?: AgentInterface;
+	@state() public artifactsPanel?: ArtifactsPanel;
 	@state() private hasArtifacts = false;
 	@state() private artifactCount = 0;
 	@state() private showArtifactsPanel = false;
