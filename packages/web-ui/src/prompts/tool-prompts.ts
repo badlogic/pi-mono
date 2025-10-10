@@ -7,67 +7,41 @@
 // JavaScript REPL Tool
 // ============================================================================
 
-export const JAVASCRIPT_REPL_BASE_DESCRIPTION = `Execute JavaScript code in a sandboxed browser environment with full modern browser capabilities.
+export const JAVASCRIPT_REPL_DESCRIPTION = `# JavaScript REPL
 
-Environment: Modern browser with ALL Web APIs available:
+## Purpose
+Execute JavaScript code in a sandboxed browser environment with full Web APIs.
+
+## When to Use
+- Quick calculations or data transformations
+- Testing JavaScript code snippets
+- Processing data with libraries (XLSX, CSV, etc.)
+- Creating visualizations (charts, graphs)
+
+## Environment
 - ES2023+ JavaScript (async/await, optional chaining, nullish coalescing, etc.)
-- DOM APIs (document, window, Canvas, WebGL, etc.)
-- Fetch API for HTTP requests
+- All browser APIs: DOM, Canvas, WebGL, Fetch, Web Workers, WebSockets, Crypto, etc.
+- Import any npm package: await import('https://esm.run/package-name')
 
-Loading external libraries via dynamic imports (use esm.run):
-- XLSX (Excel files): const XLSX = await import('https://esm.run/xlsx');
-- Papa Parse (CSV): const Papa = (await import('https://esm.run/papaparse')).default;
-- Lodash: const _ = await import('https://esm.run/lodash-es');
-- D3.js: const d3 = await import('https://esm.run/d3');
+## Common Libraries
+- XLSX: const XLSX = await import('https://esm.run/xlsx');
+- CSV: const Papa = (await import('https://esm.run/papaparse')).default;
 - Chart.js: const Chart = (await import('https://esm.run/chart.js/auto')).default;
 - Three.js: const THREE = await import('https://esm.run/three');
-- Any npm package: await import('https://esm.run/package-name')
+- Lodash: const _ = await import('https://esm.run/lodash-es');
+- D3.js: const d3 = await import('https://esm.run/d3');
 
-IMPORTANT for graphics/canvas:
-- Use fixed dimensions like 400x400 or 800x600, NOT window.innerWidth/Height
-- For Three.js: renderer.setSize(400, 400) and camera aspect ratio of 1
-- For Chart.js: Set options: { responsive: false, animation: false } to ensure immediate rendering
-- Web Storage (localStorage, sessionStorage, IndexedDB)
-- Web Workers, WebAssembly, WebSockets
-- Media APIs (Audio, Video, WebRTC)
-- File APIs (Blob, FileReader, etc.)
-- Crypto API for cryptography
-- And much more - anything a modern browser supports!
+## Important Notes
+- Graphics: Use fixed dimensions (800x600), NOT window.innerWidth/Height
+- Chart.js: Set options: { responsive: false, animation: false }
+- Three.js: renderer.setSize(800, 600) with matching aspect ratio
+- Output: All console.log() calls are captured and displayed
 
-Output:
-- console.log() - All output is captured as text`;
-
-export const JAVASCRIPT_REPL_CHART_EXAMPLE = `
-    - Chart.js example:
-      const Chart = (await import('https://esm.run/chart.js/auto')).default;
-      const canvas = document.createElement('canvas');
-      canvas.width = 400; canvas.height = 300;
-      document.body.appendChild(canvas);
-      new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr'],
-          datasets: [{ label: 'Sales', data: [10, 20, 15, 25], borderColor: 'blue' }]
-        },
-        options: { responsive: false, animation: false }
-      });
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      await returnDownloadableFile('chart.png', blob, 'image/png');`;
-
-export const JAVASCRIPT_REPL_FOOTER = `
-
-- All standard browser globals (window, document, fetch, etc.)`;
-
-/**
- * Build complete JavaScript REPL description with optional provider docs.
- */
-export function buildJavaScriptReplDescription(providerDocs?: string): string {
-	return (
-		JAVASCRIPT_REPL_BASE_DESCRIPTION +
-		(providerDocs ? "\n" + providerDocs + JAVASCRIPT_REPL_CHART_EXAMPLE : "") +
-		JAVASCRIPT_REPL_FOOTER
-	);
-}
+## Example
+const data = [10, 20, 15, 25];
+const sum = data.reduce((a, b) => a + b, 0);
+const avg = sum / data.length;
+console.log('Sum:', sum, 'Average:', avg);`;
 
 // ============================================================================
 // Artifacts Tool
