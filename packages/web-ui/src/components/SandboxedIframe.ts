@@ -495,7 +495,12 @@ export class SandboxIframe extends LitElement {
 			})
 			.join("\n");
 
-		return `<script>
+		return `<style>
+html {
+	font-size: 16px;
+}
+</style>
+<script>
 window.sandboxId = ${JSON.stringify(sandboxId)};
 ${dataInjection}
 ${bridgeCode}
