@@ -28,6 +28,13 @@ export class RuntimeMessageBridge {
 		// Returns stringified function that uses window.parent.postMessage
 		return `
 window.__completionCallbacks = [];
+// Check if we're in an extension context by examining the URL
+window.__isExtensionContext = () => {
+    const url = window.location.href;
+    return url.startsWith('chrome-extension://') ||
+           url.startsWith('moz-extension://') ||
+           url === 'about:srcdoc';
+};
 window.sendRuntimeMessage = async (message) => {
     const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
@@ -68,6 +75,13 @@ window.onCompleted = (callback) => {
 		// Returns stringified function that uses chrome.runtime.sendMessage
 		return `
 window.__completionCallbacks = [];
+// Check if we're in an extension context by examining the URL
+window.__isExtensionContext = () => {
+    const url = window.location.href;
+    return url.startsWith('chrome-extension://') ||
+           url.startsWith('moz-extension://') ||
+           url === 'about:srcdoc';
+};
 window.sendRuntimeMessage = async (message) => {
     return await chrome.runtime.sendMessage({
         ...message,

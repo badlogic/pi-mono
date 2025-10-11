@@ -52,8 +52,8 @@ export class FileDownloadRuntimeProvider implements SandboxRuntimeProvider {
 					finalMimeType = mimeType || "application/json";
 				}
 
-				// Send to extension if available (online mode)
-				if ((window as any).sendRuntimeMessage) {
+				// Send to extension if in extension context (online mode)
+				if ((window as any).__isExtensionContext?.()) {
 					const response = await (window as any).sendRuntimeMessage({
 						type: "file-returned",
 						fileName,

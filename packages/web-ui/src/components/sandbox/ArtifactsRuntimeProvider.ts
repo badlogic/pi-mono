@@ -43,7 +43,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 
 			(window as any).listArtifacts = async (): Promise<string[]> => {
 				// Online: ask extension
-				if ((window as any).sendRuntimeMessage) {
+				if ((window as any).__isExtensionContext?.()) {
 					const response = await (window as any).sendRuntimeMessage({
 						type: "artifact-operation",
 						action: "list",
@@ -61,7 +61,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 				let content: string;
 
 				// Online: ask extension
-				if ((window as any).sendRuntimeMessage) {
+				if ((window as any).__isExtensionContext?.()) {
 					const response = await (window as any).sendRuntimeMessage({
 						type: "artifact-operation",
 						action: "get",
@@ -94,7 +94,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 				content: any,
 				mimeType?: string,
 			): Promise<void> => {
-				if (!(window as any).sendRuntimeMessage) {
+				if (!(window as any).__isExtensionContext?.()) {
 					throw new Error("Cannot create/update artifacts in offline mode (read-only)");
 				}
 
@@ -117,7 +117,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 			};
 
 			(window as any).deleteArtifact = async (filename: string): Promise<void> => {
-				if (!(window as any).sendRuntimeMessage) {
+				if (!(window as any).__isExtensionContext?.()) {
 					throw new Error("Cannot delete artifacts in offline mode (read-only)");
 				}
 

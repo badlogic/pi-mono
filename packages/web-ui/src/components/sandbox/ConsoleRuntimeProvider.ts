@@ -51,8 +51,8 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 					// Always log locally too
 					(originalConsole as any)[method].apply(console, args);
 
-					// Send immediately and track the promise
-					if ((window as any).sendRuntimeMessage) {
+					// Send immediately and track the promise (only in extension context)
+					if ((window as any).__isExtensionContext?.()) {
 						const sendPromise = (window as any)
 							.sendRuntimeMessage({
 								type: "console",
@@ -108,7 +108,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 				const finalError = error || lastError;
 
-				if ((window as any).sendRuntimeMessage) {
+				if ((window as any).__isExtensionContext?.()) {
 					if (finalError) {
 						await (window as any).sendRuntimeMessage({
 							type: "execution-error",
