@@ -29,11 +29,12 @@ export class RuntimeMessageBridge {
 		return `
 window.__completionCallbacks = [];
 // Check if we're in an extension context by examining the URL
+// We check for web/file protocols and negate - anything else is extension context
 window.__isExtensionContext = () => {
     const url = window.location.href;
-    return url.startsWith('chrome-extension://') ||
-           url.startsWith('moz-extension://') ||
-           url === 'about:srcdoc';
+    return !(url.startsWith('http://') ||
+             url.startsWith('https://') ||
+             url.startsWith('file://'));
 };
 window.sendRuntimeMessage = async (message) => {
     const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
@@ -76,11 +77,12 @@ window.onCompleted = (callback) => {
 		return `
 window.__completionCallbacks = [];
 // Check if we're in an extension context by examining the URL
+// We check for web/file protocols and negate - anything else is extension context
 window.__isExtensionContext = () => {
     const url = window.location.href;
-    return url.startsWith('chrome-extension://') ||
-           url.startsWith('moz-extension://') ||
-           url === 'about:srcdoc';
+    return !(url.startsWith('http://') ||
+             url.startsWith('https://') ||
+             url.startsWith('file://'));
 };
 window.sendRuntimeMessage = async (message) => {
     return await chrome.runtime.sendMessage({
