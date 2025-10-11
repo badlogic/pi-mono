@@ -96,6 +96,34 @@ export class IndexedDBStorageBackend implements StorageBackend {
 		}
 	}
 
+	async getAllFromIndex<T = unknown>(
+		storeName: string,
+		indexName: string,
+		direction: "asc" | "desc" = "asc",
+	): Promise<T[]> {
+		const db = await this.getDB();
+		const tx = db.transaction(storeName, "readonly");
+		const store = tx.objectStore(storeName);
+		const index = store.index(indexName);
+
+		return new Promise((resolve, reject) => {
+			const results: T[] = [];
+			const request = index.openCursor(null, direction === "desc" ? "prev" : "next");
+
+			request.onsuccess = () => {
+				const cursor = request.result;
+				if (cursor) {
+					results.push(cursor.value as T);
+					cursor.continue();
+				} else {
+					resolve(results);
+				}
+			};
+
+			request.onerror = () => reject(request.error);
+		});
+	}
+
 	async clear(storeName: string): Promise<void> {
 		const db = await this.getDB();
 		const tx = db.transaction(storeName, "readwrite");

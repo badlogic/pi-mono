@@ -42,11 +42,8 @@ export class SessionsStore extends Store {
 	}
 
 	async getAllMetadata(): Promise<SessionMetadata[]> {
-		const keys = await this.getBackend().keys("sessions-metadata");
-		const metadata = await Promise.all(
-			keys.map((key) => this.getBackend().get<SessionMetadata>("sessions-metadata", key)),
-		);
-		return metadata.filter((m): m is SessionMetadata => m !== null);
+		// Use the lastModified index to get sessions sorted by most recent first
+		return this.getBackend().getAllFromIndex<SessionMetadata>("sessions-metadata", "lastModified", "desc");
 	}
 
 	async delete(id: string): Promise<void> {

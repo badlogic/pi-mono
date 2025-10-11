@@ -49,6 +49,14 @@ export interface StorageBackend {
 	keys(storeName: string, prefix?: string): Promise<string[]>;
 
 	/**
+	 * Get all values from a specific store, ordered by an index.
+	 * @param storeName - The store to query
+	 * @param indexName - The index to use for ordering
+	 * @param direction - Sort direction ("asc" or "desc")
+	 */
+	getAllFromIndex<T = unknown>(storeName: string, indexName: string, direction?: "asc" | "desc"): Promise<T[]>;
+
+	/**
 	 * Clear all data from a specific store.
 	 */
 	clear(storeName: string): Promise<void>;
