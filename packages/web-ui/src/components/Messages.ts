@@ -231,16 +231,22 @@ export class ToolMessage extends LitElement {
 		const result: ToolResultMessageType<any> | undefined = this.aborted
 			? { role: "toolResult", isError: true, output: "", toolCallId: this.toolCall.id, toolName: this.toolCall.name }
 			: this.result;
-		const toolContent = renderTool(
+		const renderResult = renderTool(
 			toolName,
 			this.toolCall.arguments,
 			result,
 			!this.aborted && (this.isStreaming || this.pending),
 		);
 
+		// Handle custom rendering (no card wrapper)
+		if (renderResult.isCustom) {
+			return renderResult.content;
+		}
+
+		// Default: wrap in card
 		return html`
 			<div class="p-2.5 border border-border rounded-md bg-card text-card-foreground shadow-xs">
-				${toolContent}
+				${renderResult.content}
 			</div>
 		`;
 	}

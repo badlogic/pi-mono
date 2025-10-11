@@ -1,4 +1,10 @@
-import { type AgentContext, agentLoop, type Message, type PromptConfig, type UserMessage } from "@mariozechner/pi-ai";
+import {
+	type AgentContext,
+	type AgentLoopConfig,
+	agentLoop,
+	type Message,
+	type UserMessage,
+} from "@mariozechner/pi-ai";
 import { getAppStorage } from "../../storage/app-storage.js";
 import type { AgentRunConfig, AgentTransport } from "./types.js";
 
@@ -34,10 +40,11 @@ export class ProviderTransport implements AgentTransport {
 			tools: cfg.tools,
 		};
 
-		const pc: PromptConfig = {
+		const pc: AgentLoopConfig = {
 			model,
 			reasoning: cfg.reasoning,
 			apiKey,
+			getQueuedMessages: cfg.getQueuedMessages,
 		};
 
 		// Yield events from agentLoop

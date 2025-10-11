@@ -1,9 +1,9 @@
-import type { TemplateResult } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
+import "./javascript-repl.js"; // Auto-registers the renderer
 import { getToolRenderer, registerToolRenderer } from "./renderer-registry.js";
 import { BashRenderer } from "./renderers/BashRenderer.js";
 import { DefaultRenderer } from "./renderers/DefaultRenderer.js";
-import "./javascript-repl.js"; // Auto-registers the renderer
+import type { ToolRenderResult } from "./types.js";
 
 // Register all built-in tool renderers
 registerToolRenderer("bash", new BashRenderer());
@@ -18,7 +18,7 @@ export function renderTool(
 	params: any | undefined,
 	result: ToolResultMessage | undefined,
 	isStreaming?: boolean,
-): TemplateResult {
+): ToolRenderResult {
 	const renderer = getToolRenderer(toolName);
 	if (renderer) {
 		return renderer.render(params, result, isStreaming);
@@ -26,4 +26,4 @@ export function renderTool(
 	return defaultRenderer.render(params, result, isStreaming);
 }
 
-export { registerToolRenderer, getToolRenderer };
+export { getToolRenderer, registerToolRenderer };

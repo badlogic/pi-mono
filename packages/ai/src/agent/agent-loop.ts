@@ -2,13 +2,13 @@ import { streamSimple } from "../stream.js";
 import type { AssistantMessage, Context, Message, ToolResultMessage, UserMessage } from "../types.js";
 import { EventStream } from "../utils/event-stream.js";
 import { validateToolArguments } from "../utils/validation.js";
-import type { AgentContext, AgentEvent, AgentTool, AgentToolResult, PromptConfig } from "./types.js";
+import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult, QueuedMessage } from "./types.js";
 
 // Main prompt function - returns a stream of events
 export function agentLoop(
 	prompt: UserMessage,
 	context: AgentContext,
-	config: PromptConfig,
+	config: AgentLoopConfig,
 	signal?: AbortSignal,
 	streamFn?: typeof streamSimple,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
@@ -36,15 +36,33 @@ export function agentLoop(
 			messages,
 		};
 
-		// Keep looping while we have tool calls
+		// Keep looping while we have tool calls or queued messages
 		let hasMoreToolCalls = true;
 		let firstTurn = true;
-		while (hasMoreToolCalls) {
+		let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
+
+		while (hasMoreToolCalls || queuedMessages.length > 0) {
 			if (!firstTurn) {
 				stream.push({ type: "turn_start" });
 			} else {
 				firstTurn = false;
 			}
+
+			// Process queued messages first (inject before next assistant response)
+			if (queuedMessages.length > 0) {
+				for (const { original, llm } of queuedMessages) {
+					stream.push({ type: "message_start", message: original });
+					stream.push({ type: "message_end", message: original });
+					if (llm) {
+						currentContext.messages.push(llm);
+						newMessages.push(llm);
+					}
+				}
+				queuedMessages = [];
+			}
+
+			console.log("agent-loop: ", [...currentContext.messages]);
+
 			// Stream assistant response
 			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
 			newMessages.push(message);
@@ -69,6 +87,9 @@ export function agentLoop(
 				newMessages.push(...toolResults);
 			}
 			stream.push({ type: "turn_end", message, toolResults: toolResults });
+
+			// Get queued messages after turn completes
+			queuedMessages = (await config.getQueuedMessages?.()) || [];
 		}
 		stream.push({ type: "agent_end", messages: newMessages });
 		stream.end(newMessages);
@@ -80,7 +101,7 @@ export function agentLoop(
 // Helper functions
 async function streamAssistantResponse(
 	context: AgentContext,
-	config: PromptConfig,
+	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentContext["messages"]>,
 	streamFn?: typeof streamSimple,

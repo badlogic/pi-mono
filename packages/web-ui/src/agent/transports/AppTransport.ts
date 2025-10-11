@@ -1,12 +1,12 @@
 import type {
 	AgentContext,
+	AgentLoopConfig,
 	Api,
 	AssistantMessage,
 	AssistantMessageEvent,
 	Context,
 	Message,
 	Model,
-	PromptConfig,
 	SimpleStreamOptions,
 	ToolCall,
 	UserMessage,
@@ -348,9 +348,10 @@ export class AppTransport implements AgentTransport {
 			tools: cfg.tools,
 		};
 
-		const pc: PromptConfig = {
+		const pc: AgentLoopConfig = {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
+			getQueuedMessages: cfg.getQueuedMessages,
 		};
 
 		// Yield events from the upstream agentLoop iterator

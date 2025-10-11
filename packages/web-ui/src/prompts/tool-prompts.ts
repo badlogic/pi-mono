@@ -14,7 +14,7 @@ Execute JavaScript code in a sandboxed browser environment with full Web APIs.
 
 ## When to Use
 - Quick calculations or data transformations
-- Testing JavaScript code snippets
+- Testing JavaScript code snippets in isolation
 - Processing data with libraries (XLSX, CSV, etc.)
 - Creating visualizations (charts, graphs)
 
@@ -29,17 +29,32 @@ Execute JavaScript code in a sandboxed browser environment with full Web APIs.
 - Chart.js: const Chart = (await import('https://esm.run/chart.js/auto')).default;
 - Three.js: const THREE = await import('https://esm.run/three');
 
-## Important Notes
-- Graphics: Use fixed dimensions (800x600), NOT window.innerWidth/Height
-- Chart.js: Set options: { responsive: false, animation: false }
-- Three.js: renderer.setSize(800, 600) with matching aspect ratio
-- Output: All console.log() calls are captured and displayed
+## Persistence between tool calls
+- Objects stored on global scope do not persist between calls.
+- Use artifacts as a key-value JSON object store:
+  - Use createOrUpdateArtifact(filename, content) to persist data between calls. JSON objects are auto-stringified.
+  - Use listArtifacts() and getArtifact(filename) to read persisted data. JSON files are auto-parsed to objects.
+  - Prefer to use a single artifact throughout the session to store intermediate data (e.g. 'data.json').
+
+## Input
+- You have access to the user's attachments via listAttachments(), readTextAttachment(id), and readBinaryAttachment(id)
+- You have access to previously created artifacts via listArtifacts() and getArtifact(filename)
+
+## Output
+- All console.log() calls are captured for you to inspect. The user does not see these logs.
+- Create artifacts for file results (images, JSON, CSV, etc.) which persiste throughout the
+  session and are accessible to you and the user.
 
 ## Example
 const data = [10, 20, 15, 25];
 const sum = data.reduce((a, b) => a + b, 0);
 const avg = sum / data.length;
-console.log('Sum:', sum, 'Average:', avg);`;
+console.log('Sum:', sum, 'Average:', avg);
+
+## Important Notes
+- Graphics: Use fixed dimensions (800x600), NOT window.innerWidth/Height
+- Chart.js: Set options: { responsive: false, animation: false }
+- Three.js: renderer.setSize(800, 600) with matching aspect ratio`;
 
 // ============================================================================
 // Artifacts Tool

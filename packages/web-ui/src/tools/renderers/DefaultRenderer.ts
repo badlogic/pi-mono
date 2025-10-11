@@ -1,14 +1,17 @@
-import { html, type TemplateResult } from "@mariozechner/mini-lit";
+import { html } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { i18n } from "../../utils/i18n.js";
-import type { ToolRenderer } from "../types.js";
+import type { ToolRenderer, ToolRenderResult } from "../types.js";
 
 export class DefaultRenderer implements ToolRenderer {
-	render(params: any | undefined, result: ToolResultMessage | undefined, isStreaming?: boolean): TemplateResult {
+	render(params: any | undefined, result: ToolResultMessage | undefined, isStreaming?: boolean): ToolRenderResult {
 		// Show result if available
 		if (result) {
 			const text = result.output || i18n("(no output)");
-			return html`<div class="text-sm text-muted-foreground whitespace-pre-wrap font-mono">${text}</div>`;
+			return {
+				content: html`<div class="text-sm text-muted-foreground whitespace-pre-wrap font-mono">${text}</div>`,
+				isCustom: false,
+			};
 		}
 
 		// Show params
@@ -25,13 +28,19 @@ export class DefaultRenderer implements ToolRenderer {
 			}
 
 			if (isStreaming && (!text || text === "{}" || text === "null")) {
-				return html`<div class="text-sm text-muted-foreground">${i18n("Preparing tool parameters...")}</div>`;
+				return {
+					content: html`<div class="text-sm text-muted-foreground">${i18n("Preparing tool parameters...")}</div>`,
+					isCustom: false,
+				};
 			}
 
-			return html`<console-block .content=${text}></console-block>`;
+			return { content: html`<console-block .content=${text}></console-block>`, isCustom: false };
 		}
 
 		// No params or result yet
-		return html`<div class="text-sm text-muted-foreground">${i18n("Preparing tool...")}</div>`;
+		return {
+			content: html`<div class="text-sm text-muted-foreground">${i18n("Preparing tool...")}</div>`,
+			isCustom: false,
+		};
 	}
 }

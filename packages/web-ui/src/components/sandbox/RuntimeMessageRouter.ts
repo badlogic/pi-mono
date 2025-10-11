@@ -59,7 +59,6 @@ export class RuntimeMessageRouter {
 
 		// Setup global listener if not already done
 		this.setupListener();
-		console.log(`Registered sandbox: ${sandboxId}, providers: ${providers.length}, consumers: ${consumers.length}`);
 	}
 
 	/**
@@ -72,7 +71,6 @@ export class RuntimeMessageRouter {
 		if (context) {
 			context.iframe = iframe;
 		}
-		console.log("Set iframe for sandbox:", sandboxId);
 	}
 
 	/**
@@ -96,7 +94,6 @@ export class RuntimeMessageRouter {
 				this.userScriptMessageListener = null;
 			}
 		}
-		console.log("Unregistered sandbox:", sandboxId);
 	}
 
 	/**
@@ -108,7 +105,6 @@ export class RuntimeMessageRouter {
 		if (context) {
 			context.consumers.add(consumer);
 		}
-		console.log("Added consumer for sandbox:", sandboxId);
 	}
 
 	/**
@@ -119,7 +115,6 @@ export class RuntimeMessageRouter {
 		if (context) {
 			context.consumers.delete(consumer);
 		}
-		console.log("Removed consumer for sandbox:", sandboxId);
 	}
 
 	/**
@@ -132,18 +127,8 @@ export class RuntimeMessageRouter {
 				const { sandboxId, messageId } = e.data;
 				if (!sandboxId) return;
 
-				console.log(
-					"[ROUTER] Received message for sandbox:",
-					sandboxId,
-					"type:",
-					e.data.type,
-					"full message:",
-					e.data,
-				);
-
 				const context = this.sandboxes.get(sandboxId);
 				if (!context) {
-					console.log("[ROUTER] No context found for sandbox:", sandboxId);
 					return;
 				}
 
@@ -161,19 +146,15 @@ export class RuntimeMessageRouter {
 				};
 
 				// 1. Try provider handlers first (for bidirectional comm)
-				console.log("[ROUTER] Broadcasting to", context.providers.length, "providers");
 				for (const provider of context.providers) {
 					if (provider.handleMessage) {
-						console.log("[ROUTER] Calling provider.handleMessage for", provider.constructor.name);
 						await provider.handleMessage(e.data, respond);
 						// Don't stop - let consumers also handle the message
 					}
 				}
 
 				// 2. Broadcast to consumers (one-way messages or lifecycle events)
-				console.log("[ROUTER] Broadcasting to", context.consumers.size, "consumers");
 				for (const consumer of context.consumers) {
-					console.log("[ROUTER] Calling consumer.handleMessage");
 					await consumer.handleMessage(e.data);
 					// Don't stop - let all consumers see the message
 				}
@@ -186,7 +167,6 @@ export class RuntimeMessageRouter {
 		if (!this.userScriptMessageListener) {
 			// Guard: check if we're in extension context
 			if (typeof chrome === "undefined" || !chrome.runtime?.onUserScriptMessage) {
-				console.log("[RuntimeMessageRouter] User script API not available (not in extension context)");
 				return;
 			}
 
@@ -196,8 +176,6 @@ export class RuntimeMessageRouter {
 
 				const context = this.sandboxes.get(sandboxId);
 				if (!context) return false;
-
-				console.log("Router received user script message for sandbox:", sandboxId, message);
 
 				const respond = (response: any) => {
 					sendResponse({
@@ -227,7 +205,6 @@ export class RuntimeMessageRouter {
 			};
 
 			chrome.runtime.onUserScriptMessage.addListener(this.userScriptMessageListener);
-			console.log("[RuntimeMessageRouter] Registered chrome.runtime.onUserScriptMessage listener");
 		}
 	}
 }

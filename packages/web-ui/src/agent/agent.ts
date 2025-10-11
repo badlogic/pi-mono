@@ -1,4 +1,4 @@
-import type { Context } from "@mariozechner/pi-ai";
+import type { Context, QueuedMessage } from "@mariozechner/pi-ai";
 import {
 	type AgentTool,
 	type AssistantMessage as AssistantMessageType,
@@ -47,7 +47,9 @@ export interface AgentState {
 export type AgentEvent =
 	| { type: "state-update"; state: AgentState }
 	| { type: "error-no-model" }
-	| { type: "error-no-api-key"; provider: string };
+	| { type: "error-no-api-key"; provider: string }
+	| { type: "started" }
+	| { type: "completed" };
 
 export interface AgentOptions {
 	initialState?: Partial<AgentState>;
@@ -74,6 +76,7 @@ export class Agent {
 	private transport: AgentTransport;
 	private debugListener?: (entry: DebugLogEntry) => void;
 	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
+	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -111,12 +114,25 @@ export class Agent {
 	appendMessage(m: AppMessage) {
 		this.patch({ messages: [...this._state.messages, m] });
 	}
+	async queueMessage(m: AppMessage) {
+		// Transform message and queue it for injection at next turn
+		const transformed = await this.messageTransformer([m]);
+		this.messageQueue.push({
+			original: m,
+			llm: transformed[0], // undefined if filtered out
+		});
+	}
 	clearMessages() {
 		this.patch({ messages: [] });
 	}
 
 	abort() {
 		this.abortController?.abort();
+	}
+
+	private logState(message: string) {
+		const { systemPrompt, model, messages } = this._state;
+		console.log(message, { systemPrompt, model, messages });
 	}
 
 	async prompt(input: string, attachments?: Attachment[]) {
@@ -150,6 +166,7 @@ export class Agent {
 
 		this.abortController = new AbortController();
 		this.patch({ isStreaming: true, streamMessage: null, error: undefined });
+		this.emit({ type: "started" });
 
 		const reasoning =
 			this._state.thinkingLevel === "off"
@@ -162,6 +179,12 @@ export class Agent {
 			tools: this._state.tools,
 			model,
 			reasoning,
+			getQueuedMessages: async <T>() => {
+				// Return queued messages (they'll be added to state via message_end event)
+				const queued = this.messageQueue.slice();
+				this.messageQueue = [];
+				return queued as QueuedMessage<T>[];
+			},
 		};
 
 		try {
@@ -169,9 +192,12 @@ export class Agent {
 			let turnDebug: DebugLogEntry | null = null;
 			let turnStart = 0;
 
-			// Transform app messages to LLM-compatible messages
+			this.logState("prompt started, current state:");
+
+			// Transform app messages to LLM-compatible messages (initial set)
 			const llmMessages = await this.messageTransformer(this._state.messages);
 
+			console.log("transformed messages:", llmMessages);
 			for await (const ev of this.transport.run(
 				llmMessages,
 				userMessage as Message,
@@ -292,11 +318,9 @@ export class Agent {
 		} finally {
 			this.patch({ isStreaming: false, streamMessage: null, pendingToolCalls: new Set<string>() });
 			this.abortController = undefined;
+			this.emit({ type: "completed" });
 		}
-		{
-			const { systemPrompt, model, messages } = this._state;
-			console.log("final state:", { systemPrompt, model, messages });
-		}
+		this.logState("final state:");
 	}
 
 	private patch(p: Partial<AgentState>): void {

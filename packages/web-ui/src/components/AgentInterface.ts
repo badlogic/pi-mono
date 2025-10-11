@@ -19,10 +19,10 @@ import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
 export class AgentInterface extends LitElement {
 	// Optional external session: when provided, this component becomes a view over the session
 	@property({ attribute: false }) session?: Agent;
-	@property() enableAttachments = true;
-	@property() enableModelSelector = true;
-	@property() enableThinkingSelector = true;
-	@property() showThemeToggle = false;
+	@property({ type: Boolean }) enableAttachments = true;
+	@property({ type: Boolean }) enableModelSelector = true;
+	@property({ type: Boolean }) enableThinkingSelector = true;
+	@property({ type: Boolean }) showThemeToggle = false;
 	// Optional custom API key prompt handler - if not provided, uses default dialog
 	@property({ attribute: false }) onApiKeyRequired?: (provider: string) => Promise<boolean>;
 	// Optional callback called before sending a message
@@ -50,6 +50,10 @@ export class AgentInterface extends LitElement {
 			}
 		};
 		update();
+	}
+
+	public setAutoScroll(enabled: boolean) {
+		this._autoScroll = enabled;
 	}
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {

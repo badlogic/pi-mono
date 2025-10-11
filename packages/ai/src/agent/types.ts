@@ -62,8 +62,15 @@ export type AgentEvent =
 	// contained in messages, which can be appended to the context
 	| { type: "agent_end"; messages: AgentContext["messages"] };
 
-// Configuration for prompt execution
-export interface PromptConfig extends SimpleStreamOptions {
+// Queued message with optional LLM representation
+export interface QueuedMessage<TApp = Message> {
+	original: TApp; // Original message for UI events
+	llm?: Message; // Optional transformed message for loop context (undefined if filtered)
+}
+
+// Configuration for agent loop execution
+export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
 	preprocessor?: (messages: AgentContext["messages"], abortSignal?: AbortSignal) => Promise<AgentContext["messages"]>;
+	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
 }

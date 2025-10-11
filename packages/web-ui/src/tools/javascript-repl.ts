@@ -1,4 +1,4 @@
-import { html, i18n, type TemplateResult } from "@mariozechner/mini-lit";
+import { html, i18n } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { createRef, ref } from "lit/directives/ref.js";
@@ -8,7 +8,7 @@ import type { SandboxRuntimeProvider } from "../components/sandbox/SandboxRuntim
 import { JAVASCRIPT_REPL_DESCRIPTION } from "../prompts/tool-prompts.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
-import type { ToolRenderer } from "./types.js";
+import type { ToolRenderer, ToolRenderResult } from "./types.js";
 
 // Execute JavaScript code with attachments using SandboxedIframe
 export async function executeJavaScript(
@@ -194,7 +194,7 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 		params: JavaScriptReplParams | undefined,
 		result: ToolResultMessage<JavaScriptReplResult> | undefined,
 		isStreaming?: boolean,
-	): TemplateResult {
+	): ToolRenderResult {
 		// Determine status
 		const state = result ? (result.isError ? "error" : "complete") : isStreaming ? "inprogress" : "complete";
 
@@ -236,38 +236,44 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 				};
 			});
 
-			return html`
-				<div>
-					${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
-					<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
-						<code-block .code=${params.code || ""} language="javascript"></code-block>
-						${output ? html`<console-block .content=${output} .variant=${result.isError ? "error" : "default"}></console-block>` : ""}
+			return {
+				content: html`
+					<div>
+						${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
+						<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300 space-y-3">
+							<code-block .code=${params.code || ""} language="javascript"></code-block>
+							${output ? html`<console-block .content=${output} .variant=${result.isError ? "error" : "default"}></console-block>` : ""}
+						</div>
+						${
+							attachments.length
+								? html`<div class="flex flex-wrap gap-2 mt-3">
+									${attachments.map((att) => html`<attachment-tile .attachment=${att}></attachment-tile>`)}
+							  </div>`
+								: ""
+						}
 					</div>
-					${
-						attachments.length
-							? html`<div class="flex flex-wrap gap-2 mt-3">
-								${attachments.map((att) => html`<attachment-tile .attachment=${att}></attachment-tile>`)}
-						  </div>`
-							: ""
-					}
-				</div>
-			`;
+				`,
+				isCustom: false,
+			};
 		}
 
 		// Just params (streaming or waiting for result)
 		if (params) {
-			return html`
-				<div>
-					${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
-					<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
-						${params.code ? html`<code-block .code=${params.code} language="javascript"></code-block>` : ""}
+			return {
+				content: html`
+					<div>
+						${renderCollapsibleHeader(state, Code, params.title ? params.title : i18n("Executing JavaScript"), codeContentRef, codeChevronRef, false)}
+						<div ${ref(codeContentRef)} class="max-h-0 overflow-hidden transition-all duration-300">
+							${params.code ? html`<code-block .code=${params.code} language="javascript"></code-block>` : ""}
+						</div>
 					</div>
-				</div>
-			`;
+				`,
+				isCustom: false,
+			};
 		}
 
 		// No params or result yet
-		return renderHeader(state, Code, i18n("Preparing JavaScript..."));
+		return { content: renderHeader(state, Code, i18n("Preparing JavaScript...")), isCustom: false };
 	},
 };
 

@@ -408,7 +408,7 @@ export class ArtifactsPanel extends LitElement {
 		let result = `Created file ${params.filename}`;
 		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
 			const logs = await this.waitForHtmlExecution(params.filename);
-			result += logs;
+			result += `\n${logs}`;
 		}
 
 		return result;
@@ -486,7 +486,7 @@ export class ArtifactsPanel extends LitElement {
 		let result = "";
 		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
 			const logs = await this.waitForHtmlExecution(params.filename);
-			result += logs;
+			result += `\n${logs}`;
 		}
 
 		return result;

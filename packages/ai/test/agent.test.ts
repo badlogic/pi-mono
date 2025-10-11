@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentLoop } from "../src/agent/agent-loop.js";
 import { calculateTool } from "../src/agent/tools/calculate.js";
-import type { AgentContext, AgentEvent, PromptConfig } from "../src/agent/types.js";
+import type { AgentContext, AgentEvent, AgentLoopConfig } from "../src/agent/types.js";
 import { getModel } from "../src/models.js";
 import type { Api, Message, Model, OptionsForApi, UserMessage } from "../src/types.js";
 
@@ -15,7 +15,7 @@ async function calculateTest<TApi extends Api>(model: Model<TApi>, options: Opti
 	};
 
 	// Create the prompt config
-	const config: PromptConfig = {
+	const config: AgentLoopConfig = {
 		model,
 		...options,
 	};
@@ -167,7 +167,7 @@ async function abortTest<TApi extends Api>(model: Model<TApi>, options: OptionsF
 	};
 
 	// Create the prompt config
-	const config: PromptConfig = {
+	const config: AgentLoopConfig = {
 		model,
 		...options,
 	};

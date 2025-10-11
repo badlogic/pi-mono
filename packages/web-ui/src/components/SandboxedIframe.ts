@@ -25,6 +25,15 @@ export interface SandboxResult {
  */
 export type SandboxUrlProvider = () => string;
 
+/**
+ * Escape HTML special sequences in code to prevent premature tag closure
+ * @param code Code that will be injected into <script> tags
+ * @returns Escaped code safe for injection
+ */
+function escapeScriptContent(code: string): string {
+	return code.replace(/<\/script/gi, "<\\/script");
+}
+
 @customElement("sandbox-iframe")
 export class SandboxIframe extends LitElement {
 	private iframe?: HTMLIFrameElement;
@@ -79,6 +88,26 @@ export class SandboxIframe extends LitElement {
 		// loadContent is always used for HTML artifacts
 		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, providers, true);
 
+		// Validate HTML before loading
+		const validationError = this.validateHtml(completeHtml);
+		if (validationError) {
+			console.error("HTML validation failed:", validationError);
+			// Show error in iframe instead of crashing
+			this.iframe?.remove();
+			this.iframe = document.createElement("iframe");
+			this.iframe.style.cssText = "width: 100%; height: 100%; border: none;";
+			this.iframe.srcdoc = `
+				<html>
+				<body style="font-family: monospace; padding: 20px; background: #fff; color: #000;">
+					<h3 style="color: #c00;">HTML Validation Error</h3>
+					<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap;">${validationError}</pre>
+				</body>
+				</html>
+			`;
+			this.appendChild(this.iframe);
+			return;
+		}
+
 		// Remove previous iframe if exists
 		this.iframe?.remove();
 
@@ -104,10 +133,11 @@ export class SandboxIframe extends LitElement {
 		// Update router with iframe reference BEFORE appending to DOM
 		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
-		// Listen for sandbox-ready message directly
+		// Listen for sandbox-ready and sandbox-error messages directly
 		const readyHandler = (e: MessageEvent) => {
 			if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
 				window.removeEventListener("message", readyHandler);
+				window.removeEventListener("message", errorHandler);
 
 				// Send content to sandbox
 				this.iframe?.contentWindow?.postMessage(
@@ -121,7 +151,27 @@ export class SandboxIframe extends LitElement {
 			}
 		};
 
+		const errorHandler = (e: MessageEvent) => {
+			if (e.data.type === "sandbox-error" && e.source === this.iframe?.contentWindow) {
+				window.removeEventListener("message", readyHandler);
+				window.removeEventListener("message", errorHandler);
+
+				// The sandbox.js already sent us the error via postMessage.
+				// We need to convert it to an execution-error message that the execute() consumer will handle.
+				// Simulate receiving an execution-error from the sandbox
+				window.postMessage(
+					{
+						sandboxId: sandboxId,
+						type: "execution-error",
+						error: { message: e.data.error, stack: e.data.stack },
+					},
+					"*",
+				);
+			}
+		};
+
 		window.addEventListener("message", readyHandler);
+		window.addEventListener("message", errorHandler);
 
 		this.appendChild(this.iframe);
 	}
@@ -228,14 +278,21 @@ export class SandboxIframe extends LitElement {
 					resolve({
 						success: false,
 						console: consoleProvider.getLogs(),
-						error: { message: "Execution timeout (30s)", stack: "" },
+						error: { message: "Execution timeout (120s)", stack: "" },
 						files,
 					});
 				}
-			}, 30000);
+			}, 120000);
 
 			// 4. Prepare HTML and create iframe
 			const completeHtml = this.prepareHtmlDocument(sandboxId, code, providers, isHtmlArtifact);
+
+			// 5. Validate HTML before sending to sandbox
+			const validationError = this.validateHtml(completeHtml);
+			if (validationError) {
+				reject(new Error(`HTML validation failed: ${validationError}`));
+				return;
+			}
 
 			if (this.sandboxUrlProvider) {
 				// Browser extension mode: wait for sandbox-ready
@@ -247,10 +304,11 @@ export class SandboxIframe extends LitElement {
 				// Update router with iframe reference BEFORE appending to DOM
 				RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
-				// Listen for sandbox-ready message directly
+				// Listen for sandbox-ready and sandbox-error messages
 				const readyHandler = (e: MessageEvent) => {
 					if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
 						window.removeEventListener("message", readyHandler);
+						window.removeEventListener("message", errorHandler);
 
 						// Send content to sandbox
 						this.iframe?.contentWindow?.postMessage(
@@ -264,7 +322,25 @@ export class SandboxIframe extends LitElement {
 					}
 				};
 
+				const errorHandler = (e: MessageEvent) => {
+					if (e.data.type === "sandbox-error" && e.source === this.iframe?.contentWindow) {
+						window.removeEventListener("message", readyHandler);
+						window.removeEventListener("message", errorHandler);
+
+						// Convert sandbox-error to execution-error for the execution consumer
+						window.postMessage(
+							{
+								sandboxId: sandboxId,
+								type: "execution-error",
+								error: { message: e.data.error, stack: e.data.stack },
+							},
+							"*",
+						);
+					}
+				};
+
 				window.addEventListener("message", readyHandler);
+				window.addEventListener("message", errorHandler);
 
 				this.appendChild(this.iframe);
 			} else {
@@ -280,6 +356,27 @@ export class SandboxIframe extends LitElement {
 				this.appendChild(this.iframe);
 			}
 		});
+	}
+
+	/**
+	 * Validate HTML using DOMParser - returns error message if invalid, null if valid
+	 * Note: JavaScript syntax validation is done in sandbox.js to avoid CSP restrictions
+	 */
+	private validateHtml(html: string): string | null {
+		try {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(html, "text/html");
+
+			// Check for parser errors
+			const parserError = doc.querySelector("parsererror");
+			if (parserError) {
+				return parserError.textContent || "Unknown parse error";
+			}
+
+			return null;
+		} catch (error: any) {
+			return error.message || "Unknown validation error";
+		}
 	}
 
 	/**
@@ -315,6 +412,9 @@ export class SandboxIframe extends LitElement {
 			return runtime + userCode;
 		} else {
 			// REPL - wrap code in HTML with runtime and call complete() when done
+			// Escape </script> in user code to prevent premature tag closure
+			const escapedUserCode = escapeScriptContent(userCode);
+
 			return `<!DOCTYPE html>
 <html>
 <head>
@@ -326,7 +426,7 @@ export class SandboxIframe extends LitElement {
 			try {
 				// Wrap user code in async function to capture return value
 				const userCodeFunc = async () => {
-					${userCode}
+					${escapedUserCode}
 				};
 
 				const returnValue = await userCodeFunc();
