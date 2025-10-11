@@ -53,7 +53,7 @@ export class FileDownloadRuntimeProvider implements SandboxRuntimeProvider {
 				}
 
 				// Send to extension if in extension context (online mode)
-				if ((window as any).__isExtensionContext?.()) {
+				if ((window as any).sendRuntimeMessage) {
 					const response = await (window as any).sendRuntimeMessage({
 						type: "file-returned",
 						fileName,

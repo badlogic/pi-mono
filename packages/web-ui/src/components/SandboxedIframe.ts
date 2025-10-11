@@ -559,14 +559,18 @@ ${runtimeFunctions.join("\n")}
 		}
 	}, true);
 
-	// Prevent window.location changes
-	const originalLocation = window.location;
-	Object.defineProperty(window, 'location', {
-		get: function() { return originalLocation; },
-		set: function(url) {
-			window.parent.postMessage({ type: 'open-external-url', url: url.toString() }, '*');
-		}
-	});
+	// Prevent window.location changes (only if not already redefined)
+	try {
+		const originalLocation = window.location;
+		Object.defineProperty(window, 'location', {
+			get: function() { return originalLocation; },
+			set: function(url) {
+				window.parent.postMessage({ type: 'open-external-url', url: url.toString() }, '*');
+			}
+		});
+	} catch (e) {
+		// Already defined, skip
+	}
 })();
 </script>`;
 	}
