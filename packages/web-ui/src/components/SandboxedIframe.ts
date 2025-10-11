@@ -133,6 +133,21 @@ export class SandboxIframe extends LitElement {
 		// Update router with iframe reference BEFORE appending to DOM
 		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
+		// Listen for open-external-url messages from iframe
+		const externalUrlHandler = (e: MessageEvent) => {
+			if (e.data.type === "open-external-url" && e.source === this.iframe?.contentWindow) {
+				// Use chrome.tabs API to open in new tab
+				const chromeAPI = (globalThis as any).chrome;
+				if (chromeAPI?.tabs) {
+					chromeAPI.tabs.create({ url: e.data.url });
+				} else {
+					// Fallback for non-extension context
+					window.open(e.data.url, "_blank");
+				}
+			}
+		};
+		window.addEventListener("message", externalUrlHandler);
+
 		// Listen for sandbox-ready and sandbox-error messages directly
 		const readyHandler = (e: MessageEvent) => {
 			if (e.data.type === "sandbox-ready" && e.source === this.iframe?.contentWindow) {
@@ -188,6 +203,15 @@ export class SandboxIframe extends LitElement {
 
 		// Update router with iframe reference BEFORE appending to DOM
 		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
+
+		// Listen for open-external-url messages from iframe
+		const externalUrlHandler = (e: MessageEvent) => {
+			if (e.data.type === "open-external-url" && e.source === this.iframe?.contentWindow) {
+				// Fallback for non-extension context
+				window.open(e.data.url, "_blank");
+			}
+		};
+		window.addEventListener("message", externalUrlHandler);
 
 		this.appendChild(this.iframe);
 	}
@@ -495,9 +519,13 @@ export class SandboxIframe extends LitElement {
 			})
 			.join("\n");
 
+		// TODO the font-size is needed, as chrome seems to inject a stylesheet into iframes
+		// found in an extension context like sidepanel, settin body { font-size: 75% }. It's
+		// definitely not our code doing that.
+		// See  https://stackoverflow.com/questions/71480433/chrome-is-injecting-some-stylesheet-in-popup-ui-which-reduces-the-font-size-to-7
 		return `<style>
-html {
-	font-size: 16px;
+html, body {
+	font-size: initial;
 }
 </style>
 <script>
@@ -505,6 +533,41 @@ window.sandboxId = ${JSON.stringify(sandboxId)};
 ${dataInjection}
 ${bridgeCode}
 ${runtimeFunctions.join("\n")}
+
+// Navigation interceptor: prevent all navigation and open externally
+(function() {
+	// Intercept link clicks
+	document.addEventListener('click', function(e) {
+		const link = e.target.closest('a');
+		if (link && link.href) {
+			// Check if it's an external link (not javascript: or #hash)
+			if (link.href.startsWith('http://') || link.href.startsWith('https://')) {
+				e.preventDefault();
+				e.stopPropagation();
+				window.parent.postMessage({ type: 'open-external-url', url: link.href }, '*');
+			}
+		}
+	}, true);
+
+	// Intercept form submissions
+	document.addEventListener('submit', function(e) {
+		const form = e.target;
+		if (form && form.action) {
+			e.preventDefault();
+			e.stopPropagation();
+			window.parent.postMessage({ type: 'open-external-url', url: form.action }, '*');
+		}
+	}, true);
+
+	// Prevent window.location changes
+	const originalLocation = window.location;
+	Object.defineProperty(window, 'location', {
+		get: function() { return originalLocation; },
+		set: function(url) {
+			window.parent.postMessage({ type: 'open-external-url', url: url.toString() }, '*');
+		}
+	});
+})();
 </script>`;
 	}
 }
