@@ -26,6 +26,16 @@ export interface SandboxResult {
 export type SandboxUrlProvider = () => string;
 
 /**
+ * Configuration for prepareHtmlDocument
+ */
+export interface PrepareHtmlOptions {
+	/** True if this is an HTML artifact (inject into existing HTML), false if REPL (wrap in HTML) */
+	isHtmlArtifact: boolean;
+	/** True if this is a standalone download (no runtime bridge, no navigation interceptor) */
+	isStandalone?: boolean;
+}
+
+/**
  * Escape HTML special sequences in code to prevent premature tag closure
  * @param code Code that will be injected into <script> tags
  * @returns Escaped code safe for injection
@@ -85,8 +95,11 @@ export class SandboxIframe extends LitElement {
 
 		RUNTIME_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
 
-		// loadContent is always used for HTML artifacts
-		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, providers, true);
+		// loadContent is always used for HTML artifacts (not standalone)
+		const completeHtml = this.prepareHtmlDocument(sandboxId, htmlContent, providers, {
+			isHtmlArtifact: true,
+			isStandalone: false,
+		});
 
 		// Validate HTML before loading
 		const validationError = this.validateHtml(completeHtml);
@@ -309,7 +322,10 @@ export class SandboxIframe extends LitElement {
 			}, 120000);
 
 			// 4. Prepare HTML and create iframe
-			const completeHtml = this.prepareHtmlDocument(sandboxId, code, providers, isHtmlArtifact);
+			const completeHtml = this.prepareHtmlDocument(sandboxId, code, providers, {
+				isHtmlArtifact,
+				isStandalone: false,
+			});
 
 			// 5. Validate HTML before sending to sandbox
 			const validationError = this.validateHtml(completeHtml);
@@ -411,14 +427,21 @@ export class SandboxIframe extends LitElement {
 		sandboxId: string,
 		userCode: string,
 		providers: SandboxRuntimeProvider[] = [],
-		isHtmlArtifact: boolean = false,
+		options?: PrepareHtmlOptions,
 	): string {
+		// Default options
+		const opts: PrepareHtmlOptions = {
+			isHtmlArtifact: false,
+			isStandalone: false,
+			...options,
+		};
+
 		// Runtime script that will be injected
-		const runtime = this.getRuntimeScript(sandboxId, providers);
+		const runtime = this.getRuntimeScript(sandboxId, providers, opts.isStandalone || false);
 
 		// Only check for HTML tags if explicitly marked as HTML artifact
 		// For javascript_repl, userCode is JavaScript that may contain HTML in string literals
-		if (isHtmlArtifact) {
+		if (opts.isHtmlArtifact) {
 			// HTML Artifact - inject runtime into existing HTML
 			const headMatch = userCode.match(/<head[^>]*>/i);
 			if (headMatch) {
@@ -490,19 +513,28 @@ export class SandboxIframe extends LitElement {
 
 	/**
 	 * Generate runtime script from providers
+	 * @param sandboxId Unique sandbox ID
+	 * @param providers Runtime providers
+	 * @param isStandalone If true, skip runtime bridge and navigation interceptor (for standalone downloads)
 	 */
-	private getRuntimeScript(sandboxId: string, providers: SandboxRuntimeProvider[] = []): string {
+	private getRuntimeScript(
+		sandboxId: string,
+		providers: SandboxRuntimeProvider[] = [],
+		isStandalone: boolean = false,
+	): string {
 		// Collect all data from providers
 		const allData: Record<string, any> = {};
 		for (const provider of providers) {
 			Object.assign(allData, provider.getData());
 		}
 
-		// Generate bridge code
-		const bridgeCode = RuntimeMessageBridge.generateBridgeCode({
-			context: "sandbox-iframe",
-			sandboxId,
-		});
+		// Generate bridge code (skip if standalone)
+		const bridgeCode = isStandalone
+			? ""
+			: RuntimeMessageBridge.generateBridgeCode({
+					context: "sandbox-iframe",
+					sandboxId,
+				});
 
 		// Collect all runtime functions - pass sandboxId as string literal
 		const runtimeFunctions: string[] = [];
@@ -523,17 +555,11 @@ export class SandboxIframe extends LitElement {
 		// found in an extension context like sidepanel, settin body { font-size: 75% }. It's
 		// definitely not our code doing that.
 		// See  https://stackoverflow.com/questions/71480433/chrome-is-injecting-some-stylesheet-in-popup-ui-which-reduces-the-font-size-to-7
-		return `<style>
-html, body {
-	font-size: initial;
-}
-</style>
-<script>
-window.sandboxId = ${JSON.stringify(sandboxId)};
-${dataInjection}
-${bridgeCode}
-${runtimeFunctions.join("\n")}
 
+		// Navigation interceptor (only if NOT standalone)
+		const navigationInterceptor = isStandalone
+			? ""
+			: `
 // Navigation interceptor: prevent all navigation and open externally
 (function() {
 	// Intercept link clicks
@@ -572,6 +598,19 @@ ${runtimeFunctions.join("\n")}
 		// Already defined, skip
 	}
 })();
+`;
+
+		return `<style>
+html, body {
+	font-size: initial;
+}
+</style>
+<script>
+window.sandboxId = ${JSON.stringify(sandboxId)};
+${dataInjection}
+${bridgeCode}
+${runtimeFunctions.join("\n")}
+${navigationInterceptor}
 </script>`;
 	}
 }

@@ -61,7 +61,7 @@ export function agentLoop(
 				queuedMessages = [];
 			}
 
-			console.log("agent-loop: ", [...currentContext.messages]);
+			// console.log("agent-loop: ", [...currentContext.messages]);
 
 			// Stream assistant response
 			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);

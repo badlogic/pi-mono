@@ -48,7 +48,10 @@ export class HtmlArtifact extends ArtifactElement {
 		const sandbox = this.sandboxIframeRef.value;
 		const sandboxId = `artifact-${this.filename}`;
 		const downloadContent =
-			sandbox?.prepareHtmlDocument(sandboxId, this._content, this.runtimeProviders || [], true) || this._content;
+			sandbox?.prepareHtmlDocument(sandboxId, this._content, this.runtimeProviders || [], {
+				isHtmlArtifact: true,
+				isStandalone: true, // Skip runtime bridge and navigation interceptor for standalone downloads
+			}) || this._content;
 
 		return html`
 			<div class="flex items-center gap-2">
