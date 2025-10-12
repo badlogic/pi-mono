@@ -137,7 +137,8 @@ export class ArtifactsPanel extends LitElement {
 			ext === "css" ||
 			ext === "scss" ||
 			ext === "sass" ||
-			ext === "less"
+			ext === "less" ||
+			ext === "sh"
 		)
 			return "text";
 		// Everything else gets generic fallback
@@ -218,6 +219,14 @@ export class ArtifactsPanel extends LitElement {
 		});
 		this._activeFilename = filename;
 		this.requestUpdate(); // Only for tab bar update
+
+		// Scroll the active tab into view after render
+		requestAnimationFrame(() => {
+			const activeButton = this.querySelector(`button[data-filename="${filename}"]`);
+			if (activeButton) {
+				activeButton.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+			}
+		});
 	}
 
 	// Open panel and focus an artifact tab by filename
@@ -617,6 +626,7 @@ export class ArtifactsPanel extends LitElement {
 							return html`
 								<button
 									class="px-3 py-2 whitespace-nowrap border-b-2 ${activeClass}"
+									data-filename="${a.filename}"
 									@click=${() => this.showArtifact(a.filename)}
 								>
 									<span class="font-mono text-xs">${a.filename}</span>

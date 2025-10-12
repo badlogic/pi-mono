@@ -251,6 +251,30 @@ Downloadable Files (one-time downloads for the user - YOU cannot read these back
     - await returnDownloadableFile('chart.png', blob, 'image/png')`;
 
 // ============================================================================
+// Extract Document Tool
+// ============================================================================
+
+export const EXTRACT_DOCUMENT_DESCRIPTION = `Extract plain text from documents on the web (PDF, DOCX, XLSX, PPTX).
+
+## Purpose
+Use this when the user wants you to read a document at a URL.
+
+## Parameters
+- url: URL of the document (PDF, DOCX, XLSX, or PPTX only)
+
+## Returns
+Structured plain text with page/sheet/slide delimiters in XML-like format:
+- PDFs: <pdf filename="..."><page number="1">text</page>...</pdf>
+- Word: <docx filename="..."><page number="1">text</page></docx>
+- Excel: <excel filename="..."><sheet name="Sheet1" index="1">CSV data</sheet>...</excel>
+- PowerPoint: <pptx filename="..."><slide number="1">text</slide>...<notes>...</notes></pptx>
+
+## Important Notes
+- Maximum file size: 50MB
+- CORS restrictions may block some URLs - if this happens, the error will guide you to help the user configure a CORS proxy
+- Format is automatically detected from file extension and Content-Type header`;
+
+// ============================================================================
 // Attachments Runtime Provider
 // ============================================================================
 

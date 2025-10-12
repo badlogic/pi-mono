@@ -84,6 +84,7 @@ export { ImageArtifact } from "./tools/artifacts/ImageArtifact.js";
 export { MarkdownArtifact } from "./tools/artifacts/MarkdownArtifact.js";
 export { SvgArtifact } from "./tools/artifacts/SvgArtifact.js";
 export { TextArtifact } from "./tools/artifacts/TextArtifact.js";
+export { createExtractDocumentTool, extractDocumentTool } from "./tools/extract-document.js";
 // Tools
 export { getToolRenderer, registerToolRenderer, renderTool } from "./tools/index.js";
 export { createJavaScriptReplTool, javascriptReplTool } from "./tools/javascript-repl.js";

@@ -1,5 +1,6 @@
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import "./javascript-repl.js"; // Auto-registers the renderer
+import "./extract-document.js"; // Auto-registers the renderer
 import { getToolRenderer, registerToolRenderer } from "./renderer-registry.js";
 import { BashRenderer } from "./renderers/BashRenderer.js";
 import { DefaultRenderer } from "./renderers/DefaultRenderer.js";
