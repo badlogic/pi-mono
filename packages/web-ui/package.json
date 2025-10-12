@@ -23,7 +23,7 @@
     "lit": "^3.3.1",
     "lucide": "^0.544.0",
     "ollama": "^0.6.0",
-    "pdfjs-dist": "^5.4.149",
+    "pdfjs-dist": "^5.4.296",
     "xlsx": "^0.18.5"
   },
   "peerDependencies": {

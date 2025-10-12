@@ -41,6 +41,11 @@ declare module "@mariozechner/mini-lit" {
 		"Failed to load PDF": string;
 		"Failed to load document": string;
 		"Failed to load spreadsheet": string;
+		"Error loading PDF": string;
+		"Error loading document": string;
+		"Error loading spreadsheet": string;
+		"Preview not available for this file type.": string;
+		"Click the download button above to view it on your computer.": string;
 		"No content available": string;
 		"Failed to display text content": string;
 		"API keys are required to use AI models. Get your keys from the provider's website.": string;
@@ -207,6 +212,12 @@ export const translations = {
 		"Failed to load PDF": "Failed to load PDF",
 		"Failed to load document": "Failed to load document",
 		"Failed to load spreadsheet": "Failed to load spreadsheet",
+		"Error loading PDF": "Error loading PDF",
+		"Error loading document": "Error loading document",
+		"Error loading spreadsheet": "Error loading spreadsheet",
+		"Preview not available for this file type.": "Preview not available for this file type.",
+		"Click the download button above to view it on your computer.":
+			"Click the download button above to view it on your computer.",
 		"No content available": "No content available",
 		"Failed to display text content": "Failed to display text content",
 		"API keys are required to use AI models. Get your keys from the provider's website.":
@@ -377,6 +388,12 @@ export const translations = {
 		"Failed to load PDF": "PDF konnte nicht geladen werden",
 		"Failed to load document": "Dokument konnte nicht geladen werden",
 		"Failed to load spreadsheet": "Tabelle konnte nicht geladen werden",
+		"Error loading PDF": "Fehler beim Laden des PDFs",
+		"Error loading document": "Fehler beim Laden des Dokuments",
+		"Error loading spreadsheet": "Fehler beim Laden der Tabelle",
+		"Preview not available for this file type.": "Vorschau für diesen Dateityp nicht verfügbar.",
+		"Click the download button above to view it on your computer.":
+			"Klicken Sie oben auf die Download-Schaltfläche, um die Datei auf Ihrem Computer anzuzeigen.",
 		"No content available": "Kein Inhalt verfügbar",
 		"Failed to display text content": "Textinhalt konnte nicht angezeigt werden",
 		"API keys are required to use AI models. Get your keys from the provider's website.":

@@ -11,9 +11,13 @@ import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRun
 import { buildArtifactsDescription } from "../../prompts/tool-prompts.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
+import { DocxArtifact } from "./DocxArtifact.js";
+import { ExcelArtifact } from "./ExcelArtifact.js";
+import { GenericArtifact } from "./GenericArtifact.js";
 import { HtmlArtifact } from "./HtmlArtifact.js";
 import { ImageArtifact } from "./ImageArtifact.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
+import { PdfArtifact } from "./PdfArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
 
@@ -93,11 +97,16 @@ export class ArtifactsPanel extends LitElement {
 	}
 
 	// Helper to determine file type from extension
-	private getFileType(filename: string): "html" | "svg" | "markdown" | "image" | "text" {
+	private getFileType(
+		filename: string,
+	): "html" | "svg" | "markdown" | "image" | "pdf" | "excel" | "docx" | "text" | "generic" {
 		const ext = filename.split(".").pop()?.toLowerCase();
 		if (ext === "html") return "html";
 		if (ext === "svg") return "svg";
 		if (ext === "md" || ext === "markdown") return "markdown";
+		if (ext === "pdf") return "pdf";
+		if (ext === "xlsx" || ext === "xls") return "excel";
+		if (ext === "docx") return "docx";
 		if (
 			ext === "png" ||
 			ext === "jpg" ||
@@ -108,7 +117,31 @@ export class ArtifactsPanel extends LitElement {
 			ext === "ico"
 		)
 			return "image";
-		return "text";
+		// Text files
+		if (
+			ext === "txt" ||
+			ext === "json" ||
+			ext === "xml" ||
+			ext === "yaml" ||
+			ext === "yml" ||
+			ext === "csv" ||
+			ext === "js" ||
+			ext === "ts" ||
+			ext === "jsx" ||
+			ext === "tsx" ||
+			ext === "py" ||
+			ext === "java" ||
+			ext === "c" ||
+			ext === "cpp" ||
+			ext === "h" ||
+			ext === "css" ||
+			ext === "scss" ||
+			ext === "sass" ||
+			ext === "less"
+		)
+			return "text";
+		// Everything else gets generic fallback
+		return "generic";
 	}
 
 	// Get or create artifact element
@@ -130,8 +163,16 @@ export class ArtifactsPanel extends LitElement {
 				element = new MarkdownArtifact();
 			} else if (type === "image") {
 				element = new ImageArtifact();
-			} else {
+			} else if (type === "pdf") {
+				element = new PdfArtifact();
+			} else if (type === "excel") {
+				element = new ExcelArtifact();
+			} else if (type === "docx") {
+				element = new DocxArtifact();
+			} else if (type === "text") {
 				element = new TextArtifact();
+			} else {
+				element = new GenericArtifact();
 			}
 			element.filename = filename;
 			element.content = content;
