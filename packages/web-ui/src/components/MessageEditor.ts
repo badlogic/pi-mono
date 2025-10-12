@@ -77,6 +77,56 @@ export class MessageEditor extends LitElement {
 		}
 	};
 
+	private handlePaste = async (e: ClipboardEvent) => {
+		const items = e.clipboardData?.items;
+		if (!items) return;
+
+		const imageFiles: File[] = [];
+
+		// Check for image items in clipboard
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			if (item.type.startsWith("image/")) {
+				const file = item.getAsFile();
+				if (file) {
+					imageFiles.push(file);
+				}
+			}
+		}
+
+		// If we found images, process them
+		if (imageFiles.length > 0) {
+			e.preventDefault(); // Prevent default paste behavior
+
+			if (imageFiles.length + this.attachments.length > this.maxFiles) {
+				alert(`Maximum ${this.maxFiles} files allowed`);
+				return;
+			}
+
+			this.processingFiles = true;
+			const newAttachments: Attachment[] = [];
+
+			for (const file of imageFiles) {
+				try {
+					if (file.size > this.maxFileSize) {
+						alert(`Image exceeds maximum size of ${Math.round(this.maxFileSize / 1024 / 1024)}MB`);
+						continue;
+					}
+
+					const attachment = await loadAttachment(file);
+					newAttachments.push(attachment);
+				} catch (error) {
+					console.error("Error processing pasted image:", error);
+					alert(`Failed to process pasted image: ${String(error)}`);
+				}
+			}
+
+			this.attachments = [...this.attachments, ...newAttachments];
+			this.onFilesChange?.(this.attachments);
+			this.processingFiles = false;
+		}
+	};
+
 	private handleSend = () => {
 		this.onSend?.(this.value, this.attachments);
 	};
@@ -258,6 +308,7 @@ export class MessageEditor extends LitElement {
 					.value=${this.value}
 					@input=${this.handleTextareaInput}
 					@keydown=${this.handleKeyDown}
+					@paste=${this.handlePaste}
 					${ref(this.textareaRef)}
 				></textarea>
 
