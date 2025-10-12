@@ -25,13 +25,19 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 
 	getRuntime(): (sandboxId: string) => void {
 		return (_sandboxId: string) => {
-			// Console capture with immediate send pattern
-			const originalConsole = {
-				log: console.log,
-				error: console.error,
-				warn: console.warn,
-				info: console.info,
-			};
+			// Store truly original console methods on first wrap only
+			// This prevents accumulation of wrapper functions across multiple executions
+			if (!(window as any).__originalConsole) {
+				(window as any).__originalConsole = {
+					log: console.log.bind(console),
+					error: console.error.bind(console),
+					warn: console.warn.bind(console),
+					info: console.info.bind(console),
+				};
+			}
+
+			// Always use the truly original console, not the current (possibly wrapped) one
+			const originalConsole = (window as any).__originalConsole;
 
 			// Track pending send promises to wait for them in onCompleted
 			const pendingSends: Promise<any>[] = [];
@@ -48,7 +54,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 						})
 						.join(" ");
 
-					// Always log locally too
+					// Always log locally too (using truly original console)
 					(originalConsole as any)[method].apply(console, args);
 
 					// Send immediately and track the promise (only in extension context)
