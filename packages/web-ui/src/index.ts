@@ -18,7 +18,7 @@ export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
 // Message components
-export type { AppMessage, CustomMessages } from "./components/Messages.js";
+export type { AppMessage, CustomMessages, UserMessageWithAttachments } from "./components/Messages.js";
 export { AssistantMessage, ToolMessage, UserMessage } from "./components/Messages.js";
 // Message renderer registry
 export {

@@ -1,4 +1,4 @@
-import { html, i18n } from "@mariozechner/mini-lit";
+import { html } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { createRef, ref } from "lit/directives/ref.js";
