@@ -26,6 +26,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
@@ -364,7 +365,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 		const role = model.reasoning ? "developer" : "system";
 		messages.push({
 			role,
-			content: context.systemPrompt,
+			content: sanitizeSurrogates(context.systemPrompt),
 		});
 	}
 
@@ -373,14 +374,14 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			if (typeof msg.content === "string") {
 				messages.push({
 					role: "user",
-					content: [{ type: "input_text", text: msg.content }],
+					content: [{ type: "input_text", text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
 				const content: ResponseInputContent[] = msg.content.map((item): ResponseInputContent => {
 					if (item.type === "text") {
 						return {
 							type: "input_text",
-							text: item.text,
+							text: sanitizeSurrogates(item.text),
 						} satisfies ResponseInputText;
 					} else {
 						return {
@@ -414,7 +415,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					output.push({
 						type: "message",
 						role: "assistant",
-						content: [{ type: "output_text", text: textBlock.text, annotations: [] }],
+						content: [{ type: "output_text", text: sanitizeSurrogates(textBlock.text), annotations: [] }],
 						status: "completed",
 						id: textBlock.textSignature || "msg_" + Math.random().toString(36).substring(2, 15),
 					} satisfies ResponseOutputMessage);
@@ -436,7 +437,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: msg.output,
+				output: sanitizeSurrogates(msg.output),
 			});
 		}
 	}

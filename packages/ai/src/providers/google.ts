@@ -22,6 +22,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
@@ -278,7 +279,7 @@ function buildParams(
 
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),
-		...(context.systemPrompt && { systemInstruction: context.systemPrompt }),
+		...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
 		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
 
@@ -323,12 +324,12 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			if (typeof msg.content === "string") {
 				contents.push({
 					role: "user",
-					parts: [{ text: msg.content }],
+					parts: [{ text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
 				const parts: Part[] = msg.content.map((item) => {
 					if (item.type === "text") {
-						return { text: item.text };
+						return { text: sanitizeSurrogates(item.text) };
 					} else {
 						return {
 							inlineData: {
@@ -350,12 +351,12 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 
 			for (const block of msg.content) {
 				if (block.type === "text") {
-					parts.push({ text: block.text });
+					parts.push({ text: sanitizeSurrogates(block.text) });
 				} else if (block.type === "thinking") {
 					const thinkingPart: Part = {
 						thought: true,
 						thoughtSignature: block.thinkingSignature,
-						text: block.thinking,
+						text: sanitizeSurrogates(block.thinking),
 					};
 					parts.push(thinkingPart);
 				} else if (block.type === "toolCall") {
@@ -383,7 +384,7 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 							id: msg.toolCallId,
 							name: msg.toolName,
 							response: {
-								result: msg.output,
+								result: sanitizeSurrogates(msg.output),
 								isError: msg.isError,
 							},
 						},

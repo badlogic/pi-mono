@@ -22,6 +22,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
@@ -310,7 +311,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 		const useDeveloperRole =
 			model.reasoning && !model.baseUrl.includes("cerebras.ai") && !model.baseUrl.includes("api.x.ai");
 		const role = useDeveloperRole ? "developer" : "system";
-		params.push({ role: role, content: context.systemPrompt });
+		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
 	}
 
 	for (const msg of transformedMessages) {
@@ -318,14 +319,14 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 			if (typeof msg.content === "string") {
 				params.push({
 					role: "user",
-					content: msg.content,
+					content: sanitizeSurrogates(msg.content),
 				});
 			} else {
 				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
 					if (item.type === "text") {
 						return {
 							type: "text",
-							text: item.text,
+							text: sanitizeSurrogates(item.text),
 						} satisfies ChatCompletionContentPartText;
 					} else {
 						return {
@@ -354,7 +355,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
 			if (textBlocks.length > 0) {
 				assistantMsg.content = textBlocks.map((b) => {
-					return { type: "text", text: b.text };
+					return { type: "text", text: sanitizeSurrogates(b.text) };
 				});
 			}
 
@@ -386,7 +387,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 		} else if (msg.role === "toolResult") {
 			params.push({
 				role: "tool",
-				content: msg.output,
+				content: sanitizeSurrogates(msg.output),
 				tool_call_id: msg.toolCallId,
 			});
 		}

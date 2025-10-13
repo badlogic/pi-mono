@@ -22,6 +22,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
@@ -284,7 +285,7 @@ function buildParams(
 		if (context.systemPrompt) {
 			params.system.push({
 				type: "text",
-				text: context.systemPrompt,
+				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
 				},
@@ -295,7 +296,7 @@ function buildParams(
 		params.system = [
 			{
 				type: "text",
-				text: context.systemPrompt,
+				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
 				},
@@ -349,7 +350,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				if (msg.content.trim().length > 0) {
 					params.push({
 						role: "user",
-						content: msg.content,
+						content: sanitizeSurrogates(msg.content),
 					});
 				}
 			} else {
@@ -357,7 +358,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 					if (item.type === "text") {
 						return {
 							type: "text",
-							text: item.text,
+							text: sanitizeSurrogates(item.text),
 						};
 					} else {
 						return {
@@ -391,13 +392,13 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 					if (block.text.trim().length === 0) continue;
 					blocks.push({
 						type: "text",
-						text: block.text,
+						text: sanitizeSurrogates(block.text),
 					});
 				} else if (block.type === "thinking") {
 					if (block.thinking.trim().length === 0) continue;
 					blocks.push({
 						type: "thinking",
-						thinking: block.thinking,
+						thinking: sanitizeSurrogates(block.thinking),
 						signature: block.thinkingSignature || "",
 					});
 				} else if (block.type === "toolCall") {
@@ -422,7 +423,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 			toolResults.push({
 				type: "tool_result",
 				tool_use_id: sanitizeToolCallId(msg.toolCallId),
-				content: msg.output,
+				content: sanitizeSurrogates(msg.output),
 				is_error: msg.isError,
 			});
 
@@ -433,7 +434,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				toolResults.push({
 					type: "tool_result",
 					tool_use_id: sanitizeToolCallId(nextMsg.toolCallId),
-					content: nextMsg.output,
+					content: sanitizeSurrogates(nextMsg.output),
 					is_error: nextMsg.isError,
 				});
 				j++;
