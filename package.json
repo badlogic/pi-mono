@@ -7,7 +7,7 @@
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-web-ui && npm run build -w @mariozechner/pi-agent && npm run build -w @mariozechner/pi-proxy && npm run build -w @mariozechner/pi",
+		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-agent && npm run build -w @mariozechner/pi-agent-old && npm run build -w @mariozechner/coding-agent && npm run build -w @mariozechner/pi-web-ui && npm run build -w @mariozechner/pi-proxy && npm run build -w @mariozechner/pi",
 		"dev": "concurrently --names \"ai,web-ui,tui,proxy\" --prefix-colors \"cyan,green,magenta,blue\" \"npm run dev -w @mariozechner/pi-ai\" \"npm run dev -w @mariozechner/pi-web-ui\" \"npm run dev -w @mariozechner/pi-tui\" \"npm run dev -w @mariozechner/pi-proxy\"",
 		"check": "biome check --write . && npm run check --workspaces && tsc --noEmit",
 		"test": "npm run test --workspaces --if-present",

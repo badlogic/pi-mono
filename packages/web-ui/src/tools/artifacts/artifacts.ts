@@ -8,7 +8,7 @@ import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
 import type { ArtifactMessage } from "../../components/Messages.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
-import { buildArtifactsDescription } from "../../prompts/tool-prompts.js";
+import { ARTIFACTS_TOOL_DESCRIPTION } from "../../prompts/prompts.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { DocxArtifact } from "./DocxArtifact.js";
@@ -245,14 +245,12 @@ export class ArtifactsPanel extends LitElement {
 			label: "Artifacts",
 			name: "artifacts",
 			get description() {
-				// Get dynamic provider descriptions
-				const providers = self.runtimeProvidersFactory?.() || [];
-				const providerDocs = providers
-					.map((p) => p.getDescription?.())
-					.filter(Boolean)
-					.join("\n");
-
-				return buildArtifactsDescription(providerDocs || undefined);
+				const runtimeProviderDescriptions =
+					self
+						.runtimeProvidersFactory?.()
+						.map((d) => d.getDescription())
+						.filter((d) => d.trim().length > 0) || [];
+				return ARTIFACTS_TOOL_DESCRIPTION(runtimeProviderDescriptions);
 			},
 			parameters: artifactsParamsSchema,
 			// Execute mutates our local store and returns a plain output

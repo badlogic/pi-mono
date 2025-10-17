@@ -9,6 +9,7 @@ import {
 	type AppMessage,
 	AppStorage,
 	ChatPanel,
+	createJavaScriptReplTool,
 	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
@@ -197,6 +198,12 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 	await chatPanel.setAgent(agent, {
 		onApiKeyRequired: async (provider: string) => {
 			return await ApiKeyPromptDialog.prompt(provider);
+		},
+		toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
+			// Create javascript_repl tool with access to attachments + artifacts
+			const replTool = createJavaScriptReplTool();
+			replTool.runtimeProvidersFactory = runtimeProvidersFactory;
+			return [replTool];
 		}
 	});
 };

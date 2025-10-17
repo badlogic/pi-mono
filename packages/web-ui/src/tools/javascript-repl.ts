@@ -5,7 +5,7 @@ import { createRef, ref } from "lit/directives/ref.js";
 import { Code } from "lucide";
 import { type SandboxFile, SandboxIframe, type SandboxResult } from "../components/SandboxedIframe.js";
 import type { SandboxRuntimeProvider } from "../components/sandbox/SandboxRuntimeProvider.js";
-import { JAVASCRIPT_REPL_DESCRIPTION } from "../prompts/tool-prompts.js";
+import { JAVASCRIPT_REPL_TOOL_DESCRIPTION } from "../prompts/prompts.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer, ToolRenderResult } from "./types.js";
@@ -132,7 +132,13 @@ export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchem
 		name: "javascript_repl",
 		runtimeProvidersFactory: () => [], // default to empty array
 		sandboxUrlProvider: undefined, // optional, for browser extensions
-		description: JAVASCRIPT_REPL_DESCRIPTION,
+		get description() {
+			const runtimeProviderDescriptions =
+				this.runtimeProvidersFactory?.()
+					.map((d) => d.getDescription())
+					.filter((d) => d.trim().length > 0) || [];
+			return JAVASCRIPT_REPL_TOOL_DESCRIPTION(runtimeProviderDescriptions);
+		},
 		parameters: javascriptReplSchema,
 		execute: async function (_toolCallId: string, args: Static<typeof javascriptReplSchema>, signal?: AbortSignal) {
 			const result = await executeJavaScript(

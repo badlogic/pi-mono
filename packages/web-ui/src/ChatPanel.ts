@@ -9,7 +9,6 @@ import { ArtifactsRuntimeProvider } from "./components/sandbox/ArtifactsRuntimeP
 import { AttachmentsRuntimeProvider } from "./components/sandbox/AttachmentsRuntimeProvider.js";
 import type { SandboxRuntimeProvider } from "./components/sandbox/SandboxRuntimeProvider.js";
 import { ArtifactsPanel, ArtifactsToolRenderer } from "./tools/artifacts/index.js";
-import { createJavaScriptReplTool } from "./tools/javascript-repl.js";
 import { registerToolRenderer } from "./tools/renderer-registry.js";
 import type { Attachment } from "./utils/attachment-utils.js";
 import { i18n } from "./utils/i18n.js";
@@ -65,6 +64,7 @@ export class ChatPanel extends LitElement {
 				agent: Agent,
 				agentInterface: AgentInterface,
 				artifactsPanel: ArtifactsPanel,
+				runtimeProvidersFactory: () => SandboxRuntimeProvider[],
 			) => AgentTool<any>[];
 		},
 	) {
@@ -80,12 +80,6 @@ export class ChatPanel extends LitElement {
 		this.agentInterface.onApiKeyRequired = config?.onApiKeyRequired;
 		this.agentInterface.onBeforeSend = config?.onBeforeSend;
 
-		// Create JavaScript REPL tool
-		const javascriptReplTool = createJavaScriptReplTool();
-		if (config?.sandboxUrlProvider) {
-			javascriptReplTool.sandboxUrlProvider = config.sandboxUrlProvider;
-		}
-
 		// Set up artifacts panel
 		this.artifactsPanel = new ArtifactsPanel();
 		if (config?.sandboxUrlProvider) {
@@ -94,7 +88,7 @@ export class ChatPanel extends LitElement {
 		// Register the standalone tool renderer (not the panel itself)
 		registerToolRenderer("artifacts", new ArtifactsToolRenderer(this.artifactsPanel));
 
-		// Runtime providers factory
+		// Runtime providers factory for attachments + artifacts access
 		const runtimeProvidersFactory = () => {
 			const attachments: Attachment[] = [];
 			for (const message of this.agent!.state.messages) {
@@ -116,7 +110,6 @@ export class ChatPanel extends LitElement {
 
 			return providers;
 		};
-		javascriptReplTool.runtimeProvidersFactory = runtimeProvidersFactory;
 		this.artifactsPanel.runtimeProvidersFactory = runtimeProvidersFactory;
 
 		this.artifactsPanel.onArtifactsChange = () => {
@@ -141,8 +134,10 @@ export class ChatPanel extends LitElement {
 		};
 
 		// Set tools on the agent
-		const additionalTools = config?.toolsFactory?.(agent, this.agentInterface, this.artifactsPanel) || [];
-		const tools = [javascriptReplTool, this.artifactsPanel.tool, ...additionalTools];
+		// Pass runtimeProvidersFactory so consumers can configure their own REPL tools
+		const additionalTools =
+			config?.toolsFactory?.(agent, this.agentInterface, this.artifactsPanel, runtimeProvidersFactory) || [];
+		const tools = [this.artifactsPanel.tool, ...additionalTools];
 		this.agent.setTools(tools);
 
 		// Reconstruct artifacts from existing messages

@@ -1,0 +1,52 @@
+{
+	"name": "@mariozechner/coding-agent",
+	"version": "0.5.44",
+	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
+	"type": "module",
+	"bin": {
+		"coding-agent": "dist/cli.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+		"check": "tsc --noEmit",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent": "^0.5.44",
+		"@mariozechner/pi-ai": "^0.5.44",
+		"@mariozechner/pi-tui": "^0.5.44",
+		"chalk": "^5.5.0",
+		"glob": "^11.0.3"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"coding-agent",
+		"ai",
+		"llm",
+		"cli",
+		"tui",
+		"agent"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/coding-agent"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

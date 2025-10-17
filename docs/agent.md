@@ -1,15 +1,23 @@
-# Coding Agent Architecture
+# Agent Architecture
 
 ## Executive Summary
 
-This document proposes extracting the agent infrastructure from `@mariozechner/pi-web-ui` and `@mariozechner/pi-agent` into a new headless coding agent package that can be reused across multiple UI implementations (TUI, VS Code extension, web interface).
+This document proposes extracting the agent infrastructure from `@mariozechner/pi-web-ui` into two new packages:
+
+1. **`@mariozechner/agent`** - General-purpose agent package with transport abstraction, state management, and attachment support
+2. **`@mariozechner/coding-agent`** - Specialized coding agent built on the general agent, with file manipulation tools and session management
 
 The new architecture will provide:
-- **Headless agent core** with file manipulation tools (read, bash, edit, write)
-- **Session management** for conversation persistence and resume capability
+- **General agent core** with transport abstraction (ProviderTransport, AppTransport)
+- **Reactive state management** with subscribe/emit pattern
+- **Attachment support** (type definitions only - processing stays in consumers)
+- **Message transformation** pipeline for filtering and adapting messages
+- **Message queueing** for out-of-band message injection
 - **Full abort support** throughout the execution pipeline
 - **Event-driven API** for flexible UI integration
 - **Clean separation** between agent logic and presentation layer
+- **Coding-specific tools** (read, bash, edit, write) in a specialized package
+- **Session management** for conversation persistence and resume capability
 
 ## Current Architecture Analysis
 
@@ -18,7 +26,7 @@ The new architecture will provide:
 ```
 pi-mono/
 ├── packages/ai/              # Core AI streaming (GOOD - keep as-is)
-├── packages/web-ui/          # Web UI with agent (GOOD - keep separate)
+├── packages/web-ui/          # Web UI with embedded agent (EXTRACT core agent logic)
 ├── packages/agent/           # OLD - needs to be replaced
 ├── packages/tui/             # Terminal UI lib (GOOD - low-level primitives)
 ├── packages/proxy/           # CORS proxy (unrelated)
@@ -77,9 +85,9 @@ interface AgentToolResult<T> {
 }
 ```
 
-### packages/web-ui/agent - Web Agent
+### packages/web-ui/src/agent - Web Agent
 
-**Status:** ✅ Good for web use cases, keep separate
+**Status:** ✅ KEEP AS-IS for now, will be replaced later after new packages are proven
 
 **Architecture:**
 ```typescript
@@ -94,60 +102,49 @@ class Agent {
   async prompt(input: string, attachments?: Attachment[]): Promise<void>
   abort(): void
   subscribe(fn: (e: AgentEvent) => void): () => void
+  setSystemPrompt(v: string): void
+  setModel(m: Model<any>): void
+  setThinkingLevel(l: ThinkingLevel): void
+  setTools(t: AgentTool<any>[]): void
+  replaceMessages(ms: AppMessage[]): void
+  appendMessage(m: AppMessage): void
+  async queueMessage(m: AppMessage): Promise<void>
+  clearMessages(): void
 }
 ```
 
-**Key Features:**
-- **Transport abstraction** (ProviderTransport for direct API, AppTransport for server-side)
-- **Attachment handling** (images, documents with text extraction)
-- **Message transformation** (app messages → LLM messages)
-- **Reactive state** (subscribe pattern for UI updates)
-- **Message queue** for injecting tool results/errors asynchronously
+**Key Features (will be basis for new `@mariozechner/agent` package):**
+- ✅ **Transport abstraction** (ProviderTransport for direct API, AppTransport for server-side proxy)
+- ✅ **Attachment type definition** (id, type, fileName, mimeType, size, content, extractedText, preview)
+- ✅ **Message transformation** pipeline (app messages → LLM messages, with filtering)
+- ✅ **Reactive state** (subscribe/emit pattern for UI updates)
+- ✅ **Message queueing** for injecting messages out-of-band during agent loop
+- ✅ **Abort support** (AbortController per prompt)
+- ✅ **State management** (systemPrompt, model, thinkingLevel, tools, messages, isStreaming, etc.)
 
-**Why it's different from coding agent:**
-- Browser-specific concerns (CORS, attachments)
-- Transport layer for flexible API routing
-- Tied to web UI state management
-- Supports rich media attachments
+**Strategy:**
+1. Use this implementation as the **reference design** for `@mariozechner/agent`
+2. Create new `@mariozechner/agent` package by copying/adapting this code
+3. Keep web-ui using its own embedded agent until new package is proven stable
+4. Eventually migrate web-ui to use `@mariozechner/agent` (Phase 2 of migration)
+5. Document processing (PDF/DOCX/PPTX/Excel) stays in web-ui permanently
 
 ### packages/agent - OLD Implementation
 
-**Status:** ⚠️ MUST BE REPLACED
+**Status:** ⚠️ REMOVE COMPLETELY
 
-**Architecture:**
-```typescript
-class Agent {
-  constructor(
-    config: AgentConfig,
-    renderer?: AgentEventReceiver,
-    sessionManager?: SessionManager
-  )
+**Why it should be removed:**
+1. **Tightly coupled to OpenAI SDK** - Not provider-agnostic, hardcoded to OpenAI's API
+2. **Outdated architecture** - Superseded by web-ui's better agent design
+3. **Mixed concerns** - Agent logic + tool implementations + rendering all in one package
+4. **Limited scope** - Cannot be reused across different UI implementations
 
-  async ask(userMessage: string): Promise<void>
-  interrupt(): void
-  setEvents(events: AgentEvent[]): void
-}
-```
+**What to salvage before removal:**
+1. **SessionManager** - Port to `@mariozechner/coding-agent` (JSONL-based session persistence)
+2. **Tool implementations** - Adapt read, bash, edit, write tools for coding-agent
+3. **Renderer abstractions** - Port TuiRenderer/ConsoleRenderer/JsonRenderer concepts to coding-agent-tui
 
-**Problems:**
-1. **Tightly coupled to OpenAI SDK** (not provider-agnostic)
-2. **Hardcoded tools** (read, list, bash, glob, rg)
-3. **Mixed concerns** (agent logic + tool implementations in same package)
-4. **No separation** between core loop and UI rendering
-5. **Two API paths** (completions vs responses) with branching logic
-
-**Good parts to preserve:**
-1. **SessionManager** - JSONL-based session persistence
-2. **Event receiver pattern** - Clean UI integration
-3. **Abort support** - Proper signal handling
-4. **Renderer abstraction** (ConsoleRenderer, TuiRenderer, JsonRenderer)
-
-**Tools implemented:**
-- `read`: Read file contents (1MB limit with truncation)
-- `list`: List directory contents
-- `bash`: Execute shell command with abort support
-- `glob`: Find files matching glob pattern
-- `rg`: Run ripgrep search
+**Action:** Delete this package entirely after extracting useful components to the new packages.
 
 ## Proposed Architecture
 
@@ -155,132 +152,440 @@ class Agent {
 
 ```
 pi-mono/
-├── packages/ai/                          # [unchanged] Core streaming
-├── packages/coding-agent/                # [NEW] Headless coding agent
+├── packages/ai/                          # [unchanged] Core streaming library
+│
+├── packages/agent/                       # [NEW] General-purpose agent
 │   ├── src/
-│   │   ├── agent.ts                      # Main agent class
-│   │   ├── session-manager.ts            # Session persistence
+│   │   ├── agent.ts                      # Main Agent class
+│   │   ├── types.ts                      # AgentState, AgentEvent, Attachment, etc.
+│   │   ├── transports/
+│   │   │   ├── types.ts                  # AgentTransport interface
+│   │   │   ├── ProviderTransport.ts      # Direct API calls
+│   │   │   ├── AppTransport.ts           # Server-side proxy
+│   │   │   ├── proxy-types.ts            # Proxy event types
+│   │   │   └── index.ts                  # Transport exports
+│   │   └── index.ts                      # Public API
+│   └── package.json
+│
+├── packages/coding-agent/                # [NEW] Coding-specific agent + CLI
+│   ├── src/
+│   │   ├── coding-agent.ts               # CodingAgent wrapper (uses @mariozechner/agent)
+│   │   ├── session-manager.ts            # Session persistence (JSONL)
 │   │   ├── tools/
 │   │   │   ├── read-tool.ts              # Read files (with pagination)
 │   │   │   ├── bash-tool.ts              # Shell execution
 │   │   │   ├── edit-tool.ts              # File editing (old_string → new_string)
 │   │   │   ├── write-tool.ts             # File creation/replacement
 │   │   │   └── index.ts                  # Tool exports
-│   │   └── types.ts                      # Public types
-│   └── package.json
+│   │   ├── cli/
+│   │   │   ├── index.ts                  # CLI entry point
+│   │   │   ├── renderers/
+│   │   │   │   ├── tui-renderer.ts       # Rich terminal UI
+│   │   │   │   ├── console-renderer.ts   # Simple console output
+│   │   │   │   └── json-renderer.ts      # JSONL output for piping
+│   │   │   └── main.ts                   # CLI app logic
+│   │   ├── types.ts                      # Public types
+│   │   └── index.ts                      # Public API (agent + tools)
+│   └── package.json                      # Exports both library + CLI binary
 │
-├── packages/coding-agent-tui/            # [NEW] Terminal interface
+├── packages/web-ui/                      # [updated] Uses @mariozechner/agent
 │   ├── src/
-│   │   ├── cli.ts                        # CLI entry point
-│   │   ├── renderers/
-│   │   │   ├── tui-renderer.ts           # Rich terminal UI
-│   │   │   ├── console-renderer.ts       # Simple console output
-│   │   │   └── json-renderer.ts          # JSONL output for piping
-│   │   └── main.ts                       # App logic
-│   └── package.json
+│   │   ├── utils/
+│   │   │   └── attachment-utils.ts       # Document processing (keep here)
+│   │   └── ...                           # Other web UI code
+│   └── package.json                      # Now depends on @mariozechner/agent
 │
-├── packages/web-ui/                      # [unchanged] Web UI keeps its own agent
 └── packages/tui/                         # [unchanged] Low-level terminal primitives
 ```
 
 ### Dependency Graph
 
 ```
-┌─────────────────────┐
-│   @mariozechner/    │
-│      pi-ai          │  ← Core streaming, tool interface
-└──────────┬──────────┘
-           │ depends on
-           ↓
-┌─────────────────────┐
-│  @mariozechner/     │
-│   coding-agent      │  ← Headless agent + file tools
-└──────────┬──────────┘
-           │ depends on
-           ↓
-    ┌──────────┬──────────┐
-    ↓          ↓          ↓
-┌────────┐ ┌───────┐ ┌────────┐
-│ TUI    │ │ VSCode│ │ Web UI │
-│ Client │ │  Ext  │ │ (own)  │
-└────────┘ └───────┘ └────────┘
+                    ┌─────────────────────┐
+                    │   @mariozechner/    │
+                    │      pi-ai          │  ← Core streaming, tool interface
+                    └──────────┬──────────┘
+                               │ depends on
+                               ↓
+                    ┌─────────────────────┐
+                    │  @mariozechner/     │
+                    │      agent          │  ← General agent (transports, state, attachments)
+                    └──────────┬──────────┘
+                               │ depends on
+                               ↓
+               ┌───────────────┴───────────────┐
+               ↓                               ↓
+    ┌─────────────────────┐         ┌─────────────────────┐
+    │  @mariozechner/     │         │  @mariozechner/     │
+    │   coding-agent      │         │     pi-web-ui       │
+    │ (lib + CLI + tools) │         │ (+ doc processing)  │
+    └─────────────────────┘         └─────────────────────┘
+```
+
+## Package: @mariozechner/agent
+
+### Core Types
+
+```typescript
+export interface Attachment {
+  id: string;
+  type: "image" | "document";
+  fileName: string;
+  mimeType: string;
+  size: number;
+  content: string;        // base64 encoded (without data URL prefix)
+  extractedText?: string; // For documents
+  preview?: string;       // base64 image preview
+}
+
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
+
+// AppMessage abstraction - extends base LLM messages with app-specific features
+export type UserMessageWithAttachments = UserMessage & { attachments?: Attachment[] };
+
+// Extensible interface for custom app messages (via declaration merging)
+// Apps can add their own message types:
+// declare module "@mariozechner/agent" {
+//   interface CustomMessages {
+//     artifact: ArtifactMessage;
+//     notification: NotificationMessage;
+//   }
+// }
+export interface CustomMessages {
+  // Empty by default - apps extend via declaration merging
+}
+
+// AppMessage: Union of LLM messages + attachments + custom messages
+export type AppMessage =
+  | AssistantMessage
+  | UserMessageWithAttachments
+  | ToolResultMessage
+  | CustomMessages[keyof CustomMessages];
+
+export interface AgentState {
+  systemPrompt: string;
+  model: Model<any>;
+  thinkingLevel: ThinkingLevel;
+  tools: AgentTool<any>[];
+  messages: AppMessage[];      // Can include attachments + custom message types
+  isStreaming: boolean;
+  streamMessage: Message | null;
+  pendingToolCalls: Set<string>;
+  error?: string;
+}
+
+export type AgentEvent =
+  | { type: "state-update"; state: AgentState }
+  | { type: "started" }
+  | { type: "completed" };
+```
+
+### AppMessage Abstraction
+
+The `AppMessage` type is a key abstraction that extends base LLM messages with app-specific features while maintaining type safety and extensibility.
+
+**Key Benefits:**
+1. **Extends base messages** - Adds `attachments` field to `UserMessage` for file uploads
+2. **Type-safe extensibility** - Apps can add custom message types via declaration merging
+3. **Backward compatible** - Works seamlessly with base LLM messages from `@mariozechner/pi-ai`
+4. **Message transformation** - Filters app-specific fields before sending to LLM
+
+**Usage Example (Web UI):**
+```typescript
+import type { AppMessage } from "@mariozechner/agent";
+
+// Extend with custom message type for artifacts
+declare module "@mariozechner/agent" {
+  interface CustomMessages {
+    artifact: ArtifactMessage;
+  }
+}
+
+interface ArtifactMessage {
+  role: "artifact";
+  action: "create" | "update" | "delete";
+  filename: string;
+  content?: string;
+  title?: string;
+  timestamp: string;
+}
+
+// Now AppMessage includes: AssistantMessage | UserMessageWithAttachments | ToolResultMessage | ArtifactMessage
+const messages: AppMessage[] = [
+  { role: "user", content: "Hello", attachments: [attachment] },
+  { role: "assistant", content: [{ type: "text", text: "Hi!" }], /* ... */ },
+  { role: "artifact", action: "create", filename: "test.ts", content: "...", timestamp: "..." }
+];
+```
+
+**Usage Example (Coding Agent):**
+```typescript
+import type { AppMessage } from "@mariozechner/agent";
+
+// Coding agent can extend with session metadata
+declare module "@mariozechner/agent" {
+  interface CustomMessages {
+    session_metadata: SessionMetadataMessage;
+  }
+}
+
+interface SessionMetadataMessage {
+  role: "session_metadata";
+  sessionId: string;
+  timestamp: string;
+  workingDirectory: string;
+}
+```
+
+**Message Transformation:**
+
+The `messageTransformer` function converts app messages to LLM-compatible messages, including handling attachments:
+
+```typescript
+function defaultMessageTransformer(messages: AppMessage[]): Message[] {
+  return messages
+    .filter((m) => {
+      // Only keep standard LLM message roles
+      return m.role === "user" || m.role === "assistant" || m.role === "toolResult";
+    })
+    .map((m) => {
+      if (m.role === "user") {
+        const { attachments, ...baseMessage } = m as any;
+
+        // If no attachments, return as-is
+        if (!attachments || attachments.length === 0) {
+          return baseMessage as Message;
+        }
+
+        // Convert attachments to content blocks
+        const content = Array.isArray(baseMessage.content)
+          ? [...baseMessage.content]
+          : [{ type: "text", text: baseMessage.content }];
+
+        for (const attachment of attachments) {
+          // Add image blocks for image attachments
+          if (attachment.type === "image") {
+            content.push({
+              type: "image",
+              data: attachment.content,
+              mimeType: attachment.mimeType
+            });
+          }
+          // Add text blocks for documents with extracted text
+          else if (attachment.type === "document" && attachment.extractedText) {
+            content.push({
+              type: "text",
+              text: attachment.extractedText
+            });
+          }
+        }
+
+        return { ...baseMessage, content } as Message;
+      }
+      return m as Message;
+    });
+}
+```
+
+This ensures that:
+- Custom message types (like `artifact`, `session_metadata`) are filtered out
+- Image attachments are converted to `ImageContent` blocks
+- Document attachments with extracted text are converted to `TextContent` blocks
+- The `attachments` field itself is stripped (replaced by proper content blocks)
+- LLM receives only standard `Message` types from `@mariozechner/pi-ai`
+
+### Agent Class
+
+```typescript
+export interface AgentOptions {
+  initialState?: Partial<AgentState>;
+  transport: AgentTransport;
+  // Transform app messages to LLM-compatible messages before sending
+  messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
+}
+
+export class Agent {
+  constructor(opts: AgentOptions);
+
+  get state(): AgentState;
+  subscribe(fn: (e: AgentEvent) => void): () => void;
+
+  // State mutators
+  setSystemPrompt(v: string): void;
+  setModel(m: Model<any>): void;
+  setThinkingLevel(l: ThinkingLevel): void;
+  setTools(t: AgentTool<any>[]): void;
+  replaceMessages(ms: AppMessage[]): void;
+  appendMessage(m: AppMessage): void;
+  async queueMessage(m: AppMessage): Promise<void>;
+  clearMessages(): void;
+
+  // Main prompt method
+  async prompt(input: string, attachments?: Attachment[]): Promise<void>;
+
+  // Abort current operation
+  abort(): void;
+}
+```
+
+**Key Features:**
+1. **Reactive state** - Subscribe to state updates for UI binding
+2. **Transport abstraction** - Pluggable backends (direct API, proxy server, etc.)
+3. **Message transformation** - Convert app-specific messages to LLM format
+4. **Message queueing** - Inject messages during agent loop (for tool results, errors)
+5. **Attachment support** - Type-safe attachment handling (processing is external)
+6. **Abort support** - Cancel in-progress operations
+
+### Transport Interface
+
+```typescript
+export interface AgentRunConfig {
+  systemPrompt: string;
+  tools: AgentTool<any>[];
+  model: Model<any>;
+  reasoning?: "low" | "medium" | "high";
+  getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
+}
+
+export interface AgentTransport {
+  run(
+    messages: Message[],
+    userMessage: Message,
+    config: AgentRunConfig,
+    signal?: AbortSignal,
+  ): AsyncIterable<AgentEvent>;
+}
+```
+
+### ProviderTransport
+
+```typescript
+export class ProviderTransport implements AgentTransport {
+  async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+    // Calls LLM providers directly using agentLoop from @mariozechner/pi-ai
+    // Optionally routes through CORS proxy if configured
+  }
+}
+```
+
+### AppTransport
+
+```typescript
+export class AppTransport implements AgentTransport {
+  constructor(proxyUrl: string);
+
+  async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+    // Routes requests through app server with user authentication
+    // Server manages API keys and usage tracking
+  }
+}
 ```
 
 ## Package: @mariozechner/coding-agent
 
-### Core Agent Class
+### CodingAgent Class
 
 ```typescript
-export interface CodingAgentConfig {
+export interface CodingAgentOptions {
   systemPrompt: string;
   model: Model<any>;
   reasoning?: "low" | "medium" | "high";
   apiKey: string;
-}
-
-export interface CodingAgentOptions {
-  config: CodingAgentConfig;
-  sessionManager?: SessionManager;
   workingDirectory?: string;
+  sessionManager?: SessionManager;
 }
 
 export class CodingAgent {
   constructor(options: CodingAgentOptions);
 
+  // Access underlying agent
+  get agent(): Agent;
+
+  // State accessors
+  get state(): AgentState;
+  subscribe(fn: (e: AgentEvent) => void): () => void;
+
   // Send a message to the agent
-  async prompt(message: string, signal?: AbortSignal): AsyncIterable<AgentEvent>;
+  async prompt(message: string, attachments?: Attachment[]): Promise<void>;
 
-  // Restore from session events (for --continue mode)
-  setMessages(messages: Message[]): void;
+  // Abort current operation
+  abort(): void;
 
-  // Get current message history
-  getMessages(): Message[];
+  // Message management for session restoration
+  replaceMessages(messages: AppMessage[]): void;
+  getMessages(): AppMessage[];
 }
 ```
 
 **Key design decisions:**
-1. **AsyncIterable instead of callbacks** - More flexible for consumers
-2. **Signal per prompt** - Each prompt() call accepts its own AbortSignal
-3. **No internal state management** - Consumers handle UI state
-4. **Simple message management** - Get/set for session restoration
+1. **Wraps @mariozechner/agent** - Builds on the general agent package
+2. **Pre-configured tools** - Includes read, bash, edit, write tools
+3. **Session management** - Optional JSONL-based session persistence
+4. **Working directory context** - All file operations relative to this directory
+5. **Simple API** - Hides transport complexity, uses ProviderTransport by default
 
 ### Usage Example (TUI)
 
 ```typescript
 import { CodingAgent } from "@mariozechner/coding-agent";
 import { SessionManager } from "@mariozechner/coding-agent";
+import { getModel } from "@mariozechner/pi-ai";
 
 const session = new SessionManager({ continue: true });
 const agent = new CodingAgent({
-  config: {
-    systemPrompt: "You are a coding assistant...",
-    model: getModel("openai", "gpt-4"),
-    apiKey: process.env.OPENAI_API_KEY!,
-  },
-  sessionManager: session,
+  systemPrompt: "You are a coding assistant...",
+  model: getModel("openai", "gpt-4"),
+  apiKey: process.env.OPENAI_API_KEY!,
   workingDirectory: process.cwd(),
+  sessionManager: session,
 });
 
 // Restore previous session
 if (session.hasData()) {
-  agent.setMessages(session.getMessages());
+  agent.replaceMessages(session.getMessages());
 }
 
-// Send prompt with abort support
-const controller = new AbortController();
-for await (const event of agent.prompt("Fix the bug in server.ts", controller.signal)) {
-  switch (event.type) {
-    case "message_update":
-      renderer.updateAssistant(event.message);
-      break;
-    case "tool_execution_start":
-      renderer.showTool(event.toolName, event.args);
-      break;
-    case "tool_execution_end":
-      renderer.showToolResult(event.toolName, event.result);
-      break;
+// Subscribe to state changes
+agent.subscribe((event) => {
+  if (event.type === "state-update") {
+    renderer.render(event.state);
+  } else if (event.type === "completed") {
+    session.save(agent.getMessages());
   }
-}
+});
+
+// Send prompt
+await agent.prompt("Fix the bug in server.ts");
+```
+
+### Usage Example (Web UI)
+
+```typescript
+import { Agent, ProviderTransport, Attachment } from "@mariozechner/agent";
+import { getModel } from "@mariozechner/pi-ai";
+import { loadAttachment } from "./utils/attachment-utils"; // Web UI keeps this
+
+const agent = new Agent({
+  transport: new ProviderTransport(),
+  initialState: {
+    systemPrompt: "You are a helpful assistant...",
+    model: getModel("google", "gemini-2.5-flash"),
+    thinkingLevel: "low",
+    tools: [],
+  },
+});
+
+// Subscribe to state changes for UI updates
+agent.subscribe((event) => {
+  if (event.type === "state-update") {
+    updateUI(event.state);
+  }
+});
+
+// Handle file upload and send prompt
+const file = await fileInput.files[0];
+const attachment = await loadAttachment(file); // Processes PDF/DOCX/etc
+await agent.prompt("Analyze this document", [attachment]);
 ```
 
 ### Session Manager
@@ -300,8 +605,7 @@ export interface SessionMetadata {
 
 export interface SessionData {
   metadata: SessionMetadata;
-  messages: Message[];          // Conversation history
-  totalUsage: TokenUsage;       // Aggregated token usage
+  messages: AppMessage[];       // Conversation history
 }
 
 export class SessionManager {
@@ -310,8 +614,8 @@ export class SessionManager {
   // Start a new session (writes metadata)
   startSession(config: CodingAgentConfig): void;
 
-  // Log an event (appends to JSONL)
-  appendEvent(event: AgentEvent): void;
+  // Append a message to the session (appends to JSONL)
+  appendMessage(message: AppMessage): void;
 
   // Check if session has existing data
   hasData(): boolean;
@@ -320,7 +624,7 @@ export class SessionManager {
   getData(): SessionData | null;
 
   // Get just the messages for agent restoration
-  getMessages(): Message[];
+  getMessages(): AppMessage[];
 
   // Get session file path
   getFilePath(): string;
@@ -332,11 +636,18 @@ export class SessionManager {
 
 **Session Storage Format (JSONL):**
 ```jsonl
-{"type":"session","id":"uuid","timestamp":"2025-10-12T10:00:00Z","cwd":"/path","config":{...}}
-{"type":"event","timestamp":"2025-10-12T10:00:01Z","event":{"type":"turn_start"}}
-{"type":"event","timestamp":"2025-10-12T10:00:02Z","event":{"type":"message_start",...}}
-{"type":"event","timestamp":"2025-10-12T10:00:03Z","event":{"type":"message_end",...}}
+{"type":"metadata","id":"uuid","timestamp":"2025-10-12T10:00:00Z","cwd":"/path","config":{...}}
+{"type":"message","message":{"role":"user","content":"Fix the bug in server.ts"}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll help..."}],...}}
+{"type":"message","message":{"role":"toolResult","toolCallId":"call_123","output":"..."}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Fixed!"}],...}}
 ```
+
+**How it works:**
+- First line is session metadata (id, timestamp, working directory, config)
+- Each subsequent line is an `AppMessage` from `agent.state.messages`
+- Messages are appended as they're added to the agent state (append-only)
+- On session restore, read all message lines to reconstruct conversation history
 
 **Session File Naming:**
 ```
@@ -643,9 +954,11 @@ export class WriteTool implements AgentTool<typeof writeToolSchema, WriteToolDet
 }
 ```
 
-## Package: @mariozechner/coding-agent-tui
+## CLI Interface (included in @mariozechner/coding-agent)
 
-### CLI Interface
+The coding-agent package includes both a library and a CLI interface in one package.
+
+### CLI Usage
 
 ```bash
 # Interactive mode (default)
@@ -667,7 +980,7 @@ coding-agent --model openai/gpt-4 --api-key $KEY
 coding-agent --json < prompts.jsonl > results.jsonl
 ```
 
-### Arguments
+### CLI Arguments
 
 ```typescript
 {
@@ -818,33 +1131,58 @@ app.listen(3000);
 
 ## Migration Plan
 
-### Phase 1: Extract Core Package
+### Phase 1: Create General Agent Package
+1. Create `packages/agent/` structure
+2. **COPY** Agent class from web-ui/src/agent/agent.ts (don't extract yet)
+3. Copy types (AgentState, AgentEvent, Attachment, DebugLogEntry, ThinkingLevel)
+4. Copy transports (types.ts, ProviderTransport.ts, AppTransport.ts, proxy-types.ts)
+5. Adapt code to work as standalone package
+6. Write unit tests for Agent class
+7. Write tests for both transports
+8. Publish `@mariozechner/agent@0.1.0`
+9. **Keep web-ui unchanged** - it continues using its embedded agent
+
+### Phase 2: Create Coding Agent Package (with CLI)
 1. Create `packages/coding-agent/` structure
 2. Port SessionManager from old agent package
-3. Implement BashTool, EditTool, WriteTool
-4. Implement CodingAgent class using pi-ai/agentLoop
-5. Write tests for each tool
-6. Write integration tests
+3. Implement ReadTool, BashTool, EditTool, WriteTool
+4. Implement CodingAgent class (wraps @mariozechner/agent)
+5. Implement CLI in `src/cli/` directory:
+   - CLI entry point (index.ts)
+   - TuiRenderer, ConsoleRenderer, JsonRenderer
+   - Argument parsing
+   - Interactive and single-shot modes
+6. Write tests for tools and agent
+7. Write integration tests for CLI
+8. Publish `@mariozechner/coding-agent@0.1.0` (includes library + CLI binary)
 
-### Phase 2: Build TUI
-1. Create `packages/coding-agent-tui/`
-2. Port TuiRenderer from old agent package
-3. Port ConsoleRenderer, JsonRenderer
-4. Implement CLI argument parsing
-5. Implement interactive and single-shot modes
-6. Test session resume functionality
+### Phase 3: Prove Out New Packages
+1. Use coding-agent (library + CLI) extensively
+2. Fix bugs and iterate on API design
+3. Gather feedback from real usage
+4. Ensure stability and performance
 
-### Phase 3: Update Dependencies
-1. Update web-ui if needed (should be unaffected)
-2. Deprecate old agent package
-3. Update documentation
-4. Update examples
+### Phase 4: Migrate Web UI (OPTIONAL, later)
+1. Once new `@mariozechner/agent` is proven stable
+2. Update web-ui package.json to depend on `@mariozechner/agent`
+3. Remove src/agent/agent.ts, src/agent/types.ts, src/agent/transports/
+4. Keep src/utils/attachment-utils.ts (document processing)
+5. Update imports to use `@mariozechner/agent`
+6. Test that web UI still works correctly
+7. Verify document attachments (PDF, DOCX, etc.) still work
 
-### Phase 4: Future Enhancements
-1. Build VS Code extension
-2. Add more tools (grep, find, etc.) as optional
+### Phase 5: Cleanup
+1. Deprecate/remove old `packages/agent/` package
+2. Update all documentation
+3. Create migration guide
+4. Add examples for all use cases
+
+### Phase 6: Future Enhancements
+1. Build VS Code extension using `@mariozechner/coding-agent`
+2. Add more tools (grep, find, glob, etc.) as optional plugins
 3. Plugin system for custom tools
 4. Parallel tool execution
+5. Streaming tool output for long-running commands
 
 ## Open Questions & Decisions
 
@@ -975,14 +1313,29 @@ Error: Cannot read binary file 'dist/app.js'. Use bash tool if you need to inspe
 
 This architecture provides:
 
-✅ **Headless core** - Clean separation between agent logic and UI
-✅ **Reusable** - Same agent for TUI, VS Code, web, APIs
-✅ **Composable** - Build on pi-ai primitives
-✅ **Abortable** - First-class cancellation support
-✅ **Session persistence** - Resume conversations seamlessly
+### General Agent Package (`@mariozechner/agent`)
+✅ **Transport abstraction** - Pluggable backends (ProviderTransport, AppTransport)
+✅ **Reactive state** - Subscribe/emit pattern for UI binding
+✅ **Message transformation** - Flexible pipeline for message filtering/adaptation
+✅ **Message queueing** - Out-of-band message injection during agent loop
+✅ **Attachment support** - Type-safe attachment handling (processing is external)
+✅ **Abort support** - First-class cancellation with AbortController
+✅ **Provider agnostic** - Works with any LLM provider via @mariozechner/pi-ai
+✅ **Type-safe** - Full TypeScript with proper types
+
+### Coding Agent Package (`@mariozechner/coding-agent`)
+✅ **Builds on general agent** - Leverages transport abstraction and state management
+✅ **Session persistence** - JSONL-based session storage and resume
 ✅ **Focused tools** - read, bash, edit, write (4 tools, no more)
-✅ **Smart pagination** - 5000-line chunks with offset/limit
-✅ **Type-safe** - Full TypeScript with schema validation
+✅ **Smart pagination** - 5000-line chunks with offset/limit for ReadTool
+✅ **Working directory context** - All tools operate relative to project root
+✅ **Simple API** - Hides complexity, easy to use
 ✅ **Testable** - Pure functions, mockable dependencies
 
-The key insight is to **keep web-ui's agent separate** (it has different concerns) while creating a **new focused coding agent** for file manipulation workflows that can be shared across non-web interfaces.
+### Key Architectural Insights
+1. **Extract, don't rewrite** - The web-ui agent is well-designed; extract it into a general package
+2. **Separation of concerns** - Document processing (PDF/DOCX/etc.) stays in web-ui, only type definitions move to general agent
+3. **Layered architecture** - pi-ai → agent → coding-agent → coding-agent-tui
+4. **Reusable across UIs** - Web UI and coding agent both use the same general agent package
+5. **Pluggable transports** - Easy to add new backends (local API, proxy server, etc.)
+6. **Attachment flexibility** - Type is defined centrally, processing is done by consumers

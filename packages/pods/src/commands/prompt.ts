@@ -1,4 +1,4 @@
-import { main as agentMain } from "@mariozechner/pi-agent";
+import { main as agentMain } from "@mariozechner/pi-agent-old";
 import chalk from "chalk";
 import { getActivePod, loadConfig } from "../config.js";
 

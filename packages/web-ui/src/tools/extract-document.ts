@@ -3,7 +3,7 @@ import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { createRef, ref } from "lit/directives/ref.js";
 import { FileText } from "lucide";
-import { EXTRACT_DOCUMENT_DESCRIPTION } from "../prompts/tool-prompts.js";
+import { EXTRACT_DOCUMENT_DESCRIPTION } from "../prompts/prompts.js";
 import { loadAttachment } from "../utils/attachment-utils.js";
 import { registerToolRenderer, renderCollapsibleHeader, renderHeader } from "./renderer-registry.js";
 import type { ToolRenderer, ToolRenderResult } from "./types.js";

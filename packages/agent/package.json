@@ -1,38 +1,31 @@
 {
 	"name": "@mariozechner/pi-agent",
 	"version": "0.5.44",
-	"description": "General-purpose agent with tool calling and session persistence",
+	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
-	"bin": {
-		"pi-agent": "dist/cli.js"
-	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"files": [
-		"dist"
+		"dist",
+		"README.md"
 	],
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
-		"check": "biome check --write .",
+		"build": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+		"check": "tsc --noEmit",
+		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-tui": "^0.5.44",
-		"@types/glob": "^8.1.0",
-		"chalk": "^5.5.0",
-		"glob": "^11.0.3",
-		"openai": "^5.12.2"
+		"@mariozechner/pi-ai": "^0.5.44"
 	},
-	"devDependencies": {},
 	"keywords": [
-		"agent",
 		"ai",
+		"agent",
 		"llm",
-		"openai",
-		"claude",
-		"cli",
-		"tui"
+		"transport",
+		"state-management"
 	],
 	"author": "Mario Zechner",
 	"license": "MIT",
@@ -43,5 +36,10 @@
 	},
 	"engines": {
 		"node": ">=20.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
 	}
 }

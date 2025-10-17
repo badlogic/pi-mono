@@ -56,8 +56,8 @@ export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/Set
 // Prompts
 export {
 	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION,
-	DOWNLOADABLE_FILE_RUNTIME_DESCRIPTION,
-} from "./prompts/tool-prompts.js";
+	ATTACHMENTS_RUNTIME_DESCRIPTION,
+} from "./prompts/prompts.js";
 // Storage
 export { AppStorage, getAppStorage, setAppStorage } from "./storage/app-storage.js";
 export { IndexedDBStorageBackend } from "./storage/backends/indexeddb-storage-backend.js";

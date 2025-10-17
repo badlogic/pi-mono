@@ -7,7 +7,7 @@
 // JavaScript REPL Tool
 // ============================================================================
 
-export const JAVASCRIPT_REPL_DESCRIPTION = `# JavaScript REPL
+export const JAVASCRIPT_REPL_TOOL_DESCRIPTION = (runtimeProviderDescriptions: string[]) => `# JavaScript REPL
 
 ## Purpose
 Execute JavaScript code in a sandboxed browser environment with full Web APIs.
@@ -16,7 +16,7 @@ Execute JavaScript code in a sandboxed browser environment with full Web APIs.
 - Quick calculations or data transformations
 - Testing JavaScript code snippets in isolation
 - Processing data with libraries (XLSX, CSV, etc.)
-- Creating visualizations (charts, graphs)
+- Creating artifacts from data
 
 ## Environment
 - ES2023+ JavaScript (async/await, optional chaining, nullish coalescing, etc.)
@@ -54,13 +54,21 @@ console.log('Sum:', sum, 'Average:', avg);
 ## Important Notes
 - Graphics: Use fixed dimensions (800x600), NOT window.innerWidth/Height
 - Chart.js: Set options: { responsive: false, animation: false }
-- Three.js: renderer.setSize(800, 600) with matching aspect ratio`;
+- Three.js: renderer.setSize(800, 600) with matching aspect ratio
+
+## Library functions
+You can use the following functions in your code:
+
+${runtimeProviderDescriptions.join("\n\n")}
+`;
 
 // ============================================================================
 // Artifacts Tool
 // ============================================================================
 
-export const ARTIFACTS_BASE_DESCRIPTION = `Creates and manages file artifacts. Each artifact is a file with a filename and content.
+export const ARTIFACTS_TOOL_DESCRIPTION = (
+	runtimeProviderDescriptions: string[],
+) => `Creates and manages file artifacts. Each artifact is a file with a filename and content.
 
 CRITICAL - ARTIFACT UPDATE WORKFLOW:
 1. Creating new file? → Use 'create'
@@ -104,33 +112,8 @@ Commands:
 ANTI-PATTERNS TO AVOID:
 ❌ Using 'get' + modifying content + 'rewrite' to change one section
 ❌ Using createOrUpdateArtifact() in code for manual edits YOU make
-✅ Use 'update' command for surgical, targeted modifications`;
+✅ Use 'update' command for surgical, targeted modifications
 
-export const ARTIFACTS_RUNTIME_EXAMPLE = `- Example HTML artifact that processes a CSV attachment:
-  <script>
-    // List available files
-    const files = listAttachments();
-    console.log('Available files:', files);
-
-    // Find CSV file
-    const csvFile = files.find(f => f.mimeType === 'text/csv');
-    if (csvFile) {
-      const csvContent = readTextAttachment(csvFile.id);
-      // Process CSV data...
-    }
-
-    // Display image
-    const imageFile = files.find(f => f.mimeType.startsWith('image/'));
-    if (imageFile) {
-      const bytes = readBinaryAttachment(imageFile.id);
-      const blob = new Blob([bytes], {type: imageFile.mimeType});
-      const url = URL.createObjectURL(blob);
-      document.body.innerHTML = '<img src="' + url + '">';
-    }
-  </script>
-`;
-
-export const ARTIFACTS_HTML_SECTION = `
 For text/html artifacts:
 - Must be a single self-contained file
 - External scripts: Use CDNs like https://esm.sh, https://unpkg.com, or https://cdnjs.cloudflare.com
@@ -166,40 +149,33 @@ CRITICAL REMINDER FOR ALL ARTIFACTS:
 - Prefer to update existing files rather than creating new ones
 - Keep filenames consistent and descriptive
 - Use appropriate file extensions
-- Ensure HTML artifacts have a defined background color`;
+- Ensure HTML artifacts have a defined background color
 
-/**
- * Build complete artifacts description with optional provider docs.
- */
-export function buildArtifactsDescription(providerDocs?: string): string {
-	const runtimeSection = providerDocs
-		? `
+The following functions are available inside your code in HTML artifacts:
 
-For text/html artifacts with runtime capabilities:${providerDocs}
-${ARTIFACTS_RUNTIME_EXAMPLE}
-`
-		: "";
-
-	return ARTIFACTS_BASE_DESCRIPTION + runtimeSection + ARTIFACTS_HTML_SECTION;
-}
+${runtimeProviderDescriptions.join("\n\n")}
+`;
 
 // ============================================================================
 // Artifacts Runtime Provider
 // ============================================================================
 
 export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION = `
-Artifact Management from within executed code (HTML/JavaScript REPL).
+### Artifacts
 
-WHEN TO USE THESE FUNCTIONS:
+Programmatically create, read, update, and delete artifact files from your code.
+
+#### When to Use
+- Persist data or state between REPL calls
 - ONLY when writing code that programmatically generates/transforms data
 - Examples: Web scraping results, processed CSV data, generated charts saved as JSON
 - The artifact content is CREATED BY THE CODE, not by you directly
 
-DO NOT USE THESE FUNCTIONS FOR:
+#### Do NOT Use For
 - Summaries or notes YOU write (use artifacts tool instead)
 - Content YOU author directly (use artifacts tool instead)
 
-Functions:
+#### Functions
 - await listArtifacts() - Get list of all artifact filenames, returns string[]
   * Example: const files = await listArtifacts(); // ['data.json', 'notes.md']
 
@@ -216,39 +192,75 @@ Functions:
 - await deleteArtifact(filename) - Delete an artifact
   * Example: await deleteArtifact('temp.json')
 
-Example - Scraping data and saving it:
-  const response = await fetch('https://api.example.com/data');
-  const data = await response.json();
-  await createOrUpdateArtifact('api-results.json', data);
+#### Example
+Scraping data and saving it:
+\`\`\`javascript
+const response = await fetch('https://api.example.com/data');
+const data = await response.json();
+await createOrUpdateArtifact('api-results.json', data);
+\`\`\`
 
-Binary data must be converted to a base64 string before passing to createOrUpdateArtifact.
-Example:
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-  const arrayBuffer = await blob.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-  await createOrUpdateArtifact('image.png', base64);
+Binary data (convert to base64 first):
+\`\`\`javascript
+const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+const arrayBuffer = await blob.arrayBuffer();
+const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+await createOrUpdateArtifact('image.png', base64);
+\`\`\`
 `;
 
 // ============================================================================
-// Downloadable File Runtime Provider
+// Attachments Runtime Provider
 // ============================================================================
 
-export const DOWNLOADABLE_FILE_RUNTIME_DESCRIPTION = `
-Downloadable Files (one-time downloads for the user - YOU cannot read these back):
-- await returnDownloadableFile(filename, content, mimeType?) - Create downloadable file (async!)
-  * Use for: Processed/transformed data, generated images, analysis results
-  * Important: This creates a download for the user. You will NOT be able to access this file's content later.
-  * If you need to access the data later, use createArtifact() instead (if available).
-  * Always use await with returnDownloadableFile
-  * REQUIRED: For Blob/Uint8Array binary content, you MUST supply a proper MIME type (e.g., "image/png").
-    If omitted, throws an Error with stack trace pointing to the offending line.
-  * Strings without a MIME default to text/plain.
-  * Objects are auto-JSON stringified and default to application/json unless a MIME is provided.
-  * Canvas images: Use toBlob() with await Promise wrapper
-  * Examples:
-    - await returnDownloadableFile('cleaned-data.csv', csvString, 'text/csv')
-    - await returnDownloadableFile('analysis.json', {results: [...]}, 'application/json')
-    - await returnDownloadableFile('chart.png', blob, 'image/png')`;
+export const ATTACHMENTS_RUNTIME_DESCRIPTION = `
+### User Attachments
+
+Read files that the user has uploaded to the conversation.
+
+#### When to Use
+- When you need to read or process files the user has uploaded to the conversation
+- Examples: CSV data files, JSON datasets, Excel spreadsheets, images, PDFs
+
+#### Do NOT Use For
+- Creating new files (use createOrUpdateArtifact instead)
+- Modifying existing files (read first, then create artifact with modified version)
+
+#### Functions
+- listAttachments() - List all attachments, returns array of {id, fileName, mimeType, size}
+  * Example: const files = listAttachments(); // [{id: '...', fileName: 'data.xlsx', mimeType: '...', size: 12345}]
+
+- readTextAttachment(attachmentId) - Read attachment as text, returns string
+  * Use for: CSV, JSON, TXT, XML, and other text-based files
+  * Example: const csvContent = readTextAttachment(files[0].id);
+  * Example: const json = JSON.parse(readTextAttachment(jsonFile.id));
+
+- readBinaryAttachment(attachmentId) - Read attachment as binary data, returns Uint8Array
+  * Use for: Excel (.xlsx), images, PDFs, and other binary files
+  * Example: const xlsxBytes = readBinaryAttachment(files[0].id);
+  * Example: const XLSX = await import('https://esm.run/xlsx'); const workbook = XLSX.read(xlsxBytes);
+
+#### Example
+Processing CSV attachment:
+\`\`\`javascript
+const files = listAttachments();
+const csvFile = files.find(f => f.fileName.endsWith('.csv'));
+const csvData = readTextAttachment(csvFile.id);
+const rows = csvData.split('\\n').map(row => row.split(','));
+console.log(\`Found \${rows.length} rows\`);
+\`\`\`
+
+Processing Excel attachment:
+\`\`\`javascript
+const XLSX = await import('https://esm.run/xlsx');
+const files = listAttachments();
+const excelFile = files.find(f => f.fileName.endsWith('.xlsx'));
+const bytes = readBinaryAttachment(excelFile.id);
+const workbook = XLSX.read(bytes);
+const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+\`\`\`
+`;
 
 // ============================================================================
 // Extract Document Tool
@@ -273,27 +285,3 @@ Structured plain text with page/sheet/slide delimiters in XML-like format:
 - Maximum file size: 50MB
 - CORS restrictions may block some URLs - if this happens, the error will guide you to help the user configure a CORS proxy
 - Format is automatically detected from file extension and Content-Type header`;
-
-// ============================================================================
-// Attachments Runtime Provider
-// ============================================================================
-
-export const ATTACHMENTS_RUNTIME_DESCRIPTION = `
-User Attachments (files the user added to the conversation):
-- listAttachments() - List all attachments, returns array of {id, fileName, mimeType, size}
-  * Example: const files = listAttachments(); // [{id: '...', fileName: 'data.xlsx', mimeType: '...', size: 12345}]
-- readTextAttachment(attachmentId) - Read attachment as text, returns string
-  * Use for: CSV, JSON, TXT, XML, and other text-based files
-  * Example: const csvContent = readTextAttachment(files[0].id);
-  * Example: const json = JSON.parse(readTextAttachment(jsonFile.id));
-- readBinaryAttachment(attachmentId) - Read attachment as binary data, returns Uint8Array
-  * Use for: Excel (.xlsx), images, PDFs, and other binary files
-  * Example: const xlsxBytes = readBinaryAttachment(files[0].id);
-  * Example: const XLSX = await import('https://esm.run/xlsx'); const workbook = XLSX.read(xlsxBytes);
-
-Common pattern - Process attachment and create download:
-  const files = listAttachments();
-  const csvFile = files.find(f => f.fileName.endsWith('.csv'));
-  const csvData = readTextAttachment(csvFile.id);
-  // Process csvData...
-  await returnDownloadableFile('processed-' + csvFile.fileName, processedData, 'text/csv');`;

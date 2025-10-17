@@ -23,6 +23,10 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 		return {};
 	}
 
+	getDescription(): string {
+		return "";
+	}
+
 	getRuntime(): (sandboxId: string) => void {
 		return (_sandboxId: string) => {
 			// Store truly original console methods on first wrap only
