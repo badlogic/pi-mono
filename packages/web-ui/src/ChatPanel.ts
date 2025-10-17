@@ -82,13 +82,14 @@ export class ChatPanel extends LitElement {
 
 		// Set up artifacts panel
 		this.artifactsPanel = new ArtifactsPanel();
+		this.artifactsPanel.agent = agent; // Pass agent for HTML artifact runtime providers
 		if (config?.sandboxUrlProvider) {
 			this.artifactsPanel.sandboxUrlProvider = config.sandboxUrlProvider;
 		}
 		// Register the standalone tool renderer (not the panel itself)
 		registerToolRenderer("artifacts", new ArtifactsToolRenderer(this.artifactsPanel));
 
-		// Runtime providers factory for attachments + artifacts access
+		// Runtime providers factory for REPL tools (read-write access)
 		const runtimeProvidersFactory = () => {
 			const attachments: Attachment[] = [];
 			for (const message of this.agent!.state.messages) {
@@ -105,12 +106,11 @@ export class ChatPanel extends LitElement {
 				providers.push(new AttachmentsRuntimeProvider(attachments));
 			}
 
-			// Add artifacts provider (always available)
-			providers.push(new ArtifactsRuntimeProvider(this.artifactsPanel!, this.agent!));
+			// Add artifacts provider with read-write access (for REPL)
+			providers.push(new ArtifactsRuntimeProvider(this.artifactsPanel!, this.agent!, true));
 
 			return providers;
 		};
-		this.artifactsPanel.runtimeProvidersFactory = runtimeProvidersFactory;
 
 		this.artifactsPanel.onArtifactsChange = () => {
 			const count = this.artifactsPanel?.artifacts?.size ?? 0;

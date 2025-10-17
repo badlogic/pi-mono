@@ -6,9 +6,17 @@ import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
+import type { Agent } from "../../agent/agent.js";
 import type { ArtifactMessage } from "../../components/Messages.js";
+import { ArtifactsRuntimeProvider } from "../../components/sandbox/ArtifactsRuntimeProvider.js";
+import { AttachmentsRuntimeProvider } from "../../components/sandbox/AttachmentsRuntimeProvider.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
-import { ARTIFACTS_TOOL_DESCRIPTION } from "../../prompts/prompts.js";
+import {
+	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO,
+	ARTIFACTS_TOOL_DESCRIPTION,
+	ATTACHMENTS_RUNTIME_DESCRIPTION,
+} from "../../prompts/prompts.js";
+import type { Attachment } from "../../utils/attachment-utils.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
 import { DocxArtifact } from "./DocxArtifact.js";
@@ -50,8 +58,8 @@ export class ArtifactsPanel extends LitElement {
 	private artifactElements = new Map<string, ArtifactElement>();
 	private contentRef: Ref<HTMLDivElement> = createRef();
 
-	// External factory for runtime providers (decouples panel from AgentInterface)
-	@property({ attribute: false }) runtimeProvidersFactory?: () => SandboxRuntimeProvider[];
+	// Agent reference (needed to get attachments for HTML artifacts)
+	@property({ attribute: false }) agent?: Agent;
 	// Sandbox URL provider for browser extensions (optional)
 	@property({ attribute: false }) sandboxUrlProvider?: () => string;
 	// Callbacks
@@ -66,6 +74,29 @@ export class ArtifactsPanel extends LitElement {
 	// Public getter for artifacts
 	get artifacts() {
 		return this._artifacts;
+	}
+
+	// Get runtime providers for HTML artifacts (read-only: attachments + artifacts)
+	private getHtmlArtifactRuntimeProviders(): SandboxRuntimeProvider[] {
+		const providers: SandboxRuntimeProvider[] = [];
+
+		// Get attachments from agent messages
+		if (this.agent) {
+			const attachments: Attachment[] = [];
+			for (const message of this.agent.state.messages) {
+				if (message.role === "user" && message.attachments) {
+					attachments.push(...message.attachments);
+				}
+			}
+			if (attachments.length > 0) {
+				providers.push(new AttachmentsRuntimeProvider(attachments));
+			}
+		}
+
+		// Add read-only artifacts provider
+		providers.push(new ArtifactsRuntimeProvider(this, this.agent, false));
+
+		return providers;
 	}
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
@@ -153,8 +184,7 @@ export class ArtifactsPanel extends LitElement {
 			const type = this.getFileType(filename);
 			if (type === "html") {
 				element = new HtmlArtifact();
-				const runtimeProviders = this.runtimeProvidersFactory?.() || [];
-				(element as HtmlArtifact).runtimeProviders = runtimeProviders;
+				(element as HtmlArtifact).runtimeProviders = this.getHtmlArtifactRuntimeProviders();
 				if (this.sandboxUrlProvider) {
 					(element as HtmlArtifact).sandboxUrlProvider = this.sandboxUrlProvider;
 				}
@@ -198,8 +228,7 @@ export class ArtifactsPanel extends LitElement {
 			// Just update content
 			element.content = content;
 			if (element instanceof HtmlArtifact) {
-				const runtimeProviders = this.runtimeProvidersFactory?.() || [];
-				element.runtimeProviders = runtimeProviders;
+				element.runtimeProviders = this.getHtmlArtifactRuntimeProviders();
 			}
 		}
 
@@ -240,16 +269,15 @@ export class ArtifactsPanel extends LitElement {
 
 	// Build the AgentTool (no details payload; return only output strings)
 	public get tool(): AgentTool<typeof artifactsParamsSchema, undefined> {
-		const self = this;
 		return {
 			label: "Artifacts",
 			name: "artifacts",
 			get description() {
-				const runtimeProviderDescriptions =
-					self
-						.runtimeProvidersFactory?.()
-						.map((d) => d.getDescription())
-						.filter((d) => d.trim().length > 0) || [];
+				// HTML artifacts have read-only access to attachments and artifacts
+				const runtimeProviderDescriptions = [
+					ATTACHMENTS_RUNTIME_DESCRIPTION,
+					ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO,
+				];
 				return ARTIFACTS_TOOL_DESCRIPTION(runtimeProviderDescriptions);
 			},
 			parameters: artifactsParamsSchema,
@@ -282,7 +310,6 @@ export class ArtifactsPanel extends LitElement {
 		// 2) Build an ordered list of successful artifact operations
 		const operations: Array<ArtifactsParams> = [];
 		for (const m of messages) {
-			// Handle artifact messages (from programmatic operations like browser_javascript)
 			if ((m as any).role === "artifact") {
 				const artifactMsg = m as ArtifactMessage;
 				switch (artifactMsg.action) {

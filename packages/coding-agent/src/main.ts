@@ -3,6 +3,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { SessionManager } from "./session-manager.js";
 import { codingTools } from "./tools/index.js";
+import { TuiRenderer } from "./tui-renderer.js";
 
 interface Args {
 	provider?: string;
@@ -57,6 +58,9 @@ ${chalk.bold("Options:")}
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
+  # Interactive mode (no messages = interactive TUI)
+  coding-agent
+
   # Single message
   coding-agent "List all .ts files in src/"
 
@@ -100,6 +104,57 @@ Guidelines:
 - Show file paths clearly when working with files
 
 Current directory: ${process.cwd()}`;
+
+async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager): Promise<void> {
+	const renderer = new TuiRenderer();
+
+	// Initialize TUI
+	await renderer.init();
+
+	// Set interrupt callback
+	renderer.setInterruptCallback(() => {
+		agent.abort();
+	});
+
+	// Subscribe to agent state updates
+	agent.subscribe(async (event) => {
+		if (event.type === "state-update") {
+			await renderer.handleStateUpdate(event.state);
+		}
+	});
+
+	// Interactive loop
+	while (true) {
+		const userInput = await renderer.getUserInput();
+
+		// Process the message - agent.prompt will add user message and trigger state updates
+		try {
+			await agent.prompt(userInput);
+		} catch (error: any) {
+			// Error handling - errors should be in agent state
+			console.error("Error:", error.message);
+		}
+	}
+}
+
+async function runSingleShotMode(agent: Agent, sessionManager: SessionManager, messages: string[]): Promise<void> {
+	for (const message of messages) {
+		console.log(chalk.blue(`\n> ${message}\n`));
+		await agent.prompt(message);
+
+		// Print response
+		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
+		if (lastMessage.role === "assistant") {
+			for (const content of lastMessage.content) {
+				if (content.type === "text") {
+					console.log(content.text);
+				}
+			}
+		}
+	}
+
+	console.log(chalk.dim(`\nSession saved to: ${sessionManager.getSessionFile()}`));
+}
 
 export async function main(args: string[]) {
 	const parsed = parseArgs(args);
@@ -183,27 +238,12 @@ export async function main(args: string[]) {
 		sessionManager.saveEvent(event);
 	});
 
-	// Process messages
-	if (parsed.messages.length === 0) {
-		console.log(chalk.yellow("No messages provided. Use --help for usage information."));
-		console.log(chalk.dim(`Session saved to: ${sessionManager.getSessionFile()}`));
-		return;
+	// Determine mode: interactive if no messages provided
+	const isInteractive = parsed.messages.length === 0;
+
+	if (isInteractive) {
+		await runInteractiveMode(agent, sessionManager);
+	} else {
+		await runSingleShotMode(agent, sessionManager, parsed.messages);
 	}
-
-	for (const message of parsed.messages) {
-		console.log(chalk.blue(`\n> ${message}\n`));
-		await agent.prompt(message);
-
-		// Print response
-		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
-		if (lastMessage.role === "assistant") {
-			for (const content of lastMessage.content) {
-				if (content.type === "text") {
-					console.log(content.text);
-				}
-			}
-		}
-	}
-
-	console.log(chalk.dim(`\nSession saved to: ${sessionManager.getSessionFile()}`));
 }

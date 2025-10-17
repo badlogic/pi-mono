@@ -56,8 +56,9 @@ console.log('Sum:', sum, 'Average:', avg);
 - Chart.js: Set options: { responsive: false, animation: false }
 - Three.js: renderer.setSize(800, 600) with matching aspect ratio
 
-## Library functions
-You can use the following functions in your code:
+## Helper Functions (Automatically Available)
+
+These functions are injected into the execution environment and available globally:
 
 ${runtimeProviderDescriptions.join("\n\n")}
 `;
@@ -66,92 +67,78 @@ ${runtimeProviderDescriptions.join("\n\n")}
 // Artifacts Tool
 // ============================================================================
 
-export const ARTIFACTS_TOOL_DESCRIPTION = (
-	runtimeProviderDescriptions: string[],
-) => `Creates and manages file artifacts. Each artifact is a file with a filename and content.
+export const ARTIFACTS_TOOL_DESCRIPTION = (runtimeProviderDescriptions: string[]) => `# Artifacts
 
-CRITICAL - ARTIFACT UPDATE WORKFLOW:
-1. Creating new file? → Use 'create'
-2. Changing specific section(s)? → Use 'update' (PREFERRED - token efficient)
-3. Complete structural overhaul? → Use 'rewrite' (last resort only)
+Create and manage persistent files that live alongside the conversation.
 
-❌ NEVER regenerate entire documents to change small sections
-✅ ALWAYS use 'update' for targeted edits (adding sources, fixing sections, appending to lists)
+## When to Use - Artifacts Tool vs REPL
 
-Commands:
-1. create: Create a new file
-   - filename: Name with extension (required, e.g., 'summary.md', 'index.html')
-   - title: Display name for the tab (optional, defaults to filename)
-   - content: File content (required)
-   - Use for: Brand new files only
+**Use artifacts tool when YOU are the author:**
+- Writing research summaries, analysis, ideas, documentation
+- Creating markdown notes for user to read
+- Building HTML applications/visualizations that present data
+- Creating HTML artifacts that render charts from programmatically generated data
 
-2. update: Update part of an existing file (PREFERRED for edits)
-   - filename: File to update (required)
-   - old_str: Exact string to replace (required, can be multi-line)
-   - new_str: Replacement string (required)
-   - Use for: Adding sources, fixing typos, updating sections, appending content
-   - Token efficient - only transmits the changed portion
-   - Example: Adding source link to a section
+**Use repl + artifact storage functions when CODE processes data:**
+- Scraping workflows that extract and store data
+- Processing CSV/Excel files programmatically
+- Data transformation pipelines
+- Binary file generation requiring libraries (PDF, DOCX)
 
-3. rewrite: Completely replace a file's content (LAST RESORT)
-   - filename: File to rewrite (required)
-   - content: New content (required)
-   - Use ONLY when: Complete structural overhaul needed
-   - DO NOT use for: Adding one line, fixing one section, appending content
+**Pattern: REPL generates data → Artifacts tool creates HTML that visualizes it**
+Example: repl scrapes products → stores products.json → you author dashboard.html that reads products.json and renders Chart.js visualizations
 
-4. get: Retrieve the full content of a file
-   - filename: File to retrieve (required)
-   - Returns the complete file content
+## Input
+- { action: "create", filename: "notes.md", content: "..." } - Create new file
+- { action: "update", filename: "notes.md", old_str: "...", new_str: "..." } - Update part of file (PREFERRED)
+- { action: "rewrite", filename: "notes.md", content: "..." } - Replace entire file (LAST RESORT)
+- { action: "get", filename: "data.json" } - Retrieve file content
+- { action: "delete", filename: "old.csv" } - Delete file
+- { action: "htmlArtifactLogs", filename: "app.html" } - Get console logs from HTML artifact
 
-5. delete: Delete a file
-   - filename: File to delete (required)
+## Returns
+Depends on action:
+- create/update/rewrite/delete: Success status or error
+- get: File content
+- htmlArtifactLogs: Console logs and errors
 
-6. logs: Get console logs and errors (HTML files only)
-   - filename: HTML file to get logs for (required)
+## Supported File Types
+✅ Text-based files you author: .md, .txt, .html, .js, .css, .json, .csv, .svg
+❌ Binary files requiring libraries (use repl): .pdf, .docx
 
-ANTI-PATTERNS TO AVOID:
-❌ Using 'get' + modifying content + 'rewrite' to change one section
-❌ Using createOrUpdateArtifact() in code for manual edits YOU make
-✅ Use 'update' command for surgical, targeted modifications
+## Critical - Prefer Update Over Rewrite
+❌ NEVER: get entire file + rewrite to change small sections
+✅ ALWAYS: update for targeted edits (token efficient)
+✅ Ask: Can I describe the change as old_str → new_str? Use update.
 
-For text/html artifacts:
-- Must be a single self-contained file
-- External scripts: Use CDNs like https://esm.sh, https://unpkg.com, or https://cdnjs.cloudflare.com
-- Preferred: Use https://esm.sh for npm packages (e.g., https://esm.sh/three for Three.js)
-- For ES modules, use: <script type="module">import * as THREE from 'https://esm.sh/three';</script>
-- For Three.js specifically: import from 'https://esm.sh/three' or 'https://esm.sh/three@0.160.0'
-- For addons: import from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js'
-- No localStorage/sessionStorage - use in-memory variables only
-- CSS should be included inline
-- CRITICAL REMINDER FOR HTML ARTIFACTS:
-	- ALWAYS set a background color inline in <style> or directly on body element
-	- Failure to set a background color is a COMPLIANCE ERROR
-	- Background color MUST be explicitly defined to ensure visibility and proper rendering
-- Can embed base64 images directly in img tags
-- Ensure the layout is responsive as the iframe might be resized
-- Note: Network errors (404s) for external scripts may not be captured in logs due to browser security
+---
 
-For application/vnd.ant.code artifacts:
-- Include the language parameter for syntax highlighting
-- Supports all major programming languages
+## HTML Artifacts
 
-For text/markdown:
-- Standard markdown syntax
-- Will be rendered with full formatting
-- Can include base64 images using markdown syntax
+Interactive HTML applications that can visualize data from other artifacts.
 
-For image/svg+xml:
-- Complete SVG markup
-- Will be rendered inline
-- Can embed raster images as base64 in SVG
+### Data Access
+- Can read artifacts created by repl and user attachments
+- Use to build dashboards, visualizations, interactive tools
+- See Helper Functions section below for available functions
 
-CRITICAL REMINDER FOR ALL ARTIFACTS:
-- Prefer to update existing files rather than creating new ones
-- Keep filenames consistent and descriptive
-- Use appropriate file extensions
-- Ensure HTML artifacts have a defined background color
+### Requirements
+- Self-contained single file
+- Import ES modules from esm.sh: <script type="module">import X from 'https://esm.sh/pkg';</script>
+- Use Tailwind CDN: <script src="https://cdn.tailwindcss.com"></script>
+- Can embed images from any domain: <img src="https://example.com/image.jpg">
+- MUST set background color explicitly (avoid transparent)
+- Inline CSS or Tailwind utility classes
+- No localStorage/sessionStorage
 
-The following functions are available inside your code in HTML artifacts:
+### Styling
+- Use Tailwind utility classes for clean, functional designs
+- Ensure responsive layout (iframe may be resized)
+- Avoid purple gradients, AI aesthetic clichés, and emojis
+
+### Helper Functions (Automatically Available)
+
+These functions are injected into HTML artifact sandbox:
 
 ${runtimeProviderDescriptions.join("\n\n")}
 `;
@@ -160,52 +147,83 @@ ${runtimeProviderDescriptions.join("\n\n")}
 // Artifacts Runtime Provider
 // ============================================================================
 
-export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION = `
-### Artifacts
+export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RW = `
+### Artifacts Storage
 
-Programmatically create, read, update, and delete artifact files from your code.
+Create, read, update, and delete files in artifacts storage.
 
 #### When to Use
-- Persist data or state between REPL calls
-- ONLY when writing code that programmatically generates/transforms data
-- Examples: Web scraping results, processed CSV data, generated charts saved as JSON
-- The artifact content is CREATED BY THE CODE, not by you directly
+- Store intermediate results between tool calls
+- Save generated files (images, CSVs, processed data) for user to view and download
 
 #### Do NOT Use For
-- Summaries or notes YOU write (use artifacts tool instead)
-- Content YOU author directly (use artifacts tool instead)
+- Content you author directly, like summaries of content you read (use artifacts tool instead)
 
 #### Functions
-- await listArtifacts() - Get list of all artifact filenames, returns string[]
-  * Example: const files = await listArtifacts(); // ['data.json', 'notes.md']
-
-- await getArtifact(filename) - Read artifact content, returns string or object
-  * Auto-parses .json files to objects
-  * Example: const data = await getArtifact('data.json'); // Returns parsed object
-
-- await createOrUpdateArtifact(filename, content, mimeType?) - Create/update artifact FROM CODE
-  * ONLY use when the content is generated programmatically by your code
-  * Auto-stringifies objects for .json files
-  * Example: await createOrUpdateArtifact('scraped-data.json', results)
-  * Example: await createOrUpdateArtifact('chart.png', base64ImageData, 'image/png')
-
-- await deleteArtifact(filename) - Delete an artifact
-  * Example: await deleteArtifact('temp.json')
+- listArtifacts() - List all artifact filenames, returns Promise<string[]>
+- getArtifact(filename) - Read artifact content, returns Promise<string | object>. JSON files auto-parse to objects, binary files return base64 string
+- createOrUpdateArtifact(filename, content, mimeType?) - Create or update artifact, returns Promise<void>. JSON files auto-stringify objects, binary requires base64 string with mimeType
+- deleteArtifact(filename) - Delete artifact, returns Promise<void>
 
 #### Example
-Scraping data and saving it:
+JSON workflow:
 \`\`\`javascript
-const response = await fetch('https://api.example.com/data');
-const data = await response.json();
-await createOrUpdateArtifact('api-results.json', data);
+// Fetch and save
+const response = await fetch('https://api.example.com/products');
+const products = await response.json();
+await createOrUpdateArtifact('products.json', products);
+
+// Later: read and filter
+const all = await getArtifact('products.json');
+const cheap = all.filter(p => p.price < 100);
+await createOrUpdateArtifact('cheap.json', cheap);
 \`\`\`
 
-Binary data (convert to base64 first):
+Binary file (image):
 \`\`\`javascript
-const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-const arrayBuffer = await blob.arrayBuffer();
-const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-await createOrUpdateArtifact('image.png', base64);
+const canvas = document.createElement('canvas');
+canvas.width = 800; canvas.height = 600;
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = 'blue';
+ctx.fillRect(0, 0, 800, 600);
+// Remove data:image/png;base64, prefix
+const base64 = canvas.toDataURL().split(',')[1];
+await createOrUpdateArtifact('chart.png', base64, 'image/png');
+\`\`\`
+`;
+
+export const ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO = `
+### Artifacts Storage
+
+Read files from artifacts storage.
+
+#### When to Use
+- Read artifacts created by REPL or artifacts tool
+- Access data from other HTML artifacts
+- Load configuration or data files
+
+#### Do NOT Use For
+- Creating new artifacts (not available in HTML artifacts)
+- Modifying artifacts (read-only access)
+
+#### Functions
+- listArtifacts() - List all artifact filenames, returns Promise<string[]>
+- getArtifact(filename) - Read artifact content, returns Promise<string | object>. JSON files auto-parse to objects, binary files return base64 string
+
+#### Example
+JSON data:
+\`\`\`javascript
+const products = await getArtifact('products.json');
+const html = products.map(p => \`<div>\${p.name}: $\${p.price}</div>\`).join('');
+document.body.innerHTML = html;
+\`\`\`
+
+Binary image:
+\`\`\`javascript
+const base64 = await getArtifact('chart.png');
+const img = document.createElement('img');
+img.src = 'data:image/png;base64,' + base64;
+document.body.appendChild(img);
 \`\`\`
 `;
 
@@ -216,49 +234,33 @@ await createOrUpdateArtifact('image.png', base64);
 export const ATTACHMENTS_RUNTIME_DESCRIPTION = `
 ### User Attachments
 
-Read files that the user has uploaded to the conversation.
+Read files the user uploaded to the conversation.
 
 #### When to Use
-- When you need to read or process files the user has uploaded to the conversation
-- Examples: CSV data files, JSON datasets, Excel spreadsheets, images, PDFs
-
-#### Do NOT Use For
-- Creating new files (use createOrUpdateArtifact instead)
-- Modifying existing files (read first, then create artifact with modified version)
+- Process user-uploaded files (CSV, JSON, Excel, images, PDFs)
 
 #### Functions
 - listAttachments() - List all attachments, returns array of {id, fileName, mimeType, size}
-  * Example: const files = listAttachments(); // [{id: '...', fileName: 'data.xlsx', mimeType: '...', size: 12345}]
-
-- readTextAttachment(attachmentId) - Read attachment as text, returns string
-  * Use for: CSV, JSON, TXT, XML, and other text-based files
-  * Example: const csvContent = readTextAttachment(files[0].id);
-  * Example: const json = JSON.parse(readTextAttachment(jsonFile.id));
-
-- readBinaryAttachment(attachmentId) - Read attachment as binary data, returns Uint8Array
-  * Use for: Excel (.xlsx), images, PDFs, and other binary files
-  * Example: const xlsxBytes = readBinaryAttachment(files[0].id);
-  * Example: const XLSX = await import('https://esm.run/xlsx'); const workbook = XLSX.read(xlsxBytes);
+- readTextAttachment(id) - Read attachment as text, returns string
+- readBinaryAttachment(id) - Read attachment as binary data, returns Uint8Array
 
 #### Example
-Processing CSV attachment:
+CSV file:
 \`\`\`javascript
 const files = listAttachments();
 const csvFile = files.find(f => f.fileName.endsWith('.csv'));
 const csvData = readTextAttachment(csvFile.id);
 const rows = csvData.split('\\n').map(row => row.split(','));
-console.log(\`Found \${rows.length} rows\`);
 \`\`\`
 
-Processing Excel attachment:
+Excel file:
 \`\`\`javascript
 const XLSX = await import('https://esm.run/xlsx');
 const files = listAttachments();
-const excelFile = files.find(f => f.fileName.endsWith('.xlsx'));
-const bytes = readBinaryAttachment(excelFile.id);
+const xlsxFile = files.find(f => f.fileName.endsWith('.xlsx'));
+const bytes = readBinaryAttachment(xlsxFile.id);
 const workbook = XLSX.read(bytes);
-const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 \`\`\`
 `;
 
@@ -266,22 +268,15 @@ const jsonData = XLSX.utils.sheet_to_json(firstSheet);
 // Extract Document Tool
 // ============================================================================
 
-export const EXTRACT_DOCUMENT_DESCRIPTION = `Extract plain text from documents on the web (PDF, DOCX, XLSX, PPTX).
+export const EXTRACT_DOCUMENT_DESCRIPTION = `# Extract Document
 
-## Purpose
-Use this when the user wants you to read a document at a URL.
+Extract plain text from documents on the web (PDF, DOCX, XLSX, PPTX).
 
-## Parameters
-- url: URL of the document (PDF, DOCX, XLSX, or PPTX only)
+## When to Use
+User wants you to read a document at a URL.
+
+## Input
+- { url: "https://example.com/document.pdf" } - URL to PDF, DOCX, XLSX, or PPTX
 
 ## Returns
-Structured plain text with page/sheet/slide delimiters in XML-like format:
-- PDFs: <pdf filename="..."><page number="1">text</page>...</pdf>
-- Word: <docx filename="..."><page number="1">text</page></docx>
-- Excel: <excel filename="..."><sheet name="Sheet1" index="1">CSV data</sheet>...</excel>
-- PowerPoint: <pptx filename="..."><slide number="1">text</slide>...<notes>...</notes></pptx>
-
-## Important Notes
-- Maximum file size: 50MB
-- CORS restrictions may block some URLs - if this happens, the error will guide you to help the user configure a CORS proxy
-- Format is automatically detected from file extension and Content-Type header`;
+Structured plain text with page/sheet/slide delimiters.`;

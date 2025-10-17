@@ -22,7 +22,6 @@
 	"dependencies": {
 		"@mariozechner/pi-agent": "^0.5.44",
 		"@mariozechner/pi-ai": "^0.5.44",
-		"@mariozechner/pi-tui": "^0.5.44",
 		"chalk": "^5.5.0",
 		"glob": "^11.0.3"
 	},

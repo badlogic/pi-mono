@@ -1,4 +1,7 @@
-import { ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION } from "../../prompts/prompts.js";
+import {
+	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO,
+	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RW,
+} from "../../prompts/prompts.js";
 import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 
 // Define minimal interface for ArtifactsPanel to avoid circular dependencies
@@ -24,6 +27,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 	constructor(
 		private artifactsPanel: ArtifactsPanelLike,
 		private agent?: AgentLike,
+		private readWrite: boolean = true,
 	) {}
 
 	getData(): Record<string, any> {
@@ -210,6 +214,6 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 	}
 
 	getDescription(): string {
-		return ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION;
+		return this.readWrite ? ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RW : ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO;
 	}
 }

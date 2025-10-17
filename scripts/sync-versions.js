@@ -16,14 +16,12 @@ const tui = JSON.parse(readFileSync(join(packagesDir, 'tui/package.json'), 'utf8
 const agent = JSON.parse(readFileSync(join(packagesDir, 'agent/package.json'), 'utf8'));
 const pods = JSON.parse(readFileSync(join(packagesDir, 'pods/package.json'), 'utf8'));
 const webUi = JSON.parse(readFileSync(join(packagesDir, 'web-ui/package.json'), 'utf8'));
-const browserExtension = JSON.parse(readFileSync(join(packagesDir, 'browser-extension/package.json'), 'utf8'));
 
 console.log('Current versions:');
 console.log(`  @mariozechner/pi-tui: ${tui.version}`);
 console.log(`  @mariozechner/pi-agent: ${agent.version}`);
 console.log(`  @mariozechner/pi: ${pods.version}`);
 console.log(`  @mariozechner/pi-web-ui: ${webUi.version}`);
-console.log(`  @mariozechner/pi-reader-extension: ${browserExtension.version}`);
 
 // Update agent's dependency on tui
 if (agent.dependencies['@mariozechner/pi-tui']) {
@@ -41,12 +39,13 @@ if (pods.dependencies['@mariozechner/pi-agent']) {
   console.log(`Updated pods' dependency on pi-agent: ${oldVersion} → ^${agent.version}`);
 }
 
-// Update browser-extension's dependency on web-ui
-if (browserExtension.dependencies['@mariozechner/pi-web-ui']) {
-  const oldVersion = browserExtension.dependencies['@mariozechner/pi-web-ui'];
-  browserExtension.dependencies['@mariozechner/pi-web-ui'] = `^${webUi.version}`;
-  writeFileSync(join(packagesDir, 'browser-extension/package.json'), JSON.stringify(browserExtension, null, '\t') + '\n');
-  console.log(`Updated browser-extension's dependency on pi-web-ui: ${oldVersion} → ^${webUi.version}`);
+
+// Update web-ui's dependency on tui
+if (webUi.dependencies['@mariozechner/pi-tui']) {
+  const oldVersion = webUi.dependencies['@mariozechner/pi-tui'];
+  webUi.dependencies['@mariozechner/pi-tui'] = `^${tui.version}`;
+  writeFileSync(join(packagesDir, 'web-ui/package.json'), JSON.stringify(webUi, null, '\t') + '\n');
+  console.log(`Updated web-ui's dependency on pi-tui: ${oldVersion} → ^${tui.version}`);
 }
 
 console.log('\n✅ Version sync complete!');
