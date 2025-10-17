@@ -63,6 +63,8 @@ declare module "@mariozechner/mini-lit" {
 		"No session set": string;
 		"Preparing tool parameters...": string;
 		"(no output)": string;
+		Input: string;
+		Output: string;
 		"Writing expression...": string;
 		"Waiting for expression...": string;
 		Calculating: string;
@@ -237,6 +239,8 @@ export const translations = {
 		"No session set": "No session set",
 		"Preparing tool parameters...": "Preparing tool parameters...",
 		"(no output)": "(no output)",
+		Input: "Input",
+		Output: "Output",
 		"Waiting for expression...": "Waiting for expression...",
 		"Writing expression...": "Writing expression...",
 		Calculating: "Calculating",
@@ -414,6 +418,8 @@ export const translations = {
 		"No session set": "Keine Sitzung gesetzt",
 		"Preparing tool parameters...": "Bereite Tool-Parameter vor...",
 		"(no output)": "(keine Ausgabe)",
+		Input: "Eingabe",
+		Output: "Ausgabe",
 		"Waiting for expression...": "Warte auf Ausdruck",
 		"Writing expression...": "Schreibe Ausdruck...",
 		Calculating: "Berechne",

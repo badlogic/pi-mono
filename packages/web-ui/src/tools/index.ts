@@ -11,6 +11,17 @@ registerToolRenderer("bash", new BashRenderer());
 
 const defaultRenderer = new DefaultRenderer();
 
+// Global flag to force default JSON rendering for all tools
+let showJsonMode = false;
+
+/**
+ * Enable or disable show JSON mode
+ * When enabled, all tool renderers will use the default JSON renderer
+ */
+export function setShowJsonMode(enabled: boolean): void {
+	showJsonMode = enabled;
+}
+
 /**
  * Render tool - unified function that handles params, result, and streaming state
  */
@@ -20,6 +31,11 @@ export function renderTool(
 	result: ToolResultMessage | undefined,
 	isStreaming?: boolean,
 ): ToolRenderResult {
+	// If showJsonMode is enabled, always use the default renderer
+	if (showJsonMode) {
+		return defaultRenderer.render(params, result, isStreaming);
+	}
+
 	const renderer = getToolRenderer(toolName);
 	if (renderer) {
 		return renderer.render(params, result, isStreaming);
