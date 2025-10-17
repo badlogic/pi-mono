@@ -1,9 +1,10 @@
-import { CopyButton, DownloadButton, PreviewCodeToggle } from "@mariozechner/mini-lit";
+import { Button, CopyButton, DownloadButton, icon, PreviewCodeToggle } from "@mariozechner/mini-lit";
 import hljs from "highlight.js";
 import { html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { RefreshCw } from "lucide";
 import type { SandboxIframe } from "../../components/SandboxedIframe.js";
 import { type MessageConsumer, RUNTIME_MESSAGE_ROUTER } from "../../components/sandbox/RuntimeMessageRouter.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";
@@ -56,6 +57,16 @@ export class HtmlArtifact extends ArtifactElement {
 		return html`
 			<div class="flex items-center gap-2">
 				${toggle}
+				${Button({
+					variant: "ghost",
+					size: "sm",
+					onClick: () => {
+						this.logs = [];
+						this.executeContent(this._content);
+					},
+					title: i18n("Reload HTML"),
+					children: icon(RefreshCw, "sm"),
+				})}
 				${copyButton}
 				${DownloadButton({ content: downloadContent, filename: this.filename, mimeType: "text/html", title: i18n("Download HTML") })}
 			</div>

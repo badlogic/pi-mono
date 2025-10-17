@@ -122,6 +122,7 @@ declare module "@mariozechner/mini-lit" {
 		Artifacts: string;
 		"Copy HTML": string;
 		"Download HTML": string;
+		"Reload HTML": string;
 		"Copy SVG": string;
 		"Download SVG": string;
 		"Copy Markdown": string;
@@ -294,6 +295,7 @@ export const translations = {
 		Artifacts: "Artifacts",
 		"Copy HTML": "Copy HTML",
 		"Download HTML": "Download HTML",
+		"Reload HTML": "Reload HTML",
 		"Copy SVG": "Copy SVG",
 		"Download SVG": "Download SVG",
 		"Copy Markdown": "Copy Markdown",
@@ -470,6 +472,7 @@ export const translations = {
 		Artifacts: "Artefakte",
 		"Copy HTML": "HTML kopieren",
 		"Download HTML": "HTML herunterladen",
+		"Reload HTML": "HTML neu laden",
 		"Copy SVG": "SVG kopieren",
 		"Download SVG": "SVG herunterladen",
 		"Copy Markdown": "Markdown kopieren",
