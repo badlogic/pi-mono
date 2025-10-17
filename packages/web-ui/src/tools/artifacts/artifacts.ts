@@ -451,6 +451,18 @@ export class ArtifactsPanel extends LitElement {
 		});
 	}
 
+	// Reload all HTML artifacts (called when any artifact changes)
+	private reloadAllHtmlArtifacts() {
+		this.artifactElements.forEach((element) => {
+			if (element instanceof HtmlArtifact && element.sandboxIframeRef.value) {
+				// Update runtime providers with latest artifact state
+				element.runtimeProviders = this.getHtmlArtifactRuntimeProviders();
+				// Re-execute the HTML content
+				element.executeContent(element.content);
+			}
+		});
+	}
+
 	private async createArtifact(
 		params: ArtifactsParams,
 		options: { skipWait?: boolean; silent?: boolean } = {},
@@ -478,6 +490,9 @@ export class ArtifactsPanel extends LitElement {
 			this.onArtifactsChange?.();
 			this.requestUpdate();
 		}
+
+		// Reload all HTML artifacts since they might depend on this new artifact
+		this.reloadAllHtmlArtifacts();
 
 		// For HTML files, wait for execution
 		let result = `Created file ${params.filename}`;
@@ -520,6 +535,9 @@ export class ArtifactsPanel extends LitElement {
 		// Show the artifact
 		this.showArtifact(params.filename);
 
+		// Reload all HTML artifacts since they might depend on this updated artifact
+		this.reloadAllHtmlArtifacts();
+
 		// For HTML files, wait for execution
 		let result = `Updated file ${params.filename}`;
 		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
@@ -556,6 +574,9 @@ export class ArtifactsPanel extends LitElement {
 
 		// Show the artifact
 		this.showArtifact(params.filename);
+
+		// Reload all HTML artifacts since they might depend on this rewritten artifact
+		this.reloadAllHtmlArtifacts();
 
 		// For HTML files, wait for execution
 		let result = "";
@@ -607,6 +628,9 @@ export class ArtifactsPanel extends LitElement {
 		}
 		this.onArtifactsChange?.();
 		this.requestUpdate();
+
+		// Reload all HTML artifacts since they might have depended on this deleted artifact
+		this.reloadAllHtmlArtifacts();
 
 		return `Deleted file ${params.filename}`;
 	}

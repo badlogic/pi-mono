@@ -23,7 +23,7 @@ export class HtmlArtifact extends ArtifactElement {
 	private logs: Array<{ type: "log" | "error"; text: string }> = [];
 
 	// Refs for DOM elements
-	private sandboxIframeRef: Ref<SandboxIframe> = createRef();
+	public sandboxIframeRef: Ref<SandboxIframe> = createRef();
 	private consoleRef: Ref<Console> = createRef();
 
 	@state() private viewMode: "preview" | "code" = "preview";
@@ -76,7 +76,7 @@ export class HtmlArtifact extends ArtifactElement {
 		}
 	}
 
-	private executeContent(html: string) {
+	public executeContent(html: string) {
 		const sandbox = this.sandboxIframeRef.value;
 		if (!sandbox) return;
 
