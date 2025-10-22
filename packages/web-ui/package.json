@@ -28,10 +28,10 @@
 		"xlsx": "^0.18.5"
 	},
 	"peerDependencies": {
-		"@mariozechner/mini-lit": "^0.1.9"
+		"@mariozechner/mini-lit": "^0.1.10"
 	},
 	"devDependencies": {
-		"@mariozechner/mini-lit": "^0.1.9",
+		"@mariozechner/mini-lit": "^0.1.10",
 		"@tailwindcss/cli": "^4.0.0-beta.14",
 		"concurrently": "^9.2.1",
 		"typescript": "^5.7.3"
