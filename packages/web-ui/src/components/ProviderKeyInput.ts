@@ -63,7 +63,7 @@ export class ProviderKeyInput extends LitElement {
 			}
 
 			const context: Context = {
-				messages: [{ role: "user", content: "Reply with: ok" }],
+				messages: [{ role: "user", content: "Reply with: ok", timestamp: Date.now() }],
 			};
 
 			const result = await complete(model, context, {

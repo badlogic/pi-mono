@@ -159,6 +159,7 @@ export class Agent {
 			role: "user",
 			content,
 			attachments: attachments?.length ? attachments : undefined,
+			timestamp: Date.now(),
 		};
 
 		this.abortController = new AbortController();
@@ -260,6 +261,7 @@ export class Agent {
 				},
 				stopReason: this.abortController?.signal.aborted ? "aborted" : "error",
 				errorMessage: err?.message || String(err),
+				timestamp: Date.now(),
 			};
 			this.appendMessage(msg as AppMessage);
 			this.patch({ error: err?.message || String(err) });

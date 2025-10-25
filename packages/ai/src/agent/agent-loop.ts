@@ -223,6 +223,7 @@ async function executeToolCalls<T>(
 			output: typeof resultOrError === "string" ? resultOrError : resultOrError.output,
 			details: typeof resultOrError === "string" ? ({} as T) : resultOrError.details,
 			isError,
+			timestamp: Date.now(),
 		};
 
 		results.push(toolResultMessage);

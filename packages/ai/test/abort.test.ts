@@ -9,6 +9,7 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 			{
 				role: "user",
 				content: "What is 15 + 27? Think step by step. Then list 50 first names.",
+				timestamp: Date.now(),
 			},
 		],
 	};
@@ -29,7 +30,11 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 	expect(msg.content.length).toBeGreaterThan(0);
 
 	context.messages.push(msg);
-	context.messages.push({ role: "user", content: "Please continue, but only generate 5 names." });
+	context.messages.push({
+		role: "user",
+		content: "Please continue, but only generate 5 names.",
+		timestamp: Date.now(),
+	});
 
 	const followUp = await complete(llm, context, options);
 	expect(followUp.stopReason).toBe("stop");
@@ -42,7 +47,7 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: O
 	controller.abort();
 
 	const context: Context = {
-		messages: [{ role: "user", content: "Hello" }],
+		messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
 	};
 
 	const response = await complete(llm, context, { ...options, signal: controller.signal });

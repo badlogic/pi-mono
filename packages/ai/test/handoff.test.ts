@@ -49,6 +49,7 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
+			timestamp: Date.now(),
 		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
@@ -56,6 +57,7 @@ const providerContexts = {
 			toolName: "get_weather",
 			output: "Weather in Tokyo: 18°C, partly cloudy",
 			isError: false,
+			timestamp: Date.now(),
 		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 391,
@@ -98,6 +100,7 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
+			timestamp: Date.now(),
 		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
@@ -105,6 +108,7 @@ const providerContexts = {
 			toolName: "get_weather",
 			output: "Weather in Berlin: 22°C, sunny",
 			isError: false,
+			timestamp: Date.now(),
 		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 456,
@@ -146,6 +150,7 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
+			timestamp: Date.now(),
 		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
@@ -153,6 +158,7 @@ const providerContexts = {
 			toolName: "get_weather",
 			output: "Weather in London: 15°C, rainy",
 			isError: false,
+			timestamp: Date.now(),
 		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 525,
@@ -196,6 +202,7 @@ const providerContexts = {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "toolUse",
+			timestamp: Date.now(),
 		} satisfies AssistantMessage,
 		toolResult: {
 			role: "toolResult" as const,
@@ -203,6 +210,7 @@ const providerContexts = {
 			toolName: "get_weather",
 			output: "Weather in Sydney: 25°C, clear",
 			isError: false,
+			timestamp: Date.now(),
 		} satisfies ToolResultMessage,
 		facts: {
 			calculation: 486,
@@ -239,6 +247,7 @@ const providerContexts = {
 			},
 			stopReason: "error",
 			errorMessage: "Request was aborted",
+			timestamp: Date.now(),
 		} satisfies AssistantMessage,
 		toolResult: null,
 		facts: {
@@ -263,6 +272,7 @@ async function testProviderHandoff<TApi extends Api>(
 		{
 			role: "user",
 			content: "Please do some calculations, tell me about capitals, and check the weather.",
+			timestamp: Date.now(),
 		},
 		sourceContext.message,
 	];
@@ -281,6 +291,7 @@ async function testProviderHandoff<TApi extends Api>(
                  3) What was the temperature?
                  4) What capital city was mentioned?
                  Please include the specific numbers and names.`,
+		timestamp: Date.now(),
 	});
 
 	const context: Context = {

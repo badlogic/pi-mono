@@ -8,6 +8,7 @@ async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: Opt
 	const emptyMessage: UserMessage = {
 		role: "user",
 		content: [],
+		timestamp: Date.now(),
 	};
 
 	const context: Context = {
@@ -34,6 +35,7 @@ async function testEmptyStringMessage<TApi extends Api>(llm: Model<TApi>, option
 			{
 				role: "user",
 				content: "",
+				timestamp: Date.now(),
 			},
 		],
 	};
@@ -58,6 +60,7 @@ async function testWhitespaceOnlyMessage<TApi extends Api>(llm: Model<TApi>, opt
 			{
 				role: "user",
 				content: "   \n\t  ",
+				timestamp: Date.now(),
 			},
 		],
 	};
@@ -92,6 +95,7 @@ async function testEmptyAssistantMessage<TApi extends Api>(llm: Model<TApi>, opt
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
 		stopReason: "stop",
+		timestamp: Date.now(),
 	};
 
 	const context: Context = {
@@ -99,11 +103,13 @@ async function testEmptyAssistantMessage<TApi extends Api>(llm: Model<TApi>, opt
 			{
 				role: "user",
 				content: "Hello, how are you?",
+				timestamp: Date.now(),
 			},
 			emptyAssistant,
 			{
 				role: "user",
 				content: "Please respond this time.",
+				timestamp: Date.now(),
 			},
 		],
 	};

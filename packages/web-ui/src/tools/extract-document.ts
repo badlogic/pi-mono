@@ -100,7 +100,10 @@ export function createExtractDocumentTool(): AgentTool<typeof extractDocumentSch
 
 				// Extract filename from URL
 				const urlParts = url.split("/");
-				const fileName = urlParts[urlParts.length - 1]?.split("?")[0] || "document";
+				let fileName = urlParts[urlParts.length - 1]?.split("?")[0] || "document";
+				if (url.startsWith("https://arxiv.org/")) {
+					fileName = fileName + ".pdf";
+				}
 
 				// Use loadAttachment to process the document
 				const attachment = await loadAttachment(arrayBuffer, fileName);

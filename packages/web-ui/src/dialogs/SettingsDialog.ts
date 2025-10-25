@@ -208,13 +208,6 @@ export class SettingsDialog extends LitElement {
 									)}
 								</div>
 							</div>
-
-							<!-- Footer -->
-							<div class="pt-4 flex-shrink-0">
-								<p class="text-xs text-muted-foreground text-center">
-									${i18n("Settings are stored locally in your browser")}
-								</p>
-							</div>
 						</div>
 					`,
 				})}

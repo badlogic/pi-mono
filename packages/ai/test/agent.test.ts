@@ -27,6 +27,7 @@ async function calculateTest<TApi extends Api>(model: Model<TApi>, options: Opti
 1. Calculate 3485 * 4234 and 88823 * 3482 in parallel
 2. Calculate the sum of the two results using the calculator tool
 3. Output ONLY the final sum as a single integer number, nothing else.`,
+		timestamp: Date.now(),
 	};
 
 	// Calculate expected results (using integers)
@@ -176,6 +177,7 @@ async function abortTest<TApi extends Api>(model: Model<TApi>, options: OptionsF
 	const userPrompt: UserMessage = {
 		role: "user",
 		content: "Calculate 100 * 200, then 300 * 400, then 500 * 600, then sum all three results.",
+		timestamp: Date.now(),
 	};
 
 	// Create abort controller

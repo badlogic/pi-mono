@@ -32,7 +32,7 @@ const calculatorTool: Tool<typeof calculatorSchema> = {
 async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant. Be concise.",
-		messages: [{ role: "user", content: "Reply with exactly: 'Hello test successful'" }],
+		messages: [{ role: "user", content: "Reply with exactly: 'Hello test successful'", timestamp: Date.now() }],
 	};
 	const response = await complete(model, context, options);
 
@@ -44,7 +44,7 @@ async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options
 	expect(response.content.map((b) => (b.type === "text" ? b.text : "")).join("")).toContain("Hello test successful");
 
 	context.messages.push(response);
-	context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'" });
+	context.messages.push({ role: "user", content: "Now say 'Goodbye test successful'", timestamp: Date.now() });
 
 	const secondResponse = await complete(model, context, options);
 
@@ -65,6 +65,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: Op
 			{
 				role: "user",
 				content: "Calculate 15 + 27 using the calculator tool.",
+				timestamp: Date.now(),
 			},
 		],
 		tools: [calculatorTool],
@@ -141,7 +142,7 @@ async function handleStreaming<TApi extends Api>(model: Model<TApi>, options?: O
 	let textCompleted = false;
 
 	const context: Context = {
-		messages: [{ role: "user", content: "Count from 1 to 3" }],
+		messages: [{ role: "user", content: "Count from 1 to 3", timestamp: Date.now() }],
 	};
 
 	const s = stream(model, context, options);
@@ -174,6 +175,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 			{
 				role: "user",
 				content: `Think long and hard about ${(Math.random() * 255) | 0} + 27. Think step by step. Then output the result.`,
+				timestamp: Date.now(),
 			},
 		],
 	};
@@ -228,6 +230,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 					},
 					imageContent,
 				],
+				timestamp: Date.now(),
 			},
 		],
 	};
@@ -251,6 +254,7 @@ async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: Options
 			{
 				role: "user",
 				content: "Think about this briefly, then calculate 42 * 17 and 453 + 434 using the calculator tool.",
+				timestamp: Date.now(),
 			},
 		],
 		tools: [calculatorTool],
@@ -303,6 +307,7 @@ async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: Options
 					toolName: block.name,
 					output: `${result}`,
 					isError: false,
+					timestamp: Date.now(),
 				});
 			}
 		}

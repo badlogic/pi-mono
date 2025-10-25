@@ -95,6 +95,7 @@ export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
+	timestamp: number; // Unix timestamp in milliseconds
 }
 
 export interface AssistantMessage {
@@ -106,6 +107,7 @@ export interface AssistantMessage {
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
+	timestamp: number; // Unix timestamp in milliseconds
 }
 
 export interface ToolResultMessage<TDetails = any> {
@@ -115,6 +117,7 @@ export interface ToolResultMessage<TDetails = any> {
 	output: string;
 	details?: TDetails;
 	isError: boolean;
+	timestamp: number; // Unix timestamp in milliseconds
 }
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;

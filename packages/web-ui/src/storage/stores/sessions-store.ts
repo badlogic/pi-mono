@@ -1,3 +1,4 @@
+import type { AgentState } from "../../agent/agent.js";
 import { Store } from "../store.js";
 import type { SessionData, SessionMetadata, StoreConfig } from "../types.js";
 
@@ -82,7 +83,12 @@ export class SessionsStore extends Store {
 	}
 
 	// Alias methods for backward compatibility
-	async saveSession(id: string, state: any, metadata: SessionMetadata | undefined, title?: string): Promise<void> {
+	async saveSession(
+		id: string,
+		state: AgentState,
+		metadata: SessionMetadata | undefined,
+		title?: string,
+	): Promise<void> {
 		// If metadata is provided, use it; otherwise create it from state
 		const meta: SessionMetadata = metadata || {
 			id,
@@ -90,7 +96,7 @@ export class SessionsStore extends Store {
 			createdAt: new Date().toISOString(),
 			lastModified: new Date().toISOString(),
 			messageCount: state.messages?.length || 0,
-			usage: state.usage || {
+			usage: {
 				input: 0,
 				output: 0,
 				cacheRead: 0,

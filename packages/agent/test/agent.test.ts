@@ -86,7 +86,7 @@ describe("Agent", () => {
 		expect(agent.state.tools).toBe(tools);
 
 		// Test replaceMessages
-		const messages = [{ role: "user" as const, content: "Hello" }];
+		const messages = [{ role: "user" as const, content: "Hello", timestamp: Date.now() }];
 		agent.replaceMessages(messages);
 		expect(agent.state.messages).toEqual(messages);
 		expect(agent.state.messages).not.toBe(messages); // Should be a copy
@@ -107,7 +107,7 @@ describe("Agent", () => {
 			transport: new ProviderTransport(),
 		});
 
-		const message = { role: "user" as const, content: "Queued message" };
+		const message = { role: "user" as const, content: "Queued message", timestamp: Date.now() };
 		await agent.queueMessage(message);
 
 		// The message is queued but not yet in state.messages
