@@ -67,7 +67,15 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 			const blocks = output.content as Block[];
 
 			for await (const event of anthropicStream) {
-				if (event.type === "content_block_start") {
+				if (event.type === "message_start") {
+					// Capture initial token usage from message_start event
+					// This ensures we have input token counts even if the stream is aborted early
+					output.usage.input = event.message.usage.input_tokens || 0;
+					output.usage.output = event.message.usage.output_tokens || 0;
+					output.usage.cacheRead = event.message.usage.cache_read_input_tokens || 0;
+					output.usage.cacheWrite = event.message.usage.cache_creation_input_tokens || 0;
+					calculateCost(model, output.usage);
+				} else if (event.type === "content_block_start") {
 					if (event.content_block.type === "text") {
 						const block: Block = {
 							type: "text",
@@ -186,10 +194,10 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 					if (event.delta.stop_reason) {
 						output.stopReason = mapStopReason(event.delta.stop_reason);
 					}
-					output.usage.input += event.usage.input_tokens || 0;
-					output.usage.output += event.usage.output_tokens || 0;
-					output.usage.cacheRead += event.usage.cache_read_input_tokens || 0;
-					output.usage.cacheWrite += event.usage.cache_creation_input_tokens || 0;
+					output.usage.input = event.usage.input_tokens || 0;
+					output.usage.output = event.usage.output_tokens || 0;
+					output.usage.cacheRead = event.usage.cache_read_input_tokens || 0;
+					output.usage.cacheWrite = event.usage.cache_creation_input_tokens || 0;
 					calculateCost(model, output.usage);
 				}
 			}
