@@ -117,7 +117,7 @@ function mapOptionsForApi<TApi extends Api>(
 ): OptionsForApi<TApi> {
 	const base = {
 		temperature: options?.temperature,
-		maxTokens: options?.maxTokens,
+		maxTokens: options?.maxTokens || model.maxTokens,
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 	};
@@ -130,7 +130,7 @@ function mapOptionsForApi<TApi extends Api>(
 				minimal: 1024,
 				low: 2048,
 				medium: 8192,
-				high: Math.min(25000, model.maxTokens - 1000),
+				high: 16384,
 			};
 
 			return {

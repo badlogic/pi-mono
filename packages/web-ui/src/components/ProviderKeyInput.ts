@@ -3,6 +3,7 @@ import { type Context, complete, getModel } from "@mariozechner/pi-ai";
 import { LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { getAppStorage } from "../storage/app-storage.js";
+import { applyProxyIfNeeded } from "../utils/proxy-utils.js";
 
 // Test models for each provider
 const TEST_MODELS: Record<string, string> = {
@@ -51,16 +52,12 @@ export class ProviderKeyInput extends LitElement {
 			let model = getModel(provider as any, modelId);
 			if (!model) return false;
 
-			// Check if CORS proxy is enabled and apply it
+			// Get proxy URL from settings (if available)
 			const proxyEnabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
 			const proxyUrl = await getAppStorage().settings.get<string>("proxy.url");
 
-			if (proxyEnabled && proxyUrl && model.baseUrl) {
-				model = {
-					...model,
-					baseUrl: `${proxyUrl}/?url=${encodeURIComponent(model.baseUrl)}`,
-				};
-			}
+			// Apply proxy only if this provider/key combination requires it
+			model = applyProxyIfNeeded(model, apiKey, proxyEnabled ? proxyUrl || undefined : undefined);
 
 			const context: Context = {
 				messages: [{ role: "user", content: "Reply with: ok", timestamp: Date.now() }],

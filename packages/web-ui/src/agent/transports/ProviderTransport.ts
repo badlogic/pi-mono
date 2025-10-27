@@ -6,11 +6,12 @@ import {
 	type UserMessage,
 } from "@mariozechner/pi-ai";
 import { getAppStorage } from "../../storage/app-storage.js";
+import { applyProxyIfNeeded } from "../../utils/proxy-utils.js";
 import type { AgentRunConfig, AgentTransport } from "./types.js";
 
 /**
  * Transport that calls LLM providers directly.
- * Optionally routes calls through a CORS proxy if enabled in settings.
+ * Uses CORS proxy only for providers that require it (Anthropic OAuth, Z-AI).
  */
 export class ProviderTransport implements AgentTransport {
 	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
@@ -20,18 +21,12 @@ export class ProviderTransport implements AgentTransport {
 			throw new Error("no-api-key");
 		}
 
-		// Check if CORS proxy is enabled
+		// Get proxy URL from settings (if available)
 		const proxyEnabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
 		const proxyUrl = await getAppStorage().settings.get<string>("proxy.url");
 
-		// Clone model and modify baseUrl if proxy is enabled
-		let model = cfg.model;
-		if (proxyEnabled && proxyUrl && cfg.model.baseUrl) {
-			model = {
-				...cfg.model,
-				baseUrl: `${proxyUrl}/?url=${encodeURIComponent(cfg.model.baseUrl)}`,
-			};
-		}
+		// Apply proxy only if this provider/key combination requires it
+		const model = applyProxyIfNeeded(cfg.model, apiKey, proxyEnabled ? proxyUrl || undefined : undefined);
 
 		// Messages are already LLM-compatible (filtered by Agent)
 		const context: AgentContext = {
