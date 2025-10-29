@@ -24,6 +24,7 @@ export class ProviderKeyInput extends LitElement {
 	@state() private testing = false;
 	@state() private failed = false;
 	@state() private hasKey = false;
+	@state() private inputChanged = false;
 
 	protected createRenderRoot() {
 		return this;
@@ -89,7 +90,7 @@ export class ProviderKeyInput extends LitElement {
 			try {
 				await getAppStorage().providerKeys.set(this.provider, this.keyInput);
 				this.hasKey = true;
-				this.keyInput = "";
+				this.inputChanged = false;
 				this.requestUpdate();
 			} catch (error) {
 				console.error("Failed to save API key:", error);
@@ -105,17 +106,6 @@ export class ProviderKeyInput extends LitElement {
 				this.failed = false;
 				this.requestUpdate();
 			}, 5000);
-		}
-	}
-
-	private async removeKey() {
-		try {
-			await getAppStorage().providerKeys.delete(this.provider);
-			this.hasKey = false;
-			this.keyInput = "";
-			this.requestUpdate();
-		} catch (error) {
-			console.error("Failed to remove API key:", error);
 		}
 	}
 
@@ -140,27 +130,18 @@ export class ProviderKeyInput extends LitElement {
 						value: this.keyInput,
 						onInput: (e: Event) => {
 							this.keyInput = (e.target as HTMLInputElement).value;
+							this.inputChanged = true;
 							this.requestUpdate();
 						},
 						className: "flex-1",
 					})}
-					${
-						this.hasKey
-							? Button({
-									onClick: () => this.removeKey(),
-									variant: "ghost",
-									size: "sm",
-									children: i18n("Clear"),
-									className: "!text-destructive",
-								})
-							: Button({
-									onClick: () => this.saveKey(),
-									variant: "default",
-									size: "sm",
-									disabled: !this.keyInput || this.testing,
-									children: i18n("Save"),
-								})
-					}
+					${Button({
+						onClick: () => this.saveKey(),
+						variant: "default",
+						size: "sm",
+						disabled: !this.keyInput || this.testing || (this.hasKey && !this.inputChanged),
+						children: i18n("Save"),
+					})}
 				</div>
 			</div>
 		`;
