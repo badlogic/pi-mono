@@ -128,9 +128,6 @@ export interface SessionMetadata {
 		};
 	};
 
-	/** Last used model ID (e.g., "claude-sonnet-4") */
-	modelId: string | null;
-
 	/** Last used thinking level */
 	thinkingLevel: ThinkingLevel;
 
