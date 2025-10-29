@@ -84,7 +84,7 @@ export class ProxyTab extends SettingsTab {
 		return html`
 			<div class="flex flex-col gap-4">
 				<p class="text-sm text-muted-foreground">
-					${i18n("The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.")}
+					${i18n("Allows browser-based apps to bypass CORS restrictions when calling LLM providers. Required for Z-AI and Anthropic with OAuth token.")}
 				</p>
 
 				<div class="flex items-center justify-between">
@@ -109,6 +109,9 @@ export class ProxyTab extends SettingsTab {
 						},
 						onChange: () => this.saveProxySettings(),
 					})}
+					<p class="text-xs text-muted-foreground">
+						${i18n("Format: The proxy must accept requests as <proxy-url>/?url=<target-url>")}
+					</p>
 				</div>
 			</div>
 		`;

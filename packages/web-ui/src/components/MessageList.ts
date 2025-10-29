@@ -15,6 +15,7 @@ export class MessageList extends LitElement {
 	@property({ type: Array }) tools: AgentTool[] = [];
 	@property({ type: Object }) pendingToolCalls?: Set<string>;
 	@property({ type: Boolean }) isStreaming: boolean = false;
+	@property({ attribute: false }) onCostClick?: () => void;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -68,6 +69,7 @@ export class MessageList extends LitElement {
 						.pendingToolCalls=${this.pendingToolCalls}
 						.toolResultsById=${resultByCallId}
 						.hideToolCalls=${false}
+						.onCostClick=${this.onCostClick}
 					></assistant-message>`,
 				});
 				index++;

@@ -88,6 +88,7 @@ export class AssistantMessage extends LitElement {
 	@property({ type: Boolean }) hideToolCalls = false;
 	@property({ type: Object }) toolResultsById?: Map<string, ToolResultMessageType>;
 	@property({ type: Boolean }) isStreaming: boolean = false;
+	@property({ attribute: false }) onCostClick?: () => void;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -133,7 +134,9 @@ export class AssistantMessage extends LitElement {
 				${orderedParts.length ? html` <div class="px-4 flex flex-col gap-3">${orderedParts}</div> ` : ""}
 				${
 					this.message.usage
-						? html` <div class="px-4 mt-2 text-xs text-muted-foreground">${formatUsage(this.message.usage)}</div> `
+						? this.onCostClick
+							? html` <div class="px-4 mt-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors" @click=${this.onCostClick}>${formatUsage(this.message.usage)}</div> `
+							: html` <div class="px-4 mt-2 text-xs text-muted-foreground">${formatUsage(this.message.usage)}</div> `
 						: ""
 				}
 				${

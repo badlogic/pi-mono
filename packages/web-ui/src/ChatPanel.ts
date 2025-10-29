@@ -59,6 +59,7 @@ export class ChatPanel extends LitElement {
 		config?: {
 			onApiKeyRequired?: (provider: string) => Promise<boolean>;
 			onBeforeSend?: () => void | Promise<void>;
+			onCostClick?: () => void;
 			sandboxUrlProvider?: () => string;
 			toolsFactory?: (
 				agent: Agent,
@@ -79,6 +80,7 @@ export class ChatPanel extends LitElement {
 		this.agentInterface.showThemeToggle = false;
 		this.agentInterface.onApiKeyRequired = config?.onApiKeyRequired;
 		this.agentInterface.onBeforeSend = config?.onBeforeSend;
+		this.agentInterface.onCostClick = config?.onCostClick;
 
 		// Set up artifacts panel
 		this.artifactsPanel = new ArtifactsPanel();

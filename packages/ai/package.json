@@ -14,6 +14,7 @@
 		"generate-models": "npx tsx scripts/generate-models.ts",
 		"build": "npm run generate-models && tsc -p tsconfig.build.json",
 		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+		"dev:tsc": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"check": "biome check --write .",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"

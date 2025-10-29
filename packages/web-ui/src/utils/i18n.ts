@@ -137,11 +137,12 @@ declare module "@mariozechner/mini-lit" {
 		Proxy: string;
 		"Use CORS Proxy": string;
 		"Proxy URL": string;
+		"Format: The proxy must accept requests as <proxy-url>/?url=<target-url>": string;
 		"Settings are stored locally in your browser": string;
 		Clear: string;
 		"API Key Required": string;
 		"Enter your API key for {provider}": string;
-		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.": string;
+		"Allows browser-based apps to bypass CORS restrictions when calling LLM providers. Required for Z-AI and Anthropic with OAuth token.": string;
 		Off: string;
 		Minimal: string;
 		Low: string;
@@ -312,12 +313,14 @@ export const translations = {
 		Proxy: "Proxy",
 		"Use CORS Proxy": "Use CORS Proxy",
 		"Proxy URL": "Proxy URL",
+		"Format: The proxy must accept requests as <proxy-url>/?url=<target-url>":
+			"Format: The proxy must accept requests as <proxy-url>/?url=<target-url>",
 		"Settings are stored locally in your browser": "Settings are stored locally in your browser",
 		Clear: "Clear",
 		"API Key Required": "API Key Required",
 		"Enter your API key for {provider}": "Enter your API key for {provider}",
-		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
-			"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.",
+		"Allows browser-based apps to bypass CORS restrictions when calling LLM providers. Required for Z-AI and Anthropic with OAuth token.":
+			"Allows browser-based apps to bypass CORS restrictions when calling LLM providers. Required for Z-AI and Anthropic with OAuth token.",
 		Off: "Off",
 		Minimal: "Minimal",
 		Low: "Low",
@@ -491,12 +494,14 @@ export const translations = {
 		Proxy: "Proxy",
 		"Use CORS Proxy": "CORS-Proxy verwenden",
 		"Proxy URL": "Proxy-URL",
+		"Format: The proxy must accept requests as <proxy-url>/?url=<target-url>":
+			"Format: Der Proxy muss Anfragen als <proxy-url>/?url=<ziel-url> akzeptieren",
 		"Settings are stored locally in your browser": "Einstellungen werden lokal in Ihrem Browser gespeichert",
 		Clear: "Löschen",
 		"API Key Required": "API-Schlüssel erforderlich",
 		"Enter your API key for {provider}": "Geben Sie Ihren API-Schlüssel für {provider} ein",
-		"The CORS proxy strips CORS headers from API responses, allowing browser-based apps to make direct calls to LLM providers without CORS restrictions. It forwards requests to providers while removing headers that would otherwise block cross-origin requests.":
-			"Der CORS-Proxy entfernt CORS-Header aus API-Antworten und ermöglicht browserbasierte Anwendungen, direkte Aufrufe an LLM-Anbieter ohne CORS-Einschränkungen durchzuführen. Er leitet Anfragen an Anbieter weiter und entfernt Header, die sonst Cross-Origin-Anfragen blockieren würden.",
+		"Allows browser-based apps to bypass CORS restrictions when calling LLM providers. Required for Z-AI and Anthropic with OAuth token.":
+			"Ermöglicht browserbasierten Anwendungen, CORS-Einschränkungen beim Aufruf von LLM-Anbietern zu umgehen. Erforderlich für Z-AI und Anthropic mit OAuth-Token.",
 		Off: "Aus",
 		Minimal: "Minimal",
 		Low: "Niedrig",

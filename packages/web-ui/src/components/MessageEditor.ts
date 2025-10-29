@@ -22,13 +22,6 @@ export class MessageEditor extends LitElement {
 		const oldValue = this._value;
 		this._value = val;
 		this.requestUpdate("value", oldValue);
-		this.updateComplete.then(() => {
-			const textarea = this.textareaRef.value;
-			if (textarea) {
-				textarea.style.height = "auto";
-				textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-			}
-		});
 	}
 
 	@property() isStreaming = false;
@@ -60,8 +53,6 @@ export class MessageEditor extends LitElement {
 	private handleTextareaInput = (e: Event) => {
 		const textarea = e.target as HTMLTextAreaElement;
 		this.value = textarea.value;
-		textarea.style.height = "auto";
-		textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
 		this.onInput?.(this.value);
 	};
 
@@ -231,30 +222,10 @@ export class MessageEditor extends LitElement {
 		this.processingFiles = false;
 	};
 
-	private adjustTextareaHeight() {
-		const textarea = this.textareaRef.value;
-		if (textarea) {
-			// Reset height to auto to get accurate scrollHeight
-			textarea.style.height = "auto";
-			// Only adjust if there's content, otherwise keep minimal height
-			if (this.value.trim()) {
-				textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-			}
-		}
-	}
-
 	override firstUpdated() {
 		const textarea = this.textareaRef.value;
 		if (textarea) {
-			// Don't adjust height on first render - let it be minimal
 			textarea.focus();
-		}
-	}
-
-	override updated() {
-		// Only adjust height when component updates if there's content
-		if (this.value) {
-			this.adjustTextareaHeight();
 		}
 	}
 
@@ -304,7 +275,7 @@ export class MessageEditor extends LitElement {
 					class="w-full bg-transparent p-4 text-foreground placeholder-muted-foreground outline-none resize-none overflow-y-auto"
 					placeholder=${i18n("Type a message...")}
 					rows="1"
-					style="max-height: 200px;"
+					style="max-height: 200px; field-sizing: content; min-height: 1lh; height: auto;"
 					.value=${this.value}
 					@input=${this.handleTextareaInput}
 					@keydown=${this.handleKeyDown}

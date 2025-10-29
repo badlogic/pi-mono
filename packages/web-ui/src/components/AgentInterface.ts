@@ -29,6 +29,8 @@ export class AgentInterface extends LitElement {
 	@property({ attribute: false }) onBeforeSend?: () => void | Promise<void>;
 	// Optional callback called before executing a tool call - return false to prevent execution
 	@property({ attribute: false }) onBeforeToolCall?: (toolName: string, args: any) => boolean | Promise<boolean>;
+	// Optional callback called when cost display is clicked
+	@property({ attribute: false }) onCostClick?: () => void;
 
 	// References
 	@query("message-editor") private _messageEditor!: MessageEditor;
@@ -226,6 +228,7 @@ export class AgentInterface extends LitElement {
 					.tools=${state.tools}
 					.pendingToolCalls=${this.session ? this.session.state.pendingToolCalls : new Set<string>()}
 					.isStreaming=${state.isStreaming}
+					.onCostClick=${this.onCostClick}
 				></message-list>
 
 				<!-- Streaming message container - manages its own updates -->
@@ -235,6 +238,7 @@ export class AgentInterface extends LitElement {
 					.isStreaming=${state.isStreaming}
 					.pendingToolCalls=${state.pendingToolCalls}
 					.toolResultsById=${toolResultsById}
+					.onCostClick=${this.onCostClick}
 				></streaming-message-container>
 			</div>
 		`;
@@ -275,7 +279,15 @@ export class AgentInterface extends LitElement {
 				<div class="flex items-center gap-1">
 					${this.showThemeToggle ? html`<theme-toggle></theme-toggle>` : html``}
 				</div>
-				<div class="flex ml-auto items-center gap-3">${totalsText ? html`<span>${totalsText}</span>` : ""}</div>
+				<div class="flex ml-auto items-center gap-3">
+					${
+						totalsText
+							? this.onCostClick
+								? html`<span class="cursor-pointer hover:text-foreground transition-colors" @click=${this.onCostClick}>${totalsText}</span>`
+								: html`<span>${totalsText}</span>`
+							: ""
+					}
+				</div>
 			</div>
 		`;
 	}
