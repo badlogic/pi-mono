@@ -42,17 +42,9 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 			if (!model.supported_parameters?.includes("tools")) continue;
 
 			// Parse provider from model ID
-			const [providerPrefix] = model.id.split("/");
 			let provider: KnownProvider = "openrouter";
 			let modelKey = model.id;
 
-			// Skip models that we get from models.dev (Anthropic, Google, OpenAI)
-			if (model.id.startsWith("google/") ||
-			    model.id.startsWith("openai/") ||
-			    model.id.startsWith("anthropic/") ||
-				model.id.startsWith("x-ai/")) {
-				continue;
-			}
 			modelKey = model.id; // Keep full ID for OpenRouter
 
 			// Parse input modalities
