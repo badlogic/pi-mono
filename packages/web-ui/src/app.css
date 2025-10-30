@@ -42,3 +42,26 @@ body {
 .fixed.inset-0 button[type="button"] {
 	cursor: pointer;
 }
+
+/* Shimmer animation for thinking text */
+@keyframes shimmer {
+	0% {
+		background-position: -200% 0;
+	}
+	100% {
+		background-position: 200% 0;
+	}
+}
+
+.animate-shimmer {
+	animation: shimmer 2s ease-in-out infinite;
+}
+
+/* User message with fancy pill styling */
+.user-message-container {
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	position: relative;
+	background: linear-gradient(135deg, rgba(217, 79, 0, 0.12), rgba(255, 107, 0, 0.12), rgba(212, 165, 0, 0.12));
+	border: 1px solid rgba(255, 107, 0, 0.25);
+	backdrop-filter: blur(10px);
+}

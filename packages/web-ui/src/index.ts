@@ -46,6 +46,7 @@ export {
 export { RuntimeMessageBridge } from "./components/sandbox/RuntimeMessageBridge.js";
 export { RUNTIME_MESSAGE_ROUTER } from "./components/sandbox/RuntimeMessageRouter.js";
 export type { SandboxRuntimeProvider } from "./components/sandbox/SandboxRuntimeProvider.js";
+export { ThinkingBlock } from "./components/ThinkingBlock.js";
 export { ApiKeyPromptDialog } from "./dialogs/ApiKeyPromptDialog.js";
 export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs

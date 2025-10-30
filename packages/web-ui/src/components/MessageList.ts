@@ -65,7 +65,7 @@ export class MessageList extends LitElement {
 					template: html`<assistant-message
 						.message=${amsg}
 						.tools=${this.tools}
-						.isStreaming=${this.isStreaming}
+						.isStreaming=${false}
 						.pendingToolCalls=${this.pendingToolCalls}
 						.toolResultsById=${resultByCallId}
 						.hideToolCalls=${false}

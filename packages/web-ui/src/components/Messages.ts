@@ -12,6 +12,7 @@ import { renderTool } from "../tools/index.js";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
+import "./ThinkingBlock.js";
 
 export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
 
@@ -62,19 +63,21 @@ export class UserMessage extends LitElement {
 				: this.message.content.find((c) => c.type === "text")?.text || "";
 
 		return html`
-			<div class="py-2 px-4 border-l-4 border-accent-foreground/60 text-primary-foreground">
-				<markdown-block .content=${content}></markdown-block>
-				${
-					this.message.attachments && this.message.attachments.length > 0
-						? html`
-							<div class="mt-3 flex flex-wrap gap-2">
-								${this.message.attachments.map(
-									(attachment) => html` <attachment-tile .attachment=${attachment}></attachment-tile> `,
-								)}
-							</div>
-						`
-						: ""
-				}
+			<div class="flex justify-start ml-4">
+				<div class="user-message-container py-2 px-4 rounded-xl">
+					<markdown-block .content=${content}></markdown-block>
+					${
+						this.message.attachments && this.message.attachments.length > 0
+							? html`
+								<div class="mt-3 flex flex-wrap gap-2">
+									${this.message.attachments.map(
+										(attachment) => html` <attachment-tile .attachment=${attachment}></attachment-tile> `,
+									)}
+								</div>
+							`
+							: ""
+					}
+				</div>
 			</div>
 		`;
 	}
@@ -107,7 +110,9 @@ export class AssistantMessage extends LitElement {
 			if (chunk.type === "text" && chunk.text.trim() !== "") {
 				orderedParts.push(html`<markdown-block .content=${chunk.text}></markdown-block>`);
 			} else if (chunk.type === "thinking" && chunk.thinking.trim() !== "") {
-				orderedParts.push(html` <markdown-block .content=${chunk.thinking} .isThinking=${true}></markdown-block> `);
+				orderedParts.push(
+					html`<thinking-block .content=${chunk.thinking} .isStreaming=${this.isStreaming}></thinking-block>`,
+				);
 			} else if (chunk.type === "toolCall") {
 				if (!this.hideToolCalls) {
 					const tool = this.tools?.find((t) => t.name === chunk.name);
@@ -133,7 +138,7 @@ export class AssistantMessage extends LitElement {
 			<div>
 				${orderedParts.length ? html` <div class="px-4 flex flex-col gap-3">${orderedParts}</div> ` : ""}
 				${
-					this.message.usage
+					this.message.usage && !this.isStreaming
 						? this.onCostClick
 							? html` <div class="px-4 mt-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors" @click=${this.onCostClick}>${formatUsage(this.message.usage)}</div> `
 							: html` <div class="px-4 mt-2 text-xs text-muted-foreground">${formatUsage(this.message.usage)}</div> `

@@ -1,7 +1,7 @@
 import { html, icon, type TemplateResult } from "@mariozechner/mini-lit";
 import type { Ref } from "lit/directives/ref.js";
 import { ref } from "lit/directives/ref.js";
-import { ChevronRight, Loader } from "lucide";
+import { ChevronsUpDown, ChevronUp, Loader } from "lucide";
 import type { ToolRenderer } from "./types.js";
 
 // Registry of tool renderers
@@ -85,11 +85,23 @@ export function renderCollapsibleHeader(
 			if (isCollapsed) {
 				content.classList.remove("max-h-0");
 				content.classList.add("max-h-[2000px]", "mt-3");
-				chevron.classList.add("rotate-90");
+				// Show ChevronUp, hide ChevronsUpDown
+				const upIcon = chevron.querySelector(".chevron-up");
+				const downIcon = chevron.querySelector(".chevrons-up-down");
+				if (upIcon && downIcon) {
+					upIcon.classList.remove("hidden");
+					downIcon.classList.add("hidden");
+				}
 			} else {
 				content.classList.remove("max-h-[2000px]", "mt-3");
 				content.classList.add("max-h-0");
-				chevron.classList.remove("rotate-90");
+				// Show ChevronsUpDown, hide ChevronUp
+				const upIcon = chevron.querySelector(".chevron-up");
+				const downIcon = chevron.querySelector(".chevrons-up-down");
+				if (upIcon && downIcon) {
+					upIcon.classList.add("hidden");
+					downIcon.classList.remove("hidden");
+				}
 			}
 		}
 	};
@@ -108,8 +120,9 @@ export function renderCollapsibleHeader(
 				${statusIcon(toolIcon, toolIconColor)}
 				${text}
 			</div>
-			<span class="inline-block text-muted-foreground transition-transform duration-300 ${defaultExpanded ? "rotate-90" : ""}" ${ref(chevronRef)}>
-				${icon(ChevronRight, "sm")}
+			<span class="inline-block text-muted-foreground" ${ref(chevronRef)}>
+				<span class="chevron-up ${defaultExpanded ? "" : "hidden"}">${icon(ChevronUp, "sm")}</span>
+				<span class="chevrons-up-down ${defaultExpanded ? "hidden" : ""}">${icon(ChevronsUpDown, "sm")}</span>
 			</span>
 		</button>
 	`;
