@@ -265,10 +265,11 @@ export class Editor implements Component {
 			// Get text and substitute paste markers with actual content
 			let result = this.state.lines.join("\n").trim();
 
-			// Replace all [paste #N] markers with actual paste content
+			// Replace all [paste #N +xxx lines] markers with actual paste content
 			for (const [pasteId, pasteContent] of this.pastes) {
-				const marker = `[paste #${pasteId}]`;
-				result = result.replace(marker, pasteContent);
+				// Match both old format [paste #N] and new format [paste #N +xxx lines]
+				const markerRegex = new RegExp(`\\[paste #${pasteId}( \\+\\d+ lines)?\\]`, "g");
+				result = result.replace(markerRegex, pasteContent);
 			}
 
 			// Reset editor and clear pastes
@@ -472,8 +473,8 @@ export class Editor implements Component {
 			const pasteId = this.pasteCounter;
 			this.pastes.set(pasteId, filteredText);
 
-			// Insert marker like "[paste #1]"
-			const marker = `[paste #${pasteId}]`;
+			// Insert marker like "[paste #1 +123 lines]"
+			const marker = `[paste #${pasteId} +${pastedLines.length} lines]`;
 			for (const char of marker) {
 				this.insertCharacter(char);
 			}
