@@ -1,4 +1,3 @@
-import { main as agentMain } from "@mariozechner/pi-agent-old";
 import chalk from "chalk";
 import { getActivePod, loadConfig } from "../config.js";
 
@@ -77,7 +76,7 @@ Current working directory: ${process.cwd()}`;
 
 	// Call agent main function directly
 	try {
-		await agentMain(args);
+		throw new Error("Not implemented");
 	} catch (err: any) {
 		console.error(chalk.red(`Agent error: ${err.message}`));
 		process.exit(1);
