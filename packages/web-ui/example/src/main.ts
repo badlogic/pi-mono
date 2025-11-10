@@ -5,15 +5,16 @@ import {
 	Agent,
 	type AgentState,
 	ApiKeyPromptDialog,
-	ApiKeysTab,
 	type AppMessage,
 	AppStorage,
 	ChatPanel,
 	createJavaScriptReplTool,
+	CustomProvidersStore,
 	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
 	ProviderTransport,
+	ProvidersModelsTab,
 	ProxyTab,
 	SessionListDialog,
 	SessionsStore,
@@ -33,24 +34,32 @@ registerCustomMessageRenderers();
 const settings = new SettingsStore();
 const providerKeys = new ProviderKeysStore();
 const sessions = new SessionsStore();
+const customProviders = new CustomProvidersStore();
 
 // Gather configs
-const configs = [settings.getConfig(), SessionsStore.getMetadataConfig(), providerKeys.getConfig(), sessions.getConfig()];
+const configs = [
+	settings.getConfig(),
+	SessionsStore.getMetadataConfig(),
+	providerKeys.getConfig(),
+	customProviders.getConfig(),
+	sessions.getConfig(),
+];
 
 // Create backend
 const backend = new IndexedDBStorageBackend({
 	dbName: "pi-web-ui-example",
-	version: 1,
+	version: 2, // Incremented for custom-providers store
 	stores: configs,
 });
 
 // Wire backend to stores
 settings.setBackend(backend);
 providerKeys.setBackend(backend);
+customProviders.setBackend(backend);
 sessions.setBackend(backend);
 
 // Create and set app storage
-const storage = new AppStorage(settings, providerKeys, sessions, backend);
+const storage = new AppStorage(settings, providerKeys, sessions, customProviders, backend);
 setAppStorage(storage);
 
 let currentSessionId: string | undefined;
@@ -349,7 +358,7 @@ const renderApp = () => {
 						variant: "ghost",
 						size: "sm",
 						children: icon(Settings, "sm"),
-						onClick: () => SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]),
+						onClick: () => SettingsDialog.open([new ProvidersModelsTab(), new ProxyTab()]),
 						title: "Settings",
 					})}
 				</div>

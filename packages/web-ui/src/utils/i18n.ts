@@ -170,6 +170,40 @@ declare module "@mariozechner/mini-lit" {
 		messages: string;
 		tokens: string;
 		"Drop files here": string;
+		// Providers & Models
+		"Providers & Models": string;
+		"Cloud Providers": string;
+		"Cloud LLM providers with predefined models. API keys are stored locally in your browser.": string;
+		"Custom Providers": string;
+		"User-configured servers with auto-discovered or manually defined models.": string;
+		"Add Provider": string;
+		"No custom providers configured. Click 'Add Provider' to get started.": string;
+		Models: string;
+		"auto-discovered": string;
+		Refresh: string;
+		Edit: string;
+		"Are you sure you want to delete this provider?": string;
+		"Edit Provider": string;
+		"Provider Name": string;
+		"e.g., My Ollama Server": string;
+		"Provider Type": string;
+		"Base URL": string;
+		"e.g., http://localhost:11434": string;
+		"API Key (Optional)": string;
+		"Leave empty if not required": string;
+		"Test Connection": string;
+		Discovered: string;
+		models: string;
+		and: string;
+		more: string;
+		"For manual provider types, add models after saving the provider.": string;
+		"Please fill in all required fields": string;
+		"Failed to save provider": string;
+		"OpenAI Completions Compatible": string;
+		"OpenAI Responses Compatible": string;
+		"Anthropic Messages Compatible": string;
+		"Checking...": string;
+		Disconnected: string;
 	}
 }
 
@@ -354,6 +388,44 @@ export const translations = {
 		Delete: "Delete",
 		"Drop files here": "Drop files here",
 		"Command failed:": "Command failed:",
+		// Providers & Models
+		"Providers & Models": "Providers & Models",
+		"Cloud Providers": "Cloud Providers",
+		"Cloud LLM providers with predefined models. API keys are stored locally in your browser.":
+			"Cloud LLM providers with predefined models. API keys are stored locally in your browser.",
+		"Custom Providers": "Custom Providers",
+		"User-configured servers with auto-discovered or manually defined models.":
+			"User-configured servers with auto-discovered or manually defined models.",
+		"Add Provider": "Add Provider",
+		"No custom providers configured. Click 'Add Provider' to get started.":
+			"No custom providers configured. Click 'Add Provider' to get started.",
+		"auto-discovered": "auto-discovered",
+		Refresh: "Refresh",
+		Edit: "Edit",
+		"Are you sure you want to delete this provider?": "Are you sure you want to delete this provider?",
+		"Edit Provider": "Edit Provider",
+		"Provider Name": "Provider Name",
+		"e.g., My Ollama Server": "e.g., My Ollama Server",
+		"Provider Type": "Provider Type",
+		"Base URL": "Base URL",
+		"e.g., http://localhost:11434": "e.g., http://localhost:11434",
+		"API Key (Optional)": "API Key (Optional)",
+		"Leave empty if not required": "Leave empty if not required",
+		"Test Connection": "Test Connection",
+		Discovered: "Discovered",
+		Models: "Models",
+		models: "models",
+		and: "and",
+		more: "more",
+		"For manual provider types, add models after saving the provider.":
+			"For manual provider types, add models after saving the provider.",
+		"Please fill in all required fields": "Please fill in all required fields",
+		"Failed to save provider": "Failed to save provider",
+		"OpenAI Completions Compatible": "OpenAI Completions Compatible",
+		"OpenAI Responses Compatible": "OpenAI Responses Compatible",
+		"Anthropic Messages Compatible": "Anthropic Messages Compatible",
+		"Checking...": "Checking...",
+		Disconnected: "Disconnected",
 	},
 	de: {
 		...defaultGerman,
@@ -535,6 +607,44 @@ export const translations = {
 		Delete: "Löschen",
 		"Drop files here": "Dateien hier ablegen",
 		"Command failed:": "Befehl fehlgeschlagen:",
+		// Providers & Models
+		"Providers & Models": "Anbieter & Modelle",
+		"Cloud Providers": "Cloud-Anbieter",
+		"Cloud LLM providers with predefined models. API keys are stored locally in your browser.":
+			"Cloud-LLM-Anbieter mit vordefinierten Modellen. API-Schlüssel werden lokal in Ihrem Browser gespeichert.",
+		"Custom Providers": "Benutzerdefinierte Anbieter",
+		"User-configured servers with auto-discovered or manually defined models.":
+			"Benutzerkonfigurierte Server mit automatisch erkannten oder manuell definierten Modellen.",
+		"Add Provider": "Anbieter hinzufügen",
+		"No custom providers configured. Click 'Add Provider' to get started.":
+			"Keine benutzerdefinierten Anbieter konfiguriert. Klicken Sie auf 'Anbieter hinzufügen', um zu beginnen.",
+		"auto-discovered": "automatisch erkannt",
+		Refresh: "Aktualisieren",
+		Edit: "Bearbeiten",
+		"Are you sure you want to delete this provider?": "Sind Sie sicher, dass Sie diesen Anbieter löschen möchten?",
+		"Edit Provider": "Anbieter bearbeiten",
+		"Provider Name": "Anbietername",
+		"e.g., My Ollama Server": "z.B. Mein Ollama Server",
+		"Provider Type": "Anbietertyp",
+		"Base URL": "Basis-URL",
+		"e.g., http://localhost:11434": "z.B. http://localhost:11434",
+		"API Key (Optional)": "API-Schlüssel (Optional)",
+		"Leave empty if not required": "Leer lassen, falls nicht erforderlich",
+		"Test Connection": "Verbindung testen",
+		Discovered: "Erkannt",
+		Models: "Modelle",
+		models: "Modelle",
+		and: "und",
+		more: "mehr",
+		"For manual provider types, add models after saving the provider.":
+			"Für manuelle Anbietertypen fügen Sie Modelle nach dem Speichern des Anbieters hinzu.",
+		"Please fill in all required fields": "Bitte füllen Sie alle erforderlichen Felder aus",
+		"Failed to save provider": "Fehler beim Speichern des Anbieters",
+		"OpenAI Completions Compatible": "OpenAI Completions Kompatibel",
+		"OpenAI Responses Compatible": "OpenAI Responses Kompatibel",
+		"Anthropic Messages Compatible": "Anthropic Messages Kompatibel",
+		"Checking...": "Überprüfe...",
+		Disconnected: "Getrennt",
 	},
 };
 

@@ -64,4 +64,5 @@ body {
 	background: linear-gradient(135deg, rgba(217, 79, 0, 0.12), rgba(255, 107, 0, 0.12), rgba(212, 165, 0, 0.12));
 	border: 1px solid rgba(255, 107, 0, 0.25);
 	backdrop-filter: blur(10px);
+	max-width: 100%;
 }

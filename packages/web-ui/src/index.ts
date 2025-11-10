@@ -52,6 +52,7 @@ export { AttachmentOverlay } from "./dialogs/AttachmentOverlay.js";
 // Dialogs
 export { ModelSelector } from "./dialogs/ModelSelector.js";
 export { PersistentStorageDialog } from "./dialogs/PersistentStorageDialog.js";
+export { ProvidersModelsTab } from "./dialogs/ProvidersModelsTab.js";
 export { SessionListDialog } from "./dialogs/SessionListDialog.js";
 export { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "./dialogs/SettingsDialog.js";
 // Prompts
@@ -64,6 +65,12 @@ export {
 export { AppStorage, getAppStorage, setAppStorage } from "./storage/app-storage.js";
 export { IndexedDBStorageBackend } from "./storage/backends/indexeddb-storage-backend.js";
 export { Store } from "./storage/store.js";
+export type {
+	AutoDiscoveryProviderType,
+	CustomProvider,
+	CustomProviderType,
+} from "./storage/stores/custom-providers-store.js";
+export { CustomProvidersStore } from "./storage/stores/custom-providers-store.js";
 export { ProviderKeysStore } from "./storage/stores/provider-keys-store.js";
 export { SessionsStore } from "./storage/stores/sessions-store.js";
 export { SettingsStore } from "./storage/stores/settings-store.js";

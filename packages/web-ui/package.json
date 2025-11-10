@@ -18,6 +18,7 @@
 		"check": "npm run typecheck"
 	},
 	"dependencies": {
+		"@lmstudio/sdk": "^1.5.0",
 		"@mariozechner/pi-ai": "^0.5.43",
 		"@mariozechner/pi-tui": "^0.5.48",
 		"docx-preview": "^0.3.7",

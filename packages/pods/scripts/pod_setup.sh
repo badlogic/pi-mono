@@ -216,7 +216,9 @@ esac
 
 # --- Install additional packages ---------------------------------------------
 echo "Installing additional packages..."
-uv pip install huggingface-hub psutil tensorrt hf_transfer
+# Note: tensorrt removed temporarily due to CUDA 13.0 compatibility issues
+# TensorRT still depends on deprecated nvidia-cuda-runtime-cu13 package
+uv pip install huggingface-hub psutil hf_transfer
 
 # --- FlashInfer installation (optional, improves performance) ----------------
 echo "Attempting FlashInfer installation (optional)..."

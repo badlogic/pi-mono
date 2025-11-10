@@ -690,7 +690,7 @@ This continues until the assistant produces a response without tool calls.
 Given a prompt asking to calculate two expressions and sum them:
 
 ```typescript
-import { prompt, AgentContext, calculateTool } from '@mariozechner/pi-ai';
+import { agentLoop, AgentContext, calculateTool } from '@mariozechner/pi-ai';
 
 const context: AgentContext = {
   systemPrompt: 'You are a helpful math assistant.',
@@ -698,8 +698,8 @@ const context: AgentContext = {
   tools: [calculateTool]
 };
 
-const stream = prompt(
-  { role: 'user', content: 'Calculate 15 * 20 and 30 * 40, then sum the results' },
+const stream = agentLoop(
+  { role: 'user', content: 'Calculate 15 * 20 and 30 * 40, then sum the results', timestamp: Date.now() },
   context,
   { model: getModel('openai', 'gpt-4o-mini') }
 );
