@@ -38,6 +38,10 @@ export class Editor implements Component {
 	private pastes: Map<number, string> = new Map();
 	private pasteCounter: number = 0;
 
+	// Bracketed paste mode buffering
+	private pasteBuffer: string = "";
+	private isInPaste: boolean = false;
+
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
@@ -84,11 +88,23 @@ export class Editor implements Component {
 					displayText = before + cursor + restAfter;
 					// visibleLength stays the same - we're replacing, not adding
 				} else {
-					// Cursor is at the end - add highlighted space
-					const cursor = "\x1b[7m \x1b[0m";
-					displayText = before + cursor;
-					// visibleLength increases by 1 - we're adding a space
-					visibleLength = layoutLine.text.length + 1;
+					// Cursor is at the end - check if we have room for the space
+					if (layoutLine.text.length < width) {
+						// We have room - add highlighted space
+						const cursor = "\x1b[7m \x1b[0m";
+						displayText = before + cursor;
+						// visibleLength increases by 1 - we're adding a space
+						visibleLength = layoutLine.text.length + 1;
+					} else {
+						// Line is at full width - use reverse video on last character if possible
+						// or just show cursor at the end without adding space
+						if (before.length > 0) {
+							const lastChar = before[before.length - 1];
+							const cursor = `\x1b[7m${lastChar}\x1b[0m`;
+							displayText = before.slice(0, -1) + cursor;
+						}
+						// visibleLength stays the same
+					}
 				}
 			}
 
@@ -112,17 +128,53 @@ export class Editor implements Component {
 	}
 
 	handleInput(data: string): void {
+		// Handle bracketed paste mode
+		// Start of paste: \x1b[200~
+		// End of paste: \x1b[201~
+
+		// Check if we're starting a bracketed paste
+		if (data.includes("\x1b[200~")) {
+			this.isInPaste = true;
+			this.pasteBuffer = "";
+			// Remove the start marker and keep the rest
+			data = data.replace("\x1b[200~", "");
+		}
+
+		// If we're in a paste, buffer the data
+		if (this.isInPaste) {
+			// Append data to buffer first (end marker could be split across chunks)
+			this.pasteBuffer += data;
+
+			// Check if the accumulated buffer contains the end marker
+			const endIndex = this.pasteBuffer.indexOf("\x1b[201~");
+			if (endIndex !== -1) {
+				// Extract content before the end marker
+				const pasteContent = this.pasteBuffer.substring(0, endIndex);
+
+				// Process the complete paste
+				this.handlePaste(pasteContent);
+
+				// Reset paste state
+				this.isInPaste = false;
+
+				// Process any remaining data after the end marker
+				const remaining = this.pasteBuffer.substring(endIndex + 6); // 6 = length of \x1b[201~
+				this.pasteBuffer = "";
+
+				if (remaining.length > 0) {
+					this.handleInput(remaining);
+				}
+				return;
+			} else {
+				// Still accumulating, wait for more data
+				return;
+			}
+		}
+
 		// Handle special key combinations first
 
 		// Ctrl+C - Exit (let parent handle this)
 		if (data.charCodeAt(0) === 3) {
-			return;
-		}
-
-		// Handle paste - detect when we get a lot of text at once
-		const isPaste = data.length > 10 || (data.length > 2 && data.includes("\n"));
-		if (isPaste) {
-			this.handlePaste(data);
 			return;
 		}
 
@@ -321,7 +373,7 @@ export class Editor implements Component {
 					const chunkStart = chunkIndex * maxLineLength;
 					const chunkEnd = chunkStart + chunk.length;
 					const cursorPos = this.state.cursorCol;
-					const hasCursorInChunk = isCurrentLine && cursorPos >= chunkStart && cursorPos < chunkEnd;
+					const hasCursorInChunk = isCurrentLine && cursorPos >= chunkStart && cursorPos <= chunkEnd;
 
 					if (hasCursorInChunk) {
 						layoutLines.push({

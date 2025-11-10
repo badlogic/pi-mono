@@ -28,17 +28,28 @@ export class Markdown implements Component {
 	private bgColor?: Color;
 	private fgColor?: Color;
 	private customBgRgb?: { r: number; g: number; b: number };
+	private paddingX: number; // Left/right padding
+	private paddingY: number; // Top/bottom padding
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(text: string = "", bgColor?: Color, fgColor?: Color, customBgRgb?: { r: number; g: number; b: number }) {
+	constructor(
+		text: string = "",
+		bgColor?: Color,
+		fgColor?: Color,
+		customBgRgb?: { r: number; g: number; b: number },
+		paddingX: number = 1,
+		paddingY: number = 1,
+	) {
 		this.text = text;
 		this.bgColor = bgColor;
 		this.fgColor = fgColor;
 		this.customBgRgb = customBgRgb;
+		this.paddingX = paddingX;
+		this.paddingY = paddingY;
 	}
 
 	setText(text: string): void {
@@ -71,6 +82,9 @@ export class Markdown implements Component {
 			return this.cachedLines;
 		}
 
+		// Calculate available width for content (subtract horizontal padding)
+		const contentWidth = Math.max(1, width - this.paddingX * 2);
+
 		// Parse markdown to HTML-like tokens
 		const tokens = marked.lexer(this.text);
 
@@ -80,54 +94,79 @@ export class Markdown implements Component {
 		for (let i = 0; i < tokens.length; i++) {
 			const token = tokens[i];
 			const nextToken = tokens[i + 1];
-			const tokenLines = this.renderToken(token, width, nextToken?.type);
+			const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
 			renderedLines.push(...tokenLines);
 		}
 
-		// Wrap lines to fit width
+		// Wrap lines to fit content width
 		const wrappedLines: string[] = [];
 		for (const line of renderedLines) {
-			wrappedLines.push(...this.wrapLine(line, width));
+			wrappedLines.push(...this.wrapLine(line, contentWidth));
 		}
 
-		// Apply background and foreground colors if specified
-		let result: string[];
-		if (this.bgColor || this.fgColor || this.customBgRgb) {
-			const coloredLines: string[] = [];
-			for (const line of wrappedLines) {
-				// Calculate visible length (strip ANSI codes)
-				const visibleLength = stripVTControlCharacters(line).length;
-				const padding = " ".repeat(Math.max(0, width - visibleLength));
+		// Add padding and apply colors
+		const leftPad = " ".repeat(this.paddingX);
+		const paddedLines: string[] = [];
 
-				// Apply colors
-				let coloredLine = line + padding;
+		for (const line of wrappedLines) {
+			// Calculate visible length (strip ANSI codes)
+			const visibleLength = stripVTControlCharacters(line).length;
+			// Right padding to fill to width (accounting for left padding)
+			const rightPadLength = Math.max(0, width - visibleLength - this.paddingX * 2);
+			const rightPad = " ".repeat(rightPadLength);
 
-				// Apply foreground color first if specified
-				if (this.fgColor) {
-					coloredLine = (chalk as any)[this.fgColor](coloredLine);
-				}
+			// Add left padding, content, and right padding
+			let paddedLine = leftPad + line + rightPad;
 
-				// Apply background color if specified
-				if (this.customBgRgb) {
-					// Use custom RGB background
-					coloredLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(coloredLine);
-				} else if (this.bgColor) {
-					coloredLine = (chalk as any)[this.bgColor](coloredLine);
-				}
-
-				coloredLines.push(coloredLine);
+			// Apply foreground color if specified
+			if (this.fgColor) {
+				paddedLine = (chalk as any)[this.fgColor](paddedLine);
 			}
-			result = coloredLines.length > 0 ? coloredLines : [""];
-		} else {
-			result = wrappedLines.length > 0 ? wrappedLines : [""];
+
+			// Apply background color if specified
+			if (this.customBgRgb) {
+				paddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(paddedLine);
+			} else if (this.bgColor) {
+				paddedLine = (chalk as any)[this.bgColor](paddedLine);
+			}
+
+			paddedLines.push(paddedLine);
 		}
+
+		// Add top padding (empty lines)
+		const emptyLine = " ".repeat(width);
+		const topPadding: string[] = [];
+		for (let i = 0; i < this.paddingY; i++) {
+			let emptyPaddedLine = emptyLine;
+			if (this.customBgRgb) {
+				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
+			} else if (this.bgColor) {
+				emptyPaddedLine = (chalk as any)[this.bgColor](emptyPaddedLine);
+			}
+			topPadding.push(emptyPaddedLine);
+		}
+
+		// Add bottom padding (empty lines)
+		const bottomPadding: string[] = [];
+		for (let i = 0; i < this.paddingY; i++) {
+			let emptyPaddedLine = emptyLine;
+			if (this.customBgRgb) {
+				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
+			} else if (this.bgColor) {
+				emptyPaddedLine = (chalk as any)[this.bgColor](emptyPaddedLine);
+			}
+			bottomPadding.push(emptyPaddedLine);
+		}
+
+		// Combine top padding, content, and bottom padding
+		const result = [...topPadding, ...paddedLines, ...bottomPadding];
 
 		// Update cache
 		this.cachedText = this.text;
 		this.cachedWidth = width;
 		this.cachedLines = result;
 
-		return result;
+		return result.length > 0 ? result : [""];
 	}
 
 	private renderToken(token: Token, width: number, nextTokenType?: string): string[] {

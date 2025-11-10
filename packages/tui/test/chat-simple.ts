@@ -84,16 +84,12 @@ editor.onSubmit = (value: string) => {
 		// Insert before the editor (which is last)
 		const children = tui.children;
 		children.splice(children.length - 1, 0, userMessage);
-
-		// Add spacer after user message
 		children.splice(children.length - 1, 0, new Spacer());
 
 		// Add loader
 		const loader = new Loader(tui, "Thinking...");
-		children.splice(children.length - 1, 0, loader);
-
-		// Add spacer after loader
 		const loaderSpacer = new Spacer();
+		children.splice(children.length - 1, 0, loader);
 		children.splice(children.length - 1, 0, loaderSpacer);
 
 		tui.requestRender();
@@ -101,15 +97,8 @@ editor.onSubmit = (value: string) => {
 		// Simulate a 1 second delay
 		setTimeout(() => {
 			// Remove loader and its spacer
-			const loaderIndex = children.indexOf(loader);
-			if (loaderIndex !== -1) {
-				children.splice(loaderIndex, 1);
-				loader.stop();
-			}
-			const loaderSpacerIndex = children.indexOf(loaderSpacer);
-			if (loaderSpacerIndex !== -1) {
-				children.splice(loaderSpacerIndex, 1);
-			}
+			tui.removeChild(loader);
+			tui.removeChild(loaderSpacer);
 
 			// Simulate a response
 			const responses = [
@@ -127,8 +116,6 @@ editor.onSubmit = (value: string) => {
 			// Add assistant message with no background (transparent)
 			const botMessage = new Markdown(randomResponse);
 			children.splice(children.length - 1, 0, botMessage);
-
-			// Add spacer after assistant message
 			children.splice(children.length - 1, 0, new Spacer());
 
 			// Re-enable submit

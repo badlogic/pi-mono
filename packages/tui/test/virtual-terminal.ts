@@ -32,10 +32,13 @@ export class VirtualTerminal implements Terminal {
 	start(onInput: (data: string) => void, onResize: () => void): void {
 		this.inputHandler = onInput;
 		this.resizeHandler = onResize;
-		// No need for raw mode in virtual terminal
+		// Enable bracketed paste mode for consistency with ProcessTerminal
+		this.xterm.write("\x1b[?2004h");
 	}
 
 	stop(): void {
+		// Disable bracketed paste mode
+		this.xterm.write("\x1b[?2004l");
 		this.inputHandler = undefined;
 		this.resizeHandler = undefined;
 	}

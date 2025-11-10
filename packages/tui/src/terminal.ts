@@ -48,12 +48,18 @@ export class ProcessTerminal implements Terminal {
 		process.stdin.setEncoding("utf8");
 		process.stdin.resume();
 
+		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
+		process.stdout.write("\x1b[?2004h");
+
 		// Set up event handlers
 		process.stdin.on("data", this.inputHandler);
 		process.stdout.on("resize", this.resizeHandler);
 	}
 
 	stop(): void {
+		// Disable bracketed paste mode
+		process.stdout.write("\x1b[?2004l");
+
 		// Remove event handlers
 		if (this.inputHandler) {
 			process.stdin.removeListener("data", this.inputHandler);
