@@ -6,7 +6,6 @@ import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 import { Editor } from "../src/components-new/editor.js";
 import { Loader } from "../src/components-new/loader.js";
 import { Markdown } from "../src/components-new/markdown.js";
-import { Spacer } from "../src/components-new/spacer.js";
 import { ProcessTerminal } from "../src/terminal.js";
 import { Text, TUI } from "../src/tui-new.js";
 
@@ -74,31 +73,21 @@ editor.onSubmit = (value: string) => {
 	}
 
 	if (trimmed) {
-		// Mark as responding and disable submit
 		isResponding = true;
 		editor.disableSubmit = true;
 
-		// Add user message with custom gray background (similar to Claude.ai)
 		const userMessage = new Markdown(value, undefined, undefined, { r: 52, g: 53, b: 65 });
 
-		// Insert before the editor (which is last)
 		const children = tui.children;
 		children.splice(children.length - 1, 0, userMessage);
-		children.splice(children.length - 1, 0, new Spacer());
 
-		// Add loader
 		const loader = new Loader(tui, "Thinking...");
-		const loaderSpacer = new Spacer();
 		children.splice(children.length - 1, 0, loader);
-		children.splice(children.length - 1, 0, loaderSpacer);
 
 		tui.requestRender();
 
-		// Simulate a 1 second delay
 		setTimeout(() => {
-			// Remove loader and its spacer
 			tui.removeChild(loader);
-			tui.removeChild(loaderSpacer);
 
 			// Simulate a response
 			const responses = [
@@ -116,7 +105,6 @@ editor.onSubmit = (value: string) => {
 			// Add assistant message with no background (transparent)
 			const botMessage = new Markdown(randomResponse);
 			children.splice(children.length - 1, 0, botMessage);
-			children.splice(children.length - 1, 0, new Spacer());
 
 			// Re-enable submit
 			isResponding = false;

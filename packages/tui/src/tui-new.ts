@@ -56,13 +56,26 @@ export class Container implements Component {
  * Text component - displays multi-line text with word wrapping
  */
 export class Text implements Component {
-	constructor(private text: string = "") {}
+	private paddingX: number; // Left/right padding
+	private paddingY: number; // Top/bottom padding
+
+	constructor(
+		private text: string = "",
+		paddingX: number = 1,
+		paddingY: number = 1,
+	) {
+		this.paddingX = paddingX;
+		this.paddingY = paddingY;
+	}
 
 	setText(text: string): void {
 		this.text = text;
 	}
 
 	render(width: number): string[] {
+		// Calculate available width for content (subtract horizontal padding)
+		const contentWidth = Math.max(1, width - this.paddingX * 2);
+
 		if (!this.text) {
 			return [""];
 		}
@@ -71,7 +84,7 @@ export class Text implements Component {
 		const textLines = this.text.split("\n");
 
 		for (const line of textLines) {
-			if (line.length <= width) {
+			if (line.length <= contentWidth) {
 				lines.push(line);
 			} else {
 				// Word wrap
@@ -81,7 +94,7 @@ export class Text implements Component {
 				for (const word of words) {
 					if (currentLine.length === 0) {
 						currentLine = word;
-					} else if (currentLine.length + 1 + word.length <= width) {
+					} else if (currentLine.length + 1 + word.length <= contentWidth) {
 						currentLine += " " + word;
 					} else {
 						lines.push(currentLine);
@@ -95,7 +108,33 @@ export class Text implements Component {
 			}
 		}
 
-		return lines.length > 0 ? lines : [""];
+		// Add padding to each line
+		const leftPad = " ".repeat(this.paddingX);
+		const paddedLines: string[] = [];
+
+		for (const line of lines) {
+			const rightPadLength = Math.max(0, width - this.paddingX - line.length);
+			const rightPad = " ".repeat(rightPadLength);
+			paddedLines.push(leftPad + line + rightPad);
+		}
+
+		// Add top padding (empty lines)
+		const emptyLine = " ".repeat(width);
+		const topPadding: string[] = [];
+		for (let i = 0; i < this.paddingY; i++) {
+			topPadding.push(emptyLine);
+		}
+
+		// Add bottom padding (empty lines)
+		const bottomPadding: string[] = [];
+		for (let i = 0; i < this.paddingY; i++) {
+			bottomPadding.push(emptyLine);
+		}
+
+		// Combine top padding, content, and bottom padding
+		const result = [...topPadding, ...paddedLines, ...bottomPadding];
+
+		return result.length > 0 ? result : [""];
 	}
 }
 

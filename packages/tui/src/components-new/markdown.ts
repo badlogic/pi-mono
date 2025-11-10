@@ -111,8 +111,8 @@ export class Markdown implements Component {
 		for (const line of wrappedLines) {
 			// Calculate visible length (strip ANSI codes)
 			const visibleLength = stripVTControlCharacters(line).length;
-			// Right padding to fill to width (accounting for left padding)
-			const rightPadLength = Math.max(0, width - visibleLength - this.paddingX * 2);
+			// Right padding to fill to width (accounting for left padding and content)
+			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
 			const rightPad = " ".repeat(rightPadLength);
 
 			// Add left padding, content, and right padding
