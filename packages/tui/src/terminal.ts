@@ -14,6 +14,18 @@ export interface Terminal {
 	// Get terminal dimensions
 	get columns(): number;
 	get rows(): number;
+
+	// Cursor positioning (relative to current position)
+	moveBy(lines: number): void; // Move cursor up (negative) or down (positive) by N lines
+
+	// Cursor visibility
+	hideCursor(): void; // Hide the cursor
+	showCursor(): void; // Show the cursor
+
+	// Clear operations
+	clearLine(): void; // Clear current line
+	clearFromCursor(): void; // Clear from cursor to end of screen
+	clearScreen(): void; // Clear entire screen and move cursor to (0,0)
 }
 
 /**
@@ -68,5 +80,36 @@ export class ProcessTerminal implements Terminal {
 
 	get rows(): number {
 		return process.stdout.rows || 24;
+	}
+
+	moveBy(lines: number): void {
+		if (lines > 0) {
+			// Move down
+			process.stdout.write(`\x1b[${lines}B`);
+		} else if (lines < 0) {
+			// Move up
+			process.stdout.write(`\x1b[${-lines}A`);
+		}
+		// lines === 0: no movement
+	}
+
+	hideCursor(): void {
+		process.stdout.write("\x1b[?25l");
+	}
+
+	showCursor(): void {
+		process.stdout.write("\x1b[?25h");
+	}
+
+	clearLine(): void {
+		process.stdout.write("\x1b[K");
+	}
+
+	clearFromCursor(): void {
+		process.stdout.write("\x1b[J");
+	}
+
+	clearScreen(): void {
+		process.stdout.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
 	}
 }

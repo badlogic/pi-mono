@@ -52,6 +52,37 @@ export class VirtualTerminal implements Terminal {
 		return this._rows;
 	}
 
+	moveBy(lines: number): void {
+		if (lines > 0) {
+			// Move down
+			this.xterm.write(`\x1b[${lines}B`);
+		} else if (lines < 0) {
+			// Move up
+			this.xterm.write(`\x1b[${-lines}A`);
+		}
+		// lines === 0: no movement
+	}
+
+	hideCursor(): void {
+		this.xterm.write("\x1b[?25l");
+	}
+
+	showCursor(): void {
+		this.xterm.write("\x1b[?25h");
+	}
+
+	clearLine(): void {
+		this.xterm.write("\x1b[K");
+	}
+
+	clearFromCursor(): void {
+		this.xterm.write("\x1b[J");
+	}
+
+	clearScreen(): void {
+		this.xterm.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
+	}
+
 	// Test-specific methods not in Terminal interface
 
 	/**
