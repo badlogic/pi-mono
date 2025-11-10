@@ -1,6 +1,5 @@
-import { Button, html, i18n, Select, type TemplateResult } from "@mariozechner/mini-lit";
+import { html, i18n, Select, type TemplateResult } from "@mariozechner/mini-lit";
 import { getProviders } from "@mariozechner/pi-ai";
-import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import "../components/CustomProviderCard.js";
 import "../components/ProviderKeyInput.js";

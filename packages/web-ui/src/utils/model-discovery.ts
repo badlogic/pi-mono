@@ -8,7 +8,7 @@ import { Ollama } from "ollama/browser";
  * @param apiKey - Optional API key (currently unused by Ollama)
  * @returns Array of discovered models
  */
-export async function discoverOllamaModels(baseUrl: string, apiKey?: string): Promise<Model<any>[]> {
+export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): Promise<Model<any>[]> {
 	try {
 		// Create Ollama client
 		const ollama = new Ollama({ host: baseUrl });
@@ -89,7 +89,7 @@ export async function discoverLlamaCppModels(baseUrl: string, apiKey?: string): 
 		};
 
 		if (apiKey) {
-			headers["Authorization"] = `Bearer ${apiKey}`;
+			headers.Authorization = `Bearer ${apiKey}`;
 		}
 
 		const response = await fetch(`${baseUrl}/v1/models`, {
@@ -151,7 +151,7 @@ export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Prom
 		};
 
 		if (apiKey) {
-			headers["Authorization"] = `Bearer ${apiKey}`;
+			headers.Authorization = `Bearer ${apiKey}`;
 		}
 
 		const response = await fetch(`${baseUrl}/v1/models`, {
@@ -206,11 +206,11 @@ export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Prom
  * @param apiKey - Optional API key (unused for LM Studio SDK)
  * @returns Array of discovered models
  */
-export async function discoverLMStudioModels(baseUrl: string, apiKey?: string): Promise<Model<any>[]> {
+export async function discoverLMStudioModels(baseUrl: string, _apiKey?: string): Promise<Model<any>[]> {
 	try {
 		// Extract host and port from baseUrl
 		const url = new URL(baseUrl);
-		const port = url.port ? parseInt(url.port) : 1234;
+		const port = url.port ? parseInt(url.port, 10) : 1234;
 
 		// Create LM Studio client
 		const client = new LMStudioClient({ baseUrl: `ws://${url.hostname}:${port}` });
