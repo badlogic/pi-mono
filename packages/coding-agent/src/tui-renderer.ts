@@ -8,6 +8,8 @@ import {
 	Loader,
 	Markdown,
 	ProcessTerminal,
+	type SelectItem,
+	SelectList,
 	Text,
 	TUI,
 } from "@mariozechner/pi-tui";
@@ -283,6 +285,7 @@ export class TuiRenderer {
 	private chatContainer: Container;
 	private statusContainer: Container;
 	private editor: CustomEditor;
+	private editorContainer: Container; // Container to swap between editor and selector
 	private footer: FooterComponent;
 	private agent: Agent;
 	private version: string;
@@ -301,6 +304,9 @@ export class TuiRenderer {
 	// Track assistant message with tool calls that needs stats shown after tools complete
 	private deferredStats: { usage: any; toolCallIds: Set<string> } | null = null;
 
+	// Thinking level selector
+	private thinkingSelector: SelectList | null = null;
+
 	constructor(agent: Agent, version: string) {
 		this.agent = agent;
 		this.version = version;
@@ -308,22 +314,14 @@ export class TuiRenderer {
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
 		this.editor = new CustomEditor();
+		this.editorContainer = new Container(); // Container to hold editor or selector
+		this.editorContainer.addChild(this.editor); // Start with editor
 		this.footer = new FooterComponent(agent.state);
 
 		// Define slash commands
 		const thinkingCommand: SlashCommand = {
 			name: "thinking",
-			description: "Set reasoning level (off, minimal, low, medium, high)",
-			getArgumentCompletions: (argumentPrefix: string) => {
-				const levels = ["off", "minimal", "low", "medium", "high"];
-				return levels
-					.filter((level) => level.toLowerCase().startsWith(argumentPrefix.toLowerCase()))
-					.map((level) => ({
-						value: level,
-						label: level,
-						description: `Set thinking level to ${level}`,
-					}));
-			},
+			description: "Select reasoning level (opens selector UI)",
 		};
 
 		// Setup autocomplete for file paths and slash commands
@@ -357,7 +355,7 @@ export class TuiRenderer {
 		this.ui.addChild(header);
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
-		this.ui.addChild(this.editor);
+		this.ui.addChild(this.editorContainer); // Use container that can hold editor or selector
 		this.ui.addChild(this.footer);
 		this.ui.setFocus(this.editor);
 
@@ -378,7 +376,15 @@ export class TuiRenderer {
 			text = text.trim();
 			if (!text) return;
 
-			// Check for slash commands
+			// Check for /thinking command
+			if (text === "/thinking") {
+				// Show thinking level selector
+				this.showThinkingSelector();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /thinking with argument (direct set)
 			if (text.startsWith("/thinking ")) {
 				const level = text.slice("/thinking ".length).trim() as ThinkingLevel;
 				const validLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
@@ -729,6 +735,51 @@ export class TuiRenderer {
 		this.editor.setText("");
 		this.statusContainer.clear();
 		this.ui.requestRender();
+	}
+
+	private showThinkingSelector(): void {
+		const thinkingLevels: SelectItem[] = [
+			{ value: "off", label: "off", description: "No reasoning" },
+			{ value: "minimal", label: "minimal", description: "Very brief reasoning (~1k tokens)" },
+			{ value: "low", label: "low", description: "Light reasoning (~2k tokens)" },
+			{ value: "medium", label: "medium", description: "Moderate reasoning (~8k tokens)" },
+			{ value: "high", label: "high", description: "Deep reasoning (~16k tokens)" },
+		];
+
+		this.thinkingSelector = new SelectList(thinkingLevels, 5);
+		this.thinkingSelector.onSelect = (item) => {
+			// Apply the selected thinking level
+			const level = item.value as ThinkingLevel;
+			this.agent.setThinkingLevel(level);
+
+			// Show confirmation message
+			const confirmText = new Text(chalk.dim(`Thinking level set to: ${level}`), 1, 0);
+			this.chatContainer.addChild(confirmText);
+
+			// Hide selector and show editor again
+			this.hideThinkingSelector();
+			this.ui.requestRender();
+		};
+
+		this.thinkingSelector.onCancel = () => {
+			// Just hide the selector
+			this.hideThinkingSelector();
+			this.ui.requestRender();
+		};
+
+		// Replace editor with selector in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.thinkingSelector);
+		this.ui.setFocus(this.thinkingSelector);
+		this.ui.requestRender();
+	}
+
+	private hideThinkingSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.thinkingSelector = null;
+		this.ui.setFocus(this.editor);
 	}
 
 	stop(): void {
