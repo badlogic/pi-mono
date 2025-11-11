@@ -308,7 +308,8 @@ export class TuiRenderer {
 			for (const content of assistantMsg.content) {
 				if (content.type === "text" && content.text.trim()) {
 					// Assistant text messages with no background - trim the text
-					this.chatContainer.addChild(new Markdown(content.text.trim()));
+					// Set paddingY=0 to avoid extra spacing before tool executions
+					this.chatContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
 				} else if (content.type === "thinking" && content.thinking.trim()) {
 					// Thinking traces in dark gray italic
 					const thinkingText = content.thinking
