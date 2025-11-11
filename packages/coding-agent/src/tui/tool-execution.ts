@@ -6,7 +6,6 @@ import chalk from "chalk";
  */
 export class ToolExecutionComponent extends Container {
 	private spacerText: Text;
-	private headerText: Text;
 	private contentText: Text;
 	private toolName: string;
 	private args: any;
@@ -19,11 +18,8 @@ export class ToolExecutionComponent extends Container {
 		// Blank line with no background for spacing
 		this.spacerText = new Text("\n", 0, 0);
 		this.addChild(this.spacerText);
-		// Header with colored background
-		this.headerText = new Text("", 1, 0, { r: 40, g: 40, b: 50 });
-		this.addChild(this.headerText);
-		// Content has same colored background
-		this.contentText = new Text("", 1, 0, { r: 40, g: 40, b: 50 });
+		// Content with colored background and padding
+		this.contentText = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
 		this.addChild(this.contentText);
 		this.updateDisplay();
 	}
@@ -40,27 +36,21 @@ export class ToolExecutionComponent extends Container {
 				: { r: 40, g: 50, b: 40 }
 			: { r: 40, g: 40, b: 50 };
 
-		const { header, content } = this.formatToolExecution();
-
-		this.headerText.setCustomBgRgb(bgColor);
-		this.headerText.setText(header);
-
-		if (content) {
-			this.contentText.setCustomBgRgb(bgColor);
-			this.contentText.setText(content);
-		} else {
-			this.contentText.setText("");
-		}
+		this.contentText.setCustomBgRgb(bgColor);
+		this.contentText.setText(this.formatToolExecution());
 	}
 
-	private formatToolExecution(): { header: string; content: string } {
-		let header = "";
-		let content = "";
+	private formatToolExecution(): string {
+		let text = "";
 
 		// Format based on tool type
 		if (this.toolName === "bash") {
 			const command = this.args.command || "";
-			header = chalk.bold(`$ ${command}`);
+			text = chalk.bold(`$ ${command}`);
+			if (this.result?.isError) {
+				text += " ❌";
+			}
+
 			if (this.result) {
 				// Show output without code fences - more minimal
 				const output = this.result.output.trim();
@@ -70,32 +60,28 @@ export class ToolExecutionComponent extends Container {
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
-					content = displayLines.map((line: string) => chalk.dim(line)).join("\n");
+					text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
 					if (remaining > 0) {
-						content += chalk.dim(`\n... (${remaining} more lines)`);
+						text += chalk.dim(`\n... (${remaining} more lines)`);
 					}
-				}
-
-				if (this.result.isError) {
-					header += " ❌";
 				}
 			}
 		} else if (this.toolName === "read") {
 			const path = this.args.path || "";
-			header = chalk.bold("read") + " " + chalk.cyan(path);
+			text = chalk.bold("read") + " " + chalk.cyan(path);
+			if (this.result?.isError) {
+				text += " ❌";
+			}
+
 			if (this.result) {
 				const lines = this.result.output.split("\n");
 				const maxLines = 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				content = displayLines.map((line: string) => chalk.dim(line)).join("\n");
+				text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
 				if (remaining > 0) {
-					content += chalk.dim(`\n... (${remaining} more lines)`);
-				}
-
-				if (this.result.isError) {
-					header += " ❌";
+					text += chalk.dim(`\n... (${remaining} more lines)`);
 				}
 			}
 		} else if (this.toolName === "write") {
@@ -104,13 +90,13 @@ export class ToolExecutionComponent extends Container {
 			const lines = fileContent.split("\n");
 			const totalLines = lines.length;
 
-			header = chalk.bold("write") + " " + chalk.cyan(path);
+			text = chalk.bold("write") + " " + chalk.cyan(path);
 			if (totalLines > 10) {
-				header += ` (${totalLines} lines)`;
+				text += ` (${totalLines} lines)`;
 			}
 
 			if (this.result) {
-				header += this.result.isError ? " ❌" : " ✓";
+				text += this.result.isError ? " ❌" : " ✓";
 			}
 
 			// Show first 10 lines of content
@@ -118,26 +104,32 @@ export class ToolExecutionComponent extends Container {
 			const displayLines = lines.slice(0, maxLines);
 			const remaining = lines.length - maxLines;
 
-			content = displayLines.map((line: string) => chalk.dim(line)).join("\n");
+			text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
 			if (remaining > 0) {
-				content += chalk.dim(`\n... (${remaining} more lines)`);
+				text += chalk.dim(`\n... (${remaining} more lines)`);
 			}
 		} else if (this.toolName === "edit") {
 			const path = this.args.path || "";
-			header = chalk.bold("edit") + " " + chalk.cyan(path);
+			text = chalk.bold("edit") + " " + chalk.cyan(path);
 			if (this.result) {
-				header += this.result.isError ? " ❌" : " ✓";
+				text += this.result.isError ? " ❌" : " ✓";
 			}
 		} else {
 			// Generic tool
-			header = chalk.bold(this.toolName);
-			content = JSON.stringify(this.args, null, 2);
-			if (this.result) {
-				content += "\n" + this.result.output;
-				header += this.result.isError ? " ❌" : " ✓";
+			text = chalk.bold(this.toolName);
+			if (this.result?.isError) {
+				text += " ❌";
+			} else if (this.result) {
+				text += " ✓";
+			}
+
+			const content = JSON.stringify(this.args, null, 2);
+			text += "\n\n" + content;
+			if (this.result?.output) {
+				text += "\n" + this.result.output;
 			}
 		}
 
-		return { header, content };
+		return text;
 	}
 }
