@@ -333,7 +333,7 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with logo and instructions
-		const logo = chalk.cyan("●") + " " + chalk.bold("pi");
+		const logo = chalk.cyan("==[ ") + chalk.bold.cyan("pi") + chalk.cyan(" ]==");
 		const instructions = chalk.dim(
 			"esc" +
 				chalk.gray(" to interrupt") +
