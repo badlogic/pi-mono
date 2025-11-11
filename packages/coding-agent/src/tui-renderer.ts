@@ -332,12 +332,22 @@ export class TuiRenderer {
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
-		// Add header with instructions
-		const header = new Text(
-			">> coding-agent interactive <<\n" +
-				"Press Escape to interrupt while processing\n" +
-				"Press CTRL+C twice quickly to exit\n",
+		// Add header with logo and instructions
+		const logo = chalk.cyan("●") + " " + chalk.bold("pi");
+		const instructions = chalk.dim(
+			"esc" +
+				chalk.gray(" to interrupt") +
+				" • " +
+				"ctrl+c" +
+				chalk.gray(" to clear") +
+				" • " +
+				"ctrl+c twice" +
+				chalk.gray(" to exit") +
+				" • " +
+				"/" +
+				chalk.gray(" for commands"),
 		);
+		const header = new Text(logo + "\n" + instructions + "\n");
 
 		// Setup UI layout
 		this.ui.addChild(header);
