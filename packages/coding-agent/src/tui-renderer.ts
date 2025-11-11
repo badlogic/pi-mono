@@ -344,6 +344,9 @@ export class TuiRenderer {
 			chalk.dim("ctrl+c twice") +
 			chalk.gray(" to exit") +
 			"\n" +
+			chalk.dim("ctrl+k") +
+			chalk.gray(" to delete line") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -390,9 +393,11 @@ export class TuiRenderer {
 				const validLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
 				if (validLevels.includes(level)) {
 					this.agent.setThinkingLevel(level);
-					// Show confirmation message
-					const confirmText = new Text(chalk.dim(`Thinking level set to: ${level}`), 1, 0);
+					// Show confirmation message with padding
+					this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
+					const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
 					this.chatContainer.addChild(confirmText);
+					this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
 					this.ui.requestRender();
 					this.editor.setText("");
 					return;
@@ -746,15 +751,25 @@ export class TuiRenderer {
 			{ value: "high", label: "high", description: "Deep reasoning (~16k tokens)" },
 		];
 
+		// Create container for the selector with borders
+		const selectorContainer = new Container();
+
+		// Add top border
+		const topBorder = new Text(chalk.blue("─".repeat(50)), 0, 0);
+		selectorContainer.addChild(topBorder);
+
+		// Add selector
 		this.thinkingSelector = new SelectList(thinkingLevels, 5);
 		this.thinkingSelector.onSelect = (item) => {
 			// Apply the selected thinking level
 			const level = item.value as ThinkingLevel;
 			this.agent.setThinkingLevel(level);
 
-			// Show confirmation message
-			const confirmText = new Text(chalk.dim(`Thinking level set to: ${level}`), 1, 0);
+			// Show confirmation message with padding and blue color
+			this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
+			const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
 			this.chatContainer.addChild(confirmText);
+			this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
 
 			// Hide selector and show editor again
 			this.hideThinkingSelector();
@@ -767,9 +782,15 @@ export class TuiRenderer {
 			this.ui.requestRender();
 		};
 
-		// Replace editor with selector in the container
+		selectorContainer.addChild(this.thinkingSelector);
+
+		// Add bottom border
+		const bottomBorder = new Text(chalk.blue("─".repeat(50)), 0, 0);
+		selectorContainer.addChild(bottomBorder);
+
+		// Replace editor with selector container
 		this.editorContainer.clear();
-		this.editorContainer.addChild(this.thinkingSelector);
+		this.editorContainer.addChild(selectorContainer);
 		this.ui.setFocus(this.thinkingSelector);
 		this.ui.requestRender();
 	}
