@@ -59,16 +59,30 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 				}
 
 				if (signal?.aborted) {
+					let output = "";
+					if (stdout) output += stdout;
+					if (stderr) {
+						if (output) output += "\n";
+						output += stderr;
+					}
 					resolve({
-						output: `Command aborted by user\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`,
+						output: output || "(no output)",
 						details: undefined,
 					});
 					return;
 				}
 
 				if (timedOut) {
+					let output = "";
+					if (stdout) output += stdout;
+					if (stderr) {
+						if (output) output += "\n";
+						output += stderr;
+					}
+					if (output) output += "\n\n";
+					output += "Command timed out after 30 seconds";
 					resolve({
-						output: `Command timed out after 30 seconds\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`,
+						output,
 						details: undefined,
 					});
 					return;
@@ -76,11 +90,15 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 
 				let output = "";
 				if (stdout) output += stdout;
-				if (stderr) output += stderr ? `\nSTDERR:\n${stderr}` : "";
+				if (stderr) {
+					if (output) output += "\n";
+					output += stderr;
+				}
 
 				if (code !== 0 && code !== null) {
+					if (output) output += "\n\n";
 					resolve({
-						output: `Command exited with code ${code}\n${output}`,
+						output: `${output}Command exited with code ${code}`,
 						details: undefined,
 					});
 				} else {
