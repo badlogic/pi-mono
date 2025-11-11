@@ -49,11 +49,15 @@ export class AssistantMessageComponent extends Container {
 		}
 
 		// Check if aborted - show after partial content
-		if (message.stopReason === "aborted") {
-			this.contentContainer.addChild(new Text(chalk.red("Aborted")));
-		} else if (message.stopReason === "error") {
-			const errorMsg = message.errorMessage || "Unknown error";
-			this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`)));
+		// But only if there are no tool calls (tool execution components will show the error)
+		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		if (!hasToolCalls) {
+			if (message.stopReason === "aborted") {
+				this.contentContainer.addChild(new Text(chalk.red("Aborted")));
+			} else if (message.stopReason === "error") {
+				const errorMsg = message.errorMessage || "Unknown error";
+				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`)));
+			}
 		}
 	}
 }

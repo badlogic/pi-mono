@@ -327,8 +327,21 @@ export class TuiRenderer {
 					if (content.type === "toolCall") {
 						const component = new ToolExecutionComponent(content.name, content.arguments);
 						this.chatContainer.addChild(component);
-						// Store in map so we can update with results later
-						this.pendingTools.set(content.id, component);
+
+						// If message was aborted/errored, immediately mark tool as failed
+						if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+							const errorMessage =
+								assistantMsg.stopReason === "aborted"
+									? "Operation aborted"
+									: assistantMsg.errorMessage || "Error";
+							component.updateResult({
+								output: errorMessage,
+								isError: true,
+							});
+						} else {
+							// Store in map so we can update with results later
+							this.pendingTools.set(content.id, component);
+						}
 					}
 				}
 			} else if (message.role === "toolResult") {
