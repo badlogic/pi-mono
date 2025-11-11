@@ -30,6 +30,10 @@ export class SelectList implements Component {
 		this.selectedIndex = 0;
 	}
 
+	setSelectedIndex(index: number): void {
+		this.selectedIndex = Math.max(0, Math.min(index, this.filteredItems.length - 1));
+	}
+
 	render(width: number): string[] {
 		const lines: string[] = [];
 

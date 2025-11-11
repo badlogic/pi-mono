@@ -1,23 +1,15 @@
 import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
-import {
-	CombinedAutocompleteProvider,
-	Container,
-	Loader,
-	Markdown,
-	ProcessTerminal,
-	type SelectItem,
-	SelectList,
-	Spacer,
-	Text,
-	TUI,
-} from "@mariozechner/pi-tui";
+import { CombinedAutocompleteProvider, Container, Loader, ProcessTerminal, Text, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { FooterComponent } from "./footer.js";
 import { StreamingMessageComponent } from "./streaming-message.js";
+import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
+import { UserMessageComponent } from "./user-message.js";
 
 /**
  * TUI renderer for the coding agent
@@ -47,7 +39,7 @@ export class TuiRenderer {
 	private deferredStats: { usage: any; toolCallIds: Set<string> } | null = null;
 
 	// Thinking level selector
-	private thinkingSelector: SelectList | null = null;
+	private thinkingSelector: ThinkingSelectorComponent | null = null;
 
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
@@ -292,52 +284,16 @@ export class TuiRenderer {
 			const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
 			const textContent = textBlocks.map((c: any) => c.text).join("");
 			if (textContent) {
-				// Add spacer before user message (except first one)
-				if (!this.isFirstUserMessage) {
-					this.chatContainer.addChild(new Spacer(1));
-				}
+				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
+				this.chatContainer.addChild(userComponent);
 				this.isFirstUserMessage = false;
-
-				// User messages with dark gray background
-				this.chatContainer.addChild(new Markdown(textContent, undefined, undefined, { r: 52, g: 53, b: 65 }));
 			}
 		} else if (message.role === "assistant") {
 			const assistantMsg = message as AssistantMessage;
 
-			// Add spacer before assistant message
-			this.chatContainer.addChild(new Spacer(1));
-
-			// Render content in order
-			for (const content of assistantMsg.content) {
-				if (content.type === "text" && content.text.trim()) {
-					// Assistant text messages with no background - trim the text
-					// Set paddingY=0 to avoid extra spacing before tool executions
-					this.chatContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
-				} else if (content.type === "thinking" && content.thinking.trim()) {
-					// Thinking traces in dark gray italic
-					const thinkingText = content.thinking
-						.split("\n")
-						.map((line) => chalk.gray.italic(line))
-						.join("\n");
-					this.chatContainer.addChild(new Text(thinkingText, 1, 0));
-				}
-			}
-
-			// Check if aborted - show after partial content
-			if (assistantMsg.stopReason === "aborted") {
-				// Show red "Aborted" message after partial content
-				const abortedText = new Text(chalk.red("Aborted"));
-				this.chatContainer.addChild(abortedText);
-				return;
-			}
-
-			if (assistantMsg.stopReason === "error") {
-				// Show red error message after partial content
-				const errorMsg = assistantMsg.errorMessage || "Unknown error";
-				const errorText = new Text(chalk.red(`Error: ${errorMsg}`));
-				this.chatContainer.addChild(errorText);
-				return;
-			}
+			// Add assistant message component
+			const assistantComponent = new AssistantMessageComponent(assistantMsg);
+			this.chatContainer.addChild(assistantComponent);
 
 			// Check if this message has tool calls
 			const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
@@ -502,55 +458,34 @@ export class TuiRenderer {
 	}
 
 	private showThinkingSelector(): void {
-		const thinkingLevels: SelectItem[] = [
-			{ value: "off", label: "off", description: "No reasoning" },
-			{ value: "minimal", label: "minimal", description: "Very brief reasoning (~1k tokens)" },
-			{ value: "low", label: "low", description: "Light reasoning (~2k tokens)" },
-			{ value: "medium", label: "medium", description: "Moderate reasoning (~8k tokens)" },
-			{ value: "high", label: "high", description: "Deep reasoning (~16k tokens)" },
-		];
+		// Create thinking selector with current level
+		this.thinkingSelector = new ThinkingSelectorComponent(
+			this.agent.state.thinkingLevel,
+			(level) => {
+				// Apply the selected thinking level
+				this.agent.setThinkingLevel(level);
 
-		// Create container for the selector with borders
-		const selectorContainer = new Container();
+				// Show confirmation message with padding and blue color
+				this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
+				const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
+				this.chatContainer.addChild(confirmText);
+				this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
 
-		// Add top border
-		const topBorder = new Text(chalk.blue("─".repeat(50)), 0, 0);
-		selectorContainer.addChild(topBorder);
+				// Hide selector and show editor again
+				this.hideThinkingSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideThinkingSelector();
+				this.ui.requestRender();
+			},
+		);
 
-		// Add selector
-		this.thinkingSelector = new SelectList(thinkingLevels, 5);
-		this.thinkingSelector.onSelect = (item) => {
-			// Apply the selected thinking level
-			const level = item.value as ThinkingLevel;
-			this.agent.setThinkingLevel(level);
-
-			// Show confirmation message with padding and blue color
-			this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
-			const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
-			this.chatContainer.addChild(confirmText);
-			this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
-
-			// Hide selector and show editor again
-			this.hideThinkingSelector();
-			this.ui.requestRender();
-		};
-
-		this.thinkingSelector.onCancel = () => {
-			// Just hide the selector
-			this.hideThinkingSelector();
-			this.ui.requestRender();
-		};
-
-		selectorContainer.addChild(this.thinkingSelector);
-
-		// Add bottom border
-		const bottomBorder = new Text(chalk.blue("─".repeat(50)), 0, 0);
-		selectorContainer.addChild(bottomBorder);
-
-		// Replace editor with selector container
+		// Replace editor with selector
 		this.editorContainer.clear();
-		this.editorContainer.addChild(selectorContainer);
-		this.ui.setFocus(this.thinkingSelector);
+		this.editorContainer.addChild(this.thinkingSelector);
+		this.ui.setFocus(this.thinkingSelector.getSelectList());
 		this.ui.requestRender();
 	}
 
