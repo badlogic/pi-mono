@@ -37,8 +37,9 @@ export class Text implements Component {
 		// Calculate available width for content (subtract horizontal padding)
 		const contentWidth = Math.max(1, width - this.paddingX * 2);
 
-		if (!this.text) {
-			const result = [""];
+		// Don't render anything if there's no actual text
+		if (!this.text || this.text.trim() === "") {
+			const result: string[] = [];
 			// Update cache
 			this.cachedText = this.text;
 			this.cachedWidth = width;

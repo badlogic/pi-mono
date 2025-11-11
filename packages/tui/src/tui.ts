@@ -98,13 +98,8 @@ export class TUI extends Container {
 	}
 
 	private handleInput(data: string): void {
-		// Exit on Ctrl+C
-		if (data === "\x03") {
-			this.stop();
-			process.exit(0);
-		}
-
-		// Pass input to focused component
+		// Pass input to focused component (including Ctrl+C)
+		// The focused component can decide how to handle Ctrl+C
 		if (this.focusedComponent?.handleInput) {
 			this.focusedComponent.handleInput(data);
 			this.requestRender();

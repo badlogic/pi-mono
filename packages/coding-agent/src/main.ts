@@ -106,7 +106,7 @@ Guidelines:
 Current directory: ${process.cwd()}`;
 
 async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager): Promise<void> {
-	const renderer = new TuiRenderer();
+	const renderer = new TuiRenderer(agent);
 
 	// Initialize TUI
 	await renderer.init();
@@ -115,6 +115,9 @@ async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager)
 	renderer.setInterruptCallback(() => {
 		agent.abort();
 	});
+
+	// Render any existing messages (from --continue mode)
+	renderer.renderInitialMessages(agent.state);
 
 	// Subscribe to agent events
 	agent.subscribe(async (event) => {

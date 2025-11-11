@@ -76,6 +76,14 @@ export class Markdown implements Component {
 		this.cachedLines = undefined;
 	}
 
+	setCustomBgRgb(customBgRgb?: { r: number; g: number; b: number }): void {
+		this.customBgRgb = customBgRgb;
+		// Invalidate cache when color changes
+		this.cachedText = undefined;
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+
 	render(width: number): string[] {
 		// Check cache
 		if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
@@ -84,6 +92,16 @@ export class Markdown implements Component {
 
 		// Calculate available width for content (subtract horizontal padding)
 		const contentWidth = Math.max(1, width - this.paddingX * 2);
+
+		// Don't render anything if there's no actual text
+		if (!this.text || this.text.trim() === "") {
+			const result: string[] = [];
+			// Update cache
+			this.cachedText = this.text;
+			this.cachedWidth = width;
+			this.cachedLines = result;
+			return result;
+		}
 
 		// Parse markdown to HTML-like tokens
 		const tokens = marked.lexer(this.text);
