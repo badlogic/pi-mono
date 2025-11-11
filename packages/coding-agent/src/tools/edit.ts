@@ -32,7 +32,13 @@ export const editTool: AgentTool<typeof editSchema> = {
 	execute: async (
 		_toolCallId: string,
 		{ path, oldText, newText }: { path: string; oldText: string; newText: string },
+		signal?: AbortSignal,
 	) => {
+		// Check if already aborted
+		if (signal?.aborted) {
+			throw new Error("Operation aborted");
+		}
+
 		const absolutePath = resolve(expandPath(path));
 
 		if (!existsSync(absolutePath)) {

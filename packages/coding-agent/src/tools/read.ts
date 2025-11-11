@@ -26,7 +26,12 @@ export const readTool: AgentTool<typeof readSchema> = {
 	label: "read",
 	description: "Read the contents of a file. Returns the full file content as text.",
 	parameters: readSchema,
-	execute: async (_toolCallId: string, { path }: { path: string }) => {
+	execute: async (_toolCallId: string, { path }: { path: string }, signal?: AbortSignal) => {
+		// Check if already aborted
+		if (signal?.aborted) {
+			throw new Error("Operation aborted");
+		}
+
 		const absolutePath = resolve(expandPath(path));
 
 		if (!existsSync(absolutePath)) {
