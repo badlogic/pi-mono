@@ -66,13 +66,24 @@ class StreamingMessageComponent extends Container {
 		if (message.role === "assistant") {
 			const assistantMsg = message as AssistantMessage;
 
-			// Update text content
-			const textContent = assistantMsg.content
-				.filter((c) => c.type === "text")
-				.map((c) => c.text)
-				.join("");
+			// Update text and thinking content
+			let combinedContent = "";
+			for (const c of assistantMsg.content) {
+				if (c.type === "text") {
+					combinedContent += c.text;
+				} else if (c.type === "thinking") {
+					// Add thinking in italic
+					const thinkingLines = c.thinking
+						.split("\n")
+						.map((line) => `*${line}*`)
+						.join("\n");
+					if (combinedContent && !combinedContent.endsWith("\n")) combinedContent += "\n";
+					combinedContent += thinkingLines;
+					if (!combinedContent.endsWith("\n")) combinedContent += "\n";
+				}
+			}
 
-			this.markdown.setText(textContent);
+			this.markdown.setText(combinedContent);
 
 			// Update usage stats
 			const usage = assistantMsg.usage;
@@ -140,16 +151,19 @@ class ToolExecutionComponent extends Container {
 			const command = this.args.command || "";
 			text = `**$ ${command}**`;
 			if (this.result) {
-				const lines = this.result.output.split("\n");
-				const maxLines = 5;
-				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
+				// Show output without code fences - more minimal
+				const output = this.result.output.trim();
+				if (output) {
+					const lines = output.split("\n");
+					const maxLines = 5;
+					const displayLines = lines.slice(0, maxLines);
+					const remaining = lines.length - maxLines;
 
-				text += "\n```\n" + displayLines.join("\n");
-				if (remaining > 0) {
-					text += `\n... (${remaining} more lines)`;
+					text += "\n" + displayLines.join("\n");
+					if (remaining > 0) {
+						text += `\n... (${remaining} more lines)`;
+					}
 				}
-				text += "\n```";
 
 				if (this.result.isError) {
 					text += " ❌";
@@ -504,8 +518,6 @@ export class TuiRenderer {
 						output: typeof event.result === "string" ? event.result : event.result.output,
 						isError: event.isError,
 					});
-					// Add empty line after tool execution
-					this.chatContainer.addChild(new Text("", 0, 0));
 					this.pendingTools.delete(event.toolCallId);
 
 					// Check if this was part of deferred stats and all tools are complete
@@ -555,14 +567,19 @@ export class TuiRenderer {
 		} else if (message.role === "assistant") {
 			const assistantMsg = message as AssistantMessage;
 
-			// Render text content first (tool calls handled by events)
-			const textContent = assistantMsg.content
-				.filter((c) => c.type === "text")
-				.map((c) => c.text)
-				.join("");
-			if (textContent) {
-				// Assistant messages with no background
-				this.chatContainer.addChild(new Markdown(textContent));
+			// Render content in order
+			for (const content of assistantMsg.content) {
+				if (content.type === "text" && content.text.trim()) {
+					// Assistant text messages with no background
+					this.chatContainer.addChild(new Markdown(content.text));
+				} else if (content.type === "thinking" && content.thinking.trim()) {
+					// Thinking traces in dark gray italic
+					const thinkingText = content.thinking
+						.split("\n")
+						.map((line) => chalk.gray.italic(line))
+						.join("\n");
+					this.chatContainer.addChild(new Text(thinkingText, 1, 0));
+				}
 			}
 
 			// Check if aborted - show after partial content
@@ -688,8 +705,6 @@ export class TuiRenderer {
 							isError: toolResultMsg.isError,
 						});
 						this.chatContainer.addChild(component);
-						// Add empty line after tool execution
-						this.chatContainer.addChild(new Text("", 0, 0));
 
 						// Check if this was the last tool call for this assistant message
 						const assistantData = assistantWithTools.get(assistantMsgIndex);
