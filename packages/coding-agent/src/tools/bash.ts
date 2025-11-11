@@ -1,6 +1,6 @@
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
@@ -14,43 +14,95 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 	parameters: bashSchema,
 	execute: async (_toolCallId: string, { command }: { command: string }, signal?: AbortSignal) => {
 		return new Promise((resolve) => {
-			const child = exec(
-				command,
-				{
-					timeout: 30000,
-					maxBuffer: 10 * 1024 * 1024, // 10MB
-				},
-				(error, stdout, stderr) => {
-					if (signal) {
-						signal.removeEventListener("abort", onAbort);
+			const child = spawn("sh", ["-c", command], {
+				detached: true,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+
+			let stdout = "";
+			let stderr = "";
+			let timedOut = false;
+
+			// Set timeout
+			const timeout = setTimeout(() => {
+				timedOut = true;
+				onAbort();
+			}, 30000);
+
+			// Collect stdout
+			if (child.stdout) {
+				child.stdout.on("data", (data) => {
+					stdout += data.toString();
+					// Limit buffer size
+					if (stdout.length > 10 * 1024 * 1024) {
+						stdout = stdout.slice(0, 10 * 1024 * 1024);
 					}
+				});
+			}
 
-					if (signal?.aborted) {
-						resolve({
-							output: `Command aborted by user\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`,
-							details: undefined,
-						});
-						return;
+			// Collect stderr
+			if (child.stderr) {
+				child.stderr.on("data", (data) => {
+					stderr += data.toString();
+					// Limit buffer size
+					if (stderr.length > 10 * 1024 * 1024) {
+						stderr = stderr.slice(0, 10 * 1024 * 1024);
 					}
+				});
+			}
 
-					let output = "";
-					if (stdout) output += stdout;
-					if (stderr) output += stderr ? `\nSTDERR:\n${stderr}` : "";
+			// Handle process exit
+			child.on("close", (code) => {
+				clearTimeout(timeout);
+				if (signal) {
+					signal.removeEventListener("abort", onAbort);
+				}
 
-					if (error && !error.killed) {
-						resolve({
-							output: `Error executing command: ${error.message}\n${output}`,
-							details: undefined,
-						});
-					} else {
-						resolve({ output: output || "(no output)", details: undefined });
-					}
-				},
-			);
+				if (signal?.aborted) {
+					resolve({
+						output: `Command aborted by user\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`,
+						details: undefined,
+					});
+					return;
+				}
 
-			// Handle abort signal
+				if (timedOut) {
+					resolve({
+						output: `Command timed out after 30 seconds\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`,
+						details: undefined,
+					});
+					return;
+				}
+
+				let output = "";
+				if (stdout) output += stdout;
+				if (stderr) output += stderr ? `\nSTDERR:\n${stderr}` : "";
+
+				if (code !== 0 && code !== null) {
+					resolve({
+						output: `Command exited with code ${code}\n${output}`,
+						details: undefined,
+					});
+				} else {
+					resolve({ output: output || "(no output)", details: undefined });
+				}
+			});
+
+			// Handle abort signal - kill entire process tree
 			const onAbort = () => {
-				child.kill("SIGKILL");
+				if (child.pid) {
+					// Kill the entire process group (negative PID kills all processes in the group)
+					try {
+						process.kill(-child.pid, "SIGKILL");
+					} catch (e) {
+						// Fallback to killing just the child if process group kill fails
+						try {
+							child.kill("SIGKILL");
+						} catch (e2) {
+							// Process already dead
+						}
+					}
+				}
 			};
 
 			if (signal) {
