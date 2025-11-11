@@ -135,7 +135,7 @@ export class TUI extends Container {
 		// Width changed - full re-render
 		if (widthChanged) {
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			buffer += "\x1b[2J\x1b[H"; // Clear screen and home
+			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
@@ -178,7 +178,7 @@ export class TUI extends Container {
 		if (firstChanged < viewportTop) {
 			// First change is above viewport - need full re-render
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			buffer += "\x1b[2J\x1b[H"; // Clear screen and home
+			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
