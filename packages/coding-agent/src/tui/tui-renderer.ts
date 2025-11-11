@@ -1,7 +1,15 @@
 import type { Agent, AgentEvent, AgentState } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
-import { CombinedAutocompleteProvider, Container, Loader, ProcessTerminal, Text, TUI } from "@mariozechner/pi-tui";
+import {
+	CombinedAutocompleteProvider,
+	Container,
+	Loader,
+	ProcessTerminal,
+	Spacer,
+	Text,
+	TUI,
+} from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
@@ -33,9 +41,6 @@ export class TuiRenderer {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Track assistant message with tool calls that needs stats shown after tools complete
-	private deferredStats: { component: AssistantMessageComponent; usage: any; toolCallIds: Set<string> } | null = null;
 
 	// Thinking level selector
 	private thinkingSelector: ThinkingSelectorComponent | null = null;
@@ -88,12 +93,14 @@ export class TuiRenderer {
 			"\n" +
 			chalk.dim("drop files") +
 			chalk.gray(" to attach");
-		const header = new Text(logo + "\n" + instructions);
+		const header = new Text(logo + "\n" + instructions, 1, 0);
 
 		// Setup UI layout
+		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(header);
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
+		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editorContainer); // Use container that can hold editor or selector
 		this.ui.addChild(this.footer);
 		this.ui.setFocus(this.editor);
@@ -173,7 +180,28 @@ export class TuiRenderer {
 			case "message_update":
 				// Update streaming component
 				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingComponent.updateContent(event.message as AssistantMessage);
+					const assistantMsg = event.message as AssistantMessage;
+					this.streamingComponent.updateContent(assistantMsg);
+
+					// Create tool execution components as soon as we see tool calls
+					for (const content of assistantMsg.content) {
+						if (content.type === "toolCall") {
+							// Only create if we haven't created it yet
+							if (!this.pendingTools.has(content.id)) {
+								this.chatContainer.addChild(new Text("", 0, 0));
+								const component = new ToolExecutionComponent(content.name, content.arguments);
+								this.chatContainer.addChild(component);
+								this.pendingTools.set(content.id, component);
+							} else {
+								// Update existing component with latest arguments as they stream
+								const component = this.pendingTools.get(content.id);
+								if (component) {
+									component.updateArgs(content.arguments);
+								}
+							}
+						}
+					}
+
 					this.ui.requestRender();
 				}
 				break;
@@ -184,23 +212,6 @@ export class TuiRenderer {
 					break;
 				}
 				if (this.streamingComponent && event.message.role === "assistant") {
-					const assistantMsg = event.message as AssistantMessage;
-
-					// Check if this message has tool calls
-					const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
-
-					if (hasToolCalls) {
-						// Defer stats until after tool executions complete
-						const toolCallIds = new Set<string>();
-						for (const content of assistantMsg.content) {
-							if (content.type === "toolCall") {
-								toolCallIds.add(content.id);
-							}
-						}
-						this.deferredStats = { component: this.streamingComponent, usage: assistantMsg.usage, toolCallIds };
-						// Hide stats for now
-						this.streamingComponent.hideStats();
-					}
 					// Keep the streaming component - it's now the final assistant message
 					this.streamingComponent = null;
 				}
@@ -208,13 +219,13 @@ export class TuiRenderer {
 				break;
 
 			case "tool_execution_start": {
-				// Add empty line before tool execution
-				this.chatContainer.addChild(new Text("", 0, 0));
-				// Create tool execution component and add it
-				const component = new ToolExecutionComponent(event.toolName, event.args);
-				this.chatContainer.addChild(component);
-				this.pendingTools.set(event.toolCallId, component);
-				this.ui.requestRender();
+				// Component should already exist from message_update, but create if missing
+				if (!this.pendingTools.has(event.toolCallId)) {
+					const component = new ToolExecutionComponent(event.toolName, event.args);
+					this.chatContainer.addChild(component);
+					this.pendingTools.set(event.toolCallId, component);
+					this.ui.requestRender();
+				}
 				break;
 			}
 
@@ -228,17 +239,6 @@ export class TuiRenderer {
 						isError: event.isError,
 					});
 					this.pendingTools.delete(event.toolCallId);
-
-					// Check if this was part of deferred stats and all tools are complete
-					if (this.deferredStats) {
-						this.deferredStats.toolCallIds.delete(event.toolCallId);
-						if (this.deferredStats.toolCallIds.size === 0) {
-							// All tools complete - show stats now on the component
-							this.deferredStats.component.updateStats(this.deferredStats.usage);
-							this.deferredStats = null;
-						}
-					}
-
 					this.ui.requestRender();
 				}
 				break;
@@ -256,7 +256,6 @@ export class TuiRenderer {
 					this.streamingComponent = null;
 				}
 				this.pendingTools.clear();
-				this.deferredStats = null; // Clear any deferred stats
 				this.editor.disableSubmit = false;
 				this.ui.requestRender();
 				break;
@@ -280,40 +279,12 @@ export class TuiRenderer {
 			// Add assistant message component
 			const assistantComponent = new AssistantMessageComponent(assistantMsg);
 			this.chatContainer.addChild(assistantComponent);
-
-			// Check if this message has tool calls
-			const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
-
-			if (hasToolCalls) {
-				// Defer stats until after tool executions complete
-				const toolCallIds = new Set<string>();
-				for (const content of assistantMsg.content) {
-					if (content.type === "toolCall") {
-						toolCallIds.add(content.id);
-					}
-				}
-				this.deferredStats = { component: assistantComponent, usage: assistantMsg.usage, toolCallIds };
-				// Hide stats for now
-				assistantComponent.hideStats();
-			}
-			// else: stats are shown by the component constructor
 		}
 		// Note: tool calls and results are now handled via tool_execution_start/end events
 	}
 
 	renderInitialMessages(state: AgentState): void {
 		// Render all existing messages (for --continue mode)
-		// Track assistant components with their tool calls to show stats after tools
-		const assistantWithTools = new Map<
-			number,
-			{
-				component: AssistantMessageComponent;
-				usage: any;
-				toolCallIds: Set<string>;
-				remainingToolCallIds: Set<string>;
-			}
-		>();
-
 		// Reset first user message flag for initial render
 		this.isFirstUserMessage = true;
 
@@ -335,60 +306,31 @@ export class TuiRenderer {
 				const assistantComponent = new AssistantMessageComponent(assistantMsg);
 				this.chatContainer.addChild(assistantComponent);
 
-				// Check if this message has tool calls
-				const toolCallIds = new Set<string>();
+				// Create tool execution components for any tool calls
 				for (const content of assistantMsg.content) {
 					if (content.type === "toolCall") {
-						toolCallIds.add(content.id);
+						const component = new ToolExecutionComponent(content.name, content.arguments);
+						this.chatContainer.addChild(component);
+						// Store in map so we can update with results later
+						this.pendingTools.set(content.id, component);
 					}
-				}
-				if (toolCallIds.size > 0) {
-					// Hide stats until tools complete
-					assistantComponent.hideStats();
-					assistantWithTools.set(i, {
-						component: assistantComponent,
-						usage: assistantMsg.usage,
-						toolCallIds,
-						remainingToolCallIds: new Set(toolCallIds),
-					});
 				}
 			} else if (message.role === "toolResult") {
-				// Render tool calls that have already completed
+				// Update existing tool execution component with results
 				const toolResultMsg = message as any;
-				const assistantMsgIndex = state.messages.findIndex(
-					(m) =>
-						m.role === "assistant" &&
-						m.content.some((c: any) => c.type === "toolCall" && c.id === toolResultMsg.toolCallId),
-				);
-
-				if (assistantMsgIndex !== -1) {
-					const assistantMsg = state.messages[assistantMsgIndex] as AssistantMessage;
-					const toolCall = assistantMsg.content.find(
-						(c) => c.type === "toolCall" && c.id === toolResultMsg.toolCallId,
-					) as any;
-					if (toolCall) {
-						// Add empty line before tool execution
-						this.chatContainer.addChild(new Text("", 0, 0));
-						const component = new ToolExecutionComponent(toolCall.name, toolCall.arguments);
-						component.updateResult({
-							output: toolResultMsg.output,
-							isError: toolResultMsg.isError,
-						});
-						this.chatContainer.addChild(component);
-
-						// Check if this was the last tool call for this assistant message
-						const assistantData = assistantWithTools.get(assistantMsgIndex);
-						if (assistantData) {
-							assistantData.remainingToolCallIds.delete(toolResultMsg.toolCallId);
-							if (assistantData.remainingToolCallIds.size === 0) {
-								// All tools for this assistant message are complete - show stats
-								assistantData.component.updateStats(assistantData.usage);
-							}
-						}
-					}
+				const component = this.pendingTools.get(toolResultMsg.toolCallId);
+				if (component) {
+					component.updateResult({
+						output: toolResultMsg.output,
+						isError: toolResultMsg.isError,
+					});
+					// Remove from pending map since it's complete
+					this.pendingTools.delete(toolResultMsg.toolCallId);
 				}
 			}
 		}
+		// Clear pending tools after rendering initial messages
+		this.pendingTools.clear();
 		this.ui.requestRender();
 	}
 

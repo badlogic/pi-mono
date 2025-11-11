@@ -13,7 +13,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 		"Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.",
 	parameters: bashSchema,
 	execute: async (_toolCallId: string, { command }: { command: string }, signal?: AbortSignal) => {
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			const child = spawn("sh", ["-c", command], {
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
@@ -65,10 +65,9 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 						if (output) output += "\n";
 						output += stderr;
 					}
-					resolve({
-						output: output || "(no output)",
-						details: undefined,
-					});
+					if (output) output += "\n\n";
+					output += "Command aborted";
+					reject(new Error(output));
 					return;
 				}
 
@@ -81,10 +80,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 					}
 					if (output) output += "\n\n";
 					output += "Command timed out after 30 seconds";
-					resolve({
-						output,
-						details: undefined,
-					});
+					reject(new Error(output));
 					return;
 				}
 
@@ -97,10 +93,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 
 				if (code !== 0 && code !== null) {
 					if (output) output += "\n\n";
-					resolve({
-						output: `${output}Command exited with code ${code}`,
-						details: undefined,
-					});
+					reject(new Error(`${output}Command exited with code ${code}`));
 				} else {
 					resolve({ output: output || "(no output)", details: undefined });
 				}

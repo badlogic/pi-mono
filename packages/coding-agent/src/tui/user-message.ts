@@ -4,7 +4,6 @@ import { Container, Markdown, Spacer } from "@mariozechner/pi-tui";
  * Component that renders a user message
  */
 export class UserMessageComponent extends Container {
-	private spacer: Spacer | null = null;
 	private markdown: Markdown;
 
 	constructor(text: string, isFirst: boolean) {
@@ -12,8 +11,7 @@ export class UserMessageComponent extends Container {
 
 		// Add spacer before user message (except first one)
 		if (!isFirst) {
-			this.spacer = new Spacer(1);
-			this.addChild(this.spacer);
+			this.addChild(new Spacer(1));
 		}
 
 		// User messages with dark gray background

@@ -15,9 +15,13 @@ export class Loader extends Text {
 		ui: TUI,
 		private message: string = "Loading...",
 	) {
-		super("");
+		super("", 1, 0);
 		this.ui = ui;
 		this.start();
+	}
+
+	render(width: number): string[] {
+		return ["", ...super.render(width)];
 	}
 
 	start() {

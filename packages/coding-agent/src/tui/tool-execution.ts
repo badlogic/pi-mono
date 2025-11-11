@@ -1,11 +1,55 @@
+import * as os from "node:os";
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+
+/**
+ * Convert absolute path to tilde notation if it's in home directory
+ */
+function shortenPath(path: string): string {
+	const home = os.homedir();
+	if (path.startsWith(home)) {
+		return "~" + path.slice(home.length);
+	}
+	return path;
+}
+
+/**
+ * Generate a unified diff between old and new strings with line numbers
+ */
+function generateDiff(oldStr: string, newStr: string): string {
+	// Split into lines
+	const oldLines = oldStr.split("\n");
+	const newLines = newStr.split("\n");
+
+	const diff: string[] = [];
+
+	// Calculate line number padding (for alignment)
+	const maxLineNum = Math.max(oldLines.length, newLines.length);
+	const lineNumWidth = String(maxLineNum).length;
+
+	// Show old lines with line numbers
+	diff.push(chalk.red("- old:"));
+	for (let i = 0; i < oldLines.length; i++) {
+		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
+		diff.push(chalk.red(`- ${chalk.dim(lineNum)} ${oldLines[i]}`));
+	}
+
+	diff.push("");
+
+	// Show new lines with line numbers
+	diff.push(chalk.green("+ new:"));
+	for (let i = 0; i < newLines.length; i++) {
+		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
+		diff.push(chalk.green(`+ ${chalk.dim(lineNum)} ${newLines[i]}`));
+	}
+
+	return diff.join("\n");
+}
 
 /**
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private spacer: Spacer;
 	private contentText: Text;
 	private toolName: string;
 	private args: any;
@@ -15,12 +59,15 @@ export class ToolExecutionComponent extends Container {
 		super();
 		this.toolName = toolName;
 		this.args = args;
-		// Blank line with no background for spacing
-		this.spacer = new Spacer(1);
-		this.addChild(this.spacer);
+		this.addChild(new Spacer(1));
 		// Content with colored background and padding
 		this.contentText = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
 		this.addChild(this.contentText);
+		this.updateDisplay();
+	}
+
+	updateArgs(args: any): void {
+		this.args = args;
 		this.updateDisplay();
 	}
 
@@ -45,11 +92,8 @@ export class ToolExecutionComponent extends Container {
 
 		// Format based on tool type
 		if (this.toolName === "bash") {
-			const command = this.args.command || "";
-			text = chalk.bold(`$ ${command}`);
-			if (this.result?.isError) {
-				text += " ❌";
-			}
+			const command = this.args?.command || "";
+			text = chalk.bold(`$ ${command || chalk.dim("...")}`);
 
 			if (this.result) {
 				// Show output without code fences - more minimal
@@ -67,11 +111,8 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "read") {
-			const path = this.args.path || "";
-			text = chalk.bold("read") + " " + chalk.cyan(path);
-			if (this.result?.isError) {
-				text += " ❌";
-			}
+			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			text = chalk.bold("read") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 
 			if (this.result) {
 				const lines = this.result.output.split("\n");
@@ -85,43 +126,38 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "write") {
-			const path = this.args.path || "";
-			const fileContent = this.args.content || "";
-			const lines = fileContent.split("\n");
+			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			const fileContent = this.args?.content || "";
+			const lines = fileContent ? fileContent.split("\n") : [];
 			const totalLines = lines.length;
 
-			text = chalk.bold("write") + " " + chalk.cyan(path);
+			text = chalk.bold("write") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 			if (totalLines > 10) {
 				text += ` (${totalLines} lines)`;
 			}
 
-			if (this.result) {
-				text += this.result.isError ? " ❌" : " ✓";
-			}
+			// Show first 10 lines of content if available
+			if (fileContent) {
+				const maxLines = 10;
+				const displayLines = lines.slice(0, maxLines);
+				const remaining = lines.length - maxLines;
 
-			// Show first 10 lines of content
-			const maxLines = 10;
-			const displayLines = lines.slice(0, maxLines);
-			const remaining = lines.length - maxLines;
-
-			text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
-			if (remaining > 0) {
-				text += chalk.dim(`\n... (${remaining} more lines)`);
+				text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
+				if (remaining > 0) {
+					text += chalk.dim(`\n... (${remaining} more lines)`);
+				}
 			}
 		} else if (this.toolName === "edit") {
-			const path = this.args.path || "";
-			text = chalk.bold("edit") + " " + chalk.cyan(path);
-			if (this.result) {
-				text += this.result.isError ? " ❌" : " ✓";
+			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			text = chalk.bold("edit") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
+
+			// Show diff if we have old_string and new_string
+			if (this.args?.old_string && this.args?.new_string) {
+				text += "\n\n" + generateDiff(this.args.old_string, this.args.new_string);
 			}
 		} else {
 			// Generic tool
 			text = chalk.bold(this.toolName);
-			if (this.result?.isError) {
-				text += " ❌";
-			} else if (this.result) {
-				text += " ✓";
-			}
 
 			const content = JSON.stringify(this.args, null, 2);
 			text += "\n\n" + content;
