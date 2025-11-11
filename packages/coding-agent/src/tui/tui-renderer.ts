@@ -213,6 +213,21 @@ export class TuiRenderer {
 					break;
 				}
 				if (this.streamingComponent && event.message.role === "assistant") {
+					const assistantMsg = event.message as AssistantMessage;
+
+					// If message was aborted or errored, mark all pending tool components as failed
+					if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+						const errorMessage =
+							assistantMsg.stopReason === "aborted" ? "Operation aborted" : assistantMsg.errorMessage || "Error";
+						for (const [toolCallId, component] of this.pendingTools.entries()) {
+							component.updateResult({
+								output: errorMessage,
+								isError: true,
+							});
+						}
+						this.pendingTools.clear();
+					}
+
 					// Keep the streaming component - it's now the final assistant message
 					this.streamingComponent = null;
 				}
