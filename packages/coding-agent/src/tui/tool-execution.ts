@@ -64,15 +64,14 @@ export class ToolExecutionComponent extends Container {
 			text = `**read** \`${path}\``;
 			if (this.result) {
 				const lines = this.result.output.split("\n");
-				const maxLines = 5;
+				const maxLines = 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n```\n" + displayLines.join("\n");
+				text += "\n" + displayLines.join("\n");
 				if (remaining > 0) {
 					text += `\n... (${remaining} more lines)`;
 				}
-				text += "\n```";
 
 				if (this.result.isError) {
 					text += " ❌";
@@ -82,8 +81,12 @@ export class ToolExecutionComponent extends Container {
 			const path = this.args.path || "";
 			const content = this.args.content || "";
 			const lines = content.split("\n");
-			text = `**write** \`${path}\` (${lines.length} lines)`;
+			text = `**write** \`${path}\``;
 			if (this.result) {
+				const totalLines = lines.length;
+				if (totalLines > 10) {
+					text += ` (${totalLines} lines)`;
+				}
 				text += this.result.isError ? " ❌" : " ✓";
 			}
 		} else if (this.toolName === "edit") {
