@@ -1,4 +1,4 @@
-import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
+import type { Agent, AgentEvent, AgentState } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import { CombinedAutocompleteProvider, Container, Loader, ProcessTerminal, Text, TUI } from "@mariozechner/pi-tui";
@@ -6,7 +6,6 @@ import chalk from "chalk";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { FooterComponent } from "./footer.js";
-import { StreamingMessageComponent } from "./streaming-message.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -30,13 +29,13 @@ export class TuiRenderer {
 	private lastSigintTime = 0;
 
 	// Streaming message tracking
-	private streamingComponent: StreamingMessageComponent | null = null;
+	private streamingComponent: AssistantMessageComponent | null = null;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
 	// Track assistant message with tool calls that needs stats shown after tools complete
-	private deferredStats: { usage: any; toolCallIds: Set<string> } | null = null;
+	private deferredStats: { component: AssistantMessageComponent; usage: any; toolCallIds: Set<string> } | null = null;
 
 	// Thinking level selector
 	private thinkingSelector: ThinkingSelectorComponent | null = null;
@@ -124,34 +123,6 @@ export class TuiRenderer {
 				return;
 			}
 
-			// Check for /thinking with argument (direct set)
-			if (text.startsWith("/thinking ")) {
-				const level = text.slice("/thinking ".length).trim() as ThinkingLevel;
-				const validLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
-				if (validLevels.includes(level)) {
-					this.agent.setThinkingLevel(level);
-					// Show confirmation message with padding
-					this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
-					const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
-					this.chatContainer.addChild(confirmText);
-					this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
-					this.ui.requestRender();
-					this.editor.setText("");
-					return;
-				} else {
-					// Show error message
-					const errorText = new Text(
-						chalk.red(`Invalid thinking level: ${level}. Use: off, minimal, low, medium, high`),
-						1,
-						0,
-					);
-					this.chatContainer.addChild(errorText);
-					this.ui.requestRender();
-					this.editor.setText("");
-					return;
-				}
-			}
-
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -191,10 +162,10 @@ export class TuiRenderer {
 					this.editor.setText("");
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					// Create streaming component for assistant messages (has its own spacer)
-					this.streamingComponent = new StreamingMessageComponent();
+					// Create assistant component for streaming
+					this.streamingComponent = new AssistantMessageComponent();
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(event.message);
+					this.streamingComponent.updateContent(event.message as AssistantMessage);
 					this.ui.requestRender();
 				}
 				break;
@@ -202,7 +173,7 @@ export class TuiRenderer {
 			case "message_update":
 				// Update streaming component
 				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingComponent.updateContent(event.message);
+					this.streamingComponent.updateContent(event.message as AssistantMessage);
 					this.ui.requestRender();
 				}
 				break;
@@ -213,11 +184,26 @@ export class TuiRenderer {
 					break;
 				}
 				if (this.streamingComponent && event.message.role === "assistant") {
-					this.chatContainer.removeChild(this.streamingComponent);
+					const assistantMsg = event.message as AssistantMessage;
+
+					// Check if this message has tool calls
+					const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
+
+					if (hasToolCalls) {
+						// Defer stats until after tool executions complete
+						const toolCallIds = new Set<string>();
+						for (const content of assistantMsg.content) {
+							if (content.type === "toolCall") {
+								toolCallIds.add(content.id);
+							}
+						}
+						this.deferredStats = { component: this.streamingComponent, usage: assistantMsg.usage, toolCallIds };
+						// Hide stats for now
+						this.streamingComponent.hideStats();
+					}
+					// Keep the streaming component - it's now the final assistant message
 					this.streamingComponent = null;
 				}
-				// Show final assistant message
-				this.addMessageToChat(event.message);
 				this.ui.requestRender();
 				break;
 
@@ -247,8 +233,8 @@ export class TuiRenderer {
 					if (this.deferredStats) {
 						this.deferredStats.toolCallIds.delete(event.toolCallId);
 						if (this.deferredStats.toolCallIds.size === 0) {
-							// All tools complete - show stats now
-							this.addStatsComponent(this.deferredStats.usage);
+							// All tools complete - show stats now on the component
+							this.deferredStats.component.updateStats(this.deferredStats.usage);
 							this.deferredStats = null;
 						}
 					}
@@ -306,56 +292,50 @@ export class TuiRenderer {
 						toolCallIds.add(content.id);
 					}
 				}
-				this.deferredStats = { usage: assistantMsg.usage, toolCallIds };
-			} else {
-				// No tool calls - show stats immediately
-				this.addStatsComponent(assistantMsg.usage);
+				this.deferredStats = { component: assistantComponent, usage: assistantMsg.usage, toolCallIds };
+				// Hide stats for now
+				assistantComponent.hideStats();
 			}
+			// else: stats are shown by the component constructor
 		}
 		// Note: tool calls and results are now handled via tool_execution_start/end events
 	}
 
-	private addStatsComponent(usage: any): void {
-		if (!usage) return;
-
-		// Format token counts (similar to web-ui)
-		const formatTokens = (count: number): string => {
-			if (count < 1000) return count.toString();
-			if (count < 10000) return (count / 1000).toFixed(1) + "k";
-			return Math.round(count / 1000) + "k";
-		};
-
-		const statsParts = [];
-		if (usage.input) statsParts.push(`↑${formatTokens(usage.input)}`);
-		if (usage.output) statsParts.push(`↓${formatTokens(usage.output)}`);
-		if (usage.cacheRead) statsParts.push(`R${formatTokens(usage.cacheRead)}`);
-		if (usage.cacheWrite) statsParts.push(`W${formatTokens(usage.cacheWrite)}`);
-		if (usage.cost?.total) statsParts.push(`$${usage.cost.total.toFixed(3)}`);
-
-		if (statsParts.length > 0) {
-			const statsText = new Text(chalk.gray(statsParts.join(" ")), 1, 0);
-			this.chatContainer.addChild(statsText);
-			// Add empty line after stats
-			this.chatContainer.addChild(new Text("", 1, 0));
-		}
-	}
-
 	renderInitialMessages(state: AgentState): void {
 		// Render all existing messages (for --continue mode)
-		// Track assistant messages with their tool calls to show stats after tools
+		// Track assistant components with their tool calls to show stats after tools
 		const assistantWithTools = new Map<
 			number,
-			{ usage: any; toolCallIds: Set<string>; remainingToolCallIds: Set<string> }
+			{
+				component: AssistantMessageComponent;
+				usage: any;
+				toolCallIds: Set<string>;
+				remainingToolCallIds: Set<string>;
+			}
 		>();
 
 		// Reset first user message flag for initial render
 		this.isFirstUserMessage = true;
 
-		// First pass: identify assistant messages with tool calls
+		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
-			if (message.role === "assistant") {
+
+			if (message.role === "user") {
+				const userMsg = message as any;
+				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
+				const textContent = textBlocks.map((c: any) => c.text).join("");
+				if (textContent) {
+					const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
+					this.chatContainer.addChild(userComponent);
+					this.isFirstUserMessage = false;
+				}
+			} else if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
+				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				this.chatContainer.addChild(assistantComponent);
+
+				// Check if this message has tool calls
 				const toolCallIds = new Set<string>();
 				for (const content of assistantMsg.content) {
 					if (content.type === "toolCall") {
@@ -363,25 +343,15 @@ export class TuiRenderer {
 					}
 				}
 				if (toolCallIds.size > 0) {
+					// Hide stats until tools complete
+					assistantComponent.hideStats();
 					assistantWithTools.set(i, {
+						component: assistantComponent,
 						usage: assistantMsg.usage,
 						toolCallIds,
 						remainingToolCallIds: new Set(toolCallIds),
 					});
 				}
-			}
-		}
-
-		// Second pass: render messages
-		for (let i = 0; i < state.messages.length; i++) {
-			const message = state.messages[i];
-
-			if (message.role === "user" || message.role === "assistant") {
-				// Temporarily disable deferred stats for initial render
-				const savedDeferredStats = this.deferredStats;
-				this.deferredStats = null;
-				this.addMessageToChat(message);
-				this.deferredStats = savedDeferredStats;
 			} else if (message.role === "toolResult") {
 				// Render tool calls that have already completed
 				const toolResultMsg = message as any;
@@ -412,7 +382,7 @@ export class TuiRenderer {
 							assistantData.remainingToolCallIds.delete(toolResultMsg.toolCallId);
 							if (assistantData.remainingToolCallIds.size === 0) {
 								// All tools for this assistant message are complete - show stats
-								this.addStatsComponent(assistantData.usage);
+								assistantData.component.updateStats(assistantData.usage);
 							}
 						}
 					}
