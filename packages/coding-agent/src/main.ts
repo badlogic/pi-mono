@@ -1,4 +1,4 @@
-import { Agent, ProviderTransport } from "@mariozechner/pi-agent";
+import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent";
 import { getModel } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { readFileSync } from "fs";
@@ -226,6 +226,13 @@ export async function main(args: string[]) {
 		if (messages.length > 0) {
 			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
 			agent.replaceMessages(messages);
+		}
+
+		// Load and restore thinking level
+		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
+		if (thinkingLevel && thinkingLevel !== "off") {
+			agent.setThinkingLevel(thinkingLevel);
+			console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
 		}
 	}
 

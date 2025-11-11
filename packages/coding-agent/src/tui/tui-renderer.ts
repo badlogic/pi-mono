@@ -98,6 +98,7 @@ export class TuiRenderer {
 		// Setup UI layout
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(header);
+		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(new Spacer(1));
@@ -377,11 +378,10 @@ export class TuiRenderer {
 				// Apply the selected thinking level
 				this.agent.setThinkingLevel(level);
 
-				// Show confirmation message with padding and blue color
-				this.chatContainer.addChild(new Text("", 0, 0)); // Blank line before
-				const confirmText = new Text(chalk.blue(`Thinking level set to: ${level}`), 0, 0);
+				// Show confirmation message with proper spacing
+				this.chatContainer.addChild(new Spacer(1));
+				const confirmText = new Text(chalk.dim(`Thinking level: ${level}`), 1, 0);
 				this.chatContainer.addChild(confirmText);
-				this.chatContainer.addChild(new Text("", 0, 0)); // Blank line after
 
 				// Hide selector and show editor again
 				this.hideThinkingSelector();

@@ -19,6 +19,7 @@ export interface SessionHeader {
 	cwd: string;
 	systemPrompt: string;
 	model: string;
+	thinkingLevel: string;
 }
 
 export interface SessionMessageEntry {
@@ -115,6 +116,7 @@ export class SessionManager {
 			cwd: process.cwd(),
 			systemPrompt: state.systemPrompt,
 			model: `${state.model.provider}/${state.model.id}`,
+			thinkingLevel: state.thinkingLevel,
 		};
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
 	}
@@ -155,6 +157,27 @@ export class SessionManager {
 		}
 
 		return messages;
+	}
+
+	loadThinkingLevel(): string {
+		if (!existsSync(this.sessionFile)) return "off";
+
+		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
+
+		// Find the most recent session header with thinking level
+		let lastThinkingLevel = "off";
+		for (const line of lines) {
+			try {
+				const entry = JSON.parse(line);
+				if (entry.type === "session" && entry.thinkingLevel) {
+					lastThinkingLevel = entry.thinkingLevel;
+				}
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		return lastThinkingLevel;
 	}
 
 	getSessionId(): string {

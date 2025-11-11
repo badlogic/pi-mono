@@ -41,9 +41,9 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Thinking traces in dark gray italic
-				// Apply styling to entire block so wrapping preserves it
+				// Use Markdown component because it preserves ANSI codes across wrapped lines
 				const thinkingText = chalk.gray.italic(content.thinking);
-				this.contentContainer.addChild(new Text(thinkingText, 1, 0));
+				this.contentContainer.addChild(new Markdown(thinkingText, undefined, undefined, undefined, 1, 0));
 				this.contentContainer.addChild(new Spacer(1));
 			}
 		}
