@@ -336,19 +336,21 @@ export class TuiRenderer {
 
 		// Add header with logo and instructions
 		const logo = chalk.bold.cyan("pi") + chalk.dim(` v${this.version}`);
-		const instructions = chalk.dim(
-			"esc" +
-				chalk.gray(" to interrupt") +
-				" • " +
-				"ctrl+c" +
-				chalk.gray(" to clear") +
-				" • " +
-				"ctrl+c twice" +
-				chalk.gray(" to exit") +
-				" • " +
-				"/" +
-				chalk.gray(" for commands"),
-		);
+		const instructions =
+			chalk.dim("esc") +
+			chalk.gray(" to interrupt") +
+			"\n" +
+			chalk.dim("ctrl+c") +
+			chalk.gray(" to clear") +
+			"\n" +
+			chalk.dim("ctrl+c twice") +
+			chalk.gray(" to exit") +
+			"\n" +
+			chalk.dim("/") +
+			chalk.gray(" for commands") +
+			"\n" +
+			chalk.dim("drop files") +
+			chalk.gray(" to attach");
 		const header = new Text(logo + "\n" + instructions);
 
 		// Setup UI layout
