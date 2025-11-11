@@ -9,6 +9,7 @@ import {
 	ProcessTerminal,
 	type SelectItem,
 	SelectList,
+	Spacer,
 	Text,
 	TUI,
 } from "@mariozechner/pi-tui";
@@ -47,6 +48,9 @@ export class TuiRenderer {
 
 	// Thinking level selector
 	private thinkingSelector: SelectList | null = null;
+
+	// Track if this is the first user message (to skip spacer)
+	private isFirstUserMessage = true;
 
 	constructor(agent: Agent, version: string) {
 		this.agent = agent;
@@ -288,6 +292,12 @@ export class TuiRenderer {
 			const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
 			const textContent = textBlocks.map((c: any) => c.text).join("");
 			if (textContent) {
+				// Add spacer before user message (except first one)
+				if (!this.isFirstUserMessage) {
+					this.chatContainer.addChild(new Spacer(1));
+				}
+				this.isFirstUserMessage = false;
+
 				// User messages with dark gray background
 				this.chatContainer.addChild(new Markdown(textContent, undefined, undefined, { r: 52, g: 53, b: 65 }));
 			}
@@ -377,6 +387,9 @@ export class TuiRenderer {
 			number,
 			{ usage: any; toolCallIds: Set<string>; remainingToolCallIds: Set<string> }
 		>();
+
+		// Reset first user message flag for initial render
+		this.isFirstUserMessage = true;
 
 		// First pass: identify assistant messages with tool calls
 		for (let i = 0; i < state.messages.length; i++) {
