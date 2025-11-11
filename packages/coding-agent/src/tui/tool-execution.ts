@@ -1,11 +1,11 @@
-import { Container, Text } from "@mariozechner/pi-tui";
+import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 
 /**
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private spacerText: Text;
+	private spacer: Spacer;
 	private contentText: Text;
 	private toolName: string;
 	private args: any;
@@ -16,8 +16,8 @@ export class ToolExecutionComponent extends Container {
 		this.toolName = toolName;
 		this.args = args;
 		// Blank line with no background for spacing
-		this.spacerText = new Text("\n", 0, 0);
-		this.addChild(this.spacerText);
+		this.spacer = new Spacer(1);
+		this.addChild(this.spacer);
 		// Content with colored background and padding
 		this.contentText = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
 		this.addChild(this.contentText);
