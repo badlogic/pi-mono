@@ -14,6 +14,13 @@ function shortenPath(path: string): string {
 }
 
 /**
+ * Replace tabs with spaces for consistent rendering
+ */
+function replaceTabs(text: string): string {
+	return text.replace(/\t/g, "   ");
+}
+
+/**
  * Generate a unified diff between old and new strings with line numbers
  */
 function generateDiff(oldStr: string, newStr: string): string {
@@ -120,7 +127,7 @@ export class ToolExecutionComponent extends Container {
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
+				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
 				if (remaining > 0) {
 					text += chalk.dim(`\n... (${remaining} more lines)`);
 				}
@@ -142,7 +149,7 @@ export class ToolExecutionComponent extends Container {
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
+				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
 				if (remaining > 0) {
 					text += chalk.dim(`\n... (${remaining} more lines)`);
 				}

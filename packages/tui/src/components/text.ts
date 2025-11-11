@@ -63,8 +63,11 @@ export class Text implements Component {
 			return result;
 		}
 
+		// Replace tabs with 3 spaces for consistent rendering
+		const normalizedText = this.text.replace(/\t/g, "   ");
+
 		const lines: string[] = [];
-		const textLines = this.text.split("\n");
+		const textLines = normalizedText.split("\n");
 
 		for (const line of textLines) {
 			// Measure visible length (strip ANSI codes)

@@ -103,8 +103,11 @@ export class Markdown implements Component {
 			return result;
 		}
 
+		// Replace tabs with 3 spaces for consistent rendering
+		const normalizedText = this.text.replace(/\t/g, "   ");
+
 		// Parse markdown to HTML-like tokens
-		const tokens = marked.lexer(this.text);
+		const tokens = marked.lexer(normalizedText);
 
 		// Convert tokens to styled terminal output
 		const renderedLines: string[] = [];

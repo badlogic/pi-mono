@@ -6,7 +6,10 @@ import stringWidth from "string-width";
  * - ANSI escape codes (ignored)
  * - Emojis and wide characters (counted as 2 columns)
  * - Combining characters (counted correctly)
+ * - Tabs (replaced with 3 spaces for consistent width)
  */
 export function visibleWidth(str: string): number {
-	return stringWidth(str);
+	// Replace tabs with 3 spaces before measuring
+	const normalized = str.replace(/\t/g, "   ");
+	return stringWidth(normalized);
 }
