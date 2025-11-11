@@ -4,7 +4,6 @@ import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	Container,
-	Editor,
 	Loader,
 	Markdown,
 	ProcessTerminal,
@@ -14,282 +13,10 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-
-/**
- * Custom editor that handles Escape and Ctrl+C keys for coding-agent
- */
-class CustomEditor extends Editor {
-	public onEscape?: () => void;
-	public onCtrlC?: () => void;
-
-	handleInput(data: string): void {
-		// Intercept Escape key - but only if autocomplete is NOT active
-		// (let parent handle escape for autocomplete cancellation)
-		if (data === "\x1b" && this.onEscape && !this.isShowingAutocomplete()) {
-			this.onEscape();
-			return;
-		}
-
-		// Intercept Ctrl+C
-		if (data === "\x03" && this.onCtrlC) {
-			this.onCtrlC();
-			return;
-		}
-
-		// Pass to parent for normal handling
-		super.handleInput(data);
-	}
-}
-
-/**
- * Component that renders a streaming message with live updates
- */
-class StreamingMessageComponent extends Container {
-	private markdown: Markdown;
-	private statsText: Text;
-
-	constructor() {
-		super();
-		this.markdown = new Markdown("");
-		this.statsText = new Text("", 1, 0);
-		this.addChild(this.markdown);
-		this.addChild(this.statsText);
-	}
-
-	updateContent(message: Message | null) {
-		if (!message) {
-			this.markdown.setText("");
-			this.statsText.setText("");
-			return;
-		}
-
-		if (message.role === "assistant") {
-			const assistantMsg = message as AssistantMessage;
-
-			// Update text and thinking content
-			let combinedContent = "";
-			for (const c of assistantMsg.content) {
-				if (c.type === "text") {
-					combinedContent += c.text;
-				} else if (c.type === "thinking") {
-					// Add thinking in italic
-					const thinkingLines = c.thinking
-						.split("\n")
-						.map((line) => `*${line}*`)
-						.join("\n");
-					if (combinedContent && !combinedContent.endsWith("\n")) combinedContent += "\n";
-					combinedContent += thinkingLines;
-					if (!combinedContent.endsWith("\n")) combinedContent += "\n";
-				}
-			}
-
-			this.markdown.setText(combinedContent);
-
-			// Update usage stats
-			const usage = assistantMsg.usage;
-			if (usage) {
-				// Format token counts (similar to web-ui)
-				const formatTokens = (count: number): string => {
-					if (count < 1000) return count.toString();
-					if (count < 10000) return (count / 1000).toFixed(1) + "k";
-					return Math.round(count / 1000) + "k";
-				};
-
-				const statsParts = [];
-				if (usage.input) statsParts.push(`↑${formatTokens(usage.input)}`);
-				if (usage.output) statsParts.push(`↓${formatTokens(usage.output)}`);
-				if (usage.cacheRead) statsParts.push(`R${formatTokens(usage.cacheRead)}`);
-				if (usage.cacheWrite) statsParts.push(`W${formatTokens(usage.cacheWrite)}`);
-				if (usage.cost?.total) statsParts.push(`$${usage.cost.total.toFixed(3)}`);
-
-				this.statsText.setText(chalk.gray(statsParts.join(" ")));
-			} else {
-				this.statsText.setText("");
-			}
-		}
-	}
-}
-
-/**
- * Component that renders a tool call with its result (updateable)
- */
-class ToolExecutionComponent extends Container {
-	private markdown: Markdown;
-	private toolName: string;
-	private args: any;
-	private result?: { output: string; isError: boolean };
-
-	constructor(toolName: string, args: any) {
-		super();
-		this.toolName = toolName;
-		this.args = args;
-		this.markdown = new Markdown("", undefined, undefined, { r: 40, g: 40, b: 50 });
-		this.addChild(this.markdown);
-		this.updateDisplay();
-	}
-
-	updateResult(result: { output: string; isError: boolean }): void {
-		this.result = result;
-		this.updateDisplay();
-	}
-
-	private updateDisplay(): void {
-		const bgColor = this.result
-			? this.result.isError
-				? { r: 60, g: 40, b: 40 }
-				: { r: 40, g: 50, b: 40 }
-			: { r: 40, g: 40, b: 50 };
-		this.markdown.setCustomBgRgb(bgColor);
-		this.markdown.setText(this.formatToolExecution());
-	}
-
-	private formatToolExecution(): string {
-		let text = "";
-
-		// Format based on tool type
-		if (this.toolName === "bash") {
-			const command = this.args.command || "";
-			text = `**$ ${command}**`;
-			if (this.result) {
-				// Show output without code fences - more minimal
-				const output = this.result.output.trim();
-				if (output) {
-					const lines = output.split("\n");
-					const maxLines = 5;
-					const displayLines = lines.slice(0, maxLines);
-					const remaining = lines.length - maxLines;
-
-					text += "\n" + displayLines.join("\n");
-					if (remaining > 0) {
-						text += `\n... (${remaining} more lines)`;
-					}
-				}
-
-				if (this.result.isError) {
-					text += " ❌";
-				}
-			}
-		} else if (this.toolName === "read") {
-			const path = this.args.path || "";
-			text = `**read** \`${path}\``;
-			if (this.result) {
-				const lines = this.result.output.split("\n");
-				const maxLines = 5;
-				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
-
-				text += "\n```\n" + displayLines.join("\n");
-				if (remaining > 0) {
-					text += `\n... (${remaining} more lines)`;
-				}
-				text += "\n```";
-
-				if (this.result.isError) {
-					text += " ❌";
-				}
-			}
-		} else if (this.toolName === "write") {
-			const path = this.args.path || "";
-			const content = this.args.content || "";
-			const lines = content.split("\n");
-			text = `**write** \`${path}\` (${lines.length} lines)`;
-			if (this.result) {
-				text += this.result.isError ? " ❌" : " ✓";
-			}
-		} else if (this.toolName === "edit") {
-			const path = this.args.path || "";
-			text = `**edit** \`${path}\``;
-			if (this.result) {
-				text += this.result.isError ? " ❌" : " ✓";
-			}
-		} else {
-			// Generic tool
-			text = `**${this.toolName}**\n\`\`\`json\n${JSON.stringify(this.args, null, 2)}\n\`\`\``;
-			if (this.result) {
-				text += `\n\`\`\`\n${this.result.output}\n\`\`\``;
-				text += this.result.isError ? " ❌" : " ✓";
-			}
-		}
-
-		return text;
-	}
-}
-
-/**
- * Footer component that shows pwd, token stats, and context usage
- */
-class FooterComponent {
-	private state: AgentState;
-
-	constructor(state: AgentState) {
-		this.state = state;
-	}
-
-	updateState(state: AgentState): void {
-		this.state = state;
-	}
-
-	render(width: number): string[] {
-		// Calculate cumulative usage from all assistant messages
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalCacheWrite = 0;
-		let totalCost = 0;
-
-		for (const message of this.state.messages) {
-			if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				totalInput += assistantMsg.usage.input;
-				totalOutput += assistantMsg.usage.output;
-				totalCacheRead += assistantMsg.usage.cacheRead;
-				totalCacheWrite += assistantMsg.usage.cacheWrite;
-				totalCost += assistantMsg.usage.cost.total;
-			}
-		}
-
-		// Calculate total tokens and % of context window
-		const totalTokens = totalInput + totalOutput;
-		const contextWindow = this.state.model.contextWindow;
-		const contextPercent = contextWindow > 0 ? ((totalTokens / contextWindow) * 100).toFixed(1) : "0.0";
-
-		// Format token counts (similar to web-ui)
-		const formatTokens = (count: number): string => {
-			if (count < 1000) return count.toString();
-			if (count < 10000) return (count / 1000).toFixed(1) + "k";
-			return Math.round(count / 1000) + "k";
-		};
-
-		// Replace home directory with ~
-		let pwd = process.cwd();
-		const home = process.env.HOME || process.env.USERPROFILE;
-		if (home && pwd.startsWith(home)) {
-			pwd = "~" + pwd.slice(home.length);
-		}
-
-		// Truncate path if too long to fit width
-		const maxPathLength = Math.max(20, width - 10); // Leave some margin
-		if (pwd.length > maxPathLength) {
-			const start = pwd.slice(0, Math.floor(maxPathLength / 2) - 2);
-			const end = pwd.slice(-(Math.floor(maxPathLength / 2) - 1));
-			pwd = `${start}...${end}`;
-		}
-
-		// Build stats line
-		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-		if (totalCost) statsParts.push(`$${totalCost.toFixed(3)}`);
-		statsParts.push(`${contextPercent}%`);
-
-		const statsLine = statsParts.join(" ");
-
-		// Return two lines: pwd and stats
-		return [chalk.gray(pwd), chalk.gray(statsLine)];
-	}
-}
+import { CustomEditor } from "./custom-editor.js";
+import { FooterComponent } from "./footer.js";
+import { StreamingMessageComponent } from "./streaming-message.js";
+import { ToolExecutionComponent } from "./tool-execution.js";
 
 /**
  * TUI renderer for the coding agent
@@ -570,8 +297,8 @@ export class TuiRenderer {
 			// Render content in order
 			for (const content of assistantMsg.content) {
 				if (content.type === "text" && content.text.trim()) {
-					// Assistant text messages with no background
-					this.chatContainer.addChild(new Markdown(content.text));
+					// Assistant text messages with no background - trim the text
+					this.chatContainer.addChild(new Markdown(content.text.trim()));
 				} else if (content.type === "thinking" && content.thinking.trim()) {
 					// Thinking traces in dark gray italic
 					const thinkingText = content.thinking
@@ -639,7 +366,7 @@ export class TuiRenderer {
 			const statsText = new Text(chalk.gray(statsParts.join(" ")), 1, 0);
 			this.chatContainer.addChild(statsText);
 			// Add empty line after stats
-			this.chatContainer.addChild(new Text("", 0, 0));
+			this.chatContainer.addChild(new Text("", 1, 0));
 		}
 	}
 

@@ -6,7 +6,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { SessionManager } from "./session-manager.js";
 import { codingTools } from "./tools/index.js";
-import { TuiRenderer } from "./tui-renderer.js";
+import { TuiRenderer } from "./tui/tui-renderer.js";
 
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
