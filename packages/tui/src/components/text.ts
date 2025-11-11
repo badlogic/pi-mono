@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
@@ -8,21 +9,36 @@ export class Text implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
 	private paddingY: number; // Top/bottom padding
+	private customBgRgb?: { r: number; g: number; b: number };
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(text: string = "", paddingX: number = 1, paddingY: number = 1) {
+	constructor(
+		text: string = "",
+		paddingX: number = 1,
+		paddingY: number = 1,
+		customBgRgb?: { r: number; g: number; b: number },
+	) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
+		this.customBgRgb = customBgRgb;
 	}
 
 	setText(text: string): void {
 		this.text = text;
 		// Invalidate cache when text changes
+		this.cachedText = undefined;
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+
+	setCustomBgRgb(customBgRgb?: { r: number; g: number; b: number }): void {
+		this.customBgRgb = customBgRgb;
+		// Invalidate cache when color changes
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -91,20 +107,35 @@ export class Text implements Component {
 			// Right padding to fill to width (accounting for left padding and content)
 			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
 			const rightPad = " ".repeat(rightPadLength);
-			paddedLines.push(leftPad + line + rightPad);
+			let paddedLine = leftPad + line + rightPad;
+
+			// Apply background color if specified
+			if (this.customBgRgb) {
+				paddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(paddedLine);
+			}
+
+			paddedLines.push(paddedLine);
 		}
 
 		// Add top padding (empty lines)
 		const emptyLine = " ".repeat(width);
 		const topPadding: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			topPadding.push(emptyLine);
+			let emptyPaddedLine = emptyLine;
+			if (this.customBgRgb) {
+				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
+			}
+			topPadding.push(emptyPaddedLine);
 		}
 
 		// Add bottom padding (empty lines)
 		const bottomPadding: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			bottomPadding.push(emptyLine);
+			let emptyPaddedLine = emptyLine;
+			if (this.customBgRgb) {
+				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
+			}
+			bottomPadding.push(emptyPaddedLine);
 		}
 
 		// Combine top padding, content, and bottom padding

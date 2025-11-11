@@ -1,4 +1,4 @@
-import type { Agent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
+import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -166,7 +166,7 @@ export class TuiRenderer {
 		this.isInitialized = true;
 	}
 
-	async handleEvent(event: import("@mariozechner/pi-agent").AgentEvent, state: AgentState): Promise<void> {
+	async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}

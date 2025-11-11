@@ -1,10 +1,11 @@
-import { Container, Markdown } from "@mariozechner/pi-tui";
+import { Container, Text } from "@mariozechner/pi-tui";
+import chalk from "chalk";
 
 /**
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private markdown: Markdown;
+	private text: Text;
 	private toolName: string;
 	private args: any;
 	private result?: { output: string; isError: boolean };
@@ -13,8 +14,8 @@ export class ToolExecutionComponent extends Container {
 		super();
 		this.toolName = toolName;
 		this.args = args;
-		this.markdown = new Markdown("", undefined, undefined, { r: 40, g: 40, b: 50 });
-		this.addChild(this.markdown);
+		this.text = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
+		this.addChild(this.text);
 		this.updateDisplay();
 	}
 
@@ -29,17 +30,18 @@ export class ToolExecutionComponent extends Container {
 				? { r: 60, g: 40, b: 40 }
 				: { r: 40, g: 50, b: 40 }
 			: { r: 40, g: 40, b: 50 };
-		this.markdown.setCustomBgRgb(bgColor);
-		this.markdown.setText(this.formatToolExecution());
+		this.text.setCustomBgRgb(bgColor);
+		this.text.setText(this.formatToolExecution());
 	}
 
 	private formatToolExecution(): string {
-		let text = "";
+		// Start with blank line for spacing
+		let text = "\n";
 
 		// Format based on tool type
 		if (this.toolName === "bash") {
 			const command = this.args.command || "";
-			text = `**$ ${command}**`;
+			text += chalk.bold(`$ ${command}`);
 			if (this.result) {
 				// Show output without code fences - more minimal
 				const output = this.result.output.trim();
@@ -61,7 +63,7 @@ export class ToolExecutionComponent extends Container {
 			}
 		} else if (this.toolName === "read") {
 			const path = this.args.path || "";
-			text = `**read** \`${path}\``;
+			text += chalk.bold("read") + " " + path;
 			if (this.result) {
 				const lines = this.result.output.split("\n");
 				const maxLines = 10;
@@ -81,25 +83,27 @@ export class ToolExecutionComponent extends Container {
 			const path = this.args.path || "";
 			const content = this.args.content || "";
 			const lines = content.split("\n");
-			text = `**write** \`${path}\``;
+			const totalLines = lines.length;
+
+			text += chalk.bold("write") + " " + path;
+			if (totalLines > 10) {
+				text += ` (${totalLines} lines)`;
+			}
+
 			if (this.result) {
-				const totalLines = lines.length;
-				if (totalLines > 10) {
-					text += ` (${totalLines} lines)`;
-				}
 				text += this.result.isError ? " ❌" : " ✓";
 			}
 		} else if (this.toolName === "edit") {
 			const path = this.args.path || "";
-			text = `**edit** \`${path}\``;
+			text += chalk.bold("edit") + " " + path;
 			if (this.result) {
 				text += this.result.isError ? " ❌" : " ✓";
 			}
 		} else {
 			// Generic tool
-			text = `**${this.toolName}**\n\`\`\`json\n${JSON.stringify(this.args, null, 2)}\n\`\`\``;
+			text += chalk.bold(this.toolName) + "\n" + JSON.stringify(this.args, null, 2);
 			if (this.result) {
-				text += `\n\`\`\`\n${this.result.output}\n\`\`\``;
+				text += "\n" + this.result.output;
 				text += this.result.isError ? " ❌" : " ✓";
 			}
 		}
