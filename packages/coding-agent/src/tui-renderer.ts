@@ -89,7 +89,7 @@ class StreamingMessageComponent extends Container {
 				if (usage.cacheWrite) statsParts.push(`W${formatTokens(usage.cacheWrite)}`);
 				if (usage.cost?.total) statsParts.push(`$${usage.cost.total.toFixed(3)}`);
 
-				this.statsText.setText(chalk.dim(statsParts.join(" ")));
+				this.statsText.setText(chalk.gray(statsParts.join(" ")));
 			} else {
 				this.statsText.setText("");
 			}
@@ -271,7 +271,7 @@ class FooterComponent {
 		const statsLine = statsParts.join(" ");
 
 		// Return two lines: pwd and stats
-		return [chalk.dim(pwd), chalk.dim(statsLine)];
+		return [chalk.gray(pwd), chalk.gray(statsLine)];
 	}
 }
 
@@ -349,7 +349,7 @@ export class TuiRenderer {
 				"/" +
 				chalk.gray(" for commands"),
 		);
-		const header = new Text(logo + "\n" + instructions + "\n");
+		const header = new Text(logo + "\n" + instructions);
 
 		// Setup UI layout
 		this.ui.addChild(header);
@@ -606,7 +606,7 @@ export class TuiRenderer {
 		if (usage.cost?.total) statsParts.push(`$${usage.cost.total.toFixed(3)}`);
 
 		if (statsParts.length > 0) {
-			const statsText = new Text(chalk.dim(statsParts.join(" ")), 1, 0);
+			const statsText = new Text(chalk.gray(statsParts.join(" ")), 1, 0);
 			this.chatContainer.addChild(statsText);
 			// Add empty line after stats
 			this.chatContainer.addChild(new Text("", 0, 0));
