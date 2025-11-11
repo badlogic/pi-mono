@@ -404,7 +404,11 @@ export class Markdown implements Component {
 				}
 			} else {
 				// Regular character
-				if (currentLength >= width) {
+				const char = line[i];
+				const charWidth = visibleWidth(char);
+
+				// Check if adding this character would exceed width
+				if (currentLength + charWidth > width) {
 					// Need to wrap - close current line with reset if needed
 					if (activeAnsiCodes.length > 0) {
 						wrapped.push(currentLine + "\x1b[0m");
@@ -416,10 +420,9 @@ export class Markdown implements Component {
 					}
 					currentLength = 0;
 				}
-				const char = line[i];
+
 				currentLine += char;
-				// Count actual terminal column width, not string length
-				currentLength += visibleWidth(char);
+				currentLength += charWidth;
 				i++;
 			}
 		}

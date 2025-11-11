@@ -1,6 +1,15 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, type SelectItem, SelectList } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+
+/**
+ * Dynamic border component that adjusts to viewport width
+ */
+class DynamicBorder implements Component {
+	render(width: number): string[] {
+		return [chalk.blue("─".repeat(Math.max(1, width)))];
+	}
+}
 
 /**
  * Component that renders a thinking level selector with borders
@@ -20,7 +29,7 @@ export class ThinkingSelectorComponent extends Container {
 		];
 
 		// Add top border
-		this.addChild(new Text(chalk.blue("─".repeat(50)), 0, 0));
+		this.addChild(new DynamicBorder());
 
 		// Create selector
 		this.selectList = new SelectList(thinkingLevels, 5);
@@ -42,7 +51,7 @@ export class ThinkingSelectorComponent extends Container {
 		this.addChild(this.selectList);
 
 		// Add bottom border
-		this.addChild(new Text(chalk.blue("─".repeat(50)), 0, 0));
+		this.addChild(new DynamicBorder());
 	}
 
 	getSelectList(): SelectList {

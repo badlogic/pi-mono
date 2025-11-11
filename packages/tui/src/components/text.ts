@@ -84,13 +84,27 @@ export class Text implements Component {
 					const currentVisible = visibleWidth(currentLine);
 					const wordVisible = visibleWidth(word);
 
+					// If word is too long, truncate it
+					let finalWord = word;
+					if (wordVisible > contentWidth) {
+						// Truncate word to fit
+						let truncated = "";
+						for (const char of word) {
+							if (visibleWidth(truncated + char) > contentWidth) {
+								break;
+							}
+							truncated += char;
+						}
+						finalWord = truncated;
+					}
+
 					if (currentVisible === 0) {
-						currentLine = word;
-					} else if (currentVisible + 1 + wordVisible <= contentWidth) {
-						currentLine += " " + word;
+						currentLine = finalWord;
+					} else if (currentVisible + 1 + visibleWidth(finalWord) <= contentWidth) {
+						currentLine += " " + finalWord;
 					} else {
 						lines.push(currentLine);
-						currentLine = word;
+						currentLine = finalWord;
 					}
 				}
 
