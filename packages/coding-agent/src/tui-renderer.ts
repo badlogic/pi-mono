@@ -7,7 +7,6 @@ import {
 	Loader,
 	Markdown,
 	ProcessTerminal,
-	Spacer,
 	Text,
 	TUI,
 } from "@mariozechner/pi-tui";
@@ -42,14 +41,17 @@ class CustomEditor extends Editor {
  * Component that renders a streaming message with live updates
  */
 class StreamingMessageComponent extends Container {
-	private textComponent: Markdown | null = null;
-	private toolCallsContainer: Container | null = null;
-	private currentContent = "";
-	private currentToolCalls: any[] = [];
+	private markdown: Markdown;
+
+	constructor() {
+		super();
+		this.markdown = new Markdown("");
+		this.addChild(this.markdown);
+	}
 
 	updateContent(message: Message | null) {
 		if (!message) {
-			this.clear();
+			this.markdown.setText("");
 			return;
 		}
 
@@ -61,35 +63,95 @@ class StreamingMessageComponent extends Container {
 				.filter((c) => c.type === "text")
 				.map((c) => c.text)
 				.join("");
-			if (textContent !== this.currentContent) {
-				this.currentContent = textContent;
-				if (this.textComponent) {
-					this.removeChild(this.textComponent);
+
+			this.markdown.setText(textContent);
+		}
+	}
+}
+
+/**
+ * Component that renders a tool call with its result
+ */
+class ToolExecutionComponent extends Container {
+	private markdown: Markdown;
+
+	constructor(toolName: string, args: any, result?: { output: string; isError: boolean }) {
+		super();
+		const bgColor = result
+			? result.isError
+				? { r: 60, g: 40, b: 40 }
+				: { r: 40, g: 50, b: 40 }
+			: { r: 40, g: 40, b: 50 };
+		this.markdown = new Markdown(this.formatToolExecution(toolName, args, result), undefined, undefined, bgColor);
+		this.addChild(this.markdown);
+	}
+
+	private formatToolExecution(toolName: string, args: any, result?: { output: string; isError: boolean }): string {
+		let text = "";
+
+		// Format based on tool type
+		if (toolName === "bash") {
+			const command = args.command || "";
+			text = `**$ ${command}**`;
+			if (result) {
+				const lines = result.output.split("\n");
+				const maxLines = 5;
+				const displayLines = lines.slice(0, maxLines);
+				const remaining = lines.length - maxLines;
+
+				text += "\n```\n" + displayLines.join("\n");
+				if (remaining > 0) {
+					text += `\n... (${remaining} more lines)`;
 				}
-				if (textContent) {
-					this.textComponent = new Markdown(textContent);
-					this.addChild(this.textComponent);
+				text += "\n```";
+
+				if (result.isError) {
+					text += " ❌";
 				}
 			}
+		} else if (toolName === "read") {
+			const path = args.path || "";
+			text = `**read** \`${path}\``;
+			if (result) {
+				const lines = result.output.split("\n");
+				const maxLines = 5;
+				const displayLines = lines.slice(0, maxLines);
+				const remaining = lines.length - maxLines;
 
-			// Update tool calls
-			const toolCalls = assistantMsg.content.filter((c) => c.type === "toolCall");
-			if (JSON.stringify(toolCalls) !== JSON.stringify(this.currentToolCalls)) {
-				this.currentToolCalls = toolCalls;
-				if (this.toolCallsContainer) {
-					this.removeChild(this.toolCallsContainer);
+				text += "\n```\n" + displayLines.join("\n");
+				if (remaining > 0) {
+					text += `\n... (${remaining} more lines)`;
 				}
-				if (toolCalls.length > 0) {
-					this.toolCallsContainer = new Container();
-					for (const toolCall of toolCalls) {
-						const argsStr =
-							typeof toolCall.arguments === "string" ? toolCall.arguments : JSON.stringify(toolCall.arguments);
-						this.toolCallsContainer.addChild(new Text(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)));
-					}
-					this.addChild(this.toolCallsContainer);
+				text += "\n```";
+
+				if (result.isError) {
+					text += " ❌";
 				}
+			}
+		} else if (toolName === "write") {
+			const path = args.path || "";
+			const content = args.content || "";
+			const lines = content.split("\n");
+			text = `**write** \`${path}\` (${lines.length} lines)`;
+			if (result) {
+				text += result.isError ? " ❌" : " ✓";
+			}
+		} else if (toolName === "edit") {
+			const path = args.path || "";
+			text = `**edit** \`${path}\``;
+			if (result) {
+				text += result.isError ? " ❌" : " ✓";
+			}
+		} else {
+			// Generic tool
+			text = `**${toolName}**\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``;
+			if (result) {
+				text += `\n\`\`\`\n${result.output}\n\`\`\``;
+				text += result.isError ? " ❌" : " ✓";
 			}
 		}
+
+		return text;
 	}
 }
 
@@ -107,9 +169,11 @@ export class TuiRenderer {
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 
-	// Message tracking
-	private lastStableMessageCount = 0;
+	// Streaming message tracking
 	private streamingComponent: StreamingMessageComponent | null = null;
+
+	// Tool execution tracking: toolCallId -> { component, toolName, args }
+	private pendingTools = new Map<string, { component: ToolExecutionComponent; toolName: string; args: any }>();
 
 	constructor() {
 		this.ui = new TUI(new ProcessTerminal());
@@ -127,20 +191,16 @@ export class TuiRenderer {
 
 		// Add header with instructions
 		const header = new Text(
-			chalk.blueBright(">> coding-agent interactive <<") +
-				"\n" +
-				chalk.dim("Press Escape to interrupt while processing") +
-				"\n" +
-				chalk.dim("Press CTRL+C to clear the text editor") +
-				"\n" +
-				chalk.dim("Press CTRL+C twice quickly to exit"),
+			">> coding-agent interactive <<\n" +
+				"Press Escape to interrupt while processing\n" +
+				"Press CTRL+C to clear the text editor\n" +
+				"Press CTRL+C twice quickly to exit\n",
 		);
 
 		// Setup UI layout
 		this.ui.addChild(header);
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
-		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editor);
 		this.ui.setFocus(this.editor);
 
@@ -183,108 +243,146 @@ export class TuiRenderer {
 		this.isInitialized = true;
 	}
 
-	async handleStateUpdate(state: AgentState): Promise<void> {
+	async handleEvent(event: import("@mariozechner/pi-agent").AgentEvent, _state: AgentState): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}
 
-		// Count stable messages (exclude the streaming one if streaming)
-		const stableMessageCount = state.isStreaming ? state.messages.length - 1 : state.messages.length;
-
-		// Add any NEW stable messages
-		if (stableMessageCount > this.lastStableMessageCount) {
-			for (let i = this.lastStableMessageCount; i < stableMessageCount; i++) {
-				const message = state.messages[i];
-				this.addMessageToChat(message);
-			}
-			this.lastStableMessageCount = stableMessageCount;
-		}
-
-		// Handle streaming message
-		if (state.isStreaming) {
-			const streamingMessage = state.messages[state.messages.length - 1];
-
-			// Show loading animation if we just started streaming
-			if (!this.loadingAnimation) {
+		switch (event.type) {
+			case "agent_start":
+				// Show loading animation
 				this.editor.disableSubmit = true;
+				// Stop old loader before clearing
+				if (this.loadingAnimation) {
+					this.loadingAnimation.stop();
+				}
 				this.statusContainer.clear();
-				this.loadingAnimation = new Loader(this.ui);
+				this.loadingAnimation = new Loader(this.ui, "Working...");
 				this.statusContainer.addChild(this.loadingAnimation);
+				this.ui.requestRender();
+				break;
+
+			case "message_start":
+				if (event.message.role === "user") {
+					// Show user message immediately and clear editor
+					this.addMessageToChat(event.message);
+					this.editor.setText("");
+					this.ui.requestRender();
+				} else if (event.message.role === "assistant") {
+					// Create streaming component for assistant messages
+					this.streamingComponent = new StreamingMessageComponent();
+					this.chatContainer.addChild(this.streamingComponent);
+					this.streamingComponent.updateContent(event.message);
+					this.ui.requestRender();
+				}
+				break;
+
+			case "message_update":
+				// Update streaming component
+				if (this.streamingComponent && event.message.role === "assistant") {
+					this.streamingComponent.updateContent(event.message);
+					this.ui.requestRender();
+				}
+				break;
+
+			case "message_end":
+				// Skip user messages (already shown in message_start)
+				if (event.message.role === "user") {
+					break;
+				}
+				if (this.streamingComponent && event.message.role === "assistant") {
+					this.chatContainer.removeChild(this.streamingComponent);
+					this.streamingComponent = null;
+				}
+				// Show final assistant message
+				this.addMessageToChat(event.message);
+				this.ui.requestRender();
+				break;
+
+			case "tool_execution_start": {
+				// Create tool execution component and add it
+				const component = new ToolExecutionComponent(event.toolName, event.args);
+				this.chatContainer.addChild(component);
+				this.pendingTools.set(event.toolCallId, { component, toolName: event.toolName, args: event.args });
+				this.ui.requestRender();
+				break;
 			}
 
-			// Create or update streaming component
-			if (!this.streamingComponent) {
-				this.streamingComponent = new StreamingMessageComponent();
-				this.chatContainer.addChild(this.streamingComponent);
-			}
-			this.streamingComponent.updateContent(streamingMessage);
-		} else {
-			// Streaming stopped
-			if (this.loadingAnimation) {
-				this.loadingAnimation.stop();
-				this.loadingAnimation = null;
-				this.statusContainer.clear();
-			}
-
-			if (this.streamingComponent) {
-				this.chatContainer.removeChild(this.streamingComponent);
-				this.streamingComponent = null;
+			case "tool_execution_end": {
+				// Update the existing tool component with the result
+				const pending = this.pendingTools.get(event.toolCallId);
+				if (pending) {
+					// Re-render the component with result
+					this.chatContainer.removeChild(pending.component);
+					const updatedComponent = new ToolExecutionComponent(pending.toolName, pending.args, {
+						output: typeof event.result === "string" ? event.result : event.result.output,
+						isError: event.isError,
+					});
+					this.chatContainer.addChild(updatedComponent);
+					this.pendingTools.delete(event.toolCallId);
+					this.ui.requestRender();
+				}
+				break;
 			}
 
-			this.editor.disableSubmit = false;
+			case "agent_end":
+				// Stop loading animation
+				if (this.loadingAnimation) {
+					this.loadingAnimation.stop();
+					this.loadingAnimation = null;
+					this.statusContainer.clear();
+				}
+				if (this.streamingComponent) {
+					this.chatContainer.removeChild(this.streamingComponent);
+					this.streamingComponent = null;
+				}
+				this.pendingTools.clear();
+				this.editor.disableSubmit = false;
+				this.ui.requestRender();
+				break;
 		}
-
-		this.ui.requestRender();
 	}
 
 	private addMessageToChat(message: Message): void {
 		if (message.role === "user") {
-			this.chatContainer.addChild(new Text(chalk.green("[user]")));
 			const userMsg = message as any;
-			const textContent = userMsg.content?.map((c: any) => c.text || "").join("") || message.content || "";
-			this.chatContainer.addChild(new Text(textContent));
-			this.chatContainer.addChild(new Spacer(1));
+			// Extract text content from content blocks
+			const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
+			const textContent = textBlocks.map((c: any) => c.text).join("");
+			if (textContent) {
+				// User messages with dark gray background
+				this.chatContainer.addChild(new Markdown(textContent, undefined, undefined, { r: 52, g: 53, b: 65 }));
+			}
 		} else if (message.role === "assistant") {
-			this.chatContainer.addChild(new Text(chalk.hex("#FFA500")("[assistant]")));
 			const assistantMsg = message as AssistantMessage;
 
-			// Render text content
+			// Render text content first (tool calls handled by events)
 			const textContent = assistantMsg.content
 				.filter((c) => c.type === "text")
 				.map((c) => c.text)
 				.join("");
 			if (textContent) {
+				// Assistant messages with no background
 				this.chatContainer.addChild(new Markdown(textContent));
 			}
 
-			// Render tool calls
-			const toolCalls = assistantMsg.content.filter((c) => c.type === "toolCall");
-			for (const toolCall of toolCalls) {
-				const argsStr =
-					typeof toolCall.arguments === "string" ? toolCall.arguments : JSON.stringify(toolCall.arguments);
-				this.chatContainer.addChild(new Text(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)));
+			// Check if aborted - show after partial content
+			if (assistantMsg.stopReason === "aborted") {
+				// Show red "Aborted" message after partial content
+				const abortedText = new Text(chalk.red("Aborted"));
+				this.chatContainer.addChild(abortedText);
+				return;
 			}
 
-			this.chatContainer.addChild(new Spacer(1));
-		} else if (message.role === "toolResult") {
-			const toolResultMsg = message as any;
-			const output = toolResultMsg.result?.output || toolResultMsg.result || "";
-
-			// Truncate long outputs
-			const lines = output.split("\n");
-			const maxLines = 10;
-			const truncated = lines.length > maxLines;
-			const toShow = truncated ? lines.slice(0, maxLines) : lines;
-
-			for (const line of toShow) {
-				this.chatContainer.addChild(new Text(chalk.gray(line)));
+			if (assistantMsg.stopReason === "error") {
+				// Show red error message after partial content
+				const errorMsg = assistantMsg.errorMessage || "Unknown error";
+				const errorText = new Text(chalk.red(`Error: ${errorMsg}`));
+				this.chatContainer.addChild(errorText);
+				return;
 			}
-
-			if (truncated) {
-				this.chatContainer.addChild(new Text(chalk.dim(`... (${lines.length - maxLines} more lines)`)));
-			}
-			this.chatContainer.addChild(new Spacer(1));
 		}
+		// Note: tool calls and results are now handled via tool_execution_start/end events
 	}
 
 	async getUserInput(): Promise<string> {
@@ -303,7 +401,7 @@ export class TuiRenderer {
 	clearEditor(): void {
 		this.editor.setText("");
 		this.statusContainer.clear();
-		const hint = new Text(chalk.dim("Press Ctrl+C again to exit"));
+		const hint = new Text("Press Ctrl+C again to exit");
 		this.statusContainer.addChild(hint);
 		this.ui.requestRender();
 

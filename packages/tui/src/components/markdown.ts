@@ -1,7 +1,7 @@
-import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import { marked, type Token } from "marked";
 import type { Component } from "../tui.js";
+import { visibleWidth } from "../utils.js";
 
 type Color =
 	| "black"
@@ -109,8 +109,8 @@ export class Markdown implements Component {
 		const paddedLines: string[] = [];
 
 		for (const line of wrappedLines) {
-			// Calculate visible length (strip ANSI codes)
-			const visibleLength = stripVTControlCharacters(line).length;
+			// Calculate visible length
+			const visibleLength = visibleWidth(line);
 			// Right padding to fill to width (accounting for left padding and content)
 			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
 			const rightPad = " ".repeat(rightPadLength);
@@ -328,11 +328,25 @@ export class Markdown implements Component {
 			return [""];
 		}
 
-		// If line fits within width, return as-is
-		const visibleLength = stripVTControlCharacters(line).length;
-		if (visibleLength <= width) {
-			return [line];
+		// Split by newlines first - wrap each line individually
+		const splitLines = line.split("\n");
+		for (const splitLine of splitLines) {
+			const visibleLength = visibleWidth(splitLine);
+
+			if (visibleLength <= width) {
+				wrapped.push(splitLine);
+				continue;
+			}
+
+			// This line needs wrapping
+			wrapped.push(...this.wrapSingleLine(splitLine, width));
 		}
+
+		return wrapped.length > 0 ? wrapped : [""];
+	}
+
+	private wrapSingleLine(line: string, width: number): string[] {
+		const wrapped: string[] = [];
 
 		// Track active ANSI codes to preserve them across wrapped lines
 		const activeAnsiCodes: string[] = [];
@@ -381,8 +395,10 @@ export class Markdown implements Component {
 					}
 					currentLength = 0;
 				}
-				currentLine += line[i];
-				currentLength++;
+				const char = line[i];
+				currentLine += char;
+				// Count actual terminal column width, not string length
+				currentLength += visibleWidth(char);
 				i++;
 			}
 		}

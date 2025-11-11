@@ -40,7 +40,8 @@
 		"@types/mime-types": "^2.1.4",
 		"chalk": "^5.5.0",
 		"marked": "^15.0.12",
-		"mime-types": "^3.0.1"
+		"mime-types": "^3.0.1",
+		"string-width": "^8.1.0"
 	},
 	"devDependencies": {
 		"@xterm/headless": "^5.5.0",

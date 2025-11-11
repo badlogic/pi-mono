@@ -116,11 +116,10 @@ async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager)
 		agent.abort();
 	});
 
-	// Subscribe to agent state updates
+	// Subscribe to agent events
 	agent.subscribe(async (event) => {
-		if (event.type === "state-update") {
-			await renderer.handleStateUpdate(event.state);
-		}
+		// Pass all events to the renderer
+		await renderer.handleEvent(event, agent.state);
 	});
 
 	// Interactive loop
@@ -168,8 +167,8 @@ export async function main(args: string[]) {
 	const sessionManager = new SessionManager(parsed.continue);
 
 	// Determine provider and model
-	const provider = (parsed.provider || "google") as any;
-	const modelId = parsed.model || "gemini-2.5-flash";
+	const provider = (parsed.provider || "anthropic") as any;
+	const modelId = parsed.model || "claude-sonnet-4-5";
 
 	// Get API key
 	let apiKey = parsed.apiKey;
@@ -177,7 +176,7 @@ export async function main(args: string[]) {
 		const envVarMap: Record<string, string> = {
 			google: "GEMINI_API_KEY",
 			openai: "OPENAI_API_KEY",
-			anthropic: "ANTHROPIC_API_KEY",
+			anthropic: "ANTHROPIC_OAUTH_TOKEN",
 			xai: "XAI_API_KEY",
 			groq: "GROQ_API_KEY",
 			cerebras: "CEREBRAS_API_KEY",
@@ -221,20 +220,14 @@ export async function main(args: string[]) {
 	// Start session
 	sessionManager.startSession(agent.state);
 
-	// Subscribe to state updates to save messages
+	// Subscribe to agent events to save messages and log events
 	agent.subscribe((event) => {
-		if (event.type === "state-update") {
-			// Save any new messages
-			const currentMessages = event.state.messages;
-			const loadedMessages = sessionManager.loadMessages();
-
-			if (currentMessages.length > loadedMessages.length) {
-				for (let i = loadedMessages.length; i < currentMessages.length; i++) {
-					sessionManager.saveMessage(currentMessages[i]);
-				}
-			}
+		// Save messages on completion
+		if (event.type === "message_end") {
+			sessionManager.saveMessage(event.message);
 		}
 
+		// Log all events
 		sessionManager.saveEvent(event);
 	});
 

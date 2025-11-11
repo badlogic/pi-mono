@@ -17,4 +17,6 @@ export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
-export { Component, Container, TUI } from "./tui.js";
+export { type Component, Container, TUI } from "./tui.js";
+// Utilities
+export { visibleWidth } from "./utils.js";

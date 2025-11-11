@@ -1,5 +1,5 @@
-import { stripVTControlCharacters } from "node:util";
 import type { Component } from "../tui.js";
+import { visibleWidth } from "../utils.js";
 
 /**
  * Input component - single-line text input with horizontal scrolling
@@ -127,8 +127,8 @@ export class Input implements Component {
 		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
 		const textWithCursor = beforeCursor + cursorChar + afterCursor;
 
-		// Calculate visual width (strip ANSI codes to measure actual displayed characters)
-		const visualLength = stripVTControlCharacters(textWithCursor).length;
+		// Calculate visual width
+		const visualLength = visibleWidth(textWithCursor);
 		const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
 		const line = prompt + textWithCursor + padding;
 

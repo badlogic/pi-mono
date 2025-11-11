@@ -3,6 +3,7 @@
  */
 
 import type { Terminal } from "./terminal.js";
+import { visibleWidth } from "./utils.js";
 
 /**
  * Component interface - all components must implement this
@@ -20,6 +21,8 @@ export interface Component {
 	 */
 	handleInput?(data: string): void;
 }
+
+export { visibleWidth };
 
 /**
  * Container - a component that contains other components
@@ -211,6 +214,9 @@ export class TUI extends Container {
 		// Render from first changed line to end
 		for (let i = firstChanged; i < newLines.length; i++) {
 			if (i > firstChanged) buffer += "\r\n";
+			if (visibleWidth(newLines[i]) > width) {
+				throw new Error("Rendered line exceeds terminal width");
+			}
 			buffer += newLines[i];
 		}
 

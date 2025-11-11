@@ -1,5 +1,5 @@
-import { stripVTControlCharacters } from "node:util";
 import type { Component } from "../tui.js";
+import { visibleWidth } from "../utils.js";
 
 /**
  * Text component - displays multi-line text with word wrapping
@@ -50,7 +50,10 @@ export class Text implements Component {
 		const textLines = this.text.split("\n");
 
 		for (const line of textLines) {
-			if (line.length <= contentWidth) {
+			// Measure visible length (strip ANSI codes)
+			const visibleLineLength = visibleWidth(line);
+
+			if (visibleLineLength <= contentWidth) {
 				lines.push(line);
 			} else {
 				// Word wrap
@@ -58,9 +61,12 @@ export class Text implements Component {
 				let currentLine = "";
 
 				for (const word of words) {
-					if (currentLine.length === 0) {
+					const currentVisible = visibleWidth(currentLine);
+					const wordVisible = visibleWidth(word);
+
+					if (currentVisible === 0) {
 						currentLine = word;
-					} else if (currentLine.length + 1 + word.length <= contentWidth) {
+					} else if (currentVisible + 1 + wordVisible <= contentWidth) {
 						currentLine += " " + word;
 					} else {
 						lines.push(currentLine);
@@ -80,7 +86,7 @@ export class Text implements Component {
 
 		for (const line of lines) {
 			// Calculate visible length (strip ANSI codes)
-			const visibleLength = stripVTControlCharacters(line).length;
+			const visibleLength = visibleWidth(line);
 			// Right padding to fill to width (accounting for left padding and content)
 			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
 			const rightPad = " ".repeat(rightPadLength);

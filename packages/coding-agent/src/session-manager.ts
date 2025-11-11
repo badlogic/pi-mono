@@ -58,7 +58,7 @@ export class SessionManager {
 		const cwd = process.cwd();
 		const safePath = "--" + cwd.replace(/^\//, "").replace(/\//g, "-") + "--";
 
-		const configDir = resolve(process.env.CODING_AGENT_DIR || join(homedir(), ".coding-agent"));
+		const configDir = resolve(process.env.CODING_AGENT_DIR || join(homedir(), ".pi/agent/"));
 		const sessionDir = join(configDir, "sessions", safePath);
 		if (!existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });

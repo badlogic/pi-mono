@@ -36,30 +36,28 @@ describe("Agent", () => {
 		expect(agent.state.thinkingLevel).toBe("low");
 	});
 
-	it("should subscribe to state updates", () => {
+	it("should subscribe to events", () => {
 		const agent = new Agent({
 			transport: new ProviderTransport(),
 		});
 
-		let updateCount = 0;
-		const unsubscribe = agent.subscribe((event) => {
-			if (event.type === "state-update") {
-				updateCount++;
-			}
+		let eventCount = 0;
+		const unsubscribe = agent.subscribe((_event) => {
+			eventCount++;
 		});
 
-		// Initial state update on subscribe
-		expect(updateCount).toBe(1);
+		// No initial event on subscribe
+		expect(eventCount).toBe(0);
 
-		// Update state
+		// State mutators don't emit events
 		agent.setSystemPrompt("Test prompt");
-		expect(updateCount).toBe(2);
+		expect(eventCount).toBe(0);
 		expect(agent.state.systemPrompt).toBe("Test prompt");
 
 		// Unsubscribe should work
 		unsubscribe();
 		agent.setSystemPrompt("Another prompt");
-		expect(updateCount).toBe(2); // Should not increase
+		expect(eventCount).toBe(0); // Should not increase
 	});
 
 	it("should update state with mutators", () => {

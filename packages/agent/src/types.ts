@@ -1,4 +1,11 @@
-import type { AgentTool, AssistantMessage, Message, Model, UserMessage } from "@mariozechner/pi-ai";
+import type {
+	AgentTool,
+	AssistantMessage,
+	AssistantMessageEvent,
+	Message,
+	Model,
+	UserMessage,
+} from "@mariozechner/pi-ai";
 
 /**
  * Attachment type definition.
@@ -71,5 +78,20 @@ export interface AgentState {
 
 /**
  * Events emitted by the Agent for UI updates.
+ * These events provide fine-grained lifecycle information for messages, turns, and tool executions.
  */
-export type AgentEvent = { type: "state-update"; state: AgentState } | { type: "started" } | { type: "completed" };
+export type AgentEvent =
+	// Agent lifecycle
+	| { type: "agent_start" }
+	| { type: "agent_end"; messages: AppMessage[] }
+	// Turn lifecycle - a turn is one assistant response + any tool calls/results
+	| { type: "turn_start" }
+	| { type: "turn_end"; message: AppMessage; toolResults: AppMessage[] }
+	// Message lifecycle - emitted for user, assistant, and toolResult messages
+	| { type: "message_start"; message: AppMessage }
+	// Only emitted for assistant messages during streaming
+	| { type: "message_update"; message: AppMessage; assistantMessageEvent: AssistantMessageEvent }
+	| { type: "message_end"; message: AppMessage }
+	// Tool execution lifecycle
+	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
+	| { type: "tool_execution_end"; toolCallId: string; toolName: string; result: any; isError: boolean };

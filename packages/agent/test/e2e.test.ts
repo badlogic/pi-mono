@@ -167,29 +167,26 @@ async function stateUpdates(model: Model<any>) {
 		}),
 	});
 
-	const stateSnapshots: Array<{ isStreaming: boolean; messageCount: number; hasStreamMessage: boolean }> = [];
+	const events: Array<string> = [];
 
 	agent.subscribe((event) => {
-		if (event.type === "state-update") {
-			stateSnapshots.push({
-				isStreaming: event.state.isStreaming,
-				messageCount: event.state.messages.length,
-				hasStreamMessage: event.state.streamMessage !== null,
-			});
-		}
+		events.push(event.type);
 	});
 
 	await agent.prompt("Count from 1 to 5.");
 
-	const streamingStates = stateSnapshots.filter((s) => s.isStreaming);
-	const nonStreamingStates = stateSnapshots.filter((s) => !s.isStreaming);
+	// Should have received lifecycle events
+	expect(events).toContain("agent_start");
+	expect(events).toContain("agent_end");
+	expect(events).toContain("message_start");
+	expect(events).toContain("message_end");
+	// May have message_update events during streaming
+	const hasMessageUpdates = events.some((e) => e === "message_update");
+	expect(hasMessageUpdates).toBe(true);
 
-	expect(streamingStates.length).toBeGreaterThan(0);
-	expect(nonStreamingStates.length).toBeGreaterThan(0);
-
-	const finalState = stateSnapshots[stateSnapshots.length - 1];
-	expect(finalState.isStreaming).toBe(false);
-	expect(finalState.messageCount).toBe(2);
+	// Check final state
+	expect(agent.state.isStreaming).toBe(false);
+	expect(agent.state.messages.length).toBe(2); // User message + assistant response
 }
 
 async function multiTurnConversation(model: Model<any>) {
