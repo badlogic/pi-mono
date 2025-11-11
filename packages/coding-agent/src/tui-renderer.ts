@@ -285,6 +285,7 @@ export class TuiRenderer {
 	private editor: CustomEditor;
 	private footer: FooterComponent;
 	private agent: Agent;
+	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | null = null;
@@ -300,8 +301,9 @@ export class TuiRenderer {
 	// Track assistant message with tool calls that needs stats shown after tools complete
 	private deferredStats: { usage: any; toolCallIds: Set<string> } | null = null;
 
-	constructor(agent: Agent) {
+	constructor(agent: Agent, version: string) {
 		this.agent = agent;
+		this.version = version;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
@@ -333,7 +335,7 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with logo and instructions
-		const logo = chalk.cyan("==[ ") + chalk.bold.cyan("pi") + chalk.cyan(" ]==");
+		const logo = chalk.bold.cyan("pi") + chalk.dim(` v${this.version}`);
 		const instructions = chalk.dim(
 			"esc" +
 				chalk.gray(" to interrupt") +

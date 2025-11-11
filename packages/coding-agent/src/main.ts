@@ -1,9 +1,18 @@
 import { Agent, ProviderTransport } from "@mariozechner/pi-agent";
 import { getModel } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { SessionManager } from "./session-manager.js";
 import { codingTools } from "./tools/index.js";
 import { TuiRenderer } from "./tui-renderer.js";
+
+// Get version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const VERSION = packageJson.version;
 
 interface Args {
 	provider?: string;
@@ -105,8 +114,8 @@ Guidelines:
 
 Current directory: ${process.cwd()}`;
 
-async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager): Promise<void> {
-	const renderer = new TuiRenderer(agent);
+async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager, version: string): Promise<void> {
+	const renderer = new TuiRenderer(agent, version);
 
 	// Initialize TUI
 	await renderer.init();
@@ -238,7 +247,7 @@ export async function main(args: string[]) {
 	const isInteractive = parsed.messages.length === 0;
 
 	if (isInteractive) {
-		await runInteractiveMode(agent, sessionManager);
+		await runInteractiveMode(agent, sessionManager, VERSION);
 	} else {
 		await runSingleShotMode(agent, sessionManager, parsed.messages);
 	}
