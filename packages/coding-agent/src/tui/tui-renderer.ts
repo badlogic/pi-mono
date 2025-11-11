@@ -199,7 +199,7 @@ export class TuiRenderer {
 					this.editor.setText("");
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					// Create streaming component for assistant messages
+					// Create streaming component for assistant messages (has its own spacer)
 					this.streamingComponent = new StreamingMessageComponent();
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(event.message);
@@ -303,6 +303,9 @@ export class TuiRenderer {
 			}
 		} else if (message.role === "assistant") {
 			const assistantMsg = message as AssistantMessage;
+
+			// Add spacer before assistant message
+			this.chatContainer.addChild(new Spacer(1));
 
 			// Render content in order
 			for (const content of assistantMsg.content) {

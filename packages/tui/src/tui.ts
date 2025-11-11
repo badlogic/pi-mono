@@ -210,7 +210,7 @@ export class TUI extends Container {
 		for (let i = firstChanged; i < newLines.length; i++) {
 			if (i > firstChanged) buffer += "\r\n";
 			if (visibleWidth(newLines[i]) > width) {
-				throw new Error("Rendered line exceeds terminal width");
+				throw new Error(`Rendered line ${i} exceeds terminal width\n\n${newLines[i]}`);
 			}
 			buffer += newLines[i];
 		}

@@ -1,18 +1,21 @@
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
-import { Container, Markdown, Text } from "@mariozechner/pi-tui";
+import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 
 /**
  * Component that renders a streaming message with live updates
  */
 export class StreamingMessageComponent extends Container {
+	private spacer: Spacer;
 	private markdown: Markdown;
 	private statsText: Text;
 
 	constructor() {
 		super();
+		this.spacer = new Spacer(1);
 		this.markdown = new Markdown("");
 		this.statsText = new Text("", 1, 0);
+		this.addChild(this.spacer);
 		this.addChild(this.markdown);
 		this.addChild(this.statsText);
 	}
