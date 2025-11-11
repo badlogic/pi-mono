@@ -34,6 +34,18 @@ export interface SessionEventEntry {
 	event: AgentEvent;
 }
 
+export interface ThinkingLevelChangeEntry {
+	type: "thinking_level_change";
+	timestamp: string;
+	thinkingLevel: string;
+}
+
+export interface ModelChangeEntry {
+	type: "model_change";
+	timestamp: string;
+	model: string;
+}
+
 export class SessionManager {
 	private sessionId!: string;
 	private sessionFile!: string;
@@ -139,6 +151,24 @@ export class SessionManager {
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
 	}
 
+	saveThinkingLevelChange(thinkingLevel: string): void {
+		const entry: ThinkingLevelChangeEntry = {
+			type: "thinking_level_change",
+			timestamp: new Date().toISOString(),
+			thinkingLevel,
+		};
+		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+	}
+
+	saveModelChange(model: string): void {
+		const entry: ModelChangeEntry = {
+			type: "model_change",
+			timestamp: new Date().toISOString(),
+			model,
+		};
+		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+	}
+
 	loadMessages(): any[] {
 		if (!existsSync(this.sessionFile)) return [];
 
@@ -164,12 +194,14 @@ export class SessionManager {
 
 		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
 
-		// Find the most recent session header with thinking level
+		// Find the most recent thinking level (from session header or change event)
 		let lastThinkingLevel = "off";
 		for (const line of lines) {
 			try {
 				const entry = JSON.parse(line);
 				if (entry.type === "session" && entry.thinkingLevel) {
+					lastThinkingLevel = entry.thinkingLevel;
+				} else if (entry.type === "thinking_level_change" && entry.thinkingLevel) {
 					lastThinkingLevel = entry.thinkingLevel;
 				}
 			} catch {

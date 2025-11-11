@@ -11,6 +11,7 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import type { SessionManager } from "../session-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { FooterComponent } from "./footer.js";
@@ -29,6 +30,7 @@ export class TuiRenderer {
 	private editorContainer: Container; // Container to swap between editor and selector
 	private footer: FooterComponent;
 	private agent: Agent;
+	private sessionManager: SessionManager;
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
@@ -48,8 +50,9 @@ export class TuiRenderer {
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
-	constructor(agent: Agent, version: string) {
+	constructor(agent: Agent, sessionManager: SessionManager, version: string) {
 		this.agent = agent;
+		this.sessionManager = sessionManager;
 		this.version = version;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
@@ -408,6 +411,9 @@ export class TuiRenderer {
 			(level) => {
 				// Apply the selected thinking level
 				this.agent.setThinkingLevel(level);
+
+				// Save thinking level change to session
+				this.sessionManager.saveThinkingLevelChange(level);
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));

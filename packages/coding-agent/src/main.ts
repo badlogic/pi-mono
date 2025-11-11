@@ -114,8 +114,8 @@ Guidelines:
 
 Current directory: ${process.cwd()}`;
 
-async function runInteractiveMode(agent: Agent, _sessionManager: SessionManager, version: string): Promise<void> {
-	const renderer = new TuiRenderer(agent, version);
+async function runInteractiveMode(agent: Agent, sessionManager: SessionManager, version: string): Promise<void> {
+	const renderer = new TuiRenderer(agent, sessionManager, version);
 
 	// Initialize TUI
 	await renderer.init();
