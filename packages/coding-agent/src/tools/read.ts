@@ -1,8 +1,9 @@
 import * as os from "node:os";
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
+import { constants } from "fs";
+import { access, readFile } from "fs/promises";
+import { resolve as resolvePath } from "path";
 
 /**
  * Expand ~ to home directory
@@ -27,18 +28,71 @@ export const readTool: AgentTool<typeof readSchema> = {
 	description: "Read the contents of a file. Returns the full file content as text.",
 	parameters: readSchema,
 	execute: async (_toolCallId: string, { path }: { path: string }, signal?: AbortSignal) => {
-		// Check if already aborted
-		if (signal?.aborted) {
-			throw new Error("Operation aborted");
-		}
+		const absolutePath = resolvePath(expandPath(path));
 
-		const absolutePath = resolve(expandPath(path));
+		return new Promise<{ output: string; details: undefined }>((resolve, reject) => {
+			// Check if already aborted
+			if (signal?.aborted) {
+				reject(new Error("Operation aborted"));
+				return;
+			}
 
-		if (!existsSync(absolutePath)) {
-			throw new Error(`File not found: ${path}`);
-		}
+			let aborted = false;
 
-		const content = readFileSync(absolutePath, "utf-8");
-		return { output: content, details: undefined };
+			// Set up abort handler
+			const onAbort = () => {
+				aborted = true;
+				reject(new Error("Operation aborted"));
+			};
+
+			if (signal) {
+				signal.addEventListener("abort", onAbort, { once: true });
+			}
+
+			// Perform the read operation
+			(async () => {
+				try {
+					// Check if file exists
+					try {
+						await access(absolutePath, constants.R_OK);
+					} catch {
+						if (signal) {
+							signal.removeEventListener("abort", onAbort);
+						}
+						reject(new Error(`File not found: ${path}`));
+						return;
+					}
+
+					// Check if aborted before reading
+					if (aborted) {
+						return;
+					}
+
+					// Read the file
+					const content = await readFile(absolutePath, "utf-8");
+
+					// Check if aborted after reading
+					if (aborted) {
+						return;
+					}
+
+					// Clean up abort handler
+					if (signal) {
+						signal.removeEventListener("abort", onAbort);
+					}
+
+					resolve({ output: content, details: undefined });
+				} catch (error: any) {
+					// Clean up abort handler
+					if (signal) {
+						signal.removeEventListener("abort", onAbort);
+					}
+
+					if (!aborted) {
+						reject(error);
+					}
+				}
+			})();
+		});
 	},
 };
