@@ -34,31 +34,40 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
+		// Check if there's any actual content (text or thinking)
+		let hasContent = false;
+
 		// Render content in order
 		for (const content of message.content) {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
+				hasContent = true;
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Thinking traces in dark gray italic
 				// Apply styling to entire block so wrapping preserves it
 				const thinkingText = chalk.gray.italic(content.thinking);
 				this.contentContainer.addChild(new Text(thinkingText, 1, 0));
 				this.contentContainer.addChild(new Spacer(1));
+				hasContent = true;
 			}
 		}
 
 		// Check if aborted - show after partial content
 		if (message.stopReason === "aborted") {
 			this.contentContainer.addChild(new Text(chalk.red("Aborted")));
+			hasContent = true;
 		} else if (message.stopReason === "error") {
 			const errorMsg = message.errorMessage || "Unknown error";
 			this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`)));
+			hasContent = true;
 		}
 
-		// Update stats
-		this.updateStats(message.usage);
+		// Only update stats if there's actual content (not just tool calls)
+		if (hasContent) {
+			this.updateStats(message.usage);
+		}
 	}
 
 	updateStats(usage: any): void {
