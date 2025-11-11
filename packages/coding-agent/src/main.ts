@@ -230,7 +230,7 @@ export async function main(args: string[]) {
 
 		// Load and restore thinking level
 		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
-		if (thinkingLevel && thinkingLevel !== "off") {
+		if (thinkingLevel) {
 			agent.setThinkingLevel(thinkingLevel);
 			console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
 		}

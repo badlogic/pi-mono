@@ -61,6 +61,7 @@ export class SelectList implements Component {
 			if (isSelected) {
 				// Use arrow indicator for selection
 				const prefix = chalk.blue("→ ");
+				const prefixWidth = 2; // "→ " is 2 characters visually
 				const displayValue = item.label || item.value;
 
 				if (item.description && width > 40) {
@@ -69,8 +70,8 @@ export class SelectList implements Component {
 					const truncatedValue = displayValue.substring(0, maxValueLength);
 					const spacing = " ".repeat(Math.max(1, 32 - truncatedValue.length));
 
-					// Calculate remaining space for description
-					const descriptionStart = prefix.length + truncatedValue.length + spacing.length - 2; // -2 for arrow color codes
+					// Calculate remaining space for description using visible widths
+					const descriptionStart = prefixWidth + truncatedValue.length + spacing.length;
 					const remainingWidth = width - descriptionStart - 2; // -2 for safety
 
 					if (remainingWidth > 10) {
@@ -78,12 +79,12 @@ export class SelectList implements Component {
 						line = prefix + chalk.blue(truncatedValue) + chalk.gray(spacing + truncatedDesc);
 					} else {
 						// Not enough space for description
-						const maxWidth = width - 4; // 2 for arrow + space, 2 for safety
+						const maxWidth = width - prefixWidth - 2;
 						line = prefix + chalk.blue(displayValue.substring(0, maxWidth));
 					}
 				} else {
 					// No description or not enough width
-					const maxWidth = width - 4; // 2 for arrow + space, 2 for safety
+					const maxWidth = width - prefixWidth - 2;
 					line = prefix + chalk.blue(displayValue.substring(0, maxWidth));
 				}
 			} else {
@@ -120,7 +121,11 @@ export class SelectList implements Component {
 
 		// Add scroll indicators if needed
 		if (startIndex > 0 || endIndex < this.filteredItems.length) {
-			const scrollInfo = chalk.gray(`  (${this.selectedIndex + 1}/${this.filteredItems.length})`);
+			const scrollText = `  (${this.selectedIndex + 1}/${this.filteredItems.length})`;
+			// Truncate if too long for terminal
+			const maxWidth = width - 2;
+			const truncated = scrollText.substring(0, maxWidth);
+			const scrollInfo = chalk.gray(truncated);
 			lines.push(scrollInfo);
 		}
 
