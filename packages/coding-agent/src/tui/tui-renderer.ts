@@ -215,6 +215,9 @@ export class TuiRenderer {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					const assistantMsg = event.message as AssistantMessage;
 
+					// Update streaming component with final message (includes stopReason)
+					this.streamingComponent.updateContent(assistantMsg);
+
 					// If message was aborted or errored, mark all pending tool components as failed
 					if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
 						const errorMessage =
