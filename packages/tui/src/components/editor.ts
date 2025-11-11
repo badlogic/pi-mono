@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import type { Component } from "../tui-new.js";
+import type { Component } from "../tui.js";
 import { SelectList } from "./select-list.js";
 
 interface EditorState {

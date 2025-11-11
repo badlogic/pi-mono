@@ -7,25 +7,14 @@ export {
 	CombinedAutocompleteProvider,
 	type SlashCommand,
 } from "./autocomplete.js";
-// Loading animation component
-export { LoadingAnimation } from "./components/loading-animation.js";
-// Markdown component
-export { MarkdownComponent } from "./components/markdown-component.js";
-// Select list component
+// Components
+export { Editor, type TextEditorConfig } from "./components/editor.js";
+export { Input } from "./components/input.js";
+export { Loader } from "./components/loader.js";
+export { Markdown } from "./components/markdown.js";
 export { type SelectItem, SelectList } from "./components/select-list.js";
-// Text component
-export { TextComponent } from "./components/text-component.js";
-// Text editor component
-export { TextEditor, type TextEditorConfig } from "./components/text-editor.js";
-// Whitespace component
-export { WhitespaceComponent } from "./components/whitespace-component.js";
+export { Spacer } from "./components/spacer.js";
+export { Text } from "./components/text.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
-export {
-	type Component,
-	type ComponentRenderResult,
-	Container,
-	getNextComponentId,
-	type Padding,
-	TUI,
-} from "./tui.js";
+export { Component, Container, TUI } from "./tui.js";

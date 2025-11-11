@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/ && cp -r scripts dist/",
+		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/ && cp -r scripts dist/",
 		"check": "biome check --write .",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

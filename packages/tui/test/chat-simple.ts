@@ -1,13 +1,14 @@
 /**
- * Simple chat interface demo using tui-new.ts
+ * Simple chat interface demo using tui.ts
  */
 
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
-import { Editor } from "../src/components-new/editor.js";
-import { Loader } from "../src/components-new/loader.js";
-import { Markdown } from "../src/components-new/markdown.js";
+import { Editor } from "../src/components/editor.js";
+import { Loader } from "../src/components/loader.js";
+import { Markdown } from "../src/components/markdown.js";
+import { Text } from "../src/components/text.js";
 import { ProcessTerminal } from "../src/terminal.js";
-import { Text, TUI } from "../src/tui-new.js";
+import { TUI } from "../src/tui.js";
 
 // Create terminal
 const terminal = new ProcessTerminal();
@@ -16,8 +17,9 @@ const terminal = new ProcessTerminal();
 const tui = new TUI(terminal);
 
 // Create chat container with some initial messages
-tui.addChild(new Text("Welcome to Simple Chat!"));
-tui.addChild(new Text("Type your messages below. Type '/' for commands. Press Ctrl+C to exit.\n"));
+tui.addChild(
+	new Text("Welcome to Simple Chat!\n\nType your messages below. Type '/' for commands. Press Ctrl+C to exit."),
+);
 
 // Create editor with autocomplete
 const editor = new Editor();

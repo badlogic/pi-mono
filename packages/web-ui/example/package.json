@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsgo --noEmit"
   },
   "dependencies": {
     "@mariozechner/mini-lit": "^0.1.7",

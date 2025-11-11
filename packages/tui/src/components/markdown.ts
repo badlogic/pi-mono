@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import { marked, type Token } from "marked";
-import type { Component } from "../tui-new.js";
+import type { Component } from "../tui.js";
 
 type Color =
 	| "black"

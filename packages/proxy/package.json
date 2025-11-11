@@ -12,7 +12,7 @@
 		"clean": "rm -rf dist",
 		"build": "tsc",
 		"check": "biome check --write .",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsgo --noEmit",
 		"dev": "tsx src/cors-proxy.ts 3001"
 	},
 	"dependencies": {

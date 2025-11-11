@@ -6,9 +6,9 @@
 	"main": "dist/index.js",
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json",
-		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
-		"check": "biome check --write .",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"check": "biome check --write . && tsgo --noEmit",
 		"test": "node --test --import tsx test/*.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

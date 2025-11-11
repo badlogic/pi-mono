@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { type Component, type ComponentRenderResult, getNextComponentId } from "../tui.js";
+import type { Component } from "../tui.js";
 
 export interface SelectItem {
 	value: string;
@@ -8,7 +8,6 @@ export interface SelectItem {
 }
 
 export class SelectList implements Component {
-	readonly id = getNextComponentId();
 	private items: SelectItem[] = [];
 	private filteredItems: SelectItem[] = [];
 	private selectedIndex: number = 0;
@@ -31,13 +30,13 @@ export class SelectList implements Component {
 		this.selectedIndex = 0;
 	}
 
-	render(width: number): ComponentRenderResult {
+	render(width: number): string[] {
 		const lines: string[] = [];
 
 		// If no items match filter, show message
 		if (this.filteredItems.length === 0) {
 			lines.push(chalk.gray("  No matching commands"));
-			return { lines, changed: true };
+			return lines;
 		}
 
 		// Calculate visible range with scrolling
@@ -121,7 +120,7 @@ export class SelectList implements Component {
 			lines.push(scrollInfo);
 		}
 
-		return { lines, changed: true };
+		return lines;
 	}
 
 	handleInput(keyData: string): void {

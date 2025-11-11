@@ -3,20 +3,46 @@ import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import {
 	CombinedAutocompleteProvider,
 	Container,
-	LoadingAnimation,
-	MarkdownComponent,
-	TextComponent,
-	TextEditor,
+	Editor,
+	Loader,
+	Markdown,
+	ProcessTerminal,
+	Spacer,
+	Text,
 	TUI,
-	WhitespaceComponent,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+
+/**
+ * Custom editor that handles Escape and Ctrl+C keys for coding-agent
+ */
+class CustomEditor extends Editor {
+	public onEscape?: () => void;
+	public onCtrlC?: () => void;
+
+	handleInput(data: string): void {
+		// Intercept Escape key
+		if (data === "\x1b" && this.onEscape) {
+			this.onEscape();
+			return;
+		}
+
+		// Intercept Ctrl+C
+		if (data === "\x03" && this.onCtrlC) {
+			this.onCtrlC();
+			return;
+		}
+
+		// Pass to parent for normal handling
+		super.handleInput(data);
+	}
+}
 
 /**
  * Component that renders a streaming message with live updates
  */
 class StreamingMessageComponent extends Container {
-	private textComponent: MarkdownComponent | null = null;
+	private textComponent: Markdown | null = null;
 	private toolCallsContainer: Container | null = null;
 	private currentContent = "";
 	private currentToolCalls: any[] = [];
@@ -41,7 +67,7 @@ class StreamingMessageComponent extends Container {
 					this.removeChild(this.textComponent);
 				}
 				if (textContent) {
-					this.textComponent = new MarkdownComponent(textContent);
+					this.textComponent = new Markdown(textContent);
 					this.addChild(this.textComponent);
 				}
 			}
@@ -58,9 +84,7 @@ class StreamingMessageComponent extends Container {
 					for (const toolCall of toolCalls) {
 						const argsStr =
 							typeof toolCall.arguments === "string" ? toolCall.arguments : JSON.stringify(toolCall.arguments);
-						this.toolCallsContainer.addChild(
-							new TextComponent(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)),
-						);
+						this.toolCallsContainer.addChild(new Text(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)));
 					}
 					this.addChild(this.toolCallsContainer);
 				}
@@ -76,10 +100,10 @@ export class TuiRenderer {
 	private ui: TUI;
 	private chatContainer: Container;
 	private statusContainer: Container;
-	private editor: TextEditor;
+	private editor: CustomEditor;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
-	private loadingAnimation: LoadingAnimation | null = null;
+	private loadingAnimation: Loader | null = null;
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 
@@ -88,10 +112,10 @@ export class TuiRenderer {
 	private streamingComponent: StreamingMessageComponent | null = null;
 
 	constructor() {
-		this.ui = new TUI();
+		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
-		this.editor = new TextEditor();
+		this.editor = new CustomEditor();
 
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider([], process.cwd());
@@ -102,7 +126,7 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with instructions
-		const header = new TextComponent(
+		const header = new Text(
 			chalk.blueBright(">> coding-agent interactive <<") +
 				"\n" +
 				chalk.dim("Press Escape to interrupt while processing") +
@@ -110,45 +134,38 @@ export class TuiRenderer {
 				chalk.dim("Press CTRL+C to clear the text editor") +
 				"\n" +
 				chalk.dim("Press CTRL+C twice quickly to exit"),
-			{ bottom: 1 },
 		);
 
 		// Setup UI layout
 		this.ui.addChild(header);
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
-		this.ui.addChild(new WhitespaceComponent(1));
+		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editor);
 		this.ui.setFocus(this.editor);
 
-		// Set up global key handler for Escape and Ctrl+C
-		this.ui.onGlobalKeyPress = (data: string): boolean => {
+		// Set up custom key handlers on the editor
+		this.editor.onEscape = () => {
 			// Intercept Escape key when processing
-			if (data === "\x1b" && this.loadingAnimation) {
-				if (this.onInterruptCallback) {
-					this.onInterruptCallback();
-				}
-				return false;
+			if (this.loadingAnimation && this.onInterruptCallback) {
+				this.onInterruptCallback();
 			}
+		};
 
+		this.editor.onCtrlC = () => {
 			// Handle Ctrl+C (raw mode sends \x03)
-			if (data === "\x03") {
-				const now = Date.now();
-				const timeSinceLastCtrlC = now - this.lastSigintTime;
+			const now = Date.now();
+			const timeSinceLastCtrlC = now - this.lastSigintTime;
 
-				if (timeSinceLastCtrlC < 500) {
-					// Second Ctrl+C within 500ms - exit
-					this.stop();
-					process.exit(0);
-				} else {
-					// First Ctrl+C - clear the editor
-					this.clearEditor();
-					this.lastSigintTime = now;
-				}
-				return false;
+			if (timeSinceLastCtrlC < 500) {
+				// Second Ctrl+C within 500ms - exit
+				this.stop();
+				process.exit(0);
+			} else {
+				// First Ctrl+C - clear the editor
+				this.clearEditor();
+				this.lastSigintTime = now;
 			}
-
-			return true;
 		};
 
 		// Handle editor submission
@@ -191,7 +208,7 @@ export class TuiRenderer {
 			if (!this.loadingAnimation) {
 				this.editor.disableSubmit = true;
 				this.statusContainer.clear();
-				this.loadingAnimation = new LoadingAnimation(this.ui);
+				this.loadingAnimation = new Loader(this.ui);
 				this.statusContainer.addChild(this.loadingAnimation);
 			}
 
@@ -222,12 +239,13 @@ export class TuiRenderer {
 
 	private addMessageToChat(message: Message): void {
 		if (message.role === "user") {
-			this.chatContainer.addChild(new TextComponent(chalk.green("[user]")));
+			this.chatContainer.addChild(new Text(chalk.green("[user]")));
 			const userMsg = message as any;
 			const textContent = userMsg.content?.map((c: any) => c.text || "").join("") || message.content || "";
-			this.chatContainer.addChild(new TextComponent(textContent, { bottom: 1 }));
+			this.chatContainer.addChild(new Text(textContent));
+			this.chatContainer.addChild(new Spacer(1));
 		} else if (message.role === "assistant") {
-			this.chatContainer.addChild(new TextComponent(chalk.hex("#FFA500")("[assistant]")));
+			this.chatContainer.addChild(new Text(chalk.hex("#FFA500")("[assistant]")));
 			const assistantMsg = message as AssistantMessage;
 
 			// Render text content
@@ -236,7 +254,7 @@ export class TuiRenderer {
 				.map((c) => c.text)
 				.join("");
 			if (textContent) {
-				this.chatContainer.addChild(new MarkdownComponent(textContent));
+				this.chatContainer.addChild(new Markdown(textContent));
 			}
 
 			// Render tool calls
@@ -244,10 +262,10 @@ export class TuiRenderer {
 			for (const toolCall of toolCalls) {
 				const argsStr =
 					typeof toolCall.arguments === "string" ? toolCall.arguments : JSON.stringify(toolCall.arguments);
-				this.chatContainer.addChild(new TextComponent(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)));
+				this.chatContainer.addChild(new Text(chalk.yellow(`[tool] ${toolCall.name}(${argsStr})`)));
 			}
 
-			this.chatContainer.addChild(new WhitespaceComponent(1));
+			this.chatContainer.addChild(new Spacer(1));
 		} else if (message.role === "toolResult") {
 			const toolResultMsg = message as any;
 			const output = toolResultMsg.result?.output || toolResultMsg.result || "";
@@ -259,13 +277,13 @@ export class TuiRenderer {
 			const toShow = truncated ? lines.slice(0, maxLines) : lines;
 
 			for (const line of toShow) {
-				this.chatContainer.addChild(new TextComponent(chalk.gray(line)));
+				this.chatContainer.addChild(new Text(chalk.gray(line)));
 			}
 
 			if (truncated) {
-				this.chatContainer.addChild(new TextComponent(chalk.dim(`... (${lines.length - maxLines} more lines)`)));
+				this.chatContainer.addChild(new Text(chalk.dim(`... (${lines.length - maxLines} more lines)`)));
 			}
-			this.chatContainer.addChild(new WhitespaceComponent(1));
+			this.chatContainer.addChild(new Spacer(1));
 		}
 	}
 
@@ -285,7 +303,7 @@ export class TuiRenderer {
 	clearEditor(): void {
 		this.editor.setText("");
 		this.statusContainer.clear();
-		const hint = new TextComponent(chalk.dim("Press Ctrl+C again to exit"));
+		const hint = new Text(chalk.dim("Press Ctrl+C again to exit"));
 		this.statusContainer.addChild(hint);
 		this.ui.requestRender();
 

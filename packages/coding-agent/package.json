@@ -13,9 +13,9 @@
 	],
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
-		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
-		"check": "tsc --noEmit",
+		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"check": "tsgo --noEmit",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

@@ -1,5 +1,6 @@
 import chalk from "chalk";
-import { Text, type TUI } from "../tui-new.js";
+import type { TUI } from "../tui.js";
+import { Text } from "./text.js";
 
 /**
  * Loader component that updates every 80ms with spinning animation
