@@ -21,8 +21,9 @@ class CustomEditor extends Editor {
 	public onCtrlC?: () => void;
 
 	handleInput(data: string): void {
-		// Intercept Escape key
-		if (data === "\x1b" && this.onEscape) {
+		// Intercept Escape key - but only if autocomplete is NOT active
+		// (let parent handle escape for autocomplete cancellation)
+		if (data === "\x1b" && this.onEscape && !this.isShowingAutocomplete()) {
 			this.onEscape();
 			return;
 		}

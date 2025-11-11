@@ -749,6 +749,10 @@ export class Editor implements Component {
 		this.autocompletePrefix = "";
 	}
 
+	public isShowingAutocomplete(): boolean {
+		return this.isAutocompleting;
+	}
+
 	private updateAutocomplete(): void {
 		if (!this.isAutocompleting || !this.autocompleteProvider) return;
 
