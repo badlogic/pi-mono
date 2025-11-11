@@ -42,11 +42,10 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Thinking traces in dark gray italic
-				const thinkingText = content.thinking
-					.split("\n")
-					.map((line) => chalk.gray.italic(line))
-					.join("\n");
+				// Apply styling to entire block so wrapping preserves it
+				const thinkingText = chalk.gray.italic(content.thinking);
 				this.contentContainer.addChild(new Text(thinkingText, 1, 0));
+				this.contentContainer.addChild(new Spacer(1));
 			}
 		}
 
