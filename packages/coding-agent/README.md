@@ -366,6 +366,10 @@ You can also reference tool READMEs in your `AGENT.md` files to make them automa
 - Global: `~/.pi/agent/AGENT.md` - available in all sessions
 - Project-specific: `./AGENT.md` - available in this project
 
+**Real-world example:**
+
+The [exa-search](https://github.com/badlogic/exa-search) tools provide web search capabilities via the Exa API. Just tell your agent: "Read ~/agent-tools/exa-search/README.md and search for X".
+
 For a detailed walkthrough with real examples, and the reasons for and benefits of this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
 ## Security (YOLO by default)
@@ -455,9 +459,7 @@ The agent can read, update, and reference the plan as it works. Unlike ephemeral
 
 ## Background Bash
 
-**pi does not and will not implement background bash execution.** Instead, tell the agent to use `tmux` or something like [tterminal-cp](https://github.com/badlogic/tterminal-cp).
-
-Long-running commands belong in proper terminal sessions, not as detached processes that complicate cleanup and monitoring.
+**pi does not and will not implement background bash execution.** Instead, tell the agent to use `tmux` or something like [tterminal-cp](https://mariozechner.at/posts/2025-08-15-mcp-vs-cli/). Bonus points: you can watch the agent interact with a CLI like a debugger and even intervene if necessary.
 
 ## Planned Features
 
