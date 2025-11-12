@@ -116,14 +116,29 @@ function formatToolExecution(
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				html += '<div class="tool-output">';
-				for (const line of displayLines) {
-					html += `<div>${escapeHtml(line)}</div>`;
-				}
 				if (remaining > 0) {
-					html += `<div>... (${remaining} more lines)</div>`;
+					// Truncated output - make it expandable
+					html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+					html += '<div class="output-preview">';
+					for (const line of displayLines) {
+						html += `<div>${escapeHtml(line)}</div>`;
+					}
+					html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+					html += "</div>";
+					html += '<div class="output-full">';
+					for (const line of lines) {
+						html += `<div>${escapeHtml(line)}</div>`;
+					}
+					html += "</div>";
+					html += "</div>";
+				} else {
+					// Short output - show all
+					html += '<div class="tool-output">';
+					for (const line of displayLines) {
+						html += `<div>${escapeHtml(line)}</div>`;
+					}
+					html += "</div>";
 				}
-				html += "</div>";
 			}
 		}
 	} else if (toolName === "read") {
@@ -137,14 +152,29 @@ function formatToolExecution(
 			const displayLines = lines.slice(0, maxLines);
 			const remaining = lines.length - maxLines;
 
-			html += '<div class="tool-output">';
-			for (const line of displayLines) {
-				html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-			}
 			if (remaining > 0) {
-				html += `<div>... (${remaining} more lines)</div>`;
+				// Truncated output - make it expandable
+				html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+				html += '<div class="output-preview">';
+				for (const line of displayLines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+				html += "</div>";
+				html += '<div class="output-full">';
+				for (const line of lines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += "</div>";
+				html += "</div>";
+			} else {
+				// Short output - show all
+				html += '<div class="tool-output">';
+				for (const line of displayLines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += "</div>";
 			}
-			html += "</div>";
 		}
 	} else if (toolName === "write") {
 		const path = shortenPath(args?.file_path || args?.path || "");
@@ -163,14 +193,29 @@ function formatToolExecution(
 			const displayLines = lines.slice(0, maxLines);
 			const remaining = lines.length - maxLines;
 
-			html += '<div class="tool-output">';
-			for (const line of displayLines) {
-				html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-			}
 			if (remaining > 0) {
-				html += `<div>... (${remaining} more lines)</div>`;
+				// Truncated output - make it expandable
+				html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+				html += '<div class="output-preview">';
+				for (const line of displayLines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+				html += "</div>";
+				html += '<div class="output-full">';
+				for (const line of lines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += "</div>";
+				html += "</div>";
+			} else {
+				// Short output - show all
+				html += '<div class="tool-output">';
+				for (const line of displayLines) {
+					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+				}
+				html += "</div>";
 			}
-			html += "</div>";
 		}
 
 		if (result) {
@@ -449,6 +494,81 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
             color: inherit;
         }
 
+        /* Expandable tool output */
+        .tool-output.expandable {
+            cursor: pointer;
+        }
+
+        .tool-output.expandable:hover {
+            opacity: 0.9;
+        }
+
+        .tool-output.expandable .output-full {
+            display: none;
+        }
+
+        .tool-output.expandable.expanded .output-preview {
+            display: none;
+        }
+
+        .tool-output.expandable.expanded .output-full {
+            display: block;
+        }
+
+        .expand-hint {
+            color: ${COLORS.cyan};
+            font-style: italic;
+            margin-top: 4px;
+        }
+
+        /* System prompt section */
+        .system-prompt {
+            background: rgb(60, 55, 40);
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .system-prompt-header {
+            font-weight: bold;
+            color: ${COLORS.yellow};
+            margin-bottom: 8px;
+        }
+
+        .system-prompt-content {
+            color: ${COLORS.textDim};
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 13px;
+        }
+
+        .tools-list {
+            background: rgb(60, 55, 40);
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .tools-header {
+            font-weight: bold;
+            color: ${COLORS.yellow};
+            margin-bottom: 8px;
+        }
+
+        .tools-content {
+            color: ${COLORS.textDim};
+            font-size: 13px;
+        }
+
+        .tool-item {
+            margin: 4px 0;
+        }
+
+        .tool-item-name {
+            font-weight: bold;
+            color: ${COLORS.text};
+        }
+
         /* Diff styling */
         .tool-diff {
             margin-top: 12px;
@@ -538,6 +658,23 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
                     <span class="info-label">Thinking:</span>
                     <span class="info-value">${escapeHtml(sessionHeader?.thinkingLevel || state.thinkingLevel)}</span>
                 </div>
+            </div>
+        </div>
+
+        <div class="system-prompt">
+            <div class="system-prompt-header">System Prompt</div>
+            <div class="system-prompt-content">${escapeHtml(sessionHeader?.systemPrompt || state.systemPrompt)}</div>
+        </div>
+
+        <div class="tools-list">
+            <div class="tools-header">Available Tools</div>
+            <div class="tools-content">
+                ${state.tools
+							.map(
+								(tool) =>
+									`<div class="tool-item"><span class="tool-item-name">${escapeHtml(tool.name)}</span> - ${escapeHtml(tool.description)}</div>`,
+							)
+							.join("")}
             </div>
         </div>
 
