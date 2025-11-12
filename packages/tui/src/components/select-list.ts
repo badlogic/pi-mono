@@ -148,8 +148,8 @@ export class SelectList implements Component {
 				this.onSelect(selectedItem);
 			}
 		}
-		// Escape
-		else if (keyData === "\x1b") {
+		// Escape or Ctrl+C
+		else if (keyData === "\x1b" || keyData === "\x03") {
 			if (this.onCancel) {
 				this.onCancel();
 			}

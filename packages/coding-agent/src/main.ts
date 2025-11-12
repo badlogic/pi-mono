@@ -123,27 +123,13 @@ Current directory: ${process.cwd()}`;
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
-		let selectedPath: string | null = null;
 		let resolved = false;
-
-		// Handle Ctrl+C
-		const handleSigint = () => {
-			if (!resolved) {
-				resolved = true;
-				ui.stop();
-				process.exit(0);
-			}
-		};
-
-		process.on("SIGINT", handleSigint);
 
 		const selector = new SessionSelectorComponent(
 			sessionManager,
 			(path: string) => {
 				if (!resolved) {
 					resolved = true;
-					selectedPath = path;
-					process.removeListener("SIGINT", handleSigint);
 					ui.stop();
 					resolve(path);
 				}
@@ -151,7 +137,6 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 			() => {
 				if (!resolved) {
 					resolved = true;
-					process.removeListener("SIGINT", handleSigint);
 					ui.stop();
 					resolve(null);
 				}
@@ -159,7 +144,7 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 		);
 
 		ui.addChild(selector);
-		ui.setFocus(selector.getSelectList());
+		ui.setFocus(selector.getSessionList());
 		ui.start();
 	});
 }
