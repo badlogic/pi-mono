@@ -5,7 +5,7 @@ Interactive CLI coding assistant powered by multiple LLM providers. Chat with AI
 ## Installation
 
 ```bash
-npm install -g @mariozechner/coding-agent
+npm install -g @mariozechner/pi-coding-agent
 ```
 
 ## Quick Start
