@@ -1,7 +1,31 @@
 import type { AgentState } from "@mariozechner/pi-agent";
-import type { Message } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
+import { basename } from "path";
 import type { SessionManager } from "./session-manager.js";
+
+/**
+ * TUI Color scheme (matching exact RGB values from TUI components)
+ */
+const COLORS = {
+	// Backgrounds
+	userMessageBg: "rgb(52, 53, 65)", // Dark slate
+	toolPendingBg: "rgb(40, 40, 50)", // Dark blue-gray
+	toolSuccessBg: "rgb(40, 50, 40)", // Dark green
+	toolErrorBg: "rgb(60, 40, 40)", // Dark red
+	bodyBg: "rgb(24, 24, 30)", // Very dark background
+	containerBg: "rgb(30, 30, 36)", // Slightly lighter container
+
+	// Text colors (matching chalk colors)
+	text: "rgb(229, 229, 231)", // Light gray (close to white)
+	textDim: "rgb(161, 161, 170)", // Dimmed gray
+	cyan: "rgb(103, 232, 249)", // Cyan for paths
+	green: "rgb(34, 197, 94)", // Green for success
+	red: "rgb(239, 68, 68)", // Red for errors
+	yellow: "rgb(234, 179, 8)", // Yellow for warnings
+	italic: "rgb(161, 161, 170)", // Gray italic for thinking
+};
 
 /**
  * Escape HTML special characters
@@ -16,142 +40,251 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Convert ANSI color codes to HTML spans
+ * Shorten path with tilde notation
  */
-function ansiToHtml(text: string): string {
-	// Simple ANSI color code to HTML conversion
-	// This is a basic implementation - could be enhanced with a library
-	const ansiColors: Record<string, string> = {
-		"30": "#000000", // black
-		"31": "#cd3131", // red
-		"32": "#0dbc79", // green
-		"33": "#e5e510", // yellow
-		"34": "#2472c8", // blue
-		"35": "#bc3fbc", // magenta
-		"36": "#11a8cd", // cyan
-		"37": "#e5e5e5", // white
-		"90": "#666666", // bright black (gray)
-		"91": "#f14c4c", // bright red
-		"92": "#23d18b", // bright green
-		"93": "#f5f543", // bright yellow
-		"94": "#3b8eea", // bright blue
-		"95": "#d670d6", // bright magenta
-		"96": "#29b8db", // bright cyan
-		"97": "#ffffff", // bright white
+function shortenPath(path: string): string {
+	const home = homedir();
+	if (path.startsWith(home)) {
+		return "~" + path.slice(home.length);
+	}
+	return path;
+}
+
+/**
+ * Replace tabs with 3 spaces
+ */
+function replaceTabs(text: string): string {
+	return text.replace(/\t/g, "   ");
+}
+
+/**
+ * Generate unified diff matching TUI style
+ */
+function generateDiff(oldStr: string, newStr: string): string {
+	const oldLines = oldStr.split("\n");
+	const newLines = newStr.split("\n");
+
+	const maxLineNum = Math.max(oldLines.length, newLines.length);
+	const lineNumWidth = String(maxLineNum).length;
+
+	let html = `<div class="diff-old">- old:</div>`;
+	for (let i = 0; i < oldLines.length; i++) {
+		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
+		html += `<div class="diff-line-old">- <span class="line-num">${escapeHtml(lineNum)}</span> ${escapeHtml(oldLines[i])}</div>`;
+	}
+
+	html += `<div class="diff-spacer"></div>`;
+
+	html += `<div class="diff-new">+ new:</div>`;
+	for (let i = 0; i < newLines.length; i++) {
+		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
+		html += `<div class="diff-line-new">+ <span class="line-num">${escapeHtml(lineNum)}</span> ${escapeHtml(newLines[i])}</div>`;
+	}
+
+	return html;
+}
+
+/**
+ * Format tool execution matching TUI ToolExecutionComponent
+ */
+function formatToolExecution(
+	toolName: string,
+	args: any,
+	result?: ToolResultMessage,
+): { html: string; bgColor: string } {
+	let html = "";
+	const isError = result?.isError || false;
+	const bgColor = result ? (isError ? COLORS.toolErrorBg : COLORS.toolSuccessBg) : COLORS.toolPendingBg;
+
+	// Get text output from result
+	const getTextOutput = (): string => {
+		if (!result) return "";
+		const textBlocks = result.content.filter((c) => c.type === "text");
+		return textBlocks.map((c: any) => c.text).join("\n");
 	};
 
-	let html = escapeHtml(text);
+	// Format based on tool type (matching TUI logic exactly)
+	if (toolName === "bash") {
+		const command = args?.command || "";
+		html = `<div class="tool-command">$ ${escapeHtml(command || "...")}</div>`;
 
-	// Replace ANSI codes with HTML spans
-	html = html.replace(/\x1b\[([0-9;]+)m/g, (_match, codes) => {
-		const codeList = codes.split(";");
-		if (codeList.includes("0")) {
-			return "</span>"; // Reset
-		}
-		for (const code of codeList) {
-			if (ansiColors[code]) {
-				return `<span style="color: ${ansiColors[code]}">`;
-			}
-			if (code === "1") {
-				return '<span style="font-weight: bold">';
-			}
-			if (code === "2") {
-				return '<span style="opacity: 0.6">';
-			}
-		}
-		return "";
-	});
+		if (result) {
+			const output = getTextOutput().trim();
+			if (output) {
+				const lines = output.split("\n");
+				const maxLines = 5;
+				const displayLines = lines.slice(0, maxLines);
+				const remaining = lines.length - maxLines;
 
-	return html;
-}
-
-/**
- * Format a message as HTML
- */
-function formatMessage(message: Message): string {
-	const role = message.role;
-	const roleClass =
-		role === "user" ? "user-message" : role === "toolResult" ? "tool-result-message" : "assistant-message";
-	const roleLabel = role === "user" ? "User" : role === "assistant" ? "Assistant" : "Tool Result";
-
-	let html = `<div class="message ${roleClass}">`;
-	html += `<div class="message-role">${roleLabel}</div>`;
-	html += `<div class="message-content">`;
-
-	// Handle ToolResultMessage separately
-	if (role === "toolResult") {
-		const isError = message.isError;
-		html += `<div class="tool-result ${isError ? "error" : "success"}">`;
-		html += `<div class="tool-result-header">${isError ? "❌" : "✅"} ${escapeHtml(message.toolName)}</div>`;
-
-		for (const content of message.content) {
-			if (content.type === "text") {
-				html += `<pre class="tool-result-output">${ansiToHtml(content.text)}</pre>`;
-			} else if (content.type === "image") {
-				const imageData = content.data;
-				const mimeType = content.mimeType || "image/png";
-				html += `<img src="data:${mimeType};base64,${imageData}" alt="Tool result image" class="tool-result-image">`;
+				html += '<div class="tool-output">';
+				for (const line of displayLines) {
+					html += `<div>${escapeHtml(line)}</div>`;
+				}
+				if (remaining > 0) {
+					html += `<div>... (${remaining} more lines)</div>`;
+				}
+				html += "</div>";
 			}
 		}
-		html += `</div>`;
-	}
-	// Handle string content (for user messages)
-	else if (typeof message.content === "string") {
-		const text = escapeHtml(message.content);
-		html += `<div class="text-content">${text.replace(/\n/g, "<br>")}</div>`;
+	} else if (toolName === "read") {
+		const path = shortenPath(args?.file_path || args?.path || "");
+		html = `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
+
+		if (result) {
+			const output = getTextOutput();
+			const lines = output.split("\n");
+			const maxLines = 10;
+			const displayLines = lines.slice(0, maxLines);
+			const remaining = lines.length - maxLines;
+
+			html += '<div class="tool-output">';
+			for (const line of displayLines) {
+				html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+			}
+			if (remaining > 0) {
+				html += `<div>... (${remaining} more lines)</div>`;
+			}
+			html += "</div>";
+		}
+	} else if (toolName === "write") {
+		const path = shortenPath(args?.file_path || args?.path || "");
+		const fileContent = args?.content || "";
+		const lines = fileContent ? fileContent.split("\n") : [];
+		const totalLines = lines.length;
+
+		html = `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(path || "...")}</span>`;
+		if (totalLines > 10) {
+			html += ` <span class="line-count">(${totalLines} lines)</span>`;
+		}
+		html += "</div>";
+
+		if (fileContent) {
+			const maxLines = 10;
+			const displayLines = lines.slice(0, maxLines);
+			const remaining = lines.length - maxLines;
+
+			html += '<div class="tool-output">';
+			for (const line of displayLines) {
+				html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+			}
+			if (remaining > 0) {
+				html += `<div>... (${remaining} more lines)</div>`;
+			}
+			html += "</div>";
+		}
+
+		if (result) {
+			const output = getTextOutput().trim();
+			if (output) {
+				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+			}
+		}
+	} else if (toolName === "edit") {
+		const path = shortenPath(args?.file_path || args?.path || "");
+		html = `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
+
+		if (args?.old_string && args?.new_string) {
+			html += '<div class="tool-diff">' + generateDiff(args.old_string, args.new_string) + "</div>";
+		}
+
+		if (result) {
+			const output = getTextOutput().trim();
+			if (output) {
+				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+			}
+		}
 	} else {
-		// Handle array content
-		for (const content of message.content) {
-			if (typeof content === "string") {
-				// Handle legacy string content
-				const text = escapeHtml(content);
-				html += `<div class="text-content">${text.replace(/\n/g, "<br>")}</div>`;
-			} else if (content.type === "text") {
-				// Format text with markdown-like rendering
-				const text = escapeHtml(content.text);
-				html += `<div class="text-content">${text.replace(/\n/g, "<br>")}</div>`;
-			} else if (content.type === "thinking") {
-				html += `<details class="thinking-block">`;
-				html += `<summary>Thinking...</summary>`;
-				html += `<div class="thinking-content">${escapeHtml(content.thinking).replace(/\n/g, "<br>")}</div>`;
-				html += `</details>`;
-			} else if (content.type === "toolCall") {
-				html += `<div class="tool-call">`;
-				html += `<div class="tool-call-header">🔧 ${escapeHtml(content.name)}</div>`;
-				html += `<pre class="tool-call-args">${escapeHtml(JSON.stringify(content.arguments, null, 2))}</pre>`;
-				html += `</div>`;
-			} else if (content.type === "image") {
-				const imageData = content.data;
-				const mimeType = content.mimeType || "image/png";
-				html += `<img src="data:${mimeType};base64,${imageData}" alt="User image" class="user-image">`;
+		// Generic tool
+		html = `<div class="tool-header"><span class="tool-name">${escapeHtml(toolName)}</span></div>`;
+		html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
+
+		if (result) {
+			const output = getTextOutput();
+			if (output) {
+				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
 			}
 		}
 	}
 
-	html += `</div></div>`;
+	return { html, bgColor };
+}
+
+/**
+ * Format a message as HTML (matching TUI component styling)
+ */
+function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>): string {
+	let html = "";
+
+	if (message.role === "user") {
+		const userMsg = message as UserMessage;
+		let textContent = "";
+
+		if (typeof userMsg.content === "string") {
+			textContent = userMsg.content;
+		} else {
+			const textBlocks = userMsg.content.filter((c) => c.type === "text");
+			textContent = textBlocks.map((c: any) => c.text).join("");
+		}
+
+		if (textContent.trim()) {
+			html += `<div class="user-message">${escapeHtml(textContent).replace(/\n/g, "<br>")}</div>`;
+		}
+	} else if (message.role === "assistant") {
+		const assistantMsg = message as AssistantMessage;
+
+		// Render text and thinking content
+		for (const content of assistantMsg.content) {
+			if (content.type === "text" && content.text.trim()) {
+				html += `<div class="assistant-text">${escapeHtml(content.text.trim()).replace(/\n/g, "<br>")}</div>`;
+			} else if (content.type === "thinking" && content.thinking.trim()) {
+				html += `<div class="thinking-text">${escapeHtml(content.thinking.trim()).replace(/\n/g, "<br>")}</div>`;
+			}
+		}
+
+		// Render tool calls with their results
+		for (const content of assistantMsg.content) {
+			if (content.type === "toolCall") {
+				const toolResult = toolResultsMap.get(content.id);
+				const { html: toolHtml, bgColor } = formatToolExecution(content.name, content.arguments, toolResult);
+				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
+			}
+		}
+
+		// Show error/abort status if no tool calls
+		const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
+		if (!hasToolCalls) {
+			if (assistantMsg.stopReason === "aborted") {
+				html += '<div class="error-text">Aborted</div>';
+			} else if (assistantMsg.stopReason === "error") {
+				const errorMsg = assistantMsg.errorMessage || "Unknown error";
+				html += `<div class="error-text">Error: ${escapeHtml(errorMsg)}</div>`;
+			}
+		}
+	}
+
 	return html;
 }
 
 /**
- * Export session to a self-contained HTML file
+ * Export session to a self-contained HTML file matching TUI visual style
  */
 export function exportSessionToHtml(sessionManager: SessionManager, state: AgentState, outputPath?: string): string {
 	const sessionFile = sessionManager.getSessionFile();
 	const timestamp = new Date().toISOString();
 
-	// Generate output filename if not provided
+	// Use session filename + .html if no output path provided
 	if (!outputPath) {
-		const dateStr = new Date().toISOString().replace(/[:.]/g, "-").split("T")[0];
-		outputPath = `coding-session-${dateStr}.html`;
+		const sessionBasename = basename(sessionFile, ".jsonl");
+		outputPath = `${sessionBasename}.html`;
 	}
 
-	// Read session data
+	// Read and parse session data
 	const sessionContent = readFileSync(sessionFile, "utf8");
 	const lines = sessionContent.trim().split("\n");
 
-	// Parse session metadata
 	let sessionHeader: any = null;
 	const messages: Message[] = [];
+	const toolResultsMap = new Map<string, ToolResultMessage>();
 
 	for (const line of lines) {
 		try {
@@ -160,19 +293,32 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
 				sessionHeader = entry;
 			} else if (entry.type === "message") {
 				messages.push(entry.message);
+				// Build map of tool call ID to result
+				if (entry.message.role === "toolResult") {
+					toolResultsMap.set(entry.message.toolCallId, entry.message);
+				}
 			}
 		} catch {
 			// Skip malformed lines
 		}
 	}
 
-	// Generate HTML
+	// Generate messages HTML
+	let messagesHtml = "";
+	for (const message of messages) {
+		if (message.role !== "toolResult") {
+			// Skip toolResult messages as they're rendered with their tool calls
+			messagesHtml += formatMessage(message, toolResultsMap);
+		}
+	}
+
+	// Generate HTML (matching TUI aesthetic)
 	const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coding Session Export - ${timestamp}</title>
+    <title>Session Export - ${basename(sessionFile)}</title>
     <style>
         * {
             margin: 0;
@@ -181,11 +327,12 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            font-size: 14px;
             line-height: 1.6;
-            color: #e4e4e7;
-            background: #09090b;
-            padding: 2rem;
+            color: ${COLORS.text};
+            background: ${COLORS.bodyBg};
+            padding: 24px;
         }
 
         .container {
@@ -194,205 +341,161 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
         }
 
         .header {
-            margin-bottom: 3rem;
-            padding: 2rem;
-            background: #18181b;
-            border-radius: 0.5rem;
-            border: 1px solid #27272a;
+            margin-bottom: 32px;
+            padding: 20px;
+            background: ${COLORS.containerBg};
+            border-radius: 4px;
         }
 
         .header h1 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
-            color: #fafafa;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: ${COLORS.cyan};
         }
 
         .header-info {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-top: 1.5rem;
+            gap: 12px;
+            font-size: 13px;
         }
 
         .info-item {
-            padding: 0.75rem;
-            background: #09090b;
-            border-radius: 0.375rem;
-            border: 1px solid #27272a;
+            color: ${COLORS.textDim};
         }
 
         .info-label {
-            font-size: 0.875rem;
-            color: #a1a1aa;
-            margin-bottom: 0.25rem;
+            font-weight: 600;
+            margin-right: 8px;
         }
 
         .info-value {
-            font-size: 1rem;
-            color: #fafafa;
-            font-weight: 500;
+            color: ${COLORS.text};
         }
 
         .messages {
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 16px;
         }
 
-        .message {
-            background: #18181b;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            border: 1px solid #27272a;
-        }
-
-        .message-role {
-            font-weight: 600;
-            margin-bottom: 1rem;
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .user-message .message-role {
-            color: #60a5fa;
-        }
-
-        .assistant-message .message-role {
-            color: #34d399;
-        }
-
-        .message-content {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .text-content {
-            color: #e4e4e7;
+        /* User message - matching TUI UserMessageComponent */
+        .user-message {
+            background: ${COLORS.userMessageBg};
+            padding: 12px 16px;
+            border-radius: 4px;
             white-space: pre-wrap;
             word-wrap: break-word;
         }
 
-        .thinking-block {
-            background: #27272a;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            border-left: 3px solid #a855f7;
-        }
-
-        .thinking-block summary {
-            cursor: pointer;
-            font-weight: 500;
-            color: #a855f7;
-            margin-bottom: 0.5rem;
-        }
-
-        .thinking-content {
-            margin-top: 0.75rem;
-            color: #d4d4d8;
-            font-size: 0.875rem;
-            line-height: 1.6;
-        }
-
-        .tool-call {
-            background: #27272a;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            border-left: 3px solid #3b82f6;
-        }
-
-        .tool-call-header {
-            font-weight: 600;
-            color: #3b82f6;
-            margin-bottom: 0.5rem;
-        }
-
-        .tool-call-args {
-            background: #18181b;
-            padding: 0.75rem;
-            border-radius: 0.25rem;
-            overflow-x: auto;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.875rem;
-            color: #d4d4d8;
-        }
-
-        .tool-result {
-            background: #27272a;
-            border-radius: 0.375rem;
-            padding: 1rem;
-        }
-
-        .tool-result.success {
-            border-left: 3px solid #10b981;
-        }
-
-        .tool-result.error {
-            border-left: 3px solid #ef4444;
-        }
-
-        .tool-result-header {
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-
-        .tool-result.success .tool-result-header {
-            color: #10b981;
-        }
-
-        .tool-result.error .tool-result-header {
-            color: #ef4444;
-        }
-
-        .tool-result-output {
-            background: #18181b;
-            padding: 0.75rem;
-            border-radius: 0.25rem;
-            overflow-x: auto;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.875rem;
-            color: #d4d4d8;
+        /* Assistant text - matching TUI AssistantMessageComponent */
+        .assistant-text {
+            padding: 12px 16px;
             white-space: pre-wrap;
             word-wrap: break-word;
         }
 
-        .tool-result-image,
-        .user-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 0.375rem;
-            margin-top: 0.5rem;
+        /* Thinking text - gray italic */
+        .thinking-text {
+            padding: 12px 16px;
+            color: ${COLORS.italic};
+            font-style: italic;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* Tool execution - matching TUI ToolExecutionComponent */
+        .tool-execution {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .tool-header {
+            font-weight: bold;
+        }
+
+        .tool-name {
+            font-weight: bold;
+        }
+
+        .tool-path {
+            color: ${COLORS.cyan};
+        }
+
+        .line-count {
+            color: ${COLORS.textDim};
+        }
+
+        .tool-command {
+            font-weight: bold;
+        }
+
+        .tool-output {
+            margin-top: 12px;
+            color: ${COLORS.textDim};
+            white-space: pre-wrap;
+            font-family: inherit;
+        }
+
+        .tool-output > div {
+            line-height: 1.4;
+        }
+
+        .tool-output pre {
+            margin: 0;
+            font-family: inherit;
+            color: inherit;
+        }
+
+        /* Diff styling */
+        .tool-diff {
+            margin-top: 12px;
+            font-size: 13px;
+        }
+
+        .diff-old, .diff-new {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .diff-old {
+            color: ${COLORS.red};
+        }
+
+        .diff-new {
+            color: ${COLORS.green};
+        }
+
+        .diff-line-old {
+            color: ${COLORS.red};
+        }
+
+        .diff-line-new {
+            color: ${COLORS.green};
+        }
+
+        .line-num {
+            color: ${COLORS.textDim};
+        }
+
+        .diff-spacer {
+            height: 8px;
+        }
+
+        /* Error text */
+        .error-text {
+            color: ${COLORS.red};
+            padding: 12px 16px;
         }
 
         .footer {
-            margin-top: 3rem;
-            padding: 2rem;
+            margin-top: 48px;
+            padding: 20px;
             text-align: center;
-            color: #71717a;
-            font-size: 0.875rem;
-        }
-
-        @media (max-width: 768px) {
-            body {
-                padding: 1rem;
-            }
-
-            .header {
-                padding: 1rem;
-            }
-
-            .header h1 {
-                font-size: 1.5rem;
-            }
-
-            .header-info {
-                grid-template-columns: 1fr;
-            }
-
-            .message {
-                padding: 1rem;
-            }
+            color: ${COLORS.textDim};
+            font-size: 12px;
         }
 
         @media print {
@@ -400,9 +503,8 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
                 background: white;
                 color: black;
             }
-
-            .message {
-                page-break-inside: avoid;
+            .tool-execution {
+                border: 1px solid #ddd;
             }
         }
     </style>
@@ -410,41 +512,41 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
 <body>
     <div class="container">
         <div class="header">
-            <h1>Coding Session Export</h1>
+            <h1>pi coding-agent session</h1>
             <div class="header-info">
                 <div class="info-item">
-                    <div class="info-label">Session ID</div>
-                    <div class="info-value">${sessionHeader?.id || "unknown"}</div>
+                    <span class="info-label">Session:</span>
+                    <span class="info-value">${escapeHtml(sessionHeader?.id || "unknown")}</span>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Date</div>
-                    <div class="info-value">${sessionHeader?.timestamp ? new Date(sessionHeader.timestamp).toLocaleString() : timestamp}</div>
+                    <span class="info-label">Date:</span>
+                    <span class="info-value">${sessionHeader?.timestamp ? new Date(sessionHeader.timestamp).toLocaleString() : timestamp}</span>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Model</div>
-                    <div class="info-value">${escapeHtml(sessionHeader?.model || state.model.id)}</div>
+                    <span class="info-label">Model:</span>
+                    <span class="info-value">${escapeHtml(sessionHeader?.model || state.model.id)}</span>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Messages</div>
-                    <div class="info-value">${messages.length}</div>
+                    <span class="info-label">Messages:</span>
+                    <span class="info-value">${messages.filter((m) => m.role !== "toolResult").length}</span>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Working Directory</div>
-                    <div class="info-value">${escapeHtml(sessionHeader?.cwd || process.cwd())}</div>
+                    <span class="info-label">Directory:</span>
+                    <span class="info-value">${escapeHtml(shortenPath(sessionHeader?.cwd || process.cwd()))}</span>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Thinking Level</div>
-                    <div class="info-value">${escapeHtml(sessionHeader?.thinkingLevel || state.thinkingLevel)}</div>
+                    <span class="info-label">Thinking:</span>
+                    <span class="info-value">${escapeHtml(sessionHeader?.thinkingLevel || state.thinkingLevel)}</span>
                 </div>
             </div>
         </div>
 
         <div class="messages">
-            ${messages.map((msg) => formatMessage(msg)).join("\n")}
+            ${messagesHtml}
         </div>
 
         <div class="footer">
-            Generated by pi coding-agent v${sessionHeader?.version || "unknown"} on ${new Date().toLocaleString()}
+            Generated by pi coding-agent on ${new Date().toLocaleString()}
         </div>
     </div>
 </body>
