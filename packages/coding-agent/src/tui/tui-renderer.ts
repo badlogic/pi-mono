@@ -541,15 +541,15 @@ export class TuiRenderer {
 			// Export session to HTML
 			const filePath = exportSessionToHtml(this.sessionManager, this.agent.state, outputPath);
 
-			// Show success message in chat
-			this.chatContainer.addChild(new Text("", 0, 0)); // Spacer
-			this.chatContainer.addChild(new Text(chalk.green(`✓ Session exported to: ${filePath}`), 0, 0));
+			// Show success message in chat - matching thinking level style
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim(`Session exported to: ${filePath}`), 1, 0));
 			this.ui.requestRender();
 		} catch (error: any) {
 			// Show error message in chat
-			this.chatContainer.addChild(new Text("", 0, 0)); // Spacer
+			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(
-				new Text(chalk.red(`✗ Failed to export session: ${error.message || "Unknown error"}`), 0, 0),
+				new Text(chalk.red(`Failed to export session: ${error.message || "Unknown error"}`), 1, 0),
 			);
 			this.ui.requestRender();
 		}
