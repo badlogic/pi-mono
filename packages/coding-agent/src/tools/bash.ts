@@ -4,15 +4,20 @@ import { spawn } from "child_process";
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
 });
 
 export const bashTool: AgentTool<typeof bashSchema> = {
 	name: "bash",
 	label: "bash",
 	description:
-		"Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.",
+		"Execute a bash command in the current working directory. Returns stdout and stderr. Optionally provide a timeout in seconds.",
 	parameters: bashSchema,
-	execute: async (_toolCallId: string, { command }: { command: string }, signal?: AbortSignal) => {
+	execute: async (
+		_toolCallId: string,
+		{ command, timeout }: { command: string; timeout?: number },
+		signal?: AbortSignal,
+	) => {
 		return new Promise((resolve, _reject) => {
 			const child = spawn("sh", ["-c", command], {
 				detached: true,
@@ -23,11 +28,14 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 			let stderr = "";
 			let timedOut = false;
 
-			// Set timeout
-			const timeout = setTimeout(() => {
-				timedOut = true;
-				onAbort();
-			}, 30000);
+			// Set timeout if provided
+			let timeoutHandle: NodeJS.Timeout | undefined;
+			if (timeout !== undefined && timeout > 0) {
+				timeoutHandle = setTimeout(() => {
+					timedOut = true;
+					onAbort();
+				}, timeout * 1000);
+			}
 
 			// Collect stdout
 			if (child.stdout) {
@@ -53,7 +61,9 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 
 			// Handle process exit
 			child.on("close", (code) => {
-				clearTimeout(timeout);
+				if (timeoutHandle) {
+					clearTimeout(timeoutHandle);
+				}
 				if (signal) {
 					signal.removeEventListener("abort", onAbort);
 				}
@@ -79,7 +89,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 						output += stderr;
 					}
 					if (output) output += "\n\n";
-					output += "Command timed out after 30 seconds";
+					output += `Command timed out after ${timeout} seconds`;
 					resolve({ content: [{ type: "text", text: `Command failed\n\n${output}` }], details: undefined });
 					return;
 				}
