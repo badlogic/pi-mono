@@ -515,8 +515,10 @@ export async function main(args: string[]) {
 	if (shouldPrintMessages && !parsed.continue && !parsed.resume) {
 		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
-			const fileList = contextFiles.map((f) => f.path).join(", ");
-			console.log(chalk.dim(`Loaded project context from: ${fileList}`));
+			console.log(chalk.dim("Loaded project context from:"));
+			for (const { path: filePath } of contextFiles) {
+				console.log(chalk.dim(`  - ${filePath}`));
+			}
 		}
 	}
 
