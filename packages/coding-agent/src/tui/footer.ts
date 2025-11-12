@@ -1,5 +1,6 @@
 import type { AgentState } from "@mariozechner/pi-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
+import { visibleWidth } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 
 /**
@@ -71,7 +72,35 @@ export class FooterComponent {
 		if (totalCost) statsParts.push(`$${totalCost.toFixed(3)}`);
 		statsParts.push(`${contextPercent}%`);
 
-		const statsLine = statsParts.join(" ");
+		const statsLeft = statsParts.join(" ");
+
+		// Add model name on the right side
+		let modelName = this.state.model.id;
+		const statsLeftWidth = visibleWidth(statsLeft);
+		const modelWidth = visibleWidth(modelName);
+
+		// Calculate available space for padding (minimum 2 spaces between stats and model)
+		const minPadding = 2;
+		const totalNeeded = statsLeftWidth + minPadding + modelWidth;
+
+		let statsLine: string;
+		if (totalNeeded <= width) {
+			// Both fit - add padding to right-align model
+			const padding = " ".repeat(width - statsLeftWidth - modelWidth);
+			statsLine = statsLeft + padding + modelName;
+		} else {
+			// Need to truncate model name
+			const availableForModel = width - statsLeftWidth - minPadding;
+			if (availableForModel > 3) {
+				// Truncate model name to fit
+				modelName = modelName.substring(0, availableForModel);
+				const padding = " ".repeat(width - statsLeftWidth - visibleWidth(modelName));
+				statsLine = statsLeft + padding + modelName;
+			} else {
+				// Not enough space for model name at all
+				statsLine = statsLeft;
+			}
+		}
 
 		// Return two lines: pwd and stats
 		return [chalk.gray(pwd), chalk.gray(statsLine)];
