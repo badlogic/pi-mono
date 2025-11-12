@@ -320,7 +320,7 @@ Execute a bash command in the current working directory. Returns stdout and stde
 
 ### MCP & Adding Your Own Tools
 
-**pi does not support MCP.** Instead, it relies on the four built-in tools above and assumes the agent can invoke pre-existing CLI tools or write them on the fly as needed.
+**pi does and will not support MCP.** Instead, it relies on the four built-in tools above and assumes the agent can invoke pre-existing CLI tools or write them on the fly as needed.
 
 **Here's the gist:**
 
@@ -358,7 +358,11 @@ You: Read ~/agent-tools/screenshot/README.md and use that tool to take a screens
 
 The agent will read the README, understand the tool, and invoke it via bash as needed. If you need a new tool, ask the agent to write it for you.
 
-For a detailed walkthrough with real examples, and the reasons for this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
+You can also reference tool READMEs in your `AGENT.md` files to make them automatically available:
+- Global: `~/.pi/agent/AGENT.md` - available in all sessions
+- Project-specific: `./AGENT.md` - available in this project
+
+For a detailed walkthrough with real examples, and the reasons for and benefits of this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
 ## Security (YOLO by default)
 
