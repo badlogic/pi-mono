@@ -358,7 +358,7 @@ You: Read ~/agent-tools/screenshot/README.md and use that tool to take a screens
 
 The agent will read the README, understand the tool, and invoke it via bash as needed. If you need a new tool, ask the agent to write it for you.
 
-For a detailed walkthrough with real examples, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
+For a detailed walkthrough with real examples, and the reasons for this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
 ## Security (YOLO by default)
 
