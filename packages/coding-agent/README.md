@@ -168,7 +168,7 @@ Context files are useful for:
 - Update CHANGELOG.md for user-facing changes
 ```
 
-Each file is injected as a separate user message at the beginning of new sessions, ensuring the AI has full project context without modifying the system prompt.
+All context files are automatically included in the system prompt at session start, along with the current date/time and working directory. This ensures the AI has complete project context from the very first message.
 
 ## Image Support
 

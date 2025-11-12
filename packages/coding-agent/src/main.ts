@@ -131,7 +131,24 @@ ${chalk.bold("Available Tools:")}
 `);
 }
 
-const DEFAULT_SYSTEM_PROMPT = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+function buildSystemPrompt(customPrompt?: string): string {
+	if (customPrompt) {
+		return customPrompt;
+	}
+
+	const now = new Date();
+	const dateTime = now.toLocaleString("en-US", {
+		weekday: "long",
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		timeZoneName: "short",
+	});
+
+	let prompt = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 - read: Read file contents
@@ -145,9 +162,24 @@ Guidelines:
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
 - Be concise in your responses
-- Show file paths clearly when working with files
+- Show file paths clearly when working with files`;
 
-Current directory: ${process.cwd()}`;
+	// Append project context files
+	const contextFiles = loadProjectContextFiles();
+	if (contextFiles.length > 0) {
+		prompt += "\n\n# Project Context\n\n";
+		prompt += "The following project context files have been loaded:\n\n";
+		for (const { path: filePath, content } of contextFiles) {
+			prompt += `## ${filePath}\n\n${content}\n\n`;
+		}
+	}
+
+	// Add date/time and working directory last
+	prompt += `\nCurrent date and time: ${dateTime}`;
+	prompt += `\nCurrent working directory: ${process.cwd()}`;
+
+	return prompt;
+}
 
 /**
  * Look for AGENT.md or CLAUDE.md in a directory (prefers AGENT.md)
@@ -407,7 +439,7 @@ export async function main(args: string[]) {
 
 	// Create agent
 	const model = getModel(provider, modelId);
-	const systemPrompt = parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+	const systemPrompt = buildSystemPrompt(parsed.systemPrompt);
 
 	const agent = new Agent({
 		initialState: {
@@ -479,27 +511,12 @@ export async function main(args: string[]) {
 	// Note: Session will be started lazily after first user+assistant message exchange
 	// (unless continuing/resuming, in which case it's already initialized)
 
-	// Inject project context files (AGENT.md/CLAUDE.md) if not continuing/resuming
-	if (!parsed.continue && !parsed.resume) {
+	// Log loaded context files (they're already in the system prompt)
+	if (shouldPrintMessages && !parsed.continue && !parsed.resume) {
 		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
-			// Queue each context file as a separate message
-			for (const { path: filePath, content } of contextFiles) {
-				await agent.queueMessage({
-					role: "user",
-					content: [
-						{
-							type: "text",
-							text: `[Project Context from ${filePath}]\n\n${content}`,
-						},
-					],
-					timestamp: Date.now(),
-				});
-			}
-			if (shouldPrintMessages) {
-				const fileList = contextFiles.map((f) => f.path).join(", ");
-				console.log(chalk.dim(`Loaded project context from: ${fileList}`));
-			}
+			const fileList = contextFiles.map((f) => f.path).join(", ");
+			console.log(chalk.dim(`Loaded project context from: ${fileList}`));
 		}
 	}
 
