@@ -1,4 +1,4 @@
-import { type Component, Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Input, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import type { SessionManager } from "../session-manager.js";
 
@@ -21,22 +21,58 @@ interface SessionItem {
 }
 
 /**
- * Custom session list component with multi-line items
+ * Custom session list component with multi-line items and search
  */
 class SessionList implements Component {
-	private sessions: SessionItem[] = [];
+	private allSessions: SessionItem[] = [];
+	private filteredSessions: SessionItem[] = [];
 	private selectedIndex: number = 0;
+	private searchInput: Input;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
+	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
 	constructor(sessions: SessionItem[]) {
-		this.sessions = sessions;
+		this.allSessions = sessions;
+		this.filteredSessions = sessions;
+		this.searchInput = new Input();
+
+		// Handle Enter in search input - select current item
+		this.searchInput.onSubmit = () => {
+			if (this.filteredSessions[this.selectedIndex]) {
+				const selected = this.filteredSessions[this.selectedIndex];
+				if (this.onSelect) {
+					this.onSelect(selected.path);
+				}
+			}
+		};
+	}
+
+	private filterSessions(query: string): void {
+		if (!query.trim()) {
+			this.filteredSessions = this.allSessions;
+		} else {
+			const searchTokens = query
+				.toLowerCase()
+				.split(/\s+/)
+				.filter((t) => t);
+			this.filteredSessions = this.allSessions.filter((session) => {
+				const searchText = session.firstMessage.toLowerCase();
+				return searchTokens.every((token) => searchText.includes(token));
+			});
+		}
+
+		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
 
 	render(width: number): string[] {
 		const lines: string[] = [];
 
-		if (this.sessions.length === 0) {
+		// Render search input
+		lines.push(...this.searchInput.render(width));
+		lines.push(""); // Blank line after search
+
+		if (this.filteredSessions.length === 0) {
 			lines.push(chalk.gray("  No sessions found"));
 			return lines;
 		}
@@ -58,9 +94,16 @@ class SessionList implements Component {
 			return date.toLocaleDateString();
 		};
 
-		// Render each session (2 lines per session)
-		for (let i = 0; i < this.sessions.length; i++) {
-			const session = this.sessions[i];
+		// Calculate visible range with scrolling
+		const startIndex = Math.max(
+			0,
+			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredSessions.length - this.maxVisible),
+		);
+		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredSessions.length);
+
+		// Render visible sessions (2 lines per session + blank line)
+		for (let i = startIndex; i < endIndex; i++) {
+			const session = this.filteredSessions[i];
 			const isSelected = i === this.selectedIndex;
 
 			// Normalize first message to single line
@@ -80,6 +123,13 @@ class SessionList implements Component {
 
 			lines.push(messageLine);
 			lines.push(metadataLine);
+			lines.push(""); // Blank line between sessions
+		}
+
+		// Add scroll indicator if needed
+		if (startIndex > 0 || endIndex < this.filteredSessions.length) {
+			const scrollInfo = chalk.gray(`  (${this.selectedIndex + 1}/${this.filteredSessions.length})`);
+			lines.push(scrollInfo);
 		}
 
 		return lines;
@@ -92,20 +142,29 @@ class SessionList implements Component {
 		}
 		// Down arrow
 		else if (keyData === "\x1b[B") {
-			this.selectedIndex = Math.min(this.sessions.length - 1, this.selectedIndex + 1);
+			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
 		// Enter
 		else if (keyData === "\r") {
-			const selected = this.sessions[this.selectedIndex];
+			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.path);
 			}
 		}
-		// Escape or Ctrl+C
-		else if (keyData === "\x1b" || keyData === "\x03") {
+		// Escape - cancel
+		else if (keyData === "\x1b") {
 			if (this.onCancel) {
 				this.onCancel();
 			}
+		}
+		// Ctrl+C - exit process
+		else if (keyData === "\x03") {
+			process.exit(0);
+		}
+		// Pass everything else to search input
+		else {
+			this.searchInput.handleInput(keyData);
+			this.filterSessions(this.searchInput.getValue());
 		}
 	}
 }
