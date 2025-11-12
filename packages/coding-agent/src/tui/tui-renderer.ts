@@ -11,6 +11,7 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { exportSessionToHtml } from "../export-html.js";
 import type { SessionManager } from "../session-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
@@ -77,8 +78,16 @@ export class TuiRenderer {
 			description: "Select model (opens selector UI)",
 		};
 
+		const exportCommand: SlashCommand = {
+			name: "export",
+			description: "Export session to HTML file",
+		};
+
 		// Setup autocomplete for file paths and slash commands
-		const autocompleteProvider = new CombinedAutocompleteProvider([thinkingCommand, modelCommand], process.cwd());
+		const autocompleteProvider = new CombinedAutocompleteProvider(
+			[thinkingCommand, modelCommand, exportCommand],
+			process.cwd(),
+		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
 	}
 
@@ -147,6 +156,13 @@ export class TuiRenderer {
 			if (text === "/model") {
 				// Show model selector
 				this.showModelSelector();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /export command
+			if (text.startsWith("/export")) {
+				this.handleExportCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -514,6 +530,29 @@ export class TuiRenderer {
 		this.editorContainer.addChild(this.editor);
 		this.modelSelector = null;
 		this.ui.setFocus(this.editor);
+	}
+
+	private handleExportCommand(text: string): void {
+		// Parse optional filename from command: /export [filename]
+		const parts = text.split(/\s+/);
+		const outputPath = parts.length > 1 ? parts[1] : undefined;
+
+		try {
+			// Export session to HTML
+			const filePath = exportSessionToHtml(this.sessionManager, this.agent.state, outputPath);
+
+			// Show success message in chat
+			this.chatContainer.addChild(new Text("", 0, 0)); // Spacer
+			this.chatContainer.addChild(new Text(chalk.green(`✓ Session exported to: ${filePath}`), 0, 0));
+			this.ui.requestRender();
+		} catch (error: any) {
+			// Show error message in chat
+			this.chatContainer.addChild(new Text("", 0, 0)); // Spacer
+			this.chatContainer.addChild(
+				new Text(chalk.red(`✗ Failed to export session: ${error.message || "Unknown error"}`), 0, 0),
+			);
+			this.ui.requestRender();
+		}
 	}
 
 	stop(): void {
