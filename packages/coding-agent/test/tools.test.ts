@@ -32,14 +32,15 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("read tool", () => {
-		it("should read file contents", async () => {
+		it("should read file contents that fit within limits", async () => {
 			const testFile = join(testDir, "test.txt");
-			const content = "Hello, world!";
+			const content = "Hello, world!\nLine 2\nLine 3";
 			writeFileSync(testFile, content);
 
 			const result = await readTool.execute("test-call-1", { path: testFile });
 
 			expect(getTextOutput(result)).toBe(content);
+			expect(getTextOutput(result)).not.toContain("more lines not shown");
 			expect(result.details).toBeUndefined();
 		});
 
@@ -50,6 +51,109 @@ describe("Coding Agent Tools", () => {
 
 			expect(getTextOutput(result)).toContain("Error");
 			expect(getTextOutput(result)).toContain("File not found");
+		});
+
+		it("should truncate files exceeding line limit", async () => {
+			const testFile = join(testDir, "large.txt");
+			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-3", { path: testFile });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Line 1");
+			expect(output).toContain("Line 2000");
+			expect(output).not.toContain("Line 2001");
+			expect(output).toContain("500 more lines not shown");
+			expect(output).toContain("Use offset=2001 to continue reading");
+		});
+
+		it("should truncate long lines and show notice", async () => {
+			const testFile = join(testDir, "long-lines.txt");
+			const longLine = "a".repeat(3000);
+			const content = `Short line\n${longLine}\nAnother short line`;
+			writeFileSync(testFile, content);
+
+			const result = await readTool.execute("test-call-4", { path: testFile });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Short line");
+			expect(output).toContain("Another short line");
+			expect(output).toContain("Some lines were truncated to 2000 characters");
+			expect(output.split("\n")[1].length).toBe(2000);
+		});
+
+		it("should handle offset parameter", async () => {
+			const testFile = join(testDir, "offset-test.txt");
+			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-5", { path: testFile, offset: 51 });
+			const output = getTextOutput(result);
+
+			expect(output).not.toContain("Line 50");
+			expect(output).toContain("Line 51");
+			expect(output).toContain("Line 100");
+			expect(output).not.toContain("more lines not shown");
+		});
+
+		it("should handle limit parameter", async () => {
+			const testFile = join(testDir, "limit-test.txt");
+			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-6", { path: testFile, limit: 10 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Line 1");
+			expect(output).toContain("Line 10");
+			expect(output).not.toContain("Line 11");
+			expect(output).toContain("90 more lines not shown");
+			expect(output).toContain("Use offset=11 to continue reading");
+		});
+
+		it("should handle offset + limit together", async () => {
+			const testFile = join(testDir, "offset-limit-test.txt");
+			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-7", {
+				path: testFile,
+				offset: 41,
+				limit: 20,
+			});
+			const output = getTextOutput(result);
+
+			expect(output).not.toContain("Line 40");
+			expect(output).toContain("Line 41");
+			expect(output).toContain("Line 60");
+			expect(output).not.toContain("Line 61");
+			expect(output).toContain("40 more lines not shown");
+			expect(output).toContain("Use offset=61 to continue reading");
+		});
+
+		it("should show error when offset is beyond file length", async () => {
+			const testFile = join(testDir, "short.txt");
+			writeFileSync(testFile, "Line 1\nLine 2\nLine 3");
+
+			const result = await readTool.execute("test-call-8", { path: testFile, offset: 100 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Error: Offset 100 is beyond end of file");
+			expect(output).toContain("3 lines total");
+		});
+
+		it("should show both truncation notices when applicable", async () => {
+			const testFile = join(testDir, "both-truncations.txt");
+			const longLine = "b".repeat(3000);
+			const lines = Array.from({ length: 2500 }, (_, i) => (i === 500 ? longLine : `Line ${i + 1}`));
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-9", { path: testFile });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Some lines were truncated to 2000 characters");
+			expect(output).toContain("500 more lines not shown");
 		});
 	});
 

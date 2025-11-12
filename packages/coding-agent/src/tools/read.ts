@@ -125,23 +125,50 @@ export const readTool: AgentTool<typeof readSchema> = {
 						const maxLines = limit || MAX_LINES;
 						const endLine = Math.min(startLine + maxLines, lines.length);
 
-						// Get the relevant lines
-						const selectedLines = lines.slice(startLine, endLine);
+						// Check if offset is out of bounds
+						if (startLine >= lines.length) {
+							content = [
+								{
+									type: "text",
+									text: `Error: Offset ${offset} is beyond end of file (${lines.length} lines total)`,
+								},
+							];
+						} else {
+							// Get the relevant lines
+							const selectedLines = lines.slice(startLine, endLine);
 
-						// Truncate long lines
-						const formattedLines = selectedLines.map((line) => {
-							return line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) : line;
-						});
+							// Truncate long lines and track which were truncated
+							let hadTruncatedLines = false;
+							const formattedLines = selectedLines.map((line) => {
+								if (line.length > MAX_LINE_LENGTH) {
+									hadTruncatedLines = true;
+									return line.slice(0, MAX_LINE_LENGTH);
+								}
+								return line;
+							});
 
-						let outputText = formattedLines.join("\n");
+							let outputText = formattedLines.join("\n");
 
-						// Add truncation notice if needed
-						if (endLine < lines.length) {
-							const remaining = lines.length - endLine;
-							outputText += `\n\n... (${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading)`;
+							// Add notices
+							const notices: string[] = [];
+
+							if (hadTruncatedLines) {
+								notices.push(`Some lines were truncated to ${MAX_LINE_LENGTH} characters for display`);
+							}
+
+							if (endLine < lines.length) {
+								const remaining = lines.length - endLine;
+								notices.push(
+									`${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading`,
+								);
+							}
+
+							if (notices.length > 0) {
+								outputText += `\n\n... (${notices.join(". ")})`;
+							}
+
+							content = [{ type: "text", text: outputText }];
 						}
-
-						content = [{ type: "text", text: outputText }];
 					}
 
 					// Check if aborted after reading
