@@ -54,29 +54,29 @@ export class SessionSelectorComponent extends Container {
 				const diffHours = Math.floor(diffMs / 3600000);
 				const diffDays = Math.floor(diffMs / 86400000);
 
-				if (diffMins < 1) return "just now";
-				if (diffMins < 60) return `${diffMins}m ago`;
-				if (diffHours < 24) return `${diffHours}h ago`;
-				if (diffDays === 1) return "yesterday";
-				if (diffDays < 7) return `${diffDays}d ago`;
+				if (diffMins < 1) return "now";
+				if (diffMins < 60) return `${diffMins}m`;
+				if (diffHours < 24) return `${diffHours}h`;
+				if (diffDays === 1) return "1d";
+				if (diffDays < 7) return `${diffDays}d`;
 
 				// Fallback to date string
 				return date.toLocaleDateString();
 			};
 
-			// Truncate first message to single line
-			const truncatedMessage = session.firstMessage.replace(/\n/g, " ").trim();
+			// Normalize first message to single line
+			const normalizedMessage = session.firstMessage.replace(/\n/g, " ").trim();
 
-			// Build description with metadata
-			const created = formatDate(session.created);
+			// Build description with metadata (single line, compact format)
 			const modified = formatDate(session.modified);
-			const msgCount = `${session.messageCount} msg${session.messageCount !== 1 ? "s" : ""}`;
+			const msgCount = `${session.messageCount}msg`;
 
-			const description = `${truncatedMessage}\n${chalk.dim(`Created: ${created} • Modified: ${modified} • ${msgCount}`)}`;
+			// Keep description compact: "modified • count"
+			const description = `${modified} • ${msgCount}`;
 
 			return {
 				value: session.path,
-				label: truncatedMessage.substring(0, 80),
+				label: normalizedMessage, // Let SelectList handle truncation based on actual width
 				description,
 			};
 		});

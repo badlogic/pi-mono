@@ -124,17 +124,37 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
 		let selectedPath: string | null = null;
+		let resolved = false;
+
+		// Handle Ctrl+C
+		const handleSigint = () => {
+			if (!resolved) {
+				resolved = true;
+				ui.stop();
+				process.exit(0);
+			}
+		};
+
+		process.on("SIGINT", handleSigint);
 
 		const selector = new SessionSelectorComponent(
 			sessionManager,
 			(path: string) => {
-				selectedPath = path;
-				ui.stop();
-				resolve(path);
+				if (!resolved) {
+					resolved = true;
+					selectedPath = path;
+					process.removeListener("SIGINT", handleSigint);
+					ui.stop();
+					resolve(path);
+				}
 			},
 			() => {
-				ui.stop();
-				resolve(null);
+				if (!resolved) {
+					resolved = true;
+					process.removeListener("SIGINT", handleSigint);
+					ui.stop();
+					resolve(null);
+				}
 			},
 		);
 
