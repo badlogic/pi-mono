@@ -132,8 +132,47 @@ ${chalk.bold("Available Tools:")}
 }
 
 function buildSystemPrompt(customPrompt?: string): string {
+	// Check if customPrompt is a file path that exists
+	if (customPrompt && existsSync(customPrompt)) {
+		try {
+			customPrompt = readFileSync(customPrompt, "utf-8");
+		} catch (error) {
+			console.error(chalk.yellow(`Warning: Could not read system prompt file ${customPrompt}: ${error}`));
+			// Fall through to use as literal string
+		}
+	}
+
 	if (customPrompt) {
-		return customPrompt;
+		// Use custom prompt as base, then add context/datetime
+		const now = new Date();
+		const dateTime = now.toLocaleString("en-US", {
+			weekday: "long",
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			timeZoneName: "short",
+		});
+
+		let prompt = customPrompt;
+
+		// Append project context files
+		const contextFiles = loadProjectContextFiles();
+		if (contextFiles.length > 0) {
+			prompt += "\n\n# Project Context\n\n";
+			prompt += "The following project context files have been loaded:\n\n";
+			for (const { path: filePath, content } of contextFiles) {
+				prompt += `## ${filePath}\n\n${content}\n\n`;
+			}
+		}
+
+		// Add date/time and working directory last
+		prompt += `\nCurrent date and time: ${dateTime}`;
+		prompt += `\nCurrent working directory: ${process.cwd()}`;
+
+		return prompt;
 	}
 
 	const now = new Date();

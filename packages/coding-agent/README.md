@@ -251,8 +251,12 @@ Model ID. Default: `claude-sonnet-4-5`
 **--api-key <key>**
 API key (overrides environment variables)
 
-**--system-prompt <text>**
-Custom system prompt (overrides default coding assistant prompt)
+**--system-prompt <text|file>**
+Custom system prompt. Can be:
+- Inline text: `--system-prompt "You are a helpful assistant"`
+- File path: `--system-prompt ./my-prompt.txt`
+
+If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
 
 **--mode <mode>**
 Output mode for non-interactive usage. Options:
