@@ -570,6 +570,8 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
             margin-top: 12px;
             font-size: 13px;
             font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            overflow-x: auto;
+            max-width: 100%;
         }
 
         .diff-line-old {
