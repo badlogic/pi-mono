@@ -142,8 +142,8 @@ async function runInteractiveMode(agent: Agent, sessionManager: SessionManager, 
 		try {
 			await agent.prompt(userInput);
 		} catch (error: any) {
-			// Error handling - errors should be in agent state
-			console.error("Error:", error.message);
+			// Display error in the TUI by adding an error message to the chat
+			renderer.showError(error.message || "Unknown error occurred");
 		}
 	}
 }
@@ -182,26 +182,55 @@ export async function main(args: string[]) {
 	const provider = (parsed.provider || "anthropic") as any;
 	const modelId = parsed.model || "claude-sonnet-4-5";
 
-	// Get API key
-	let apiKey = parsed.apiKey;
-	if (!apiKey) {
-		const envVarMap: Record<string, string> = {
-			google: "GEMINI_API_KEY",
-			openai: "OPENAI_API_KEY",
-			anthropic: "ANTHROPIC_OAUTH_TOKEN",
-			xai: "XAI_API_KEY",
-			groq: "GROQ_API_KEY",
-			cerebras: "CEREBRAS_API_KEY",
-			zai: "ZAI_API_KEY",
-		};
-		const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-		apiKey = process.env[envVar];
-
-		if (!apiKey) {
-			console.error(chalk.red(`Error: No API key found for provider "${provider}"`));
-			console.error(chalk.dim(`Set ${envVar} environment variable or use --api-key flag`));
-			process.exit(1);
+	// Helper function to get API key for a provider
+	const getApiKeyForProvider = (providerName: string): string | undefined => {
+		// Check if API key was provided via command line
+		if (parsed.apiKey) {
+			return parsed.apiKey;
 		}
+
+		const envVarMap: Record<string, string[]> = {
+			google: ["GEMINI_API_KEY"],
+			openai: ["OPENAI_API_KEY"],
+			anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+			xai: ["XAI_API_KEY"],
+			groq: ["GROQ_API_KEY"],
+			cerebras: ["CEREBRAS_API_KEY"],
+			zai: ["ZAI_API_KEY"],
+			moonshotai: ["MOONSHOT_API_KEY"],
+		};
+
+		const envVars = envVarMap[providerName] || [`${providerName.toUpperCase()}_API_KEY`];
+
+		// Check each environment variable in priority order
+		for (const envVar of envVars) {
+			const key = process.env[envVar];
+			if (key) {
+				return key;
+			}
+		}
+
+		return undefined;
+	};
+
+	// Get initial API key
+	const initialApiKey = getApiKeyForProvider(provider);
+	if (!initialApiKey) {
+		const envVarMap: Record<string, string[]> = {
+			google: ["GEMINI_API_KEY"],
+			openai: ["OPENAI_API_KEY"],
+			anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+			xai: ["XAI_API_KEY"],
+			groq: ["GROQ_API_KEY"],
+			cerebras: ["CEREBRAS_API_KEY"],
+			zai: ["ZAI_API_KEY"],
+			moonshotai: ["MOONSHOT_API_KEY"],
+		};
+		const envVars = envVarMap[provider] || [`${provider.toUpperCase()}_API_KEY`];
+		const envVarList = envVars.join(" or ");
+		console.error(chalk.red(`Error: No API key found for provider "${provider}"`));
+		console.error(chalk.dim(`Set ${envVarList} environment variable or use --api-key flag`));
+		process.exit(1);
 	}
 
 	// Create agent
@@ -216,7 +245,17 @@ export async function main(args: string[]) {
 			tools: codingTools,
 		},
 		transport: new ProviderTransport({
-			getApiKey: async () => apiKey!,
+			// Dynamic API key lookup based on current model's provider
+			getApiKey: async () => {
+				const currentProvider = agent.state.model.provider;
+				const key = getApiKeyForProvider(currentProvider);
+				if (!key) {
+					throw new Error(
+						`No API key found for provider "${currentProvider}". Please set the appropriate environment variable.`,
+					);
+				}
+				return key;
+			},
 		}),
 	});
 
@@ -226,6 +265,22 @@ export async function main(args: string[]) {
 		if (messages.length > 0) {
 			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
 			agent.replaceMessages(messages);
+		}
+
+		// Load and restore model
+		const savedModel = sessionManager.loadModel();
+		if (savedModel) {
+			// Parse provider/modelId from saved model string (format: "provider/modelId")
+			const [savedProvider, savedModelId] = savedModel.split("/");
+			if (savedProvider && savedModelId) {
+				try {
+					const restoredModel = getModel(savedProvider as any, savedModelId);
+					agent.setModel(restoredModel);
+					console.log(chalk.dim(`Restored model: ${savedModel}`));
+				} catch (error: any) {
+					console.error(chalk.yellow(`Warning: Could not restore model ${savedModel}: ${error.message}`));
+				}
+			}
 		}
 
 		// Load and restore thinking level

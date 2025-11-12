@@ -15,6 +15,7 @@ import type { SessionManager } from "../session-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { FooterComponent } from "./footer.js";
+import { ModelSelectorComponent } from "./model-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -47,6 +48,9 @@ export class TuiRenderer {
 	// Thinking level selector
 	private thinkingSelector: ThinkingSelectorComponent | null = null;
 
+	// Model selector
+	private modelSelector: ModelSelectorComponent | null = null;
+
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
@@ -68,8 +72,13 @@ export class TuiRenderer {
 			description: "Select reasoning level (opens selector UI)",
 		};
 
+		const modelCommand: SlashCommand = {
+			name: "model",
+			description: "Select model (opens selector UI)",
+		};
+
 		// Setup autocomplete for file paths and slash commands
-		const autocompleteProvider = new CombinedAutocompleteProvider([thinkingCommand], process.cwd());
+		const autocompleteProvider = new CombinedAutocompleteProvider([thinkingCommand, modelCommand], process.cwd());
 		this.editor.setAutocompleteProvider(autocompleteProvider);
 	}
 
@@ -130,6 +139,14 @@ export class TuiRenderer {
 			if (text === "/thinking") {
 				// Show thinking level selector
 				this.showThinkingSelector();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /model command
+			if (text === "/model") {
+				// Show model selector
+				this.showModelSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -404,6 +421,13 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
+	showError(errorMessage: string): void {
+		// Show error message in the chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.red(`Error: ${errorMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	private showThinkingSelector(): void {
 		// Create thinking selector with current level
 		this.thinkingSelector = new ThinkingSelectorComponent(
@@ -443,6 +467,48 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.thinkingSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showModelSelector(): void {
+		// Create model selector with current model
+		this.modelSelector = new ModelSelectorComponent(
+			this.agent.state.model,
+			(model) => {
+				// Apply the selected model
+				this.agent.setModel(model);
+
+				// Save model change to session
+				this.sessionManager.saveModelChange(`${model.provider}/${model.id}`);
+
+				// Show confirmation message with proper spacing
+				this.chatContainer.addChild(new Spacer(1));
+				const confirmText = new Text(chalk.dim(`Model: ${model.id}`), 1, 0);
+				this.chatContainer.addChild(confirmText);
+
+				// Hide selector and show editor again
+				this.hideModelSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideModelSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.modelSelector);
+		this.ui.setFocus(this.modelSelector);
+		this.ui.requestRender();
+	}
+
+	private hideModelSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.modelSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 

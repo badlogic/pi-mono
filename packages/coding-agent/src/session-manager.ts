@@ -212,6 +212,29 @@ export class SessionManager {
 		return lastThinkingLevel;
 	}
 
+	loadModel(): string | null {
+		if (!existsSync(this.sessionFile)) return null;
+
+		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
+
+		// Find the most recent model (from session header or change event)
+		let lastModel: string | null = null;
+		for (const line of lines) {
+			try {
+				const entry = JSON.parse(line);
+				if (entry.type === "session" && entry.model) {
+					lastModel = entry.model;
+				} else if (entry.type === "model_change" && entry.model) {
+					lastModel = entry.model;
+				}
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		return lastModel;
+	}
+
 	getSessionId(): string {
 		return this.sessionId;
 	}
