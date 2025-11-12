@@ -85,6 +85,20 @@ Export the current session to a self-contained HTML file:
 
 The HTML file includes the full conversation with syntax highlighting and is viewable in any browser.
 
+### /session
+
+Show session information and statistics:
+
+```
+/session
+```
+
+Displays:
+- Session file path and ID
+- Message counts (user, assistant, total)
+- Token usage (input, output, cache read/write, total)
+- Total cost (if available)
+
 ## Editor Features
 
 The interactive input editor includes several productivity features:
