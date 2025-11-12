@@ -300,25 +300,56 @@ pi -c "What did we discuss?"
 pi --provider openai --model gpt-4o "Help me refactor this code"
 ```
 
-## Available Tools
+## Tools
+
+### Built-in Tools
 
 The agent has access to four core tools for working with your codebase:
 
-### read
-
+**read**
 Read file contents. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit parameters for large files. Lines longer than 2000 characters are truncated.
 
-### write
-
+**write**
 Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.
 
-### edit
-
+**edit**
 Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits. Returns an error if the text appears multiple times or isn't found.
 
-### bash
-
+**bash**
 Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.
+
+### MCP & Adding Your Own Tools
+
+You don't need MCP to extend pi's capabilities. Agents are excellent at writing code and running bash commands - leverage that instead.
+
+**The simple approach:**
+- Write small CLI scripts for your specific needs (Node.js, Python, whatever)
+- Put them in your PATH or a dedicated `~/agent-tools` directory
+- Document them in a README that you point your agent to when needed
+
+**Why this works:**
+- **Token efficient**: A 225-token README beats a 13,000-token MCP server description
+- **Composable**: Chain tools with bash pipes, save outputs to files, process results with code
+- **Easy to extend**: Need a new tool? Ask your agent to write it for you
+- **No overhead**: No server processes, no protocol complexity, just executables
+
+**Example structure:**
+```bash
+# Set up tools directory
+mkdir -p ~/agent-tools/browser-tools
+cd ~/agent-tools/browser-tools
+
+# Create minimal CLI tools (e.g., start.js, nav.js, screenshot.js)
+# Document them in README.md
+# Add to PATH or reference in AGENT.md
+
+# In your session:
+# "Read ~/agent-tools/browser-tools/README.md and use those tools"
+```
+
+The agent already knows how to use bash, write code, and compose results. Building on these primitives is often simpler, more flexible, and more efficient than integrating an MCP server.
+
+For a detailed walkthrough and real examples, see: [What if you don't need MCP at all?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
 ## Security (YOLO by default)
 
@@ -332,8 +363,7 @@ This agent runs in full YOLO mode and assumes you know what you're doing. It has
 
 **Why:**
 - Permission systems add massive friction while being easily circumvented
-- Pre-checking tools for "dangerous" patterns introduces latency and false positives
-- Fast iteration requires trust, not sandboxing
+- Pre-checking tools for "dangerous" patterns introduces latency, false positives, and is ineffective
 
 **Prompt injection risks:**
 - By default, pi has no web search or fetch tool
@@ -345,8 +375,11 @@ This agent runs in full YOLO mode and assumes you know what you're doing. It has
 - Run pi inside a container if you're uncomfortable with full access
 - Use a different tool if you need guardrails
 - Don't use pi on systems with sensitive data you can't afford to lose
+- Fork pi and add all of the above
 
-This is how I want it to work. Use at your own risk.
+This is how I want it to work and I'm not likely to change my stance on this.
+
+Use at your own risk.
 
 ## License
 
