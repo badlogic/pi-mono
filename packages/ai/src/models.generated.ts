@@ -1966,8 +1966,8 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.21,
-				output: 0.84,
+				input: 0.255,
+				output: 1.02,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
@@ -2193,7 +2193,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 32768,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-5-pro": {
 			id: "openai/gpt-5-pro",
@@ -2346,7 +2346,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 32768,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-max": {
 			id: "qwen/qwen3-max",
