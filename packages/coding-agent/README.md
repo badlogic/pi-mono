@@ -368,9 +368,9 @@ You can also reference tool READMEs in your `AGENT.md` files to make them automa
 
 **Real-world example:**
 
-The [exa-search](https://github.com/badlogic/exa-search) tools provide web search capabilities via the Exa API. Just tell your agent: "Read ~/agent-tools/exa-search/README.md and search for X".
+The [exa-search](https://github.com/badlogic/exa-search) tools provide web search capabilities via the Exa API. Built by the agent itself in ~2 minutes. Not perfect, but functional. Just tell your agent: "Read ~/agent-tools/exa-search/README.md and search for X".
 
-For a detailed walkthrough with real examples, and the reasons for and benefits of this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
+For a detailed walkthrough with more examples, and the reasons for and benefits of this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
 ## Security (YOLO by default)
 
