@@ -307,7 +307,12 @@ export class Markdown implements Component {
 
 				case "link": {
 					const linkText = this.renderInlineTokens(token.tokens || []);
-					result += chalk.underline.blue(linkText) + chalk.gray(` (${token.href})`);
+					// If link text matches href, only show the link once
+					if (linkText === token.href) {
+						result += chalk.underline.blue(linkText);
+					} else {
+						result += chalk.underline.blue(linkText) + chalk.gray(` (${token.href})`);
+					}
 					break;
 				}
 

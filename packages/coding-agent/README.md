@@ -320,36 +320,45 @@ Execute a bash command in the current working directory. Returns stdout and stde
 
 ### MCP & Adding Your Own Tools
 
-You don't need MCP to extend pi's capabilities. Agents are excellent at writing code and running bash commands - leverage that instead.
+**pi does not support MCP.** Instead, it relies on the four built-in tools above and assumes the agent can invoke pre-existing CLI tools or write them on the fly as needed.
 
-**The simple approach:**
-- Write small CLI scripts for your specific needs (Node.js, Python, whatever)
-- Put them in your PATH or a dedicated `~/agent-tools` directory
-- Document them in a README that you point your agent to when needed
+**Here's the gist:**
 
-**Why this works:**
-- **Token efficient**: A 225-token README beats a 13,000-token MCP server description
-- **Composable**: Chain tools with bash pipes, save outputs to files, process results with code
-- **Easy to extend**: Need a new tool? Ask your agent to write it for you
-- **No overhead**: No server processes, no protocol complexity, just executables
+1. Create a simple CLI tool (any language, any executable)
+2. Write a concise README.md describing what it does and how to use it
+3. Tell the agent to read that README
 
-**Example structure:**
+**Minimal example:**
+
+`~/agent-tools/screenshot/README.md`:
+```markdown
+# Screenshot Tool
+
+Takes a screenshot of your main display.
+
+## Usage
 ```bash
-# Set up tools directory
-mkdir -p ~/agent-tools/browser-tools
-cd ~/agent-tools/browser-tools
-
-# Create minimal CLI tools (e.g., start.js, nav.js, screenshot.js)
-# Document them in README.md
-# Add to PATH or reference in AGENT.md
-
-# In your session:
-# "Read ~/agent-tools/browser-tools/README.md and use those tools"
+screenshot.sh
 ```
 
-The agent already knows how to use bash, write code, and compose results. Building on these primitives is often simpler, more flexible, and more efficient than integrating an MCP server.
+Returns the path to the saved PNG file.
+```
 
-For a detailed walkthrough and real examples, see: [What if you don't need MCP at all?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
+`~/agent-tools/screenshot/screenshot.sh`:
+```bash
+#!/bin/bash
+screencapture -x /tmp/screenshot-$(date +%s).png
+ls -t /tmp/screenshot-*.png | head -1
+```
+
+**In your session:**
+```
+You: Read ~/agent-tools/screenshot/README.md and use that tool to take a screenshot
+```
+
+The agent will read the README, understand the tool, and invoke it via bash as needed. If you need a new tool, ask the agent to write it for you.
+
+For a detailed walkthrough with real examples, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
 ## Security (YOLO by default)
 
