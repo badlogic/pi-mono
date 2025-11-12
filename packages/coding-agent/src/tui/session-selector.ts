@@ -18,6 +18,7 @@ interface SessionItem {
 	modified: Date;
 	messageCount: number;
 	firstMessage: string;
+	allMessagesText: string;
 }
 
 /**
@@ -57,7 +58,8 @@ class SessionList implements Component {
 				.split(/\s+/)
 				.filter((t) => t);
 			this.filteredSessions = this.allSessions.filter((session) => {
-				const searchText = session.firstMessage.toLowerCase();
+				// Search through all messages in the session
+				const searchText = session.allMessagesText.toLowerCase();
 				return searchTokens.every((token) => searchText.includes(token));
 			});
 		}

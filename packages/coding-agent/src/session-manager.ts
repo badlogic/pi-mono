@@ -253,6 +253,7 @@ export class SessionManager {
 		modified: Date;
 		messageCount: number;
 		firstMessage: string;
+		allMessagesText: string;
 	}> {
 		const sessions: Array<{
 			path: string;
@@ -261,6 +262,7 @@ export class SessionManager {
 			modified: Date;
 			messageCount: number;
 			firstMessage: string;
+			allMessagesText: string;
 		}> = [];
 
 		try {
@@ -278,6 +280,7 @@ export class SessionManager {
 					let created = stats.birthtime;
 					let messageCount = 0;
 					let firstMessage = "";
+					const allMessages: string[] = [];
 
 					for (const line of lines) {
 						try {
@@ -289,17 +292,25 @@ export class SessionManager {
 								created = new Date(entry.timestamp);
 							}
 
-							// Count messages
+							// Count messages and collect all text
 							if (entry.type === "message") {
 								messageCount++;
 
-								// Get first user message
-								if (!firstMessage && entry.message.role === "user") {
+								// Extract text from user and assistant messages
+								if (entry.message.role === "user" || entry.message.role === "assistant") {
 									const textContent = entry.message.content
 										.filter((c: any) => c.type === "text")
 										.map((c: any) => c.text)
 										.join(" ");
-									firstMessage = textContent || "";
+
+									if (textContent) {
+										allMessages.push(textContent);
+
+										// Get first user message for display
+										if (!firstMessage && entry.message.role === "user") {
+											firstMessage = textContent;
+										}
+									}
 								}
 							}
 						} catch {
@@ -314,6 +325,7 @@ export class SessionManager {
 						modified: stats.mtime,
 						messageCount,
 						firstMessage: firstMessage || "(no messages)",
+						allMessagesText: allMessages.join(" "),
 					});
 				} catch (error) {
 					// Skip files that can't be read
