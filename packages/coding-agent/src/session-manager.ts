@@ -78,7 +78,8 @@ export class SessionManager {
 
 	private getSessionDirectory(): string {
 		const cwd = process.cwd();
-		const safePath = "--" + cwd.replace(/^\//, "").replace(/\//g, "-") + "--";
+		// Replace all path separators and colons (for Windows drive letters) with dashes
+		const safePath = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
 
 		const configDir = resolve(process.env.CODING_AGENT_DIR || join(homedir(), ".pi/agent/"));
 		const sessionDir = join(configDir, "sessions", safePath);
