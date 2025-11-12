@@ -1966,8 +1966,8 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.255,
-				output: 1.02,
+				input: 0.21,
+				output: 0.84,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
@@ -2238,13 +2238,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.44999999999999996,
-				output: 1.9,
+				input: 0.6,
+				output: 2.2,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 202752,
-			maxTokens: 4096,
+			contextWindow: 204800,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"anthropic/claude-sonnet-4.5": {
 			id: "anthropic/claude-sonnet-4.5",

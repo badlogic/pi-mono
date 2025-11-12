@@ -4,6 +4,7 @@
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"bin": {
+		"pi": "dist/cli.js",
 		"coding-agent": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
