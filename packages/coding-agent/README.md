@@ -2,8 +2,6 @@
 
 Interactive CLI coding assistant powered by multiple LLM providers. Chat with AI models that can read files, execute commands, and make precise edits to your codebase.
 
-**Note**: This tool can modify your filesystem. Use with caution in production environments.
-
 ## Installation
 
 ```bash
@@ -321,6 +319,34 @@ Edit a file by replacing exact text. The oldText must match exactly (including w
 ### bash
 
 Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.
+
+## Security (YOLO by default)
+
+This agent runs in full YOLO mode and assumes you know what you're doing. It has unrestricted access to your filesystem and can execute any command without permission checks or safety rails.
+
+**What this means:**
+- No permission prompts for file operations or commands
+- No pre-checking of bash commands for malicious content
+- Full filesystem access - can read, write, or delete anything
+- Can execute any command with your user privileges
+
+**Why:**
+- Permission systems add massive friction while being easily circumvented
+- Pre-checking tools for "dangerous" patterns introduces latency and false positives
+- Fast iteration requires trust, not sandboxing
+
+**Prompt injection risks:**
+- By default, pi has no web search or fetch tool
+- However, it can use `curl` or read files from disk
+- Both provide ample surface area for prompt injection attacks
+- Malicious content in files or command outputs can influence behavior
+
+**Mitigations:**
+- Run pi inside a container if you're uncomfortable with full access
+- Use a different tool if you need guardrails
+- Don't use pi on systems with sensitive data you can't afford to lose
+
+This is how I want it to work. Use at your own risk.
 
 ## License
 
