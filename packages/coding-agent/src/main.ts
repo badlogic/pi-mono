@@ -3,7 +3,8 @@ import { getModel, type KnownProvider } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
-import { dirname, join } from "path";
+import { homedir } from "os";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { SessionManager } from "./session-manager.js";
 import { codingTools } from "./tools/index.js";
@@ -149,20 +150,70 @@ Guidelines:
 Current directory: ${process.cwd()}`;
 
 /**
- * Look for AGENT.md or CLAUDE.md in the current directory and return its contents
+ * Look for AGENT.md or CLAUDE.md in a directory (prefers AGENT.md)
  */
-function loadProjectContext(): string | null {
+function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
 	const candidates = ["AGENT.md", "CLAUDE.md"];
 	for (const filename of candidates) {
-		if (existsSync(filename)) {
+		const filePath = join(dir, filename);
+		if (existsSync(filePath)) {
 			try {
-				return readFileSync(filename, "utf-8");
+				return {
+					path: filePath,
+					content: readFileSync(filePath, "utf-8"),
+				};
 			} catch (error) {
-				console.error(chalk.yellow(`Warning: Could not read ${filename}: ${error}`));
+				console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
 			}
 		}
 	}
 	return null;
+}
+
+/**
+ * Load all project context files in order:
+ * 1. Global: ~/.pi/agent/AGENT.md or CLAUDE.md
+ * 2. Parent directories (top-most first) down to cwd
+ * Each returns {path, content} for separate messages
+ */
+function loadProjectContextFiles(): Array<{ path: string; content: string }> {
+	const contextFiles: Array<{ path: string; content: string }> = [];
+
+	// 1. Load global context from ~/.pi/agent/
+	const homeDir = homedir();
+	const globalContextDir = resolve(process.env.CODING_AGENT_DIR || join(homeDir, ".pi/agent/"));
+	const globalContext = loadContextFileFromDir(globalContextDir);
+	if (globalContext) {
+		contextFiles.push(globalContext);
+	}
+
+	// 2. Walk up from cwd to root, collecting all context files
+	const cwd = process.cwd();
+	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
+
+	let currentDir = cwd;
+	const root = resolve("/");
+
+	while (true) {
+		const contextFile = loadContextFileFromDir(currentDir);
+		if (contextFile) {
+			// Add to beginning so we get top-most parent first
+			ancestorContextFiles.unshift(contextFile);
+		}
+
+		// Stop if we've reached root
+		if (currentDir === root) break;
+
+		// Move up one directory
+		const parentDir = resolve(currentDir, "..");
+		if (parentDir === currentDir) break; // Safety check
+		currentDir = parentDir;
+	}
+
+	// Add ancestor files in order (top-most → cwd)
+	contextFiles.push(...ancestorContextFiles);
+
+	return contextFiles;
 }
 
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
@@ -428,23 +479,26 @@ export async function main(args: string[]) {
 	// Note: Session will be started lazily after first user+assistant message exchange
 	// (unless continuing/resuming, in which case it's already initialized)
 
-	// Inject project context (AGENT.md/CLAUDE.md) if not continuing/resuming
+	// Inject project context files (AGENT.md/CLAUDE.md) if not continuing/resuming
 	if (!parsed.continue && !parsed.resume) {
-		const projectContext = loadProjectContext();
-		if (projectContext) {
-			// Queue the context as a message that will be injected at the start
-			await agent.queueMessage({
-				role: "user",
-				content: [
-					{
-						type: "text",
-						text: `[Project Context from ${existsSync("AGENT.md") ? "AGENT.md" : "CLAUDE.md"}]\n\n${projectContext}`,
-					},
-				],
-				timestamp: Date.now(),
-			});
+		const contextFiles = loadProjectContextFiles();
+		if (contextFiles.length > 0) {
+			// Queue each context file as a separate message
+			for (const { path: filePath, content } of contextFiles) {
+				await agent.queueMessage({
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: `[Project Context from ${filePath}]\n\n${content}`,
+						},
+					],
+					timestamp: Date.now(),
+				});
+			}
 			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Loaded project context from ${existsSync("AGENT.md") ? "AGENT.md" : "CLAUDE.md"}`));
+				const fileList = contextFiles.map((f) => f.path).join(", ");
+				console.log(chalk.dim(`Loaded project context from: ${fileList}`));
 			}
 		}
 	}

@@ -120,15 +120,55 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 
 ## Project Context Files
 
-Place an `AGENT.md` or `CLAUDE.md` file in your project root to provide context to the AI. The contents will be automatically included at the start of new sessions (not when continuing/resuming sessions).
+The agent automatically loads context from `AGENT.md` or `CLAUDE.md` files at the start of new sessions (not when continuing/resuming). These files are loaded in hierarchical order to support both global preferences and monorepo structures.
 
-This is useful for:
+### File Locations
+
+Context files are loaded in this order:
+
+1. **Global context**: `~/.pi/agent/AGENT.md` or `CLAUDE.md`
+   - Applies to all your coding sessions
+   - Great for personal coding preferences and workflows
+
+2. **Parent directories** (top-most first down to current directory)
+   - Walks up from current directory to filesystem root
+   - Each directory can have its own `AGENT.md` or `CLAUDE.md`
+   - Perfect for monorepos with shared context at higher levels
+
+3. **Current directory**: Your project's `AGENT.md` or `CLAUDE.md`
+   - Most specific context, loaded last
+   - Overwrites or extends parent/global context
+
+**File preference**: In each directory, `AGENT.md` is preferred over `CLAUDE.md` if both exist.
+
+### What to Include
+
+Context files are useful for:
 - Project-specific instructions and guidelines
+- Common bash commands and workflows
 - Architecture documentation
 - Coding conventions and style guides
 - Dependencies and setup information
+- Testing instructions
+- Repository etiquette (branch naming, merge vs. rebase, etc.)
 
-The file is injected as a user message at the beginning of each new session, ensuring the AI has project context without modifying the system prompt.
+### Example
+
+```markdown
+# Common Commands
+- npm run build: Build the project
+- npm test: Run tests
+
+# Code Style
+- Use TypeScript strict mode
+- Prefer async/await over promises
+
+# Workflow
+- Always run tests before committing
+- Update CHANGELOG.md for user-facing changes
+```
+
+Each file is injected as a separate user message at the beginning of new sessions, ensuring the AI has full project context without modifying the system prompt.
 
 ## Image Support
 
@@ -141,26 +181,6 @@ You: What is in this screenshot? /path/to/image.png
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
 The image will be automatically encoded and sent with your message. JPEG and PNG are supported across all vision models. Other formats may only be supported by some models.
-
-## Available Tools
-
-The agent has access to four core tools for working with your codebase:
-
-### read
-
-Read file contents. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit parameters for large files. Lines longer than 2000 characters are truncated.
-
-### write
-
-Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.
-
-### edit
-
-Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits. Returns an error if the text appears multiple times or isn't found.
-
-### bash
-
-Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.
 
 ## Session Management
 
@@ -267,6 +287,26 @@ pi -c "What did we discuss?"
 # Use different model
 pi --provider openai --model gpt-4o "Help me refactor this code"
 ```
+
+## Available Tools
+
+The agent has access to four core tools for working with your codebase:
+
+### read
+
+Read file contents. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit parameters for large files. Lines longer than 2000 characters are truncated.
+
+### write
+
+Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.
+
+### edit
+
+Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits. Returns an error if the text appears multiple times or isn't found.
+
+### bash
+
+Execute a bash command in the current working directory. Returns stdout and stderr. Commands run with a 30 second timeout.
 
 ## License
 
