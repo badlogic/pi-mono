@@ -2,8 +2,15 @@ import type { AgentState } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { basename } from "path";
+import { basename, dirname, join } from "path";
+import { fileURLToPath } from "url";
 import type { SessionManager } from "./session-manager.js";
+
+// Get version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const VERSION = packageJson.version;
 
 /**
  * TUI Color scheme (matching exact RGB values from TUI components)
@@ -386,37 +393,41 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
         }
 
         .header {
-            margin-bottom: 32px;
-            padding: 20px;
+            margin-bottom: 24px;
+            padding: 16px;
             background: ${COLORS.containerBg};
             border-radius: 4px;
         }
 
         .header h1 {
-            font-size: 20px;
+            font-size: 16px;
             font-weight: bold;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
             color: ${COLORS.cyan};
         }
 
         .header-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
             font-size: 13px;
         }
 
         .info-item {
             color: ${COLORS.textDim};
+            display: flex;
+            align-items: baseline;
         }
 
         .info-label {
             font-weight: 600;
             margin-right: 8px;
+            min-width: 80px;
         }
 
         .info-value {
             color: ${COLORS.text};
+            flex: 1;
         }
 
         .messages {
@@ -632,7 +643,7 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
 <body>
     <div class="container">
         <div class="header">
-            <h1>pi coding-agent session</h1>
+            <h1>pi v${VERSION}</h1>
             <div class="header-info">
                 <div class="info-item">
                     <span class="info-label">Session:</span>
