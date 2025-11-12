@@ -449,16 +449,11 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Subscribe to agent events to save messages and log events
+	// Subscribe to agent events to save messages
 	agent.subscribe((event) => {
 		// Save messages on completion
 		if (event.type === "message_end") {
 			sessionManager.saveMessage(event.message);
-		}
-
-		// Log all events except message_update (too verbose)
-		if (event.type !== "message_update") {
-			sessionManager.saveEvent(event);
 		}
 	});
 

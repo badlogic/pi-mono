@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentState } from "@mariozechner/pi-agent";
+import type { AgentState } from "@mariozechner/pi-agent";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
@@ -25,12 +25,6 @@ export interface SessionMessageEntry {
 	type: "message";
 	timestamp: string;
 	message: any; // AppMessage from agent state
-}
-
-export interface SessionEventEntry {
-	type: "event";
-	timestamp: string;
-	event: AgentEvent;
 }
 
 export interface ThinkingLevelChangeEntry {
@@ -148,16 +142,6 @@ export class SessionManager {
 			type: "message",
 			timestamp: new Date().toISOString(),
 			message,
-		};
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
-	}
-
-	saveEvent(event: AgentEvent): void {
-		if (!this.enabled) return;
-		const entry: SessionEventEntry = {
-			type: "event",
-			timestamp: new Date().toISOString(),
-			event,
 		};
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
 	}
