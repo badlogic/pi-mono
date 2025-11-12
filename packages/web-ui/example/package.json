@@ -9,7 +9,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@mariozechner/mini-lit": "^0.1.7",
+    "@mariozechner/mini-lit": "^0.2.0",
     "@mariozechner/pi-ai": "file:../../ai",
     "@mariozechner/pi-web-ui": "file:../",
     "@tailwindcss/vite": "^4.1.17",

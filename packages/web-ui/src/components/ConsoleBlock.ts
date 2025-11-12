@@ -1,6 +1,7 @@
-import { html, icon } from "@mariozechner/mini-lit";
+import { icon } from "@mariozechner/mini-lit";
 import { LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
+import { html } from "lit/html.js";
 import { Check, Copy } from "lucide";
 import { i18n } from "../utils/i18n.js";
 

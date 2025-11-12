@@ -1,5 +1,5 @@
-import { Badge, html } from "@mariozechner/mini-lit";
-import { LitElement } from "lit";
+import { Badge } from "@mariozechner/mini-lit/dist/Badge.js";
+import { html, LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Agent } from "./agent/agent.js";
 import "./components/AgentInterface.js";

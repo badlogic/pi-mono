@@ -1,5 +1,7 @@
-import { html, i18n, Select, type TemplateResult } from "@mariozechner/mini-lit";
+import { i18n } from "@mariozechner/mini-lit";
+import { Select } from "@mariozechner/mini-lit/dist/Select.js";
 import { getProviders } from "@mariozechner/pi-ai";
+import { html, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import "../components/CustomProviderCard.js";
 import "../components/ProviderKeyInput.js";

@@ -1,5 +1,5 @@
-import { html } from "@mariozechner/mini-lit";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
+import { html } from "lit";
 import { Clock } from "lucide";
 import { i18n } from "../../utils/i18n.js";
 import { renderHeader } from "../renderer-registry.js";

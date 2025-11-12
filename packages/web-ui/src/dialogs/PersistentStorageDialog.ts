@@ -1,4 +1,7 @@
-import { Button, DialogBase, DialogContent, DialogHeader, html } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
+import { DialogContent, DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
+import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
+import { html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { i18n } from "../utils/i18n.js";
 

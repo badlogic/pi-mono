@@ -1,4 +1,3 @@
-import { Button, CopyButton, DownloadButton, icon, PreviewCodeToggle } from "@mariozechner/mini-lit";
 import hljs from "highlight.js";
 import { html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -13,6 +12,11 @@ import "../../components/SandboxedIframe.js";
 import { ArtifactElement } from "./ArtifactElement.js";
 import type { Console } from "./Console.js";
 import "./Console.js";
+import { icon } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
+import { CopyButton } from "@mariozechner/mini-lit/dist/CopyButton.js";
+import { DownloadButton } from "@mariozechner/mini-lit/dist/DownloadButton.js";
+import { PreviewCodeToggle } from "@mariozechner/mini-lit/dist/PreviewCodeToggle.js";
 
 @customElement("html-artifact")
 export class HtmlArtifact extends ArtifactElement {

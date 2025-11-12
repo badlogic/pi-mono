@@ -1,10 +1,9 @@
-import { html } from "@mariozechner/mini-lit";
 import type {
 	AgentTool,
 	AssistantMessage as AssistantMessageType,
 	ToolResultMessage as ToolResultMessageType,
 } from "@mariozechner/pi-ai";
-import { LitElement, type TemplateResult } from "lit";
+import { html, LitElement, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { AppMessage } from "./Messages.js";

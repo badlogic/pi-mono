@@ -1,4 +1,3 @@
-import { Button, icon, Input } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
 import { getModel } from "@mariozechner/pi-ai";
 import {
@@ -26,6 +25,9 @@ import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";
 import { createSystemNotification, customMessageTransformer, registerCustomMessageRenderers } from "./custom-messages.js";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
+import { icon } from "@mariozechner/mini-lit";
+import { Input } from "@mariozechner/mini-lit/dist/Input.js";
 
 // Register custom message renderers
 registerCustomMessageRenderers();

@@ -1,5 +1,6 @@
-import { Button, icon } from "@mariozechner/mini-lit";
+import { icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { type AgentTool, type Message, StringEnum, type ToolCall } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";

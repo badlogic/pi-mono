@@ -1,6 +1,5 @@
-import { html } from "@mariozechner/mini-lit";
 import type { AgentTool, Message, ToolResultMessage } from "@mariozechner/pi-ai";
-import { LitElement } from "lit";
+import { html, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 
 export class StreamingMessageContainer extends LitElement {

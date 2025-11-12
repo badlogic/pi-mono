@@ -1,6 +1,5 @@
-import { html } from "@mariozechner/mini-lit";
 import type { ToolResultMessage, Usage } from "@mariozechner/pi-ai";
-import { LitElement } from "lit";
+import { html, LitElement } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
 import { ModelSelector } from "../dialogs/ModelSelector.js";
 import type { MessageEditor } from "./MessageEditor.js";

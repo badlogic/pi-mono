@@ -1,6 +1,7 @@
-import { html, icon } from "@mariozechner/mini-lit";
+import { icon } from "@mariozechner/mini-lit/dist/icons.js";
 import { LitElement } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { html } from "lit/html.js";
 import { FileSpreadsheet, FileText, X } from "lucide";
 import { AttachmentOverlay } from "../dialogs/AttachmentOverlay.js";
 import type { Attachment } from "../utils/attachment-utils.js";

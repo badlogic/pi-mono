@@ -1,4 +1,3 @@
-import { html } from "@mariozechner/mini-lit";
 import type {
 	AgentTool,
 	AssistantMessage as AssistantMessageType,
@@ -6,7 +5,7 @@ import type {
 	ToolResultMessage as ToolResultMessageType,
 	UserMessage as UserMessageType,
 } from "@mariozechner/pi-ai";
-import { LitElement, type TemplateResult } from "lit";
+import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { renderTool } from "../tools/index.js";
 import type { Attachment } from "../utils/attachment-utils.js";

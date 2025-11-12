@@ -1,5 +1,6 @@
-import { Button, html, i18n, type TemplateResult } from "@mariozechner/mini-lit";
-import { LitElement } from "lit";
+import { i18n } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
+import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { CustomProvider } from "../storage/stores/custom-providers-store.js";
 

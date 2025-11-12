@@ -1,7 +1,8 @@
-import { Button, html, icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/ModeToggle.js";
+import { icon } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { renderAsync } from "docx-preview";
-import { LitElement } from "lit";
+import { html, LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { Download, X } from "lucide";
 import * as pdfjsLib from "pdfjs-dist";

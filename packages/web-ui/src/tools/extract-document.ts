@@ -1,6 +1,6 @@
-import { html } from "@mariozechner/mini-lit";
 import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
+import { html } from "lit";
 import { createRef, ref } from "lit/directives/ref.js";
 import { FileText } from "lucide";
 import { EXTRACT_DOCUMENT_DESCRIPTION } from "../prompts/prompts.js";

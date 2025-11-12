@@ -1,6 +1,8 @@
-import { DialogBase, DialogContent, DialogHeader, html } from "@mariozechner/mini-lit";
 import { customElement, state } from "lit/decorators.js";
 import "../components/ProviderKeyInput.js";
+import { DialogContent, DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
+import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
+import { html } from "lit";
 import { getAppStorage } from "../storage/app-storage.js";
 import { i18n } from "../utils/i18n.js";
 

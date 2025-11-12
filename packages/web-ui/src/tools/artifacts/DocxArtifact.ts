@@ -1,4 +1,4 @@
-import { DownloadButton } from "@mariozechner/mini-lit";
+import { DownloadButton } from "@mariozechner/mini-lit/dist/DownloadButton.js";
 import { renderAsync } from "docx-preview";
 import { html, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";

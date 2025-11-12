@@ -1,9 +1,10 @@
-import { Diff, html, type TemplateResult } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/CodeBlock.js";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { createRef, ref } from "lit/directives/ref.js";
 import { FileCode2 } from "lucide";
 import "../../components/ConsoleBlock.js";
+import { Diff } from "@mariozechner/mini-lit/dist/Diff.js";
+import { html, type TemplateResult } from "lit";
 import { i18n } from "../../utils/i18n.js";
 import { renderCollapsibleHeader, renderHeader } from "../renderer-registry.js";
 import type { ToolRenderer, ToolRenderResult } from "../types.js";

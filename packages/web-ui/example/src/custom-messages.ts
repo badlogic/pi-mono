@@ -1,8 +1,8 @@
-import { Alert } from "@mariozechner/mini-lit";
 import type { Message } from "@mariozechner/pi-ai";
 import { html } from "lit";
 import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
 import type { AppMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
+import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
 
 // ============================================================================
 // 1. EXTEND AppMessage TYPE VIA DECLARATION MERGING

@@ -1,4 +1,6 @@
-import { CopyButton, DownloadButton, PreviewCodeToggle } from "@mariozechner/mini-lit";
+import { CopyButton } from "@mariozechner/mini-lit/dist/CopyButton.js";
+import { DownloadButton } from "@mariozechner/mini-lit/dist/DownloadButton.js";
+import { PreviewCodeToggle } from "@mariozechner/mini-lit/dist/PreviewCodeToggle.js";
 import hljs from "highlight.js";
 import { html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
