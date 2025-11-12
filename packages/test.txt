@@ -1,20 +1,5 @@
-Line 1: The quick brown fox jumps over the lazy dog
-Line 2: Testing the TUI renderer with multiple lines
-Line 3: Each line contains some different text
-Line 4: This is line number four
-Line 5: Halfway through the first ten lines
-Line 6: More content for testing purposes
-Line 7: Seven is a lucky number
-Line 8: Eight lines down, twelve to go
-Line 9: Almost at line ten
-Line 10: Double digits now
-Line 11: Starting the second half
-Line 12: A dozen lines complete
-Line 13: Unlucky for some, lucky for others
-Line 14: Fortnight means fourteen nights
-Line 15: Three quarters of the way there
-Line 16: Sweet sixteen
-Line 17: Just a few more lines left
-Line 18: Penultimate line coming up
-Line 19: This is the second to last line
-Line 20: The final line of this test file
+hello
+world
+hello
+world
+hello

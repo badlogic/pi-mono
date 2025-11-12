@@ -27,6 +27,8 @@ const envApiKeyMap: Record<KnownProvider, string[]> = {
 	zai: ["ZAI_API_KEY"],
 };
 
+type Mode = "text" | "json" | "rpc";
+
 interface Args {
 	provider?: string;
 	model?: string;
@@ -35,6 +37,7 @@ interface Args {
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
+	mode?: Mode;
 	messages: string[];
 }
 
@@ -48,6 +51,11 @@ function parseArgs(args: string[]): Args {
 
 		if (arg === "--help" || arg === "-h") {
 			result.help = true;
+		} else if (arg === "--mode" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (mode === "text" || mode === "json" || mode === "rpc") {
+				result.mode = mode;
+			}
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
 		} else if (arg === "--resume" || arg === "-r") {
@@ -79,6 +87,7 @@ ${chalk.bold("Options:")}
   --model <id>            Model ID (default: gemini-2.5-flash)
   --api-key <key>         API key (defaults to env vars)
   --system-prompt <text>  System prompt (default: coding assistant prompt)
+  --mode <mode>           Output mode: text (default), json, or rpc
   --continue, -c          Continue previous session
   --resume, -r            Select a session to resume
   --help, -h              Show this help
@@ -194,12 +203,26 @@ async function runInteractiveMode(agent: Agent, sessionManager: SessionManager, 
 	}
 }
 
-async function runSingleShotMode(agent: Agent, sessionManager: SessionManager, messages: string[]): Promise<void> {
-	for (const message of messages) {
-		console.log(chalk.blue(`\n> ${message}\n`));
-		await agent.prompt(message);
+async function runSingleShotMode(
+	agent: Agent,
+	_sessionManager: SessionManager,
+	messages: string[],
+	mode: "text" | "json",
+): Promise<void> {
+	if (mode === "json") {
+		// Subscribe to all events and output as JSON
+		agent.subscribe((event) => {
+			// Output event as JSON (same format as session manager)
+			console.log(JSON.stringify(event));
+		});
+	}
 
-		// Print response
+	for (const message of messages) {
+		await agent.prompt(message);
+	}
+
+	// In text mode, only output the final assistant message
+	if (mode === "text") {
 		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
 		if (lastMessage.role === "assistant") {
 			for (const content of lastMessage.content) {
@@ -209,8 +232,40 @@ async function runSingleShotMode(agent: Agent, sessionManager: SessionManager, m
 			}
 		}
 	}
+}
 
-	console.log(chalk.dim(`\nSession saved to: ${sessionManager.getSessionFile()}`));
+async function runRpcMode(agent: Agent, _sessionManager: SessionManager): Promise<void> {
+	// Subscribe to all events and output as JSON
+	agent.subscribe((event) => {
+		console.log(JSON.stringify(event));
+	});
+
+	// Listen for JSON input on stdin
+	const readline = require("readline");
+	const rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+		terminal: false,
+	});
+
+	rl.on("line", async (line: string) => {
+		try {
+			const input = JSON.parse(line);
+
+			// Handle different RPC commands
+			if (input.type === "prompt" && input.message) {
+				await agent.prompt(input.message);
+			} else if (input.type === "abort") {
+				agent.abort();
+			}
+		} catch (error: any) {
+			// Output error as JSON
+			console.log(JSON.stringify({ type: "error", error: error.message }));
+		}
+	});
+
+	// Keep process alive
+	return new Promise(() => {});
 }
 
 export async function main(args: string[]) {
@@ -295,11 +350,18 @@ export async function main(args: string[]) {
 		}),
 	});
 
+	// Determine mode early to know if we should print messages
+	const isInteractive = parsed.messages.length === 0;
+	const mode = parsed.mode || "text";
+	const shouldPrintMessages = isInteractive || mode === "text";
+
 	// Load previous messages if continuing or resuming
 	if (parsed.continue || parsed.resume) {
 		const messages = sessionManager.loadMessages();
 		if (messages.length > 0) {
-			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
+			if (shouldPrintMessages) {
+				console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
+			}
 			agent.replaceMessages(messages);
 		}
 
@@ -312,9 +374,13 @@ export async function main(args: string[]) {
 				try {
 					const restoredModel = getModel(savedProvider as any, savedModelId);
 					agent.setModel(restoredModel);
-					console.log(chalk.dim(`Restored model: ${savedModel}`));
+					if (shouldPrintMessages) {
+						console.log(chalk.dim(`Restored model: ${savedModel}`));
+					}
 				} catch (error: any) {
-					console.error(chalk.yellow(`Warning: Could not restore model ${savedModel}: ${error.message}`));
+					if (shouldPrintMessages) {
+						console.error(chalk.yellow(`Warning: Could not restore model ${savedModel}: ${error.message}`));
+					}
 				}
 			}
 		}
@@ -323,7 +389,9 @@ export async function main(args: string[]) {
 		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
 		if (thinkingLevel) {
 			agent.setThinkingLevel(thinkingLevel);
-			console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
+			if (shouldPrintMessages) {
+				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
+			}
 		}
 	}
 
@@ -343,12 +411,16 @@ export async function main(args: string[]) {
 		}
 	});
 
-	// Determine mode: interactive if no messages provided
-	const isInteractive = parsed.messages.length === 0;
-
+	// Route to appropriate mode
 	if (isInteractive) {
+		// No mode flag in interactive - always use TUI
 		await runInteractiveMode(agent, sessionManager, VERSION);
 	} else {
-		await runSingleShotMode(agent, sessionManager, parsed.messages);
+		// CLI mode with messages
+		if (mode === "rpc") {
+			await runRpcMode(agent, sessionManager);
+		} else {
+			await runSingleShotMode(agent, sessionManager, parsed.messages, mode);
+		}
 	}
 }

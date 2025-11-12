@@ -4,8 +4,7 @@
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"bin": {
-		"pi": "dist/cli.js",
-		"coding-agent": "dist/cli.js"
+		"pi": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -24,9 +23,11 @@
 		"@mariozechner/pi-agent": "^0.6.0",
 		"@mariozechner/pi-ai": "^0.6.0",
 		"chalk": "^5.5.0",
+		"diff": "^8.0.2",
 		"glob": "^11.0.3"
 	},
 	"devDependencies": {
+		"@types/diff": "^7.0.2",
 		"@types/node": "^24.3.0",
 		"typescript": "^5.7.3",
 		"vitest": "^3.2.4"
