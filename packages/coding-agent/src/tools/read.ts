@@ -41,15 +41,24 @@ function isImageFile(filePath: string): string | null {
 
 const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
+	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
+
+const MAX_LINES = 2000;
+const MAX_LINE_LENGTH = 2000;
 
 export const readTool: AgentTool<typeof readSchema> = {
 	name: "read",
 	label: "read",
 	description:
-		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp, svg). Images are sent as attachments to the model.",
+		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp, svg). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
 	parameters: readSchema,
-	execute: async (_toolCallId: string, { path }: { path: string }, signal?: AbortSignal) => {
+	execute: async (
+		_toolCallId: string,
+		{ path, offset, limit }: { path: string; offset?: number; limit?: number },
+		signal?: AbortSignal,
+	) => {
 		const absolutePath = resolvePath(expandPath(path));
 		const mimeType = isImageFile(absolutePath);
 
@@ -109,7 +118,30 @@ export const readTool: AgentTool<typeof readSchema> = {
 					} else {
 						// Read as text
 						const textContent = await readFile(absolutePath, "utf-8");
-						content = [{ type: "text", text: textContent }];
+						const lines = textContent.split("\n");
+
+						// Apply offset and limit (matching Claude Code Read tool behavior)
+						const startLine = offset ? Math.max(0, offset - 1) : 0; // 1-indexed to 0-indexed
+						const maxLines = limit || MAX_LINES;
+						const endLine = Math.min(startLine + maxLines, lines.length);
+
+						// Get the relevant lines
+						const selectedLines = lines.slice(startLine, endLine);
+
+						// Truncate long lines
+						const formattedLines = selectedLines.map((line) => {
+							return line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) : line;
+						});
+
+						let outputText = formattedLines.join("\n");
+
+						// Add truncation notice if needed
+						if (endLine < lines.length) {
+							const remaining = lines.length - endLine;
+							outputText += `\n\n... (${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading)`;
+						}
+
+						content = [{ type: "text", text: outputText }];
 					}
 
 					// Check if aborted after reading
