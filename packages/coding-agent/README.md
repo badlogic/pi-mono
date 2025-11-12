@@ -453,6 +453,12 @@ Working on step 3 - authorization endpoints
 
 The agent can read, update, and reference the plan as it works. Unlike ephemeral planning modes that only exist within a session, file-based plans persist and can be versioned with your code.
 
+## Background Bash
+
+**pi does not and will not implement background bash execution.** Instead, tell the agent to use `tmux` or something like [tterminal-cp](https://github.com/badlogic/tterminal-cp).
+
+Long-running commands belong in proper terminal sessions, not as detached processes that complicate cleanup and monitoring.
+
 ## Planned Features
 
 Things that might happen eventually:
