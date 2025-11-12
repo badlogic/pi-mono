@@ -32,7 +32,7 @@ export const writeTool: AgentTool<typeof writeSchema> = {
 		const absolutePath = resolvePath(expandPath(path));
 		const dir = dirname(absolutePath);
 
-		return new Promise<{ output: string; details: undefined }>((resolve, reject) => {
+		return new Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }>((resolve, reject) => {
 			// Check if already aborted
 			if (signal?.aborted) {
 				reject(new Error("Operation aborted"));
@@ -75,7 +75,10 @@ export const writeTool: AgentTool<typeof writeSchema> = {
 						signal.removeEventListener("abort", onAbort);
 					}
 
-					resolve({ output: `Successfully wrote ${content.length} bytes to ${path}`, details: undefined });
+					resolve({
+						content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
+						details: undefined,
+					});
 				} catch (error: any) {
 					// Clean up abort handler
 					if (signal) {

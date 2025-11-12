@@ -60,14 +60,18 @@ async function calculateTest<TApi extends Api>(model: Model<TApi>, options: Opti
 				break;
 
 			case "tool_execution_end":
-				if (!event.isError && typeof event.result === "object" && event.result.output) {
+				if (!event.isError && typeof event.result === "object" && event.result.content) {
+					const textOutput = event.result.content
+						.filter((c: any) => c.type === "text")
+						.map((c: any) => c.text)
+						.join("\n");
 					toolCallCount++;
 					// Extract number from output like "expression = result"
-					const match = event.result.output.match(/=\s*([\d.]+)/);
+					const match = textOutput.match(/=\s*([\d.]+)/);
 					if (match) {
 						const value = parseFloat(match[1]);
 						toolResults.push(value);
-						console.log(`Tool ${toolCallCount}: ${event.result.output}`);
+						console.log(`Tool ${toolCallCount}: ${textOutput}`);
 					}
 				}
 				break;

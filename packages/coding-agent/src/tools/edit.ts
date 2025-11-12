@@ -37,7 +37,7 @@ export const editTool: AgentTool<typeof editSchema> = {
 	) => {
 		const absolutePath = resolvePath(expandPath(path));
 
-		return new Promise<{ output: string; details: undefined }>((resolve, reject) => {
+		return new Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }>((resolve, reject) => {
 			// Check if already aborted
 			if (signal?.aborted) {
 				reject(new Error("Operation aborted"));
@@ -131,7 +131,12 @@ export const editTool: AgentTool<typeof editSchema> = {
 					}
 
 					resolve({
-						output: `Successfully replaced text in ${path}. Changed ${oldText.length} characters to ${newText.length} characters.`,
+						content: [
+							{
+								type: "text",
+								text: `Successfully replaced text in ${path}. Changed ${oldText.length} characters to ${newText.length} characters.`,
+							},
+						],
 						details: undefined,
 					});
 				} catch (error: any) {

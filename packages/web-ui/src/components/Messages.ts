@@ -191,7 +191,12 @@ export class ToolMessageDebugView extends LitElement {
 	}
 
 	override render() {
-		const output = this.pretty(this.result?.output);
+		const textOutput =
+			this.result?.content
+				?.filter((c) => c.type === "text")
+				.map((c: any) => c.text)
+				.join("\n") || "";
+		const output = this.pretty(textOutput);
 		const details = this.pretty(this.result?.details);
 
 		return html`
@@ -240,7 +245,7 @@ export class ToolMessage extends LitElement {
 			? {
 					role: "toolResult",
 					isError: true,
-					output: "",
+					content: [],
 					toolCallId: this.toolCall.id,
 					toolName: this.toolCall.name,
 					timestamp: Date.now(),

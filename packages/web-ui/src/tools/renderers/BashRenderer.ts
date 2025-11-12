@@ -16,7 +16,11 @@ export class BashRenderer implements ToolRenderer<BashParams, undefined> {
 
 		// With result: show command + output
 		if (result && params?.command) {
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 			const combined = output ? `> ${params.command}\n\n${output}` : `> ${params.command}`;
 			return {
 				content: html`

@@ -8,20 +8,22 @@ export async function getCurrentTime(timezone?: string): Promise<GetCurrentTimeR
 	const date = new Date();
 	if (timezone) {
 		try {
+			const timeStr = date.toLocaleString("en-US", {
+				timeZone: timezone,
+				dateStyle: "full",
+				timeStyle: "long",
+			});
 			return {
-				output: date.toLocaleString("en-US", {
-					timeZone: timezone,
-					dateStyle: "full",
-					timeStyle: "long",
-				}),
+				content: [{ type: "text", text: timeStr }],
 				details: { utcTimestamp: date.getTime() },
 			};
 		} catch (e) {
 			throw new Error(`Invalid timezone: ${timezone}. Current UTC time: ${date.toISOString()}`);
 		}
 	}
+	const timeStr = date.toLocaleString("en-US", { dateStyle: "full", timeStyle: "long" });
 	return {
-		output: date.toLocaleString("en-US", { dateStyle: "full", timeStyle: "long" }),
+		content: [{ type: "text", text: timeStr }],
 		details: { utcTimestamp: date.getTime() },
 	};
 }

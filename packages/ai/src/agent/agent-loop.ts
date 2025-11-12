@@ -216,11 +216,15 @@ async function executeToolCalls<T>(
 			isError,
 		});
 
+		// Convert result to content blocks
+		const content: ToolResultMessage<T>["content"] =
+			typeof resultOrError === "string" ? [{ type: "text", text: resultOrError }] : resultOrError.content;
+
 		const toolResultMessage: ToolResultMessage<T> = {
 			role: "toolResult",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
-			output: typeof resultOrError === "string" ? resultOrError : resultOrError.output,
+			content,
 			details: typeof resultOrError === "string" ? ({} as T) : resultOrError.details,
 			isError,
 			timestamp: Date.now(),

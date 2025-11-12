@@ -80,10 +80,15 @@ async function toolExecution(model: Model<any>) {
 	const toolResultMsg = agent.state.messages.find((m) => m.role === "toolResult");
 	expect(toolResultMsg).toBeDefined();
 	if (toolResultMsg?.role !== "toolResult") throw new Error("Expected tool result message");
-	expect(toolResultMsg.output).toBeDefined();
+	const textContent =
+		toolResultMsg.content
+			?.filter((c) => c.type === "text")
+			.map((c: any) => c.text)
+			.join("\n") || "";
+	expect(textContent).toBeDefined();
 
 	const expectedResult = 123 * 456;
-	expect(toolResultMsg.output).toContain(String(expectedResult));
+	expect(textContent).toContain(String(expectedResult));
 
 	const finalMessage = agent.state.messages[agent.state.messages.length - 1];
 	if (finalMessage.role !== "assistant") throw new Error("Expected final assistant message");

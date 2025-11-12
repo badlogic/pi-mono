@@ -25,7 +25,11 @@ export class DefaultRenderer implements ToolRenderer {
 
 		// With result: show header + params + result
 		if (result) {
-			let outputJson = result.output || i18n("(no output)");
+			let outputJson =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || i18n("(no output)");
 			let outputLanguage = "text";
 
 			// Try to parse and pretty-print if it's valid JSON

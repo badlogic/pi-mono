@@ -27,7 +27,7 @@ describe("Tool Validation with TypeBox and AJV", () => {
 		parameters: testSchema,
 		execute: async (_toolCallId, args) => {
 			return {
-				output: `Processed: ${args.name}, ${args.age}, ${args.email}`,
+				content: [{ type: "text", text: `Processed: ${args.name}, ${args.age}, ${args.email}` }],
 				details: undefined,
 			};
 		},
@@ -130,7 +130,11 @@ describe("Tool Validation with TypeBox and AJV", () => {
 
 		const result = await testTool.execute("test-id", validInput as TestParams);
 
-		expect(result.output).toBe("Processed: John Doe, 30, john@example.com");
+		const textOutput = result.content
+			.filter((c: any) => c.type === "text")
+			.map((c: any) => c.text)
+			.join("\n");
+		expect(textOutput).toBe("Processed: John Doe, 30, john@example.com");
 		expect(result.details).toBeUndefined();
 	});
 });

@@ -95,7 +95,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 					if (output) output += "\n\n";
 					reject(new Error(`${output}Command exited with code ${code}`));
 				} else {
-					resolve({ output: output || "(no output)", details: undefined });
+					resolve({ content: [{ type: "text", text: output || "(no output)" }], details: undefined });
 				}
 			});
 

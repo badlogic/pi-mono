@@ -435,11 +435,47 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			if (output.length === 0) continue;
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
+			// Extract text and image content
+			const textResult = msg.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as any).text)
+				.join("\n");
+			const hasImages = msg.content.some((c) => c.type === "image");
+
+			// Always send function_call_output with text (or placeholder if only images)
+			const hasText = textResult.length > 0;
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: sanitizeSurrogates(msg.output),
+				output: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
 			});
+
+			// If there are images and model supports them, send a follow-up user message with images
+			if (hasImages && model.input.includes("image")) {
+				const contentParts: ResponseInputContent[] = [];
+
+				// Add text prefix
+				contentParts.push({
+					type: "input_text",
+					text: "Attached image(s) from tool result:",
+				} satisfies ResponseInputText);
+
+				// Add images
+				for (const block of msg.content) {
+					if (block.type === "image") {
+						contentParts.push({
+							type: "input_image",
+							detail: "auto",
+							image_url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+						} satisfies ResponseInputImage);
+					}
+				}
+
+				messages.push({
+					role: "user",
+					content: contentParts,
+				});
+			}
 		}
 	}
 

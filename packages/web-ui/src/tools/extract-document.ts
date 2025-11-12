@@ -166,7 +166,7 @@ export function createExtractDocumentTool(): AgentTool<typeof extractDocumentSch
 			}
 
 			return {
-				output: attachment.extractedText,
+				content: [{ type: "text" as const, text: attachment.extractedText }],
 				details: {
 					extractedText: attachment.extractedText,
 					format,
@@ -210,7 +210,11 @@ export const extractDocumentRenderer: ToolRenderer<ExtractDocumentParams, Extrac
 					? "Failed to extract document"
 					: "Extracted text from document";
 
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 
 			return {
 				content: html`

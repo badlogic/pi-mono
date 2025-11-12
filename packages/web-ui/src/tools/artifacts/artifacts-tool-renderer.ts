@@ -10,6 +10,17 @@ import type { ToolRenderer, ToolRenderResult } from "../types.js";
 import { ArtifactPill } from "./ArtifactPill.js";
 import type { ArtifactsPanel, ArtifactsParams } from "./artifacts.js";
 
+// Helper to extract text from content blocks
+function getTextOutput(result: ToolResultMessage<any> | undefined): string {
+	if (!result) return "";
+	return (
+		result.content
+			?.filter((c) => c.type === "text")
+			.map((c: any) => c.text)
+			.join("\n") || ""
+	);
+}
+
 // Helper to determine language for syntax highlighting
 function getLanguageFromFilename(filename?: string): string {
 	if (!filename) return "text";
@@ -109,8 +120,8 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 							${isDiff ? diffContent : content ? html`<code-block .code=${content} language=${getLanguageFromFilename(filename)}></code-block>` : ""}
 							${
 								isHtml
-									? html`<console-block .content=${result.output || i18n("An error occurred")} variant="error"></console-block>`
-									: html`<div class="text-sm text-destructive">${result.output || i18n("An error occurred")}</div>`
+									? html`<console-block .content=${getTextOutput(result) || i18n("An error occurred")} variant="error"></console-block>`
+									: html`<div class="text-sm text-destructive">${getTextOutput(result) || i18n("An error occurred")}</div>`
 							}
 						</div>
 					</div>
@@ -124,7 +135,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 				content: html`
 				<div class="space-y-3">
 					${renderHeader(state, FileCode2, headerText)}
-					<div class="text-sm text-destructive">${result.output || i18n("An error occurred")}</div>
+					<div class="text-sm text-destructive">${getTextOutput(result) || i18n("An error occurred")}</div>
 				</div>
 			`,
 				isCustom: false,
@@ -141,7 +152,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 
 			// GET command: show code block with file content
 			if (command === "get") {
-				const fileContent = result.output || i18n("(no output)");
+				const fileContent = getTextOutput(result) || i18n("(no output)");
 				return {
 					content: html`
 					<div>
@@ -157,7 +168,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 
 			// LOGS command: show console block
 			if (command === "logs") {
-				const logs = result.output || i18n("(no output)");
+				const logs = getTextOutput(result) || i18n("(no output)");
 				return {
 					content: html`
 					<div>
@@ -175,7 +186,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			if (command === "create" || command === "rewrite") {
 				const codeContent = content || "";
 				const isHtml = filename?.endsWith(".html");
-				const logs = result.output || "";
+				const logs = getTextOutput(result) || "";
 
 				return {
 					content: html`
@@ -193,7 +204,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 
 			if (command === "update") {
 				const isHtml = filename?.endsWith(".html");
-				const logs = result.output || "";
+				const logs = getTextOutput(result) || "";
 				return {
 					content: html`
 					<div>

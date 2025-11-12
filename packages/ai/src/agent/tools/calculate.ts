@@ -1,15 +1,15 @@
 import { type Static, Type } from "@sinclair/typebox";
-import type { AgentTool } from "../../agent/types.js";
+import type { AgentTool, AgentToolResult } from "../../agent/types.js";
 
-export interface CalculateResult {
-	output: string;
+export interface CalculateResult extends AgentToolResult<undefined> {
+	content: Array<{ type: "text"; text: string }>;
 	details: undefined;
 }
 
 export function calculate(expression: string): CalculateResult {
 	try {
 		const result = new Function("return " + expression)();
-		return { output: `${expression} = ${result}`, details: undefined };
+		return { content: [{ type: "text", text: `${expression} = ${result}` }], details: undefined };
 	} catch (e: any) {
 		throw new Error(e.message || String(e));
 	}

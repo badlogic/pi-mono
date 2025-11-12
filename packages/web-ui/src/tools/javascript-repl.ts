@@ -187,7 +187,7 @@ export function createJavaScriptReplTool(): AgentTool<typeof javascriptReplSchem
 					contentBase64: base64,
 				};
 			});
-			return { output: result.output, details: { files } };
+			return { content: [{ type: "text", text: result.output }], details: { files } };
 		},
 	};
 }
@@ -210,7 +210,11 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 
 		// With result: show params + result
 		if (result && params) {
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 			const files = result.details?.files || [];
 
 			const attachments: Attachment[] = files.map((f, i) => {

@@ -386,11 +386,50 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 			}
 			params.push(assistantMsg);
 		} else if (msg.role === "toolResult") {
+			// Extract text and image content
+			const textResult = msg.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as any).text)
+				.join("\n");
+			const hasImages = msg.content.some((c) => c.type === "image");
+
+			// Always send tool result with text (or placeholder if only images)
+			const hasText = textResult.length > 0;
 			params.push({
 				role: "tool",
-				content: sanitizeSurrogates(msg.output),
+				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
 				tool_call_id: msg.toolCallId,
 			});
+
+			// If there are images and model supports them, send a follow-up user message with images
+			if (hasImages && model.input.includes("image")) {
+				const contentBlocks: Array<
+					{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+				> = [];
+
+				// Add text prefix
+				contentBlocks.push({
+					type: "text",
+					text: "Attached image(s) from tool result:",
+				});
+
+				// Add images
+				for (const block of msg.content) {
+					if (block.type === "image") {
+						contentBlocks.push({
+							type: "image_url",
+							image_url: {
+								url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+							},
+						});
+					}
+				}
+
+				params.push({
+					role: "user",
+					content: contentBlocks,
+				});
+			}
 		}
 	}
 

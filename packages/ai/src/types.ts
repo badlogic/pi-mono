@@ -114,7 +114,7 @@ export interface ToolResultMessage<TDetails = any> {
 	role: "toolResult";
 	toolCallId: string;
 	toolName: string;
-	output: string;
+	content: (TextContent | ImageContent)[]; // Supports text and images
 	details?: TDetails;
 	isError: boolean;
 	timestamp: number; // Unix timestamp in milliseconds

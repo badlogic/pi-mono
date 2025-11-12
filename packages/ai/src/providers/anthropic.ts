@@ -9,6 +9,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	ImageContent,
 	Message,
 	Model,
 	StopReason,
@@ -25,6 +26,58 @@ import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
+
+/**
+ * Convert content blocks to Anthropic API format
+ */
+function convertContentBlocks(content: (TextContent | ImageContent)[]):
+	| string
+	| Array<
+			| { type: "text"; text: string }
+			| {
+					type: "image";
+					source: {
+						type: "base64";
+						media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+						data: string;
+					};
+			  }
+	  > {
+	// If only text blocks, return as concatenated string for simplicity
+	const hasImages = content.some((c) => c.type === "image");
+	if (!hasImages) {
+		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
+	}
+
+	// If we have images, convert to content block array
+	const blocks = content.map((block) => {
+		if (block.type === "text") {
+			return {
+				type: "text" as const,
+				text: sanitizeSurrogates(block.text),
+			};
+		}
+		return {
+			type: "image" as const,
+			source: {
+				type: "base64" as const,
+				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+				data: block.data,
+			},
+		};
+	});
+
+	// If only images (no text), add placeholder text block
+	const hasText = blocks.some((b) => b.type === "text");
+	if (!hasText) {
+		blocks.unshift({
+			type: "text" as const,
+			text: "(see attached image)",
+		});
+	}
+
+	return blocks;
+}
 
 export interface AnthropicOptions extends StreamOptions {
 	thinkingEnabled?: boolean;
@@ -171,7 +224,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							block.arguments = JSON.parse(block.partialJson);
+							block.arguments = parseStreamingJson(block.partialJson);
 
 							// Validate tool arguments if tool definition is available
 							if (context.tools) {
@@ -432,7 +485,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 			toolResults.push({
 				type: "tool_result",
 				tool_use_id: sanitizeToolCallId(msg.toolCallId),
-				content: sanitizeSurrogates(msg.output),
+				content: convertContentBlocks(msg.content),
 				is_error: msg.isError,
 			});
 
@@ -443,7 +496,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				toolResults.push({
 					type: "tool_result",
 					tool_use_id: sanitizeToolCallId(nextMsg.toolCallId),
-					content: sanitizeSurrogates(nextMsg.output),
+					content: convertContentBlocks(nextMsg.content),
 					is_error: nextMsg.isError,
 				});
 				j++;

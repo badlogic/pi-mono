@@ -244,7 +244,7 @@ export class TuiRenderer {
 							assistantMsg.stopReason === "aborted" ? "Operation aborted" : assistantMsg.errorMessage || "Error";
 						for (const [toolCallId, component] of this.pendingTools.entries()) {
 							component.updateResult({
-								output: errorMessage,
+								content: [{ type: "text", text: errorMessage }],
 								isError: true,
 							});
 						}
@@ -273,8 +273,12 @@ export class TuiRenderer {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					// Update the component with the result
+					const content =
+						typeof event.result === "string"
+							? [{ type: "text" as const, text: event.result }]
+							: event.result.content;
 					component.updateResult({
-						output: typeof event.result === "string" ? event.result : event.result.output,
+						content,
 						isError: event.isError,
 					});
 					this.pendingTools.delete(event.toolCallId);
@@ -358,7 +362,7 @@ export class TuiRenderer {
 									? "Operation aborted"
 									: assistantMsg.errorMessage || "Error";
 							component.updateResult({
-								output: errorMessage,
+								content: [{ type: "text", text: errorMessage }],
 								isError: true,
 							});
 						} else {
@@ -373,7 +377,7 @@ export class TuiRenderer {
 				const component = this.pendingTools.get(toolResultMsg.toolCallId);
 				if (component) {
 					component.updateResult({
-						output: toolResultMsg.output,
+						content: toolResultMsg.content,
 						isError: toolResultMsg.isError,
 					});
 					// Remove from pending map since it's complete

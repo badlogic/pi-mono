@@ -2,17 +2,19 @@ import type { Static, TSchema } from "@sinclair/typebox";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	ImageContent,
 	Message,
 	Model,
 	SimpleStreamOptions,
+	TextContent,
 	Tool,
 	ToolResultMessage,
 } from "../types.js";
 
 export interface AgentToolResult<T> {
-	// Output of the tool to be given to the LLM in ToolResultMessage.content
-	output: string;
-	// Details to be displayed in a UI or loggedty
+	// Content blocks supporting text and images
+	content: (TextContent | ImageContent)[];
+	// Details to be displayed in a UI or logged
 	details: T;
 }
 

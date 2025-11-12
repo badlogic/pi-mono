@@ -62,7 +62,10 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 		role: "toolResult",
 		toolCallId: "test_1",
 		toolName: "test_tool",
-		output: `Test with emoji 🙈 and other characters:
+		content: [
+			{
+				type: "text",
+				text: `Test with emoji 🙈 and other characters:
 - Monkey emoji: 🙈
 - Thumbs up: 👍
 - Heart: ❤️
@@ -73,6 +76,8 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 - Chinese: 你好
 - Mathematical symbols: ∑∫∂√
 - Special quotes: "curly" 'quotes'`,
+			},
+		],
 		isError: false,
 		timestamp: Date.now(),
 	};
@@ -141,7 +146,10 @@ async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, opt
 		role: "toolResult",
 		toolCallId: "linkedin_1",
 		toolName: "linkedin_skill",
-		output: `Post: Hab einen "Generative KI für Nicht-Techniker" Workshop gebaut.
+		content: [
+			{
+				type: "text",
+				text: `Post: Hab einen "Generative KI für Nicht-Techniker" Workshop gebaut.
 Unanswered Comments: 2
 
 => {
@@ -156,6 +164,8 @@ Unanswered Comments: 2
     }
   ]
 }`,
+			},
+		],
 		isError: false,
 		timestamp: Date.now(),
 	};
@@ -226,7 +236,7 @@ async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, opt
 		role: "toolResult",
 		toolCallId: "test_2",
 		toolName: "test_tool",
-		output: `Text with unpaired surrogate: ${unpairedSurrogate} <- should be sanitized`,
+		content: [{ type: "text", text: `Text with unpaired surrogate: ${unpairedSurrogate} <- should be sanitized` }],
 		isError: false,
 		timestamp: Date.now(),
 	};

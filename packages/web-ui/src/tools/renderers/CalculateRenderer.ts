@@ -16,7 +16,11 @@ export class CalculateRenderer implements ToolRenderer<CalculateParams, undefine
 
 		// Full params + full result
 		if (result && params?.expression) {
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 
 			// Error: show expression in header, error below
 			if (result.isError) {

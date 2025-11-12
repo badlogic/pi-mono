@@ -377,20 +377,44 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 				parts,
 			});
 		} else if (msg.role === "toolResult") {
+			// Build parts array with functionResponse and/or images
+			const parts: Part[] = [];
+
+			// Extract text and image content
+			const textResult = msg.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as any).text)
+				.join("\n");
+			const imageBlocks = model.input.includes("image") ? msg.content.filter((c) => c.type === "image") : [];
+
+			// Always add functionResponse with text result (or placeholder if only images)
+			const hasText = textResult.length > 0;
+			const hasImages = imageBlocks.length > 0;
+
+			parts.push({
+				functionResponse: {
+					id: msg.toolCallId,
+					name: msg.toolName,
+					response: {
+						result: hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "",
+						isError: msg.isError,
+					},
+				},
+			});
+
+			// Add any images as inlineData parts
+			for (const imageBlock of imageBlocks) {
+				parts.push({
+					inlineData: {
+						mimeType: (imageBlock as any).mimeType,
+						data: (imageBlock as any).data,
+					},
+				});
+			}
+
 			contents.push({
 				role: "user",
-				parts: [
-					{
-						functionResponse: {
-							id: msg.toolCallId,
-							name: msg.toolName,
-							response: {
-								result: sanitizeSurrogates(msg.output),
-								isError: msg.isError,
-							},
-						},
-					},
-				],
+				parts,
 			});
 		}
 	}

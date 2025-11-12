@@ -7,6 +7,16 @@ import { editTool } from "../src/tools/edit.js";
 import { readTool } from "../src/tools/read.js";
 import { writeTool } from "../src/tools/write.js";
 
+// Helper to extract text from content blocks
+function getTextOutput(result: any): string {
+	return (
+		result.content
+			?.filter((c: any) => c.type === "text")
+			.map((c: any) => c.text)
+			.join("\n") || ""
+	);
+}
+
 describe("Coding Agent Tools", () => {
 	let testDir: string;
 
@@ -29,7 +39,7 @@ describe("Coding Agent Tools", () => {
 
 			const result = await readTool.execute("test-call-1", { path: testFile });
 
-			expect(result.output).toBe(content);
+			expect(getTextOutput(result)).toBe(content);
 			expect(result.details).toBeUndefined();
 		});
 
@@ -38,8 +48,8 @@ describe("Coding Agent Tools", () => {
 
 			const result = await readTool.execute("test-call-2", { path: testFile });
 
-			expect(result.output).toContain("Error");
-			expect(result.output).toContain("File not found");
+			expect(getTextOutput(result)).toContain("Error");
+			expect(getTextOutput(result)).toContain("File not found");
 		});
 	});
 
@@ -50,8 +60,8 @@ describe("Coding Agent Tools", () => {
 
 			const result = await writeTool.execute("test-call-3", { path: testFile, content });
 
-			expect(result.output).toContain("Successfully wrote");
-			expect(result.output).toContain(testFile);
+			expect(getTextOutput(result)).toContain("Successfully wrote");
+			expect(getTextOutput(result)).toContain(testFile);
 			expect(result.details).toBeUndefined();
 		});
 
@@ -61,7 +71,7 @@ describe("Coding Agent Tools", () => {
 
 			const result = await writeTool.execute("test-call-4", { path: testFile, content });
 
-			expect(result.output).toContain("Successfully wrote");
+			expect(getTextOutput(result)).toContain("Successfully wrote");
 		});
 	});
 
@@ -77,7 +87,7 @@ describe("Coding Agent Tools", () => {
 				newText: "testing",
 			});
 
-			expect(result.output).toContain("Successfully replaced");
+			expect(getTextOutput(result)).toContain("Successfully replaced");
 			expect(result.details).toBeUndefined();
 		});
 
@@ -92,7 +102,7 @@ describe("Coding Agent Tools", () => {
 				newText: "testing",
 			});
 
-			expect(result.output).toContain("Could not find the exact text");
+			expect(getTextOutput(result)).toContain("Could not find the exact text");
 		});
 
 		it("should fail if text appears multiple times", async () => {
@@ -106,7 +116,7 @@ describe("Coding Agent Tools", () => {
 				newText: "bar",
 			});
 
-			expect(result.output).toContain("Found 3 occurrences");
+			expect(getTextOutput(result)).toContain("Found 3 occurrences");
 		});
 	});
 
@@ -114,20 +124,20 @@ describe("Coding Agent Tools", () => {
 		it("should execute simple commands", async () => {
 			const result = await bashTool.execute("test-call-8", { command: "echo 'test output'" });
 
-			expect(result.output).toContain("test output");
+			expect(getTextOutput(result)).toContain("test output");
 			expect(result.details).toBeUndefined();
 		});
 
 		it("should handle command errors", async () => {
 			const result = await bashTool.execute("test-call-9", { command: "exit 1" });
 
-			expect(result.output).toContain("Command failed");
+			expect(getTextOutput(result)).toContain("Command failed");
 		});
 
 		it("should respect timeout", async () => {
 			const result = await bashTool.execute("test-call-10", { command: "sleep 35" });
 
-			expect(result.output).toContain("Command failed");
+			expect(getTextOutput(result)).toContain("Command failed");
 		}, 35000);
 	});
 });

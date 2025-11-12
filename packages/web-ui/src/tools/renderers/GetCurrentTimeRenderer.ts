@@ -19,7 +19,11 @@ export class GetCurrentTimeRenderer implements ToolRenderer<GetCurrentTimeParams
 
 		// Full params + full result
 		if (result && params) {
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 			const headerText = params.timezone
 				? `${i18n("Getting current time in")} ${params.timezone}`
 				: i18n("Getting current date and time");
@@ -43,7 +47,11 @@ export class GetCurrentTimeRenderer implements ToolRenderer<GetCurrentTimeParams
 
 		// Full result, no params
 		if (result) {
-			const output = result.output || "";
+			const output =
+				result.content
+					?.filter((c) => c.type === "text")
+					.map((c: any) => c.text)
+					.join("\n") || "";
 
 			// Error: show header, error below
 			if (result.isError) {

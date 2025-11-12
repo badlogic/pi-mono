@@ -99,7 +99,6 @@ const finalMessage = await s.result();
 context.messages.push(finalMessage);
 
 // Handle tool calls if any
-// Handle tool calls if any
 const toolCalls = finalMessage.content.filter(b => b.type === 'toolCall');
 for (const call of toolCalls) {
   // Execute the tool
@@ -111,13 +110,14 @@ for (const call of toolCalls) {
       })
     : 'Unknown tool';
 
-  // Add tool result to context
+  // Add tool result to context (supports text and images)
   context.messages.push({
     role: 'toolResult',
     toolCallId: call.id,
     toolName: call.name,
-    output: result,
-    isError: false
+    content: [{ type: 'text', text: result }],
+    isError: false,
+    timestamp: Date.now()
   });
 }
 
@@ -179,7 +179,11 @@ const bookMeetingTool: Tool = {
 
 ### Handling Tool Calls
 
+Tool results use content blocks and can include both text and images:
+
 ```typescript
+import { readFileSync } from 'fs';
+
 const context: Context = {
   messages: [{ role: 'user', content: 'What is the weather in London?' }],
   tools: [weatherTool]
@@ -194,16 +198,31 @@ for (const block of response.content) {
     // If validation fails, an error event is emitted
     const result = await executeWeatherApi(block.arguments);
 
-    // Add tool result to continue the conversation
+    // Add tool result with text content
     context.messages.push({
       role: 'toolResult',
       toolCallId: block.id,
       toolName: block.name,
-      output: JSON.stringify(result),
-      isError: false
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      isError: false,
+      timestamp: Date.now()
     });
   }
 }
+
+// Tool results can also include images (for vision-capable models)
+const imageBuffer = readFileSync('chart.png');
+context.messages.push({
+  role: 'toolResult',
+  toolCallId: 'tool_xyz',
+  toolName: 'generate_chart',
+  content: [
+    { type: 'text', text: 'Generated chart showing temperature trends' },
+    { type: 'image', data: imageBuffer.toString('base64'), mimeType: 'image/png' }
+  ],
+  isError: false,
+  timestamp: Date.now()
+});
 ```
 
 ### Streaming Tool Calls with Partial JSON
@@ -625,7 +644,7 @@ const geminiResponse = await complete(gemini, context);
 
 All providers can handle messages from other providers, including:
 - Text content
-- Tool calls and tool results
+- Tool calls and tool results (including images in tool results)
 - Thinking/reasoning blocks (transformed to tagged text for cross-provider compatibility)
 - Aborted messages with partial content
 
@@ -815,6 +834,23 @@ const weatherTool: AgentTool<typeof weatherSchema, { temp: number }> = {
     return {
       output: `Temperature in ${args.city}: ${temp}°${args.units[0].toUpperCase()}`,
       details: { temp }
+    };
+  }
+};
+
+// Tools can also return images alongside text
+const chartTool: AgentTool<typeof Type.Object({ data: Type.Array(Type.Number()) })> = {
+  label: 'Generate Chart',
+  name: 'generate_chart',
+  description: 'Generate a chart from data',
+  parameters: Type.Object({ data: Type.Array(Type.Number()) }),
+  execute: async (toolCallId, args) => {
+    const chartImage = await generateChartImage(args.data);
+    return {
+      content: [
+        { type: 'text', text: `Generated chart with ${args.data.length} data points` },
+        { type: 'image', data: chartImage.toString('base64'), mimeType: 'image/png' }
+      ]
     };
   }
 };

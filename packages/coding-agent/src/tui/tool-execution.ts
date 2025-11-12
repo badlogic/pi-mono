@@ -60,7 +60,10 @@ export class ToolExecutionComponent extends Container {
 	private contentText: Text;
 	private toolName: string;
 	private args: any;
-	private result?: { output: string; isError: boolean };
+	private result?: {
+		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+		isError: boolean;
+	};
 
 	constructor(toolName: string, args: any) {
 		super();
@@ -78,7 +81,10 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
-	updateResult(result: { output: string; isError: boolean }): void {
+	updateResult(result: {
+		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+		isError: boolean;
+	}): void {
 		this.result = result;
 		this.updateDisplay();
 	}
@@ -94,6 +100,24 @@ export class ToolExecutionComponent extends Container {
 		this.contentText.setText(this.formatToolExecution());
 	}
 
+	private getTextOutput(): string {
+		if (!this.result) return "";
+
+		// Extract text from content blocks
+		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
+		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+
+		let output = textBlocks.map((c: any) => c.text).join("\n");
+
+		// Add indicator for images
+		if (imageBlocks.length > 0) {
+			const imageIndicators = imageBlocks.map((img: any) => `[Image: ${img.mimeType}]`).join("\n");
+			output = output ? `${output}\n${imageIndicators}` : imageIndicators;
+		}
+
+		return output;
+	}
+
 	private formatToolExecution(): string {
 		let text = "";
 
@@ -104,7 +128,7 @@ export class ToolExecutionComponent extends Container {
 
 			if (this.result) {
 				// Show output without code fences - more minimal
-				const output = this.result.output.trim();
+				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
 					const maxLines = 5;
@@ -122,7 +146,8 @@ export class ToolExecutionComponent extends Container {
 			text = chalk.bold("read") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 
 			if (this.result) {
-				const lines = this.result.output.split("\n");
+				const output = this.getTextOutput();
+				const lines = output.split("\n");
 				const maxLines = 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
@@ -168,8 +193,9 @@ export class ToolExecutionComponent extends Container {
 
 			const content = JSON.stringify(this.args, null, 2);
 			text += "\n\n" + content;
-			if (this.result?.output) {
-				text += "\n" + this.result.output;
+			const output = this.getTextOutput();
+			if (output) {
+				text += "\n" + output;
 			}
 		}
 
