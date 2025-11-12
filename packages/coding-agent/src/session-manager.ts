@@ -44,6 +44,8 @@ export class SessionManager {
 	private sessionFile!: string;
 	private sessionDir: string;
 	private enabled: boolean = true;
+	private sessionInitialized: boolean = false;
+	private pendingMessages: any[] = [];
 
 	constructor(continueSession: boolean = false, customSessionPath?: string) {
 		this.sessionDir = this.getSessionDirectory();
@@ -52,11 +54,15 @@ export class SessionManager {
 			// Use custom session file path
 			this.sessionFile = resolve(customSessionPath);
 			this.loadSessionId();
+			// Mark as initialized since we're loading an existing session
+			this.sessionInitialized = existsSync(this.sessionFile);
 		} else if (continueSession) {
 			const mostRecent = this.findMostRecentlyModifiedSession();
 			if (mostRecent) {
 				this.sessionFile = mostRecent;
 				this.loadSessionId();
+				// Mark as initialized since we're loading an existing session
+				this.sessionInitialized = true;
 			} else {
 				this.initNewSession();
 			}
@@ -124,7 +130,9 @@ export class SessionManager {
 	}
 
 	startSession(state: AgentState): void {
-		if (!this.enabled) return;
+		if (!this.enabled || this.sessionInitialized) return;
+		this.sessionInitialized = true;
+
 		const entry: SessionHeader = {
 			type: "session",
 			id: this.sessionId,
@@ -134,6 +142,12 @@ export class SessionManager {
 			thinkingLevel: state.thinkingLevel,
 		};
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+
+		// Write any queued messages
+		for (const msg of this.pendingMessages) {
+			appendFileSync(this.sessionFile, JSON.stringify(msg) + "\n");
+		}
+		this.pendingMessages = [];
 	}
 
 	saveMessage(message: any): void {
@@ -143,7 +157,12 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			message,
 		};
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+
+		if (!this.sessionInitialized) {
+			this.pendingMessages.push(entry);
+		} else {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		}
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
@@ -153,7 +172,12 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			thinkingLevel,
 		};
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+
+		if (!this.sessionInitialized) {
+			this.pendingMessages.push(entry);
+		} else {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		}
 	}
 
 	saveModelChange(model: string): void {
@@ -163,7 +187,12 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			model,
 		};
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+
+		if (!this.sessionInitialized) {
+			this.pendingMessages.push(entry);
+		} else {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		}
 	}
 
 	loadMessages(): any[] {
@@ -345,5 +374,20 @@ export class SessionManager {
 	setSessionFile(path: string): void {
 		this.sessionFile = path;
 		this.loadSessionId();
+		// Mark as initialized since we're loading an existing session
+		this.sessionInitialized = existsSync(path);
+	}
+
+	/**
+	 * Check if we should initialize the session based on message history.
+	 * Session is initialized when we have at least 1 user message and 1 assistant message.
+	 */
+	shouldInitializeSession(messages: any[]): boolean {
+		if (this.sessionInitialized) return false;
+
+		const userMessages = messages.filter((m) => m.role === "user");
+		const assistantMessages = messages.filter((m) => m.role === "assistant");
+
+		return userMessages.length >= 1 && assistantMessages.length >= 1;
 	}
 }

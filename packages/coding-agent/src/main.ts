@@ -425,8 +425,8 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Start session
-	sessionManager.startSession(agent.state);
+	// Note: Session will be started lazily after first user+assistant message exchange
+	// (unless continuing/resuming, in which case it's already initialized)
 
 	// Inject project context (AGENT.md/CLAUDE.md) if not continuing/resuming
 	if (!parsed.continue && !parsed.resume) {
@@ -454,6 +454,11 @@ export async function main(args: string[]) {
 		// Save messages on completion
 		if (event.type === "message_end") {
 			sessionManager.saveMessage(event.message);
+
+			// Check if we should initialize session now (after first user+assistant exchange)
+			if (sessionManager.shouldInitializeSession(agent.state.messages)) {
+				sessionManager.startSession(agent.state);
+			}
 		}
 	});
 
