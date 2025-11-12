@@ -398,6 +398,29 @@ This is how I want it to work and I'm not likely to change my stance on this.
 
 Use at your own risk.
 
+## Sub-Agents
+
+**pi does not and will not support sub-agents as a built-in feature.** If the agent needs to delegate work, it can:
+
+1. Spawn another instance of itself via the `pi` CLI command
+2. Write a custom tool with a README.md that describes how to invoke pi for specific tasks
+
+**Why no built-in sub-agents:**
+
+Context transfer between agents is generally poor. Information gets lost, compressed, or misrepresented when passed through agent boundaries. Direct execution with full context is more effective than delegation with summarized context.
+
+If you need parallel work on independent tasks, manually run multiple `pi` sessions in different terminal tabs. You're the orchestrator.
+
+## Planned Features
+
+Things that might happen eventually:
+
+- **Custom/local models**: Support for Ollama, llama.cpp, vLLM, SGLang, LM Studio via JSON config file
+- **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, ask the agent to write a summary .md file you can load in a new session
+- **Message queuing**: Core engine supports it, just needs UI wiring
+- **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
+- **Less flicker than Claude Code**: One day...
+
 ## License
 
 MIT
