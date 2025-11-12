@@ -430,7 +430,7 @@ The agent can read and update this file as needed. Using checkboxes keeps track 
 
 ## Planning
 
-**pi does not and will not have a built-in planning mode.** Telling the agent to think through a problem, modify files, and execute commands is generally sufficient.
+**pi does not and will not have a built-in planning mode.** Telling the agent to think through a problem together with you, without modifying files or executing commands, is generally sufficient.
 
 If you need persistent planning across sessions, write it to a file:
 
