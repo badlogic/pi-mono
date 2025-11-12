@@ -36,10 +36,22 @@ export class FooterComponent {
 			}
 		}
 
-		// Calculate total tokens and % of context window
-		const totalTokens = totalInput + totalOutput;
+		// Get last assistant message for context percentage calculation
+		const lastAssistantMessage = this.state.messages
+			.slice()
+			.reverse()
+			.find((m) => m.role === "assistant") as AssistantMessage | undefined;
+
+		// Calculate context percentage from last message (input + output + cacheRead + cacheWrite)
+		const contextTokens = lastAssistantMessage
+			? lastAssistantMessage.usage.input +
+				lastAssistantMessage.usage.output +
+				lastAssistantMessage.usage.cacheRead +
+				lastAssistantMessage.usage.cacheWrite
+			: 0;
 		const contextWindow = this.state.model.contextWindow;
-		const contextPercent = contextWindow > 0 ? ((totalTokens / contextWindow) * 100).toFixed(1) : "0.0";
+		const contextPercent =
+			contextWindow > 0 ? `${((contextTokens / contextWindow) * 100).toFixed(1)}% (${contextWindow})` : "0.0%";
 
 		// Format token counts (similar to web-ui)
 		const formatTokens = (count: number): string => {

@@ -265,10 +265,10 @@ export class Editor implements Component {
 			// Get text and substitute paste markers with actual content
 			let result = this.state.lines.join("\n").trim();
 
-			// Replace all [paste #N +xxx lines] markers with actual paste content
+			// Replace all [paste #N +xxx lines] or [paste #N xxx chars] markers with actual paste content
 			for (const [pasteId, pasteContent] of this.pastes) {
-				// Match both old format [paste #N] and new format [paste #N +xxx lines]
-				const markerRegex = new RegExp(`\\[paste #${pasteId}( \\+\\d+ lines)?\\]`, "g");
+				// Match formats: [paste #N], [paste #N +xxx lines], or [paste #N xxx chars]
+				const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
 				result = result.replace(markerRegex, pasteContent);
 			}
 
@@ -466,15 +466,19 @@ export class Editor implements Component {
 		// Split into lines
 		const pastedLines = filteredText.split("\n");
 
-		// Check if this is a large paste (> 10 lines)
-		if (pastedLines.length > 10) {
+		// Check if this is a large paste (> 10 lines or > 1000 characters)
+		const totalChars = filteredText.length;
+		if (pastedLines.length > 10 || totalChars > 1000) {
 			// Store the paste and insert a marker
 			this.pasteCounter++;
 			const pasteId = this.pasteCounter;
 			this.pastes.set(pasteId, filteredText);
 
-			// Insert marker like "[paste #1 +123 lines]"
-			const marker = `[paste #${pasteId} +${pastedLines.length} lines]`;
+			// Insert marker like "[paste #1 +123 lines]" or "[paste #1 1234 chars]"
+			const marker =
+				pastedLines.length > 10
+					? `[paste #${pasteId} +${pastedLines.length} lines]`
+					: `[paste #${pasteId} ${totalChars} chars]`;
 			for (const char of marker) {
 				this.insertCharacter(char);
 			}

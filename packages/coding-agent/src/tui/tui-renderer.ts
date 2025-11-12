@@ -351,6 +351,9 @@ export class TuiRenderer {
 		// Reset first user message flag for initial render
 		this.isFirstUserMessage = true;
 
+		// Update footer with loaded state
+		this.footer.updateState(state);
+
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
