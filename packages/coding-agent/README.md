@@ -411,6 +411,23 @@ Context transfer between agents is generally poor. Information gets lost, compre
 
 If you need parallel work on independent tasks, manually run multiple `pi` sessions in different terminal tabs. You're the orchestrator.
 
+## To-Dos
+
+**pi does not and will not support built-in to-dos.** In my experience, to-do lists generally confuse models more than they help.
+
+If you need task tracking, make it stateful by writing to a file:
+
+```markdown
+# TODO.md
+
+- [x] Implement user authentication
+- [x] Add database migrations
+- [ ] Write API documentation
+- [ ] Add rate limiting
+```
+
+The agent can read and update this file as needed. Using checkboxes keeps track of what's done and what remains. Simple, visible, and under your control.
+
 ## Planned Features
 
 Things that might happen eventually:
