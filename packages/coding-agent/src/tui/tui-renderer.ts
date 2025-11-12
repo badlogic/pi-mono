@@ -83,9 +83,14 @@ export class TuiRenderer {
 			description: "Export session to HTML file",
 		};
 
+		const sessionCommand: SlashCommand = {
+			name: "session",
+			description: "Show session info and stats",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[thinkingCommand, modelCommand, exportCommand],
+			[thinkingCommand, modelCommand, exportCommand, sessionCommand],
 			process.cwd(),
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -163,6 +168,13 @@ export class TuiRenderer {
 			// Check for /export command
 			if (text.startsWith("/export")) {
 				this.handleExportCommand(text);
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /session command
+			if (text === "/session") {
+				this.handleSessionCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -544,6 +556,66 @@ export class TuiRenderer {
 			);
 			this.ui.requestRender();
 		}
+	}
+
+	private handleSessionCommand(): void {
+		// Get session info
+		const sessionFile = this.sessionManager.getSessionFile();
+		const state = this.agent.state;
+
+		// Count messages
+		const userMessages = state.messages.filter((m) => m.role === "user").length;
+		const assistantMessages = state.messages.filter((m) => m.role === "assistant").length;
+		const totalMessages = state.messages.length;
+
+		// Calculate cumulative usage from all assistant messages (same as footer)
+		let totalInput = 0;
+		let totalOutput = 0;
+		let totalCacheRead = 0;
+		let totalCacheWrite = 0;
+		let totalCost = 0;
+
+		for (const message of state.messages) {
+			if (message.role === "assistant") {
+				const assistantMsg = message as AssistantMessage;
+				totalInput += assistantMsg.usage.input;
+				totalOutput += assistantMsg.usage.output;
+				totalCacheRead += assistantMsg.usage.cacheRead;
+				totalCacheWrite += assistantMsg.usage.cacheWrite;
+				totalCost += assistantMsg.usage.cost.total;
+			}
+		}
+
+		const totalTokens = totalInput + totalOutput + totalCacheRead + totalCacheWrite;
+
+		// Build info text
+		let info = `${chalk.bold("Session Info")}\n\n`;
+		info += `${chalk.dim("File:")} ${sessionFile}\n`;
+		info += `${chalk.dim("ID:")} ${this.sessionManager.getSessionId()}\n\n`;
+		info += `${chalk.bold("Messages")}\n`;
+		info += `${chalk.dim("User:")} ${userMessages}\n`;
+		info += `${chalk.dim("Assistant:")} ${assistantMessages}\n`;
+		info += `${chalk.dim("Total:")} ${totalMessages}\n\n`;
+		info += `${chalk.bold("Tokens")}\n`;
+		info += `${chalk.dim("Input:")} ${totalInput.toLocaleString()}\n`;
+		info += `${chalk.dim("Output:")} ${totalOutput.toLocaleString()}\n`;
+		if (totalCacheRead > 0) {
+			info += `${chalk.dim("Cache Read:")} ${totalCacheRead.toLocaleString()}\n`;
+		}
+		if (totalCacheWrite > 0) {
+			info += `${chalk.dim("Cache Write:")} ${totalCacheWrite.toLocaleString()}\n`;
+		}
+		info += `${chalk.dim("Total:")} ${totalTokens.toLocaleString()}\n`;
+
+		if (totalCost > 0) {
+			info += `\n${chalk.bold("Cost")}\n`;
+			info += `${chalk.dim("Total:")} ${totalCost.toFixed(4)}`;
+		}
+
+		// Show info in chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
 	}
 
 	stop(): void {
