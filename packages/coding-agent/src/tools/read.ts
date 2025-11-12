@@ -82,7 +82,10 @@ export const readTool: AgentTool<typeof readSchema> = {
 						if (signal) {
 							signal.removeEventListener("abort", onAbort);
 						}
-						reject(new Error(`File not found: ${path}`));
+						resolve({
+							content: [{ type: "text", text: `Error: File not found: ${path}` }],
+							details: undefined,
+						});
 						return;
 					}
 
