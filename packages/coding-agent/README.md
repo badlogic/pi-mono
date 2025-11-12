@@ -2,6 +2,8 @@
 
 A radically simple and opinionated coding agent with multi-model support (including mid-session switching), a simple yet powerful CLI for headless coding tasks, and many creature comforts you might be used to from other coding agents.
 
+Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the "modern" Windows Terminal).
+
 ## Installation
 
 ```bash

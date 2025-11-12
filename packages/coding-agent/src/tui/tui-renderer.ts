@@ -566,7 +566,17 @@ export class TuiRenderer {
 		// Count messages
 		const userMessages = state.messages.filter((m) => m.role === "user").length;
 		const assistantMessages = state.messages.filter((m) => m.role === "assistant").length;
+		const toolResults = state.messages.filter((m) => m.role === "toolResult").length;
 		const totalMessages = state.messages.length;
+
+		// Count tool calls from assistant messages
+		let toolCalls = 0;
+		for (const message of state.messages) {
+			if (message.role === "assistant") {
+				const assistantMsg = message as AssistantMessage;
+				toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+			}
+		}
 
 		// Calculate cumulative usage from all assistant messages (same as footer)
 		let totalInput = 0;
@@ -595,6 +605,8 @@ export class TuiRenderer {
 		info += `${chalk.bold("Messages")}\n`;
 		info += `${chalk.dim("User:")} ${userMessages}\n`;
 		info += `${chalk.dim("Assistant:")} ${assistantMessages}\n`;
+		info += `${chalk.dim("Tool Calls:")} ${toolCalls}\n`;
+		info += `${chalk.dim("Tool Results:")} ${toolResults}\n`;
 		info += `${chalk.dim("Total:")} ${totalMessages}\n\n`;
 		info += `${chalk.bold("Tokens")}\n`;
 		info += `${chalk.dim("Input:")} ${totalInput.toLocaleString()}\n`;
