@@ -403,8 +403,23 @@ export class Markdown implements Component {
 					break;
 				}
 			} else {
-				// Regular character
-				const char = line[i];
+				// Regular character - extract full grapheme cluster
+				// Handle multi-byte characters (emoji, surrogate pairs, etc.)
+				let char: string;
+				let charByteLength: number;
+
+				// Check for surrogate pair (emoji and other multi-byte chars)
+				const codePoint = line.charCodeAt(i);
+				if (codePoint >= 0xd800 && codePoint <= 0xdbff && i + 1 < line.length) {
+					// High surrogate - get the pair
+					char = line.substring(i, i + 2);
+					charByteLength = 2;
+				} else {
+					// Regular character
+					char = line[i];
+					charByteLength = 1;
+				}
+
 				const charWidth = visibleWidth(char);
 
 				// Check if adding this character would exceed width
@@ -423,7 +438,7 @@ export class Markdown implements Component {
 
 				currentLine += char;
 				currentLength += charWidth;
-				i++;
+				i += charByteLength;
 			}
 		}
 
