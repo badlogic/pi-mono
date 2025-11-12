@@ -18,9 +18,6 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 # Start the interactive CLI
 pi
-
-# Or use the full command name
-coding-agent
 ```
 
 Once in the CLI, you can chat with the AI:
@@ -29,7 +26,7 @@ Once in the CLI, you can chat with the AI:
 You: Create a simple Express server in src/server.ts
 ```
 
-The agent will use its tools to read, write, and edit files as needed.
+The agent will use its tools to read, write, and edit files as needed, and execute commands via Bash.
 
 ## API Keys
 
@@ -88,6 +85,51 @@ Export the current session to a self-contained HTML file:
 
 The HTML file includes the full conversation with syntax highlighting and is viewable in any browser.
 
+## Editor Features
+
+The interactive input editor includes several productivity features:
+
+### Path Completion
+
+Press **Tab** to autocomplete file and directory paths:
+- Works with relative paths: `./src/` + Tab → complete files in src/
+- Works with parent directories: `../../` + Tab → navigate up and complete
+- Works with home directory: `~/Des` + Tab → `~/Desktop/`
+- Use **Up/Down arrows** to navigate completion suggestions
+- Press **Enter** to select a completion
+- Shows matching files and directories as you type
+
+### File Drag & Drop
+
+Drag files from your OS file explorer (Finder on macOS, Explorer on Windows) directly onto the terminal. The file path will be automatically inserted into the editor. Works great with screenshots from macOS screenshot tool.
+
+### Multi-line Paste
+
+Paste multiple lines of text (e.g., code snippets, logs) and they'll be automatically coalesced into a compact `[paste #123 <N> lines]` reference in the editor. The full content is still sent to the model.
+
+### Keyboard Shortcuts
+
+- **Ctrl+K**: Delete current line
+- **Ctrl+C**: Clear editor (first press) / Exit pi (second press)
+- **Tab**: Path completion
+- **Enter**: Send message
+- **Shift+Enter**: Insert new line (multi-line input)
+- **Arrow keys**: Move cursor
+- **Ctrl+A** / **Home** / **Cmd+Left** (macOS): Jump to start of line
+- **Ctrl+E** / **End** / **Cmd+Right** (macOS): Jump to end of line
+
+## Project Context Files
+
+Place an `AGENT.md` or `CLAUDE.md` file in your project root to provide context to the AI. The contents will be automatically included at the start of new sessions (not when continuing/resuming sessions).
+
+This is useful for:
+- Project-specific instructions and guidelines
+- Architecture documentation
+- Coding conventions and style guides
+- Dependencies and setup information
+
+The file is injected as a user message at the beginning of each new session, ensuring the AI has project context without modifying the system prompt.
+
 ## Image Support
 
 Send images to vision-capable models by providing file paths:
@@ -96,12 +138,9 @@ Send images to vision-capable models by providing file paths:
 You: What is in this screenshot? /path/to/image.png
 ```
 
-Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`, `.svg`
+Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
-The image will be automatically encoded and sent with your message. Vision-capable models include:
-- GPT-4o, GPT-4o-mini (OpenAI)
-- Claude 3.5 Sonnet, Claude 3.5 Haiku (Anthropic)
-- Gemini 2.5 Flash, Gemini 2.5 Pro (Google)
+The image will be automatically encoded and sent with your message. JPEG and PNG are supported across all vision models. Other formats may only be supported by some models.
 
 ## Available Tools
 
@@ -109,7 +148,7 @@ The agent has access to four core tools for working with your codebase:
 
 ### read
 
-Read file contents. Supports text files and images (jpg, png, gif, webp, bmp, svg). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit parameters for large files. Lines longer than 2000 characters are truncated.
+Read file contents. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit parameters for large files. Lines longer than 2000 characters are truncated.
 
 ### write
 
@@ -151,6 +190,18 @@ This opens an interactive session selector where you can:
 
 Sessions include all conversation messages, tool calls and results, model switches, and thinking level changes.
 
+To run without saving a session (ephemeral mode):
+
+```bash
+pi --no-session
+```
+
+To use a specific session file instead of auto-generating one:
+
+```bash
+pi --session /path/to/my-session.jsonl
+```
+
 ## CLI Options
 
 ```bash
@@ -159,25 +210,37 @@ pi [options] [messages...]
 
 ### Options
 
-**--provider <name>**  
+**--provider <name>**
 Provider name. Available: `anthropic`, `openai`, `google`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`. Default: `anthropic`
 
-**--model <id>**  
+**--model <id>**
 Model ID. Default: `claude-sonnet-4-5`
 
-**--api-key <key>**  
+**--api-key <key>**
 API key (overrides environment variables)
 
-**--system-prompt <text>**  
+**--system-prompt <text>**
 Custom system prompt (overrides default coding assistant prompt)
 
-**--continue, -c**  
+**--mode <mode>**
+Output mode for non-interactive usage. Options:
+- `text` (default): Output only the final assistant message text
+- `json`: Stream all agent events as JSON (one event per line). Events are emitted by `@mariozechner/pi-agent` and include message updates, tool executions, and completions
+- `rpc`: JSON mode plus stdin listener for headless operation. Send JSON commands on stdin: `{"type":"prompt","message":"..."}` or `{"type":"abort"}`. See [test/rpc-example.ts](test/rpc-example.ts) for a complete example
+
+**--no-session**
+Don't save session (ephemeral mode)
+
+**--session <path>**
+Use specific session file path instead of auto-generating one
+
+**--continue, -c**
 Continue the most recent session
 
-**--resume, -r**  
+**--resume, -r**
 Select a session to resume (opens interactive selector)
 
-**--help, -h**  
+**--help, -h**
 Show help message
 
 ### Examples
@@ -186,8 +249,17 @@ Show help message
 # Start interactive mode
 pi
 
-# Single message mode
+# Single message mode (text output)
 pi "List all .ts files in src/"
+
+# JSON mode - stream all agent events
+pi --mode json "List all .ts files in src/"
+
+# RPC mode - headless operation (see test/rpc-example.ts)
+pi --mode rpc --no-session
+# Then send JSON on stdin:
+# {"type":"prompt","message":"List all .ts files"}
+# {"type":"abort"}
 
 # Continue previous session
 pi -c "What did we discuss?"

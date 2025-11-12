@@ -17,7 +17,6 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	systemPrompt: string;
 	model: string;
 	thinkingLevel: string;
 }
@@ -50,11 +49,16 @@ export class SessionManager {
 	private sessionId!: string;
 	private sessionFile!: string;
 	private sessionDir: string;
+	private enabled: boolean = true;
 
-	constructor(continueSession: boolean = false) {
+	constructor(continueSession: boolean = false, customSessionPath?: string) {
 		this.sessionDir = this.getSessionDirectory();
 
-		if (continueSession) {
+		if (customSessionPath) {
+			// Use custom session file path
+			this.sessionFile = resolve(customSessionPath);
+			this.loadSessionId();
+		} else if (continueSession) {
 			const mostRecent = this.findMostRecentlyModifiedSession();
 			if (mostRecent) {
 				this.sessionFile = mostRecent;
@@ -65,6 +69,11 @@ export class SessionManager {
 		} else {
 			this.initNewSession();
 		}
+	}
+
+	/** Disable session saving (for --no-session mode) */
+	disable() {
+		this.enabled = false;
 	}
 
 	private getSessionDirectory(): string {
@@ -121,12 +130,12 @@ export class SessionManager {
 	}
 
 	startSession(state: AgentState): void {
+		if (!this.enabled) return;
 		const entry: SessionHeader = {
 			type: "session",
 			id: this.sessionId,
 			timestamp: new Date().toISOString(),
 			cwd: process.cwd(),
-			systemPrompt: state.systemPrompt,
 			model: `${state.model.provider}/${state.model.id}`,
 			thinkingLevel: state.thinkingLevel,
 		};
@@ -134,6 +143,7 @@ export class SessionManager {
 	}
 
 	saveMessage(message: any): void {
+		if (!this.enabled) return;
 		const entry: SessionMessageEntry = {
 			type: "message",
 			timestamp: new Date().toISOString(),
@@ -143,6 +153,7 @@ export class SessionManager {
 	}
 
 	saveEvent(event: AgentEvent): void {
+		if (!this.enabled) return;
 		const entry: SessionEventEntry = {
 			type: "event",
 			timestamp: new Date().toISOString(),
@@ -152,6 +163,7 @@ export class SessionManager {
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
+		if (!this.enabled) return;
 		const entry: ThinkingLevelChangeEntry = {
 			type: "thinking_level_change",
 			timestamp: new Date().toISOString(),
@@ -161,6 +173,7 @@ export class SessionManager {
 	}
 
 	saveModelChange(model: string): void {
+		if (!this.enabled) return;
 		const entry: ModelChangeEntry = {
 			type: "model_change",
 			timestamp: new Date().toISOString(),

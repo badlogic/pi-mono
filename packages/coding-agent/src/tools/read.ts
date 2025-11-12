@@ -27,8 +27,6 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 	".png": "image/png",
 	".gif": "image/gif",
 	".webp": "image/webp",
-	".bmp": "image/bmp",
-	".svg": "image/svg+xml",
 };
 
 /**
@@ -52,7 +50,7 @@ export const readTool: AgentTool<typeof readSchema> = {
 	name: "read",
 	label: "read",
 	description:
-		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp, svg). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
+		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
 	parameters: readSchema,
 	execute: async (
 		_toolCallId: string,

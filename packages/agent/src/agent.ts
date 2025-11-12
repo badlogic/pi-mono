@@ -166,9 +166,6 @@ export class Agent {
 		this._state.streamMessage = null;
 		this._state.error = undefined;
 
-		// Emit agent_start
-		this.emit({ type: "agent_start" });
-
 		const reasoning =
 			this._state.thinkingLevel === "off"
 				? undefined
@@ -291,9 +288,6 @@ export class Agent {
 			this._state.streamMessage = null;
 			this._state.pendingToolCalls = new Set<string>();
 			this.abortController = undefined;
-
-			// Emit agent_end with all generated messages
-			this.emit({ type: "agent_end", messages: generatedMessages });
 		}
 	}
 

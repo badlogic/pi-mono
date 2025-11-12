@@ -2,7 +2,7 @@ import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-a
 import { getModel, type KnownProvider } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { SessionManager } from "./session-manager.js";
@@ -38,6 +38,8 @@ interface Args {
 	resume?: boolean;
 	help?: boolean;
 	mode?: Mode;
+	noSession?: boolean;
+	session?: string;
 	messages: string[];
 }
 
@@ -68,6 +70,10 @@ function parseArgs(args: string[]): Args {
 			result.apiKey = args[++i];
 		} else if (arg === "--system-prompt" && i + 1 < args.length) {
 			result.systemPrompt = args[++i];
+		} else if (arg === "--no-session") {
+			result.noSession = true;
+		} else if (arg === "--session" && i + 1 < args.length) {
+			result.session = args[++i];
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -90,6 +96,8 @@ ${chalk.bold("Options:")}
   --mode <mode>           Output mode: text (default), json, or rpc
   --continue, -c          Continue previous session
   --resume, -r            Select a session to resume
+  --session <path>        Use specific session file
+  --no-session            Don't save session (ephemeral)
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
@@ -139,6 +147,23 @@ Guidelines:
 - Show file paths clearly when working with files
 
 Current directory: ${process.cwd()}`;
+
+/**
+ * Look for AGENT.md or CLAUDE.md in the current directory and return its contents
+ */
+function loadProjectContext(): string | null {
+	const candidates = ["AGENT.md", "CLAUDE.md"];
+	for (const filename of candidates) {
+		if (existsSync(filename)) {
+			try {
+				return readFileSync(filename, "utf-8");
+			} catch (error) {
+				console.error(chalk.yellow(`Warning: Could not read ${filename}: ${error}`));
+			}
+		}
+	}
+	return null;
+}
 
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
@@ -241,7 +266,7 @@ async function runRpcMode(agent: Agent, _sessionManager: SessionManager): Promis
 	});
 
 	// Listen for JSON input on stdin
-	const readline = require("readline");
+	const readline = await import("readline");
 	const rl = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout,
@@ -277,7 +302,12 @@ export async function main(args: string[]) {
 	}
 
 	// Setup session manager
-	const sessionManager = new SessionManager(parsed.continue && !parsed.resume);
+	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
+
+	// Disable session saving if --no-session flag is set
+	if (parsed.noSession) {
+		sessionManager.disable();
+	}
 
 	// Handle --resume flag: show session selector
 	if (parsed.resume) {
@@ -398,6 +428,27 @@ export async function main(args: string[]) {
 	// Start session
 	sessionManager.startSession(agent.state);
 
+	// Inject project context (AGENT.md/CLAUDE.md) if not continuing/resuming
+	if (!parsed.continue && !parsed.resume) {
+		const projectContext = loadProjectContext();
+		if (projectContext) {
+			// Queue the context as a message that will be injected at the start
+			await agent.queueMessage({
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text: `[Project Context from ${existsSync("AGENT.md") ? "AGENT.md" : "CLAUDE.md"}]\n\n${projectContext}`,
+					},
+				],
+				timestamp: Date.now(),
+			});
+			if (shouldPrintMessages) {
+				console.log(chalk.dim(`Loaded project context from ${existsSync("AGENT.md") ? "AGENT.md" : "CLAUDE.md"}`));
+			}
+		}
+	}
+
 	// Subscribe to agent events to save messages and log events
 	agent.subscribe((event) => {
 		// Save messages on completion
@@ -412,15 +463,14 @@ export async function main(args: string[]) {
 	});
 
 	// Route to appropriate mode
-	if (isInteractive) {
-		// No mode flag in interactive - always use TUI
+	if (mode === "rpc") {
+		// RPC mode - headless operation
+		await runRpcMode(agent, sessionManager);
+	} else if (isInteractive) {
+		// No messages and not RPC - use TUI
 		await runInteractiveMode(agent, sessionManager, VERSION);
 	} else {
 		// CLI mode with messages
-		if (mode === "rpc") {
-			await runRpcMode(agent, sessionManager);
-		} else {
-			await runSingleShotMode(agent, sessionManager, parsed.messages, mode);
-		}
+		await runSingleShotMode(agent, sessionManager, parsed.messages, mode);
 	}
 }
