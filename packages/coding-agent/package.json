@@ -21,8 +21,8 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent": "^0.5.44",
-		"@mariozechner/pi-ai": "^0.5.44",
+		"@mariozechner/pi-agent": "^0.6.0",
+		"@mariozechner/pi-ai": "^0.6.0",
 		"chalk": "^5.5.0",
 		"glob": "^11.0.3"
 	},

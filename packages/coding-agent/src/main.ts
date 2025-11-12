@@ -1,5 +1,5 @@
 import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, type KnownProvider } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { readFileSync } from "fs";
@@ -15,6 +15,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
 const VERSION = packageJson.version;
+
+const envApiKeyMap: Record<KnownProvider, string[]> = {
+	google: ["GEMINI_API_KEY"],
+	openai: ["OPENAI_API_KEY"],
+	anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+	xai: ["XAI_API_KEY"],
+	groq: ["GROQ_API_KEY"],
+	cerebras: ["CEREBRAS_API_KEY"],
+	openrouter: ["OPENROUTER_API_KEY"],
+	zai: ["ZAI_API_KEY"],
+};
 
 interface Args {
 	provider?: string;
@@ -235,18 +246,7 @@ export async function main(args: string[]) {
 			return parsed.apiKey;
 		}
 
-		const envVarMap: Record<string, string[]> = {
-			google: ["GEMINI_API_KEY"],
-			openai: ["OPENAI_API_KEY"],
-			anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
-			xai: ["XAI_API_KEY"],
-			groq: ["GROQ_API_KEY"],
-			cerebras: ["CEREBRAS_API_KEY"],
-			zai: ["ZAI_API_KEY"],
-			moonshotai: ["MOONSHOT_API_KEY"],
-		};
-
-		const envVars = envVarMap[providerName] || [`${providerName.toUpperCase()}_API_KEY`];
+		const envVars = envApiKeyMap[providerName as KnownProvider];
 
 		// Check each environment variable in priority order
 		for (const envVar of envVars) {
@@ -262,17 +262,7 @@ export async function main(args: string[]) {
 	// Get initial API key
 	const initialApiKey = getApiKeyForProvider(provider);
 	if (!initialApiKey) {
-		const envVarMap: Record<string, string[]> = {
-			google: ["GEMINI_API_KEY"],
-			openai: ["OPENAI_API_KEY"],
-			anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
-			xai: ["XAI_API_KEY"],
-			groq: ["GROQ_API_KEY"],
-			cerebras: ["CEREBRAS_API_KEY"],
-			zai: ["ZAI_API_KEY"],
-			moonshotai: ["MOONSHOT_API_KEY"],
-		};
-		const envVars = envVarMap[provider] || [`${provider.toUpperCase()}_API_KEY`];
+		const envVars = envApiKeyMap[provider as KnownProvider];
 		const envVarList = envVars.join(" or ");
 		console.error(chalk.red(`Error: No API key found for provider "${provider}"`));
 		console.error(chalk.dim(`Set ${envVarList} environment variable or use --api-key flag`));
