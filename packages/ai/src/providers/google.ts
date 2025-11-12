@@ -466,6 +466,7 @@ function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.LANGUAGE:
 		case FinishReason.MALFORMED_FUNCTION_CALL:
 		case FinishReason.UNEXPECTED_TOOL_CALL:
+		case FinishReason.NO_IMAGE:
 			return "error";
 		default: {
 			const _exhaustive: never = reason;

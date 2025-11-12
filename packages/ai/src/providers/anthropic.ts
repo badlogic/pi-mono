@@ -111,7 +111,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 		};
 
 		try {
-			const { client, isOAuthToken } = createClient(model, options?.apiKey!);
+			const apiKey = options?.apiKey ?? getApiKey(model.provider);
+		const { client, isOAuthToken } = createClient(model, apiKey);
 			const params = buildParams(model, context, isOAuthToken, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
