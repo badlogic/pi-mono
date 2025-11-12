@@ -1,6 +1,6 @@
-# @mariozechner/coding-agent
+# pi
 
-Interactive CLI coding assistant powered by multiple LLM providers. Chat with AI models that can read files, execute commands, and make precise edits to your codebase.
+A radically simple coding agent with multi-model support (including mid-session switching), a simple yet powerful CLI for headless coding tasks, and many creature comforts you might be used to from other coding agents.
 
 ## Installation
 
@@ -368,7 +368,7 @@ You can also reference tool READMEs in your `AGENT.md` files to make them automa
 
 **Real-world example:**
 
-The [exa-search](https://github.com/badlogic/exa-search) tools provide web search capabilities via the Exa API. Built by the agent itself in ~2 minutes. Not perfect, but functional. Just tell your agent: "Read ~/agent-tools/exa-search/README.md and search for X".
+The [exa-search](https://github.com/badlogic/exa-search) tools provide web search capabilities via the Exa API. Built by the agent itself in ~2 minutes. Far from perfect, but functional. Just tell your agent: "Read ~/agent-tools/exa-search/README.md and search for X".
 
 For a detailed walkthrough with more examples, and the reasons for and benefits of this decision, see: https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/
 
@@ -471,6 +471,8 @@ Things that might happen eventually:
   - Switch to a model with bigger context (e.g., Gemini) using `/model` and either continue with that model, or let it summarize the session to a .md file to be loaded in a new session
 - **Message queuing**: Core engine supports it, just needs UI wiring
 - **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
+- **Beter Markdown and tool call/result rendering**
+- **Full details mode**: use `/export out.html` for now
 - **More flicker than Claude Code**: One day...
 
 ## License
