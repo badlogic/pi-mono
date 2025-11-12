@@ -1,11 +1,13 @@
 import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent";
 import { getModel } from "@mariozechner/pi-ai";
+import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { SessionManager } from "./session-manager.js";
 import { codingTools } from "./tools/index.js";
+import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
 
 // Get version from package.json
@@ -20,6 +22,7 @@ interface Args {
 	apiKey?: string;
 	systemPrompt?: string;
 	continue?: boolean;
+	resume?: boolean;
 	help?: boolean;
 	messages: string[];
 }
@@ -36,6 +39,8 @@ function parseArgs(args: string[]): Args {
 			result.help = true;
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
+		} else if (arg === "--resume" || arg === "-r") {
+			result.resume = true;
 		} else if (arg === "--provider" && i + 1 < args.length) {
 			result.provider = args[++i];
 		} else if (arg === "--model" && i + 1 < args.length) {
@@ -64,6 +69,7 @@ ${chalk.bold("Options:")}
   --api-key <key>         API key (defaults to env vars)
   --system-prompt <text>  System prompt (default: coding assistant prompt)
   --continue, -c          Continue previous session
+  --resume, -r            Select a session to resume
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
@@ -113,6 +119,30 @@ Guidelines:
 - Show file paths clearly when working with files
 
 Current directory: ${process.cwd()}`;
+
+async function selectSession(sessionManager: SessionManager): Promise<string | null> {
+	return new Promise((resolve) => {
+		const ui = new TUI(new ProcessTerminal());
+		let selectedPath: string | null = null;
+
+		const selector = new SessionSelectorComponent(
+			sessionManager,
+			(path: string) => {
+				selectedPath = path;
+				ui.stop();
+				resolve(path);
+			},
+			() => {
+				ui.stop();
+				resolve(null);
+			},
+		);
+
+		ui.addChild(selector);
+		ui.setFocus(selector.getSelectList());
+		ui.start();
+	});
+}
 
 async function runInteractiveMode(agent: Agent, sessionManager: SessionManager, version: string): Promise<void> {
 	const renderer = new TuiRenderer(agent, sessionManager, version);
@@ -176,7 +206,18 @@ export async function main(args: string[]) {
 	}
 
 	// Setup session manager
-	const sessionManager = new SessionManager(parsed.continue);
+	const sessionManager = new SessionManager(parsed.continue && !parsed.resume);
+
+	// Handle --resume flag: show session selector
+	if (parsed.resume) {
+		const selectedSession = await selectSession(sessionManager);
+		if (!selectedSession) {
+			console.log(chalk.dim("No session selected"));
+			return;
+		}
+		// Set the selected session as the active session
+		sessionManager.setSessionFile(selectedSession);
+	}
 
 	// Determine provider and model
 	const provider = (parsed.provider || "anthropic") as any;
@@ -259,8 +300,8 @@ export async function main(args: string[]) {
 		}),
 	});
 
-	// Load previous messages if continuing
-	if (parsed.continue) {
+	// Load previous messages if continuing or resuming
+	if (parsed.continue || parsed.resume) {
 		const messages = sessionManager.loadMessages();
 		if (messages.length > 0) {
 			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));

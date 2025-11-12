@@ -242,4 +242,99 @@ export class SessionManager {
 	getSessionFile(): string {
 		return this.sessionFile;
 	}
+
+	/**
+	 * Load all sessions for the current directory with metadata
+	 */
+	loadAllSessions(): Array<{
+		path: string;
+		id: string;
+		created: Date;
+		modified: Date;
+		messageCount: number;
+		firstMessage: string;
+	}> {
+		const sessions: Array<{
+			path: string;
+			id: string;
+			created: Date;
+			modified: Date;
+			messageCount: number;
+			firstMessage: string;
+		}> = [];
+
+		try {
+			const files = readdirSync(this.sessionDir)
+				.filter((f) => f.endsWith(".jsonl"))
+				.map((f) => join(this.sessionDir, f));
+
+			for (const file of files) {
+				try {
+					const stats = statSync(file);
+					const content = readFileSync(file, "utf8");
+					const lines = content.trim().split("\n");
+
+					let sessionId = "";
+					let created = stats.birthtime;
+					let messageCount = 0;
+					let firstMessage = "";
+
+					for (const line of lines) {
+						try {
+							const entry = JSON.parse(line);
+
+							// Extract session ID from first session entry
+							if (entry.type === "session" && !sessionId) {
+								sessionId = entry.id;
+								created = new Date(entry.timestamp);
+							}
+
+							// Count messages
+							if (entry.type === "message") {
+								messageCount++;
+
+								// Get first user message
+								if (!firstMessage && entry.message.role === "user") {
+									const textContent = entry.message.content
+										.filter((c: any) => c.type === "text")
+										.map((c: any) => c.text)
+										.join(" ");
+									firstMessage = textContent || "";
+								}
+							}
+						} catch {
+							// Skip malformed lines
+						}
+					}
+
+					sessions.push({
+						path: file,
+						id: sessionId || "unknown",
+						created,
+						modified: stats.mtime,
+						messageCount,
+						firstMessage: firstMessage || "(no messages)",
+					});
+				} catch (error) {
+					// Skip files that can't be read
+					console.error(`Failed to read session file ${file}:`, error);
+				}
+			}
+
+			// Sort by modified date (most recent first)
+			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+		} catch (error) {
+			console.error("Failed to load sessions:", error);
+		}
+
+		return sessions;
+	}
+
+	/**
+	 * Set the session file to an existing session
+	 */
+	setSessionFile(path: string): void {
+		this.sessionFile = path;
+		this.loadSessionId();
+	}
 }
