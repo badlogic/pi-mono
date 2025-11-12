@@ -65,33 +65,6 @@ function replaceTabs(text: string): string {
 }
 
 /**
- * Generate unified diff matching TUI style
- */
-function generateDiff(oldStr: string, newStr: string): string {
-	const oldLines = oldStr.split("\n");
-	const newLines = newStr.split("\n");
-
-	const maxLineNum = Math.max(oldLines.length, newLines.length);
-	const lineNumWidth = String(maxLineNum).length;
-
-	let html = `<div class="diff-old">- old:</div>`;
-	for (let i = 0; i < oldLines.length; i++) {
-		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
-		html += `<div class="diff-line-old">- <span class="line-num">${escapeHtml(lineNum)}</span> ${escapeHtml(oldLines[i])}</div>`;
-	}
-
-	html += `<div class="diff-spacer"></div>`;
-
-	html += `<div class="diff-new">+ new:</div>`;
-	for (let i = 0; i < newLines.length; i++) {
-		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
-		html += `<div class="diff-line-new">+ <span class="line-num">${escapeHtml(lineNum)}</span> ${escapeHtml(newLines[i])}</div>`;
-	}
-
-	return html;
-}
-
-/**
  * Format tool execution matching TUI ToolExecutionComponent
  */
 function formatToolExecution(
@@ -235,8 +208,20 @@ function formatToolExecution(
 		const path = shortenPath(args?.file_path || args?.path || "");
 		html = `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
 
-		if (args?.old_string && args?.new_string) {
-			html += '<div class="tool-diff">' + generateDiff(args.old_string, args.new_string) + "</div>";
+		// Show diff if available from result.details.diff
+		if (result?.details?.diff) {
+			const diffLines = result.details.diff.split("\n");
+			html += '<div class="tool-diff">';
+			for (const line of diffLines) {
+				if (line.startsWith("+")) {
+					html += `<div class="diff-line-new">${escapeHtml(line)}</div>`;
+				} else if (line.startsWith("-")) {
+					html += `<div class="diff-line-old">${escapeHtml(line)}</div>`;
+				} else {
+					html += `<div class="diff-line-context">${escapeHtml(line)}</div>`;
+				}
+			}
+			html += "</div>";
 		}
 
 		if (result) {
@@ -584,35 +569,22 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
         .tool-diff {
             margin-top: 12px;
             font-size: 13px;
-        }
-
-        .diff-old, .diff-new {
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-
-        .diff-old {
-            color: ${COLORS.red};
-        }
-
-        .diff-new {
-            color: ${COLORS.green};
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
         }
 
         .diff-line-old {
             color: ${COLORS.red};
+            white-space: pre;
         }
 
         .diff-line-new {
             color: ${COLORS.green};
+            white-space: pre;
         }
 
-        .line-num {
+        .diff-line-context {
             color: ${COLORS.textDim};
-        }
-
-        .diff-spacer {
-            height: 8px;
+            white-space: pre;
         }
 
         /* Error text */
