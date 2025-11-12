@@ -428,12 +428,39 @@ If you need task tracking, make it stateful by writing to a file:
 
 The agent can read and update this file as needed. Using checkboxes keeps track of what's done and what remains. Simple, visible, and under your control.
 
+## Planning
+
+**pi does not and will not have a built-in planning mode.** Telling the agent to think through a problem, modify files, and execute commands is generally sufficient.
+
+If you need persistent planning across sessions, write it to a file:
+
+```markdown
+# PLAN.md
+
+## Goal
+Refactor authentication system to support OAuth
+
+## Approach
+1. Research OAuth 2.0 flows
+2. Design token storage schema
+3. Implement authorization server endpoints
+4. Update client-side login flow
+5. Add tests
+
+## Current Step
+Working on step 3 - authorization endpoints
+```
+
+The agent can read, update, and reference the plan as it works. Unlike ephemeral planning modes that only exist within a session, file-based plans persist and can be versioned with your code.
+
 ## Planned Features
 
 Things that might happen eventually:
 
 - **Custom/local models**: Support for Ollama, llama.cpp, vLLM, SGLang, LM Studio via JSON config file
-- **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, ask the agent to write a summary .md file you can load in a new session
+- **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, either:
+  - Ask the agent to write a summary .md file you can load in a new session
+  - Switch to a model with bigger context (e.g., Gemini) using `/model` and have it summarize the session
 - **Message queuing**: Core engine supports it, just needs UI wiring
 - **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
 - **Less flicker than Claude Code**: One day...
