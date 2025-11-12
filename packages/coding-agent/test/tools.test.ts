@@ -192,7 +192,10 @@ describe("Coding Agent Tools", () => {
 			});
 
 			expect(getTextOutput(result)).toContain("Successfully replaced");
-			expect(result.details).toBeUndefined();
+			expect(result.details).toBeDefined();
+			expect(result.details.diff).toBeDefined();
+			expect(typeof result.details.diff).toBe("string");
+			expect(result.details.diff).toContain("testing");
 		});
 
 		it("should fail if text not found", async () => {

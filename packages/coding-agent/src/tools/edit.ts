@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile, writeFile } from "fs/promises";
 import { resolve as resolvePath } from "path";
@@ -16,6 +17,99 @@ function expandPath(filePath: string): string {
 		return os.homedir() + filePath.slice(1);
 	}
 	return filePath;
+}
+
+/**
+ * Generate a unified diff string with line numbers and context
+ */
+function generateDiffString(oldContent: string, newContent: string, contextLines = 4): string {
+	const parts = Diff.diffLines(oldContent, newContent);
+	const output: string[] = [];
+
+	const oldLines = oldContent.split("\n");
+	const newLines = newContent.split("\n");
+	const maxLineNum = Math.max(oldLines.length, newLines.length);
+	const lineNumWidth = String(maxLineNum).length;
+
+	let oldLineNum = 1;
+	let newLineNum = 1;
+	let lastWasChange = false;
+
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i];
+		const raw = part.value.split("\n");
+		if (raw[raw.length - 1] === "") {
+			raw.pop();
+		}
+
+		if (part.added || part.removed) {
+			// Show the change
+			for (const line of raw) {
+				if (part.added) {
+					const lineNum = String(newLineNum).padStart(lineNumWidth, " ");
+					output.push(`+${lineNum} ${line}`);
+					newLineNum++;
+				} else {
+					// removed
+					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
+					output.push(`-${lineNum} ${line}`);
+					oldLineNum++;
+				}
+			}
+			lastWasChange = true;
+		} else {
+			// Context lines - only show a few before/after changes
+			const nextPartIsChange = i < parts.length - 1 && (parts[i + 1].added || parts[i + 1].removed);
+
+			if (lastWasChange || nextPartIsChange) {
+				// Show context
+				let linesToShow = raw;
+				let skipStart = 0;
+				let skipEnd = 0;
+
+				if (!lastWasChange) {
+					// Show only last N lines as leading context
+					skipStart = Math.max(0, raw.length - contextLines);
+					linesToShow = raw.slice(skipStart);
+				}
+
+				if (!nextPartIsChange && linesToShow.length > contextLines) {
+					// Show only first N lines as trailing context
+					skipEnd = linesToShow.length - contextLines;
+					linesToShow = linesToShow.slice(0, contextLines);
+				}
+
+				// Add ellipsis if we skipped lines at start
+				if (skipStart > 0) {
+					output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
+				}
+
+				for (const line of linesToShow) {
+					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
+					output.push(` ${lineNum} ${line}`);
+					oldLineNum++;
+					newLineNum++;
+				}
+
+				// Add ellipsis if we skipped lines at end
+				if (skipEnd > 0) {
+					output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
+				}
+
+				// Update line numbers for skipped lines
+				oldLineNum += skipStart + skipEnd;
+				newLineNum += skipStart + skipEnd;
+			} else {
+				// Skip these context lines entirely
+				oldLineNum += raw.length;
+				newLineNum += raw.length;
+			}
+
+			lastWasChange = false;
+		}
+	}
+
+	return output.join("\n");
 }
 
 const editSchema = Type.Object({
@@ -37,7 +131,10 @@ export const editTool: AgentTool<typeof editSchema> = {
 	) => {
 		const absolutePath = resolvePath(expandPath(path));
 
-		return new Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }>((resolve, reject) => {
+		return new Promise<{
+			content: Array<{ type: "text"; text: string }>;
+			details: { diff: string } | undefined;
+		}>((resolve, reject) => {
 			// Check if already aborted
 			if (signal?.aborted) {
 				reject(new Error("Operation aborted"));
@@ -148,7 +245,7 @@ export const editTool: AgentTool<typeof editSchema> = {
 								text: `Successfully replaced text in ${path}. Changed ${oldText.length} characters to ${newText.length} characters.`,
 							},
 						],
-						details: undefined,
+						details: { diff: generateDiffString(content, newContent) },
 					});
 				} catch (error: any) {
 					// Clean up abort handler

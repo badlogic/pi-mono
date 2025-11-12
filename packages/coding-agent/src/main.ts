@@ -337,8 +337,10 @@ export async function main(args: string[]) {
 			sessionManager.saveMessage(event.message);
 		}
 
-		// Log all events
-		sessionManager.saveEvent(event);
+		// Log all events except message_update (too verbose)
+		if (event.type !== "message_update") {
+			sessionManager.saveEvent(event);
+		}
 	});
 
 	// Determine mode: interactive if no messages provided

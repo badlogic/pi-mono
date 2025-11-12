@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import * as Diff from "diff";
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -21,36 +22,101 @@ function replaceTabs(text: string): string {
 }
 
 /**
- * Generate a unified diff between old and new strings with line numbers
+ * Generate a unified diff with line numbers and context
  */
 function generateDiff(oldStr: string, newStr: string): string {
-	// Split into lines
+	const parts = Diff.diffLines(oldStr, newStr);
+	const output: string[] = [];
+
+	// Calculate max line number for padding
 	const oldLines = oldStr.split("\n");
 	const newLines = newStr.split("\n");
-
-	const diff: string[] = [];
-
-	// Calculate line number padding (for alignment)
 	const maxLineNum = Math.max(oldLines.length, newLines.length);
 	const lineNumWidth = String(maxLineNum).length;
 
-	// Show old lines with line numbers
-	diff.push(chalk.red("- old:"));
-	for (let i = 0; i < oldLines.length; i++) {
-		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
-		diff.push(chalk.red(`- ${chalk.dim(lineNum)} ${oldLines[i]}`));
+	const CONTEXT_LINES = 2; // Show 2 lines of context around changes
+
+	let oldLineNum = 1;
+	let newLineNum = 1;
+	let lastWasChange = false;
+
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i];
+		const raw = part.value.split("\n");
+		if (raw[raw.length - 1] === "") {
+			raw.pop();
+		}
+
+		if (part.added || part.removed) {
+			// Show the change
+			for (const line of raw) {
+				if (part.added) {
+					const lineNum = String(newLineNum).padStart(lineNumWidth, " ");
+					output.push(chalk.green(`${lineNum} ${line}`));
+					newLineNum++;
+				} else {
+					// removed
+					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
+					output.push(chalk.red(`${lineNum} ${line}`));
+					oldLineNum++;
+				}
+			}
+			lastWasChange = true;
+		} else {
+			// Context lines - only show a few before/after changes
+			const isFirstPart = i === 0;
+			const isLastPart = i === parts.length - 1;
+			const nextPartIsChange = i < parts.length - 1 && (parts[i + 1].added || parts[i + 1].removed);
+
+			if (lastWasChange || nextPartIsChange || isFirstPart || isLastPart) {
+				// Show context
+				let linesToShow = raw;
+				let skipStart = 0;
+				let skipEnd = 0;
+
+				if (!isFirstPart && !lastWasChange) {
+					// Show only last N lines as leading context
+					skipStart = Math.max(0, raw.length - CONTEXT_LINES);
+					linesToShow = raw.slice(skipStart);
+				}
+
+				if (!isLastPart && !nextPartIsChange && linesToShow.length > CONTEXT_LINES) {
+					// Show only first N lines as trailing context
+					skipEnd = linesToShow.length - CONTEXT_LINES;
+					linesToShow = linesToShow.slice(0, CONTEXT_LINES);
+				}
+
+				// Add ellipsis if we skipped lines at start
+				if (skipStart > 0) {
+					output.push(chalk.dim(`${"".padStart(lineNumWidth, " ")} ...`));
+				}
+
+				for (const line of linesToShow) {
+					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
+					output.push(chalk.dim(`${lineNum} ${line}`));
+					oldLineNum++;
+					newLineNum++;
+				}
+
+				// Add ellipsis if we skipped lines at end
+				if (skipEnd > 0) {
+					output.push(chalk.dim(`${"".padStart(lineNumWidth, " ")} ...`));
+				}
+
+				// Update line numbers for skipped lines
+				oldLineNum += skipStart + skipEnd;
+				newLineNum += skipStart + skipEnd;
+			} else {
+				// Skip these context lines entirely
+				oldLineNum += raw.length;
+				newLineNum += raw.length;
+			}
+
+			lastWasChange = false;
+		}
 	}
 
-	diff.push("");
-
-	// Show new lines with line numbers
-	diff.push(chalk.green("+ new:"));
-	for (let i = 0; i < newLines.length; i++) {
-		const lineNum = String(i + 1).padStart(lineNumWidth, " ");
-		diff.push(chalk.green(`+ ${chalk.dim(lineNum)} ${newLines[i]}`));
-	}
-
-	return diff.join("\n");
+	return output.join("\n");
 }
 
 /**
@@ -63,6 +129,7 @@ export class ToolExecutionComponent extends Container {
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
+		details?: any;
 	};
 
 	constructor(toolName: string, args: any) {
@@ -83,6 +150,7 @@ export class ToolExecutionComponent extends Container {
 
 	updateResult(result: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+		details?: any;
 		isError: boolean;
 	}): void {
 		this.result = result;
@@ -183,9 +251,20 @@ export class ToolExecutionComponent extends Container {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
 			text = chalk.bold("edit") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 
-			// Show diff if we have old_string and new_string
-			if (this.args?.old_string && this.args?.new_string) {
-				text += "\n\n" + generateDiff(this.args.old_string, this.args.new_string);
+			// Show diff if available
+			if (this.result?.details?.diff) {
+				// Parse the diff string and apply colors
+				const diffLines = this.result.details.diff.split("\n");
+				const coloredLines = diffLines.map((line: string) => {
+					if (line.startsWith("+")) {
+						return chalk.green(line);
+					} else if (line.startsWith("-")) {
+						return chalk.red(line);
+					} else {
+						return chalk.dim(line);
+					}
+				});
+				text += "\n\n" + coloredLines.join("\n");
 			}
 		} else {
 			// Generic tool

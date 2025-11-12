@@ -288,15 +288,7 @@ export class TuiRenderer {
 				// Update the existing tool component with the result
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					// Update the component with the result
-					const content =
-						typeof event.result === "string"
-							? [{ type: "text" as const, text: event.result }]
-							: event.result.content;
-					component.updateResult({
-						content,
-						isError: event.isError,
-					});
+					component.updateResult(event.result);
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -388,16 +380,16 @@ export class TuiRenderer {
 					}
 				}
 			} else if (message.role === "toolResult") {
-				// Update existing tool execution component with results
-				const toolResultMsg = message as any;
-				const component = this.pendingTools.get(toolResultMsg.toolCallId);
+				// Update existing tool execution component with results				;
+				const component = this.pendingTools.get(message.toolCallId);
 				if (component) {
 					component.updateResult({
-						content: toolResultMsg.content,
-						isError: toolResultMsg.isError,
+						content: message.content,
+						details: message.details,
+						isError: message.isError,
 					});
 					// Remove from pending map since it's complete
-					this.pendingTools.delete(toolResultMsg.toolCallId);
+					this.pendingTools.delete(message.toolCallId);
 				}
 			}
 		}

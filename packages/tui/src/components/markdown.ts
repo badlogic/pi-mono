@@ -231,29 +231,19 @@ export class Markdown implements Component {
 				break;
 			}
 
-			case "list":
-				for (let i = 0; i < token.items.length; i++) {
-					const item = token.items[i];
-					const bullet = token.ordered ? `${i + 1}. ` : "- ";
-					const itemText = this.renderInlineTokens(item.tokens || []);
-
-					// Check if the item text contains multiple lines (embedded content)
-					const itemLines = itemText.split("\n").filter((line) => line.trim());
-					if (itemLines.length > 1) {
-						// First line is the list item
-						lines.push(chalk.cyan(bullet) + itemLines[0]);
-						// Rest are treated as separate content
-						for (let j = 1; j < itemLines.length; j++) {
-							lines.push(""); // Add spacing
-							lines.push(itemLines[j]);
-						}
-					} else {
-						lines.push(chalk.cyan(bullet) + itemText);
-					}
-				}
+			case "list": {
+				const listLines = this.renderList(token as any, 0);
+				lines.push(...listLines);
 				// Don't add spacing after lists if a space token follows
 				// (the space token will handle it)
 				break;
+			}
+
+			case "table": {
+				const tableLines = this.renderTable(token as any);
+				lines.push(...tableLines);
+				break;
+			}
 
 			case "blockquote": {
 				const quoteText = this.renderInlineTokens(token.tokens || []);
@@ -447,5 +437,152 @@ export class Markdown implements Component {
 		}
 
 		return wrapped.length > 0 ? wrapped : [""];
+	}
+
+	/**
+	 * Render a list with proper nesting support
+	 */
+	private renderList(token: Token & { items: any[]; ordered: boolean }, depth: number): string[] {
+		const lines: string[] = [];
+		const indent = "  ".repeat(depth);
+
+		for (let i = 0; i < token.items.length; i++) {
+			const item = token.items[i];
+			const bullet = token.ordered ? `${i + 1}. ` : "- ";
+
+			// Process item tokens to handle nested lists
+			const itemLines = this.renderListItem(item.tokens || [], depth);
+
+			if (itemLines.length > 0) {
+				// First line - check if it's a nested list (contains cyan ANSI code for bullets)
+				const firstLine = itemLines[0];
+				const isNestedList = firstLine.includes("\x1b[36m"); // cyan color code
+
+				if (isNestedList) {
+					// This is a nested list, just add it as-is (already has full indent)
+					lines.push(firstLine);
+				} else {
+					// Regular text content - add indent and bullet
+					lines.push(indent + chalk.cyan(bullet) + firstLine);
+				}
+
+				// Rest of the lines
+				for (let j = 1; j < itemLines.length; j++) {
+					const line = itemLines[j];
+					const isNestedListLine = line.includes("\x1b[36m"); // cyan bullet color
+
+					if (isNestedListLine) {
+						// Nested list line - already has full indent
+						lines.push(line);
+					} else {
+						// Regular content - add parent indent + 2 spaces for continuation
+						lines.push(indent + "  " + line);
+					}
+				}
+			} else {
+				lines.push(indent + chalk.cyan(bullet));
+			}
+		}
+
+		return lines;
+	}
+
+	/**
+	 * Render list item tokens, handling nested lists
+	 * Returns lines WITHOUT the parent indent (renderList will add it)
+	 */
+	private renderListItem(tokens: Token[], parentDepth: number): string[] {
+		const lines: string[] = [];
+
+		for (const token of tokens) {
+			if (token.type === "list") {
+				// Nested list - render with one additional indent level
+				// These lines will have their own indent, so we just add them as-is
+				const nestedLines = this.renderList(token as any, parentDepth + 1);
+				lines.push(...nestedLines);
+			} else if (token.type === "text") {
+				// Text content (may have inline tokens)
+				const text =
+					token.tokens && token.tokens.length > 0 ? this.renderInlineTokens(token.tokens) : token.text || "";
+				lines.push(text);
+			} else if (token.type === "paragraph") {
+				// Paragraph in list item
+				const text = this.renderInlineTokens(token.tokens || []);
+				lines.push(text);
+			} else if (token.type === "code") {
+				// Code block in list item
+				lines.push(chalk.gray("```" + (token.lang || "")));
+				const codeLines = token.text.split("\n");
+				for (const codeLine of codeLines) {
+					lines.push(chalk.dim("  ") + chalk.green(codeLine));
+				}
+				lines.push(chalk.gray("```"));
+			} else {
+				// Other token types - try to render as inline
+				const text = this.renderInlineTokens([token]);
+				if (text) {
+					lines.push(text);
+				}
+			}
+		}
+
+		return lines;
+	}
+
+	/**
+	 * Render a table
+	 */
+	private renderTable(token: Token & { header: any[]; rows: any[][] }): string[] {
+		const lines: string[] = [];
+
+		// Calculate column widths
+		const columnWidths: number[] = [];
+
+		// Check header
+		for (let i = 0; i < token.header.length; i++) {
+			const headerText = this.renderInlineTokens(token.header[i].tokens || []);
+			const width = visibleWidth(headerText);
+			columnWidths[i] = Math.max(columnWidths[i] || 0, width);
+		}
+
+		// Check rows
+		for (const row of token.rows) {
+			for (let i = 0; i < row.length; i++) {
+				const cellText = this.renderInlineTokens(row[i].tokens || []);
+				const width = visibleWidth(cellText);
+				columnWidths[i] = Math.max(columnWidths[i] || 0, width);
+			}
+		}
+
+		// Limit column widths to reasonable max
+		const maxColWidth = 40;
+		for (let i = 0; i < columnWidths.length; i++) {
+			columnWidths[i] = Math.min(columnWidths[i], maxColWidth);
+		}
+
+		// Render header
+		const headerCells = token.header.map((cell, i) => {
+			const text = this.renderInlineTokens(cell.tokens || []);
+			return chalk.bold(text.padEnd(columnWidths[i]));
+		});
+		lines.push("│ " + headerCells.join(" │ ") + " │");
+
+		// Render separator
+		const separatorCells = columnWidths.map((width) => "─".repeat(width));
+		lines.push("├─" + separatorCells.join("─┼─") + "─┤");
+
+		// Render rows
+		for (const row of token.rows) {
+			const rowCells = row.map((cell, i) => {
+				const text = this.renderInlineTokens(cell.tokens || []);
+				const visWidth = visibleWidth(text);
+				const padding = " ".repeat(Math.max(0, columnWidths[i] - visWidth));
+				return text + padding;
+			});
+			lines.push("│ " + rowCells.join(" │ ") + " │");
+		}
+
+		lines.push(""); // Add spacing after table
+		return lines;
 	}
 }
