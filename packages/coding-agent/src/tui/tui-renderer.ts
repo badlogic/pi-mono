@@ -429,7 +429,6 @@ export class TuiRenderer {
 
 	clearEditor(): void {
 		this.editor.setText("");
-		this.statusContainer.clear();
 		this.ui.requestRender();
 	}
 
