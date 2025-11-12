@@ -1,4 +1,4 @@
-import { type Component, Container, Spacer, Text, visibleWidth } from "@mariozechner/pi-tui";
+import { type Component, Container, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import type { SessionManager } from "../session-manager.js";
 
