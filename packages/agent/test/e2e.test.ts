@@ -144,6 +144,8 @@ async function abortExecution(model: Model<any>) {
 	if (lastMessage.role !== "assistant") throw new Error("Expected assistant message");
 	expect(lastMessage.stopReason).toBe("aborted");
 	expect(lastMessage.errorMessage).toBeDefined();
+	expect(agent.state.error).toBeDefined();
+	expect(agent.state.error).toBe(lastMessage.errorMessage);
 }
 
 async function stateUpdates(model: Model<any>) {
