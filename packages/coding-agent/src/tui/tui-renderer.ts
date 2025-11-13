@@ -12,8 +12,10 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { getChangelogPath, getNewEntries, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import type { SessionManager } from "../session-manager.js";
+import { SettingsManager } from "../settings-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -92,9 +94,14 @@ export class TuiRenderer {
 			description: "Show session info and stats",
 		};
 
+		const changelogCommand: SlashCommand = {
+			name: "changelog",
+			description: "Show changelog entries",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[thinkingCommand, modelCommand, exportCommand, sessionCommand],
+			[thinkingCommand, modelCommand, exportCommand, sessionCommand, changelogCommand],
 			process.cwd(),
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -190,6 +197,13 @@ export class TuiRenderer {
 			// Check for /session command
 			if (text === "/session") {
 				this.handleSessionCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /changelog command
+			if (text === "/changelog") {
+				this.handleChangelogCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -645,6 +659,25 @@ export class TuiRenderer {
 		// Show info in chat
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private handleChangelogCommand(): void {
+		const changelogPath = getChangelogPath();
+		const allEntries = parseChangelog(changelogPath);
+
+		// Show all entries in reverse order (oldest first, newest last)
+		const changelogMarkdown =
+			allEntries.length > 0
+				? allEntries
+						.reverse()
+						.map((e) => e.content)
+						.join("\n\n")
+				: "No changelog entries found.";
+
+		// Display in chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Markdown(changelogMarkdown));
 		this.ui.requestRender();
 	}
 

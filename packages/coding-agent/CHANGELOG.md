@@ -1,10 +1,13 @@
 # Changelog
 
-## [0.7.7] - Unreleased
+## [Unreleased]
+
+## [0.7.7] - 2025-11-13
 
 ### Added
 
-- Automatic changelog viewer on startup in interactive mode. When starting a new session (not continuing/resuming), the agent will display all changelog entries since the last version you used in a scrollable markdown viewer. The last shown version is tracked in `~/.pi/agent/settings.json`.
+- Automatic changelog display on startup in interactive mode. When starting a new session (not continuing/resuming), the agent will display all changelog entries since the last version you used. The last shown version is tracked in `~/.pi/agent/settings.json`.
+- `/changelog` command to display the changelog in the TUI
 - OpenRouter Auto Router model support ([#5](https://github.com/badlogic/pi-mono/pull/5))
 - Windows Git Bash support with automatic detection and process tree termination ([#1](https://github.com/badlogic/pi-mono/pull/1))
 
@@ -18,6 +21,7 @@
 
 - Fixed markdown list rendering bug where bullets were not displayed when list items contained inline code with cyan color formatting
 - Fixed context percentage showing 0% in footer when last assistant message was aborted ([#12](https://github.com/badlogic/pi-mono/issues/12))
+- Fixed error message loss when `turn_end` event contains an error. Previously, errors in `turn_end` events (e.g., "Provider returned error" from OpenRouter Auto Router) were not captured in `agent.state.error`, making it appear as if the agent completed successfully. ([#6](https://github.com/badlogic/pi-mono/issues/6))
 
 ## [0.7.6] - 2025-11-13
 
