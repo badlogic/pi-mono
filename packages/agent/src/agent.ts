@@ -238,6 +238,13 @@ export class Agent {
 						this._state.pendingToolCalls = s;
 						break;
 					}
+					case "turn_end": {
+						// Capture error from turn_end event
+						if (ev.message.role === "assistant" && ev.message.errorMessage) {
+							this._state.error = ev.message.errorMessage;
+						}
+						break;
+					}
 					case "agent_end": {
 						this._state.streamMessage = null;
 						break;
