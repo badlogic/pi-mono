@@ -1,0 +1,55 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
+import { dirname, join } from "path";
+
+export interface Settings {
+	lastChangelogVersion?: string;
+}
+
+export class SettingsManager {
+	private settingsPath: string;
+	private settings: Settings;
+
+	constructor(baseDir?: string) {
+		const dir = baseDir || join(homedir(), ".pi", "agent");
+		this.settingsPath = join(dir, "settings.json");
+		this.settings = this.load();
+	}
+
+	private load(): Settings {
+		if (!existsSync(this.settingsPath)) {
+			return {};
+		}
+
+		try {
+			const content = readFileSync(this.settingsPath, "utf-8");
+			return JSON.parse(content);
+		} catch (error) {
+			console.error(`Warning: Could not read settings file: ${error}`);
+			return {};
+		}
+	}
+
+	private save(): void {
+		try {
+			// Ensure directory exists
+			const dir = dirname(this.settingsPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true });
+			}
+
+			writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
+		} catch (error) {
+			console.error(`Warning: Could not save settings file: ${error}`);
+		}
+	}
+
+	getLastChangelogVersion(): string | undefined {
+		return this.settings.lastChangelogVersion;
+	}
+
+	setLastChangelogVersion(version: string): void {
+		this.settings.lastChangelogVersion = version;
+		this.save();
+	}
+}
