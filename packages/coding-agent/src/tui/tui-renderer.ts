@@ -138,7 +138,6 @@ export class TuiRenderer {
 			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), undefined, undefined, undefined, 1, 0));
 			this.ui.addChild(new Spacer(1));
 			this.ui.addChild(new DynamicBorder(chalk.cyan));
-			this.ui.addChild(new Spacer(1));
 		}
 
 		this.ui.addChild(this.chatContainer);
