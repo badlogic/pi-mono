@@ -4,50 +4,30 @@ import { spawn } from "child_process";
 import { existsSync } from "fs";
 
 /**
- * Find Git Bash installation on Windows
- * Searches common installation paths
- */
-function findGitBash(): string | null {
-	if (process.platform !== "win32") {
-		return null;
-	}
-
-	const paths = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"];
-
-	// Also check ProgramFiles environment variables
-	const programFiles = process.env.ProgramFiles;
-	if (programFiles) {
-		paths.push(`${programFiles}\\Git\\bin\\bash.exe`);
-	}
-
-	const programFilesX86 = process.env["ProgramFiles(x86)"];
-	if (programFilesX86) {
-		paths.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
-	}
-
-	for (const path of paths) {
-		if (existsSync(path)) {
-			return path;
-		}
-	}
-
-	return null;
-}
-
-/**
  * Get shell configuration based on platform
  */
 function getShellConfig(): { shell: string; args: string[] } {
 	if (process.platform === "win32") {
-		const gitBash = findGitBash();
-		if (!gitBash) {
-			const paths = ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"];
-			const pathList = paths.map((p) => `  - ${p}`).join("\n");
-			throw new Error(
-				`Git Bash not found in standard installation locations:\n${pathList}\n\nPlease install Git for Windows from https://git-scm.com/download/win using the default installation path.`,
-			);
+		const paths: string[] = [];
+		const programFiles = process.env.ProgramFiles;
+		if (programFiles) {
+			paths.push(`${programFiles}\\Git\\bin\\bash.exe`);
 		}
-		return { shell: gitBash, args: ["-c"] };
+		const programFilesX86 = process.env["ProgramFiles(x86)"];
+		if (programFilesX86) {
+			paths.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
+		}
+
+		for (const path of paths) {
+			if (existsSync(path)) {
+				return { shell: path, args: ["-c"] };
+			}
+		}
+
+		throw new Error(
+			`Git Bash not found. Please install Git for Windows from https://git-scm.com/download/win\n` +
+			`Searched in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
+		);
 	}
 	return { shell: "sh", args: ["-c"] };
 }
