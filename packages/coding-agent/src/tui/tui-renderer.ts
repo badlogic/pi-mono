@@ -12,10 +12,9 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-import { getChangelogPath, getNewEntries, parseChangelog } from "../changelog.js";
+import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import type { SessionManager } from "../session-manager.js";
-import { SettingsManager } from "../settings-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -677,7 +676,11 @@ export class TuiRenderer {
 
 		// Display in chat
 		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
+		this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
+		this.ui.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown));
+		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.requestRender();
 	}
 
