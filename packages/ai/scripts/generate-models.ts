@@ -337,6 +337,29 @@ async function generateModels() {
 		});
 	}
 
+	// Add missing OpenRouter model
+	if (!allModels.some(m => m.provider === "openrouter" && m.id === "openrouter/auto")) {
+		allModels.push({
+			id: "openrouter/auto",
+			name: "OpenRouter: Auto Router",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				// we dont know about the costs because OpenRouter auto routes to different models
+				// and then charges you for the underlying used model
+				input:0,
+				output:0,
+				cacheRead:0,
+				cacheWrite:0,
+			},
+			contextWindow: 2000000,
+			maxTokens: 30000,
+		});
+	}
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
