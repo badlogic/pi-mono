@@ -14,9 +14,6 @@ Tools for building AI agents and managing LLM deployments.
 | **[@mariozechner/pi-proxy](packages/proxy)** | CORS proxy for browser-based LLM API calls |
 | **[@mariozechner/pi](packages/pods)** | CLI for managing vLLM deployments on GPU pods |
 
-**Related:**
-- **[sitegeist](https://github.com/badlogic/sitegeist)** - Browser extension for AI-powered web navigation
-
 ## Development
 
 ### Setup
