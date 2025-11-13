@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.8] - 2025-11-13
+
+### Changed
+
+- Updated README.md with `/changelog` slash command documentation
+
 ## [0.7.7] - 2025-11-13
 
 ### Added
