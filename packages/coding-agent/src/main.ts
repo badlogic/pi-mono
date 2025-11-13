@@ -527,21 +527,19 @@ export async function main(args: string[]) {
 		// Load and restore model
 		const savedModel = sessionManager.loadModel();
 		if (savedModel) {
-			// Parse provider/modelId from saved model string (format: "provider/modelId")
-			// Some providers or model IDs may contain slashes, so split only on the first slash.
-			// For example, "openrouter/x-ai/grok-4-fast" -> provider: "openrouter", modelId: "x-ai/grok-4-fast".
-			const [savedProvider, savedModelId] = savedModel.split("/", 1);
-			if (savedProvider && savedModelId) {
-				try {
-					const restoredModel = getModel(savedProvider as any, savedModelId);
-					agent.setModel(restoredModel);
-					if (shouldPrintMessages) {
-						console.log(chalk.dim(`Restored model: ${savedModel}`));
-					}
-				} catch (error: any) {
-					if (shouldPrintMessages) {
-						console.error(chalk.yellow(`Warning: Could not restore model ${savedModel}: ${error.message}`));
-					}
+			try {
+				const restoredModel = getModel(savedModel.provider as any, savedModel.modelId);
+				agent.setModel(restoredModel);
+				if (shouldPrintMessages) {
+					console.log(chalk.dim(`Restored model: ${savedModel.provider}/${savedModel.modelId}`));
+				}
+			} catch (error: any) {
+				if (shouldPrintMessages) {
+					console.error(
+						chalk.yellow(
+							`Warning: Could not restore model ${savedModel.provider}/${savedModel.modelId}: ${error.message}`,
+						),
+					);
 				}
 			}
 		}

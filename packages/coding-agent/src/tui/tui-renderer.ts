@@ -521,7 +521,7 @@ export class TuiRenderer {
 				this.agent.setModel(model);
 
 				// Save model change to session
-				this.sessionManager.saveModelChange(`${model.provider}/${model.id}`);
+				this.sessionManager.saveModelChange(model.provider, model.id);
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
