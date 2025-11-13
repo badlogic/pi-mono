@@ -6,7 +6,9 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { SessionManager } from "./session-manager.js";
+import { SettingsManager } from "./settings-manager.js";
 import { codingTools } from "./tools/index.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
@@ -221,10 +223,10 @@ Guidelines:
 }
 
 /**
- * Look for AGENT.md or CLAUDE.md in a directory (prefers AGENT.md)
+ * Look for AGENTS.md or CLAUDE.md in a directory (prefers AGENTS.md)
  */
 function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
-	const candidates = ["AGENT.md", "CLAUDE.md"];
+	const candidates = ["AGENTS.md", "CLAUDE.md"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
 		if (existsSync(filePath)) {
@@ -243,7 +245,7 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 
 /**
  * Load all project context files in order:
- * 1. Global: ~/.pi/agent/AGENT.md or CLAUDE.md
+ * 1. Global: ~/.pi/agent/AGENTS.md or CLAUDE.md
  * 2. Parent directories (top-most first) down to cwd
  * Each returns {path, content} for separate messages
  */
@@ -316,8 +318,13 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 	});
 }
 
-async function runInteractiveMode(agent: Agent, sessionManager: SessionManager, version: string): Promise<void> {
-	const renderer = new TuiRenderer(agent, sessionManager, version);
+async function runInteractiveMode(
+	agent: Agent,
+	sessionManager: SessionManager,
+	version: string,
+	changelogMarkdown: string | null = null,
+): Promise<void> {
+	const renderer = new TuiRenderer(agent, sessionManager, version, changelogMarkdown);
 
 	// Initialize TUI
 	await renderer.init();
@@ -581,8 +588,38 @@ export async function main(args: string[]) {
 		// RPC mode - headless operation
 		await runRpcMode(agent, sessionManager);
 	} else if (isInteractive) {
+		// Check if we should show changelog (only in interactive mode, only for new sessions)
+		let changelogMarkdown: string | null = null;
+		if (!parsed.continue && !parsed.resume) {
+			const settingsManager = new SettingsManager();
+			const lastVersion = settingsManager.getLastChangelogVersion();
+
+			// Check if we need to show changelog
+			if (!lastVersion) {
+				// First run - show all entries
+				const changelogPath = getChangelogPath();
+				const entries = parseChangelog(changelogPath);
+				if (entries.length > 0) {
+					changelogMarkdown = entries.map((e) => e.content).join("\n\n");
+					settingsManager.setLastChangelogVersion(VERSION);
+				}
+			} else {
+				// Parse current and last versions
+				const currentParts = VERSION.split(".").map(Number);
+				const current = { major: currentParts[0] || 0, minor: currentParts[1] || 0, patch: currentParts[2] || 0 };
+				const changelogPath = getChangelogPath();
+				const entries = parseChangelog(changelogPath);
+				const newEntries = getNewEntries(entries, lastVersion);
+
+				if (newEntries.length > 0) {
+					changelogMarkdown = newEntries.map((e) => e.content).join("\n\n");
+					settingsManager.setLastChangelogVersion(VERSION);
+				}
+			}
+		}
+
 		// No messages and not RPC - use TUI
-		await runInteractiveMode(agent, sessionManager, VERSION);
+		await runInteractiveMode(agent, sessionManager, VERSION, changelogMarkdown);
 	} else {
 		// CLI mode with messages
 		await runSingleShotMode(agent, sessionManager, parsed.messages, mode);

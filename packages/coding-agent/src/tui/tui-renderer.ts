@@ -5,6 +5,7 @@ import {
 	CombinedAutocompleteProvider,
 	Container,
 	Loader,
+	Markdown,
 	ProcessTerminal,
 	Spacer,
 	Text,
@@ -15,6 +16,7 @@ import { exportSessionToHtml } from "../export-html.js";
 import type { SessionManager } from "../session-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
+import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
@@ -39,6 +41,7 @@ export class TuiRenderer {
 	private loadingAnimation: Loader | null = null;
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
+	private changelogMarkdown: string | null = null;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
@@ -55,10 +58,11 @@ export class TuiRenderer {
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
-	constructor(agent: Agent, sessionManager: SessionManager, version: string) {
+	constructor(agent: Agent, sessionManager: SessionManager, version: string, changelogMarkdown: string | null = null) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
 		this.version = version;
+		this.changelogMarkdown = changelogMarkdown;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
@@ -125,6 +129,18 @@ export class TuiRenderer {
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(header);
 		this.ui.addChild(new Spacer(1));
+
+		// Add changelog if provided
+		if (this.changelogMarkdown) {
+			this.ui.addChild(new DynamicBorder(chalk.cyan));
+			this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
+			this.ui.addChild(new Spacer(1));
+			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), undefined, undefined, undefined, 1, 0));
+			this.ui.addChild(new Spacer(1));
+			this.ui.addChild(new DynamicBorder(chalk.cyan));
+			this.ui.addChild(new Spacer(1));
+		}
+
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(new Spacer(1));
