@@ -16,6 +16,7 @@
 ### Fixed
 
 - Fixed markdown list rendering bug where bullets were not displayed when list items contained inline code with cyan color formatting
+- Fixed context percentage showing 0% in footer when last assistant message was aborted ([#12](https://github.com/badlogic/pi-mono/issues/12))
 
 ## [0.7.6] - 2025-11-13
 
