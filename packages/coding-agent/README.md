@@ -99,6 +99,14 @@ Displays:
 - Token usage (input, output, cache read/write, total)
 - Total cost (if available)
 
+### /changelog
+
+Display the full changelog with all version history (newest last):
+
+```
+/changelog
+```
+
 ## Editor Features
 
 The interactive input editor includes several productivity features:
