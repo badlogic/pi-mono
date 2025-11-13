@@ -521,7 +521,9 @@ export async function main(args: string[]) {
 		const savedModel = sessionManager.loadModel();
 		if (savedModel) {
 			// Parse provider/modelId from saved model string (format: "provider/modelId")
-			const [savedProvider, savedModelId] = savedModel.split("/");
+			// Some providers or model IDs may contain slashes, so split only on the first slash.
+			// For example, "openrouter/x-ai/grok-4-fast" -> provider: "openrouter", modelId: "x-ai/grok-4-fast".
+			const [savedProvider, savedModelId] = savedModel.split("/", 1);
 			if (savedProvider && savedModelId) {
 				try {
 					const restoredModel = getModel(savedProvider as any, savedModelId);
