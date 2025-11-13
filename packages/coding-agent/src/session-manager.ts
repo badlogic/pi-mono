@@ -17,7 +17,8 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	model: string;
+	provider: string;
+	modelId: string;
 	thinkingLevel: string;
 }
 
@@ -36,7 +37,8 @@ export interface ThinkingLevelChangeEntry {
 export interface ModelChangeEntry {
 	type: "model_change";
 	timestamp: string;
-	model: string;
+	provider: string;
+	modelId: string;
 }
 
 export class SessionManager {
@@ -139,7 +141,8 @@ export class SessionManager {
 			id: this.sessionId,
 			timestamp: new Date().toISOString(),
 			cwd: process.cwd(),
-			model: `${state.model.provider}/${state.model.id}`,
+			provider: state.model.provider,
+			modelId: state.model.id,
 			thinkingLevel: state.thinkingLevel,
 		};
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
@@ -181,12 +184,13 @@ export class SessionManager {
 		}
 	}
 
-	saveModelChange(model: string): void {
+	saveModelChange(provider: string, modelId: string): void {
 		if (!this.enabled) return;
 		const entry: ModelChangeEntry = {
 			type: "model_change",
 			timestamp: new Date().toISOString(),
-			model,
+			provider,
+			modelId,
 		};
 
 		if (!this.sessionInitialized) {
@@ -239,27 +243,34 @@ export class SessionManager {
 		return lastThinkingLevel;
 	}
 
-	loadModel(): string | null {
+	loadModel(): { provider: string; modelId: string } | null {
 		if (!existsSync(this.sessionFile)) return null;
 
 		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
 
 		// Find the most recent model (from session header or change event)
-		let lastModel: string | null = null;
+		let lastProvider: string | null = null;
+		let lastModelId: string | null = null;
+
 		for (const line of lines) {
 			try {
 				const entry = JSON.parse(line);
-				if (entry.type === "session" && entry.model) {
-					lastModel = entry.model;
-				} else if (entry.type === "model_change" && entry.model) {
-					lastModel = entry.model;
+				if (entry.type === "session" && entry.provider && entry.modelId) {
+					lastProvider = entry.provider;
+					lastModelId = entry.modelId;
+				} else if (entry.type === "model_change" && entry.provider && entry.modelId) {
+					lastProvider = entry.provider;
+					lastModelId = entry.modelId;
 				}
 			} catch {
 				// Skip malformed lines
 			}
 		}
 
-		return lastModel;
+		if (lastProvider && lastModelId) {
+			return { provider: lastProvider, modelId: lastModelId };
+		}
+		return null;
 	}
 
 	getSessionId(): string {
