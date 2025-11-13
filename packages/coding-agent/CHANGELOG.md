@@ -6,6 +6,7 @@
 
 - Automatic changelog viewer on startup in interactive mode. When starting a new session (not continuing/resuming), the agent will display all changelog entries since the last version you used in a scrollable markdown viewer. The last shown version is tracked in `~/.pi/agent/settings.json`.
 - OpenRouter Auto Router model support ([#5](https://github.com/badlogic/pi-mono/pull/5))
+- Windows Git Bash support with automatic detection and process tree termination ([#1](https://github.com/badlogic/pi-mono/pull/1))
 
 ### Changed
 
