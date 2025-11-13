@@ -26,7 +26,7 @@ function getShellConfig(): { shell: string; args: string[] } {
 
 		throw new Error(
 			`Git Bash not found. Please install Git for Windows from https://git-scm.com/download/win\n` +
-			`Searched in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
+				`Searched in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
 		);
 	}
 	return { shell: "sh", args: ["-c"] };

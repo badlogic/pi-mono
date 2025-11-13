@@ -27,13 +27,18 @@ npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ```
 
-### Running Without Building
+### Running During Development
 
-Use `tsx` to run TypeScript source directly during development:
-
+**Option 1: Run source directly with tsx (no build required)**
 ```bash
 cd packages/coding-agent && npx tsx src/cli.ts
 cd packages/pods && npx tsx src/cli.ts
+```
+
+**Option 2: Watch mode + tsx (for multi-package development)**
+```bash
+npm run dev          # Terminal 1: Start watch builds for all packages
+npx tsx ...          # Terminal 2: Run with tsx (picks up built files)
 ```
 
 ### Versioning (Lockstep)
