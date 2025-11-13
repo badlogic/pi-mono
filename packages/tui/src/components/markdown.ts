@@ -459,9 +459,10 @@ export class Markdown implements Component {
 			const itemLines = this.renderListItem(item.tokens || [], depth);
 
 			if (itemLines.length > 0) {
-				// First line - check if it's a nested list (contains cyan ANSI code for bullets)
+				// First line - check if it's a nested list
+				// A nested list will start with indent (spaces) followed by cyan bullet
 				const firstLine = itemLines[0];
-				const isNestedList = firstLine.includes("\x1b[36m"); // cyan color code
+				const isNestedList = /^\s+\x1b\[36m[-\d]/.test(firstLine); // starts with spaces + cyan + bullet char
 
 				if (isNestedList) {
 					// This is a nested list, just add it as-is (already has full indent)
@@ -474,7 +475,7 @@ export class Markdown implements Component {
 				// Rest of the lines
 				for (let j = 1; j < itemLines.length; j++) {
 					const line = itemLines[j];
-					const isNestedListLine = line.includes("\x1b[36m"); // cyan bullet color
+					const isNestedListLine = /^\s+\x1b\[36m[-\d]/.test(line); // starts with spaces + cyan + bullet char
 
 					if (isNestedListLine) {
 						// Nested list line - already has full indent
