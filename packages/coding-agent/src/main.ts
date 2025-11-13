@@ -221,10 +221,10 @@ Guidelines:
 }
 
 /**
- * Look for AGENT.md or CLAUDE.md in a directory (prefers AGENT.md)
+ * Look for AGENTS.md, AGENT.md, or CLAUDE.md in a directory (prefers AGENTS.md, then AGENT.md, then CLAUDE.md)
  */
 function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
-	const candidates = ["AGENT.md", "CLAUDE.md"];
+	const candidates = ["AGENTS.md", "AGENT.md", "CLAUDE.md"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
 		if (existsSync(filePath)) {
@@ -243,7 +243,7 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 
 /**
  * Load all project context files in order:
- * 1. Global: ~/.pi/agent/AGENT.md or CLAUDE.md
+ * 1. Global: ~/.pi/agent/AGENTS.md, AGENT.md, or CLAUDE.md
  * 2. Parent directories (top-most first) down to cwd
  * Each returns {path, content} for separate messages
  */

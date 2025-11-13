@@ -134,26 +134,26 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 
 ## Project Context Files
 
-The agent automatically loads context from `AGENT.md` or `CLAUDE.md` files at the start of new sessions (not when continuing/resuming). These files are loaded in hierarchical order to support both global preferences and monorepo structures.
+The agent automatically loads context from `AGENTS.md`, `AGENT.md`, or `CLAUDE.md` files at the start of new sessions (not when continuing/resuming). These files are loaded in hierarchical order to support both global preferences and monorepo structures.
 
 ### File Locations
 
 Context files are loaded in this order:
 
-1. **Global context**: `~/.pi/agent/AGENT.md` or `CLAUDE.md`
+1. **Global context**: `~/.pi/agent/AGENTS.md`, `AGENT.md`, or `CLAUDE.md`
    - Applies to all your coding sessions
    - Great for personal coding preferences and workflows
 
 2. **Parent directories** (top-most first down to current directory)
    - Walks up from current directory to filesystem root
-   - Each directory can have its own `AGENT.md` or `CLAUDE.md`
+   - Each directory can have its own `AGENTS.md`, `AGENT.md`, or `CLAUDE.md`
    - Perfect for monorepos with shared context at higher levels
 
-3. **Current directory**: Your project's `AGENT.md` or `CLAUDE.md`
+3. **Current directory**: Your project's `AGENTS.md`, `AGENT.md`, or `CLAUDE.md`
    - Most specific context, loaded last
    - Overwrites or extends parent/global context
 
-**File preference**: In each directory, `AGENT.md` is preferred over `CLAUDE.md` if both exist.
+**File preference**: In each directory, files are checked in this order: `AGENTS.md` → `AGENT.md` → `CLAUDE.md`. The first one found is used.
 
 ### What to Include
 
@@ -364,9 +364,9 @@ You: Read ~/agent-tools/screenshot/README.md and use that tool to take a screens
 
 The agent will read the README, understand the tool, and invoke it via bash as needed. If you need a new tool, ask the agent to write it for you.
 
-You can also reference tool READMEs in your `AGENT.md` files to make them automatically available:
-- Global: `~/.pi/agent/AGENT.md` - available in all sessions
-- Project-specific: `./AGENT.md` - available in this project
+You can also reference tool READMEs in your `AGENTS.md`, `AGENT.md`, or `CLAUDE.md` files to make them automatically available:
+- Global: `~/.pi/agent/AGENTS.md`, `AGENT.md`, or `CLAUDE.md` - available in all sessions
+- Project-specific: `./AGENTS.md`, `AGENT.md`, or `CLAUDE.md` - available in this project
 
 **Real-world example:**
 
