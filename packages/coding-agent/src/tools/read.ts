@@ -110,7 +110,7 @@ export const readTool: AgentTool<typeof readSchema> = {
 						const base64 = buffer.toString("base64");
 
 						content = [
-							{ type: "text", text: `Read image file: ${path}` },
+							{ type: "text", text: `Read image file [${mimeType}]` },
 							{ type: "image", data: base64, mimeType },
 						];
 					} else {
