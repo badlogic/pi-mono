@@ -50,8 +50,7 @@ export class FooterComponent {
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
 		const contextWindow = this.state.model.contextWindow;
-		const contextPercent =
-			contextWindow > 0 ? `${((contextTokens / contextWindow) * 100).toFixed(1)}% (${contextWindow})` : "0.0%";
+		const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "0.0";
 
 		// Format token counts (similar to web-ui)
 		const formatTokens = (count: number): string => {
