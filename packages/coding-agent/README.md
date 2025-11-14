@@ -107,6 +107,18 @@ Display the full changelog with all version history (newest last):
 /changelog
 ```
 
+### /branch
+
+Create a new conversation branch from a previous message. Opens an interactive selector showing all your user messages in chronological order. Select a message to:
+1. Create a new session with all messages before the selected one
+2. Place the selected message in the editor for modification or resubmission
+
+This allows you to explore alternative conversation paths without losing your current session.
+
+```
+/branch
+```
+
 ## Editor Features
 
 The interactive input editor includes several productivity features:

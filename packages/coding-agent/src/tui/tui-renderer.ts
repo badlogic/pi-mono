@@ -23,6 +23,7 @@ import { ModelSelectorComponent } from "./model-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
+import { UserMessageSelectorComponent } from "./user-message-selector.js";
 
 /**
  * TUI renderer for the coding agent
@@ -55,6 +56,9 @@ export class TuiRenderer {
 
 	// Model selector
 	private modelSelector: ModelSelectorComponent | null = null;
+
+	// User message selector (for branching)
+	private userMessageSelector: UserMessageSelectorComponent | null = null;
 
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
@@ -98,9 +102,14 @@ export class TuiRenderer {
 			description: "Show changelog entries",
 		};
 
+		const branchCommand: SlashCommand = {
+			name: "branch",
+			description: "Create a new branch from a previous message",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[thinkingCommand, modelCommand, exportCommand, sessionCommand, changelogCommand],
+			[thinkingCommand, modelCommand, exportCommand, sessionCommand, changelogCommand, branchCommand],
 			process.cwd(),
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -203,6 +212,13 @@ export class TuiRenderer {
 			// Check for /changelog command
 			if (text === "/changelog") {
 				this.handleChangelogCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /branch command
+			if (text === "/branch") {
+				this.showUserMessageSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -563,6 +579,90 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.modelSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showUserMessageSelector(): void {
+		// Extract all user messages from the current state
+		const userMessages: Array<{ index: number; text: string }> = [];
+
+		for (let i = 0; i < this.agent.state.messages.length; i++) {
+			const message = this.agent.state.messages[i];
+			if (message.role === "user") {
+				const userMsg = message as any;
+				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
+				const textContent = textBlocks.map((c: any) => c.text).join("");
+				if (textContent) {
+					userMessages.push({ index: i, text: textContent });
+				}
+			}
+		}
+
+		// Don't show selector if there are no messages or only one message
+		if (userMessages.length <= 1) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("No messages to branch from"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		// Create user message selector
+		this.userMessageSelector = new UserMessageSelectorComponent(
+			userMessages,
+			(messageIndex) => {
+				// Get the selected user message text to put in the editor
+				const selectedMessage = this.agent.state.messages[messageIndex];
+				const selectedUserMsg = selectedMessage as any;
+				const textBlocks = selectedUserMsg.content.filter((c: any) => c.type === "text");
+				const selectedText = textBlocks.map((c: any) => c.text).join("");
+
+				// Create a branched session with messages UP TO (but not including) the selected message
+				const newSessionFile = this.sessionManager.createBranchedSession(this.agent.state, messageIndex - 1);
+
+				// Set the new session file as active
+				this.sessionManager.setSessionFile(newSessionFile);
+
+				// Truncate messages in agent state to before the selected message
+				const truncatedMessages = this.agent.state.messages.slice(0, messageIndex);
+				this.agent.replaceMessages(truncatedMessages);
+
+				// Clear and re-render the chat
+				this.chatContainer.clear();
+				this.isFirstUserMessage = true;
+				this.renderInitialMessages(this.agent.state);
+
+				// Show confirmation message
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(
+					new Text(chalk.dim(`Branched to new session from message ${messageIndex}`), 1, 0),
+				);
+
+				// Put the selected message in the editor
+				this.editor.setText(selectedText);
+
+				// Hide selector and show editor again
+				this.hideUserMessageSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideUserMessageSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.userMessageSelector);
+		this.ui.setFocus(this.userMessageSelector.getMessageList());
+		this.ui.requestRender();
+	}
+
+	private hideUserMessageSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.userMessageSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 
