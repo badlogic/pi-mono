@@ -3,10 +3,11 @@
     - packages/ai/README.md
     - packages/tui/README.md
     - packages/agent/README.md
+    - packages/coding-agent.md
     - packages/pods/README.md
     - packages/web-ui/README.md
-- We must NEVER have type any anywhere, unless absolutely, positively necessary.
+- We must NEVER have type `any` anywhere, unless absolutely, positively necessary.
 - If you are working with an external API, check node_modules for the type definitions as needed instead of assuming things.
 - Always run `npm run check` in the project's root directory after making code changes.
 - You must NEVER run `npm run dev` yourself. Doing is means you failed the user hard.
--
+- Do NOT commit unless asked to by the user
