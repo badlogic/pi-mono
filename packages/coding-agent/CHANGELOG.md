@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.9] - 2025-11-14
+
 ### Changed
 
 - Editor: updated keyboard shortcuts to follow Unix conventions:
