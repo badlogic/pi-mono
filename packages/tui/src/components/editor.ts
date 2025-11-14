@@ -231,9 +231,21 @@ export class Editor implements Component {
 		}
 
 		// Continue with rest of input handling
-		// Ctrl+K - Delete current line
+		// Ctrl+K - Delete to end of line
 		if (data.charCodeAt(0) === 11) {
-			this.deleteCurrentLine();
+			this.deleteToEndOfLine();
+		}
+		// Ctrl+U - Delete to start of line
+		else if (data.charCodeAt(0) === 21) {
+			this.deleteToStartOfLine();
+		}
+		// Ctrl+W - Delete word backwards
+		else if (data.charCodeAt(0) === 23) {
+			this.deleteWordBackwards();
+		}
+		// Option/Alt+Backspace (e.g. Ghostty sends ESC + DEL)
+		else if (data === "\x1b\x7f") {
+			this.deleteWordBackwards();
 		}
 		// Ctrl+A - Move to start of line
 		else if (data.charCodeAt(0) === 1) {
@@ -598,6 +610,93 @@ export class Editor implements Component {
 		this.state.cursorCol = currentLine.length;
 	}
 
+	private deleteToStartOfLine(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		if (this.state.cursorCol > 0) {
+			// Delete from start of line up to cursor
+			this.state.lines[this.state.cursorLine] = currentLine.slice(this.state.cursorCol);
+			this.state.cursorCol = 0;
+		} else if (this.state.cursorLine > 0) {
+			// At start of line - merge with previous line
+			const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
+			this.state.lines[this.state.cursorLine - 1] = previousLine + currentLine;
+			this.state.lines.splice(this.state.cursorLine, 1);
+			this.state.cursorLine--;
+			this.state.cursorCol = previousLine.length;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	private deleteToEndOfLine(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		if (this.state.cursorCol < currentLine.length) {
+			// Delete from cursor to end of line
+			this.state.lines[this.state.cursorLine] = currentLine.slice(0, this.state.cursorCol);
+		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+			// At end of line - merge with next line
+			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
+			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
+			this.state.lines.splice(this.state.cursorLine + 1, 1);
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	private deleteWordBackwards(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		// If at start of line, behave like backspace at column 0 (merge with previous line)
+		if (this.state.cursorCol === 0) {
+			if (this.state.cursorLine > 0) {
+				const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
+				this.state.lines[this.state.cursorLine - 1] = previousLine + currentLine;
+				this.state.lines.splice(this.state.cursorLine, 1);
+				this.state.cursorLine--;
+				this.state.cursorCol = previousLine.length;
+			}
+		} else {
+			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+
+			const isWhitespace = (char: string): boolean => /\s/.test(char);
+			const isPunctuation = (char: string): boolean => {
+				// Treat obvious code punctuation as boundaries
+				return /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+			};
+
+			let deleteFrom = this.state.cursorCol;
+			const lastChar = textBeforeCursor[deleteFrom - 1] ?? "";
+
+			// If immediately on whitespace or punctuation, delete that single boundary char
+			if (isWhitespace(lastChar) || isPunctuation(lastChar)) {
+				deleteFrom -= 1;
+			} else {
+				// Otherwise, delete a run of non-boundary characters (the "word")
+				while (deleteFrom > 0) {
+					const ch = textBeforeCursor[deleteFrom - 1] ?? "";
+					if (isWhitespace(ch) || isPunctuation(ch)) {
+						break;
+					}
+					deleteFrom -= 1;
+				}
+			}
+
+			this.state.lines[this.state.cursorLine] =
+				currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
+			this.state.cursorCol = deleteFrom;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
 	private handleForwardDelete(): void {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
@@ -611,31 +710,6 @@ export class Editor implements Component {
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
-		}
-
-		if (this.onChange) {
-			this.onChange(this.getText());
-		}
-	}
-
-	private deleteCurrentLine(): void {
-		if (this.state.lines.length === 1) {
-			// Only one line - just clear it
-			this.state.lines[0] = "";
-			this.state.cursorCol = 0;
-		} else {
-			// Multiple lines - remove current line
-			this.state.lines.splice(this.state.cursorLine, 1);
-
-			// Adjust cursor position
-			if (this.state.cursorLine >= this.state.lines.length) {
-				// Was on last line, move to new last line
-				this.state.cursorLine = this.state.lines.length - 1;
-			}
-
-			// Clamp cursor column to new line length
-			const newLine = this.state.lines[this.state.cursorLine] || "";
-			this.state.cursorCol = Math.min(this.state.cursorCol, newLine.length);
 		}
 
 		if (this.onChange) {

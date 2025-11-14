@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Editor: updated keyboard shortcuts to follow Unix conventions:
+  - **Ctrl+W** deletes the previous word (stopping at whitespace or punctuation)
+  - **Ctrl+U** deletes from cursor to start of line (at line start, merges with previous line)
+  - **Ctrl+K** deletes from cursor to end of line (at line end, merges with next line)
+  - **Option+Backspace** in Ghostty now behaves like **Ctrl+W** (delete word backwards)
+  - **Cmd+Backspace** in Ghostty now behaves like **Ctrl+U** (delete to start of line)
+
 ## [0.7.8] - 2025-11-13
 
 ### Changed
