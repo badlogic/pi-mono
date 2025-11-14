@@ -131,7 +131,11 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 
 ### Keyboard Shortcuts
 
-- **Ctrl+K**: Delete current line
+- **Ctrl+W**: Delete word backwards (stops at whitespace or punctuation)
+- **Option+Backspace** (Ghostty): Delete word backwards (same as Ctrl+W)
+- **Ctrl+U**: Delete to start of line (at line start: merge with previous line)
+- **Cmd+Backspace** (Ghostty): Delete to start of line (same as Ctrl+U)
+- **Ctrl+K**: Delete to end of line (at line end: merge with next line)
 - **Ctrl+C**: Clear editor (first press) / Exit pi (second press)
 - **Tab**: Path completion
 - **Enter**: Send message
