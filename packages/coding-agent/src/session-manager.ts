@@ -402,4 +402,43 @@ export class SessionManager {
 
 		return userMessages.length >= 1 && assistantMessages.length >= 1;
 	}
+
+	/**
+	 * Create a branched session from a specific message index.
+	 * If branchFromIndex is -1, creates an empty session.
+	 * Returns the new session file path.
+	 */
+	createBranchedSession(state: any, branchFromIndex: number): string {
+		// Create a new session ID for the branch
+		const newSessionId = uuidv4();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
+
+		// Write session header
+		const entry: SessionHeader = {
+			type: "session",
+			id: newSessionId,
+			timestamp: new Date().toISOString(),
+			cwd: process.cwd(),
+			provider: state.model.provider,
+			modelId: state.model.id,
+			thinkingLevel: state.thinkingLevel,
+		};
+		appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+
+		// Write messages up to and including the branch point (if >= 0)
+		if (branchFromIndex >= 0) {
+			const messagesToWrite = state.messages.slice(0, branchFromIndex + 1);
+			for (const message of messagesToWrite) {
+				const messageEntry: SessionMessageEntry = {
+					type: "message",
+					timestamp: new Date().toISOString(),
+					message,
+				};
+				appendFileSync(newSessionFile, JSON.stringify(messageEntry) + "\n");
+			}
+		}
+
+		return newSessionFile;
+	}
 }

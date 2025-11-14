@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/branch` command for creating conversation branches. Opens a selector showing all user messages in chronological order. Selecting a message creates a new session with all messages before the selected one, and places the selected message in the editor for modification or resubmission. This allows exploring alternative conversation paths without losing the current session. (fixes [#16](https://github.com/badlogic/pi-mono/issues/16))
+
 ## [0.7.9] - 2025-11-14
 
 ### Changed
