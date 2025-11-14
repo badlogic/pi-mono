@@ -57,7 +57,6 @@ These commands:
 ### Publishing
 
 ```bash
-npm run publish:dry    # Preview what will be published
 npm run publish        # Publish all packages to npm
 ```
 
