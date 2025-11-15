@@ -24,7 +24,7 @@
 		"jszip": "^3.10.1",
 		"lucide": "^0.544.0",
 		"ollama": "^0.6.0",
-		"pdfjs-dist": "^5.4.296",
+		"pdfjs-dist": "5.4.394",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 	},
 	"peerDependencies": {
