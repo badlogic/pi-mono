@@ -254,6 +254,11 @@ export class SandboxIframe extends LitElement {
 		providers = [consoleProvider, ...providers];
 		RUNTIME_MESSAGE_ROUTER.registerSandbox(sandboxId, providers, consumers);
 
+		// Notify providers that execution is starting
+		for (const provider of providers) {
+			provider.onExecutionStart?.(sandboxId, signal);
+		}
+
 		const files: SandboxFile[] = [];
 		let completed = false;
 
@@ -287,6 +292,11 @@ export class SandboxIframe extends LitElement {
 			RUNTIME_MESSAGE_ROUTER.addConsumer(sandboxId, executionConsumer);
 
 			const cleanup = () => {
+				// Notify providers that execution has ended
+				for (const provider of providers) {
+					provider.onExecutionEnd?.(sandboxId);
+				}
+
 				RUNTIME_MESSAGE_ROUTER.unregisterSandbox(sandboxId);
 				signal?.removeEventListener("abort", abortHandler);
 				clearTimeout(timeoutId);
