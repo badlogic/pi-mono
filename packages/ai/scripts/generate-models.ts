@@ -295,7 +295,7 @@ async function generateModels() {
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
-	// Add missing gpt models (can't use tools)
+	// Add missing gpt models
 	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5-chat-latest")) {
 		allModels.push({
 			id: "gpt-5-chat-latest",
@@ -313,6 +313,26 @@ async function generateModels() {
 			},
 			contextWindow: 128000,
 			maxTokens: 16384,
+		});
+	}
+
+	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5.1-codex")) {
+		allModels.push({
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
+			provider: "openai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 5,
+				cacheRead: 0.125,
+				cacheWrite: 1.25,
+			},
+			contextWindow: 400000,
+			maxTokens: 128000,
 		});
 	}
 
