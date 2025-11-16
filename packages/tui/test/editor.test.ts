@@ -3,36 +3,8 @@ import { describe, it } from "node:test";
 import { Editor } from "../src/components/editor.js";
 
 describe("Editor component", () => {
-	describe("Unicode character input", () => {
-		it("should handle German umlauts correctly", () => {
-			const editor = new Editor();
-
-			// Simulate typing umlauts
-			editor.handleInput("ä");
-			editor.handleInput("ö");
-			editor.handleInput("ü");
-			editor.handleInput("Ä");
-			editor.handleInput("Ö");
-			editor.handleInput("Ü");
-			editor.handleInput("ß");
-
-			const text = editor.getText();
-			assert.strictEqual(text, "äöüÄÖÜß");
-		});
-
-		it("should handle emojis correctly", () => {
-			const editor = new Editor();
-
-			// Simulate typing emojis
-			editor.handleInput("😀");
-			editor.handleInput("👍");
-			editor.handleInput("🎉");
-
-			const text = editor.getText();
-			assert.strictEqual(text, "😀👍🎉");
-		});
-
-		it("should handle mixed ASCII, umlauts, and emojis", () => {
+	describe("Unicode text editing behavior", () => {
+		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor();
 
 			editor.handleInput("H");
@@ -51,7 +23,7 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "Hello äöü 😀");
 		});
 
-		it("should handle backspace with umlauts correctly", () => {
+		it("deletes single-code-unit unicode characters (umlauts) with Backspace", () => {
 			const editor = new Editor();
 
 			editor.handleInput("ä");
@@ -65,7 +37,7 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "äö");
 		});
 
-		it("should handle backspace with emojis correctly", () => {
+		it("deletes multi-code-unit emojis with repeated Backspace", () => {
 			const editor = new Editor();
 
 			editor.handleInput("😀");
@@ -79,7 +51,7 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "😀");
 		});
 
-		it("should handle cursor movement with umlauts", () => {
+		it("inserts characters at the correct position after cursor movement over umlauts", () => {
 			const editor = new Editor();
 
 			editor.handleInput("ä");
@@ -97,36 +69,35 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "äxöü");
 		});
 
-		it("should handle cursor movement with emojis", () => {
+		it("moves cursor in code units across multi-code-unit emojis before insertion", () => {
 			const editor = new Editor();
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
 			editor.handleInput("🎉");
 
-			// Move cursor left twice (should skip the emoji)
+			// Move cursor left over last emoji (🎉)
 			editor.handleInput("\x1b[D"); // Left arrow
 			editor.handleInput("\x1b[D"); // Left arrow
 
-			// Note: Emojis are 2 code units, so we need to move left twice per emoji
-			// But cursor position is in code units, not visual columns
+			// Move cursor left over second emoji (👍)
 			editor.handleInput("\x1b[D");
 			editor.handleInput("\x1b[D");
 
-			// Insert 'x'
+			// Insert 'x' between first and second emoji
 			editor.handleInput("x");
 
 			const text = editor.getText();
 			assert.strictEqual(text, "😀x👍🎉");
 		});
 
-		it("should handle multi-line text with umlauts", () => {
+		it("preserves umlauts across line breaks", () => {
 			const editor = new Editor();
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
 			editor.handleInput("ü");
-			editor.handleInput("\n"); // Shift+Enter (new line)
+			editor.handleInput("\n"); // new line
 			editor.handleInput("Ä");
 			editor.handleInput("Ö");
 			editor.handleInput("Ü");
@@ -135,21 +106,19 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "äöü\nÄÖÜ");
 		});
 
-		it("should handle paste with umlauts", () => {
+		it("replaces the entire document with unicode text via setText (paste simulation)", () => {
 			const editor = new Editor();
 
-			// Simulate bracketed paste by calling handlePaste directly
-			// (Bracketed paste is async and doesn't work well in sync tests)
-			editor.setText("äöüÄÖÜß");
+			// Simulate bracketed paste / programmatic replacement
+			editor.setText("Hällö Wörld! 😀 äöüÄÖÜß");
 
 			const text = editor.getText();
-			assert.strictEqual(text, "äöüÄÖÜß");
+			assert.strictEqual(text, "Hällö Wörld! 😀 äöüÄÖÜß");
 		});
 
-		it("should handle special control keys", () => {
+		it("moves cursor to document start on Ctrl+A and inserts at the beginning", () => {
 			const editor = new Editor();
 
-			// Ctrl+A moves cursor to start
 			editor.handleInput("a");
 			editor.handleInput("b");
 			editor.handleInput("\x01"); // Ctrl+A (move to start)
@@ -157,15 +126,6 @@ describe("Editor component", () => {
 
 			const text = editor.getText();
 			assert.strictEqual(text, "xab");
-		});
-
-		it("should handle setText with umlauts", () => {
-			const editor = new Editor();
-
-			editor.setText("Hällö Wörld! 😀");
-
-			const text = editor.getText();
-			assert.strictEqual(text, "Hällö Wörld! 😀");
 		});
 	});
 });
