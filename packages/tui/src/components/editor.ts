@@ -333,8 +333,8 @@ export class Editor implements Component {
 			// Left
 			this.moveCursor(0, -1);
 		}
-		// Regular characters (printable ASCII)
-		else if (data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+		// Regular characters (printable characters and unicode, but not control characters)
+		else if (data.charCodeAt(0) >= 32) {
 			this.insertCharacter(data);
 		}
 	}
@@ -472,7 +472,7 @@ export class Editor implements Component {
 		// Filter out non-printable characters except newlines
 		const filteredText = tabExpandedText
 			.split("")
-			.filter((char) => char === "\n" || (char >= " " && char <= "~"))
+			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
 			.join("");
 
 		// Split into lines
