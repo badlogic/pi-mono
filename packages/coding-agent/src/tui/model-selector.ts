@@ -1,4 +1,4 @@
-import { getModels, getProviders, type Model } from "@mariozechner/pi-ai";
+import { getApiKey, getModels, getProviders, type Model } from "@mariozechner/pi-ai";
 import { Container, Input, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 
@@ -71,8 +71,11 @@ export class ModelSelectorComponent extends Container {
 			}
 		}
 
+		// Filter out models from providers without API keys
+		const filteredModels = models.filter((item) => getApiKey(item.provider as any) !== undefined);
+
 		// Sort: current model first, then by provider
-		models.sort((a, b) => {
+		filteredModels.sort((a, b) => {
 			const aIsCurrent = this.currentModel?.id === a.model.id;
 			const bIsCurrent = this.currentModel?.id === b.model.id;
 			if (aIsCurrent && !bIsCurrent) return -1;
@@ -80,8 +83,8 @@ export class ModelSelectorComponent extends Container {
 			return a.provider.localeCompare(b.provider);
 		});
 
-		this.allModels = models;
-		this.filteredModels = models;
+		this.allModels = filteredModels;
+		this.filteredModels = filteredModels;
 	}
 
 	private filterModels(query: string): void {
