@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.7.12] - 2025-11-16
+
+### Added
+
+- **Custom Models and Providers**: Support for custom models and providers via `~/.pi/agent/models.json` configuration file. Add local models (Ollama, vLLM, LM Studio) or any OpenAI-compatible, Anthropic-compatible, or Google-compatible API. File is reloaded on every `/model` selector open, allowing live updates without restart. ([#21](https://github.com/badlogic/pi-mono/issues/21))
+- Added `gpt-5.1-codex` model to OpenAI provider (400k context, 128k max output, reasoning-capable).
+
+### Changed
+
+- **Breaking**: No longer hardcodes Anthropic/Claude as default provider/model. Now prefers sensible defaults per provider (e.g., `claude-sonnet-4-5` for Anthropic, `gpt-5.1-codex` for OpenAI), or requires explicit selection in interactive mode.
+- Interactive mode now allows starting without a model, showing helpful error on message submission instead of failing at startup.
+- Non-interactive mode (CLI messages, JSON, RPC) still fails early if no model or API key is available.
+- Model selector now saves selected model as default in settings.json.
+- `models.json` validation errors (syntax + schema) now surface with precise file/field info in both CLI and `/model` selector.
+- Agent system prompt now includes absolute path to its own README.md for self-documentation.
+
+### Fixed
+
+- Fixed crash when restoring a session with a custom model that no longer exists or lost credentials. Now gracefully falls back to default model, logs the reason, and appends a warning message to the restored chat.
+- Footer no longer crashes when no model is selected.
+
 ## [0.7.11] - 2025-11-16
 
 ### Changed

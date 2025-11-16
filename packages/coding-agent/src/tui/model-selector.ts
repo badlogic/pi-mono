@@ -1,6 +1,8 @@
-import { getApiKey, getModels, getProviders, type Model } from "@mariozechner/pi-ai";
+import type { Model } from "@mariozechner/pi-ai";
 import { Container, Input, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { getAvailableModels } from "../model-config.js";
+import type { SettingsManager } from "../settings-manager.js";
 
 interface ModelItem {
 	provider: string;
@@ -17,18 +19,26 @@ export class ModelSelectorComponent extends Container {
 	private allModels: ModelItem[] = [];
 	private filteredModels: ModelItem[] = [];
 	private selectedIndex: number = 0;
-	private currentModel: Model<any>;
+	private currentModel: Model<any> | null;
+	private settingsManager: SettingsManager;
 	private onSelectCallback: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
+	private errorMessage: string | null = null;
 
-	constructor(currentModel: Model<any>, onSelect: (model: Model<any>) => void, onCancel: () => void) {
+	constructor(
+		currentModel: Model<any> | null,
+		settingsManager: SettingsManager,
+		onSelect: (model: Model<any>) => void,
+		onCancel: () => void,
+	) {
 		super();
 
 		this.currentModel = currentModel;
+		this.settingsManager = settingsManager;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
-		// Load all models
+		// Load all models (fresh every time)
 		this.loadModels();
 
 		// Add top border
@@ -67,30 +77,35 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	private loadModels(): void {
-		const models: ModelItem[] = [];
-		const providers = getProviders();
+		// Load available models fresh (includes custom models from ~/.pi/agent/models.json)
+		const { models: availableModels, error } = getAvailableModels();
 
-		for (const provider of providers) {
-			const providerModels = getModels(provider as any);
-			for (const model of providerModels) {
-				models.push({ provider, id: model.id, model });
-			}
+		// If there's an error loading models.json, we'll show it via the "no models" path
+		// The error will be displayed to the user
+		if (error) {
+			this.allModels = [];
+			this.filteredModels = [];
+			this.errorMessage = error;
+			return;
 		}
 
-		// Filter out models from providers without API keys
-		const filteredModels = models.filter((item) => getApiKey(item.provider as any) !== undefined);
+		const models: ModelItem[] = availableModels.map((model) => ({
+			provider: model.provider,
+			id: model.id,
+			model,
+		}));
 
 		// Sort: current model first, then by provider
-		filteredModels.sort((a, b) => {
-			const aIsCurrent = this.currentModel?.id === a.model.id;
-			const bIsCurrent = this.currentModel?.id === b.model.id;
+		models.sort((a, b) => {
+			const aIsCurrent = this.currentModel?.id === a.model.id && this.currentModel?.provider === a.provider;
+			const bIsCurrent = this.currentModel?.id === b.model.id && this.currentModel?.provider === b.provider;
 			if (aIsCurrent && !bIsCurrent) return -1;
 			if (!aIsCurrent && bIsCurrent) return 1;
 			return a.provider.localeCompare(b.provider);
 		});
 
-		this.allModels = filteredModels;
-		this.filteredModels = filteredModels;
+		this.allModels = models;
+		this.filteredModels = models;
 	}
 
 	private filterModels(query: string): void {
@@ -152,8 +167,14 @@ export class ModelSelectorComponent extends Container {
 			this.listContainer.addChild(new Text(scrollInfo, 0, 0));
 		}
 
-		// Show "no results" if empty
-		if (this.filteredModels.length === 0) {
+		// Show error message or "no results" if empty
+		if (this.errorMessage) {
+			// Show error in red
+			const errorLines = this.errorMessage.split("\n");
+			for (const line of errorLines) {
+				this.listContainer.addChild(new Text(chalk.red(line), 0, 0));
+			}
+		} else if (this.filteredModels.length === 0) {
 			this.listContainer.addChild(new Text(chalk.gray("  No matching models"), 0, 0));
 		}
 	}
@@ -188,6 +209,8 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	private handleSelect(model: Model<any>): void {
+		// Save as new default
+		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 		this.onSelectCallback(model);
 	}
 

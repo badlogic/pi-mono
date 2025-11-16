@@ -14,7 +14,9 @@ import {
 import chalk from "chalk";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
+import { getApiKeyForModel } from "../model-config.js";
 import type { SessionManager } from "../session-manager.js";
+import type { SettingsManager } from "../settings-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -37,6 +39,7 @@ export class TuiRenderer {
 	private footer: FooterComponent;
 	private agent: Agent;
 	private sessionManager: SessionManager;
+	private settingsManager: SettingsManager;
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
@@ -63,9 +66,16 @@ export class TuiRenderer {
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
-	constructor(agent: Agent, sessionManager: SessionManager, version: string, changelogMarkdown: string | null = null) {
+	constructor(
+		agent: Agent,
+		sessionManager: SessionManager,
+		settingsManager: SettingsManager,
+		version: string,
+		changelogMarkdown: string | null = null,
+	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
+		this.settingsManager = settingsManager;
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
 		this.ui = new TUI(new ProcessTerminal());
@@ -223,6 +233,28 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Normal message submission - validate model and API key first
+			const currentModel = this.agent.state.model;
+			if (!currentModel) {
+				this.showError(
+					"No model selected.\n\n" +
+						"Set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n" +
+						"or create ~/.pi/agent/models.json\n\n" +
+						"Then use /model to select a model.",
+				);
+				return;
+			}
+
+			const apiKey = getApiKeyForModel(currentModel);
+			if (!apiKey) {
+				this.showError(
+					`No API key found for ${currentModel.provider}.\n\n` +
+						`Set the appropriate environment variable or update ~/.pi/agent/models.json`,
+				);
+				return;
+			}
+
+			// All good, proceed with submission
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -498,6 +530,13 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
+	showWarning(warningMessage: string): void {
+		// Show warning message in the chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.yellow(`Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	private showThinkingSelector(): void {
 		// Create thinking selector with current level
 		this.thinkingSelector = new ThinkingSelectorComponent(
@@ -544,6 +583,7 @@ export class TuiRenderer {
 		// Create model selector with current model
 		this.modelSelector = new ModelSelectorComponent(
 			this.agent.state.model,
+			this.settingsManager,
 			(model) => {
 				// Apply the selected model
 				this.agent.setModel(model);
