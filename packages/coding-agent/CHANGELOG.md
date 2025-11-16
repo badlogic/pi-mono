@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.13] - 2025-11-16
+
+### Fixed
+
+- **TUI Editor**: Fixed unicode input support for umlauts (äöü), emojis (😀), and other extended characters. Previously the editor only accepted ASCII characters (32-126). Now properly handles all printable unicode while still filtering out control characters. ([#20](https://github.com/badlogic/pi-mono/pull/20))
+
 ## [0.7.12] - 2025-11-16
 
 ### Added
