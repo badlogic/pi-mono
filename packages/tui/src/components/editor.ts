@@ -472,7 +472,7 @@ export class Editor implements Component {
 		// Filter out non-printable characters except newlines
 		const filteredText = tabExpandedText
 			.split("")
-			.filter((char) => char === "\n" || (char >= " " && char <= "~"))
+			.filter((char) => char === "\n" || char.length > 0)
 			.join("");
 
 		// Split into lines
