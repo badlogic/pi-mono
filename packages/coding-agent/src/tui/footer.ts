@@ -49,7 +49,7 @@ export class FooterComponent {
 				lastAssistantMessage.usage.cacheRead +
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
-		const contextWindow = this.state.model.contextWindow;
+		const contextWindow = this.state.model?.contextWindow || 0;
 		const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "0.0";
 
 		// Format token counts (similar to web-ui)
@@ -86,7 +86,7 @@ export class FooterComponent {
 		const statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side
-		let modelName = this.state.model.id;
+		let modelName = this.state.model?.id || "no-model";
 		const statsLeftWidth = visibleWidth(statsLeft);
 		const modelWidth = visibleWidth(modelName);
 
