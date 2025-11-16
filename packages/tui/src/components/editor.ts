@@ -334,7 +334,7 @@ export class Editor implements Component {
 			this.moveCursor(0, -1);
 		}
 		// Regular characters (printable ASCII)
-		else if (data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+		else {
 			this.insertCharacter(data);
 		}
 	}
