@@ -35,6 +35,12 @@ export class ModelSelectorComponent extends Container {
 		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
 		this.addChild(new Spacer(1));
 
+		// Add hint about API key filtering
+		this.addChild(
+			new Text(chalk.yellow("Only showing models with configured API keys (see README for details)"), 0, 0),
+		);
+		this.addChild(new Spacer(1));
+
 		// Create search input
 		this.searchInput = new Input();
 		this.searchInput.onSubmit = () => {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.11] - 2025-11-16
+
+### Changed
+
+- The `/model` selector now filters models based on available API keys. Only models for which API keys are configured in environment variables are shown. This prevents selecting models that would fail due to missing credentials. A yellow hint is displayed at the top of the selector explaining this behavior. ([#19](https://github.com/badlogic/pi-mono/pull/19))
+
 ## [0.7.10] - 2025-11-14
 
 ### Added

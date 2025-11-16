@@ -62,6 +62,8 @@ export ZAI_API_KEY=...
 
 If no API key is set, the CLI will prompt you to configure one on first run.
 
+**Note:** The `/model` command only shows models for which API keys are configured in your environment. If you don't see a model you expect, check that you've set the corresponding environment variable.
+
 ## Slash Commands
 
 The CLI supports several commands to control its behavior:
@@ -69,6 +71,8 @@ The CLI supports several commands to control its behavior:
 ### /model
 
 Switch models mid-session. Opens an interactive selector where you can type to search (by provider or model name), use arrow keys to navigate, Enter to select, or Escape to cancel.
+
+The selector only displays models for which API keys are configured in your environment (see API Keys section).
 
 ### /thinking
 
