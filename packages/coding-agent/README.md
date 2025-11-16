@@ -64,6 +64,139 @@ If no API key is set, the CLI will prompt you to configure one on first run.
 
 **Note:** The `/model` command only shows models for which API keys are configured in your environment. If you don't see a model you expect, check that you've set the corresponding environment variable.
 
+## Custom Models and Providers
+
+You can add custom models and providers (like Ollama, vLLM, LM Studio, or any custom API endpoint) via `~/.pi/agent/models.json`. Supports OpenAI-compatible APIs (`openai-completions`, `openai-responses`), Anthropic Messages API (`anthropic-messages`), and Google Generative AI API (`google-generative-ai`). This file is loaded fresh every time you open the `/model` selector, allowing live updates without restarting.
+
+### Configuration File Structure
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "apiKey": "OLLAMA_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "llama-3.1-8b",
+          "name": "Llama 3.1 8B (Local)",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 128000,
+          "maxTokens": 32000
+        }
+      ]
+    },
+    "vllm": {
+      "baseUrl": "http://your-server:8000/v1",
+      "apiKey": "VLLM_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "custom-model",
+          "name": "Custom Fine-tuned Model",
+          "reasoning": false,
+          "input": ["text", "image"],
+          "cost": {"input": 0.5, "output": 1.0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 32768,
+          "maxTokens": 8192
+        }
+      ]
+    },
+    "mixed-api-provider": {
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "CUSTOM_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "legacy-model",
+          "name": "Legacy Model",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {"input": 1.0, "output": 2.0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 8192,
+          "maxTokens": 4096
+        },
+        {
+          "id": "new-model",
+          "name": "New Model",
+          "api": "openai-responses",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": {"input": 0.5, "output": 1.0, "cacheRead": 0.1, "cacheWrite": 0.2},
+          "contextWindow": 128000,
+          "maxTokens": 32000
+        }
+      ]
+    }
+  }
+}
+```
+
+### API Key Resolution
+
+The `apiKey` field can be either an environment variable name or a literal API key:
+
+1. First, `pi` checks if an environment variable with that name exists
+2. If found, uses the environment variable's value
+3. Otherwise, treats it as a literal API key
+
+Examples:
+- `"apiKey": "OLLAMA_API_KEY"` → checks `$OLLAMA_API_KEY`, then treats as literal "OLLAMA_API_KEY"
+- `"apiKey": "sk-1234..."` → checks `$sk-1234...` (unlikely to exist), then uses literal value
+
+This allows both secure env var usage and literal keys for local servers.
+
+### API Override
+
+- **Provider-level `api`**: Sets the default API for all models in that provider
+- **Model-level `api`**: Overrides the provider default for specific models
+- Supported APIs: `openai-completions`, `openai-responses`, `anthropic-messages`, `google-generative-ai`
+
+This is useful when a provider supports multiple API standards through the same base URL.
+
+### Model Selection Priority
+
+When starting `pi`, models are selected in this order:
+
+1. **CLI args**: `--provider` and `--model` flags
+2. **Restored from session**: If using `--continue` or `--resume`
+3. **Saved default**: From `~/.pi/agent/settings.json` (set when you select a model with `/model`)
+4. **First available**: First model with a valid API key
+5. **None**: Allowed in interactive mode (shows error on message submission)
+
+### Provider Defaults
+
+When multiple providers are available, pi prefers sensible defaults before falling back to "first available":
+
+| Provider   | Default Model            |
+|------------|--------------------------|
+| anthropic  | claude-sonnet-4-5        |
+| openai     | gpt-5.1-codex            |
+| google     | gemini-2.5-pro           |
+| openrouter | openai/gpt-5.1-codex     |
+| xai        | grok-4-fast-non-reasoning|
+| groq       | openai/gpt-oss-120b      |
+| cerebras   | zai-glm-4.6              |
+| zai        | glm-4.6                  |
+
+### Live Reload & Errors
+
+The models.json file is reloaded every time you open the `/model` selector. This means:
+
+- Edit models.json during a session
+- Or have the agent write/update it for you
+- Use `/model` to see changes immediately
+- No restart needed!
+
+If the file contains errors (JSON syntax, schema violations, missing fields), the selector shows the exact validation error and file path in red so you can fix it immediately.
+
+### Example: Adding Ollama Models
+
+See the configuration structure above. Create `~/.pi/agent/models.json` with your Ollama setup, then use `/model` to select your local models. The agent can also help you write this file if you point it to this README.
+
 ## Slash Commands
 
 The CLI supports several commands to control its behavior:
@@ -273,10 +406,10 @@ pi [options] [messages...]
 ### Options
 
 **--provider <name>**
-Provider name. Available: `anthropic`, `openai`, `google`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`. Default: `anthropic`
+Provider name. Available: `anthropic`, `openai`, `google`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, plus any custom providers defined in `~/.pi/agent/models.json`.
 
 **--model <id>**
-Model ID. Default: `claude-sonnet-4-5`
+Model ID. If not specified, uses: (1) saved default from settings, (2) first available model with valid API key, or (3) none (interactive mode only).
 
 **--api-key <key>**
 API key (overrides environment variables)
@@ -495,7 +628,6 @@ The agent can read, update, and reference the plan as it works. Unlike ephemeral
 
 Things that might happen eventually:
 
-- **Custom/local models**: Support for Ollama, llama.cpp, vLLM, SGLang, LM Studio via JSON config file
 - **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, either:
   - Ask the agent to write a summary .md file you can load in a new session
   - Switch to a model with bigger context (e.g., Gemini) using `/model` and either continue with that model, or let it summarize the session to a .md file to be loaded in a new session

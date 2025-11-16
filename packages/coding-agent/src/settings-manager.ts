@@ -4,6 +4,8 @@ import { dirname, join } from "path";
 
 export interface Settings {
 	lastChangelogVersion?: string;
+	defaultProvider?: string;
+	defaultModel?: string;
 }
 
 export class SettingsManager {
@@ -50,6 +52,30 @@ export class SettingsManager {
 
 	setLastChangelogVersion(version: string): void {
 		this.settings.lastChangelogVersion = version;
+		this.save();
+	}
+
+	getDefaultProvider(): string | undefined {
+		return this.settings.defaultProvider;
+	}
+
+	getDefaultModel(): string | undefined {
+		return this.settings.defaultModel;
+	}
+
+	setDefaultProvider(provider: string): void {
+		this.settings.defaultProvider = provider;
+		this.save();
+	}
+
+	setDefaultModel(modelId: string): void {
+		this.settings.defaultModel = modelId;
+		this.save();
+	}
+
+	setDefaultModelAndProvider(provider: string, modelId: string): void {
+		this.settings.defaultProvider = provider;
+		this.settings.defaultModel = modelId;
 		this.save();
 	}
 }
