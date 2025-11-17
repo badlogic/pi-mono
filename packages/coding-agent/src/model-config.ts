@@ -226,6 +226,14 @@ export function getApiKeyForModel(model: Model<Api>): string | undefined {
 		return resolveApiKey(customKeyConfig);
 	}
 
+	// For Anthropic, check ANTHROPIC_OAUTH_KEY first
+	if (model.provider === "anthropic") {
+		const oauthKey = process.env.ANTHROPIC_OAUTH_TOKEN;
+		if (oauthKey) {
+			return oauthKey;
+		}
+	}
+
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai
 	return getApiKey(model.provider as KnownProvider);
 }
