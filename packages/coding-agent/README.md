@@ -421,6 +421,16 @@ Custom system prompt. Can be:
 
 If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
 
+**--thinking <level>**
+Initial thinking/reasoning level for supported models (Claude Sonnet 4, GPT-5, Gemini 2.5). Options:
+- `off` (default): No reasoning
+- `minimal`: Very brief reasoning (~1k tokens)
+- `low`: Light reasoning (~2k tokens)
+- `medium`: Moderate reasoning (~8k tokens)
+- `high`: Deep reasoning (~16k tokens)
+
+When continuing or resuming a session with `--continue` or `--resume`, this flag takes priority over the saved thinking level from the previous session.
+
 **--mode <mode>**
 Output mode for non-interactive usage. Options:
 - `text` (default): Output only the final assistant message text
@@ -465,6 +475,12 @@ pi -c "What did we discuss?"
 
 # Use different model
 pi --provider openai --model gpt-4o "Help me refactor this code"
+
+# Start with thinking enabled
+pi --thinking medium "Analyze this complex algorithm"
+
+# Continue session but override thinking level
+pi -c --thinking high "Continue with deeper reasoning"
 ```
 
 ## Tools

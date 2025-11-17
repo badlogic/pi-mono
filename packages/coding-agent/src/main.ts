@@ -55,6 +55,7 @@ interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	thinking?: ThinkingLevel;
 	messages: string[];
 }
 
@@ -85,6 +86,11 @@ function parseArgs(args: string[]): Args {
 			result.apiKey = args[++i];
 		} else if (arg === "--system-prompt" && i + 1 < args.length) {
 			result.systemPrompt = args[++i];
+		} else if (arg === "--thinking" && i + 1 < args.length) {
+			const level = args[++i];
+			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+				result.thinking = level as ThinkingLevel;
+			}
 		} else if (arg === "--no-session") {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
@@ -108,6 +114,7 @@ ${chalk.bold("Options:")}
   --model <id>            Model ID (default: gemini-2.5-flash)
   --api-key <key>         API key (defaults to env vars)
   --system-prompt <text>  System prompt (default: coding assistant prompt)
+  --thinking <level>      Initial thinking level: off, minimal, low, medium, high (default: off)
   --mode <mode>           Output mode: text (default), json, or rpc
   --continue, -c          Continue previous session
   --resume, -r            Select a session to resume
@@ -656,7 +663,7 @@ export async function main(args: string[]) {
 		initialState: {
 			systemPrompt,
 			model: initialModel as any, // Can be null
-			thinkingLevel: "off",
+			thinkingLevel: parsed.thinking || "off",
 			tools: codingTools,
 		},
 		transport: new ProviderTransport({
@@ -694,12 +701,14 @@ export async function main(args: string[]) {
 			agent.replaceMessages(messages);
 		}
 
-		// Load and restore thinking level
-		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
-		if (thinkingLevel) {
-			agent.setThinkingLevel(thinkingLevel);
-			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
+		// Load and restore thinking level (only if CLI arg not provided)
+		if (!parsed.thinking) {
+			const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
+			if (thinkingLevel) {
+				agent.setThinkingLevel(thinkingLevel);
+				if (shouldPrintMessages) {
+					console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
+				}
 			}
 		}
 
