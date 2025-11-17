@@ -56,7 +56,8 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Text(chalk.red("\nAborted"), 1, 0));
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
-				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`)));
+				this.contentContainer.addChild(new Spacer(1));
+				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`), 1, 0));
 			}
 		}
 	}

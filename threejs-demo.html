@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Interactive Demo</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+        }
+        
+        canvas {
+            display: block;
+            cursor: grab;
+        }
+        
+        canvas:active {
+            cursor: grabbing;
+        }
+        
+        .info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h3>Three.js Interactive Demo</h3>
+        <p>🖱️ Click & drag to rotate</p>
+        <p>🔄 Scroll to zoom in/out</p>
+        <p>✨ Multiple interactive objects</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
+    
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x1a1a2e, 1);
+        document.body.appendChild(renderer.domElement);
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 10, 5);
+        scene.add(directionalLight);
+        
+        // Create multiple interactive objects
+        const objects = [];
+        
+        // Cube
+        const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
+        const cubeMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x00ff88,
+            shininess: 100
+        });
+        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+        cube.position.x = -4;
+        scene.add(cube);
+        objects.push(cube);
+        
+        // Sphere
+        const sphereGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+        const sphereMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xff6b6b,
+            shininess: 100
+        });
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.position.x = 0;
+        scene.add(sphere);
+        objects.push(sphere);
+        
+        // Torus
+        const torusGeometry = new THREE.TorusGeometry(1, 0.4, 16, 100);
+        const torusMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x4ecdc4,
+            shininess: 100
+        });
+        const torus = new THREE.Mesh(torusGeometry, torusMaterial);
+        torus.position.x = 4;
+        scene.add(torus);
+        objects.push(torus);
+        
+        // Particle system
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 1000;
+        const posArray = new Float32Array(particlesCount * 3);
+        
+        for(let i = 0; i < particlesCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 20;
+        }
+        
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        
+        const particlesMaterial = new THREE.PointsMaterial({
+            size: 0.05,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particlesMesh);
+        
+        // Camera position
+        camera.position.z = 8;
+        camera.position.y = 2;
+        
+        // Mouse interaction
+        let mouseX = 0, mouseY = 0;
+        let targetX = 0, targetY = 0;
+        
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+        
+        // Zoom
+        document.addEventListener('wheel', (event) => {
+            camera.position.z += event.deltaY * 0.01;
+            camera.position.z = Math.max(3, Math.min(15, camera.position.z));
+        });
+        
+        // Animation
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Smooth mouse follow
+            targetX = mouseX * 0.5;
+            targetY = mouseY * 0.3;
+            
+            // Rotate objects
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+            
+            sphere.rotation.x += 0.005;
+            sphere.rotation.z += 0.01;
+            
+            torus.rotation.x += 0.02;
+            torus.rotation.y += 0.015;
+            
+            // Particle rotation
+            particlesMesh.rotation.y += 0.002;
+            particlesMesh.rotation.x += 0.001;
+            
+            // Mouse interaction effect
+            camera.position.x += (targetX - camera.position.x * 0.1) * 0.05;
+            camera.position.y += (targetY - camera.position.y * 0.1) * 0.05;
+            
+            camera.lookAt(scene.position);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Resize handling
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start animation
+        animate();
+        
+        // Add some visual effects
+        let time = 0;
+        function updateEffects() {
+            time += 0.01;
+            
+            // Pulse the cube
+            cube.scale.setScalar(1 + Math.sin(time) * 0.1);
+            
+            // Color shift the sphere
+            const hue = (time * 50) % 360;
+            sphere.material.color.setHSL(hue / 360, 0.7, 0.5);
+            
+            requestAnimationFrame(updateEffects);
+        }
+        updateEffects();
+    </script>
+</body>
+</html>
