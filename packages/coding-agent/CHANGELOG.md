@@ -2,11 +2,16 @@
 
 ## [Unreleased]
 
-## [0.7.14] - 2025-11-17
+## [0.7.15] - 2025-11-17
 
 ### Fixed
 
 - **Anthropic OAuth Support**: Added support for `ANTHROPIC_OAUTH_TOKEN` environment variable. The agent now checks for OAuth tokens before falling back to API keys for Anthropic models, enabling OAuth-based authentication.
+
+## [0.7.14] - 2025-11-17
+
+### Fixed
+
 - **Mistral API Compatibility**: Fixed compatibility with Mistral API by excluding the `store` field and using `max_tokens` instead of `max_completion_tokens`, and avoiding the `developer` role in system prompts.
 - **Error Display**: Fixed error message display in assistant messages to include proper spacing before the error text.
 - **Message Streaming**: Fixed missing `message_start` event when no partial message chunks were received during streaming.
