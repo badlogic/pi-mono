@@ -1,5 +1,4 @@
-- When receiving the first user message, ask the user which module(s) they want to work on. Then you MUST read the corresponding README.md files in full, in parallel:
-    - README.md
+- When receiving the first user message, you MUST read README.md in full. Then ask the user which module(s) they want to work on. Then you MUST read the corresponding README.md files in full, in parallel:
     - packages/ai/README.md
     - packages/tui/README.md
     - packages/agent/README.md
