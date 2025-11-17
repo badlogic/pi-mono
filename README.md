@@ -56,9 +56,39 @@ These commands:
 
 ### Publishing
 
-```bash
-npm run publish        # Publish all packages to npm
-```
+Complete release process:
+
+1. **Update CHANGELOG.md** (for coding-agent releases):
+   ```bash
+   # Add your changes to the [Unreleased] section in packages/coding-agent/CHANGELOG.md
+   ```
+
+2. **Bump version** (all packages):
+   ```bash
+   npm run version:patch    # For bug fixes
+   npm run version:minor    # For new features
+   npm run version:major    # For breaking changes
+   ```
+
+3. **Update CHANGELOG.md version** (for coding-agent):
+   ```bash
+   # Move the [Unreleased] section to the new version number with today's date
+   # e.g., ## [0.7.16] - 2025-11-17
+   ```
+
+4. **Commit and tag**:
+   ```bash
+   git add .
+   git commit -m "Release v0.7.16"
+   git tag v0.7.16
+   git push origin main
+   git push origin v0.7.16
+   ```
+
+5. **Publish to npm**:
+   ```bash
+   npm run publish        # Publish all packages to npm
+   ```
 
 ## License
 

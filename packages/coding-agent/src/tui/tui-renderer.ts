@@ -376,7 +376,20 @@ export class TuiRenderer {
 				// Update the existing tool component with the result
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult(event.result);
+					// Convert result to the format expected by updateResult
+					const resultData =
+						typeof event.result === "string"
+							? {
+									content: [{ type: "text" as const, text: event.result }],
+									details: undefined,
+									isError: event.isError,
+								}
+							: {
+									content: event.result.content,
+									details: event.result.details,
+									isError: event.isError,
+								};
+					component.updateResult(resultData);
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
