@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.16] - 2025-11-17
+
+### Fixed
+
+- **Tool Error Display**: Fixed edit tool (and all other tools) not showing error state correctly in TUI. Failed tool executions now properly display with red background and show the error message. Previously, the `isError` flag from tool execution events was not being passed to the UI component, causing all tool results to show with green (success) background regardless of whether they succeeded or failed.
+
 ## [0.7.15] - 2025-11-17
 
 ### Fixed

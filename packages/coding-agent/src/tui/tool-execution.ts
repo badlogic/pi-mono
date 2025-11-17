@@ -251,20 +251,27 @@ export class ToolExecutionComponent extends Container {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
 			text = chalk.bold("edit") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 
-			// Show diff if available
-			if (this.result?.details?.diff) {
-				// Parse the diff string and apply colors
-				const diffLines = this.result.details.diff.split("\n");
-				const coloredLines = diffLines.map((line: string) => {
-					if (line.startsWith("+")) {
-						return chalk.green(line);
-					} else if (line.startsWith("-")) {
-						return chalk.red(line);
-					} else {
-						return chalk.dim(line);
+			if (this.result) {
+				// Show error message if it's an error
+				if (this.result.isError) {
+					const errorText = this.getTextOutput();
+					if (errorText) {
+						text += "\n\n" + chalk.red(errorText);
 					}
-				});
-				text += "\n\n" + coloredLines.join("\n");
+				} else if (this.result.details?.diff) {
+					// Show diff if available
+					const diffLines = this.result.details.diff.split("\n");
+					const coloredLines = diffLines.map((line: string) => {
+						if (line.startsWith("+")) {
+							return chalk.green(line);
+						} else if (line.startsWith("-")) {
+							return chalk.red(line);
+						} else {
+							return chalk.dim(line);
+						}
+					});
+					text += "\n\n" + coloredLines.join("\n");
+				}
 			}
 		} else {
 			// Generic tool
