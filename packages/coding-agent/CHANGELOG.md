@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.20] - 2025-11-18
+
+### Fixed
+
+- **Message Wrapping**: Fixed word-based text wrapping for long lines in chat messages. Text now properly wraps at word boundaries while preserving ANSI styling (colors, bold, italic, etc.) across wrapped lines. Background colors now extend to the full width of each line. Empty lines in messages now render correctly with full-width background.
+
 ## [0.7.18] - 2025-11-18
 
 ### Fixed
