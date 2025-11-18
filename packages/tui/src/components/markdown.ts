@@ -1,84 +1,51 @@
-import chalk from "chalk";
+import { Chalk } from "chalk";
 import { marked, type Token } from "marked";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
-type Color =
-	| "black"
-	| "red"
-	| "green"
-	| "yellow"
-	| "blue"
-	| "magenta"
-	| "cyan"
-	| "white"
-	| "gray"
-	| "bgBlack"
-	| "bgRed"
-	| "bgGreen"
-	| "bgYellow"
-	| "bgBlue"
-	| "bgMagenta"
-	| "bgCyan"
-	| "bgWhite"
-	| "bgGray";
+// Use a chalk instance with color level 3 for consistent ANSI output
+const colorChalk = new Chalk({ level: 3 });
+
+/**
+ * Default text styling for markdown content.
+ * Applied to all text unless overridden by markdown formatting.
+ */
+export interface DefaultTextStyle {
+	/** Foreground color - named color or hex string like "#ff0000" */
+	color?: string;
+	/** Background color - named color or hex string like "#ff0000" */
+	bgColor?: string;
+	/** Bold text */
+	bold?: boolean;
+	/** Italic text */
+	italic?: boolean;
+	/** Strikethrough text */
+	strikethrough?: boolean;
+	/** Underline text */
+	underline?: boolean;
+}
 
 export class Markdown implements Component {
 	private text: string;
-	private bgColor?: Color;
-	private fgColor?: Color;
-	private customBgRgb?: { r: number; g: number; b: number };
 	private paddingX: number; // Left/right padding
 	private paddingY: number; // Top/bottom padding
+	private defaultTextStyle?: DefaultTextStyle;
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(
-		text: string = "",
-		bgColor?: Color,
-		fgColor?: Color,
-		customBgRgb?: { r: number; g: number; b: number },
-		paddingX: number = 1,
-		paddingY: number = 1,
-	) {
+	constructor(text: string = "", paddingX: number = 1, paddingY: number = 1, defaultTextStyle?: DefaultTextStyle) {
 		this.text = text;
-		this.bgColor = bgColor;
-		this.fgColor = fgColor;
-		this.customBgRgb = customBgRgb;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
+		this.defaultTextStyle = defaultTextStyle;
 	}
 
 	setText(text: string): void {
 		this.text = text;
 		// Invalidate cache when text changes
-		this.cachedText = undefined;
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
-	}
-
-	setBgColor(bgColor?: Color): void {
-		this.bgColor = bgColor;
-		// Invalidate cache when color changes
-		this.cachedText = undefined;
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
-	}
-
-	setFgColor(fgColor?: Color): void {
-		this.fgColor = fgColor;
-		// Invalidate cache when color changes
-		this.cachedText = undefined;
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
-	}
-
-	setCustomBgRgb(customBgRgb?: { r: number; g: number; b: number }): void {
-		this.customBgRgb = customBgRgb;
-		// Invalidate cache when color changes
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -125,7 +92,7 @@ export class Markdown implements Component {
 			wrappedLines.push(...this.wrapLine(line, contentWidth));
 		}
 
-		// Add padding and apply colors
+		// Add padding and apply background color if specified
 		const leftPad = " ".repeat(this.paddingX);
 		const paddedLines: string[] = [];
 
@@ -139,16 +106,9 @@ export class Markdown implements Component {
 			// Add left padding, content, and right padding
 			let paddedLine = leftPad + line + rightPad;
 
-			// Apply foreground color if specified
-			if (this.fgColor) {
-				paddedLine = (chalk as any)[this.fgColor](paddedLine);
-			}
-
-			// Apply background color if specified
-			if (this.customBgRgb) {
-				paddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(paddedLine);
-			} else if (this.bgColor) {
-				paddedLine = (chalk as any)[this.bgColor](paddedLine);
+			// Apply background color to entire line if specified
+			if (this.defaultTextStyle?.bgColor) {
+				paddedLine = this.applyBgColor(paddedLine);
 			}
 
 			paddedLines.push(paddedLine);
@@ -158,25 +118,15 @@ export class Markdown implements Component {
 		const emptyLine = " ".repeat(width);
 		const topPadding: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			let emptyPaddedLine = emptyLine;
-			if (this.customBgRgb) {
-				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
-			} else if (this.bgColor) {
-				emptyPaddedLine = (chalk as any)[this.bgColor](emptyPaddedLine);
-			}
-			topPadding.push(emptyPaddedLine);
+			const paddedEmptyLine = this.defaultTextStyle?.bgColor ? this.applyBgColor(emptyLine) : emptyLine;
+			topPadding.push(paddedEmptyLine);
 		}
 
 		// Add bottom padding (empty lines)
 		const bottomPadding: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			let emptyPaddedLine = emptyLine;
-			if (this.customBgRgb) {
-				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
-			} else if (this.bgColor) {
-				emptyPaddedLine = (chalk as any)[this.bgColor](emptyPaddedLine);
-			}
-			bottomPadding.push(emptyPaddedLine);
+			const paddedEmptyLine = this.defaultTextStyle?.bgColor ? this.applyBgColor(emptyLine) : emptyLine;
+			bottomPadding.push(paddedEmptyLine);
 		}
 
 		// Combine top padding, content, and bottom padding
@@ -190,6 +140,85 @@ export class Markdown implements Component {
 		return result.length > 0 ? result : [""];
 	}
 
+	/**
+	 * Apply only background color from default style.
+	 * Used for padding lines that don't have text content.
+	 */
+	private applyBgColor(text: string): string {
+		if (!this.defaultTextStyle?.bgColor) {
+			return text;
+		}
+
+		if (this.defaultTextStyle.bgColor.startsWith("#")) {
+			// Hex color
+			const hex = this.defaultTextStyle.bgColor.substring(1);
+			const r = Number.parseInt(hex.substring(0, 2), 16);
+			const g = Number.parseInt(hex.substring(2, 4), 16);
+			const b = Number.parseInt(hex.substring(4, 6), 16);
+			return colorChalk.bgRgb(r, g, b)(text);
+		}
+		// Named background color (bgRed, bgBlue, etc.)
+		return (colorChalk as any)[this.defaultTextStyle.bgColor](text);
+	}
+
+	/**
+	 * Apply default text style to a string.
+	 * This is the base styling applied to all text content.
+	 */
+	private applyDefaultStyle(text: string): string {
+		if (!this.defaultTextStyle) {
+			return text;
+		}
+
+		let styled = text;
+
+		// Apply color
+		if (this.defaultTextStyle.color) {
+			if (this.defaultTextStyle.color.startsWith("#")) {
+				// Hex color
+				const hex = this.defaultTextStyle.color.substring(1);
+				const r = Number.parseInt(hex.substring(0, 2), 16);
+				const g = Number.parseInt(hex.substring(2, 4), 16);
+				const b = Number.parseInt(hex.substring(4, 6), 16);
+				styled = colorChalk.rgb(r, g, b)(styled);
+			} else {
+				// Named color
+				styled = (colorChalk as any)[this.defaultTextStyle.color](styled);
+			}
+		}
+
+		// Apply background color
+		if (this.defaultTextStyle.bgColor) {
+			if (this.defaultTextStyle.bgColor.startsWith("#")) {
+				// Hex color
+				const hex = this.defaultTextStyle.bgColor.substring(1);
+				const r = Number.parseInt(hex.substring(0, 2), 16);
+				const g = Number.parseInt(hex.substring(2, 4), 16);
+				const b = Number.parseInt(hex.substring(4, 6), 16);
+				styled = colorChalk.bgRgb(r, g, b)(styled);
+			} else {
+				// Named background color (bgRed, bgBlue, etc.)
+				styled = (colorChalk as any)[this.defaultTextStyle.bgColor](styled);
+			}
+		}
+
+		// Apply text decorations
+		if (this.defaultTextStyle.bold) {
+			styled = colorChalk.bold(styled);
+		}
+		if (this.defaultTextStyle.italic) {
+			styled = colorChalk.italic(styled);
+		}
+		if (this.defaultTextStyle.strikethrough) {
+			styled = colorChalk.strikethrough(styled);
+		}
+		if (this.defaultTextStyle.underline) {
+			styled = colorChalk.underline(styled);
+		}
+
+		return styled;
+	}
+
 	private renderToken(token: Token, width: number, nextTokenType?: string): string[] {
 		const lines: string[] = [];
 
@@ -199,11 +228,11 @@ export class Markdown implements Component {
 				const headingPrefix = "#".repeat(headingLevel) + " ";
 				const headingText = this.renderInlineTokens(token.tokens || []);
 				if (headingLevel === 1) {
-					lines.push(chalk.bold.underline.yellow(headingText));
+					lines.push(colorChalk.bold.underline.yellow(headingText));
 				} else if (headingLevel === 2) {
-					lines.push(chalk.bold.yellow(headingText));
+					lines.push(colorChalk.bold.yellow(headingText));
 				} else {
-					lines.push(chalk.bold(headingPrefix + headingText));
+					lines.push(colorChalk.bold(headingPrefix + headingText));
 				}
 				lines.push(""); // Add spacing after headings
 				break;
@@ -220,13 +249,13 @@ export class Markdown implements Component {
 			}
 
 			case "code": {
-				lines.push(chalk.gray("```" + (token.lang || "")));
+				lines.push(colorChalk.gray("```" + (token.lang || "")));
 				// Split code by newlines and style each line
 				const codeLines = token.text.split("\n");
 				for (const codeLine of codeLines) {
-					lines.push(chalk.dim("  ") + chalk.green(codeLine));
+					lines.push(colorChalk.dim("  ") + colorChalk.green(codeLine));
 				}
-				lines.push(chalk.gray("```"));
+				lines.push(colorChalk.gray("```"));
 				lines.push(""); // Add spacing after code blocks
 				break;
 			}
@@ -249,14 +278,14 @@ export class Markdown implements Component {
 				const quoteText = this.renderInlineTokens(token.tokens || []);
 				const quoteLines = quoteText.split("\n");
 				for (const quoteLine of quoteLines) {
-					lines.push(chalk.gray("│ ") + chalk.italic(quoteLine));
+					lines.push(colorChalk.gray("│ ") + colorChalk.italic(quoteLine));
 				}
 				lines.push(""); // Add spacing after blockquotes
 				break;
 			}
 
 			case "hr":
-				lines.push(chalk.gray("─".repeat(Math.min(width, 80))));
+				lines.push(colorChalk.gray("─".repeat(Math.min(width, 80))));
 				lines.push(""); // Add spacing after horizontal rules
 				break;
 
@@ -289,29 +318,44 @@ export class Markdown implements Component {
 					if (token.tokens && token.tokens.length > 0) {
 						result += this.renderInlineTokens(token.tokens);
 					} else {
-						result += token.text;
+						// Apply default style to plain text
+						result += this.applyDefaultStyle(token.text);
 					}
 					break;
 
-				case "strong":
-					result += chalk.bold(this.renderInlineTokens(token.tokens || []));
+				case "strong": {
+					// Apply bold, then reapply default style after
+					const boldContent = this.renderInlineTokens(token.tokens || []);
+					result += colorChalk.bold(boldContent) + this.applyDefaultStyle("");
 					break;
+				}
 
-				case "em":
-					result += chalk.italic(this.renderInlineTokens(token.tokens || []));
+				case "em": {
+					// Apply italic, then reapply default style after
+					const italicContent = this.renderInlineTokens(token.tokens || []);
+					result += colorChalk.italic(italicContent) + this.applyDefaultStyle("");
 					break;
+				}
 
 				case "codespan":
-					result += chalk.gray("`") + chalk.cyan(token.text) + chalk.gray("`");
+					// Apply code styling, then reapply default style after
+					result +=
+						colorChalk.gray("`") +
+						colorChalk.cyan(token.text) +
+						colorChalk.gray("`") +
+						this.applyDefaultStyle("");
 					break;
 
 				case "link": {
 					const linkText = this.renderInlineTokens(token.tokens || []);
 					// If link text matches href, only show the link once
 					if (linkText === token.href) {
-						result += chalk.underline.blue(linkText);
+						result += colorChalk.underline.blue(linkText) + this.applyDefaultStyle("");
 					} else {
-						result += chalk.underline.blue(linkText) + chalk.gray(` (${token.href})`);
+						result +=
+							colorChalk.underline.blue(linkText) +
+							colorChalk.gray(` (${token.href})`) +
+							this.applyDefaultStyle("");
 					}
 					break;
 				}
@@ -320,14 +364,16 @@ export class Markdown implements Component {
 					result += "\n";
 					break;
 
-				case "del":
-					result += chalk.strikethrough(this.renderInlineTokens(token.tokens || []));
+				case "del": {
+					const delContent = this.renderInlineTokens(token.tokens || []);
+					result += colorChalk.strikethrough(delContent) + this.applyDefaultStyle("");
 					break;
+				}
 
 				default:
 					// Handle any other inline token types as plain text
 					if ("text" in token && typeof token.text === "string") {
-						result += token.text;
+						result += this.applyDefaultStyle(token.text);
 					}
 			}
 		}
@@ -469,7 +515,7 @@ export class Markdown implements Component {
 					lines.push(firstLine);
 				} else {
 					// Regular text content - add indent and bullet
-					lines.push(indent + chalk.cyan(bullet) + firstLine);
+					lines.push(indent + colorChalk.cyan(bullet) + firstLine);
 				}
 
 				// Rest of the lines
@@ -486,7 +532,7 @@ export class Markdown implements Component {
 					}
 				}
 			} else {
-				lines.push(indent + chalk.cyan(bullet));
+				lines.push(indent + colorChalk.cyan(bullet));
 			}
 		}
 
@@ -517,12 +563,12 @@ export class Markdown implements Component {
 				lines.push(text);
 			} else if (token.type === "code") {
 				// Code block in list item
-				lines.push(chalk.gray("```" + (token.lang || "")));
+				lines.push(colorChalk.gray("```" + (token.lang || "")));
 				const codeLines = token.text.split("\n");
 				for (const codeLine of codeLines) {
-					lines.push(chalk.dim("  ") + chalk.green(codeLine));
+					lines.push(colorChalk.dim("  ") + colorChalk.green(codeLine));
 				}
-				lines.push(chalk.gray("```"));
+				lines.push(colorChalk.gray("```"));
 			} else {
 				// Other token types - try to render as inline
 				const text = this.renderInlineTokens([token]);
@@ -569,7 +615,7 @@ export class Markdown implements Component {
 		// Render header
 		const headerCells = token.header.map((cell, i) => {
 			const text = this.renderInlineTokens(cell.tokens || []);
-			return chalk.bold(text.padEnd(columnWidths[i]));
+			return colorChalk.bold(text.padEnd(columnWidths[i]));
 		});
 		lines.push("│ " + headerCells.join(" │ ") + " │");
 

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.18] - 2025-11-18
+
+### Fixed
+
+- **Bash Tool Error Handling**: Bash tool now properly throws errors for failed commands (non-zero exit codes), timeouts, and aborted executions. This ensures tool execution components display with red background when bash commands fail.
+- **Thinking Traces Styling**: Thinking traces now maintain gray italic styling throughout, even when containing inline code blocks, bold text, or other inline formatting
+
 ## [0.7.17] - 2025-11-18
 
 ### Added

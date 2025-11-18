@@ -186,7 +186,7 @@ export class TuiRenderer {
 			this.ui.addChild(new DynamicBorder(chalk.cyan));
 			this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
 			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), undefined, undefined, undefined, 1, 0));
+			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0));
 			this.ui.addChild(new Spacer(1));
 			this.ui.addChild(new DynamicBorder(chalk.cyan));
 		}
@@ -989,7 +989,7 @@ export class TuiRenderer {
 		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
 		this.ui.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown));
+		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1));
 		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.requestRender();
 	}
