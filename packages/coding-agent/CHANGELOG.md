@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.17] - 2025-11-18
+
 ### Added
 
+- **New Model**: Added `gemini-3-pro-preview` to Google provider.
 - **OAuth Authentication**: Added `/login` and `/logout` commands for OAuth-based authentication with Claude Pro/Max subscriptions. Tokens are stored in `~/.pi/agent/oauth.json` with 0600 permissions and automatically refreshed when expired. OAuth tokens take priority over API keys for Anthropic models.
 
 ### Fixed
