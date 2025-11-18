@@ -74,6 +74,7 @@ export interface ToolCall {
 	id: string;
 	name: string;
 	arguments: Record<string, any>;
+	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
 }
 
 export interface Usage {

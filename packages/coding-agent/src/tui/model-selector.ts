@@ -1,5 +1,5 @@
 import type { Model } from "@mariozechner/pi-ai";
-import { Container, Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { getAvailableModels } from "../model-config.js";
 import type { SettingsManager } from "../settings-manager.js";
@@ -24,8 +24,10 @@ export class ModelSelectorComponent extends Container {
 	private onSelectCallback: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
 	private errorMessage: string | null = null;
+	private tui: TUI;
 
 	constructor(
+		tui: TUI,
 		currentModel: Model<any> | null,
 		settingsManager: SettingsManager,
 		onSelect: (model: Model<any>) => void,
@@ -33,13 +35,11 @@ export class ModelSelectorComponent extends Container {
 	) {
 		super();
 
+		this.tui = tui;
 		this.currentModel = currentModel;
 		this.settingsManager = settingsManager;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
-
-		// Load all models (fresh every time)
-		this.loadModels();
 
 		// Add top border
 		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
@@ -72,13 +72,17 @@ export class ModelSelectorComponent extends Container {
 		// Add bottom border
 		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
 
-		// Initial render
-		this.updateList();
+		// Load models and do initial render
+		this.loadModels().then(() => {
+			this.updateList();
+			// Request re-render after models are loaded
+			this.tui.requestRender();
+		});
 	}
 
-	private loadModels(): void {
+	private async loadModels(): Promise<void> {
 		// Load available models fresh (includes custom models from ~/.pi/agent/models.json)
-		const { models: availableModels, error } = getAvailableModels();
+		const { models: availableModels, error } = await getAvailableModels();
 
 		// If there's an error loading models.json, we'll show it via the "no models" path
 		// The error will be displayed to the user

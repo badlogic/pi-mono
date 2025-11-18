@@ -4,6 +4,7 @@ import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	Container,
+	Input,
 	Loader,
 	Markdown,
 	ProcessTerminal,
@@ -12,9 +13,11 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel } from "../model-config.js";
+import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
@@ -22,6 +25,7 @@ import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
+import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -62,6 +66,9 @@ export class TuiRenderer {
 
 	// User message selector (for branching)
 	private userMessageSelector: UserMessageSelectorComponent | null = null;
+
+	// OAuth selector
+	private oauthSelector: any | null = null;
 
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
@@ -117,9 +124,28 @@ export class TuiRenderer {
 			description: "Create a new branch from a previous message",
 		};
 
+		const loginCommand: SlashCommand = {
+			name: "login",
+			description: "Login with OAuth provider",
+		};
+
+		const logoutCommand: SlashCommand = {
+			name: "logout",
+			description: "Logout from OAuth provider",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[thinkingCommand, modelCommand, exportCommand, sessionCommand, changelogCommand, branchCommand],
+			[
+				thinkingCommand,
+				modelCommand,
+				exportCommand,
+				sessionCommand,
+				changelogCommand,
+				branchCommand,
+				loginCommand,
+				logoutCommand,
+			],
 			process.cwd(),
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -185,7 +211,7 @@ export class TuiRenderer {
 		};
 
 		// Handle editor submission
-		this.editor.onSubmit = (text: string) => {
+		this.editor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 
@@ -233,6 +259,20 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /login command
+			if (text === "/login") {
+				this.showOAuthSelector("login");
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /logout command
+			if (text === "/logout") {
+				this.showOAuthSelector("logout");
+				this.editor.setText("");
+				return;
+			}
+
 			// Normal message submission - validate model and API key first
 			const currentModel = this.agent.state.model;
 			if (!currentModel) {
@@ -245,7 +285,8 @@ export class TuiRenderer {
 				return;
 			}
 
-			const apiKey = getApiKeyForModel(currentModel);
+			// Validate API key (async)
+			const apiKey = await getApiKeyForModel(currentModel);
 			if (!apiKey) {
 				this.showError(
 					`No API key found for ${currentModel.provider}.\n\n` +
@@ -595,6 +636,7 @@ export class TuiRenderer {
 	private showModelSelector(): void {
 		// Create model selector with current model
 		this.modelSelector = new ModelSelectorComponent(
+			this.ui,
 			this.agent.state.model,
 			this.settingsManager,
 			(model) => {
@@ -716,6 +758,121 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.userMessageSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
+		// For logout mode, filter to only show logged-in providers
+		let providersToShow: string[] = [];
+		if (mode === "logout") {
+			const loggedInProviders = listOAuthProviders();
+			if (loggedInProviders.length === 0) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(chalk.dim("No OAuth providers logged in. Use /login first."), 1, 0));
+				this.ui.requestRender();
+				return;
+			}
+			providersToShow = loggedInProviders;
+		}
+
+		// Create OAuth selector
+		this.oauthSelector = new OAuthSelectorComponent(
+			mode,
+			async (providerId: any) => {
+				// Hide selector first
+				this.hideOAuthSelector();
+
+				if (mode === "login") {
+					// Handle login
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(chalk.dim(`Logging in to ${providerId}...`), 1, 0));
+					this.ui.requestRender();
+
+					try {
+						await login(
+							providerId,
+							(url: string) => {
+								// Show auth URL to user
+								this.chatContainer.addChild(new Spacer(1));
+								this.chatContainer.addChild(new Text(chalk.cyan("Opening browser to:"), 1, 0));
+								this.chatContainer.addChild(new Text(chalk.cyan(url), 1, 0));
+								this.chatContainer.addChild(new Spacer(1));
+								this.chatContainer.addChild(
+									new Text(chalk.yellow("Paste the authorization code below:"), 1, 0),
+								);
+								this.ui.requestRender();
+
+								// Open URL in browser
+								const openCmd =
+									process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+								exec(`${openCmd} "${url}"`);
+							},
+							async () => {
+								// Prompt for code with a simple Input
+								return new Promise<string>((resolve) => {
+									const codeInput = new Input();
+									codeInput.onSubmit = () => {
+										const code = codeInput.getValue();
+										// Restore editor
+										this.editorContainer.clear();
+										this.editorContainer.addChild(this.editor);
+										this.ui.setFocus(this.editor);
+										resolve(code);
+									};
+
+									this.editorContainer.clear();
+									this.editorContainer.addChild(codeInput);
+									this.ui.setFocus(codeInput);
+									this.ui.requestRender();
+								});
+							},
+						);
+
+						// Success
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(new Text(chalk.green(`✓ Successfully logged in to ${providerId}`), 1, 0));
+						this.chatContainer.addChild(new Text(chalk.dim(`Tokens saved to ~/.pi/agent/oauth.json`), 1, 0));
+						this.ui.requestRender();
+					} catch (error: any) {
+						this.showError(`Login failed: ${error.message}`);
+					}
+				} else {
+					// Handle logout
+					try {
+						await logout(providerId);
+
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(
+							new Text(chalk.green(`✓ Successfully logged out of ${providerId}`), 1, 0),
+						);
+						this.chatContainer.addChild(
+							new Text(chalk.dim(`Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
+						);
+						this.ui.requestRender();
+					} catch (error: any) {
+						this.showError(`Logout failed: ${error.message}`);
+					}
+				}
+			},
+			() => {
+				// Cancel - just hide the selector
+				this.hideOAuthSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.oauthSelector);
+		this.ui.setFocus(this.oauthSelector);
+		this.ui.requestRender();
+	}
+
+	private hideOAuthSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.oauthSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 

@@ -520,7 +520,7 @@ export async function main(args: string[]) {
 	if (!initialModel) {
 		// 4. Try first available model with valid API key
 		// Prefer default model for each provider if available
-		const { models: availableModels, error } = getAvailableModels();
+		const { models: availableModels, error } = await getAvailableModels();
 
 		if (error) {
 			console.error(chalk.red(error));
@@ -561,7 +561,7 @@ export async function main(args: string[]) {
 
 	// Non-interactive mode: validate API key exists
 	if (!isInteractive && initialModel) {
-		const apiKey = parsed.apiKey || getApiKeyForModel(initialModel);
+		const apiKey = parsed.apiKey || (await getApiKeyForModel(initialModel));
 		if (!apiKey) {
 			console.error(chalk.red(`No API key found for ${initialModel.provider}`));
 			process.exit(1);
@@ -589,7 +589,7 @@ export async function main(args: string[]) {
 			}
 
 			// Check if restored model exists and has a valid API key
-			const hasApiKey = restoredModel ? !!getApiKeyForModel(restoredModel) : false;
+			const hasApiKey = restoredModel ? !!(await getApiKeyForModel(restoredModel)) : false;
 
 			if (restoredModel && hasApiKey) {
 				initialModel = restoredModel;
@@ -610,7 +610,7 @@ export async function main(args: string[]) {
 
 				// Ensure we have a valid model - use the same fallback logic
 				if (!initialModel) {
-					const { models: availableModels, error: availableError } = getAvailableModels();
+					const { models: availableModels, error: availableError } = await getAvailableModels();
 					if (availableError) {
 						console.error(chalk.red(availableError));
 						process.exit(1);
@@ -673,7 +673,7 @@ export async function main(args: string[]) {
 				}
 
 				// Use model-specific key lookup
-				const key = getApiKeyForModel(currentModel);
+				const key = await getApiKeyForModel(currentModel);
 				if (!key) {
 					throw new Error(
 						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ~/.pi/agent/models.json`,
