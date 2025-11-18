@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Anthropic Aborted Thinking**: Fixed error when resubmitting assistant messages with incomplete thinking blocks (from aborted streams). Thinking blocks without valid signatures are now converted to text blocks with `<thinking>` delimiters, preventing API rejection.
+
 ## [0.7.16] - 2025-11-17
 
 ### Fixed
