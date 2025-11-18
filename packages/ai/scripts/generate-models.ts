@@ -380,6 +380,27 @@ async function generateModels() {
 		});
 	}
 
+	// Add Gemini 3
+	if (!allModels.some(m => m.provider === "google" && m.id === "gemini-3-pro-preview")) {
+		allModels.push({
+			id: "gemini-3-pro-preview",
+			name: "Gemini 3 Pro Preview",
+			api: "google-generative-ai",
+			provider: "google",
+			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 10,
+				cacheRead: 0.31,
+				cacheWrite: 0,
+			},
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		});
+	}
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {

@@ -4,6 +4,7 @@ import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { getOAuthToken } from "./oauth/index.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -218,20 +219,30 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 
 /**
  * Get API key for a model (checks custom providers first, then built-in)
+ * Now async to support OAuth token refresh
  */
-export function getApiKeyForModel(model: Model<Api>): string | undefined {
+export async function getApiKeyForModel(model: Model<Api>): Promise<string | undefined> {
 	// For custom providers, check their apiKey config
 	const customKeyConfig = customProviderApiKeys.get(model.provider);
 	if (customKeyConfig) {
 		return resolveApiKey(customKeyConfig);
 	}
 
-	// For Anthropic, check ANTHROPIC_OAUTH_KEY first
+	// For Anthropic, check OAuth first
 	if (model.provider === "anthropic") {
-		const oauthKey = process.env.ANTHROPIC_OAUTH_TOKEN;
-		if (oauthKey) {
-			return oauthKey;
+		// 1. Check OAuth storage (auto-refresh if needed)
+		const oauthToken = await getOAuthToken("anthropic");
+		if (oauthToken) {
+			return oauthToken;
 		}
+
+		// 2. Check ANTHROPIC_OAUTH_TOKEN env var (manual OAuth token)
+		const oauthEnv = process.env.ANTHROPIC_OAUTH_TOKEN;
+		if (oauthEnv) {
+			return oauthEnv;
+		}
+
+		// 3. Fall back to ANTHROPIC_API_KEY env var
 	}
 
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai
@@ -242,17 +253,20 @@ export function getApiKeyForModel(model: Model<Api>): string | undefined {
  * Get only models that have valid API keys available
  * Returns { models, error } - either models array or error message
  */
-export function getAvailableModels(): { models: Model<Api>[]; error: string | null } {
+export async function getAvailableModels(): Promise<{ models: Model<Api>[]; error: string | null }> {
 	const { models: allModels, error } = loadAndMergeModels();
 
 	if (error) {
 		return { models: [], error };
 	}
 
-	const availableModels = allModels.filter((model) => {
-		const apiKey = getApiKeyForModel(model);
-		return !!apiKey;
-	});
+	const availableModels: Model<Api>[] = [];
+	for (const model of allModels) {
+		const apiKey = await getApiKeyForModel(model);
+		if (apiKey) {
+			availableModels.push(model);
+		}
+	}
 
 	return { models: availableModels, error: null };
 }

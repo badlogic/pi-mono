@@ -9,6 +9,10 @@ export class Input implements Component {
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
 
+	// Bracketed paste mode buffering
+	private pasteBuffer: string = "";
+	private isInPaste: boolean = false;
+
 	getValue(): string {
 		return this.value;
 	}
@@ -19,6 +23,42 @@ export class Input implements Component {
 	}
 
 	handleInput(data: string): void {
+		// Handle bracketed paste mode
+		// Start of paste: \x1b[200~
+		// End of paste: \x1b[201~
+
+		// Check if we're starting a bracketed paste
+		if (data.includes("\x1b[200~")) {
+			this.isInPaste = true;
+			this.pasteBuffer = "";
+			data = data.replace("\x1b[200~", "");
+		}
+
+		// If we're in a paste, buffer the data
+		if (this.isInPaste) {
+			// Check if this chunk contains the end marker
+			this.pasteBuffer += data;
+
+			const endIndex = this.pasteBuffer.indexOf("\x1b[201~");
+			if (endIndex !== -1) {
+				// Extract the pasted content
+				const pasteContent = this.pasteBuffer.substring(0, endIndex);
+
+				// Process the complete paste
+				this.handlePaste(pasteContent);
+
+				// Reset paste state
+				this.isInPaste = false;
+
+				// Handle any remaining input after the paste marker
+				const remaining = this.pasteBuffer.substring(endIndex + 6); // 6 = length of \x1b[201~
+				this.pasteBuffer = "";
+				if (remaining) {
+					this.handleInput(remaining);
+				}
+			}
+			return;
+		}
 		// Handle special keys
 		if (data === "\r" || data === "\n") {
 			// Enter - submit
@@ -78,6 +118,15 @@ export class Input implements Component {
 			this.value = this.value.slice(0, this.cursor) + data + this.value.slice(this.cursor);
 			this.cursor++;
 		}
+	}
+
+	private handlePaste(pastedText: string): void {
+		// Clean the pasted text - remove newlines and carriage returns
+		const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "");
+
+		// Insert at cursor position
+		this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
+		this.cursor += cleanText.length;
 	}
 
 	render(width: number): string[] {

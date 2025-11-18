@@ -64,6 +64,31 @@ If no API key is set, the CLI will prompt you to configure one on first run.
 
 **Note:** The `/model` command only shows models for which API keys are configured in your environment. If you don't see a model you expect, check that you've set the corresponding environment variable.
 
+## OAuth Authentication (Optional)
+
+If you have a Claude Pro/Max subscription, you can use OAuth instead of API keys:
+
+```bash
+pi
+# In the interactive session:
+/login
+# Select "Anthropic (Claude Pro/Max)"
+# Authorize in browser
+# Paste authorization code
+```
+
+This gives you:
+- Free access to Claude models (included in your subscription)
+- No need to manage API keys
+- Automatic token refresh
+
+To logout:
+```
+/logout
+```
+
+**Note:** OAuth tokens are stored in `~/.pi/agent/oauth.json` with restricted permissions (0600).
+
 ## Custom Models and Providers
 
 You can add custom models and providers (like Ollama, vLLM, LM Studio, or any custom API endpoint) via `~/.pi/agent/models.json`. Supports OpenAI-compatible APIs (`openai-completions`, `openai-responses`), Anthropic Messages API (`anthropic-messages`), and Google Generative AI API (`google-generative-ai`). This file is loaded fresh every time you open the `/model` selector, allowing live updates without restarting.
@@ -255,6 +280,26 @@ This allows you to explore alternative conversation paths without losing your cu
 ```
 /branch
 ```
+
+### /login
+
+Login with OAuth to use subscription-based models (Claude Pro/Max):
+
+```
+/login
+```
+
+Opens an interactive selector to choose provider, then guides you through the OAuth flow in your browser.
+
+### /logout
+
+Logout from OAuth providers:
+
+```
+/logout
+```
+
+Shows a list of logged-in providers to logout from.
 
 ## Editor Features
 
