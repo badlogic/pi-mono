@@ -1,7 +1,7 @@
 import { Chalk } from "chalk";
 import { marked, type Token } from "marked";
 import type { Component } from "../tui.js";
-import { visibleWidth, wrapTextWithAnsi } from "../utils.js";
+import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
 // Use a chalk instance with color level 3 for consistent ANSI output
 const colorChalk = new Chalk({ level: 3 });
@@ -86,51 +86,41 @@ export class Markdown implements Component {
 			renderedLines.push(...tokenLines);
 		}
 
-		// Wrap lines to fit content width
+		// Wrap lines (NO padding, NO background yet)
 		const wrappedLines: string[] = [];
 		for (const line of renderedLines) {
 			wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
 		}
 
-		// Add padding and apply background color if specified
-		const leftPad = " ".repeat(this.paddingX);
-		const paddedLines: string[] = [];
+		// Add margins and background to each wrapped line
+		const leftMargin = " ".repeat(this.paddingX);
+		const rightMargin = " ".repeat(this.paddingX);
+		const bgRgb = this.defaultTextStyle?.bgColor ? this.parseBgColor() : undefined;
+		const contentLines: string[] = [];
 
 		for (const line of wrappedLines) {
-			// Calculate visible length
-			const visibleLength = visibleWidth(line);
-			// Right padding to fill to width (accounting for left padding and content)
-			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
-			const rightPad = " ".repeat(rightPadLength);
+			const lineWithMargins = leftMargin + line + rightMargin;
 
-			// Add left padding, content, and right padding
-			let paddedLine = leftPad + line + rightPad;
-
-			// Apply background color to entire line if specified
-			if (this.defaultTextStyle?.bgColor) {
-				paddedLine = this.applyBgColor(paddedLine);
+			if (bgRgb) {
+				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgRgb));
+			} else {
+				// No background - just pad to width
+				const visibleLen = visibleWidth(lineWithMargins);
+				const paddingNeeded = Math.max(0, width - visibleLen);
+				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
 			}
-
-			paddedLines.push(paddedLine);
 		}
 
-		// Add top padding (empty lines)
+		// Add top/bottom padding (empty lines)
 		const emptyLine = " ".repeat(width);
-		const topPadding: string[] = [];
+		const emptyLines: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			const paddedEmptyLine = this.defaultTextStyle?.bgColor ? this.applyBgColor(emptyLine) : emptyLine;
-			topPadding.push(paddedEmptyLine);
-		}
-
-		// Add bottom padding (empty lines)
-		const bottomPadding: string[] = [];
-		for (let i = 0; i < this.paddingY; i++) {
-			const paddedEmptyLine = this.defaultTextStyle?.bgColor ? this.applyBgColor(emptyLine) : emptyLine;
-			bottomPadding.push(paddedEmptyLine);
+			const line = bgRgb ? applyBackgroundToLine(emptyLine, width, bgRgb) : emptyLine;
+			emptyLines.push(line);
 		}
 
 		// Combine top padding, content, and bottom padding
-		const result = [...topPadding, ...paddedLines, ...bottomPadding];
+		const result = [...emptyLines, ...contentLines, ...emptyLines];
 
 		// Update cache
 		this.cachedText = this.text;
@@ -141,29 +131,43 @@ export class Markdown implements Component {
 	}
 
 	/**
-	 * Apply only background color from default style.
-	 * Used for padding lines that don't have text content.
+	 * Parse background color from defaultTextStyle to RGB values
 	 */
-	private applyBgColor(text: string): string {
+	private parseBgColor(): { r: number; g: number; b: number } | undefined {
 		if (!this.defaultTextStyle?.bgColor) {
-			return text;
+			return undefined;
 		}
 
 		if (this.defaultTextStyle.bgColor.startsWith("#")) {
 			// Hex color
 			const hex = this.defaultTextStyle.bgColor.substring(1);
-			const r = Number.parseInt(hex.substring(0, 2), 16);
-			const g = Number.parseInt(hex.substring(2, 4), 16);
-			const b = Number.parseInt(hex.substring(4, 6), 16);
-			return colorChalk.bgRgb(r, g, b)(text);
+			return {
+				r: Number.parseInt(hex.substring(0, 2), 16),
+				g: Number.parseInt(hex.substring(2, 4), 16),
+				b: Number.parseInt(hex.substring(4, 6), 16),
+			};
 		}
-		// Named background color (bgRed, bgBlue, etc.)
-		return (colorChalk as any)[this.defaultTextStyle.bgColor](text);
+
+		// Named colors - map to RGB (common terminal colors)
+		const colorMap: Record<string, { r: number; g: number; b: number }> = {
+			bgBlack: { r: 0, g: 0, b: 0 },
+			bgRed: { r: 255, g: 0, b: 0 },
+			bgGreen: { r: 0, g: 255, b: 0 },
+			bgYellow: { r: 255, g: 255, b: 0 },
+			bgBlue: { r: 0, g: 0, b: 255 },
+			bgMagenta: { r: 255, g: 0, b: 255 },
+			bgCyan: { r: 0, g: 255, b: 255 },
+			bgWhite: { r: 255, g: 255, b: 255 },
+		};
+
+		return colorMap[this.defaultTextStyle.bgColor];
 	}
 
 	/**
 	 * Apply default text style to a string.
 	 * This is the base styling applied to all text content.
+	 * NOTE: Background color is NOT applied here - it's applied at the padding stage
+	 * to ensure it extends to the full line width.
 	 */
 	private applyDefaultStyle(text: string): string {
 		if (!this.defaultTextStyle) {
@@ -172,7 +176,7 @@ export class Markdown implements Component {
 
 		let styled = text;
 
-		// Apply color
+		// Apply foreground color (NOT background - that's applied at padding stage)
 		if (this.defaultTextStyle.color) {
 			if (this.defaultTextStyle.color.startsWith("#")) {
 				// Hex color
@@ -184,21 +188,6 @@ export class Markdown implements Component {
 			} else {
 				// Named color
 				styled = (colorChalk as any)[this.defaultTextStyle.color](styled);
-			}
-		}
-
-		// Apply background color
-		if (this.defaultTextStyle.bgColor) {
-			if (this.defaultTextStyle.bgColor.startsWith("#")) {
-				// Hex color
-				const hex = this.defaultTextStyle.bgColor.substring(1);
-				const r = Number.parseInt(hex.substring(0, 2), 16);
-				const g = Number.parseInt(hex.substring(2, 4), 16);
-				const b = Number.parseInt(hex.substring(4, 6), 16);
-				styled = colorChalk.bgRgb(r, g, b)(styled);
-			} else {
-				// Named background color (bgRed, bgBlue, etc.)
-				styled = (colorChalk as any)[this.defaultTextStyle.bgColor](styled);
 			}
 		}
 
@@ -338,12 +327,8 @@ export class Markdown implements Component {
 				}
 
 				case "codespan":
-					// Apply code styling, then reapply default style after
-					result +=
-						colorChalk.gray("`") +
-						colorChalk.cyan(token.text) +
-						colorChalk.gray("`") +
-						this.applyDefaultStyle("");
+					// Apply code styling without backticks
+					result += colorChalk.cyan(token.text) + this.applyDefaultStyle("");
 					break;
 
 				case "link": {

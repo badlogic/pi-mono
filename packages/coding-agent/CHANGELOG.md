@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.21] - 2025-11-19
+
+### Fixed
+
+- **Terminal Flicker**: Fixed flicker at bottom of viewport (especially editor component) in xterm.js-based terminals (VS Code, etc.) by using per-line clear instead of clear-to-end sequence.
+- **Background Color Rendering**: Fixed black cells appearing at end of wrapped lines when using background colors. Completely rewrote text wrapping and background application to properly handle ANSI reset codes.
+- **Tool Output**: Strip ANSI codes from bash/tool output before rendering to prevent conflicts with TUI styling.
+
 ## [0.7.20] - 2025-11-18
 
 ### Fixed

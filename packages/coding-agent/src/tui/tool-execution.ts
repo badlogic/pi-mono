@@ -2,6 +2,7 @@ import * as os from "node:os";
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import * as Diff from "diff";
+import stripAnsi from "strip-ansi";
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -175,7 +176,8 @@ export class ToolExecutionComponent extends Container {
 		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
 		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
 
-		let output = textBlocks.map((c: any) => c.text).join("\n");
+		// Strip ANSI codes from raw output (bash may emit colors/formatting)
+		let output = textBlocks.map((c: any) => stripAnsi(c.text || "")).join("\n");
 
 		// Add indicator for images
 		if (imageBlocks.length > 0) {
