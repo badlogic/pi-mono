@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
 /**
  * Text component - displays multi-line text with word wrapping
@@ -66,53 +66,8 @@ export class Text implements Component {
 		// Replace tabs with 3 spaces for consistent rendering
 		const normalizedText = this.text.replace(/\t/g, "   ");
 
-		const lines: string[] = [];
-		const textLines = normalizedText.split("\n");
-
-		for (const line of textLines) {
-			// Measure visible length (strip ANSI codes)
-			const visibleLineLength = visibleWidth(line);
-
-			if (visibleLineLength <= contentWidth) {
-				lines.push(line);
-			} else {
-				// Word wrap
-				const words = line.split(" ");
-				let currentLine = "";
-
-				for (const word of words) {
-					const currentVisible = visibleWidth(currentLine);
-					const wordVisible = visibleWidth(word);
-
-					// If word is too long, truncate it
-					let finalWord = word;
-					if (wordVisible > contentWidth) {
-						// Truncate word to fit
-						let truncated = "";
-						for (const char of word) {
-							if (visibleWidth(truncated + char) > contentWidth) {
-								break;
-							}
-							truncated += char;
-						}
-						finalWord = truncated;
-					}
-
-					if (currentVisible === 0) {
-						currentLine = finalWord;
-					} else if (currentVisible + 1 + visibleWidth(finalWord) <= contentWidth) {
-						currentLine += " " + finalWord;
-					} else {
-						lines.push(currentLine);
-						currentLine = finalWord;
-					}
-				}
-
-				if (currentLine.length > 0) {
-					lines.push(currentLine);
-				}
-			}
-		}
+		// Use shared ANSI-aware word wrapping
+		const lines = wrapTextWithAnsi(normalizedText, contentWidth);
 
 		// Add padding to each line
 		const leftPad = " ".repeat(this.paddingX);
