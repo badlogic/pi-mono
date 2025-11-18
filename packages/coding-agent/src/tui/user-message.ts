@@ -15,7 +15,7 @@ export class UserMessageComponent extends Container {
 		}
 
 		// User messages with dark gray background
-		this.markdown = new Markdown(text, undefined, undefined, { r: 52, g: 53, b: 65 });
+		this.markdown = new Markdown(text, 1, 1, { bgColor: "#343541" });
 		this.addChild(this.markdown);
 	}
 }
