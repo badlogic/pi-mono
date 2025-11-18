@@ -58,7 +58,7 @@ These commands:
 
 Complete release process:
 
-1. **Update CHANGELOG.md** (for coding-agent releases):
+1. **Update CHANGELOG.md** (if changes affect coding-agent):
    ```bash
    # Add your changes to the [Unreleased] section in packages/coding-agent/CHANGELOG.md
    ```
@@ -70,7 +70,7 @@ Complete release process:
    npm run version:major    # For breaking changes
    ```
 
-3. **Update CHANGELOG.md version** (for coding-agent):
+3. **Update CHANGELOG.md version** (if changes affect coding-agent):
    ```bash
    # Move the [Unreleased] section to the new version number with today's date
    # e.g., ## [0.7.16] - 2025-11-17
