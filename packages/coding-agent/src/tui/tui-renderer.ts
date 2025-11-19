@@ -491,6 +491,9 @@ export class TuiRenderer {
 		// Update footer with loaded state
 		this.footer.updateState(state);
 
+		// Update editor border color based on current thinking level
+		this.updateEditorBorderColor();
+
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
@@ -579,6 +582,31 @@ export class TuiRenderer {
 		}
 	}
 
+	private getThinkingBorderColor(level: ThinkingLevel): (str: string) => string {
+		// More thinking = more color (gray → dim colors → bright colors)
+		switch (level) {
+			case "off":
+				return chalk.gray;
+			case "minimal":
+				return chalk.dim.blue;
+			case "low":
+				return chalk.blue;
+			case "medium":
+				return chalk.cyan;
+			case "high":
+				return chalk.magenta;
+			default:
+				return chalk.gray;
+		}
+	}
+
+	private updateEditorBorderColor(): void {
+		const level = this.agent.state.thinkingLevel || "off";
+		const color = this.getThinkingBorderColor(level);
+		this.editor.borderColor = color;
+		this.ui.requestRender();
+	}
+
 	private cycleThinkingLevel(): boolean {
 		// Only cycle if model supports thinking
 		if (!this.agent.state.model?.reasoning) {
@@ -596,6 +624,9 @@ export class TuiRenderer {
 
 		// Save thinking level change to session
 		this.sessionManager.saveThinkingLevelChange(nextLevel);
+
+		// Update border color
+		this.updateEditorBorderColor();
 
 		// Show brief notification
 		this.chatContainer.addChild(new Spacer(1));
@@ -634,6 +665,9 @@ export class TuiRenderer {
 
 				// Save thinking level change to session
 				this.sessionManager.saveThinkingLevelChange(level);
+
+				// Update border color
+				this.updateEditorBorderColor();
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
