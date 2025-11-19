@@ -6,15 +6,13 @@ import { Editor } from "@mariozechner/pi-tui";
 export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlC?: () => void;
-	public onTab?: () => boolean;
+	public onCtrlT?: () => void;
 
 	handleInput(data: string): void {
-		// Intercept Tab key when autocomplete is not showing
-		if (data === "\t" && !this.isShowingAutocomplete() && this.onTab) {
-			const handled = this.onTab();
-			if (handled) {
-				return;
-			}
+		// Intercept Ctrl+T for thinking level cycling
+		if (data === "\x14" && this.onCtrlT) {
+			this.onCtrlT();
+			return;
 		}
 
 		// Intercept Escape key - but only if autocomplete is NOT active
