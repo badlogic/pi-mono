@@ -160,6 +160,22 @@ function wrapSingleLine(line: string, width: number): string[] {
 	for (const word of words) {
 		const wordVisibleLength = visibleWidth(word);
 
+		// Word itself is too long - break it character by character
+		if (wordVisibleLength > width) {
+			if (currentLine) {
+				wrapped.push(currentLine);
+				currentLine = "";
+				currentVisibleLength = 0;
+			}
+
+			// Break long word
+			const broken = breakLongWord(word, width, tracker);
+			wrapped.push(...broken.slice(0, -1));
+			currentLine = broken[broken.length - 1];
+			currentVisibleLength = visibleWidth(currentLine);
+			continue;
+		}
+
 		// Check if adding this word would exceed width
 		const spaceNeeded = currentVisibleLength > 0 ? 1 : 0;
 		const totalNeeded = currentVisibleLength + spaceNeeded + wordVisibleLength;
@@ -188,6 +204,42 @@ function wrapSingleLine(line: string, width: number): string[] {
 	}
 
 	return wrapped.length > 0 ? wrapped : [""];
+}
+
+function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): string[] {
+	const lines: string[] = [];
+	let currentLine = tracker.getActiveCodes();
+	let currentWidth = 0;
+	let i = 0;
+
+	while (i < word.length) {
+		const ansiResult = extractAnsiCode(word, i);
+		if (ansiResult) {
+			currentLine += ansiResult.code;
+			tracker.process(ansiResult.code);
+			i += ansiResult.length;
+			continue;
+		}
+
+		const char = word[i];
+		const charWidth = visibleWidth(char);
+
+		if (currentWidth + charWidth > width) {
+			lines.push(currentLine);
+			currentLine = tracker.getActiveCodes();
+			currentWidth = 0;
+		}
+
+		currentLine += char;
+		currentWidth += charWidth;
+		i++;
+	}
+
+	if (currentLine) {
+		lines.push(currentLine);
+	}
+
+	return lines.length > 0 ? lines : [""];
 }
 
 /**

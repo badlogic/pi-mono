@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.22] - 2025-11-19
+
+### Fixed
+
+- **Long Line Wrapping**: Fixed crash when rendering long lines without spaces (e.g., file paths). Long words now break character-by-character to fit within terminal width.
+
 ## [0.7.21] - 2025-11-19
 
 ### Fixed
