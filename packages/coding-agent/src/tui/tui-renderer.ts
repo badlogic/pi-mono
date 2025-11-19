@@ -169,7 +169,7 @@ export class TuiRenderer {
 			chalk.dim("ctrl+k") +
 			chalk.gray(" to delete line") +
 			"\n" +
-			chalk.dim("tab") +
+			chalk.dim("ctrl+t") +
 			chalk.gray(" to cycle thinking") +
 			"\n" +
 			chalk.dim("/") +
@@ -213,8 +213,8 @@ export class TuiRenderer {
 			this.handleCtrlC();
 		};
 
-		this.editor.onTab = () => {
-			return this.cycleThinkingLevel();
+		this.editor.onCtrlT = () => {
+			this.cycleThinkingLevel();
 		};
 
 		// Handle editor submission
@@ -607,10 +607,13 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
-	private cycleThinkingLevel(): boolean {
+	private cycleThinkingLevel(): void {
 		// Only cycle if model supports thinking
 		if (!this.agent.state.model?.reasoning) {
-			return false; // Not handled, let default Tab behavior continue
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("Current model does not support thinking"), 1, 0));
+			this.ui.requestRender();
+			return;
 		}
 
 		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
@@ -632,8 +635,6 @@ export class TuiRenderer {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
 		this.ui.requestRender();
-
-		return true; // Handled
 	}
 
 	clearEditor(): void {
