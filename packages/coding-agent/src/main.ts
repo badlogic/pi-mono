@@ -794,7 +794,7 @@ export async function main(args: string[]) {
 			VERSION,
 			changelogMarkdown,
 			modelFallbackMessage,
-// Pass preview lines from CLI/env if provided
+			// Pass preview lines from CLI/env if provided
 			parsed.previewLines !== undefined
 				? parsed.previewLines
 				: process.env.PI_PREVIEW_LINES
