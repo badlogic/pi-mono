@@ -1,5 +1,5 @@
 import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
-import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -16,7 +16,7 @@ import chalk from "chalk";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
-import { getApiKeyForModel } from "../model-config.js";
+import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
@@ -73,18 +73,23 @@ export class TuiRenderer {
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
+	// Model scope for quick cycling
+	private scopedModels: Model<any>[] = [];
+
 	constructor(
 		agent: Agent,
 		sessionManager: SessionManager,
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
+		scopedModels: Model<any>[] = [],
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
 		this.settingsManager = settingsManager;
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
+		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
@@ -172,6 +177,9 @@ export class TuiRenderer {
 			chalk.dim("ctrl+t") +
 			chalk.gray(" to cycle thinking") +
 			"\n" +
+			chalk.dim("ctrl+p") +
+			chalk.gray(" to cycle models") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -215,6 +223,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlT = () => {
 			this.cycleThinkingLevel();
+		};
+
+		this.editor.onCtrlP = () => {
+			this.cycleModel();
 		};
 
 		// Handle editor submission
@@ -634,6 +646,61 @@ export class TuiRenderer {
 		// Show brief notification
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async cycleModel(): Promise<void> {
+		// Use scoped models if available, otherwise all available models
+		let modelsToUse: Model<any>[];
+		if (this.scopedModels.length > 0) {
+			modelsToUse = this.scopedModels;
+		} else {
+			const { models: availableModels, error } = await getAvailableModels();
+			if (error) {
+				this.showError(`Failed to load models: ${error}`);
+				return;
+			}
+			modelsToUse = availableModels;
+		}
+
+		if (modelsToUse.length === 0) {
+			this.showError("No models available to cycle");
+			return;
+		}
+
+		if (modelsToUse.length === 1) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("Only one model in scope"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const currentModel = this.agent.state.model;
+		let currentIndex = modelsToUse.findIndex(
+			(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
+		);
+
+		// If current model not in scope, start from first
+		if (currentIndex === -1) {
+			currentIndex = 0;
+		}
+
+		const nextIndex = (currentIndex + 1) % modelsToUse.length;
+		const nextModel = modelsToUse[nextIndex];
+
+		// Validate API key
+		const apiKey = await getApiKeyForModel(nextModel);
+		if (!apiKey) {
+			this.showError(`No API key for ${nextModel.provider}/${nextModel.id}`);
+			return;
+		}
+
+		// Switch model
+		this.agent.setModel(nextModel);
+
+		// Show notification
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.dim(`Switched to ${nextModel.name || nextModel.id}`), 1, 0));
 		this.ui.requestRender();
 	}
 
