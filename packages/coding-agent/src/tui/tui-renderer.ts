@@ -1,4 +1,4 @@
-import type { Agent, AgentEvent, AgentState } from "@mariozechner/pi-agent";
+import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -169,6 +169,9 @@ export class TuiRenderer {
 			chalk.dim("ctrl+k") +
 			chalk.gray(" to delete line") +
 			"\n" +
+			chalk.dim("tab") +
+			chalk.gray(" to cycle thinking") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -208,6 +211,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlC = () => {
 			this.handleCtrlC();
+		};
+
+		this.editor.onTab = () => {
+			return this.cycleThinkingLevel();
 		};
 
 		// Handle editor submission
@@ -570,6 +577,32 @@ export class TuiRenderer {
 			this.clearEditor();
 			this.lastSigintTime = now;
 		}
+	}
+
+	private cycleThinkingLevel(): boolean {
+		// Only cycle if model supports thinking
+		if (!this.agent.state.model?.reasoning) {
+			return false; // Not handled, let default Tab behavior continue
+		}
+
+		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+		const currentLevel = this.agent.state.thinkingLevel || "off";
+		const currentIndex = levels.indexOf(currentLevel);
+		const nextIndex = (currentIndex + 1) % levels.length;
+		const nextLevel = levels[nextIndex];
+
+		// Apply the new thinking level
+		this.agent.setThinkingLevel(nextLevel);
+
+		// Save thinking level change to session
+		this.sessionManager.saveThinkingLevelChange(nextLevel);
+
+		// Show brief notification
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
+		this.ui.requestRender();
+
+		return true; // Handled
 	}
 
 	clearEditor(): void {
