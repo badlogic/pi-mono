@@ -169,7 +169,7 @@ export class TuiRenderer {
 			chalk.dim("ctrl+k") +
 			chalk.gray(" to delete line") +
 			"\n" +
-			chalk.dim("ctrl+t") +
+			chalk.dim("shift+tab") +
 			chalk.gray(" to cycle thinking") +
 			"\n" +
 			chalk.dim("/") +
@@ -213,7 +213,7 @@ export class TuiRenderer {
 			this.handleCtrlC();
 		};
 
-		this.editor.onCtrlT = () => {
+		this.editor.onShiftTab = () => {
 			this.cycleThinkingLevel();
 		};
 
