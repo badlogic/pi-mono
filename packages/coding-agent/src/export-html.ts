@@ -67,12 +67,7 @@ function replaceTabs(text: string): string {
 /**
  * Format tool execution matching TUI ToolExecutionComponent
  */
-function formatToolExecution(
-	toolName: string,
-	args: any,
-	result?: ToolResultMessage,
-	previewLines?: number | undefined,
-): { html: string; bgColor: string } {
+function formatToolExecution(toolName: string, args: any, result?: ToolResultMessage, previewLines?: number | undefined,): { html: string; bgColor: string } {
 	let html = "";
 	const isError = result?.isError || false;
 	const bgColor = result ? (isError ? COLORS.toolErrorBg : COLORS.toolSuccessBg) : COLORS.toolPendingBg;
@@ -93,8 +88,7 @@ function formatToolExecution(
 			const output = getTextOutput().trim();
 			if (output) {
 				const lines = output.split("\n");
-				const maxLines =
-					previewLines === undefined ? 5 : previewLines === 0 ? Number.MAX_SAFE_INTEGER : previewLines;
+				const maxLines = previewLines === undefined ? 5 : previewLines === 0 ? Number.MAX_SAFE_INTEGER : previewLines;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = Math.max(0, lines.length - maxLines);
 
@@ -251,11 +245,7 @@ function formatToolExecution(
 /**
  * Format a message as HTML (matching TUI component styling)
  */
-function formatMessage(
-	message: Message,
-	toolResultsMap: Map<string, ToolResultMessage>,
-	previewLines?: number | undefined,
-): string {
+function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>, previewLines?: number | undefined): string {
 	let html = "";
 
 	if (message.role === "user") {
@@ -288,12 +278,7 @@ function formatMessage(
 		for (const content of assistantMsg.content) {
 			if (content.type === "toolCall") {
 				const toolResult = toolResultsMap.get(content.id);
-				const { html: toolHtml, bgColor } = formatToolExecution(
-					content.name,
-					content.arguments,
-					toolResult,
-					previewLines,
-				);
+				const { html: toolHtml, bgColor } = formatToolExecution(content.name, content.arguments, toolResult, previewLines);
 				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
 			}
 		}
@@ -316,12 +301,7 @@ function formatMessage(
 /**
  * Export session to a self-contained HTML file matching TUI visual style
  */
-export function exportSessionToHtml(
-	sessionManager: SessionManager,
-	state: AgentState,
-	outputPath?: string,
-	previewLines?: number | undefined,
-): string {
+export function exportSessionToHtml(sessionManager: SessionManager, state: AgentState, outputPath?: string, previewLines?: number | undefined): string {
 	const sessionFile = sessionManager.getSessionFile();
 	const timestamp = new Date().toISOString();
 

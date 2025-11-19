@@ -223,12 +223,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result) {
 				const output = this.getTextOutput();
 				const lines = output.split("\n");
-				const maxLines =
-					this.previewLines === undefined
-						? 10
-						: this.previewLines === 0
-							? Number.MAX_SAFE_INTEGER
-							: this.previewLines;
+				const maxLines = this.previewLines === undefined ? 10 : this.previewLines === 0 ? Number.MAX_SAFE_INTEGER : this.previewLines;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = Math.max(0, lines.length - maxLines);
 
@@ -245,24 +240,14 @@ export class ToolExecutionComponent extends Container {
 
 			text = chalk.bold("write") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
 			if (
-				totalLines >
-				(this.previewLines === undefined
-					? 10
-					: this.previewLines === 0
-						? Number.MAX_SAFE_INTEGER
-						: this.previewLines)
+				totalLines > (this.previewLines === undefined ? 10 : this.previewLines === 0 ? Number.MAX_SAFE_INTEGER : this.previewLines)
 			) {
 				text += ` (${totalLines} lines)`;
 			}
 
 			// Show first 10 lines of content if available
 			if (fileContent) {
-				const maxLines =
-					this.previewLines === undefined
-						? 10
-						: this.previewLines === 0
-							? Number.MAX_SAFE_INTEGER
-							: this.previewLines;
+				const maxLines = this.previewLines === undefined ? 10 : this.previewLines === 0 ? Number.MAX_SAFE_INTEGER: this.previewLines;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = Math.max(0, lines.length - maxLines);
 
