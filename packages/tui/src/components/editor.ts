@@ -28,6 +28,9 @@ export class Editor implements Component {
 
 	private config: TextEditorConfig = {};
 
+	// Border color (can be changed dynamically)
+	public borderColor: (str: string) => string = chalk.gray;
+
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
 	private autocompleteList?: SelectList;
@@ -61,7 +64,7 @@ export class Editor implements Component {
 	}
 
 	render(width: number): string[] {
-		const horizontal = chalk.gray("─");
+		const horizontal = this.borderColor("─");
 
 		// Layout the text - use full width
 		const layoutLines = this.layoutText(width);

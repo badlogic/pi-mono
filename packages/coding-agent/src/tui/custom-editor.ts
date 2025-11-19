@@ -7,11 +7,18 @@ export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlC?: () => void;
 	public onCtrlP?: () => void;
+	public onCtrlT?: () => void;
 
 	handleInput(data: string): void {
 		// Intercept Ctrl+P for model cycling
 		if (data === "\x10" && this.onCtrlP) {
 			this.onCtrlP();
+			return;
+		}
+
+		// Intercept Ctrl+T for thinking level cycling
+		if (data === "\x14" && this.onCtrlT) {
+			this.onCtrlT();
 			return;
 		}
 
