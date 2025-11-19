@@ -92,8 +92,7 @@ export class FooterComponent {
 		let rightSide = modelName;
 		if (this.state.model?.reasoning) {
 			const thinkingLevel = this.state.thinkingLevel || "off";
-			const thinkingHint = chalk.dim(" (tab to cycle)");
-			rightSide = `${modelName} • ${thinkingLevel}${thinkingHint}`;
+			rightSide = `${modelName} • Thinking: ${thinkingLevel}`;
 		}
 
 		const statsLeftWidth = visibleWidth(statsLeft);
