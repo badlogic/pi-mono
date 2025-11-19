@@ -56,6 +56,7 @@ interface Args {
 	noSession?: boolean;
 	session?: string;
 	messages: string[];
+	previewLines?: number | undefined;
 }
 
 function parseArgs(args: string[]): Args {
@@ -89,6 +90,9 @@ function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--preview-lines" && i + 1 < args.length) {
+			const v = Number(args[++i]);
+			if (!Number.isNaN(v) && v >= 0) result.previewLines = v;
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -344,8 +348,9 @@ async function runInteractiveMode(
 	version: string,
 	changelogMarkdown: string | null = null,
 	modelFallbackMessage: string | null = null,
+	previewLines?: number | undefined,
 ): Promise<void> {
-	const renderer = new TuiRenderer(agent, sessionManager, settingsManager, version, changelogMarkdown);
+	const renderer = new TuiRenderer(agent, sessionManager, settingsManager, version, changelogMarkdown, previewLines);
 
 	// Initialize TUI
 	await renderer.init();
@@ -789,6 +794,12 @@ export async function main(args: string[]) {
 			VERSION,
 			changelogMarkdown,
 			modelFallbackMessage,
+// Pass preview lines from CLI/env if provided
+			parsed.previewLines !== undefined
+				? parsed.previewLines
+				: process.env.PI_PREVIEW_LINES
+					? Number(process.env.PI_PREVIEW_LINES)
+					: undefined,
 		);
 	} else {
 		// CLI mode with messages

@@ -131,11 +131,13 @@ export class ToolExecutionComponent extends Container {
 		isError: boolean;
 		details?: any;
 	};
+	private previewLines?: number | undefined;
 
-	constructor(toolName: string, args: any) {
+	constructor(toolName: string, args: any, previewLines?: number | undefined) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
+		this.previewLines = previewLines;
 		this.addChild(new Spacer(1));
 		// Content with colored background and padding
 		this.contentText = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
@@ -199,9 +201,14 @@ export class ToolExecutionComponent extends Container {
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
-					const maxLines = 5;
+					const maxLines =
+						this.previewLines === undefined
+							? 5
+							: this.previewLines === 0
+								? Number.MAX_SAFE_INTEGER
+								: this.previewLines;
 					const displayLines = lines.slice(0, maxLines);
-					const remaining = lines.length - maxLines;
+					const remaining = Math.max(0, lines.length - maxLines);
 
 					text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
 					if (remaining > 0) {
@@ -216,9 +223,14 @@ export class ToolExecutionComponent extends Container {
 			if (this.result) {
 				const output = this.getTextOutput();
 				const lines = output.split("\n");
-				const maxLines = 10;
+				const maxLines =
+					this.previewLines === undefined
+						? 10
+						: this.previewLines === 0
+							? Number.MAX_SAFE_INTEGER
+							: this.previewLines;
 				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
+				const remaining = Math.max(0, lines.length - maxLines);
 
 				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
 				if (remaining > 0) {
@@ -232,15 +244,27 @@ export class ToolExecutionComponent extends Container {
 			const totalLines = lines.length;
 
 			text = chalk.bold("write") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
-			if (totalLines > 10) {
+			if (
+				totalLines >
+				(this.previewLines === undefined
+					? 10
+					: this.previewLines === 0
+						? Number.MAX_SAFE_INTEGER
+						: this.previewLines)
+			) {
 				text += ` (${totalLines} lines)`;
 			}
 
 			// Show first 10 lines of content if available
 			if (fileContent) {
-				const maxLines = 10;
+				const maxLines =
+					this.previewLines === undefined
+						? 10
+						: this.previewLines === 0
+							? Number.MAX_SAFE_INTEGER
+							: this.previewLines;
 				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
+				const remaining = Math.max(0, lines.length - maxLines);
 
 				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
 				if (remaining > 0) {

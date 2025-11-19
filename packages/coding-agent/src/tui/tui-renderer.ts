@@ -47,6 +47,7 @@ export class TuiRenderer {
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
+	private previewLines?: number | undefined;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
@@ -72,6 +73,7 @@ export class TuiRenderer {
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
+		previewLines?: number | undefined,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -85,6 +87,7 @@ export class TuiRenderer {
 		this.editorContainer = new Container(); // Container to hold editor or selector
 		this.editorContainer.addChild(this.editor); // Start with editor
 		this.footer = new FooterComponent(agent.state);
+		this.previewLines = previewLines;
 
 		// Define slash commands
 		const thinkingCommand: SlashCommand = {
@@ -314,7 +317,11 @@ export class TuiRenderer {
 							// Only create if we haven't created it yet
 							if (!this.pendingTools.has(content.id)) {
 								this.chatContainer.addChild(new Text("", 0, 0));
-								const component = new ToolExecutionComponent(content.name, content.arguments);
+								const component = new ToolExecutionComponent(
+									content.name,
+									content.arguments,
+									this.previewLines,
+								);
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -364,7 +371,7 @@ export class TuiRenderer {
 			case "tool_execution_start": {
 				// Component should already exist from message_update, but create if missing
 				if (!this.pendingTools.has(event.toolCallId)) {
-					const component = new ToolExecutionComponent(event.toolName, event.args);
+					const component = new ToolExecutionComponent(event.toolName, event.args, this.previewLines);
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();
@@ -464,7 +471,7 @@ export class TuiRenderer {
 				// Create tool execution components for any tool calls
 				for (const content of assistantMsg.content) {
 					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(content.name, content.arguments);
+						const component = new ToolExecutionComponent(content.name, content.arguments, this.previewLines);
 						this.chatContainer.addChild(component);
 
 						// If message was aborted/errored, immediately mark tool as failed
@@ -726,7 +733,7 @@ export class TuiRenderer {
 
 		try {
 			// Export session to HTML
-			const filePath = exportSessionToHtml(this.sessionManager, this.agent.state, outputPath);
+			const filePath = exportSessionToHtml(this.sessionManager, this.agent.state, outputPath, this.previewLines);
 
 			// Show success message in chat - matching thinking level style
 			this.chatContainer.addChild(new Spacer(1));

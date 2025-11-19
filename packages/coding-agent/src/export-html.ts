@@ -71,6 +71,7 @@ function formatToolExecution(
 	toolName: string,
 	args: any,
 	result?: ToolResultMessage,
+	previewLines?: number | undefined,
 ): { html: string; bgColor: string } {
 	let html = "";
 	const isError = result?.isError || false;
@@ -92,9 +93,10 @@ function formatToolExecution(
 			const output = getTextOutput().trim();
 			if (output) {
 				const lines = output.split("\n");
-				const maxLines = 5;
+				const maxLines =
+					previewLines === undefined ? 5 : previewLines === 0 ? Number.MAX_SAFE_INTEGER : previewLines;
 				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
+				const remaining = Math.max(0, lines.length - maxLines);
 
 				if (remaining > 0) {
 					// Truncated output - make it expandable
@@ -128,9 +130,9 @@ function formatToolExecution(
 		if (result) {
 			const output = getTextOutput();
 			const lines = output.split("\n");
-			const maxLines = 10;
+			const maxLines = previewLines === undefined ? 10 : previewLines === 0 ? Number.MAX_SAFE_INTEGER : previewLines;
 			const displayLines = lines.slice(0, maxLines);
-			const remaining = lines.length - maxLines;
+			const remaining = Math.max(0, lines.length - maxLines);
 
 			if (remaining > 0) {
 				// Truncated output - make it expandable
@@ -169,9 +171,9 @@ function formatToolExecution(
 		html += "</div>";
 
 		if (fileContent) {
-			const maxLines = 10;
+			const maxLines = previewLines === undefined ? 10 : previewLines === 0 ? Number.MAX_SAFE_INTEGER : previewLines;
 			const displayLines = lines.slice(0, maxLines);
-			const remaining = lines.length - maxLines;
+			const remaining = Math.max(0, lines.length - maxLines);
 
 			if (remaining > 0) {
 				// Truncated output - make it expandable
@@ -249,7 +251,11 @@ function formatToolExecution(
 /**
  * Format a message as HTML (matching TUI component styling)
  */
-function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>): string {
+function formatMessage(
+	message: Message,
+	toolResultsMap: Map<string, ToolResultMessage>,
+	previewLines?: number | undefined,
+): string {
 	let html = "";
 
 	if (message.role === "user") {
@@ -282,7 +288,12 @@ function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultM
 		for (const content of assistantMsg.content) {
 			if (content.type === "toolCall") {
 				const toolResult = toolResultsMap.get(content.id);
-				const { html: toolHtml, bgColor } = formatToolExecution(content.name, content.arguments, toolResult);
+				const { html: toolHtml, bgColor } = formatToolExecution(
+					content.name,
+					content.arguments,
+					toolResult,
+					previewLines,
+				);
 				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
 			}
 		}
@@ -305,7 +316,12 @@ function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultM
 /**
  * Export session to a self-contained HTML file matching TUI visual style
  */
-export function exportSessionToHtml(sessionManager: SessionManager, state: AgentState, outputPath?: string): string {
+export function exportSessionToHtml(
+	sessionManager: SessionManager,
+	state: AgentState,
+	outputPath?: string,
+	previewLines?: number | undefined,
+): string {
 	const sessionFile = sessionManager.getSessionFile();
 	const timestamp = new Date().toISOString();
 
@@ -345,7 +361,7 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
 	for (const message of messages) {
 		if (message.role !== "toolResult") {
 			// Skip toolResult messages as they're rendered with their tool calls
-			messagesHtml += formatMessage(message, toolResultsMap);
+			messagesHtml += formatMessage(message, toolResultsMap, previewLines);
 		}
 	}
 
