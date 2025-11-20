@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Model Cycling**: Press `Ctrl+P` to quickly cycle through models. Use `--models` CLI argument to scope to specific models (e.g., `--models claude-sonnet,gpt-4o`). Supports pattern matching and smart version selection (prefers aliases over dated versions).
+
 ## [0.7.24] - 2025-11-20
 
 ### Added

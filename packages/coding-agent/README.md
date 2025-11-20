@@ -333,6 +333,7 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 - **Ctrl+C**: Clear editor (first press) / Exit pi (second press)
 - **Tab**: Path completion
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
+- **Ctrl+P**: Cycle models (use `--models` to scope)
 - **Enter**: Send message
 - **Shift+Enter**: Insert new line (multi-line input)
 - **Backspace**: Delete character backwards
@@ -488,6 +489,14 @@ Continue the most recent session
 **--resume, -r**
 Select a session to resume (opens interactive selector)
 
+**--models <patterns>**
+Comma-separated model patterns for quick cycling with `Ctrl+P`. Patterns match against model IDs and names (case-insensitive). When multiple versions exist, prefers aliases over dated versions (e.g., `claude-sonnet-4-5` over `claude-sonnet-4-5-20250929`). Without this flag, `Ctrl+P` cycles through all available models.
+
+Examples:
+- `--models claude-sonnet,gpt-4o` - Scope to Claude Sonnet and GPT-4o
+- `--models sonnet,haiku` - Match any model containing "sonnet" or "haiku"
+- `--models gemini` - All Gemini models
+
 **--help, -h**
 Show help message
 
@@ -514,6 +523,10 @@ pi -c "What did we discuss?"
 
 # Use different model
 pi --provider openai --model gpt-4o "Help me refactor this code"
+
+# Limit model cycling to specific models
+pi --models claude-sonnet,claude-haiku,gpt-4o
+# Now Ctrl+P cycles only through those models
 ```
 
 ## Tools
