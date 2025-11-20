@@ -277,14 +277,15 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	if (
 		!model.baseUrl.includes("cerebras.ai") &&
 		!model.baseUrl.includes("api.x.ai") &&
-		!model.baseUrl.includes("mistral.ai")
+		!model.baseUrl.includes("mistral.ai") &&
+		!model.baseUrl.includes("chutes.ai")
 	) {
 		params.store = false;
 	}
 
 	if (options?.maxTokens) {
-		// Mistral uses max_tokens instead of max_completion_tokens
-		if (model.baseUrl.includes("mistral.ai")) {
+		// Mistral/Chutes uses max_tokens instead of max_completion_tokens
+		iif (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
 			(params as any).max_tokens = options?.maxTokens;
 		} else {
 			params.max_completion_tokens = options?.maxTokens;
@@ -317,12 +318,13 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 	const transformedMessages = transformMessages(context.messages, model);
 
 	if (context.systemPrompt) {
-		// Cerebras/xAi/Mistral don't like the "developer" role
+		// Cerebras/xAi/Mistral/Chutes don't like the "developer" role
 		const useDeveloperRole =
 			model.reasoning &&
 			!model.baseUrl.includes("cerebras.ai") &&
 			!model.baseUrl.includes("api.x.ai") &&
-			!model.baseUrl.includes("mistral.ai");
+			!model.baseUrl.includes("mistral.ai") &&
+			!model.baseUrl.includes("chutes.ai");
 		const role = useDeveloperRole ? "developer" : "system";
 		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
 	}
