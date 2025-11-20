@@ -156,6 +156,10 @@ async function streamAssistantResponse(
 				}
 				break;
 
+			case "status":
+				stream.push({ type: "status", message: event.message });
+				break;
+
 			case "done":
 			case "error": {
 				const finalMessage = await response.result();

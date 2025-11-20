@@ -253,6 +253,10 @@ export class Agent {
 						generatedMessages.push(ev.message as AppMessage);
 						break;
 					}
+					case "status": {
+						// Status events are informational only for state
+						break;
+					}
 					case "tool_execution_start": {
 						const s = new Set(this._state.pendingToolCalls);
 						s.add(ev.toolCallId);
