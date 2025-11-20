@@ -204,15 +204,26 @@ export class TUI extends Container {
 		}
 
 		buffer += "\r"; // Move to column 0
-		buffer += "\x1b[J"; // Clear from cursor to end of screen
 
-		// Render from first changed line to end
+		// Render from first changed line to end, clearing each line before writing
+		// This avoids the \x1b[J clear-to-end which can cause flicker in xterm.js
 		for (let i = firstChanged; i < newLines.length; i++) {
 			if (i > firstChanged) buffer += "\r\n";
+			buffer += "\x1b[2K"; // Clear current line
 			if (visibleWidth(newLines[i]) > width) {
 				throw new Error(`Rendered line ${i} exceeds terminal width\n\n${newLines[i]}`);
 			}
 			buffer += newLines[i];
+		}
+
+		// If we had more lines before, clear them and move cursor back
+		if (this.previousLines.length > newLines.length) {
+			const extraLines = this.previousLines.length - newLines.length;
+			for (let i = newLines.length; i < this.previousLines.length; i++) {
+				buffer += "\r\n\x1b[2K";
+			}
+			// Move cursor back to end of new content
+			buffer += `\x1b[${extraLines}A`;
 		}
 
 		buffer += "\x1b[?2026l"; // End synchronized output

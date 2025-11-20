@@ -28,6 +28,9 @@ export class Editor implements Component {
 
 	private config: TextEditorConfig = {};
 
+	// Border color (can be changed dynamically)
+	public borderColor: (str: string) => string = chalk.gray;
+
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
 	private autocompleteList?: SelectList;
@@ -61,7 +64,7 @@ export class Editor implements Component {
 	}
 
 	render(width: number): string[] {
-		const horizontal = chalk.gray("─");
+		const horizontal = this.borderColor("─");
 
 		// Layout the text - use full width
 		const layoutLines = this.layoutText(width);
@@ -333,8 +336,8 @@ export class Editor implements Component {
 			// Left
 			this.moveCursor(0, -1);
 		}
-		// Regular characters (printable ASCII)
-		else if (data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+		// Regular characters (printable characters and unicode, but not control characters)
+		else if (data.charCodeAt(0) >= 32) {
 			this.insertCharacter(data);
 		}
 	}
@@ -472,7 +475,7 @@ export class Editor implements Component {
 		// Filter out non-printable characters except newlines
 		const filteredText = tabExpandedText
 			.split("")
-			.filter((char) => char === "\n" || (char >= " " && char <= "~"))
+			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
 			.join("");
 
 		// Split into lines

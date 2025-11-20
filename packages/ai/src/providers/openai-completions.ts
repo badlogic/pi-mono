@@ -273,7 +273,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream_options: { include_usage: true },
 	};
 
-	// Cerebras/xAI/Mistral/Chutes dont like the "store" field
+	// Cerebras/xAI/Mistral dont like the "store" field
 	if (
 		!model.baseUrl.includes("cerebras.ai") &&
 		!model.baseUrl.includes("api.x.ai") &&
@@ -284,8 +284,8 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	if (options?.maxTokens) {
-		// Mistral/Chutes use max_tokens instead of max_completion_tokens
-		if (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
+		// Mistral/Chutes uses max_tokens instead of max_completion_tokens
+		iif (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
 			(params as any).max_tokens = options?.maxTokens;
 		} else {
 			params.max_completion_tokens = options?.maxTokens;

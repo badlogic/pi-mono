@@ -460,11 +460,20 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 					});
 				} else if (block.type === "thinking") {
 					if (block.thinking.trim().length === 0) continue;
-					blocks.push({
-						type: "thinking",
-						thinking: sanitizeSurrogates(block.thinking),
-						signature: block.thinkingSignature || "",
-					});
+					// If thinking signature is missing/empty (e.g., from aborted stream),
+					// convert to text block to avoid API rejection
+					if (!block.thinkingSignature || block.thinkingSignature.trim().length === 0) {
+						blocks.push({
+							type: "text",
+							text: sanitizeSurrogates(`<thinking>\n${block.thinking}\n</thinking>`),
+						});
+					} else {
+						blocks.push({
+							type: "thinking",
+							thinking: sanitizeSurrogates(block.thinking),
+							signature: block.thinkingSignature,
+						});
+					}
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",

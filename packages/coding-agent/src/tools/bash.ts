@@ -137,7 +137,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 					}
 					if (output) output += "\n\n";
 					output += "Command aborted";
-					resolve({ content: [{ type: "text", text: `Command failed\n\n${output}` }], details: undefined });
+					_reject(new Error(output));
 					return;
 				}
 
@@ -150,7 +150,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 					}
 					if (output) output += "\n\n";
 					output += `Command timed out after ${timeout} seconds`;
-					resolve({ content: [{ type: "text", text: `Command failed\n\n${output}` }], details: undefined });
+					_reject(new Error(output));
 					return;
 				}
 
@@ -163,10 +163,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 
 				if (code !== 0 && code !== null) {
 					if (output) output += "\n\n";
-					resolve({
-						content: [{ type: "text", text: `Command failed\n\n${output}Command exited with code ${code}` }],
-						details: undefined,
-					});
+					_reject(new Error(`${output}Command exited with code ${code}`));
 				} else {
 					resolve({ content: [{ type: "text", text: output || "(no output)" }], details: undefined });
 				}

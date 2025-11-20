@@ -1,5 +1,5 @@
 import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent";
-import { getModel, type KnownProvider } from "@mariozechner/pi-ai";
+import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
@@ -7,6 +7,7 @@ import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
+import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { codingTools } from "./tools/index.js";
@@ -30,6 +31,17 @@ const envApiKeyMap: Record<KnownProvider, string[]> = {
 	zai: ["ZAI_API_KEY"],
 };
 
+const defaultModelPerProvider: Record<KnownProvider, string> = {
+	anthropic: "claude-sonnet-4-5",
+	openai: "gpt-5.1-codex",
+	google: "gemini-2.5-pro",
+	openrouter: "openai/gpt-5.1-codex",
+	xai: "grok-4-fast-non-reasoning",
+	groq: "openai/gpt-oss-120b",
+	cerebras: "zai-glm-4.6",
+	zai: "glm-4.6",
+};
+
 type Mode = "text" | "json" | "rpc";
 
 interface Args {
@@ -43,6 +55,7 @@ interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	models?: string[];
 	messages: string[];
 }
 
@@ -77,6 +90,8 @@ function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--models" && i + 1 < args.length) {
+			result.models = args[++i].split(",").map((s) => s.trim());
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -86,10 +101,10 @@ function parseArgs(args: string[]): Args {
 }
 
 function printHelp() {
-	console.log(`${chalk.bold("coding-agent")} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold("pi")} - AI coding assistant with read, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
-  coding-agent [options] [messages...]
+  pi [options] [messages...]
 
 ${chalk.bold("Options:")}
   --provider <name>       Provider name (default: google)
@@ -101,23 +116,27 @@ ${chalk.bold("Options:")}
   --resume, -r            Select a session to resume
   --session <path>        Use specific session file
   --no-session            Don't save session (ephemeral)
+  --models <patterns>     Comma-separated model patterns for quick cycling with Ctrl+P
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
   # Interactive mode (no messages = interactive TUI)
-  coding-agent
+  pi
 
   # Single message
-  coding-agent "List all .ts files in src/"
+  pi "List all .ts files in src/"
 
   # Multiple messages
-  coding-agent "Read package.json" "What dependencies do we have?"
+  pi "Read package.json" "What dependencies do we have?"
 
   # Continue previous session
-  coding-agent --continue "What did we discuss?"
+  pi --continue "What did we discuss?"
 
   # Use different model
-  coding-agent --provider openai --model gpt-4o-mini "Help me refactor this code"
+  pi --provider openai --model gpt-4o-mini "Help me refactor this code"
+
+  # Limit model cycling to specific models
+  pi --models claude-sonnet,claude-haiku,gpt-4o
 
 ${chalk.bold("Environment Variables:")}
   GEMINI_API_KEY       - Google Gemini API key
@@ -189,7 +208,10 @@ function buildSystemPrompt(customPrompt?: string): string {
 		timeZoneName: "short",
 	});
 
-	let prompt = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+	// Get absolute path to README.md
+	const readmePath = resolve(join(__dirname, "../README.md"));
+
+	let prompt = `You are actually not Claude, you are Pi. You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 - read: Read file contents
@@ -203,7 +225,12 @@ Guidelines:
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
 - Be concise in your responses
-- Show file paths clearly when working with files`;
+- Show file paths clearly when working with files
+- When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
+
+Documentation:
+- Your own documentation (including custom model setup) is at: ${readmePath}
+- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider.`;
 
 	// Append project context files
 	const contextFiles = loadProjectContextFiles();
@@ -289,6 +316,89 @@ function loadProjectContextFiles(): Array<{ path: string; content: string }> {
 	return contextFiles;
 }
 
+async function checkForNewVersion(currentVersion: string): Promise<string | null> {
+	try {
+		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as { version?: string };
+		const latestVersion = data.version;
+
+		if (latestVersion && latestVersion !== currentVersion) {
+			return latestVersion;
+		}
+
+		return null;
+	} catch (error) {
+		// Silently fail - don't disrupt the user experience
+		return null;
+	}
+}
+
+/**
+ * Resolve model patterns to actual Model objects
+ * For each pattern, finds all matching models and picks the best version:
+ * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
+ * 2. If no alias, pick the latest dated version
+ */
+async function resolveModelScope(patterns: string[]): Promise<Model<Api>[]> {
+	const { models: availableModels, error } = await getAvailableModels();
+
+	if (error) {
+		console.warn(chalk.yellow(`Warning: Error loading models: ${error}`));
+		return [];
+	}
+
+	const scopedModels: Model<Api>[] = [];
+
+	for (const pattern of patterns) {
+		// Find all models matching this pattern (case-insensitive partial match)
+		const matches = availableModels.filter(
+			(m) =>
+				m.id.toLowerCase().includes(pattern.toLowerCase()) || m.name?.toLowerCase().includes(pattern.toLowerCase()),
+		);
+
+		if (matches.length === 0) {
+			console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+			continue;
+		}
+
+		// Helper to check if a model ID looks like an alias (no date suffix)
+		// Dates are typically in format: -20241022 or -20250929
+		const isAlias = (id: string): boolean => {
+			// Check if ID ends with -latest
+			if (id.endsWith("-latest")) return true;
+
+			// Check if ID ends with a date pattern (-YYYYMMDD)
+			const datePattern = /-\d{8}$/;
+			return !datePattern.test(id);
+		};
+
+		// Separate into aliases and dated versions
+		const aliases = matches.filter((m) => isAlias(m.id));
+		const datedVersions = matches.filter((m) => !isAlias(m.id));
+
+		let bestMatch: Model<Api>;
+
+		if (aliases.length > 0) {
+			// Prefer alias - if multiple aliases, pick the one that sorts highest
+			aliases.sort((a, b) => b.id.localeCompare(a.id));
+			bestMatch = aliases[0];
+		} else {
+			// No alias found, pick latest dated version
+			datedVersions.sort((a, b) => b.id.localeCompare(a.id));
+			bestMatch = datedVersions[0];
+		}
+
+		// Avoid duplicates
+		if (!scopedModels.find((m) => m.id === bestMatch.id && m.provider === bestMatch.provider)) {
+			scopedModels.push(bestMatch);
+		}
+	}
+
+	return scopedModels;
+}
+
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
@@ -321,10 +431,22 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 async function runInteractiveMode(
 	agent: Agent,
 	sessionManager: SessionManager,
+	settingsManager: SettingsManager,
 	version: string,
 	changelogMarkdown: string | null = null,
+	modelFallbackMessage: string | null = null,
+	newVersion: string | null = null,
+	scopedModels: Model<Api>[] = [],
 ): Promise<void> {
-	const renderer = new TuiRenderer(agent, sessionManager, version, changelogMarkdown);
+	const renderer = new TuiRenderer(
+		agent,
+		sessionManager,
+		settingsManager,
+		version,
+		changelogMarkdown,
+		newVersion,
+		scopedModels,
+	);
 
 	// Initialize TUI
 	await renderer.init();
@@ -336,6 +458,11 @@ async function runInteractiveMode(
 
 	// Render any existing messages (from --continue mode)
 	renderer.renderInitialMessages(agent.state);
+
+	// Show model fallback warning at the end of the chat if applicable
+	if (modelFallbackMessage) {
+		renderer.showWarning(modelFallbackMessage);
+	}
 
 	// Subscribe to agent events
 	agent.subscribe(async (event) => {
@@ -449,59 +576,208 @@ export async function main(args: string[]) {
 		sessionManager.setSessionFile(selectedSession);
 	}
 
-	// Determine provider and model
-	const provider = (parsed.provider || "anthropic") as any;
-	const modelId = parsed.model || "claude-sonnet-4-5";
+	// Settings manager
+	const settingsManager = new SettingsManager();
 
-	// Helper function to get API key for a provider
-	const getApiKeyForProvider = (providerName: string): string | undefined => {
-		// Check if API key was provided via command line
-		if (parsed.apiKey) {
-			return parsed.apiKey;
+	// Determine initial model using priority system:
+	// 1. CLI args (--provider and --model)
+	// 2. Restored from session (if --continue or --resume)
+	// 3. Saved default from settings.json
+	// 4. First available model with valid API key
+	// 5. null (allowed in interactive mode)
+	let initialModel: Model<Api> | null = null;
+
+	if (parsed.provider && parsed.model) {
+		// 1. CLI args take priority
+		const { model, error } = findModel(parsed.provider, parsed.model);
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
+		}
+		if (!model) {
+			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
+			process.exit(1);
+		}
+		initialModel = model;
+	} else if (parsed.continue || parsed.resume) {
+		// 2. Restore from session (will be handled below after loading session)
+		// Leave initialModel as null for now
+	}
+
+	if (!initialModel) {
+		// 3. Try saved default from settings
+		const defaultProvider = settingsManager.getDefaultProvider();
+		const defaultModel = settingsManager.getDefaultModel();
+		if (defaultProvider && defaultModel) {
+			const { model, error } = findModel(defaultProvider, defaultModel);
+			if (error) {
+				console.error(chalk.red(error));
+				process.exit(1);
+			}
+			initialModel = model;
+		}
+	}
+
+	if (!initialModel) {
+		// 4. Try first available model with valid API key
+		// Prefer default model for each provider if available
+		const { models: availableModels, error } = await getAvailableModels();
+
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
 		}
 
-		const envVars = envApiKeyMap[providerName as KnownProvider];
+		if (availableModels.length > 0) {
+			// Try to find a default model from known providers
+			for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
+				const defaultModelId = defaultModelPerProvider[provider];
+				const match = availableModels.find((m) => m.provider === provider && m.id === defaultModelId);
+				if (match) {
+					initialModel = match;
+					break;
+				}
+			}
 
-		// Check each environment variable in priority order
-		for (const envVar of envVars) {
-			const key = process.env[envVar];
-			if (key) {
-				return key;
+			// If no default found, use first available
+			if (!initialModel) {
+				initialModel = availableModels[0];
 			}
 		}
+	}
 
-		return undefined;
-	};
+	// Determine mode early to know if we should print messages and fail early
+	const isInteractive = parsed.messages.length === 0 && parsed.mode === undefined;
+	const mode = parsed.mode || "text";
+	const shouldPrintMessages = isInteractive || mode === "text";
 
-	// Get initial API key
-	const initialApiKey = getApiKeyForProvider(provider);
-	if (!initialApiKey) {
-		const envVars = envApiKeyMap[provider as KnownProvider];
-		const envVarList = envVars.join(" or ");
-		console.error(chalk.red(`Error: No API key found for provider "${provider}"`));
-		console.error(chalk.dim(`Set ${envVarList} environment variable or use --api-key flag`));
+	// Non-interactive mode: fail early if no model available
+	if (!isInteractive && !initialModel) {
+		console.error(chalk.red("No models available."));
+		console.error(chalk.yellow("\nSet an API key environment variable:"));
+		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
+		console.error(chalk.yellow("\nOr create ~/.pi/agent/models.json"));
 		process.exit(1);
 	}
 
-	// Create agent
-	const model = getModel(provider, modelId);
+	// Non-interactive mode: validate API key exists
+	if (!isInteractive && initialModel) {
+		const apiKey = parsed.apiKey || (await getApiKeyForModel(initialModel));
+		if (!apiKey) {
+			console.error(chalk.red(`No API key found for ${initialModel.provider}`));
+			process.exit(1);
+		}
+	}
+
 	const systemPrompt = buildSystemPrompt(parsed.systemPrompt);
 
+	// Load previous messages if continuing or resuming
+	// This may update initialModel if restoring from session
+	if (parsed.continue || parsed.resume) {
+		const messages = sessionManager.loadMessages();
+		if (messages.length > 0 && shouldPrintMessages) {
+			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
+		}
+
+		// Load and restore model (overrides initialModel if found and has API key)
+		const savedModel = sessionManager.loadModel();
+		if (savedModel) {
+			const { model: restoredModel, error } = findModel(savedModel.provider, savedModel.modelId);
+
+			if (error) {
+				console.error(chalk.red(error));
+				process.exit(1);
+			}
+
+			// Check if restored model exists and has a valid API key
+			const hasApiKey = restoredModel ? !!(await getApiKeyForModel(restoredModel)) : false;
+
+			if (restoredModel && hasApiKey) {
+				initialModel = restoredModel;
+				if (shouldPrintMessages) {
+					console.log(chalk.dim(`Restored model: ${savedModel.provider}/${savedModel.modelId}`));
+				}
+			} else {
+				// Model not found or no API key - fall back to default selection
+				const reason = !restoredModel ? "model no longer exists" : "no API key available";
+
+				if (shouldPrintMessages) {
+					console.error(
+						chalk.yellow(
+							`Warning: Could not restore model ${savedModel.provider}/${savedModel.modelId} (${reason}).`,
+						),
+					);
+				}
+
+				// Ensure we have a valid model - use the same fallback logic
+				if (!initialModel) {
+					const { models: availableModels, error: availableError } = await getAvailableModels();
+					if (availableError) {
+						console.error(chalk.red(availableError));
+						process.exit(1);
+					}
+					if (availableModels.length > 0) {
+						// Try to find a default model from known providers
+						for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
+							const defaultModelId = defaultModelPerProvider[provider];
+							const match = availableModels.find((m) => m.provider === provider && m.id === defaultModelId);
+							if (match) {
+								initialModel = match;
+								break;
+							}
+						}
+
+						// If no default found, use first available
+						if (!initialModel) {
+							initialModel = availableModels[0];
+						}
+
+						if (initialModel && shouldPrintMessages) {
+							console.log(chalk.dim(`Falling back to: ${initialModel.provider}/${initialModel.id}`));
+						}
+					} else {
+						// No models available at all
+						if (shouldPrintMessages) {
+							console.error(chalk.red("\nNo models available."));
+							console.error(chalk.yellow("Set an API key environment variable:"));
+							console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
+							console.error(chalk.yellow("\nOr create ~/.pi/agent/models.json"));
+						}
+						process.exit(1);
+					}
+				} else if (shouldPrintMessages) {
+					console.log(chalk.dim(`Falling back to: ${initialModel.provider}/${initialModel.id}`));
+				}
+			}
+		}
+	}
+
+	// Create agent (initialModel can be null in interactive mode)
 	const agent = new Agent({
 		initialState: {
 			systemPrompt,
-			model,
+			model: initialModel as any, // Can be null
 			thinkingLevel: "off",
 			tools: codingTools,
 		},
 		transport: new ProviderTransport({
 			// Dynamic API key lookup based on current model's provider
 			getApiKey: async () => {
-				const currentProvider = agent.state.model.provider;
-				const key = getApiKeyForProvider(currentProvider);
+				const currentModel = agent.state.model;
+				if (!currentModel) {
+					throw new Error("No model selected");
+				}
+
+				// Try CLI override first
+				if (parsed.apiKey) {
+					return parsed.apiKey;
+				}
+
+				// Use model-specific key lookup
+				const key = await getApiKeyForModel(currentModel);
 				if (!key) {
 					throw new Error(
-						`No API key found for provider "${currentProvider}". Please set the appropriate environment variable.`,
+						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ~/.pi/agent/models.json`,
 					);
 				}
 				return key;
@@ -509,39 +785,14 @@ export async function main(args: string[]) {
 		}),
 	});
 
-	// Determine mode early to know if we should print messages
-	const isInteractive = parsed.messages.length === 0;
-	const mode = parsed.mode || "text";
-	const shouldPrintMessages = isInteractive || mode === "text";
+	// Track if we had to fall back from saved model (to show in chat later)
+	let modelFallbackMessage: string | null = null;
 
 	// Load previous messages if continuing or resuming
 	if (parsed.continue || parsed.resume) {
 		const messages = sessionManager.loadMessages();
 		if (messages.length > 0) {
-			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
-			}
 			agent.replaceMessages(messages);
-		}
-
-		// Load and restore model
-		const savedModel = sessionManager.loadModel();
-		if (savedModel) {
-			try {
-				const restoredModel = getModel(savedModel.provider as any, savedModel.modelId);
-				agent.setModel(restoredModel);
-				if (shouldPrintMessages) {
-					console.log(chalk.dim(`Restored model: ${savedModel.provider}/${savedModel.modelId}`));
-				}
-			} catch (error: any) {
-				if (shouldPrintMessages) {
-					console.error(
-						chalk.yellow(
-							`Warning: Could not restore model ${savedModel.provider}/${savedModel.modelId}: ${error.message}`,
-						),
-					);
-				}
-			}
 		}
 
 		// Load and restore thinking level
@@ -550,6 +801,22 @@ export async function main(args: string[]) {
 			agent.setThinkingLevel(thinkingLevel);
 			if (shouldPrintMessages) {
 				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
+			}
+		}
+
+		// Check if we had to fall back from saved model
+		const savedModel = sessionManager.loadModel();
+		if (savedModel && initialModel) {
+			const savedMatches = initialModel.provider === savedModel.provider && initialModel.id === savedModel.modelId;
+			if (!savedMatches) {
+				const { model: restoredModel, error } = findModel(savedModel.provider, savedModel.modelId);
+				if (error) {
+					// Config error - already shown above, just use generic message
+					modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId}. Using ${initialModel.provider}/${initialModel.id}.`;
+				} else {
+					const reason = !restoredModel ? "model no longer exists" : "no API key available";
+					modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId} (${reason}). Using ${initialModel.provider}/${initialModel.id}.`;
+				}
 			}
 		}
 	}
@@ -586,10 +853,20 @@ export async function main(args: string[]) {
 		// RPC mode - headless operation
 		await runRpcMode(agent, sessionManager);
 	} else if (isInteractive) {
+		// Check for new version (don't block startup if it takes too long)
+		let newVersion: string | null = null;
+		try {
+			newVersion = await Promise.race([
+				checkForNewVersion(VERSION),
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)), // 1 second timeout
+			]);
+		} catch (e) {
+			// Ignore errors
+		}
+
 		// Check if we should show changelog (only in interactive mode, only for new sessions)
 		let changelogMarkdown: string | null = null;
 		if (!parsed.continue && !parsed.resume) {
-			const settingsManager = new SettingsManager();
 			const lastVersion = settingsManager.getLastChangelogVersion();
 
 			// Check if we need to show changelog
@@ -616,8 +893,29 @@ export async function main(args: string[]) {
 			}
 		}
 
+		// Resolve model scope if provided
+		let scopedModels: Model<Api>[] = [];
+		if (parsed.models && parsed.models.length > 0) {
+			scopedModels = await resolveModelScope(parsed.models);
+
+			if (scopedModels.length > 0) {
+				console.log(
+					chalk.dim(`Model scope: ${scopedModels.map((m) => m.id).join(", ")} ${chalk.gray("(Ctrl+P to cycle)")}`),
+				);
+			}
+		}
+
 		// No messages and not RPC - use TUI
-		await runInteractiveMode(agent, sessionManager, VERSION, changelogMarkdown);
+		await runInteractiveMode(
+			agent,
+			sessionManager,
+			settingsManager,
+			VERSION,
+			changelogMarkdown,
+			modelFallbackMessage,
+			newVersion,
+			scopedModels,
+		);
 	} else {
 		// CLI mode with messages
 		await runSingleShotMode(agent, sessionManager, parsed.messages, mode);
