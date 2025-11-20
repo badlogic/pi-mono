@@ -10,6 +10,7 @@ import {
 	ProcessTerminal,
 	Spacer,
 	Text,
+	TruncatedText,
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
@@ -26,6 +27,7 @@ import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { OAuthSelectorComponent } from "./oauth-selector.js";
+import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -37,6 +39,7 @@ import { UserMessageSelectorComponent } from "./user-message-selector.js";
 export class TuiRenderer {
 	private ui: TUI;
 	private chatContainer: Container;
+	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private editor: CustomEditor;
 	private editorContainer: Container; // Container to swap between editor and selector
@@ -53,6 +56,9 @@ export class TuiRenderer {
 	private changelogMarkdown: string | null = null;
 	private newVersion: string | null = null;
 
+	// Message queueing
+	private queuedMessages: string[] = [];
+
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
 
@@ -61,6 +67,9 @@ export class TuiRenderer {
 
 	// Thinking level selector
 	private thinkingSelector: ThinkingSelectorComponent | null = null;
+
+	// Queue mode selector
+	private queueModeSelector: QueueModeSelectorComponent | null = null;
 
 	// Model selector
 	private modelSelector: ModelSelectorComponent | null = null;
@@ -98,6 +107,7 @@ export class TuiRenderer {
 		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
+		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.editor = new CustomEditor();
 		this.editorContainer = new Container(); // Container to hold editor or selector
@@ -145,6 +155,11 @@ export class TuiRenderer {
 			description: "Logout from OAuth provider",
 		};
 
+		const queueCommand: SlashCommand = {
+			name: "queue",
+			description: "Select message queue mode (opens selector UI)",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
@@ -156,6 +171,7 @@ export class TuiRenderer {
 				branchCommand,
 				loginCommand,
 				logoutCommand,
+				queueCommand,
 			],
 			process.cwd(),
 		);
@@ -228,6 +244,7 @@ export class TuiRenderer {
 		}
 
 		this.ui.addChild(this.chatContainer);
+		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editorContainer); // Use container that can hold editor or selector
@@ -238,6 +255,26 @@ export class TuiRenderer {
 		this.editor.onEscape = () => {
 			// Intercept Escape key when processing
 			if (this.loadingAnimation && this.onInterruptCallback) {
+				// Get all queued messages
+				const queuedText = this.queuedMessages.join("\n\n");
+
+				// Get current editor text
+				const currentText = this.editor.getText();
+
+				// Combine: queued messages + current editor text
+				const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
+
+				// Put back in editor
+				this.editor.setText(combinedText);
+
+				// Clear queued messages
+				this.queuedMessages = [];
+				this.updatePendingMessagesDisplay();
+
+				// Clear agent's queue too
+				this.agent.clearMessageQueue();
+
+				// Abort
 				this.onInterruptCallback();
 			}
 		};
@@ -321,6 +358,13 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /queue command
+			if (text === "/queue") {
+				this.showQueueModeSelector();
+				this.editor.setText("");
+				return;
+			}
+
 			// Normal message submission - validate model and API key first
 			const currentModel = this.agent.state.model;
 			if (!currentModel) {
@@ -340,6 +384,27 @@ export class TuiRenderer {
 					`No API key found for ${currentModel.provider}.\n\n` +
 						`Set the appropriate environment variable or update ~/.pi/agent/models.json`,
 				);
+				return;
+			}
+
+			// Check if agent is currently streaming
+			if (this.agent.state.isStreaming) {
+				// Queue the message instead of submitting
+				this.queuedMessages.push(text);
+
+				// Queue in agent
+				await this.agent.queueMessage({
+					role: "user",
+					content: [{ type: "text", text }],
+					timestamp: Date.now(),
+				});
+
+				// Update pending messages display
+				this.updatePendingMessagesDisplay();
+
+				// Clear editor
+				this.editor.setText("");
+				this.ui.requestRender();
 				return;
 			}
 
@@ -365,7 +430,7 @@ export class TuiRenderer {
 		switch (event.type) {
 			case "agent_start":
 				// Show loading animation
-				this.editor.disableSubmit = true;
+				// Note: Don't disable submit - we handle queuing in onSubmit callback
 				// Stop old loader before clearing
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
@@ -378,6 +443,18 @@ export class TuiRenderer {
 
 			case "message_start":
 				if (event.message.role === "user") {
+					// Check if this is a queued message
+					const userMsg = event.message as any;
+					const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
+					const messageText = textBlocks.map((c: any) => c.text).join("");
+
+					const queuedIndex = this.queuedMessages.indexOf(messageText);
+					if (queuedIndex !== -1) {
+						// Remove from queued messages
+						this.queuedMessages.splice(queuedIndex, 1);
+						this.updatePendingMessagesDisplay();
+					}
+
 					// Show user message immediately and clear editor
 					this.addMessageToChat(event.message);
 					this.editor.setText("");
@@ -497,7 +574,7 @@ export class TuiRenderer {
 					this.streamingComponent = null;
 				}
 				this.pendingTools.clear();
-				this.editor.disableSubmit = false;
+				// Note: Don't need to re-enable submit - we never disable it
 				this.ui.requestRender();
 				break;
 		}
@@ -807,6 +884,48 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.thinkingSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showQueueModeSelector(): void {
+		// Create queue mode selector with current mode
+		this.queueModeSelector = new QueueModeSelectorComponent(
+			this.agent.getQueueMode(),
+			(mode) => {
+				// Apply the selected queue mode
+				this.agent.setQueueMode(mode);
+
+				// Save queue mode to settings
+				this.settingsManager.setQueueMode(mode);
+
+				// Show confirmation message with proper spacing
+				this.chatContainer.addChild(new Spacer(1));
+				const confirmText = new Text(chalk.dim(`Queue mode: ${mode}`), 1, 0);
+				this.chatContainer.addChild(confirmText);
+
+				// Hide selector and show editor again
+				this.hideQueueModeSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideQueueModeSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.queueModeSelector);
+		this.ui.setFocus(this.queueModeSelector.getSelectList());
+		this.ui.requestRender();
+	}
+
+	private hideQueueModeSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.queueModeSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 
@@ -1169,6 +1288,19 @@ export class TuiRenderer {
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1));
 		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.requestRender();
+	}
+
+	private updatePendingMessagesDisplay(): void {
+		this.pendingMessagesContainer.clear();
+
+		if (this.queuedMessages.length > 0) {
+			this.pendingMessagesContainer.addChild(new Spacer(1));
+
+			for (const message of this.queuedMessages) {
+				const queuedText = chalk.dim("Queued: " + message);
+				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
+			}
+		}
 	}
 
 	stop(): void {

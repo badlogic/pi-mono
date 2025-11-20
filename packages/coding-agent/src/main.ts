@@ -760,6 +760,7 @@ export async function main(args: string[]) {
 			thinkingLevel: "off",
 			tools: codingTools,
 		},
+		queueMode: settingsManager.getQueueMode(),
 		transport: new ProviderTransport({
 			// Dynamic API key lookup based on current model's provider
 			getApiKey: async () => {

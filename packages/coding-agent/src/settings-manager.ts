@@ -6,6 +6,7 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	queueMode?: "all" | "one-at-a-time";
 }
 
 export class SettingsManager {
@@ -76,6 +77,15 @@ export class SettingsManager {
 	setDefaultModelAndProvider(provider: string, modelId: string): void {
 		this.settings.defaultProvider = provider;
 		this.settings.defaultModel = modelId;
+		this.save();
+	}
+
+	getQueueMode(): "all" | "one-at-a-time" {
+		return this.settings.queueMode || "one-at-a-time";
+	}
+
+	setQueueMode(mode: "all" | "one-at-a-time"): void {
+		this.settings.queueMode = mode;
 		this.save();
 	}
 }

@@ -15,6 +15,7 @@ export { Markdown } from "./components/markdown.js";
 export { type SelectItem, SelectList } from "./components/select-list.js";
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
+export { TruncatedText } from "./components/truncated-text.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 export { type Component, Container, TUI } from "./tui.js";
