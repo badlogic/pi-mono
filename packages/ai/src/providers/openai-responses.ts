@@ -30,10 +30,194 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
 
+type RetryPolicy = {
+	maxAttempts: number;
+	initialDelayMs: number;
+	backoffFactor: number;
+};
+
+const AZURE_OPENAI_HOST_SUFFIX = ".openai.azure.com";
+
+const DEFAULT_RETRY_POLICY: RetryPolicy = {
+	maxAttempts: 1,
+	initialDelayMs: 0,
+	backoffFactor: 1,
+};
+
+const RETRYABLE_SUBSTRINGS = [
+	"unknown error",
+	"failed to fetch",
+	"network error",
+	"socket hang up",
+	"timed out",
+	"no response",
+	"connection reset",
+	"server error",
+];
+
+function getEffectiveBaseUrl(baseUrl?: string): string | undefined {
+	if (!baseUrl) {
+		return undefined;
+	}
+
+	try {
+		const parsed = new URL(baseUrl);
+		const proxiedUrl = parsed.searchParams.get("url");
+		return proxiedUrl ?? baseUrl;
+	} catch {
+		return baseUrl;
+	}
+}
+
+function isAzureOpenAIBaseUrl(baseUrl?: string): boolean {
+	const effectiveUrl = getEffectiveBaseUrl(baseUrl);
+	if (!effectiveUrl) {
+		return false;
+	}
+
+	try {
+		const hostname = new URL(effectiveUrl).hostname.toLowerCase();
+		return hostname.endsWith(AZURE_OPENAI_HOST_SUFFIX);
+	} catch {
+		return effectiveUrl.toLowerCase().includes(AZURE_OPENAI_HOST_SUFFIX);
+	}
+}
+
+function resolveOpenAIRetryPolicy<TApi extends Api>(
+	model: Model<TApi>,
+	retryOverride?: Partial<RetryPolicy>,
+): RetryPolicy {
+	if (retryOverride) {
+		return resolveRetryPolicy(retryOverride);
+	}
+
+	return resolveRetryPolicy(
+		isAzureOpenAIBaseUrl(model.baseUrl)
+			? { maxAttempts: 10, initialDelayMs: 10_000, backoffFactor: 1 }
+			: { maxAttempts: 1, initialDelayMs: 0, backoffFactor: 1 },
+	);
+}
+
+function resolveRetryPolicy(override?: Partial<RetryPolicy>): RetryPolicy {
+	if (!override) {
+		return DEFAULT_RETRY_POLICY;
+	}
+
+	return {
+		maxAttempts: Math.max(1, override.maxAttempts ?? DEFAULT_RETRY_POLICY.maxAttempts),
+		initialDelayMs: Math.max(0, override.initialDelayMs ?? DEFAULT_RETRY_POLICY.initialDelayMs),
+		backoffFactor: Math.max(1, override.backoffFactor ?? DEFAULT_RETRY_POLICY.backoffFactor),
+	};
+}
+
+function computeDelayMs(policy: RetryPolicy, attempt: number): number {
+	if (attempt <= 1) {
+		return policy.initialDelayMs;
+	}
+	return Math.round(policy.initialDelayMs * policy.backoffFactor ** (attempt - 1));
+}
+
+function isAbortError(error: unknown): boolean {
+	if (!error || typeof error !== "object") {
+		return false;
+	}
+	return (error as { name?: string }).name === "AbortError";
+}
+
+function isRetriableError(error: unknown): boolean {
+	if (!error || isAbortError(error)) {
+		return false;
+	}
+
+	if (error instanceof Error) {
+		const candidate = error as Error & {
+			status?: number;
+			statusCode?: number;
+			response?: { status?: number };
+			cause?: { status?: number } | Error;
+		};
+		const status =
+			candidate.status ??
+			candidate.statusCode ??
+			candidate.response?.status ??
+			(candidate.cause && typeof candidate.cause === "object"
+				? (candidate.cause as { status?: number }).status
+				: undefined);
+		if (typeof status === "number" && (status === 408 || status === 409 || status >= 500)) {
+			return true;
+		}
+
+		const message = candidate.message.toLowerCase();
+		if (RETRYABLE_SUBSTRINGS.some((token) => message.includes(token))) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+	if (ms <= 0) {
+		return;
+	}
+
+	await new Promise<void>((resolve, reject) => {
+		const timeout = setTimeout(() => {
+			cleanup();
+			resolve();
+		}, ms);
+
+		const cleanup = () => {
+			clearTimeout(timeout);
+			signal?.removeEventListener("abort", onAbort);
+		};
+
+		const onAbort = () => {
+			cleanup();
+			reject(new Error("Retry aborted"));
+		};
+
+		if (signal?.aborted) {
+			cleanup();
+			reject(new Error("Retry aborted"));
+			return;
+		}
+
+		signal?.addEventListener("abort", onAbort);
+	});
+}
+
+interface RetryDecisionParams {
+	error: unknown;
+	attempt: number;
+	policy: RetryPolicy;
+	hasStreamedContent: boolean;
+	signal?: AbortSignal;
+	force?: boolean;
+}
+
+function shouldRetryAttempt(params: RetryDecisionParams): boolean {
+	if (params.signal?.aborted) {
+		return false;
+	}
+	if (params.hasStreamedContent) {
+		return false;
+	}
+	const flagged = Boolean((params.error as { retriable?: boolean } | undefined)?.retriable);
+	if (flagged || params.force) {
+		return true;
+	}
+	if (params.attempt >= params.policy.maxAttempts) {
+		return false;
+	}
+	return isRetriableError(params.error);
+}
+
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	retry?: Partial<RetryPolicy>;
 }
 
 /**
@@ -45,40 +229,80 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	options?: OpenAIResponsesOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
+	const output = createAssistantMessage(model);
+	stream.push({ type: "start", partial: output });
 
-	// Start async processing
 	(async () => {
-		const output: AssistantMessage = {
-			role: "assistant",
-			content: [],
-			api: "openai-responses" as Api,
-			provider: model.provider,
-			model: model.id,
-			usage: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			},
-			stopReason: "stop",
-			timestamp: Date.now(),
-		};
+		const retryPolicy = resolveOpenAIRetryPolicy(model, options?.retry);
+		let attempt = 1;
 
-		try {
-			// Create OpenAI client
+		while (attempt <= retryPolicy.maxAttempts) {
+			const attemptState = { streamedContent: false };
+			try {
+				await processAttempt(attemptState);
+				return;
+			} catch (error) {
+				const canRetry = shouldRetryAttempt({
+					error,
+					attempt,
+					policy: retryPolicy,
+					hasStreamedContent: attemptState.streamedContent,
+					signal: options?.signal,
+				});
+
+				if (!canRetry) {
+					emitFailure(error);
+					return;
+				}
+
+				const nextAttempt = attempt + 1;
+				const displayAttempt = Math.min(retryPolicy.maxAttempts, Math.max(1, Math.ceil(nextAttempt)));
+				const delayMs = computeDelayMs(retryPolicy, attempt);
+				const delaySeconds = Math.max(1, Math.ceil(delayMs / 1000));
+				const reason = error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
+
+				stream.push({
+					type: "status",
+					message: `Retrying (${displayAttempt}/${retryPolicy.maxAttempts}) in ${delaySeconds}s after OpenAI Responses error: ${reason}`,
+				});
+
+				try {
+					await delay(delayMs, options?.signal);
+				} catch (delayError) {
+					emitFailure(delayError);
+					return;
+				}
+
+				attempt = nextAttempt;
+			}
+		}
+
+		function emitFailure(error: unknown) {
+			sanitizeBlocks(output);
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
+			stream.end();
+		}
+
+		async function processAttempt(attemptState: { streamedContent: boolean }) {
+			resetAssistantMessage(output);
+
 			const client = createClient(model, options?.apiKey);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.responses.create(params, { signal: options?.signal });
-			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
 			let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
+			const markStreamed = () => {
+				if (!attemptState.streamedContent) {
+					attemptState.streamedContent = true;
+				}
+			};
 
 			for await (const event of openaiStream) {
-				// Handle output item start
 				if (event.type === "response.output_item.added") {
 					const item = event.item;
 					if (item.type === "reasoning") {
@@ -103,9 +327,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						output.content.push(currentBlock);
 						stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 					}
-				}
-				// Handle reasoning summary deltas
-				else if (event.type === "response.reasoning_summary_part.added") {
+				} else if (event.type === "response.reasoning_summary_part.added") {
 					if (currentItem && currentItem.type === "reasoning") {
 						currentItem.summary = currentItem.summary || [];
 						currentItem.summary.push(event.part);
@@ -122,6 +344,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						if (lastPart) {
 							currentBlock.thinking += event.delta;
 							lastPart.text += event.delta;
+							markStreamed();
 							stream.push({
 								type: "thinking_delta",
 								contentIndex: blockIndex(),
@@ -130,9 +353,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							});
 						}
 					}
-				}
-				// Add a new line between summary parts (hack...)
-				else if (event.type === "response.reasoning_summary_part.done") {
+				} else if (event.type === "response.reasoning_summary_part.done") {
 					if (
 						currentItem &&
 						currentItem.type === "reasoning" &&
@@ -144,6 +365,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						if (lastPart) {
 							currentBlock.thinking += "\n\n";
 							lastPart.text += "\n\n";
+							markStreamed();
 							stream.push({
 								type: "thinking_delta",
 								contentIndex: blockIndex(),
@@ -152,9 +374,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							});
 						}
 					}
-				}
-				// Handle text output deltas
-				else if (event.type === "response.content_part.added") {
+				} else if (event.type === "response.content_part.added") {
 					if (currentItem && currentItem.type === "message") {
 						currentItem.content = currentItem.content || [];
 						currentItem.content.push(event.part);
@@ -165,6 +385,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						if (lastPart && lastPart.type === "output_text") {
 							currentBlock.text += event.delta;
 							lastPart.text += event.delta;
+							markStreamed();
 							stream.push({
 								type: "text_delta",
 								contentIndex: blockIndex(),
@@ -179,6 +400,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						if (lastPart && lastPart.type === "refusal") {
 							currentBlock.text += event.delta;
 							lastPart.refusal += event.delta;
+							markStreamed();
 							stream.push({
 								type: "text_delta",
 								contentIndex: blockIndex(),
@@ -187,9 +409,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							});
 						}
 					}
-				}
-				// Handle function call argument deltas
-				else if (event.type === "response.function_call_arguments.delta") {
+				} else if (event.type === "response.function_call_arguments.delta") {
 					if (
 						currentItem &&
 						currentItem.type === "function_call" &&
@@ -198,6 +418,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 					) {
 						currentBlock.partialJson += event.delta;
 						currentBlock.arguments = parseStreamingJson(currentBlock.partialJson);
+						markStreamed();
 						stream.push({
 							type: "toolcall_delta",
 							contentIndex: blockIndex(),
@@ -205,14 +426,13 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							partial: output,
 						});
 					}
-				}
-				// Handle output item completion
-				else if (event.type === "response.output_item.done") {
+				} else if (event.type === "response.output_item.done") {
 					const item = event.item;
 
 					if (item.type === "reasoning" && currentBlock && currentBlock.type === "thinking") {
 						currentBlock.thinking = item.summary?.map((s) => s.text).join("\n\n") || "";
 						currentBlock.thinkingSignature = JSON.stringify(item);
+						markStreamed();
 						stream.push({
 							type: "thinking_end",
 							contentIndex: blockIndex(),
@@ -223,6 +443,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 					} else if (item.type === "message" && currentBlock && currentBlock.type === "text") {
 						currentBlock.text = item.content.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join("");
 						currentBlock.textSignature = item.id;
+						markStreamed();
 						stream.push({
 							type: "text_end",
 							contentIndex: blockIndex(),
@@ -238,7 +459,6 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							arguments: JSON.parse(item.arguments),
 						};
 
-						// Validate tool arguments if tool definition is available
 						if (context.tools) {
 							const tool = context.tools.find((t) => t.name === toolCall.name);
 							if (tool) {
@@ -246,11 +466,10 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							}
 						}
 
+						markStreamed();
 						stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 					}
-				}
-				// Handle completion
-				else if (event.type === "response.completed") {
+				} else if (event.type === "response.completed") {
 					const response = event.response;
 					if (response?.usage) {
 						output.usage = {
@@ -262,14 +481,14 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						};
 					}
 					calculateCost(model, output.usage);
-					// Map status to stop reason
 					output.stopReason = mapStopReason(response?.status);
-					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
+					if (
+						output.stopReason === "stop" &&
+						output.content.some((block: TextContent | ThinkingContent | ToolCall) => block.type === "toolCall")
+					) {
 						output.stopReason = "toolUse";
 					}
-				}
-				// Handle errors
-				else if (event.type === "error") {
+				} else if (event.type === "error") {
 					throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 				} else if (event.type === "response.failed") {
 					throw new Error("Unknown error");
@@ -286,17 +505,52 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
-		} catch (error) {
-			for (const block of output.content) delete (block as any).index;
-			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-			stream.push({ type: "error", reason: output.stopReason, error: output });
-			stream.end();
 		}
 	})();
 
 	return stream;
 };
+
+function createAssistantMessage(model: Model<"openai-responses">): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	} satisfies AssistantMessage;
+}
+
+function resetAssistantMessage(message: AssistantMessage): void {
+	message.content.length = 0;
+	message.errorMessage = undefined;
+	message.stopReason = "stop";
+	message.timestamp = Date.now();
+	message.usage = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	};
+}
+
+function sanitizeBlocks(message: AssistantMessage): void {
+	for (const block of message.content) {
+		if (Object.hasOwn(block, "index")) {
+			delete (block as { index?: number }).index;
+		}
+	}
+}
 
 function createClient(model: Model<"openai-responses">, apiKey?: string) {
 	if (!apiKey) {

@@ -48,6 +48,8 @@ export type AgentEvent =
 	| { type: "message_update"; assistantMessageEvent: AssistantMessageEvent; message: AssistantMessage }
 	// Emitted when a user, assistant or tool result message is complete
 	| { type: "message_end"; message: Message }
+	// Emitted when the underlying stream handler has status updates (e.g., retrying)
+	| { type: "status"; message: string }
 	// Emitted when a tool execution starts
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
 	// Emitted when a tool execution completes

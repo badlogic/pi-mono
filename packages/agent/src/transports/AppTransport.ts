@@ -11,9 +11,7 @@ import type {
 	ToolCall,
 	UserMessage,
 } from "@mariozechner/pi-ai";
-import { agentLoop } from "@mariozechner/pi-ai";
-import { AssistantMessageEventStream } from "@mariozechner/pi-ai/dist/utils/event-stream.js";
-import { parseStreamingJson } from "@mariozechner/pi-ai/dist/utils/json-parse.js";
+import { AssistantMessageEventStream, agentLoop, parseStreamingJson } from "@mariozechner/pi-ai";
 import type { ProxyAssistantMessageEvent } from "./proxy-types.js";
 import type { AgentRunConfig, AgentTransport } from "./types.js";
 

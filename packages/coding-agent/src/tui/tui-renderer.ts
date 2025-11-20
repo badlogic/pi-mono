@@ -51,6 +51,8 @@ export class TuiRenderer {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | null = null;
+	private loadingMessage: string = "Working... (esc to interrupt)";
+	private statusText: string | null = null;
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
@@ -435,9 +437,9 @@ export class TuiRenderer {
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 				}
-				this.statusContainer.clear();
-				this.loadingAnimation = new Loader(this.ui, "Working... (esc to interrupt)");
-				this.statusContainer.addChild(this.loadingAnimation);
+				this.loadingAnimation = null;
+				this.statusText = null;
+				this.mountLoader();
 				this.ui.requestRender();
 				break;
 
@@ -460,6 +462,10 @@ export class TuiRenderer {
 					this.editor.setText("");
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					if (this.statusText && this.loadingAnimation) {
+						this.statusText = null;
+						this.loadingAnimation.setMessage(this.composeLoaderMessage());
+					}
 					// Create assistant component for streaming
 					this.streamingComponent = new AssistantMessageComponent();
 					this.chatContainer.addChild(this.streamingComponent);
@@ -473,6 +479,10 @@ export class TuiRenderer {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					const assistantMsg = event.message as AssistantMessage;
 					this.streamingComponent.updateContent(assistantMsg);
+					if (this.statusText && this.loadingAnimation) {
+						this.statusText = null;
+						this.loadingAnimation.setMessage(this.composeLoaderMessage());
+					}
 
 					// Create tool execution components as soon as we see tool calls
 					for (const content of assistantMsg.content) {
@@ -527,6 +537,13 @@ export class TuiRenderer {
 				this.ui.requestRender();
 				break;
 
+			case "status": {
+				this.statusText = String(event.message);
+				this.mountLoader();
+				this.ui.requestRender();
+				break;
+			}
+
 			case "tool_execution_start": {
 				// Component should already exist from message_update, but create if missing
 				if (!this.pendingTools.has(event.toolCallId)) {
@@ -551,9 +568,9 @@ export class TuiRenderer {
 									isError: event.isError,
 								}
 							: {
-									content: event.result.content,
-									details: event.result.details,
-									isError: event.isError,
+									content: (event.result as any).content,
+									details: (event.result as any).details,
+									isError: (event.result as any).isError,
 								};
 					component.updateResult(resultData);
 					this.pendingTools.delete(event.toolCallId);
@@ -569,6 +586,7 @@ export class TuiRenderer {
 					this.loadingAnimation = null;
 					this.statusContainer.clear();
 				}
+				this.statusText = null;
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = null;
@@ -599,6 +617,20 @@ export class TuiRenderer {
 			this.chatContainer.addChild(assistantComponent);
 		}
 		// Note: tool calls and results are now handled via tool_execution_start/end events
+	}
+
+	private composeLoaderMessage(): string {
+		return this.statusText ? `${this.loadingMessage} — ${this.statusText}` : this.loadingMessage;
+	}
+
+	private mountLoader(): void {
+		if (!this.loadingAnimation) {
+			this.statusContainer.clear();
+			this.loadingAnimation = new Loader(this.ui, this.composeLoaderMessage());
+			this.statusContainer.addChild(this.loadingAnimation);
+		} else {
+			this.loadingAnimation.setMessage(this.composeLoaderMessage());
+		}
 	}
 
 	renderInitialMessages(state: AgentState): void {
@@ -1307,7 +1339,9 @@ export class TuiRenderer {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = null;
+			this.statusContainer.clear();
 		}
+		this.statusText = null;
 		if (this.isInitialized) {
 			this.ui.stop();
 			this.isInitialized = false;

@@ -6,4 +6,6 @@ export * from "./providers/openai-completions.js";
 export * from "./providers/openai-responses.js";
 export * from "./stream.js";
 export * from "./types.js";
+export { AssistantMessageEventStream } from "./utils/event-stream.js";
+export { parseStreamingJson } from "./utils/json-parse.js";
 export * from "./utils/typebox-helpers.js";
