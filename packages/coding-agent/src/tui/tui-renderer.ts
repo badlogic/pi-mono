@@ -21,6 +21,7 @@ import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { setTheme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -28,6 +29,7 @@ import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
+import { ThemeSelectorComponent } from "./theme-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -70,6 +72,9 @@ export class TuiRenderer {
 
 	// Queue mode selector
 	private queueModeSelector: QueueModeSelectorComponent | null = null;
+
+	// Theme selector
+	private themeSelector: ThemeSelectorComponent | null = null;
 
 	// Model selector
 	private modelSelector: ModelSelectorComponent | null = null;
@@ -160,11 +165,17 @@ export class TuiRenderer {
 			description: "Select message queue mode (opens selector UI)",
 		};
 
+		const themeCommand: SlashCommand = {
+			name: "theme",
+			description: "Select color theme (opens selector UI)",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
 				thinkingCommand,
 				modelCommand,
+				themeCommand,
 				exportCommand,
 				sessionCommand,
 				changelogCommand,
@@ -361,6 +372,13 @@ export class TuiRenderer {
 			// Check for /queue command
 			if (text === "/queue") {
 				this.showQueueModeSelector();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /theme command
+			if (text === "/theme") {
+				this.showThemeSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -926,6 +944,51 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.queueModeSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showThemeSelector(): void {
+		// Get current theme from settings
+		const currentTheme = this.settingsManager.getTheme() || "dark";
+
+		// Create theme selector
+		this.themeSelector = new ThemeSelectorComponent(
+			currentTheme,
+			(themeName) => {
+				// Apply the selected theme
+				setTheme(themeName);
+
+				// Save theme to settings
+				this.settingsManager.setTheme(themeName);
+
+				// Show confirmation message with proper spacing
+				this.chatContainer.addChild(new Spacer(1));
+				const confirmText = new Text(chalk.dim(`Theme: ${themeName}`), 1, 0);
+				this.chatContainer.addChild(confirmText);
+
+				// Hide selector and show editor again
+				this.hideThemeSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideThemeSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.themeSelector);
+		this.ui.setFocus(this.themeSelector.getSelectList());
+		this.ui.requestRender();
+	}
+
+	private hideThemeSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.themeSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 

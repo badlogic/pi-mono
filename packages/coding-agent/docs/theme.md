@@ -79,7 +79,7 @@ Themes are defined in JSON files with the following structure:
 
 ```json
 {
-  "$schema": "https://pi.mariozechner.at/theme-schema.json",
+  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
   "name": "my-theme",
   "vars": {
     "blue": "#0066cc",
@@ -194,7 +194,7 @@ Custom themes are loaded from `~/.pi/agent/themes/*.json`.
 3. **Define all colors:**
    ```json
    {
-     "$schema": "https://pi.mariozechner.at/theme-schema.json",
+     "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
      "name": "my-theme",
      "vars": {
        "primary": "#00aaff",
@@ -370,13 +370,13 @@ Error loading theme 'my-theme':
 
 For editor support, the JSON schema is available at:
 ```
-https://pi.mariozechner.at/theme-schema.json
+https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json
 ```
 
 Add to your theme file for auto-completion and validation:
 ```json
 {
-  "$schema": "https://pi.mariozechner.at/theme-schema.json",
+  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
   ...
 }
 ```

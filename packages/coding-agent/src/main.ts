@@ -10,6 +10,7 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js"
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
+import { initTheme } from "./theme/theme.js";
 import { codingTools } from "./tools/index.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
@@ -563,6 +564,11 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	// Initialize theme (before any TUI rendering)
+	const settingsManager = new SettingsManager();
+	const themeName = settingsManager.getTheme();
+	initTheme(themeName);
+
 	// Setup session manager
 	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
 
@@ -581,9 +587,6 @@ export async function main(args: string[]) {
 		// Set the selected session as the active session
 		sessionManager.setSessionFile(selectedSession);
 	}
-
-	// Settings manager
-	const settingsManager = new SettingsManager();
 
 	// Determine initial model using priority system:
 	// 1. CLI args (--provider and --model)

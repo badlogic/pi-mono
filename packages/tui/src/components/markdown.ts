@@ -25,22 +25,46 @@ export interface DefaultTextStyle {
 	underline?: boolean;
 }
 
+/**
+ * Theme functions for markdown elements.
+ * Each function takes text and returns styled text with ANSI codes.
+ */
+export interface MarkdownTheme {
+	heading: (text: string) => string;
+	link: (text: string) => string;
+	code: (text: string) => string;
+	codeBlock: (text: string) => string;
+	codeBlockBorder: (text: string) => string;
+	quote: (text: string) => string;
+	quoteBorder: (text: string) => string;
+	hr: (text: string) => string;
+	listBullet: (text: string) => string;
+}
+
 export class Markdown implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
 	private paddingY: number; // Top/bottom padding
 	private defaultTextStyle?: DefaultTextStyle;
+	private theme?: MarkdownTheme;
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(text: string = "", paddingX: number = 1, paddingY: number = 1, defaultTextStyle?: DefaultTextStyle) {
+	constructor(
+		text: string = "",
+		paddingX: number = 1,
+		paddingY: number = 1,
+		defaultTextStyle?: DefaultTextStyle,
+		theme?: MarkdownTheme,
+	) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
 		this.defaultTextStyle = defaultTextStyle;
+		this.theme = theme;
 	}
 
 	setText(text: string): void {
