@@ -1,6 +1,8 @@
-import chalk from "chalk";
+import { Chalk } from "chalk";
 import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
+
+const colorChalk = new Chalk({ level: 3 });
 
 /**
  * Text component - displays multi-line text with word wrapping
@@ -30,7 +32,6 @@ export class Text implements Component {
 
 	setText(text: string): void {
 		this.text = text;
-		// Invalidate cache when text changes
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -38,7 +39,6 @@ export class Text implements Component {
 
 	setCustomBgRgb(customBgRgb?: { r: number; g: number; b: number }): void {
 		this.customBgRgb = customBgRgb;
-		// Invalidate cache when color changes
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -50,113 +50,53 @@ export class Text implements Component {
 			return this.cachedLines;
 		}
 
-		// Calculate available width for content (subtract horizontal padding)
-		const contentWidth = Math.max(1, width - this.paddingX * 2);
-
 		// Don't render anything if there's no actual text
 		if (!this.text || this.text.trim() === "") {
 			const result: string[] = [];
-			// Update cache
 			this.cachedText = this.text;
 			this.cachedWidth = width;
 			this.cachedLines = result;
 			return result;
 		}
 
-		// Replace tabs with 3 spaces for consistent rendering
+		// Replace tabs with 3 spaces
 		const normalizedText = this.text.replace(/\t/g, "   ");
 
-		const lines: string[] = [];
-		const textLines = normalizedText.split("\n");
+		// Calculate content width (subtract left/right margins)
+		const contentWidth = Math.max(1, width - this.paddingX * 2);
 
-		for (const line of textLines) {
-			// Measure visible length (strip ANSI codes)
-			const visibleLineLength = visibleWidth(line);
+		// Wrap text (this preserves ANSI codes but does NOT pad)
+		const wrappedLines = wrapTextWithAnsi(normalizedText, contentWidth);
 
-			if (visibleLineLength <= contentWidth) {
-				lines.push(line);
+		// Add margins and background to each line
+		const leftMargin = " ".repeat(this.paddingX);
+		const rightMargin = " ".repeat(this.paddingX);
+		const contentLines: string[] = [];
+
+		for (const line of wrappedLines) {
+			// Add margins
+			const lineWithMargins = leftMargin + line + rightMargin;
+
+			// Apply background if specified (this also pads to full width)
+			if (this.customBgRgb) {
+				contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgRgb));
 			} else {
-				// Word wrap
-				const words = line.split(" ");
-				let currentLine = "";
-
-				for (const word of words) {
-					const currentVisible = visibleWidth(currentLine);
-					const wordVisible = visibleWidth(word);
-
-					// If word is too long, truncate it
-					let finalWord = word;
-					if (wordVisible > contentWidth) {
-						// Truncate word to fit
-						let truncated = "";
-						for (const char of word) {
-							if (visibleWidth(truncated + char) > contentWidth) {
-								break;
-							}
-							truncated += char;
-						}
-						finalWord = truncated;
-					}
-
-					if (currentVisible === 0) {
-						currentLine = finalWord;
-					} else if (currentVisible + 1 + visibleWidth(finalWord) <= contentWidth) {
-						currentLine += " " + finalWord;
-					} else {
-						lines.push(currentLine);
-						currentLine = finalWord;
-					}
-				}
-
-				if (currentLine.length > 0) {
-					lines.push(currentLine);
-				}
+				// No background - just pad to width with spaces
+				const visibleLen = visibleWidth(lineWithMargins);
+				const paddingNeeded = Math.max(0, width - visibleLen);
+				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
 			}
 		}
 
-		// Add padding to each line
-		const leftPad = " ".repeat(this.paddingX);
-		const paddedLines: string[] = [];
-
-		for (const line of lines) {
-			// Calculate visible length (strip ANSI codes)
-			const visibleLength = visibleWidth(line);
-			// Right padding to fill to width (accounting for left padding and content)
-			const rightPadLength = Math.max(0, width - this.paddingX - visibleLength);
-			const rightPad = " ".repeat(rightPadLength);
-			let paddedLine = leftPad + line + rightPad;
-
-			// Apply background color if specified
-			if (this.customBgRgb) {
-				paddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(paddedLine);
-			}
-
-			paddedLines.push(paddedLine);
-		}
-
-		// Add top padding (empty lines)
+		// Add top/bottom padding (empty lines)
 		const emptyLine = " ".repeat(width);
-		const topPadding: string[] = [];
+		const emptyLines: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			let emptyPaddedLine = emptyLine;
-			if (this.customBgRgb) {
-				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
-			}
-			topPadding.push(emptyPaddedLine);
+			const line = this.customBgRgb ? applyBackgroundToLine(emptyLine, width, this.customBgRgb) : emptyLine;
+			emptyLines.push(line);
 		}
 
-		// Add bottom padding (empty lines)
-		const bottomPadding: string[] = [];
-		for (let i = 0; i < this.paddingY; i++) {
-			let emptyPaddedLine = emptyLine;
-			if (this.customBgRgb) {
-				emptyPaddedLine = chalk.bgRgb(this.customBgRgb.r, this.customBgRgb.g, this.customBgRgb.b)(emptyPaddedLine);
-			}
-			bottomPadding.push(emptyPaddedLine);
-		}
-
-		// Combine top padding, content, and bottom padding
-		const result = [...topPadding, ...paddedLines, ...bottomPadding];
+		const result = [...emptyLines, ...contentLines, ...emptyLines];
 
 		// Update cache
 		this.cachedText = this.text;

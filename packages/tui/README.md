@@ -115,7 +115,7 @@ editor.setAutocompleteProvider(provider);
 
 **Key Bindings:**
 - `Enter` - Submit
-- `Shift+Enter` or `Ctrl+Enter` - New line
+- `Shift+Enter`, `Ctrl+Enter`, or `Alt+Enter` - New line (terminal-dependent, Alt+Enter most reliable)
 - `Tab` - Autocomplete
 - `Ctrl+K` - Delete line
 - `Ctrl+A` / `Ctrl+E` - Line start/end

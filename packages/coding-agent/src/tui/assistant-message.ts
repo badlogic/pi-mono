@@ -38,12 +38,16 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), undefined, undefined, undefined, 1, 0));
+				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Thinking traces in dark gray italic
-				// Use Markdown component because it preserves ANSI codes across wrapped lines
-				const thinkingText = chalk.gray.italic(content.thinking);
-				this.contentContainer.addChild(new Markdown(thinkingText, undefined, undefined, undefined, 1, 0));
+				// Use Markdown component with default text style for consistent styling
+				this.contentContainer.addChild(
+					new Markdown(content.thinking.trim(), 1, 0, {
+						color: "gray",
+						italic: true,
+					}),
+				);
 				this.contentContainer.addChild(new Spacer(1));
 			}
 		}
@@ -56,7 +60,8 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Text(chalk.red("\nAborted"), 1, 0));
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
-				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`)));
+				this.contentContainer.addChild(new Spacer(1));
+				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`), 1, 0));
 			}
 		}
 	}

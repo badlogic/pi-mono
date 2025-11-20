@@ -32,4 +32,21 @@ export interface SandboxRuntimeProvider {
 	 * This will be appended to tool descriptions dynamically so the LLM knows what's available.
 	 */
 	getDescription(): string;
+
+	/**
+	 * Optional lifecycle callback invoked when sandbox execution starts.
+	 * Providers can use this to track abort signals for cancellation of async operations.
+	 *
+	 * @param sandboxId - The unique identifier for this sandbox execution
+	 * @param signal - Optional AbortSignal that will be triggered if execution is cancelled
+	 */
+	onExecutionStart?(sandboxId: string, signal?: AbortSignal): void;
+
+	/**
+	 * Optional lifecycle callback invoked when sandbox execution ends (success, error, or abort).
+	 * Providers can use this to clean up any resources associated with the sandbox.
+	 *
+	 * @param sandboxId - The unique identifier for this sandbox execution
+	 */
+	onExecutionEnd?(sandboxId: string): void;
 }

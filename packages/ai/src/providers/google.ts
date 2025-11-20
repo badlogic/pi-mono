@@ -162,6 +162,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								id: toolCallId,
 								name: part.functionCall.name || "",
 								arguments: part.functionCall.args as Record<string, any>,
+								...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 							};
 
 							// Validate tool arguments if tool definition is available
@@ -361,13 +362,17 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 					};
 					parts.push(thinkingPart);
 				} else if (block.type === "toolCall") {
-					parts.push({
+					const part: Part = {
 						functionCall: {
 							id: block.id,
 							name: block.name,
 							args: block.arguments,
 						},
-					});
+					};
+					if (block.thoughtSignature) {
+						part.thoughtSignature = block.thoughtSignature;
+					}
+					parts.push(part);
 				}
 			}
 

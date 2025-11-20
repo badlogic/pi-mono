@@ -78,7 +78,7 @@ editor.onSubmit = (value: string) => {
 		isResponding = true;
 		editor.disableSubmit = true;
 
-		const userMessage = new Markdown(value, undefined, undefined, { r: 52, g: 53, b: 65 });
+		const userMessage = new Markdown(value, 1, 1, { bgColor: "#343541" });
 
 		const children = tui.children;
 		children.splice(children.length - 1, 0, userMessage);

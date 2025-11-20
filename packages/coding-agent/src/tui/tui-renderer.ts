@@ -1,9 +1,10 @@
-import type { Agent, AgentEvent, AgentState } from "@mariozechner/pi-agent";
-import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
+import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
+import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	Container,
+	Input,
 	Loader,
 	Markdown,
 	ProcessTerminal,
@@ -12,14 +13,19 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
+import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
+import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
+import type { SettingsManager } from "../settings-manager.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
+import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
 import { UserMessageComponent } from "./user-message.js";
@@ -37,6 +43,7 @@ export class TuiRenderer {
 	private footer: FooterComponent;
 	private agent: Agent;
 	private sessionManager: SessionManager;
+	private settingsManager: SettingsManager;
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
@@ -44,6 +51,7 @@ export class TuiRenderer {
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
+	private newVersion: string | null = null;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
@@ -60,14 +68,31 @@ export class TuiRenderer {
 	// User message selector (for branching)
 	private userMessageSelector: UserMessageSelectorComponent | null = null;
 
+	// OAuth selector
+	private oauthSelector: any | null = null;
+
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
 
-	constructor(agent: Agent, sessionManager: SessionManager, version: string, changelogMarkdown: string | null = null) {
+	// Model scope for quick cycling
+	private scopedModels: Model<any>[] = [];
+
+	constructor(
+		agent: Agent,
+		sessionManager: SessionManager,
+		settingsManager: SettingsManager,
+		version: string,
+		changelogMarkdown: string | null = null,
+		newVersion: string | null = null,
+		scopedModels: Model<any>[] = [],
+	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
+		this.settingsManager = settingsManager;
 		this.version = version;
+		this.newVersion = newVersion;
 		this.changelogMarkdown = changelogMarkdown;
+		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.statusContainer = new Container();
@@ -107,9 +132,28 @@ export class TuiRenderer {
 			description: "Create a new branch from a previous message",
 		};
 
+		const loginCommand: SlashCommand = {
+			name: "login",
+			description: "Login with OAuth provider",
+		};
+
+		const logoutCommand: SlashCommand = {
+			name: "logout",
+			description: "Logout from OAuth provider",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[thinkingCommand, modelCommand, exportCommand, sessionCommand, changelogCommand, branchCommand],
+			[
+				thinkingCommand,
+				modelCommand,
+				exportCommand,
+				sessionCommand,
+				changelogCommand,
+				branchCommand,
+				loginCommand,
+				logoutCommand,
+			],
 			process.cwd(),
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
@@ -133,6 +177,12 @@ export class TuiRenderer {
 			chalk.dim("ctrl+k") +
 			chalk.gray(" to delete line") +
 			"\n" +
+			chalk.dim("shift+tab") +
+			chalk.gray(" to cycle thinking") +
+			"\n" +
+			chalk.dim("ctrl+p") +
+			chalk.gray(" to cycle models") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -145,12 +195,28 @@ export class TuiRenderer {
 		this.ui.addChild(header);
 		this.ui.addChild(new Spacer(1));
 
+		// Add new version notification if available
+		if (this.newVersion) {
+			this.ui.addChild(new DynamicBorder(chalk.yellow));
+			this.ui.addChild(
+				new Text(
+					chalk.bold.yellow("Update Available") +
+						"\n" +
+						chalk.gray(`New version ${this.newVersion} is available. Run: `) +
+						chalk.cyan("npm install -g @mariozechner/pi-coding-agent"),
+					1,
+					0,
+				),
+			);
+			this.ui.addChild(new DynamicBorder(chalk.yellow));
+		}
+
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
 			this.ui.addChild(new DynamicBorder(chalk.cyan));
 			this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
 			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), undefined, undefined, undefined, 1, 0));
+			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0));
 			this.ui.addChild(new Spacer(1));
 			this.ui.addChild(new DynamicBorder(chalk.cyan));
 		}
@@ -174,8 +240,16 @@ export class TuiRenderer {
 			this.handleCtrlC();
 		};
 
+		this.editor.onShiftTab = () => {
+			this.cycleThinkingLevel();
+		};
+
+		this.editor.onCtrlP = () => {
+			this.cycleModel();
+		};
+
 		// Handle editor submission
-		this.editor.onSubmit = (text: string) => {
+		this.editor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 
@@ -223,6 +297,43 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /login command
+			if (text === "/login") {
+				this.showOAuthSelector("login");
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /logout command
+			if (text === "/logout") {
+				this.showOAuthSelector("logout");
+				this.editor.setText("");
+				return;
+			}
+
+			// Normal message submission - validate model and API key first
+			const currentModel = this.agent.state.model;
+			if (!currentModel) {
+				this.showError(
+					"No model selected.\n\n" +
+						"Set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n" +
+						"or create ~/.pi/agent/models.json\n\n" +
+						"Then use /model to select a model.",
+				);
+				return;
+			}
+
+			// Validate API key (async)
+			const apiKey = await getApiKeyForModel(currentModel);
+			if (!apiKey) {
+				this.showError(
+					`No API key found for ${currentModel.provider}.\n\n` +
+						`Set the appropriate environment variable or update ~/.pi/agent/models.json`,
+				);
+				return;
+			}
+
+			// All good, proceed with submission
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -344,7 +455,20 @@ export class TuiRenderer {
 				// Update the existing tool component with the result
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult(event.result);
+					// Convert result to the format expected by updateResult
+					const resultData =
+						typeof event.result === "string"
+							? {
+									content: [{ type: "text" as const, text: event.result }],
+									details: undefined,
+									isError: event.isError,
+								}
+							: {
+									content: event.result.content,
+									details: event.result.details,
+									isError: event.isError,
+								};
+					component.updateResult(resultData);
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -397,6 +521,9 @@ export class TuiRenderer {
 
 		// Update footer with loaded state
 		this.footer.updateState(state);
+
+		// Update editor border color based on current thinking level
+		this.updateEditorBorderColor();
 
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
@@ -486,6 +613,116 @@ export class TuiRenderer {
 		}
 	}
 
+	private getThinkingBorderColor(level: ThinkingLevel): (str: string) => string {
+		// More thinking = more color (gray → dim colors → bright colors)
+		switch (level) {
+			case "off":
+				return chalk.gray;
+			case "minimal":
+				return chalk.dim.blue;
+			case "low":
+				return chalk.blue;
+			case "medium":
+				return chalk.cyan;
+			case "high":
+				return chalk.magenta;
+			default:
+				return chalk.gray;
+		}
+	}
+
+	private updateEditorBorderColor(): void {
+		const level = this.agent.state.thinkingLevel || "off";
+		const color = this.getThinkingBorderColor(level);
+		this.editor.borderColor = color;
+		this.ui.requestRender();
+	}
+
+	private cycleThinkingLevel(): void {
+		// Only cycle if model supports thinking
+		if (!this.agent.state.model?.reasoning) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("Current model does not support thinking"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+		const currentLevel = this.agent.state.thinkingLevel || "off";
+		const currentIndex = levels.indexOf(currentLevel);
+		const nextIndex = (currentIndex + 1) % levels.length;
+		const nextLevel = levels[nextIndex];
+
+		// Apply the new thinking level
+		this.agent.setThinkingLevel(nextLevel);
+
+		// Save thinking level change to session
+		this.sessionManager.saveThinkingLevelChange(nextLevel);
+
+		// Update border color
+		this.updateEditorBorderColor();
+
+		// Show brief notification
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async cycleModel(): Promise<void> {
+		// Use scoped models if available, otherwise all available models
+		let modelsToUse: Model<any>[];
+		if (this.scopedModels.length > 0) {
+			modelsToUse = this.scopedModels;
+		} else {
+			const { models: availableModels, error } = await getAvailableModels();
+			if (error) {
+				this.showError(`Failed to load models: ${error}`);
+				return;
+			}
+			modelsToUse = availableModels;
+		}
+
+		if (modelsToUse.length === 0) {
+			this.showError("No models available to cycle");
+			return;
+		}
+
+		if (modelsToUse.length === 1) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("Only one model in scope"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const currentModel = this.agent.state.model;
+		let currentIndex = modelsToUse.findIndex(
+			(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
+		);
+
+		// If current model not in scope, start from first
+		if (currentIndex === -1) {
+			currentIndex = 0;
+		}
+
+		const nextIndex = (currentIndex + 1) % modelsToUse.length;
+		const nextModel = modelsToUse[nextIndex];
+
+		// Validate API key
+		const apiKey = await getApiKeyForModel(nextModel);
+		if (!apiKey) {
+			this.showError(`No API key for ${nextModel.provider}/${nextModel.id}`);
+			return;
+		}
+
+		// Switch model
+		this.agent.setModel(nextModel);
+
+		// Show notification
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.dim(`Switched to ${nextModel.name || nextModel.id}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	clearEditor(): void {
 		this.editor.setText("");
 		this.ui.requestRender();
@@ -495,6 +732,13 @@ export class TuiRenderer {
 		// Show error message in the chat
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(chalk.red(`Error: ${errorMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	showWarning(warningMessage: string): void {
+		// Show warning message in the chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.yellow(`Warning: ${warningMessage}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -508,6 +752,9 @@ export class TuiRenderer {
 
 				// Save thinking level change to session
 				this.sessionManager.saveThinkingLevelChange(level);
+
+				// Update border color
+				this.updateEditorBorderColor();
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
@@ -543,7 +790,9 @@ export class TuiRenderer {
 	private showModelSelector(): void {
 		// Create model selector with current model
 		this.modelSelector = new ModelSelectorComponent(
+			this.ui,
 			this.agent.state.model,
+			this.settingsManager,
 			(model) => {
 				// Apply the selected model
 				this.agent.setModel(model);
@@ -666,6 +915,121 @@ export class TuiRenderer {
 		this.ui.setFocus(this.editor);
 	}
 
+	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
+		// For logout mode, filter to only show logged-in providers
+		let providersToShow: string[] = [];
+		if (mode === "logout") {
+			const loggedInProviders = listOAuthProviders();
+			if (loggedInProviders.length === 0) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(chalk.dim("No OAuth providers logged in. Use /login first."), 1, 0));
+				this.ui.requestRender();
+				return;
+			}
+			providersToShow = loggedInProviders;
+		}
+
+		// Create OAuth selector
+		this.oauthSelector = new OAuthSelectorComponent(
+			mode,
+			async (providerId: any) => {
+				// Hide selector first
+				this.hideOAuthSelector();
+
+				if (mode === "login") {
+					// Handle login
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(chalk.dim(`Logging in to ${providerId}...`), 1, 0));
+					this.ui.requestRender();
+
+					try {
+						await login(
+							providerId,
+							(url: string) => {
+								// Show auth URL to user
+								this.chatContainer.addChild(new Spacer(1));
+								this.chatContainer.addChild(new Text(chalk.cyan("Opening browser to:"), 1, 0));
+								this.chatContainer.addChild(new Text(chalk.cyan(url), 1, 0));
+								this.chatContainer.addChild(new Spacer(1));
+								this.chatContainer.addChild(
+									new Text(chalk.yellow("Paste the authorization code below:"), 1, 0),
+								);
+								this.ui.requestRender();
+
+								// Open URL in browser
+								const openCmd =
+									process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+								exec(`${openCmd} "${url}"`);
+							},
+							async () => {
+								// Prompt for code with a simple Input
+								return new Promise<string>((resolve) => {
+									const codeInput = new Input();
+									codeInput.onSubmit = () => {
+										const code = codeInput.getValue();
+										// Restore editor
+										this.editorContainer.clear();
+										this.editorContainer.addChild(this.editor);
+										this.ui.setFocus(this.editor);
+										resolve(code);
+									};
+
+									this.editorContainer.clear();
+									this.editorContainer.addChild(codeInput);
+									this.ui.setFocus(codeInput);
+									this.ui.requestRender();
+								});
+							},
+						);
+
+						// Success
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(new Text(chalk.green(`✓ Successfully logged in to ${providerId}`), 1, 0));
+						this.chatContainer.addChild(new Text(chalk.dim(`Tokens saved to ~/.pi/agent/oauth.json`), 1, 0));
+						this.ui.requestRender();
+					} catch (error: any) {
+						this.showError(`Login failed: ${error.message}`);
+					}
+				} else {
+					// Handle logout
+					try {
+						await logout(providerId);
+
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(
+							new Text(chalk.green(`✓ Successfully logged out of ${providerId}`), 1, 0),
+						);
+						this.chatContainer.addChild(
+							new Text(chalk.dim(`Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
+						);
+						this.ui.requestRender();
+					} catch (error: any) {
+						this.showError(`Logout failed: ${error.message}`);
+					}
+				}
+			},
+			() => {
+				// Cancel - just hide the selector
+				this.hideOAuthSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.oauthSelector);
+		this.ui.setFocus(this.oauthSelector);
+		this.ui.requestRender();
+	}
+
+	private hideOAuthSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.oauthSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
 	private handleExportCommand(text: string): void {
 		// Parse optional filename from command: /export [filename]
 		const parts = text.split(/\s+/);
@@ -779,7 +1143,7 @@ export class TuiRenderer {
 		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
 		this.ui.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown));
+		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1));
 		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
 		this.ui.requestRender();
 	}

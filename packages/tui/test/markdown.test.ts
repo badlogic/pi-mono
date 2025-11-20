@@ -10,9 +10,6 @@ describe("Markdown component", () => {
   - Nested 1.1
   - Nested 1.2
 - Item 2`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -38,9 +35,6 @@ describe("Markdown component", () => {
   - Level 2
     - Level 3
       - Level 4`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -61,9 +55,6 @@ describe("Markdown component", () => {
    1. Nested first
    2. Nested second
 2. Second`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -84,9 +75,6 @@ describe("Markdown component", () => {
    - Another nested
 2. Second ordered
    - More nested`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -107,9 +95,6 @@ describe("Markdown component", () => {
 | --- | --- |
 | Alice | 30 |
 | Bob | 25 |`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -133,9 +118,6 @@ describe("Markdown component", () => {
 | :--- | :---: | ---: |
 | A | B | C |
 | Long text | Middle | End |`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -157,9 +139,6 @@ describe("Markdown component", () => {
 | --- | --- |
 | A | This is a much longer cell content |
 | B | Short |`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -187,9 +166,6 @@ describe("Markdown component", () => {
 | Col1 | Col2 |
 | --- | --- |
 | A | B |`,
-				undefined,
-				undefined,
-				undefined,
 				0,
 				0,
 			);
@@ -205,6 +181,86 @@ describe("Markdown component", () => {
 			// Check table
 			assert.ok(plainLines.some((line) => line.includes("Col1")));
 			assert.ok(plainLines.some((line) => line.includes("│")));
+		});
+	});
+
+	describe("Pre-styled text (thinking traces)", () => {
+		it("should preserve gray italic styling after inline code", () => {
+			// This replicates how thinking content is rendered in assistant-message.ts
+			const markdown = new Markdown("This is thinking with `inline code` and more text after", 1, 0, {
+				color: "gray",
+				italic: true,
+			});
+
+			const lines = markdown.render(80);
+			const joinedOutput = lines.join("\n");
+
+			// Should contain the inline code block
+			assert.ok(joinedOutput.includes("inline code"));
+
+			// The output should have ANSI codes for gray (90) and italic (3)
+			assert.ok(joinedOutput.includes("\x1b[90m"), "Should have gray color code");
+			assert.ok(joinedOutput.includes("\x1b[3m"), "Should have italic code");
+
+			// Verify that after the inline code (cyan text), we reapply gray italic
+			const hasCyan = joinedOutput.includes("\x1b[36m"); // cyan
+			assert.ok(hasCyan, "Should have cyan for inline code");
+		});
+
+		it("should preserve gray italic styling after bold text", () => {
+			const markdown = new Markdown("This is thinking with **bold text** and more after", 1, 0, {
+				color: "gray",
+				italic: true,
+			});
+
+			const lines = markdown.render(80);
+			const joinedOutput = lines.join("\n");
+
+			// Should contain bold text
+			assert.ok(joinedOutput.includes("bold text"));
+
+			// The output should have ANSI codes for gray (90) and italic (3)
+			assert.ok(joinedOutput.includes("\x1b[90m"), "Should have gray color code");
+			assert.ok(joinedOutput.includes("\x1b[3m"), "Should have italic code");
+
+			// Should have bold codes (1 or 22 for bold on/off)
+			assert.ok(joinedOutput.includes("\x1b[1m"), "Should have bold code");
+		});
+	});
+
+	describe("HTML-like tags in text", () => {
+		it("should render content with HTML-like tags as text", () => {
+			// When the model emits something like <thinking>content</thinking> in regular text,
+			// marked might treat it as HTML and hide the content
+			const markdown = new Markdown(
+				"This is text with <thinking>hidden content</thinking> that should be visible",
+				0,
+				0,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			// The content inside the tags should be visible
+			assert.ok(
+				joinedPlain.includes("hidden content") || joinedPlain.includes("<thinking>"),
+				"Should render HTML-like tags or their content as text, not hide them",
+			);
+		});
+
+		it("should render HTML tags in code blocks correctly", () => {
+			const markdown = new Markdown("```html\n<div>Some HTML</div>\n```", 0, 0);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join("\n");
+
+			// HTML in code blocks should be visible
+			assert.ok(
+				joinedPlain.includes("<div>") && joinedPlain.includes("</div>"),
+				"Should render HTML in code blocks",
+			);
 		});
 	});
 });

@@ -164,6 +164,9 @@ async function streamAssistantResponse(
 				} else {
 					context.messages.push(finalMessage);
 				}
+				if (!addedPartial) {
+					stream.push({ type: "message_start", message: { ...finalMessage } });
+				}
 				stream.push({ type: "message_end", message: finalMessage });
 				return finalMessage;
 			}

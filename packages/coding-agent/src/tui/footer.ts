@@ -49,7 +49,7 @@ export class FooterComponent {
 				lastAssistantMessage.usage.cacheRead +
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
-		const contextWindow = this.state.model.contextWindow;
+		const contextWindow = this.state.model?.contextWindow || 0;
 		const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "0.0";
 
 		// Format token counts (similar to web-ui)
@@ -85,30 +85,42 @@ export class FooterComponent {
 
 		const statsLeft = statsParts.join(" ");
 
-		// Add model name on the right side
-		let modelName = this.state.model.id;
+		// Add model name on the right side, plus thinking level if model supports it
+		const modelName = this.state.model?.id || "no-model";
+
+		// Add thinking level hint if model supports reasoning and thinking is enabled
+		let rightSide = modelName;
+		if (this.state.model?.reasoning) {
+			const thinkingLevel = this.state.thinkingLevel || "off";
+			if (thinkingLevel !== "off") {
+				rightSide = `${modelName} • ${thinkingLevel}`;
+			}
+		}
+
 		const statsLeftWidth = visibleWidth(statsLeft);
-		const modelWidth = visibleWidth(modelName);
+		const rightSideWidth = visibleWidth(rightSide);
 
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
-		const totalNeeded = statsLeftWidth + minPadding + modelWidth;
+		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
 
 		let statsLine: string;
 		if (totalNeeded <= width) {
 			// Both fit - add padding to right-align model
-			const padding = " ".repeat(width - statsLeftWidth - modelWidth);
-			statsLine = statsLeft + padding + modelName;
+			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
+			statsLine = statsLeft + padding + rightSide;
 		} else {
-			// Need to truncate model name
-			const availableForModel = width - statsLeftWidth - minPadding;
-			if (availableForModel > 3) {
-				// Truncate model name to fit
-				modelName = modelName.substring(0, availableForModel);
-				const padding = " ".repeat(width - statsLeftWidth - visibleWidth(modelName));
-				statsLine = statsLeft + padding + modelName;
+			// Need to truncate right side
+			const availableForRight = width - statsLeftWidth - minPadding;
+			if (availableForRight > 3) {
+				// Truncate to fit (strip ANSI codes for length calculation, then truncate raw string)
+				const plainRightSide = rightSide.replace(/\x1b\[[0-9;]*m/g, "");
+				const truncatedPlain = plainRightSide.substring(0, availableForRight);
+				// For simplicity, just use plain truncated version (loses color, but fits)
+				const padding = " ".repeat(width - statsLeftWidth - truncatedPlain.length);
+				statsLine = statsLeft + padding + truncatedPlain;
 			} else {
-				// Not enough space for model name at all
+				// Not enough space for right side at all
 				statsLine = statsLeft;
 			}
 		}
