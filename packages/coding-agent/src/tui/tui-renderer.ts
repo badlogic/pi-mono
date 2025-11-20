@@ -1,4 +1,4 @@
-import type { Agent, AgentEvent, AgentState } from "@mariozechner/pi-agent";
+import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -172,6 +172,9 @@ export class TuiRenderer {
 			chalk.dim("ctrl+k") +
 			chalk.gray(" to delete line") +
 			"\n" +
+			chalk.dim("shift+tab") +
+			chalk.gray(" to cycle thinking") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -227,6 +230,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlC = () => {
 			this.handleCtrlC();
+		};
+
+		this.editor.onShiftTab = () => {
+			this.cycleThinkingLevel();
 		};
 
 		// Handle editor submission
@@ -503,6 +510,9 @@ export class TuiRenderer {
 		// Update footer with loaded state
 		this.footer.updateState(state);
 
+		// Update editor border color based on current thinking level
+		this.updateEditorBorderColor();
+
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
@@ -591,6 +601,61 @@ export class TuiRenderer {
 		}
 	}
 
+	private getThinkingBorderColor(level: ThinkingLevel): (str: string) => string {
+		// More thinking = more color (gray → dim colors → bright colors)
+		switch (level) {
+			case "off":
+				return chalk.gray;
+			case "minimal":
+				return chalk.dim.blue;
+			case "low":
+				return chalk.blue;
+			case "medium":
+				return chalk.cyan;
+			case "high":
+				return chalk.magenta;
+			default:
+				return chalk.gray;
+		}
+	}
+
+	private updateEditorBorderColor(): void {
+		const level = this.agent.state.thinkingLevel || "off";
+		const color = this.getThinkingBorderColor(level);
+		this.editor.borderColor = color;
+		this.ui.requestRender();
+	}
+
+	private cycleThinkingLevel(): void {
+		// Only cycle if model supports thinking
+		if (!this.agent.state.model?.reasoning) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(chalk.dim("Current model does not support thinking"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+		const currentLevel = this.agent.state.thinkingLevel || "off";
+		const currentIndex = levels.indexOf(currentLevel);
+		const nextIndex = (currentIndex + 1) % levels.length;
+		const nextLevel = levels[nextIndex];
+
+		// Apply the new thinking level
+		this.agent.setThinkingLevel(nextLevel);
+
+		// Save thinking level change to session
+		this.sessionManager.saveThinkingLevelChange(nextLevel);
+
+		// Update border color
+		this.updateEditorBorderColor();
+
+		// Show brief notification
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	clearEditor(): void {
 		this.editor.setText("");
 		this.ui.requestRender();
@@ -620,6 +685,9 @@ export class TuiRenderer {
 
 				// Save thinking level change to session
 				this.sessionManager.saveThinkingLevelChange(level);
+
+				// Update border color
+				this.updateEditorBorderColor();
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
