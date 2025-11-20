@@ -126,7 +126,8 @@ async function handleToolWithTextAndImageResult<TApi extends Api>(model: Model<T
 		messages: [
 			{
 				role: "user",
-				content: "Use the get_circle_with_description tool and tell me what you learned.",
+				content:
+					"Use the get_circle_with_description tool and tell me what you learned. Also say what color the shape is.",
 				timestamp: Date.now(),
 			},
 		],
