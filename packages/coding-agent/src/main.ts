@@ -139,10 +139,16 @@ ${chalk.bold("Examples:")}
   pi --models claude-sonnet,claude-haiku,gpt-4o
 
 ${chalk.bold("Environment Variables:")}
-  GEMINI_API_KEY       - Google Gemini API key
-  OPENAI_API_KEY       - OpenAI API key
-  ANTHROPIC_API_KEY    - Anthropic API key
-  CODING_AGENT_DIR     - Session storage directory (default: ~/.coding-agent)
+  ANTHROPIC_API_KEY       - Anthropic Claude API key
+  ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
+  OPENAI_API_KEY          - OpenAI GPT API key
+  GEMINI_API_KEY          - Google Gemini API key
+  GROQ_API_KEY            - Groq API key
+  CEREBRAS_API_KEY        - Cerebras API key
+  XAI_API_KEY             - xAI Grok API key
+  OPENROUTER_API_KEY      - OpenRouter API key
+  ZAI_API_KEY             - ZAI API key
+  PI_CODING_AGENT_DIR     - Session storage directory (default: ~/.pi/agent)
 
 ${chalk.bold("Available Tools:")}
   read   - Read file contents
@@ -281,7 +287,7 @@ function loadProjectContextFiles(): Array<{ path: string; content: string }> {
 
 	// 1. Load global context from ~/.pi/agent/
 	const homeDir = homedir();
-	const globalContextDir = resolve(process.env.CODING_AGENT_DIR || join(homeDir, ".pi/agent/"));
+	const globalContextDir = resolve(process.env.PI_CODING_AGENT_DIR || join(homeDir, ".pi/agent/"));
 	const globalContext = loadContextFileFromDir(globalContextDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);

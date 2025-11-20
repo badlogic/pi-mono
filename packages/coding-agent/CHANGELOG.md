@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.29] - 2025-11-20
+
+### Improved
+
+- **Read Tool Display**: When the `read` tool is called with offset/limit parameters, the tool execution now displays the line range in a compact format (e.g., `read src/main.ts:100-200` for offset=100, limit=100).
+
 ## [0.7.28] - 2025-11-20
 
 ### Added

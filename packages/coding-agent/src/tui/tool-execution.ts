@@ -219,7 +219,17 @@ export class ToolExecutionComponent extends Container {
 			}
 		} else if (this.toolName === "read") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
-			text = chalk.bold("read") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
+			const offset = this.args?.offset;
+			const limit = this.args?.limit;
+
+			// Build path display with offset/limit suffix
+			let pathDisplay = path ? chalk.cyan(path) : chalk.dim("...");
+			if (offset !== undefined) {
+				const endLine = limit !== undefined ? offset + limit : "";
+				pathDisplay += chalk.dim(`:${offset}${endLine ? `-${endLine}` : ""}`);
+			}
+
+			text = chalk.bold("read") + " " + pathDisplay;
 
 			if (this.result) {
 				const output = this.getTextOutput();
