@@ -55,6 +55,8 @@ export interface AgentOptions {
 	transport: AgentTransport;
 	// Transform app messages to LLM-compatible messages before sending to transport
 	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
+	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
+	queueMode?: "all" | "one-at-a-time";
 }
 
 export class Agent {
@@ -74,11 +76,13 @@ export class Agent {
 	private transport: AgentTransport;
 	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
+	private queueMode: "all" | "one-at-a-time";
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
 		this.transport = opts.transport;
 		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
+		this.queueMode = opts.queueMode || "one-at-a-time";
 	}
 
 	get state(): AgentState {
@@ -103,6 +107,14 @@ export class Agent {
 		this._state.thinkingLevel = l;
 	}
 
+	setQueueMode(mode: "all" | "one-at-a-time") {
+		this.queueMode = mode;
+	}
+
+	getQueueMode(): "all" | "one-at-a-time" {
+		return this.queueMode;
+	}
+
 	setTools(t: typeof this._state.tools) {
 		this._state.tools = t;
 	}
@@ -122,6 +134,10 @@ export class Agent {
 			original: m,
 			llm: transformed[0], // undefined if filtered out
 		});
+	}
+
+	clearMessageQueue() {
+		this.messageQueue = [];
 	}
 
 	clearMessages() {
@@ -179,10 +195,21 @@ export class Agent {
 			model,
 			reasoning,
 			getQueuedMessages: async <T>() => {
-				// Return queued messages (they'll be added to state via message_end event)
-				const queued = this.messageQueue.slice();
-				this.messageQueue = [];
-				return queued as QueuedMessage<T>[];
+				// Return queued messages based on queue mode
+				if (this.queueMode === "one-at-a-time") {
+					// Return only first message
+					if (this.messageQueue.length > 0) {
+						const first = this.messageQueue[0];
+						this.messageQueue = this.messageQueue.slice(1);
+						return [first] as QueuedMessage<T>[];
+					}
+					return [];
+				} else {
+					// Return all queued messages at once
+					const queued = this.messageQueue.slice();
+					this.messageQueue = [];
+					return queued as QueuedMessage<T>[];
+				}
 			},
 		};
 

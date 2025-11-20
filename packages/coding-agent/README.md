@@ -298,6 +298,14 @@ The selector only displays models for which API keys are configured in your envi
 
 Adjust thinking/reasoning level for supported models (Claude Sonnet 4, GPT-5, Gemini 2.5). Opens an interactive selector where you can use arrow keys to navigate, Enter to select, or Escape to cancel.
 
+### /queue
+
+Select message queue mode. Opens an interactive selector where you can choose between:
+- **one-at-a-time** (default): Process queued messages one by one. When you submit messages while the agent is processing, they're queued and sent individually after each agent response completes.
+- **all**: Process all queued messages at once. All queued messages are injected into the context together before the next agent response.
+
+The queue mode setting is saved and persists across sessions.
+
 ### /export [filename]
 
 Export the current session to a self-contained HTML file:
@@ -384,6 +392,31 @@ Drag files from your OS file explorer (Finder on macOS, Explorer on Windows) dir
 ### Multi-line Paste
 
 Paste multiple lines of text (e.g., code snippets, logs) and they'll be automatically coalesced into a compact `[paste #123 <N> lines]` reference in the editor. The full content is still sent to the model.
+
+### Message Queuing
+
+You can submit multiple messages while the agent is processing without waiting for responses. Messages are queued and processed based on your queue mode setting:
+
+**One-at-a-time mode (default):**
+- Each queued message is processed sequentially with its own response
+- Example: Queue "task 1", "task 2", "task 3" → agent completes task 1 → processes task 2 → completes task 2 → processes task 3
+- Recommended for most use cases
+
+**All mode:**
+- All queued messages are sent to the model at once in a single context
+- Example: Queue "task 1", "task 2", "task 3" → agent receives all three together → responds considering all tasks
+- Useful when tasks should be considered together
+
+**Visual feedback:**
+- Queued messages appear below the chat with "Queued: <message text>"
+- Messages disappear from the queue as they're processed
+
+**Abort and restore:**
+- Press **Escape** while streaming to abort the current operation
+- All queued messages (plus any text in the editor) are restored to the editor
+- Allows you to modify or remove queued messages before resubmitting
+
+Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settings.json`.
 
 ### Keyboard Shortcuts
 

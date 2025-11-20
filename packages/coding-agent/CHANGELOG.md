@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.28] - 2025-11-20
+
+### Added
+
+- **Message Queuing**: You can now send multiple messages while the agent is processing without waiting for the previous response to complete. Messages submitted during streaming are queued and processed based on your queue mode setting. Queued messages are shown in a pending area below the chat. Press Escape to abort and restore all queued messages to the editor. Use `/queue` to select between "one-at-a-time" (process queued messages sequentially, recommended) or "all" (process all queued messages at once). The queue mode setting is saved and persists across sessions. ([#15](https://github.com/badlogic/pi-mono/issues/15))
+
 ## [0.7.27] - 2025-11-20
 
 ### Fixed
