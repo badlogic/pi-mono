@@ -332,11 +332,15 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 - **Ctrl+K**: Delete to end of line (at line end: merge with next line)
 - **Ctrl+C**: Clear editor (first press) / Exit pi (second press)
 - **Tab**: Path completion
+- **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Enter**: Send message
 - **Shift+Enter**: Insert new line (multi-line input)
-- **Arrow keys**: Move cursor
+- **Backspace**: Delete character backwards
+- **Delete** (or **Fn+Backspace**): Delete character forwards
+- **Arrow keys**: Move cursor (Up/Down/Left/Right)
 - **Ctrl+A** / **Home** / **Cmd+Left** (macOS): Jump to start of line
 - **Ctrl+E** / **End** / **Cmd+Right** (macOS): Jump to end of line
+- **Escape**: Cancel autocomplete (when autocomplete is active)
 
 ## Project Context Files
 
