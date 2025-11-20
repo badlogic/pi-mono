@@ -101,10 +101,10 @@ function parseArgs(args: string[]): Args {
 }
 
 function printHelp() {
-	console.log(`${chalk.bold("coding-agent")} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold("pi")} - AI coding assistant with read, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
-  coding-agent [options] [messages...]
+  pi [options] [messages...]
 
 ${chalk.bold("Options:")}
   --provider <name>       Provider name (default: google)
@@ -121,22 +121,22 @@ ${chalk.bold("Options:")}
 
 ${chalk.bold("Examples:")}
   # Interactive mode (no messages = interactive TUI)
-  coding-agent
+  pi
 
   # Single message
-  coding-agent "List all .ts files in src/"
+  pi "List all .ts files in src/"
 
   # Multiple messages
-  coding-agent "Read package.json" "What dependencies do we have?"
+  pi "Read package.json" "What dependencies do we have?"
 
   # Continue previous session
-  coding-agent --continue "What did we discuss?"
+  pi --continue "What did we discuss?"
 
   # Use different model
-  coding-agent --provider openai --model gpt-4o-mini "Help me refactor this code"
+  pi --provider openai --model gpt-4o-mini "Help me refactor this code"
 
   # Limit model cycling to specific models
-  coding-agent --models claude-sonnet,claude-haiku,gpt-4o
+  pi --models claude-sonnet,claude-haiku,gpt-4o
 
 ${chalk.bold("Environment Variables:")}
   GEMINI_API_KEY       - Google Gemini API key
