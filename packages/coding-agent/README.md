@@ -4,6 +4,30 @@ A radically simple and opinionated coding agent with multi-model support (includ
 
 Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the "modern" Windows Terminal).
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API Keys](#api-keys)
+- [OAuth Authentication (Optional)](#oauth-authentication-optional)
+- [Custom Models and Providers](#custom-models-and-providers)
+- [Slash Commands](#slash-commands)
+- [Editor Features](#editor-features)
+- [Project Context Files](#project-context-files)
+- [Image Support](#image-support)
+- [Session Management](#session-management)
+- [CLI Options](#cli-options)
+- [Tools](#tools)
+- [Usage](#usage)
+- [Security (YOLO by default)](#security-yolo-by-default)
+- [Sub-Agents](#sub-agents)
+- [To-Dos](#to-dos)
+- [Planning](#planning)
+- [Background Bash](#background-bash)
+- [Planned Features](#planned-features)
+- [License](#license)
+- [See Also](#see-also)
+
 ## Installation
 
 ```bash
