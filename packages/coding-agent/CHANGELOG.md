@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.27] - 2025-11-20
+
+### Fixed
+
+- **Slash Command Submission**: Fixed issue where slash commands required two Enter presses to execute. Now pressing Enter on a slash command autocomplete suggestion immediately submits the command, while Tab still applies the completion for adding arguments. ([#30](https://github.com/badlogic/pi-mono/issues/30))
+- **Slash Command Autocomplete**: Fixed issue where typing a typo then correcting it would not show autocomplete suggestions. Autocomplete now re-triggers when typing or backspacing in a slash command context. ([#29](https://github.com/badlogic/pi-mono/issues/29))
+
 ## [0.7.26] - 2025-11-20
 
 ### Added
