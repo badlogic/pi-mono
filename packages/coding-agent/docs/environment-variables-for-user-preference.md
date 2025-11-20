@@ -18,7 +18,7 @@ Variables
 Behavior and validation
 
 - The renderer first checks a component-level `previewLines` value (when provided by the caller). If present, that value takes precedence.
-- If no component-level value is set, the renderer looks for the tool-specific environment variable (for example `PI_BASH_PREVIEW_LINES`). If that is not set, it falls back to `PI_TOOL_PREVIEW_LINES`.
+- If no component-level value is set, the renderer looks for the tool-specific environment variable (for example `PI_BASH_PREVIEW_LINES`).
 - If an environment variable is undefined, null, or an empty string, the renderer ignores it and uses the appropriate default.
 - Only integer values strictly greater than `0` and less than `Number.MAX_SAFE_INTEGER` are accepted from environment variables. Non-numeric values, `0`, negative numbers, or values >= `Number.MAX_SAFE_INTEGER` are ignored and the default is used instead.
 
@@ -28,12 +28,6 @@ Set the bash preview lines for the current session:
 
 ```bash
 export PI_BASH_PREVIEW_LINES=20
-```
-
-Set a global default (applies when tool-specific variable is not provided):
-
-```bash
-export PI_TOOL_PREVIEW_LINES=8
 ```
 
 Persist these in your shell config (`~/.bashrc`, `~/.zshrc`, etc.) to keep them across sessions.
