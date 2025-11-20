@@ -11,7 +11,6 @@ export class SelectList implements Component {
 	private items: SelectItem[] = [];
 	private filteredItems: SelectItem[] = [];
 	private selectedIndex: number = 0;
-	private filter: string = "";
 	private maxVisible: number = 5;
 
 	public onSelect?: (item: SelectItem) => void;
@@ -24,7 +23,6 @@ export class SelectList implements Component {
 	}
 
 	setFilter(filter: string): void {
-		this.filter = filter;
 		this.filteredItems = this.items.filter((item) => item.value.toLowerCase().startsWith(filter.toLowerCase()));
 		// Reset selection when filter changes
 		this.selectedIndex = 0;
