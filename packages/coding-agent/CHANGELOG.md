@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.25] - 2025-11-20
+
 ### Added
 
 - **Model Cycling**: Press `Ctrl+P` to quickly cycle through models. Use `--models` CLI argument to scope to specific models (e.g., `--models claude-sonnet,gpt-4o`). Supports pattern matching and smart version selection (prefers aliases over dated versions). ([#37](https://github.com/badlogic/pi-mono/pull/37) by [@fightbulc](https://github.com/fightbulc))
