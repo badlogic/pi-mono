@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Thinking Level Cycling**: Press `Shift+Tab` to cycle through thinking levels (off → minimal → low → medium → high) for reasoning-capable models. Editor border color changes to indicate current level (gray → blue → cyan → magenta).
+
 ## [0.7.23] - 2025-11-20
 
 ### Added
