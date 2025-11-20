@@ -260,7 +260,12 @@ function createClient(model: Model<"openai-completions">, apiKey?: string) {
 		}
 		apiKey = process.env.OPENAI_API_KEY;
 	}
-	return new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
+	return new OpenAI({
+		apiKey,
+		baseURL: model.baseUrl,
+		dangerouslyAllowBrowser: true,
+		defaultHeaders: model.headers,
+	});
 }
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
@@ -285,7 +290,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 
 	if (options?.maxTokens) {
 		// Mistral/Chutes uses max_tokens instead of max_completion_tokens
-		iif (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
+		if (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
 			(params as any).max_tokens = options?.maxTokens;
 		} else {
 			params.max_completion_tokens = options?.maxTokens;

@@ -307,7 +307,12 @@ function createClient(model: Model<"openai-responses">, apiKey?: string) {
 		}
 		apiKey = process.env.OPENAI_API_KEY;
 	}
-	return new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true });
+	return new OpenAI({
+		apiKey,
+		baseURL: model.baseUrl,
+		dangerouslyAllowBrowser: true,
+		defaultHeaders: model.headers,
+	});
 }
 
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {

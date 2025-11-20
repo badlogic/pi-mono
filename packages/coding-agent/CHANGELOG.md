@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Custom Headers**: Added support for custom HTTP headers in `models.json` configuration. Headers can be specified at both provider and model level, with model-level headers overriding provider-level ones. This enables bypassing Cloudflare bot detection and other proxy requirements. ([#39](https://github.com/badlogic/pi-mono/issues/39))
+
+### Fixed
+
+- **Chutes AI Provider**: Fixed 400 errors when using Chutes AI provider. Added compatibility fixes for `store` field exclusion, `max_tokens` parameter usage, and system prompt role handling. ([#42](https://github.com/badlogic/pi-mono/pull/42) by [@butelo](https://github.com/butelo))
+- **Mistral/Chutes Syntax Error**: Fixed syntax error in merged PR that used `iif` instead of `if`.
+
 ## [0.7.25] - 2025-11-20
 
 ### Added

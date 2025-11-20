@@ -31,6 +31,7 @@ const ModelDefinitionSchema = Type.Object({
 	}),
 	contextWindow: Type.Number(),
 	maxTokens: Type.Number(),
+	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 });
 
 const ProviderConfigSchema = Type.Object({
@@ -44,6 +45,7 @@ const ProviderConfigSchema = Type.Object({
 			Type.Literal("google-generative-ai"),
 		]),
 	),
+	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	models: Type.Array(ModelDefinitionSchema),
 });
 
@@ -174,6 +176,10 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 				continue;
 			}
 
+			// Merge headers: provider headers are base, model headers override
+			const headers =
+				providerConfig.headers || modelDef.headers ? { ...providerConfig.headers, ...modelDef.headers } : undefined;
+
 			models.push({
 				id: modelDef.id,
 				name: modelDef.name,
@@ -185,6 +191,7 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 				cost: modelDef.cost,
 				contextWindow: modelDef.contextWindow,
 				maxTokens: modelDef.maxTokens,
+				headers,
 			});
 		}
 	}

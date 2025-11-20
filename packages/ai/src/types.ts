@@ -168,4 +168,5 @@ export interface Model<TApi extends Api> {
 	};
 	contextWindow: number;
 	maxTokens: number;
+	headers?: Record<string, string>;
 }

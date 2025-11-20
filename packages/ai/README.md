@@ -576,6 +576,24 @@ const ollamaModel: Model<'openai-completions'> = {
   maxTokens: 32000
 };
 
+// Example: Custom endpoint with headers (bypassing Cloudflare bot detection)
+const proxyModel: Model<'anthropic-messages'> = {
+  id: 'claude-sonnet-4',
+  name: 'Claude Sonnet 4 (Proxied)',
+  api: 'anthropic-messages',
+  provider: 'custom-proxy',
+  baseUrl: 'https://proxy.example.com/v1',
+  reasoning: true,
+  input: ['text', 'image'],
+  cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  contextWindow: 200000,
+  maxTokens: 8192,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    'X-Custom-Auth': 'bearer-token-here'
+  }
+};
+
 // Use the custom model
 const response = await stream(ollamaModel, context, {
   apiKey: 'dummy' // Ollama doesn't need a real key

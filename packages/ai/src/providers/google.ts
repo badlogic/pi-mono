@@ -63,7 +63,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 		};
 
 		try {
-			const client = createClient(options?.apiKey);
+			const client = createClient(model, options?.apiKey);
 			const params = buildParams(model, context, options);
 			const googleStream = await client.models.generateContentStream(params);
 
@@ -252,7 +252,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 	return stream;
 };
 
-function createClient(apiKey?: string): GoogleGenAI {
+function createClient(model: Model<"google-generative-ai">, apiKey?: string): GoogleGenAI {
 	if (!apiKey) {
 		if (!process.env.GEMINI_API_KEY) {
 			throw new Error(
@@ -261,7 +261,10 @@ function createClient(apiKey?: string): GoogleGenAI {
 		}
 		apiKey = process.env.GEMINI_API_KEY;
 	}
-	return new GoogleGenAI({ apiKey });
+	return new GoogleGenAI({
+		apiKey,
+		httpOptions: model.headers ? { headers: model.headers } : undefined,
+	});
 }
 
 function buildParams(
