@@ -195,8 +195,8 @@ export class Editor implements Component {
 					this.autocompleteList.handleInput(data);
 				}
 
-				// If Tab or Enter was pressed, apply the selection
-				if (data === "\t" || data === "\r") {
+				// If Tab was pressed, always apply the selection
+				if (data === "\t") {
 					const selected = this.autocompleteList.getSelectedItem();
 					if (selected && this.autocompleteProvider) {
 						const result = this.autocompleteProvider.applyCompletion(
@@ -218,8 +218,35 @@ export class Editor implements Component {
 						}
 					}
 					return;
-				} else {
-					// For other keys, handle normally within autocomplete
+				}
+
+				// If Enter was pressed on a slash command, cancel autocomplete and let it submit
+				if (data === "\r" && this.autocompletePrefix.startsWith("/")) {
+					this.cancelAutocomplete();
+					// Don't return - fall through to submission logic
+				}
+				// If Enter was pressed on a file path, apply completion
+				else if (data === "\r") {
+					const selected = this.autocompleteList.getSelectedItem();
+					if (selected && this.autocompleteProvider) {
+						const result = this.autocompleteProvider.applyCompletion(
+							this.state.lines,
+							this.state.cursorLine,
+							this.state.cursorCol,
+							selected,
+							this.autocompletePrefix,
+						);
+
+						this.state.lines = result.lines;
+						this.state.cursorLine = result.cursorLine;
+						this.state.cursorCol = result.cursorCol;
+
+						this.cancelAutocomplete();
+
+						if (this.onChange) {
+							this.onChange(this.getText());
+						}
+					}
 					return;
 				}
 			}
@@ -455,8 +482,8 @@ export class Editor implements Component {
 			else if (/[a-zA-Z0-9]/.test(char)) {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-				// Check if we're in a slash command with a space (i.e., typing arguments)
-				if (textBeforeCursor.startsWith("/") && textBeforeCursor.includes(" ")) {
+				// Check if we're in a slash command (with or without space for arguments)
+				if (textBeforeCursor.trimStart().startsWith("/")) {
 					this.tryTriggerAutocomplete();
 				}
 			}
@@ -598,9 +625,16 @@ export class Editor implements Component {
 			this.onChange(this.getText());
 		}
 
-		// Update autocomplete after backspace
+		// Update or re-trigger autocomplete after backspace
 		if (this.isAutocompleting) {
 			this.updateAutocomplete();
+		} else {
+			// If autocomplete was cancelled (no matches), re-trigger if we're in slash command context
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+			if (textBeforeCursor.trimStart().startsWith("/")) {
+				this.tryTriggerAutocomplete();
+			}
 		}
 	}
 

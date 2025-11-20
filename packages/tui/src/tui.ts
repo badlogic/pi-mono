@@ -150,8 +150,6 @@ export class TUI extends Container {
 
 		// Find first and last changed lines
 		let firstChanged = -1;
-		let lastChanged = -1;
-
 		const maxLines = Math.max(newLines.length, this.previousLines.length);
 		for (let i = 0; i < maxLines; i++) {
 			const oldLine = i < this.previousLines.length ? this.previousLines[i] : "";
@@ -161,7 +159,6 @@ export class TUI extends Container {
 				if (firstChanged === -1) {
 					firstChanged = i;
 				}
-				lastChanged = i;
 			}
 		}
 
