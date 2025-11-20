@@ -206,6 +206,44 @@ This allows both secure env var usage and literal keys for local servers.
 
 This is useful when a provider supports multiple API standards through the same base URL.
 
+### Custom Headers
+
+You can add custom HTTP headers to bypass Cloudflare bot detection, add authentication tokens, or meet other proxy requirements:
+
+```json
+{
+  "providers": {
+    "custom-proxy": {
+      "baseUrl": "https://proxy.example.com/v1",
+      "apiKey": "YOUR_API_KEY",
+      "api": "anthropic-messages",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "X-Custom-Auth": "bearer-token-here"
+      },
+      "models": [
+        {
+          "id": "claude-sonnet-4",
+          "name": "Claude Sonnet 4 (Proxied)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": {"input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75},
+          "contextWindow": 200000,
+          "maxTokens": 8192,
+          "headers": {
+            "X-Model-Specific-Header": "value"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+- **Provider-level `headers`**: Applied to all requests for models in that provider
+- **Model-level `headers`**: Additional headers for specific models (merged with provider headers)
+- Model headers override provider headers when keys conflict
+
 ### Model Selection Priority
 
 When starting `pi`, models are selected in this order:

@@ -288,11 +288,12 @@ function createClient(
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
 			"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
+			...(model.headers || {}),
 		};
 
 		// Clear the env var if we're in Node.js to prevent SDK from using it
 		if (typeof process !== "undefined" && process.env) {
-			process.env.ANTHROPIC_API_KEY = undefined;
+			delete process.env.ANTHROPIC_API_KEY;
 		}
 
 		const client = new Anthropic({
@@ -309,6 +310,7 @@ function createClient(
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
 			"anthropic-beta": "fine-grained-tool-streaming-2025-05-14",
+			...(model.headers || {}),
 		};
 
 		const client = new Anthropic({
