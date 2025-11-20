@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-ai",
-	"version": "0.7.23",
+	"version": "0.7.24",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
