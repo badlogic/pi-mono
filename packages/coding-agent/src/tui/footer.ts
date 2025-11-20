@@ -93,7 +93,7 @@ export class FooterComponent {
 		if (this.state.model?.reasoning) {
 			const thinkingLevel = this.state.thinkingLevel || "off";
 			if (thinkingLevel !== "off") {
-				rightSide = `${modelName} • Thinking: ${thinkingLevel}`;
+				rightSide = `${modelName} • ${thinkingLevel}`;
 			}
 		}
 
