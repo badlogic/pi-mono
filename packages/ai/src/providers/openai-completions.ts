@@ -273,13 +273,23 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream_options: { include_usage: true },
 	};
 
-	// Cerebras/xAI dont like the "store" field
-	if (!model.baseUrl.includes("cerebras.ai") && !model.baseUrl.includes("api.x.ai")) {
+	// Cerebras/xAI/Mistral/Chutes dont like the "store" field
+	if (
+		!model.baseUrl.includes("cerebras.ai") &&
+		!model.baseUrl.includes("api.x.ai") &&
+		!model.baseUrl.includes("mistral.ai") &&
+		!model.baseUrl.includes("chutes.ai")
+	) {
 		params.store = false;
 	}
 
 	if (options?.maxTokens) {
-		params.max_completion_tokens = options?.maxTokens;
+		// Mistral/Chutes use max_tokens instead of max_completion_tokens
+		if (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
+			(params as any).max_tokens = options?.maxTokens;
+		} else {
+			params.max_completion_tokens = options?.maxTokens;
+		}
 	}
 
 	if (options?.temperature !== undefined) {
@@ -308,9 +318,13 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 	const transformedMessages = transformMessages(context.messages, model);
 
 	if (context.systemPrompt) {
-		// Cerebras/xAi don't like the "developer" role
+		// Cerebras/xAi/Mistral/Chutes don't like the "developer" role
 		const useDeveloperRole =
-			model.reasoning && !model.baseUrl.includes("cerebras.ai") && !model.baseUrl.includes("api.x.ai");
+			model.reasoning &&
+			!model.baseUrl.includes("cerebras.ai") &&
+			!model.baseUrl.includes("api.x.ai") &&
+			!model.baseUrl.includes("mistral.ai") &&
+			!model.baseUrl.includes("chutes.ai");
 		const role = useDeveloperRole ? "developer" : "system";
 		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
 	}
