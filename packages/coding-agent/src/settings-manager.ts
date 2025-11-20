@@ -7,6 +7,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	queueMode?: "all" | "one-at-a-time";
+	theme?: string;
 }
 
 export class SettingsManager {
@@ -86,6 +87,15 @@ export class SettingsManager {
 
 	setQueueMode(mode: "all" | "one-at-a-time"): void {
 		this.settings.queueMode = mode;
+		this.save();
+	}
+
+	getTheme(): string | undefined {
+		return this.settings.theme;
+	}
+
+	setTheme(theme: string): void {
+		this.settings.theme = theme;
 		this.save();
 	}
 }

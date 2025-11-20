@@ -1,0 +1,59 @@
+{
+	"$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
+	"name": "light",
+	"vars": {
+		"darkCyan": "#008899",
+		"darkBlue": "#0066cc",
+		"darkGreen": "#008800",
+		"darkRed": "#cc0000",
+		"darkYellow": "#aa8800",
+		"mediumGray": 242,
+		"lightGray": 250,
+		"userMsgBg": "#e8e8e8",
+		"toolPendingBg": "#e8e8f0",
+		"toolSuccessBg": "#e8f0e8",
+		"toolErrorBg": "#f0e8e8"
+	},
+	"colors": {
+		"accent": "darkCyan",
+		"border": "darkBlue",
+		"borderAccent": "darkCyan",
+		"borderMuted": "lightGray",
+		"success": "darkGreen",
+		"error": "darkRed",
+		"warning": "darkYellow",
+		"muted": "mediumGray",
+		"text": "",
+
+		"userMessageBg": "userMsgBg",
+		"userMessageText": "",
+		"toolPendingBg": "toolPendingBg",
+		"toolSuccessBg": "toolSuccessBg",
+		"toolErrorBg": "toolErrorBg",
+		"toolText": "",
+
+		"mdHeading": "darkCyan",
+		"mdLink": "darkBlue",
+		"mdCode": "darkCyan",
+		"mdCodeBlock": "",
+		"mdCodeBlockBorder": "mediumGray",
+		"mdQuote": "mediumGray",
+		"mdQuoteBorder": "mediumGray",
+		"mdHr": "mediumGray",
+		"mdListBullet": "darkCyan",
+
+		"toolDiffAdded": "darkGreen",
+		"toolDiffRemoved": "darkRed",
+		"toolDiffContext": "mediumGray",
+
+		"syntaxComment": "mediumGray",
+		"syntaxKeyword": "darkCyan",
+		"syntaxFunction": "darkBlue",
+		"syntaxVariable": "",
+		"syntaxString": "darkGreen",
+		"syntaxNumber": "darkYellow",
+		"syntaxType": "darkCyan",
+		"syntaxOperator": "",
+		"syntaxPunctuation": "mediumGray"
+	}
+}

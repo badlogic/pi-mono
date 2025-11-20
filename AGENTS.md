@@ -11,3 +11,4 @@
 - You must NEVER run `npm run dev` yourself. Doing is means you failed the user hard.
 - Do NOT commit unless asked to by the user
 - Keep you answers short and concise and to the point.
+- Do NOT use inline imports ala `await import("./theme/theme.js");`
