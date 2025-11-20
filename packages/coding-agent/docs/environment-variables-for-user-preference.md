@@ -15,13 +15,6 @@ Variables
   - Description: Number of lines to show when previewing content passed to the `write` tool.
   - Default: `10` lines.
 
-Behavior and validation
-
-- The renderer first checks a component-level `previewLines` value (when provided by the caller). If present, that value takes precedence.
-- If no component-level value is set, the renderer looks for the tool-specific environment variable (for example `PI_BASH_PREVIEW_LINES`).
-- If an environment variable is undefined, null, or an empty string, the renderer ignores it and uses the appropriate default.
-- Only integer values strictly greater than `0` and less than `Number.MAX_SAFE_INTEGER` are accepted from environment variables. Non-numeric values, `0`, negative numbers, or values >= `Number.MAX_SAFE_INTEGER` are ignored and the default is used instead.
-
 Examples
 
 Set the bash preview lines for the current session:
