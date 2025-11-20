@@ -144,6 +144,24 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	private getMaxLines(defaultVal: number, envVarName?: string): number {
+		if (!envVarName) {
+			return defaultVal;
+		}
+
+		const envVal = process.env[envVarName];
+		if (envVal === undefined || envVal === null || envVal.trim() === "") {
+			return defaultVal;
+		}
+
+		const parsed = parseInt(envVal, 10);
+		if (!Number.isNaN(parsed) && parsed > 0 && parsed <= Number.MAX_SAFE_INTEGER) {
+			return parsed;
+		}
+
+		return defaultVal;
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
@@ -201,7 +219,7 @@ export class ToolExecutionComponent extends Container {
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
-					const maxLines = 5;
+					const maxLines = this.getMaxLines(5, "PI_BASH_PREVIEW_LINES");
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
@@ -218,7 +236,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result) {
 				const output = this.getTextOutput();
 				const lines = output.split("\n");
-				const maxLines = 10;
+				const maxLines = this.getMaxLines(10, "PI_READ_PREVIEW_LINES");
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
@@ -234,13 +252,13 @@ export class ToolExecutionComponent extends Container {
 			const totalLines = lines.length;
 
 			text = chalk.bold("write") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
-			if (totalLines > 10) {
+			if (totalLines > this.getMaxLines(10, "PI_WRITE_PREVIEW_LINES")) {
 				text += ` (${totalLines} lines)`;
 			}
 
 			// Show first 10 lines of content if available
 			if (fileContent) {
-				const maxLines = 10;
+				const maxLines = this.getMaxLines(10, "PI_WRITE_PREVIEW_LINES");
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
