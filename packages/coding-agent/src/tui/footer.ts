@@ -88,11 +88,13 @@ export class FooterComponent {
 		// Add model name on the right side, plus thinking level if model supports it
 		const modelName = this.state.model?.id || "no-model";
 
-		// Add thinking level hint if model supports reasoning
+		// Add thinking level hint if model supports reasoning and thinking is enabled
 		let rightSide = modelName;
 		if (this.state.model?.reasoning) {
 			const thinkingLevel = this.state.thinkingLevel || "off";
-			rightSide = `${modelName} • Thinking: ${thinkingLevel}`;
+			if (thinkingLevel !== "off") {
+				rightSide = `${modelName} • Thinking: ${thinkingLevel}`;
+			}
 		}
 
 		const statsLeftWidth = visibleWidth(statsLeft);
