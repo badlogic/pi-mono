@@ -55,6 +55,7 @@ interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	models?: string[];
 	messages: string[];
 }
 
@@ -89,6 +90,8 @@ function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--models" && i + 1 < args.length) {
+			result.models = args[++i].split(",").map((s) => s.trim());
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -113,6 +116,7 @@ ${chalk.bold("Options:")}
   --resume, -r            Select a session to resume
   --session <path>        Use specific session file
   --no-session            Don't save session (ephemeral)
+  --models <patterns>     Comma-separated model patterns for quick cycling with Ctrl+P
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
@@ -130,6 +134,9 @@ ${chalk.bold("Examples:")}
 
   # Use different model
   coding-agent --provider openai --model gpt-4o-mini "Help me refactor this code"
+
+  # Limit model cycling to specific models
+  coding-agent --models claude-sonnet,claude-haiku,gpt-4o
 
 ${chalk.bold("Environment Variables:")}
   GEMINI_API_KEY       - Google Gemini API key
@@ -328,6 +335,70 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 	}
 }
 
+/**
+ * Resolve model patterns to actual Model objects
+ * For each pattern, finds all matching models and picks the best version:
+ * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
+ * 2. If no alias, pick the latest dated version
+ */
+async function resolveModelScope(patterns: string[]): Promise<Model<Api>[]> {
+	const { models: availableModels, error } = await getAvailableModels();
+
+	if (error) {
+		console.warn(chalk.yellow(`Warning: Error loading models: ${error}`));
+		return [];
+	}
+
+	const scopedModels: Model<Api>[] = [];
+
+	for (const pattern of patterns) {
+		// Find all models matching this pattern (case-insensitive partial match)
+		const matches = availableModels.filter(
+			(m) =>
+				m.id.toLowerCase().includes(pattern.toLowerCase()) || m.name?.toLowerCase().includes(pattern.toLowerCase()),
+		);
+
+		if (matches.length === 0) {
+			console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+			continue;
+		}
+
+		// Helper to check if a model ID looks like an alias (no date suffix)
+		// Dates are typically in format: -20241022 or -20250929
+		const isAlias = (id: string): boolean => {
+			// Check if ID ends with -latest
+			if (id.endsWith("-latest")) return true;
+
+			// Check if ID ends with a date pattern (-YYYYMMDD)
+			const datePattern = /-\d{8}$/;
+			return !datePattern.test(id);
+		};
+
+		// Separate into aliases and dated versions
+		const aliases = matches.filter((m) => isAlias(m.id));
+		const datedVersions = matches.filter((m) => !isAlias(m.id));
+
+		let bestMatch: Model<Api>;
+
+		if (aliases.length > 0) {
+			// Prefer alias - if multiple aliases, pick the one that sorts highest
+			aliases.sort((a, b) => b.id.localeCompare(a.id));
+			bestMatch = aliases[0];
+		} else {
+			// No alias found, pick latest dated version
+			datedVersions.sort((a, b) => b.id.localeCompare(a.id));
+			bestMatch = datedVersions[0];
+		}
+
+		// Avoid duplicates
+		if (!scopedModels.find((m) => m.id === bestMatch.id && m.provider === bestMatch.provider)) {
+			scopedModels.push(bestMatch);
+		}
+	}
+
+	return scopedModels;
+}
+
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
@@ -365,8 +436,17 @@ async function runInteractiveMode(
 	changelogMarkdown: string | null = null,
 	modelFallbackMessage: string | null = null,
 	newVersion: string | null = null,
+	scopedModels: Model<Api>[] = [],
 ): Promise<void> {
-	const renderer = new TuiRenderer(agent, sessionManager, settingsManager, version, changelogMarkdown, newVersion);
+	const renderer = new TuiRenderer(
+		agent,
+		sessionManager,
+		settingsManager,
+		version,
+		changelogMarkdown,
+		newVersion,
+		scopedModels,
+	);
 
 	// Initialize TUI
 	await renderer.init();
@@ -813,6 +893,18 @@ export async function main(args: string[]) {
 			}
 		}
 
+		// Resolve model scope if provided
+		let scopedModels: Model<Api>[] = [];
+		if (parsed.models && parsed.models.length > 0) {
+			scopedModels = await resolveModelScope(parsed.models);
+
+			if (scopedModels.length > 0) {
+				console.log(
+					chalk.dim(`Model scope: ${scopedModels.map((m) => m.id).join(", ")} ${chalk.gray("(Ctrl+P to cycle)")}`),
+				);
+			}
+		}
+
 		// No messages and not RPC - use TUI
 		await runInteractiveMode(
 			agent,
@@ -822,6 +914,7 @@ export async function main(args: string[]) {
 			changelogMarkdown,
 			modelFallbackMessage,
 			newVersion,
+			scopedModels,
 		);
 	} else {
 		// CLI mode with messages
