@@ -396,6 +396,7 @@ Paste multiple lines of text (e.g., code snippets, logs) and they'll be automati
 - **Tab**: Path completion
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Ctrl+P**: Cycle models (use `--models` to scope)
+- **Ctrl+O**: Toggle tool output expansion (collapsed ↔ full output)
 - **Enter**: Send message
 - **Shift+Enter**: Insert new line (multi-line input)
 - **Backspace**: Delete character backwards

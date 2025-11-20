@@ -77,6 +77,9 @@ export class TuiRenderer {
 	// Model scope for quick cycling
 	private scopedModels: Model<any>[] = [];
 
+	// Tool output expansion state
+	private toolOutputExpanded = false;
+
 	constructor(
 		agent: Agent,
 		sessionManager: SessionManager,
@@ -183,6 +186,9 @@ export class TuiRenderer {
 			chalk.dim("ctrl+p") +
 			chalk.gray(" to cycle models") +
 			"\n" +
+			chalk.dim("ctrl+o") +
+			chalk.gray(" to expand tools") +
+			"\n" +
 			chalk.dim("/") +
 			chalk.gray(" for commands") +
 			"\n" +
@@ -246,6 +252,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlP = () => {
 			this.cycleModel();
+		};
+
+		this.editor.onCtrlO = () => {
+			this.toggleToolOutputExpansion();
 		};
 
 		// Handle editor submission
@@ -720,6 +730,19 @@ export class TuiRenderer {
 		// Show notification
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(chalk.dim(`Switched to ${nextModel.name || nextModel.id}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private toggleToolOutputExpansion(): void {
+		this.toolOutputExpanded = !this.toolOutputExpanded;
+
+		// Update all tool execution components
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolExecutionComponent) {
+				child.setExpanded(this.toolOutputExpanded);
+			}
+		}
+
 		this.ui.requestRender();
 	}
 

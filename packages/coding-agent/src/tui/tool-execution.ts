@@ -127,6 +127,7 @@ export class ToolExecutionComponent extends Container {
 	private contentText: Text;
 	private toolName: string;
 	private args: any;
+	private expanded = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -155,6 +156,11 @@ export class ToolExecutionComponent extends Container {
 		isError: boolean;
 	}): void {
 		this.result = result;
+		this.updateDisplay();
+	}
+
+	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
 		this.updateDisplay();
 	}
 
@@ -201,7 +207,7 @@ export class ToolExecutionComponent extends Container {
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
-					const maxLines = 5;
+					const maxLines = this.expanded ? lines.length : 5;
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
@@ -218,7 +224,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result) {
 				const output = this.getTextOutput();
 				const lines = output.split("\n");
-				const maxLines = 10;
+				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
@@ -240,7 +246,7 @@ export class ToolExecutionComponent extends Container {
 
 			// Show first 10 lines of content if available
 			if (fileContent) {
-				const maxLines = 10;
+				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 

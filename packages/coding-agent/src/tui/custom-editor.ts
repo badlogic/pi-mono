@@ -8,8 +8,15 @@ export class CustomEditor extends Editor {
 	public onCtrlC?: () => void;
 	public onShiftTab?: () => void;
 	public onCtrlP?: () => void;
+	public onCtrlO?: () => void;
 
 	handleInput(data: string): void {
+		// Intercept Ctrl+O for tool output expansion
+		if (data === "\x0f" && this.onCtrlO) {
+			this.onCtrlO();
+			return;
+		}
+
 		// Intercept Ctrl+P for model cycling
 		if (data === "\x10" && this.onCtrlP) {
 			this.onCtrlP();
