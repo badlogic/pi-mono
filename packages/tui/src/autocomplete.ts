@@ -286,10 +286,12 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		// Match paths - including those ending with /, ~/, or any word at end for forced extraction
 		// This regex captures:
 		// - Paths starting from beginning of line or after space/quote/equals
-		// - Optional ./ or ../ or ~/ prefix (including the trailing slash for ~/)
+		// - Absolute paths starting with /
+		// - Relative paths with ./ or ../
+		// - Home directory paths with ~/
 		// - The path itself (can include / in the middle)
 		// - For forced extraction, capture any word at the end
-		const matches = text.match(/(?:^|[\s"'=])((?:~\/|\.{0,2}\/?)?(?:[^\s"'=]*\/?)*[^\s"'=]*)$/);
+		const matches = text.match(/(?:^|[\s"'=])((?:\/|~\/|\.{1,2}\/)?(?:[^\s"'=]*\/?)*[^\s"'=]*)$/);
 		if (!matches) {
 			// If forced extraction and no matches, return empty string to trigger from current dir
 			return forceExtract ? "" : null;
@@ -354,10 +356,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				expandedPrefix === "../" ||
 				expandedPrefix === "~" ||
 				expandedPrefix === "~/" ||
+				expandedPrefix === "/" ||
 				prefix === "@"
 			) {
 				// Complete from specified position
-				if (prefix.startsWith("~")) {
+				if (prefix.startsWith("~") || expandedPrefix === "/") {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
@@ -365,7 +368,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				searchPrefix = "";
 			} else if (expandedPrefix.endsWith("/")) {
 				// If prefix ends with /, show contents of that directory
-				if (prefix.startsWith("~") || (isAtPrefix && expandedPrefix.startsWith("/"))) {
+				if (prefix.startsWith("~") || expandedPrefix.startsWith("/")) {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
@@ -375,7 +378,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				// Split into directory and file prefix
 				const dir = dirname(expandedPrefix);
 				const file = basename(expandedPrefix);
-				if (prefix.startsWith("~") || (isAtPrefix && expandedPrefix.startsWith("/"))) {
+				if (prefix.startsWith("~") || expandedPrefix.startsWith("/")) {
 					searchDir = dir;
 				} else {
 					searchDir = join(this.basePath, dir);
@@ -392,7 +395,13 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				}
 
 				const fullPath = join(searchDir, entry);
-				const isDirectory = statSync(fullPath).isDirectory();
+				let isDirectory: boolean;
+				try {
+					isDirectory = statSync(fullPath).isDirectory();
+				} catch (e) {
+					// Skip files we can't stat (permission issues, broken symlinks, etc.)
+					continue;
+				}
 
 				// For @ prefix, filter to only show directories and attachable files
 				if (isAtPrefix && !isDirectory && !isAttachableFile(fullPath)) {
@@ -430,6 +439,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 						const homeRelativeDir = prefix.slice(2); // Remove ~/
 						const dir = dirname(homeRelativeDir);
 						relativePath = "~/" + (dir === "." ? entry : join(dir, entry));
+					} else if (prefix.startsWith("/")) {
+						// Absolute path - construct properly
+						const dir = dirname(prefix);
+						if (dir === "/") {
+							relativePath = "/" + entry;
+						} else {
+							relativePath = dir + "/" + entry;
+						}
 					} else {
 						relativePath = join(dirname(prefix), entry);
 					}
@@ -458,7 +475,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				return a.label.localeCompare(b.label);
 			});
 
-			return suggestions.slice(0, 10); // Limit to 10 suggestions
+			return suggestions;
 		} catch (e) {
 			// Directory doesn't exist or not accessible
 			return [];
@@ -474,8 +491,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
-		// Don't trigger if we're in a slash command
-		if (textBeforeCursor.startsWith("/") && !textBeforeCursor.includes(" ")) {
+		// Don't trigger if we're typing a slash command at the start of the line
+		if (textBeforeCursor.trim().startsWith("/") && !textBeforeCursor.trim().includes(" ")) {
 			return null;
 		}
 
@@ -499,8 +516,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
-		// Don't trigger if we're in a slash command
-		if (textBeforeCursor.startsWith("/") && !textBeforeCursor.includes(" ")) {
+		// Don't trigger if we're typing a slash command at the start of the line
+		if (textBeforeCursor.trim().startsWith("/") && !textBeforeCursor.trim().includes(" ")) {
 			return false;
 		}
 

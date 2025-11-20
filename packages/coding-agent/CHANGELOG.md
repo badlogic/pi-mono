@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.7.23] - 2025-11-20
+
+### Added
+
+- **Update Notifications**: Interactive mode now checks for new versions on startup and displays a notification if an update is available.
+
+### Changed
+
+- **System Prompt**: Updated system prompt to instruct agent to output plain text summaries directly instead of using cat or bash commands to display what it did.
+
+### Fixed
+
+- **File Path Completion**: Removed 10-file limit in tab completion selector. All matching files and directories now appear in the completion list.
+- **Absolute Path Completion**: Fixed tab completion for absolute paths (e.g., `/Applications`). Absolute paths in the middle of text (like "hey /") now complete correctly. Also fixed crashes when trying to stat inaccessible files (like macOS `.VolumeIcon.icns`) during directory traversal.
+
 ## [0.7.22] - 2025-11-19
 
 ### Fixed

@@ -51,6 +51,7 @@ export class TuiRenderer {
 	private onInterruptCallback?: () => void;
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
+	private newVersion: string | null = null;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
@@ -79,11 +80,13 @@ export class TuiRenderer {
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
+		newVersion: string | null = null,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
 		this.settingsManager = settingsManager;
 		this.version = version;
+		this.newVersion = newVersion;
 		this.changelogMarkdown = changelogMarkdown;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
@@ -180,6 +183,23 @@ export class TuiRenderer {
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(header);
 		this.ui.addChild(new Spacer(1));
+
+		// Add new version notification if available
+		if (this.newVersion) {
+			this.ui.addChild(new DynamicBorder(chalk.yellow));
+			this.ui.addChild(
+				new Text(
+					chalk.bold.yellow("Update Available") +
+						"\n" +
+						chalk.gray(`New version ${this.newVersion} is available. Run: `) +
+						chalk.cyan("npm install -g @mariozechner/pi-coding-agent"),
+					1,
+					0,
+				),
+			);
+			this.ui.addChild(new Spacer(1));
+			this.ui.addChild(new DynamicBorder(chalk.yellow));
+		}
 
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
