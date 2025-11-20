@@ -314,7 +314,7 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
 		if (!response.ok) return null;
 
-		const data = await response.json();
+		const data = (await response.json()) as { version?: string };
 		const latestVersion = data.version;
 
 		if (latestVersion && latestVersion !== currentVersion) {
