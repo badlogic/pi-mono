@@ -83,7 +83,7 @@ export class SessionManager {
 		// Replace all path separators and colons (for Windows drive letters) with dashes
 		const safePath = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
 
-		const configDir = resolve(process.env.CODING_AGENT_DIR || join(homedir(), ".pi/agent/"));
+		const configDir = resolve(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi/agent/"));
 		const sessionDir = join(configDir, "sessions", safePath);
 		if (!existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });
