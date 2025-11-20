@@ -219,6 +219,7 @@ Guidelines:
 - Use write only for new files or complete rewrites
 - Be concise in your responses
 - Show file paths clearly when working with files
+- When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 
 Documentation:
 - Your own documentation (including custom model setup) is at: ${readmePath}
@@ -308,6 +309,25 @@ function loadProjectContextFiles(): Array<{ path: string; content: string }> {
 	return contextFiles;
 }
 
+async function checkForNewVersion(currentVersion: string): Promise<string | null> {
+	try {
+		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
+		if (!response.ok) return null;
+
+		const data = await response.json();
+		const latestVersion = data.version;
+
+		if (latestVersion && latestVersion !== currentVersion) {
+			return latestVersion;
+		}
+
+		return null;
+	} catch (error) {
+		// Silently fail - don't disrupt the user experience
+		return null;
+	}
+}
+
 async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
@@ -344,8 +364,9 @@ async function runInteractiveMode(
 	version: string,
 	changelogMarkdown: string | null = null,
 	modelFallbackMessage: string | null = null,
+	newVersion: string | null = null,
 ): Promise<void> {
-	const renderer = new TuiRenderer(agent, sessionManager, settingsManager, version, changelogMarkdown);
+	const renderer = new TuiRenderer(agent, sessionManager, settingsManager, version, changelogMarkdown, newVersion);
 
 	// Initialize TUI
 	await renderer.init();
@@ -752,6 +773,17 @@ export async function main(args: string[]) {
 		// RPC mode - headless operation
 		await runRpcMode(agent, sessionManager);
 	} else if (isInteractive) {
+		// Check for new version (don't block startup if it takes too long)
+		let newVersion: string | null = null;
+		try {
+			newVersion = await Promise.race([
+				checkForNewVersion(VERSION),
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)), // 1 second timeout
+			]);
+		} catch (e) {
+			// Ignore errors
+		}
+
 		// Check if we should show changelog (only in interactive mode, only for new sessions)
 		let changelogMarkdown: string | null = null;
 		if (!parsed.continue && !parsed.resume) {
@@ -789,6 +821,7 @@ export async function main(args: string[]) {
 			VERSION,
 			changelogMarkdown,
 			modelFallbackMessage,
+			newVersion,
 		);
 	} else {
 		// CLI mode with messages
