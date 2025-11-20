@@ -789,11 +789,7 @@ Things that might happen eventually:
 - **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, either:
   - Ask the agent to write a summary .md file you can load in a new session
   - Switch to a model with bigger context (e.g., Gemini) using `/model` and either continue with that model, or let it summarize the session to a .md file to be loaded in a new session
-- **Message queuing**: Core engine supports it, just needs UI wiring
 - **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
-- **Beter Markdown and tool call/result rendering**
-- **Full details mode**: use `/export out.html` for now
-- **More flicker than Claude Code**: One day...
 
 ## License
 
