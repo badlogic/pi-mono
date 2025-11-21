@@ -445,6 +445,16 @@ Logout from OAuth providers:
 
 Shows a list of logged-in providers to logout from.
 
+### /clear
+
+Clear the conversation context and start a fresh session:
+
+```
+/clear
+```
+
+Aborts any in-flight agent work, clears all messages, and creates a new session file.
+
 ## Editor Features
 
 The interactive input editor includes several productivity features:
