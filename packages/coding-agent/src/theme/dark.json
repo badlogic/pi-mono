@@ -9,7 +9,7 @@
 		"yellow": "#ffff00",
 		"gray": "#808080",
 		"dimGray": "#666666",
-		"darkGray": "#303030",
+		"darkGray": "#505050",
 		"accent": "#8abeb7",
 		"userMsgBg": "#343541",
 		"toolPendingBg": "#282832",
@@ -62,7 +62,7 @@
 		"syntaxPunctuation": "gray",
 
 		"thinkingOff": "darkGray",
-		"thinkingMinimal": "#4e4e4e",
+		"thinkingMinimal": "#6e6e6e",
 		"thinkingLow": "#5f87af",
 		"thinkingMedium": "#81a2be",
 		"thinkingHigh": "#b294bb"

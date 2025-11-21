@@ -340,6 +340,21 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
 		}
 	}
 
+	// Calculate message stats (matching session command)
+	const userMessages = messages.filter((m) => m.role === "user").length;
+	const assistantMessages = messages.filter((m) => m.role === "assistant").length;
+	const toolResultMessages = messages.filter((m) => m.role === "toolResult").length;
+	const totalMessages = messages.length;
+
+	// Count tool calls from assistant messages
+	let toolCallsCount = 0;
+	for (const message of messages) {
+		if (message.role === "assistant") {
+			const assistantMsg = message as AssistantMessage;
+			toolCallsCount += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+		}
+	}
+
 	// Generate messages HTML
 	let messagesHtml = "";
 	for (const message of messages) {
@@ -373,7 +388,7 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 700px;
             margin: 0 auto;
         }
 
@@ -631,9 +646,31 @@ export function exportSessionToHtml(sessionManager: SessionManager, state: Agent
                     <span class="info-label">Model:</span>
                     <span class="info-value">${escapeHtml(sessionHeader?.model || state.model.id)}</span>
                 </div>
+            </div>
+        </div>
+
+        <div class="header">
+            <h1>Messages</h1>
+            <div class="header-info">
                 <div class="info-item">
-                    <span class="info-label">Messages:</span>
-                    <span class="info-value">${messages.filter((m) => m.role !== "toolResult").length}</span>
+                    <span class="info-label">User:</span>
+                    <span class="info-value">${userMessages}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Assistant:</span>
+                    <span class="info-value">${assistantMessages}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Tool Calls:</span>
+                    <span class="info-value">${toolCallsCount}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Tool Results:</span>
+                    <span class="info-value">${toolResultMessages}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Total:</span>
+                    <span class="info-value">${totalMessages}</span>
                 </div>
                 <div class="info-item">
                     <span class="info-label">Directory:</span>
