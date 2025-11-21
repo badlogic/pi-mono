@@ -186,6 +186,9 @@ async function executeToolCalls<T>(
 	const results: ToolResultMessage<any>[] = [];
 
 	for (const toolCall of toolCalls) {
+		// Skip if already aborted
+		if (signal?.aborted) break;
+
 		const tool = tools?.find((t) => t.name === toolCall.name);
 
 		stream.push({
@@ -210,6 +213,9 @@ async function executeToolCalls<T>(
 			resultOrError = e instanceof Error ? e.message : String(e);
 			isError = true;
 		}
+
+		// Don't emit results if abort was signaled during execution
+		if (signal?.aborted) break;
 
 		stream.push({
 			type: "tool_execution_end",
