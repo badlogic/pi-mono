@@ -670,12 +670,27 @@ Continue the most recent session
 Select a session to resume (opens interactive selector)
 
 **--models <patterns>**
-Comma-separated model patterns for quick cycling with `Ctrl+P`. Patterns match against model IDs and names (case-insensitive). When multiple versions exist, prefers aliases over dated versions (e.g., `claude-sonnet-4-5` over `claude-sonnet-4-5-20250929`). Without this flag, `Ctrl+P` cycles through all available models.
+Comma-separated model patterns for quick cycling with `Ctrl+P`. Matching priority:
+1. `provider/modelId` exact match (e.g., `openrouter/openai/gpt-5.1-codex`)
+2. Exact model ID match (e.g., `gpt-5.1-codex`)
+3. Partial match against model IDs and names (case-insensitive)
+
+When multiple partial matches exist, prefers aliases over dated versions (e.g., `claude-sonnet-4-5` over `claude-sonnet-4-5-20250929`). Without this flag, `Ctrl+P` cycles through all available models.
+
+Each pattern can optionally include a thinking level suffix: `pattern:level` where level is one of `off`, `minimal`, `low`, `medium`, or `high`. When cycling models, the associated thinking level is automatically applied. The first model in the list is used as the initial model when starting a new session.
 
 Examples:
-- `--models claude-sonnet,gpt-4o` - Scope to Claude Sonnet and GPT-4o
-- `--models sonnet,haiku` - Match any model containing "sonnet" or "haiku"
-- `--models gemini` - All Gemini models
+- `--models openrouter/openai/gpt-5.1-codex` - Exact provider/model match
+- `--models gpt-5.1-codex` - Exact ID match (not `openai/gpt-5.1-codex-mini`)
+- `--models sonnet:high,haiku:low` - Sonnet with high thinking, Haiku with low thinking
+- `--models sonnet,haiku` - Partial match for any model containing "sonnet" or "haiku"
+
+**--thinking <level>**
+Set thinking level for reasoning-capable models. Valid values: `off`, `minimal`, `low`, `medium`, `high`. Takes highest priority over all other thinking level sources (saved settings, `--models` pattern levels, session restore).
+
+Examples:
+- `--thinking high` - Start with high thinking level
+- `--thinking off` - Disable thinking even if saved setting was different
 
 **--help, -h**
 Show help message
@@ -707,6 +722,13 @@ pi --provider openai --model gpt-4o "Help me refactor this code"
 # Limit model cycling to specific models
 pi --models claude-sonnet,claude-haiku,gpt-4o
 # Now Ctrl+P cycles only through those models
+
+# Model cycling with thinking levels
+pi --models sonnet:high,haiku:low
+# Starts with sonnet at high thinking, Ctrl+P switches to haiku at low thinking
+
+# Start with specific thinking level
+pi --thinking high "Solve this complex algorithm problem"
 ```
 
 ## Tools
