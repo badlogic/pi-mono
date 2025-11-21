@@ -250,10 +250,11 @@ You can add custom HTTP headers to bypass Cloudflare bot detection, add authenti
 When starting `pi`, models are selected in this order:
 
 1. **CLI args**: `--provider` and `--model` flags
-2. **Restored from session**: If using `--continue` or `--resume`
-3. **Saved default**: From `~/.pi/agent/settings.json` (set when you select a model with `/model`)
-4. **First available**: First model with a valid API key
-5. **None**: Allowed in interactive mode (shows error on message submission)
+2. **First from `--models` scope**: If `--models` is provided (skipped when using `--continue` or `--resume`)
+3. **Restored from session**: If using `--continue` or `--resume`
+4. **Saved default**: From `~/.pi/agent/settings.json` (set when you select a model with `/model`)
+5. **First available**: First model with a valid API key
+6. **None**: Allowed in interactive mode (shows error on message submission)
 
 ### Provider Defaults
 
@@ -652,10 +653,13 @@ Custom system prompt. Can be:
 If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
 
 **--mode <mode>**
-Output mode for non-interactive usage. Options:
+Output mode for non-interactive usage (implies `--print`). Options:
 - `text` (default): Output only the final assistant message text
 - `json`: Stream all agent events as JSON (one event per line). Events are emitted by `@mariozechner/pi-agent` and include message updates, tool executions, and completions
 - `rpc`: JSON mode plus stdin listener for headless operation. Send JSON commands on stdin: `{"type":"prompt","message":"..."}` or `{"type":"abort"}`. See [test/rpc-example.ts](test/rpc-example.ts) for a complete example
+
+**--print, -p**
+Non-interactive mode: process the prompt(s) and exit. Without this flag, passing a prompt starts interactive mode with the prompt pre-submitted. Similar to Claude's `-p` flag and Codex's `exec` command.
 
 **--no-session**
 Don't save session (ephemeral mode)
@@ -701,10 +705,13 @@ Show help message
 # Start interactive mode
 pi
 
-# Single message mode (text output)
+# Interactive mode with initial prompt (stays running after completion)
 pi "List all .ts files in src/"
 
-# JSON mode - stream all agent events
+# Non-interactive mode (process prompt and exit)
+pi -p "List all .ts files in src/"
+
+# JSON mode - stream all agent events (non-interactive)
 pi --mode json "List all .ts files in src/"
 
 # RPC mode - headless operation (see test/rpc-example.ts)

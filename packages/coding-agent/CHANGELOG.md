@@ -8,6 +8,10 @@
 - **Model Cycling with Thinking Levels**: The `--models` flag now supports thinking level syntax (e.g., `--models sonnet:high,haiku:low`). When cycling models with `Ctrl+P`, the associated thinking level is automatically applied. The first model in the scope is used as the initial model when starting a new session. Both model and thinking level changes are now saved to session and settings for persistence. ([#47](https://github.com/badlogic/pi-mono/pull/47))
 - **`--thinking` Flag**: New CLI flag to set thinking level directly (e.g., `--thinking high`). Valid values: `off`, `minimal`, `low`, `medium`, `high`. Takes highest priority over all other thinking level sources. ([#45](https://github.com/badlogic/pi-mono/issues/45))
 
+### Breaking
+
+- **Interactive Mode with Initial Prompt**: Passing a prompt on the command line (e.g., `pi "List files"`) now starts interactive mode with the prompt pre-submitted, instead of exiting after completion. Use `--print` or `-p` to get the previous non-interactive behavior (e.g., `pi -p "List files"`). This matches Claude CLI (`-p`) and Codex (`exec`) behavior. ([#46](https://github.com/badlogic/pi-mono/issues/46))
+
 ### Fixed
 
 - **Slash Command Autocomplete**: Fixed issue where pressing Enter on a highlighted slash command suggestion (e.g., typing `/mod` with `/model` highlighted) would submit the partial text instead of executing the selected command. Now Enter applies the completion and submits in one action. ([#49](https://github.com/badlogic/pi-mono/issues/49))
