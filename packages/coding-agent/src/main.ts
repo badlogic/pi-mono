@@ -745,7 +745,9 @@ export async function main(args: string[]) {
 	// Having initial messages doesn't make it non-interactive anymore
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
-	const shouldPrintMessages = isInteractive || mode === "text";
+	// Only print informational messages in interactive mode
+	// Non-interactive modes (-p, --mode json, --mode rpc) should be silent except for output
+	const shouldPrintMessages = isInteractive;
 
 	// Non-interactive mode: fail early if no model available
 	if (!isInteractive && !initialModel) {
