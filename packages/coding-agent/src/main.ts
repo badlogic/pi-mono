@@ -139,6 +139,9 @@ ${chalk.bold("Examples:")}
   # Limit model cycling to specific models
   pi --models claude-sonnet,claude-haiku,gpt-4o
 
+  # Cycle models with fixed thinking levels
+  pi --models sonnet:high,haiku:low
+
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY       - Anthropic Claude API key
   ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
@@ -343,12 +346,15 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 }
 
 /**
- * Resolve model patterns to actual Model objects
+ * Resolve model patterns to actual Model objects with optional thinking levels
+ * Format: "pattern:level" where :level is optional
  * For each pattern, finds all matching models and picks the best version:
  * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
  * 2. If no alias, pick the latest dated version
  */
-async function resolveModelScope(patterns: string[]): Promise<Model<Api>[]> {
+async function resolveModelScope(
+	patterns: string[],
+): Promise<Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }>> {
 	const { models: availableModels, error } = await getAvailableModels();
 
 	if (error) {
@@ -356,17 +362,34 @@ async function resolveModelScope(patterns: string[]): Promise<Model<Api>[]> {
 		return [];
 	}
 
-	const scopedModels: Model<Api>[] = [];
+	const scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [];
 
 	for (const pattern of patterns) {
+		// Parse pattern:level format
+		const parts = pattern.split(":");
+		const modelPattern = parts[0];
+		let thinkingLevel: ThinkingLevel = "off";
+
+		if (parts.length > 1) {
+			const level = parts[1];
+			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+				thinkingLevel = level;
+			} else {
+				console.warn(
+					chalk.yellow(`Warning: Invalid thinking level "${level}" in pattern "${pattern}". Using "off" instead.`),
+				);
+			}
+		}
+
 		// Find all models matching this pattern (case-insensitive partial match)
 		const matches = availableModels.filter(
 			(m) =>
-				m.id.toLowerCase().includes(pattern.toLowerCase()) || m.name?.toLowerCase().includes(pattern.toLowerCase()),
+				m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
+				m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
 		);
 
 		if (matches.length === 0) {
-			console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+			console.warn(chalk.yellow(`Warning: No models match pattern "${modelPattern}"`));
 			continue;
 		}
 
@@ -398,8 +421,8 @@ async function resolveModelScope(patterns: string[]): Promise<Model<Api>[]> {
 		}
 
 		// Avoid duplicates
-		if (!scopedModels.find((m) => m.id === bestMatch.id && m.provider === bestMatch.provider)) {
-			scopedModels.push(bestMatch);
+		if (!scopedModels.find((sm) => sm.model.id === bestMatch.id && sm.model.provider === bestMatch.provider)) {
+			scopedModels.push({ model: bestMatch, thinkingLevel });
 		}
 	}
 
@@ -443,7 +466,7 @@ async function runInteractiveMode(
 	changelogMarkdown: string | null = null,
 	modelFallbackMessage: string | null = null,
 	newVersion: string | null = null,
-	scopedModels: Model<Api>[] = [],
+	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
 ): Promise<void> {
 	const renderer = new TuiRenderer(
 		agent,
@@ -588,13 +611,21 @@ export async function main(args: string[]) {
 		sessionManager.setSessionFile(selectedSession);
 	}
 
+	// Resolve model scope early if provided (needed for initial model selection)
+	let scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [];
+	if (parsed.models && parsed.models.length > 0) {
+		scopedModels = await resolveModelScope(parsed.models);
+	}
+
 	// Determine initial model using priority system:
 	// 1. CLI args (--provider and --model)
-	// 2. Restored from session (if --continue or --resume)
-	// 3. Saved default from settings.json
-	// 4. First available model with valid API key
-	// 5. null (allowed in interactive mode)
+	// 2. First model from --models scope
+	// 3. Restored from session (if --continue or --resume)
+	// 4. Saved default from settings.json
+	// 5. First available model with valid API key
+	// 6. null (allowed in interactive mode)
 	let initialModel: Model<Api> | null = null;
+	let initialThinking: ThinkingLevel = "off";
 
 	if (parsed.provider && parsed.model) {
 		// 1. CLI args take priority
@@ -608,8 +639,12 @@ export async function main(args: string[]) {
 			process.exit(1);
 		}
 		initialModel = model;
+	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		// 2. Use first model from --models scope (skip if continuing/resuming session)
+		initialModel = scopedModels[0].model;
+		initialThinking = scopedModels[0].thinkingLevel;
 	} else if (parsed.continue || parsed.resume) {
-		// 2. Restore from session (will be handled below after loading session)
+		// 3. Restore from session (will be handled below after loading session)
 		// Leave initialModel as null for now
 	}
 
@@ -766,7 +801,7 @@ export async function main(args: string[]) {
 		initialState: {
 			systemPrompt,
 			model: initialModel as any, // Can be null
-			thinkingLevel: "off",
+			thinkingLevel: initialThinking,
 			tools: codingTools,
 		},
 		queueMode: settingsManager.getQueueMode(),
@@ -794,6 +829,11 @@ export async function main(args: string[]) {
 			},
 		}),
 	});
+
+	// If initial thinking was requested but model doesn't support it, silently reset to off
+	if (initialThinking !== "off" && initialModel && !initialModel.reasoning) {
+		agent.setThinkingLevel("off");
+	}
 
 	// Track if we had to fall back from saved model (to show in chat later)
 	let modelFallbackMessage: string | null = null;
@@ -903,16 +943,15 @@ export async function main(args: string[]) {
 			}
 		}
 
-		// Resolve model scope if provided
-		let scopedModels: Model<Api>[] = [];
-		if (parsed.models && parsed.models.length > 0) {
-			scopedModels = await resolveModelScope(parsed.models);
-
-			if (scopedModels.length > 0) {
-				console.log(
-					chalk.dim(`Model scope: ${scopedModels.map((m) => m.id).join(", ")} ${chalk.gray("(Ctrl+P to cycle)")}`),
-				);
-			}
+		// Show model scope if provided
+		if (scopedModels.length > 0) {
+			const modelList = scopedModels
+				.map((sm) => {
+					const thinkingStr = sm.thinkingLevel !== "off" ? `:${sm.thinkingLevel}` : "";
+					return `${sm.model.id}${thinkingStr}`;
+				})
+				.join(", ");
+			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
 		// No messages and not RPC - use TUI
