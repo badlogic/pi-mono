@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-11-21
+
+### Added
+
+- **Theme System**: Full theming support with 44 customizable color tokens. Two built-in themes (`dark`, `light`) with auto-detection based on terminal background. Use `/theme` command to select themes interactively. Custom themes in `~/.pi/agent/themes/*.json` support live editing - changes apply immediately when the file is saved. Themes use RGB hex values for consistent rendering across terminals. VS Code users: set `terminal.integrated.minimumContrastRatio` to `1` for proper color rendering. See [Theme Documentation](docs/theme.md) for details.
+
 ## [0.7.29] - 2025-11-20
 
 ### Improved

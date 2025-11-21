@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import type { TUI } from "../tui.js";
 import { Text } from "./text.js";
 
@@ -13,6 +12,8 @@ export class Loader extends Text {
 
 	constructor(
 		ui: TUI,
+		private spinnerColorFn: (str: string) => string,
+		private messageColorFn: (str: string) => string,
 		private message: string = "Loading...",
 	) {
 		super("", 1, 0);
@@ -46,7 +47,7 @@ export class Loader extends Text {
 
 	private updateDisplay() {
 		const frame = this.frames[this.currentFrame];
-		this.setText(`${chalk.cyan(frame)} ${chalk.dim(this.message)}`);
+		this.setText(`${this.spinnerColorFn(frame)} ${this.messageColorFn(this.message)}`);
 		if (this.ui) {
 			this.ui.requestRender();
 		}

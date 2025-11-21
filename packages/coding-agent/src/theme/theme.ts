@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MarkdownTheme } from "@mariozechner/pi-tui";
+import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
@@ -25,7 +25,7 @@ const ThemeJsonSchema = Type.Object({
 	name: Type.String(),
 	vars: Type.Optional(Type.Record(Type.String(), ColorValueSchema)),
 	colors: Type.Object({
-		// Core UI (9 colors)
+		// Core UI (10 colors)
 		accent: ColorValueSchema,
 		border: ColorValueSchema,
 		borderAccent: ColorValueSchema,
@@ -34,17 +34,20 @@ const ThemeJsonSchema = Type.Object({
 		error: ColorValueSchema,
 		warning: ColorValueSchema,
 		muted: ColorValueSchema,
+		dim: ColorValueSchema,
 		text: ColorValueSchema,
-		// Backgrounds & Content Text (6 colors)
+		// Backgrounds & Content Text (7 colors)
 		userMessageBg: ColorValueSchema,
 		userMessageText: ColorValueSchema,
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
-		toolText: ColorValueSchema,
-		// Markdown (9 colors)
+		toolTitle: ColorValueSchema,
+		toolOutput: ColorValueSchema,
+		// Markdown (10 colors)
 		mdHeading: ColorValueSchema,
 		mdLink: ColorValueSchema,
+		mdLinkUrl: ColorValueSchema,
 		mdCode: ColorValueSchema,
 		mdCodeBlock: ColorValueSchema,
 		mdCodeBlockBorder: ColorValueSchema,
@@ -66,6 +69,12 @@ const ThemeJsonSchema = Type.Object({
 		syntaxType: ColorValueSchema,
 		syntaxOperator: ColorValueSchema,
 		syntaxPunctuation: ColorValueSchema,
+		// Thinking Level Borders (5 colors)
+		thinkingOff: ColorValueSchema,
+		thinkingMinimal: ColorValueSchema,
+		thinkingLow: ColorValueSchema,
+		thinkingMedium: ColorValueSchema,
+		thinkingHigh: ColorValueSchema,
 	}),
 });
 
@@ -82,11 +91,14 @@ export type ThemeColor =
 	| "error"
 	| "warning"
 	| "muted"
+	| "dim"
 	| "text"
 	| "userMessageText"
-	| "toolText"
+	| "toolTitle"
+	| "toolOutput"
 	| "mdHeading"
 	| "mdLink"
+	| "mdLinkUrl"
 	| "mdCode"
 	| "mdCodeBlock"
 	| "mdCodeBlockBorder"
@@ -105,7 +117,12 @@ export type ThemeColor =
 	| "syntaxNumber"
 	| "syntaxType"
 	| "syntaxOperator"
-	| "syntaxPunctuation";
+	| "syntaxPunctuation"
+	| "thinkingOff"
+	| "thinkingMinimal"
+	| "thinkingLow"
+	| "thinkingMedium"
+	| "thinkingHigh";
 
 export type ThemeBg = "userMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 
@@ -216,8 +233,6 @@ function resolveThemeColors<T extends Record<string, ColorValue>>(
 // Theme Class
 // ============================================================================
 
-const RESET = "\x1b[0m";
-
 export class Theme {
 	private fgColors: Map<ThemeColor, string>;
 	private bgColors: Map<ThemeBg, string>;
@@ -242,13 +257,13 @@ export class Theme {
 	fg(color: ThemeColor, text: string): string {
 		const ansi = this.fgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme color: ${color}`);
-		return `${ansi}${text}${RESET}`;
+		return `${ansi}${text}\x1b[39m`; // Reset only foreground color
 	}
 
 	bg(color: ThemeBg, text: string): string {
 		const ansi = this.bgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
-		return `${ansi}${text}${RESET}`;
+		return `${ansi}${text}\x1b[49m`; // Reset only background color
 	}
 
 	bold(text: string): string {
@@ -277,6 +292,24 @@ export class Theme {
 
 	getColorMode(): ColorMode {
 		return this.mode;
+	}
+
+	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high"): (str: string) => string {
+		// Map thinking levels to dedicated theme colors
+		switch (level) {
+			case "off":
+				return (str: string) => this.fg("thinkingOff", str);
+			case "minimal":
+				return (str: string) => this.fg("thinkingMinimal", str);
+			case "low":
+				return (str: string) => this.fg("thinkingLow", str);
+			case "medium":
+				return (str: string) => this.fg("thinkingMedium", str);
+			case "high":
+				return (str: string) => this.fg("thinkingHigh", str);
+			default:
+				return (str: string) => this.fg("thinkingOff", str);
+		}
 	}
 }
 
@@ -369,7 +402,8 @@ function detectTerminalBackground(): "dark" | "light" {
 		if (parts.length >= 2) {
 			const bg = parseInt(parts[1], 10);
 			if (!Number.isNaN(bg)) {
-				return bg < 8 ? "dark" : "light";
+				const result = bg < 8 ? "dark" : "light";
+				return result;
 			}
 		}
 	}
@@ -385,14 +419,109 @@ function getDefaultTheme(): string {
 // ============================================================================
 
 export let theme: Theme;
+let currentThemeName: string | undefined;
+let themeWatcher: fs.FSWatcher | undefined;
+let onThemeChangeCallback: (() => void) | undefined;
 
 export function initTheme(themeName?: string): void {
 	const name = themeName ?? getDefaultTheme();
-	theme = loadTheme(name);
+	currentThemeName = name;
+	try {
+		theme = loadTheme(name);
+		startThemeWatcher();
+	} catch (error) {
+		// Theme is invalid - fall back to dark theme silently
+		currentThemeName = "dark";
+		theme = loadTheme("dark");
+		// Don't start watcher for fallback theme
+	}
 }
 
-export function setTheme(name: string): void {
-	theme = loadTheme(name);
+export function setTheme(name: string): { success: boolean; error?: string } {
+	currentThemeName = name;
+	try {
+		theme = loadTheme(name);
+		startThemeWatcher();
+		return { success: true };
+	} catch (error) {
+		// Theme is invalid - fall back to dark theme
+		currentThemeName = "dark";
+		theme = loadTheme("dark");
+		// Don't start watcher for fallback theme
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+export function onThemeChange(callback: () => void): void {
+	onThemeChangeCallback = callback;
+}
+
+function startThemeWatcher(): void {
+	// Stop existing watcher if any
+	if (themeWatcher) {
+		themeWatcher.close();
+		themeWatcher = undefined;
+	}
+
+	// Only watch if it's a custom theme (not built-in)
+	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+		return;
+	}
+
+	const themesDir = getThemesDir();
+	const themeFile = path.join(themesDir, `${currentThemeName}.json`);
+
+	// Only watch if the file exists
+	if (!fs.existsSync(themeFile)) {
+		return;
+	}
+
+	try {
+		themeWatcher = fs.watch(themeFile, (eventType) => {
+			if (eventType === "change") {
+				// Debounce rapid changes
+				setTimeout(() => {
+					try {
+						// Reload the theme
+						theme = loadTheme(currentThemeName!);
+						// Notify callback (to invalidate UI)
+						if (onThemeChangeCallback) {
+							onThemeChangeCallback();
+						}
+					} catch (error) {
+						// Ignore errors (file might be in invalid state while being edited)
+					}
+				}, 100);
+			} else if (eventType === "rename") {
+				// File was deleted or renamed - fall back to default theme
+				setTimeout(() => {
+					if (!fs.existsSync(themeFile)) {
+						currentThemeName = "dark";
+						theme = loadTheme("dark");
+						if (themeWatcher) {
+							themeWatcher.close();
+							themeWatcher = undefined;
+						}
+						if (onThemeChangeCallback) {
+							onThemeChangeCallback();
+						}
+					}
+				}, 100);
+			}
+		});
+	} catch (error) {
+		// Ignore errors starting watcher
+	}
+}
+
+export function stopThemeWatcher(): void {
+	if (themeWatcher) {
+		themeWatcher.close();
+		themeWatcher = undefined;
+	}
 }
 
 // ============================================================================
@@ -403,6 +532,7 @@ export function getMarkdownTheme(): MarkdownTheme {
 	return {
 		heading: (text: string) => theme.fg("mdHeading", text),
 		link: (text: string) => theme.fg("mdLink", text),
+		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),
 		codeBlock: (text: string) => theme.fg("mdCodeBlock", text),
 		codeBlockBorder: (text: string) => theme.fg("mdCodeBlockBorder", text),
@@ -410,5 +540,26 @@ export function getMarkdownTheme(): MarkdownTheme {
 		quoteBorder: (text: string) => theme.fg("mdQuoteBorder", text),
 		hr: (text: string) => theme.fg("mdHr", text),
 		listBullet: (text: string) => theme.fg("mdListBullet", text),
+		bold: (text: string) => theme.bold(text),
+		italic: (text: string) => theme.italic(text),
+		underline: (text: string) => theme.underline(text),
+		strikethrough: (text: string) => chalk.strikethrough(text),
+	};
+}
+
+export function getSelectListTheme(): SelectListTheme {
+	return {
+		selectedPrefix: (text: string) => theme.fg("accent", text),
+		selectedText: (text: string) => theme.fg("accent", text),
+		description: (text: string) => theme.fg("muted", text),
+		scrollInfo: (text: string) => theme.fg("muted", text),
+		noMatch: (text: string) => theme.fg("muted", text),
+	};
+}
+
+export function getEditorTheme(): EditorTheme {
+	return {
+		borderColor: (text: string) => theme.fg("borderMuted", text),
+		selectList: getSelectListTheme(),
 	};
 }

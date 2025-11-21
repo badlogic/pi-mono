@@ -15,20 +15,34 @@ export class TruncatedText implements Component {
 		this.paddingY = paddingY;
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(width: number): string[] {
 		const result: string[] = [];
 
+		// Empty line padded to width
+		const emptyLine = " ".repeat(width);
+
 		// Add vertical padding above
 		for (let i = 0; i < this.paddingY; i++) {
-			result.push("");
+			result.push(emptyLine);
 		}
 
 		// Calculate available width after horizontal padding
 		const availableWidth = Math.max(1, width - this.paddingX * 2);
 
+		// Take only the first line (stop at newline)
+		let singleLineText = this.text;
+		const newlineIndex = this.text.indexOf("\n");
+		if (newlineIndex !== -1) {
+			singleLineText = this.text.substring(0, newlineIndex);
+		}
+
 		// Truncate text if needed (accounting for ANSI codes)
-		let displayText = this.text;
-		const textVisibleWidth = visibleWidth(this.text);
+		let displayText = singleLineText;
+		const textVisibleWidth = visibleWidth(singleLineText);
 
 		if (textVisibleWidth > availableWidth) {
 			// Need to truncate - walk through the string character by character
@@ -38,18 +52,21 @@ export class TruncatedText implements Component {
 			const ellipsisWidth = 3;
 			const targetWidth = availableWidth - ellipsisWidth;
 
-			while (i < this.text.length && currentWidth < targetWidth) {
-				// Skip ANSI escape sequences
-				if (this.text[i] === "\x1b" && this.text[i + 1] === "[") {
+			while (i < singleLineText.length && currentWidth < targetWidth) {
+				// Skip ANSI escape sequences (include them in output but don't count width)
+				if (singleLineText[i] === "\x1b" && singleLineText[i + 1] === "[") {
 					let j = i + 2;
-					while (j < this.text.length && !/[a-zA-Z]/.test(this.text[j])) {
+					while (j < singleLineText.length && !/[a-zA-Z]/.test(singleLineText[j])) {
 						j++;
 					}
-					i = j + 1;
+					// Include the final letter of the escape sequence
+					j++;
+					truncateAt = j;
+					i = j;
 					continue;
 				}
 
-				const char = this.text[i];
+				const char = singleLineText[i];
 				const charWidth = visibleWidth(char);
 
 				if (currentWidth + charWidth > targetWidth) {
@@ -61,16 +78,25 @@ export class TruncatedText implements Component {
 				i++;
 			}
 
-			displayText = this.text.substring(0, truncateAt) + "...";
+			// Add reset code before ellipsis to prevent styling leaking into it
+			displayText = singleLineText.substring(0, truncateAt) + "\x1b[0m...";
 		}
 
 		// Add horizontal padding
-		const paddingStr = " ".repeat(this.paddingX);
-		result.push(paddingStr + displayText);
+		const leftPadding = " ".repeat(this.paddingX);
+		const rightPadding = " ".repeat(this.paddingX);
+		const lineWithPadding = leftPadding + displayText + rightPadding;
+
+		// Pad line to exactly width characters
+		const lineVisibleWidth = visibleWidth(lineWithPadding);
+		const paddingNeeded = Math.max(0, width - lineVisibleWidth);
+		const finalLine = lineWithPadding + " ".repeat(paddingNeeded);
+
+		result.push(finalLine);
 
 		// Add vertical padding below
 		for (let i = 0; i < this.paddingY; i++) {
-			result.push("");
+			result.push(emptyLine);
 		}
 
 		return result;

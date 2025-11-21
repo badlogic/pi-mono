@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import type { Component } from "../tui.js";
 
 export interface SelectItem {
@@ -7,19 +6,30 @@ export interface SelectItem {
 	description?: string;
 }
 
+export interface SelectListTheme {
+	selectedPrefix: (text: string) => string;
+	selectedText: (text: string) => string;
+	description: (text: string) => string;
+	scrollInfo: (text: string) => string;
+	noMatch: (text: string) => string;
+}
+
 export class SelectList implements Component {
 	private items: SelectItem[] = [];
 	private filteredItems: SelectItem[] = [];
 	private selectedIndex: number = 0;
 	private maxVisible: number = 5;
+	private theme: SelectListTheme;
 
 	public onSelect?: (item: SelectItem) => void;
 	public onCancel?: () => void;
+	public onSelectionChange?: (item: SelectItem) => void;
 
-	constructor(items: SelectItem[], maxVisible: number = 5) {
+	constructor(items: SelectItem[], maxVisible: number, theme: SelectListTheme) {
 		this.items = items;
 		this.filteredItems = items;
 		this.maxVisible = maxVisible;
+		this.theme = theme;
 	}
 
 	setFilter(filter: string): void {
@@ -32,12 +42,16 @@ export class SelectList implements Component {
 		this.selectedIndex = Math.max(0, Math.min(index, this.filteredItems.length - 1));
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(width: number): string[] {
 		const lines: string[] = [];
 
 		// If no items match filter, show message
 		if (this.filteredItems.length === 0) {
-			lines.push(chalk.gray("  No matching commands"));
+			lines.push(this.theme.noMatch("  No matching commands"));
 			return lines;
 		}
 
@@ -58,7 +72,7 @@ export class SelectList implements Component {
 			let line = "";
 			if (isSelected) {
 				// Use arrow indicator for selection
-				const prefix = chalk.blue("→ ");
+				const prefix = this.theme.selectedPrefix("→ ");
 				const prefixWidth = 2; // "→ " is 2 characters visually
 				const displayValue = item.label || item.value;
 
@@ -74,16 +88,20 @@ export class SelectList implements Component {
 
 					if (remainingWidth > 10) {
 						const truncatedDesc = item.description.substring(0, remainingWidth);
-						line = prefix + chalk.blue(truncatedValue) + chalk.gray(spacing + truncatedDesc);
+						const selectedText = this.theme.selectedText(truncatedValue);
+						const descText = this.theme.description(spacing + truncatedDesc);
+						line = prefix + selectedText + descText;
 					} else {
 						// Not enough space for description
 						const maxWidth = width - prefixWidth - 2;
-						line = prefix + chalk.blue(displayValue.substring(0, maxWidth));
+						const selectedText = this.theme.selectedText(displayValue.substring(0, maxWidth));
+						line = prefix + selectedText;
 					}
 				} else {
 					// No description or not enough width
 					const maxWidth = width - prefixWidth - 2;
-					line = prefix + chalk.blue(displayValue.substring(0, maxWidth));
+					const selectedText = this.theme.selectedText(displayValue.substring(0, maxWidth));
+					line = prefix + selectedText;
 				}
 			} else {
 				const displayValue = item.label || item.value;
@@ -101,7 +119,8 @@ export class SelectList implements Component {
 
 					if (remainingWidth > 10) {
 						const truncatedDesc = item.description.substring(0, remainingWidth);
-						line = prefix + truncatedValue + chalk.gray(spacing + truncatedDesc);
+						const descText = this.theme.description(spacing + truncatedDesc);
+						line = prefix + truncatedValue + descText;
 					} else {
 						// Not enough space for description
 						const maxWidth = width - prefix.length - 2;
@@ -123,8 +142,7 @@ export class SelectList implements Component {
 			// Truncate if too long for terminal
 			const maxWidth = width - 2;
 			const truncated = scrollText.substring(0, maxWidth);
-			const scrollInfo = chalk.gray(truncated);
-			lines.push(scrollInfo);
+			lines.push(this.theme.scrollInfo(truncated));
 		}
 
 		return lines;
@@ -134,10 +152,12 @@ export class SelectList implements Component {
 		// Up arrow
 		if (keyData === "\x1b[A") {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+			this.notifySelectionChange();
 		}
 		// Down arrow
 		else if (keyData === "\x1b[B") {
 			this.selectedIndex = Math.min(this.filteredItems.length - 1, this.selectedIndex + 1);
+			this.notifySelectionChange();
 		}
 		// Enter
 		else if (keyData === "\r") {
@@ -151,6 +171,13 @@ export class SelectList implements Component {
 			if (this.onCancel) {
 				this.onCancel();
 			}
+		}
+	}
+
+	private notifySelectionChange(): void {
+		const selectedItem = this.filteredItems[this.selectedIndex];
+		if (selectedItem && this.onSelectionChange) {
+			this.onSelectionChange(selectedItem);
 		}
 	}
 

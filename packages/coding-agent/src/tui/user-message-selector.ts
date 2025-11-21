@@ -1,20 +1,6 @@
 import { type Component, Container, Spacer, Text } from "@mariozechner/pi-tui";
-import chalk from "chalk";
-
-/**
- * Dynamic border component that adjusts to viewport width
- */
-class DynamicBorder implements Component {
-	private colorFn: (text: string) => string;
-
-	constructor(colorFn: (text: string) => string = chalk.blue) {
-		this.colorFn = colorFn;
-	}
-
-	render(width: number): string[] {
-		return [this.colorFn("─".repeat(Math.max(1, width)))];
-	}
-}
+import { theme } from "../theme/theme.js";
+import { DynamicBorder } from "./dynamic-border.js";
 
 interface UserMessageItem {
 	index: number; // Index in the full messages array
@@ -39,11 +25,15 @@ class UserMessageList implements Component {
 		this.selectedIndex = Math.max(0, messages.length - 1);
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(width: number): string[] {
 		const lines: string[] = [];
 
 		if (this.messages.length === 0) {
-			lines.push(chalk.gray("  No user messages found"));
+			lines.push(theme.fg("muted", "  No user messages found"));
 			return lines;
 		}
 
@@ -63,24 +53,24 @@ class UserMessageList implements Component {
 			const normalizedMessage = message.text.replace(/\n/g, " ").trim();
 
 			// First line: cursor + message
-			const cursor = isSelected ? chalk.blue("› ") : "  ";
+			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
 			const maxMsgWidth = width - 2; // Account for cursor
 			const truncatedMsg = normalizedMessage.substring(0, maxMsgWidth);
-			const messageLine = cursor + (isSelected ? chalk.bold(truncatedMsg) : truncatedMsg);
+			const messageLine = cursor + (isSelected ? theme.bold(truncatedMsg) : truncatedMsg);
 
 			lines.push(messageLine);
 
 			// Second line: metadata (position in history)
 			const position = i + 1;
 			const metadata = `  Message ${position} of ${this.messages.length}`;
-			const metadataLine = chalk.dim(metadata);
+			const metadataLine = theme.fg("muted", metadata);
 			lines.push(metadataLine);
 			lines.push(""); // Blank line between messages
 		}
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.messages.length) {
-			const scrollInfo = chalk.gray(`  (${this.selectedIndex + 1}/${this.messages.length})`);
+			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.messages.length})`);
 			lines.push(scrollInfo);
 		}
 
@@ -129,8 +119,8 @@ export class UserMessageSelectorComponent extends Container {
 
 		// Add header
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(chalk.bold("Branch from Message"), 1, 0));
-		this.addChild(new Text(chalk.dim("Select a message to create a new branch from that point"), 1, 0));
+		this.addChild(new Text(theme.bold("Branch from Message"), 1, 0));
+		this.addChild(new Text(theme.fg("muted", "Select a message to create a new branch from that point"), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));

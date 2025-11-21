@@ -1,8 +1,7 @@
 import * as os from "node:os";
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
-import chalk from "chalk";
-import * as Diff from "diff";
 import stripAnsi from "strip-ansi";
+import { theme } from "../theme/theme.js";
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -20,104 +19,6 @@ function shortenPath(path: string): string {
  */
 function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
-}
-
-/**
- * Generate a unified diff with line numbers and context
- */
-function generateDiff(oldStr: string, newStr: string): string {
-	const parts = Diff.diffLines(oldStr, newStr);
-	const output: string[] = [];
-
-	// Calculate max line number for padding
-	const oldLines = oldStr.split("\n");
-	const newLines = newStr.split("\n");
-	const maxLineNum = Math.max(oldLines.length, newLines.length);
-	const lineNumWidth = String(maxLineNum).length;
-
-	const CONTEXT_LINES = 2; // Show 2 lines of context around changes
-
-	let oldLineNum = 1;
-	let newLineNum = 1;
-	let lastWasChange = false;
-
-	for (let i = 0; i < parts.length; i++) {
-		const part = parts[i];
-		const raw = part.value.split("\n");
-		if (raw[raw.length - 1] === "") {
-			raw.pop();
-		}
-
-		if (part.added || part.removed) {
-			// Show the change
-			for (const line of raw) {
-				if (part.added) {
-					const lineNum = String(newLineNum).padStart(lineNumWidth, " ");
-					output.push(chalk.green(`${lineNum} ${line}`));
-					newLineNum++;
-				} else {
-					// removed
-					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
-					output.push(chalk.red(`${lineNum} ${line}`));
-					oldLineNum++;
-				}
-			}
-			lastWasChange = true;
-		} else {
-			// Context lines - only show a few before/after changes
-			const isFirstPart = i === 0;
-			const isLastPart = i === parts.length - 1;
-			const nextPartIsChange = i < parts.length - 1 && (parts[i + 1].added || parts[i + 1].removed);
-
-			if (lastWasChange || nextPartIsChange || isFirstPart || isLastPart) {
-				// Show context
-				let linesToShow = raw;
-				let skipStart = 0;
-				let skipEnd = 0;
-
-				if (!isFirstPart && !lastWasChange) {
-					// Show only last N lines as leading context
-					skipStart = Math.max(0, raw.length - CONTEXT_LINES);
-					linesToShow = raw.slice(skipStart);
-				}
-
-				if (!isLastPart && !nextPartIsChange && linesToShow.length > CONTEXT_LINES) {
-					// Show only first N lines as trailing context
-					skipEnd = linesToShow.length - CONTEXT_LINES;
-					linesToShow = linesToShow.slice(0, CONTEXT_LINES);
-				}
-
-				// Add ellipsis if we skipped lines at start
-				if (skipStart > 0) {
-					output.push(chalk.dim(`${"".padStart(lineNumWidth, " ")} ...`));
-				}
-
-				for (const line of linesToShow) {
-					const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
-					output.push(chalk.dim(`${lineNum} ${line}`));
-					oldLineNum++;
-					newLineNum++;
-				}
-
-				// Add ellipsis if we skipped lines at end
-				if (skipEnd > 0) {
-					output.push(chalk.dim(`${"".padStart(lineNumWidth, " ")} ...`));
-				}
-
-				// Update line numbers for skipped lines
-				oldLineNum += skipStart + skipEnd;
-				newLineNum += skipStart + skipEnd;
-			} else {
-				// Skip these context lines entirely
-				oldLineNum += raw.length;
-				newLineNum += raw.length;
-			}
-
-			lastWasChange = false;
-		}
-	}
-
-	return output.join("\n");
 }
 
 /**
@@ -140,7 +41,7 @@ export class ToolExecutionComponent extends Container {
 		this.args = args;
 		this.addChild(new Spacer(1));
 		// Content with colored background and padding
-		this.contentText = new Text("", 1, 1, { r: 40, g: 40, b: 50 });
+		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.addChild(this.contentText);
 		this.updateDisplay();
 	}
@@ -165,13 +66,13 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgColor = this.result
+		const bgFn = this.result
 			? this.result.isError
-				? { r: 60, g: 40, b: 40 }
-				: { r: 40, g: 50, b: 40 }
-			: { r: 40, g: 40, b: 50 };
+				? (text: string) => theme.bg("toolErrorBg", text)
+				: (text: string) => theme.bg("toolSuccessBg", text)
+			: (text: string) => theme.bg("toolPendingBg", text);
 
-		this.contentText.setCustomBgRgb(bgColor);
+		this.contentText.setCustomBgFn(bgFn);
 		this.contentText.setText(this.formatToolExecution());
 	}
 
@@ -200,7 +101,7 @@ export class ToolExecutionComponent extends Container {
 		// Format based on tool type
 		if (this.toolName === "bash") {
 			const command = this.args?.command || "";
-			text = chalk.bold(`$ ${command || chalk.dim("...")}`);
+			text = theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`));
 
 			if (this.result) {
 				// Show output without code fences - more minimal
@@ -211,9 +112,9 @@ export class ToolExecutionComponent extends Container {
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
-					text += "\n\n" + displayLines.map((line: string) => chalk.dim(line)).join("\n");
+					text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
 					if (remaining > 0) {
-						text += chalk.dim(`\n... (${remaining} more lines)`);
+						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
 				}
 			}
@@ -223,13 +124,13 @@ export class ToolExecutionComponent extends Container {
 			const limit = this.args?.limit;
 
 			// Build path display with offset/limit suffix
-			let pathDisplay = path ? chalk.cyan(path) : chalk.dim("...");
+			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			if (offset !== undefined) {
 				const endLine = limit !== undefined ? offset + limit : "";
-				pathDisplay += chalk.dim(`:${offset}${endLine ? `-${endLine}` : ""}`);
+				pathDisplay += theme.fg("toolOutput", `:${offset}${endLine ? `-${endLine}` : ""}`);
 			}
 
-			text = chalk.bold("read") + " " + pathDisplay;
+			text = theme.fg("toolTitle", theme.bold("read")) + " " + pathDisplay;
 
 			if (this.result) {
 				const output = this.getTextOutput();
@@ -238,9 +139,9 @@ export class ToolExecutionComponent extends Container {
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
+				text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", replaceTabs(line))).join("\n");
 				if (remaining > 0) {
-					text += chalk.dim(`\n... (${remaining} more lines)`);
+					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 			}
 		} else if (this.toolName === "write") {
@@ -249,7 +150,10 @@ export class ToolExecutionComponent extends Container {
 			const lines = fileContent ? fileContent.split("\n") : [];
 			const totalLines = lines.length;
 
-			text = chalk.bold("write") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
+			text =
+				theme.fg("toolTitle", theme.bold("write")) +
+				" " +
+				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
 			if (totalLines > 10) {
 				text += ` (${totalLines} lines)`;
 			}
@@ -260,32 +164,35 @@ export class ToolExecutionComponent extends Container {
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => chalk.dim(replaceTabs(line))).join("\n");
+				text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", replaceTabs(line))).join("\n");
 				if (remaining > 0) {
-					text += chalk.dim(`\n... (${remaining} more lines)`);
+					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 			}
 		} else if (this.toolName === "edit") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
-			text = chalk.bold("edit") + " " + (path ? chalk.cyan(path) : chalk.dim("..."));
+			text =
+				theme.fg("toolTitle", theme.bold("edit")) +
+				" " +
+				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
 
 			if (this.result) {
 				// Show error message if it's an error
 				if (this.result.isError) {
 					const errorText = this.getTextOutput();
 					if (errorText) {
-						text += "\n\n" + chalk.red(errorText);
+						text += "\n\n" + theme.fg("error", errorText);
 					}
 				} else if (this.result.details?.diff) {
 					// Show diff if available
 					const diffLines = this.result.details.diff.split("\n");
 					const coloredLines = diffLines.map((line: string) => {
 						if (line.startsWith("+")) {
-							return chalk.green(line);
+							return theme.fg("toolDiffAdded", line);
 						} else if (line.startsWith("-")) {
-							return chalk.red(line);
+							return theme.fg("toolDiffRemoved", line);
 						} else {
-							return chalk.dim(line);
+							return theme.fg("toolDiffContext", line);
 						}
 					});
 					text += "\n\n" + coloredLines.join("\n");
@@ -293,7 +200,7 @@ export class ToolExecutionComponent extends Container {
 			}
 		} else {
 			// Generic tool
-			text = chalk.bold(this.toolName);
+			text = theme.fg("toolTitle", theme.bold(this.toolName));
 
 			const content = JSON.stringify(this.args, null, 2);
 			text += "\n\n" + content;

@@ -65,22 +65,24 @@ describe("wrapTextWithAnsi", () => {
 });
 
 describe("applyBackgroundToLine", () => {
+	const greenBg = (text: string) => chalk.bgGreen(text);
+
 	it("applies background to plain text and pads to width", () => {
 		const line = "hello";
-		const result = applyBackgroundToLine(line, 20, { r: 0, g: 255, b: 0 });
+		const result = applyBackgroundToLine(line, 20, greenBg);
 
 		// Should be exactly 20 visible chars
 		const stripped = result.replace(/\x1b\[[0-9;]*m/g, "");
 		assert.strictEqual(stripped.length, 20);
 
 		// Should have background codes
-		assert.ok(result.includes("\x1b[48;2;0;255;0m"));
+		assert.ok(result.includes("\x1b[48") || result.includes("\x1b[42m"));
 		assert.ok(result.includes("\x1b[49m"));
 	});
 
 	it("handles text with ANSI codes and resets", () => {
 		const line = chalk.bold("hello") + " world";
-		const result = applyBackgroundToLine(line, 20, { r: 0, g: 255, b: 0 });
+		const result = applyBackgroundToLine(line, 20, greenBg);
 
 		// Should be exactly 20 visible chars
 		const stripped = result.replace(/\x1b\[[0-9;]*m/g, "");
@@ -90,13 +92,13 @@ describe("applyBackgroundToLine", () => {
 		assert.ok(result.includes("\x1b[1m"));
 
 		// Should have background throughout (even after resets)
-		assert.ok(result.includes("\x1b[48;2;0;255;0m"));
+		assert.ok(result.includes("\x1b[48") || result.includes("\x1b[42m"));
 	});
 
 	it("handles text with 0m resets by reapplying background", () => {
 		// Simulate: bold text + reset + normal text
 		const line = "\x1b[1mhello\x1b[0m world";
-		const result = applyBackgroundToLine(line, 20, { r: 0, g: 255, b: 0 });
+		const result = applyBackgroundToLine(line, 20, greenBg);
 
 		// Should NOT have black cells (spaces without background)
 		// Pattern we DON'T want: 49m or 0m followed by spaces before bg reapplied

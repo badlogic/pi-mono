@@ -1,20 +1,16 @@
-import { Chalk } from "chalk";
 import { marked, type Token } from "marked";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
-
-// Use a chalk instance with color level 3 for consistent ANSI output
-const colorChalk = new Chalk({ level: 3 });
 
 /**
  * Default text styling for markdown content.
  * Applied to all text unless overridden by markdown formatting.
  */
 export interface DefaultTextStyle {
-	/** Foreground color - named color or hex string like "#ff0000" */
-	color?: string;
-	/** Background color - named color or hex string like "#ff0000" */
-	bgColor?: string;
+	/** Foreground color function */
+	color?: (text: string) => string;
+	/** Background color function */
+	bgColor?: (text: string) => string;
 	/** Bold text */
 	bold?: boolean;
 	/** Italic text */
@@ -32,6 +28,7 @@ export interface DefaultTextStyle {
 export interface MarkdownTheme {
 	heading: (text: string) => string;
 	link: (text: string) => string;
+	linkUrl: (text: string) => string;
 	code: (text: string) => string;
 	codeBlock: (text: string) => string;
 	codeBlockBorder: (text: string) => string;
@@ -39,6 +36,10 @@ export interface MarkdownTheme {
 	quoteBorder: (text: string) => string;
 	hr: (text: string) => string;
 	listBullet: (text: string) => string;
+	bold: (text: string) => string;
+	italic: (text: string) => string;
+	strikethrough: (text: string) => string;
+	underline: (text: string) => string;
 }
 
 export class Markdown implements Component {
@@ -46,7 +47,7 @@ export class Markdown implements Component {
 	private paddingX: number; // Left/right padding
 	private paddingY: number; // Top/bottom padding
 	private defaultTextStyle?: DefaultTextStyle;
-	private theme?: MarkdownTheme;
+	private theme: MarkdownTheme;
 
 	// Cache for rendered output
 	private cachedText?: string;
@@ -54,22 +55,25 @@ export class Markdown implements Component {
 	private cachedLines?: string[];
 
 	constructor(
-		text: string = "",
-		paddingX: number = 1,
-		paddingY: number = 1,
+		text: string,
+		paddingX: number,
+		paddingY: number,
+		theme: MarkdownTheme,
 		defaultTextStyle?: DefaultTextStyle,
-		theme?: MarkdownTheme,
 	) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
-		this.defaultTextStyle = defaultTextStyle;
 		this.theme = theme;
+		this.defaultTextStyle = defaultTextStyle;
 	}
 
 	setText(text: string): void {
 		this.text = text;
-		// Invalidate cache when text changes
+		this.invalidate();
+	}
+
+	invalidate(): void {
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -119,14 +123,14 @@ export class Markdown implements Component {
 		// Add margins and background to each wrapped line
 		const leftMargin = " ".repeat(this.paddingX);
 		const rightMargin = " ".repeat(this.paddingX);
-		const bgRgb = this.defaultTextStyle?.bgColor ? this.parseBgColor() : undefined;
+		const bgFn = this.defaultTextStyle?.bgColor;
 		const contentLines: string[] = [];
 
 		for (const line of wrappedLines) {
 			const lineWithMargins = leftMargin + line + rightMargin;
 
-			if (bgRgb) {
-				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgRgb));
+			if (bgFn) {
+				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
 			} else {
 				// No background - just pad to width
 				const visibleLen = visibleWidth(lineWithMargins);
@@ -139,7 +143,7 @@ export class Markdown implements Component {
 		const emptyLine = " ".repeat(width);
 		const emptyLines: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			const line = bgRgb ? applyBackgroundToLine(emptyLine, width, bgRgb) : emptyLine;
+			const line = bgFn ? applyBackgroundToLine(emptyLine, width, bgFn) : emptyLine;
 			emptyLines.push(line);
 		}
 
@@ -152,39 +156,6 @@ export class Markdown implements Component {
 		this.cachedLines = result;
 
 		return result.length > 0 ? result : [""];
-	}
-
-	/**
-	 * Parse background color from defaultTextStyle to RGB values
-	 */
-	private parseBgColor(): { r: number; g: number; b: number } | undefined {
-		if (!this.defaultTextStyle?.bgColor) {
-			return undefined;
-		}
-
-		if (this.defaultTextStyle.bgColor.startsWith("#")) {
-			// Hex color
-			const hex = this.defaultTextStyle.bgColor.substring(1);
-			return {
-				r: Number.parseInt(hex.substring(0, 2), 16),
-				g: Number.parseInt(hex.substring(2, 4), 16),
-				b: Number.parseInt(hex.substring(4, 6), 16),
-			};
-		}
-
-		// Named colors - map to RGB (common terminal colors)
-		const colorMap: Record<string, { r: number; g: number; b: number }> = {
-			bgBlack: { r: 0, g: 0, b: 0 },
-			bgRed: { r: 255, g: 0, b: 0 },
-			bgGreen: { r: 0, g: 255, b: 0 },
-			bgYellow: { r: 255, g: 255, b: 0 },
-			bgBlue: { r: 0, g: 0, b: 255 },
-			bgMagenta: { r: 255, g: 0, b: 255 },
-			bgCyan: { r: 0, g: 255, b: 255 },
-			bgWhite: { r: 255, g: 255, b: 255 },
-		};
-
-		return colorMap[this.defaultTextStyle.bgColor];
 	}
 
 	/**
@@ -202,31 +173,21 @@ export class Markdown implements Component {
 
 		// Apply foreground color (NOT background - that's applied at padding stage)
 		if (this.defaultTextStyle.color) {
-			if (this.defaultTextStyle.color.startsWith("#")) {
-				// Hex color
-				const hex = this.defaultTextStyle.color.substring(1);
-				const r = Number.parseInt(hex.substring(0, 2), 16);
-				const g = Number.parseInt(hex.substring(2, 4), 16);
-				const b = Number.parseInt(hex.substring(4, 6), 16);
-				styled = colorChalk.rgb(r, g, b)(styled);
-			} else {
-				// Named color
-				styled = (colorChalk as any)[this.defaultTextStyle.color](styled);
-			}
+			styled = this.defaultTextStyle.color(styled);
 		}
 
-		// Apply text decorations
+		// Apply text decorations using this.theme
 		if (this.defaultTextStyle.bold) {
-			styled = colorChalk.bold(styled);
+			styled = this.theme.bold(styled);
 		}
 		if (this.defaultTextStyle.italic) {
-			styled = colorChalk.italic(styled);
+			styled = this.theme.italic(styled);
 		}
 		if (this.defaultTextStyle.strikethrough) {
-			styled = colorChalk.strikethrough(styled);
+			styled = this.theme.strikethrough(styled);
 		}
 		if (this.defaultTextStyle.underline) {
-			styled = colorChalk.underline(styled);
+			styled = this.theme.underline(styled);
 		}
 
 		return styled;
@@ -240,13 +201,15 @@ export class Markdown implements Component {
 				const headingLevel = token.depth;
 				const headingPrefix = "#".repeat(headingLevel) + " ";
 				const headingText = this.renderInlineTokens(token.tokens || []);
+				let styledHeading: string;
 				if (headingLevel === 1) {
-					lines.push(colorChalk.bold.underline.yellow(headingText));
+					styledHeading = this.theme.heading(this.theme.bold(this.theme.underline(headingText)));
 				} else if (headingLevel === 2) {
-					lines.push(colorChalk.bold.yellow(headingText));
+					styledHeading = this.theme.heading(this.theme.bold(headingText));
 				} else {
-					lines.push(colorChalk.bold(headingPrefix + headingText));
+					styledHeading = this.theme.heading(this.theme.bold(headingPrefix + headingText));
 				}
+				lines.push(styledHeading);
 				lines.push(""); // Add spacing after headings
 				break;
 			}
@@ -262,13 +225,13 @@ export class Markdown implements Component {
 			}
 
 			case "code": {
-				lines.push(colorChalk.gray("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
 				// Split code by newlines and style each line
 				const codeLines = token.text.split("\n");
 				for (const codeLine of codeLines) {
-					lines.push(colorChalk.dim("  ") + colorChalk.green(codeLine));
+					lines.push("  " + this.theme.codeBlock(codeLine));
 				}
-				lines.push(colorChalk.gray("```"));
+				lines.push(this.theme.codeBlockBorder("```"));
 				lines.push(""); // Add spacing after code blocks
 				break;
 			}
@@ -291,14 +254,14 @@ export class Markdown implements Component {
 				const quoteText = this.renderInlineTokens(token.tokens || []);
 				const quoteLines = quoteText.split("\n");
 				for (const quoteLine of quoteLines) {
-					lines.push(colorChalk.gray("│ ") + colorChalk.italic(quoteLine));
+					lines.push(this.theme.quoteBorder("│ ") + this.theme.quote(this.theme.italic(quoteLine)));
 				}
 				lines.push(""); // Add spacing after blockquotes
 				break;
 			}
 
 			case "hr":
-				lines.push(colorChalk.gray("─".repeat(Math.min(width, 80))));
+				lines.push(this.theme.hr("─".repeat(Math.min(width, 80))));
 				lines.push(""); // Add spacing after horizontal rules
 				break;
 
@@ -339,31 +302,31 @@ export class Markdown implements Component {
 				case "strong": {
 					// Apply bold, then reapply default style after
 					const boldContent = this.renderInlineTokens(token.tokens || []);
-					result += colorChalk.bold(boldContent) + this.applyDefaultStyle("");
+					result += this.theme.bold(boldContent) + this.applyDefaultStyle("");
 					break;
 				}
 
 				case "em": {
 					// Apply italic, then reapply default style after
 					const italicContent = this.renderInlineTokens(token.tokens || []);
-					result += colorChalk.italic(italicContent) + this.applyDefaultStyle("");
+					result += this.theme.italic(italicContent) + this.applyDefaultStyle("");
 					break;
 				}
 
 				case "codespan":
 					// Apply code styling without backticks
-					result += colorChalk.cyan(token.text) + this.applyDefaultStyle("");
+					result += this.theme.code(token.text) + this.applyDefaultStyle("");
 					break;
 
 				case "link": {
 					const linkText = this.renderInlineTokens(token.tokens || []);
 					// If link text matches href, only show the link once
 					if (linkText === token.href) {
-						result += colorChalk.underline.blue(linkText) + this.applyDefaultStyle("");
+						result += this.theme.link(this.theme.underline(linkText)) + this.applyDefaultStyle("");
 					} else {
 						result +=
-							colorChalk.underline.blue(linkText) +
-							colorChalk.gray(` (${token.href})`) +
+							this.theme.link(this.theme.underline(linkText)) +
+							this.theme.linkUrl(` (${token.href})`) +
 							this.applyDefaultStyle("");
 					}
 					break;
@@ -375,7 +338,7 @@ export class Markdown implements Component {
 
 				case "del": {
 					const delContent = this.renderInlineTokens(token.tokens || []);
-					result += colorChalk.strikethrough(delContent) + this.applyDefaultStyle("");
+					result += this.theme.strikethrough(delContent) + this.applyDefaultStyle("");
 					break;
 				}
 
@@ -415,7 +378,7 @@ export class Markdown implements Component {
 					lines.push(firstLine);
 				} else {
 					// Regular text content - add indent and bullet
-					lines.push(indent + colorChalk.cyan(bullet) + firstLine);
+					lines.push(indent + this.theme.listBullet(bullet) + firstLine);
 				}
 
 				// Rest of the lines
@@ -432,7 +395,7 @@ export class Markdown implements Component {
 					}
 				}
 			} else {
-				lines.push(indent + colorChalk.cyan(bullet));
+				lines.push(indent + this.theme.listBullet(bullet));
 			}
 		}
 
@@ -463,12 +426,12 @@ export class Markdown implements Component {
 				lines.push(text);
 			} else if (token.type === "code") {
 				// Code block in list item
-				lines.push(colorChalk.gray("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
 				const codeLines = token.text.split("\n");
 				for (const codeLine of codeLines) {
-					lines.push(colorChalk.dim("  ") + colorChalk.green(codeLine));
+					lines.push("  " + this.theme.codeBlock(codeLine));
 				}
-				lines.push(colorChalk.gray("```"));
+				lines.push(this.theme.codeBlockBorder("```"));
 			} else {
 				// Other token types - try to render as inline
 				const text = this.renderInlineTokens([token]);
@@ -515,7 +478,7 @@ export class Markdown implements Component {
 		// Render header
 		const headerCells = token.header.map((cell, i) => {
 			const text = this.renderInlineTokens(cell.tokens || []);
-			return colorChalk.bold(text.padEnd(columnWidths[i]));
+			return this.theme.bold(text.padEnd(columnWidths[i]));
 		});
 		lines.push("│ " + headerCells.join(" │ ") + " │");
 

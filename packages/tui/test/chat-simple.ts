@@ -2,6 +2,7 @@
  * Simple chat interface demo using tui.ts
  */
 
+import chalk from "chalk";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 import { Editor } from "../src/components/editor.js";
 import { Loader } from "../src/components/loader.js";
@@ -9,6 +10,7 @@ import { Markdown } from "../src/components/markdown.js";
 import { Text } from "../src/components/text.js";
 import { ProcessTerminal } from "../src/terminal.js";
 import { TUI } from "../src/tui.js";
+import { defaultEditorTheme, defaultMarkdownTheme } from "./test-themes.js";
 
 // Create terminal
 const terminal = new ProcessTerminal();
@@ -22,7 +24,7 @@ tui.addChild(
 );
 
 // Create editor with autocomplete
-const editor = new Editor();
+const editor = new Editor(defaultEditorTheme);
 
 // Set up autocomplete provider with slash commands and file completion
 const autocompleteProvider = new CombinedAutocompleteProvider(
@@ -78,12 +80,17 @@ editor.onSubmit = (value: string) => {
 		isResponding = true;
 		editor.disableSubmit = true;
 
-		const userMessage = new Markdown(value, 1, 1, { bgColor: "#343541" });
+		const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);
 
 		const children = tui.children;
 		children.splice(children.length - 1, 0, userMessage);
 
-		const loader = new Loader(tui, "Thinking...");
+		const loader = new Loader(
+			tui,
+			(s) => chalk.cyan(s),
+			(s) => chalk.dim(s),
+			"Thinking...",
+		);
 		children.splice(children.length - 1, 0, loader);
 
 		tui.requestRender();
@@ -105,7 +112,7 @@ editor.onSubmit = (value: string) => {
 			const randomResponse = responses[Math.floor(Math.random() * responses.length)];
 
 			// Add assistant message with no background (transparent)
-			const botMessage = new Markdown(randomResponse);
+			const botMessage = new Markdown(randomResponse, 1, 1, defaultMarkdownTheme);
 			children.splice(children.length - 1, 0, botMessage);
 
 			// Re-enable submit

@@ -20,6 +20,12 @@ export interface Component {
 	 * Optional handler for keyboard input when component has focus
 	 */
 	handleInput?(data: string): void;
+
+	/**
+	 * Invalidate any cached rendering state.
+	 * Called when theme changes or when component needs to re-render from scratch.
+	 */
+	invalidate(): void;
 }
 
 export { visibleWidth };
@@ -43,6 +49,12 @@ export class Container implements Component {
 
 	clear(): void {
 		this.children = [];
+	}
+
+	invalidate(): void {
+		for (const child of this.children) {
+			child.invalidate?.();
+		}
 	}
 
 	render(width: number): string[] {

@@ -1,7 +1,6 @@
-import chalk from "chalk";
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import type { Component } from "../tui.js";
-import { SelectList } from "./select-list.js";
+import { SelectList, type SelectListTheme } from "./select-list.js";
 
 interface EditorState {
 	lines: string[];
@@ -15,8 +14,9 @@ interface LayoutLine {
 	cursorPos?: number;
 }
 
-export interface TextEditorConfig {
-	// Configuration options for text editor (none currently)
+export interface EditorTheme {
+	borderColor: (str: string) => string;
+	selectList: SelectListTheme;
 }
 
 export class Editor implements Component {
@@ -26,10 +26,10 @@ export class Editor implements Component {
 		cursorCol: 0,
 	};
 
-	private config: TextEditorConfig = {};
+	private theme: EditorTheme;
 
 	// Border color (can be changed dynamically)
-	public borderColor: (str: string) => string = chalk.gray;
+	public borderColor: (str: string) => string;
 
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
@@ -49,18 +49,17 @@ export class Editor implements Component {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	constructor(config?: TextEditorConfig) {
-		if (config) {
-			this.config = { ...this.config, ...config };
-		}
-	}
-
-	configure(config: Partial<TextEditorConfig>): void {
-		this.config = { ...this.config, ...config };
+	constructor(theme: EditorTheme) {
+		this.theme = theme;
+		this.borderColor = theme.borderColor;
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
 		this.autocompleteProvider = provider;
+	}
+
+	invalidate(): void {
+		// No cached state to invalidate currently
 	}
 
 	render(width: number): string[] {
@@ -806,7 +805,7 @@ export class Editor implements Component {
 
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5);
+			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
 			this.isAutocompleting = true;
 		} else {
 			this.cancelAutocomplete();
@@ -851,7 +850,7 @@ export class Editor implements Component {
 
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5);
+			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
 			this.isAutocompleting = true;
 		} else {
 			this.cancelAutocomplete();
@@ -881,7 +880,7 @@ export class Editor implements Component {
 			this.autocompletePrefix = suggestions.prefix;
 			if (this.autocompleteList) {
 				// Update the existing list with new items
-				this.autocompleteList = new SelectList(suggestions.items, 5);
+				this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
 			}
 		} else {
 			// No more matches, cancel autocomplete

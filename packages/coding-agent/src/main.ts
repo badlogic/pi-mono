@@ -236,8 +236,8 @@ Guidelines:
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 
 Documentation:
-- Your own documentation (including custom model setup) is at: ${readmePath}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider.`;
+- Your own documentation (including custom model setup and theme creation) is at: ${readmePath}
+- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.`;
 
 	// Append project context files
 	const contextFiles = loadProjectContextFiles();

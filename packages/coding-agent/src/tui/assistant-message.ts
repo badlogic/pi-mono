@@ -1,6 +1,6 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import chalk from "chalk";
+import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
  * Component that renders a complete assistant message
@@ -38,13 +38,13 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0));
+				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
-				// Thinking traces in dark gray italic
+				// Thinking traces in muted color, italic
 				// Use Markdown component with default text style for consistent styling
 				this.contentContainer.addChild(
-					new Markdown(content.thinking.trim(), 1, 0, {
-						color: "gray",
+					new Markdown(content.thinking.trim(), 1, 0, getMarkdownTheme(), {
+						color: (text: string) => theme.fg("muted", text),
 						italic: true,
 					}),
 				);
@@ -57,11 +57,11 @@ export class AssistantMessageComponent extends Container {
 		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
 		if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {
-				this.contentContainer.addChild(new Text(chalk.red("\nAborted"), 1, 0));
+				this.contentContainer.addChild(new Text(theme.fg("error", "\nAborted"), 1, 0));
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
 				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(chalk.red(`Error: ${errorMsg}`), 1, 0));
+				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
 			}
 		}
 	}

@@ -11,6 +11,7 @@ Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the
 - [API Keys](#api-keys)
 - [OAuth Authentication (Optional)](#oauth-authentication-optional)
 - [Custom Models and Providers](#custom-models-and-providers)
+- [Themes](#themes)
 - [Slash Commands](#slash-commands)
 - [Editor Features](#editor-features)
 - [Project Context Files](#project-context-files)
@@ -283,6 +284,79 @@ If the file contains errors (JSON syntax, schema violations, missing fields), th
 ### Example: Adding Ollama Models
 
 See the configuration structure above. Create `~/.pi/agent/models.json` with your Ollama setup, then use `/model` to select your local models. The agent can also help you write this file if you point it to this README.
+
+## Themes
+
+Pi supports customizable color themes for the TUI. Two built-in themes are available: `dark` (default) and `light`.
+
+### Selecting a Theme
+
+Use the `/theme` command to interactively select a theme, or edit your settings file:
+
+```bash
+# Interactive selector
+pi
+/theme
+
+# Or edit ~/.pi/agent/settings.json
+{
+  "theme": "dark"  # or "light"
+}
+```
+
+On first run, Pi auto-detects your terminal background (dark/light) and selects an appropriate theme.
+
+### Custom Themes
+
+Create custom themes in `~/.pi/agent/themes/*.json`. Custom themes support **live editing** - when you select a custom theme, Pi watches the file and automatically reloads when you save changes.
+
+**Workflow for creating themes:**
+1. Copy a built-in theme as a starting point:
+   ```bash
+   mkdir -p ~/.pi/agent/themes
+   # Copy dark theme
+   cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent/themes/my-theme.json
+   # Or copy light theme
+   cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/light.json ~/.pi/agent/themes/my-theme.json
+   ```
+2. Use `/theme` to select "my-theme"
+3. Edit `~/.pi/agent/themes/my-theme.json` - changes apply immediately on save
+4. Iterate until satisfied (no need to re-select the theme)
+
+See [Theme Documentation](docs/theme.md) for:
+- Complete list of 44 color tokens
+- Theme format and examples
+- Color value formats (hex, RGB, terminal default)
+
+Example custom theme:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
+  "name": "my-theme",
+  "vars": {
+    "accent": "#00aaff",
+    "muted": "#6c6c6c"
+  },
+  "colors": {
+    "accent": "accent",
+    "muted": "muted",
+    ...
+  }
+}
+```
+
+### VS Code Terminal Color Issue
+
+**Important:** VS Code's integrated terminal has a known issue with rendering truecolor (24-bit RGB) values. By default, it applies a "minimum contrast ratio" adjustment that can make colors look washed out or identical.
+
+To fix this, set the contrast ratio to 1 in VS Code settings:
+
+1. Open Settings (Cmd/Ctrl + ,)
+2. Search for: `terminal.integrated.minimumContrastRatio`
+3. Set to: `1`
+
+This ensures VS Code renders the exact RGB colors defined in your theme.
 
 ## Slash Commands
 

@@ -1,7 +1,4 @@
-import { Chalk } from "chalk";
 import stringWidth from "string-width";
-
-const colorChalk = new Chalk({ level: 3 });
 
 /**
  * Calculate the visible width of a string in terminal columns.
@@ -245,30 +242,18 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 /**
  * Apply background color to a line, padding to full width.
  *
- * Handles the tricky case where content contains \x1b[0m resets that would
- * kill the background color. We reapply the background after any reset.
- *
  * @param line - Line of text (may contain ANSI codes)
  * @param width - Total width to pad to
- * @param bgRgb - Background RGB color
+ * @param bgFn - Background color function
  * @returns Line with background applied and padded to width
  */
-export function applyBackgroundToLine(line: string, width: number, bgRgb: { r: number; g: number; b: number }): string {
-	const bgStart = `\x1b[48;2;${bgRgb.r};${bgRgb.g};${bgRgb.b}m`;
-	const bgEnd = "\x1b[49m";
-
+export function applyBackgroundToLine(line: string, width: number, bgFn: (text: string) => string): string {
 	// Calculate padding needed
 	const visibleLen = visibleWidth(line);
 	const paddingNeeded = Math.max(0, width - visibleLen);
 	const padding = " ".repeat(paddingNeeded);
 
-	// Strategy: wrap content + padding in background, then fix any 0m resets
+	// Apply background to content + padding
 	const withPadding = line + padding;
-	const withBg = bgStart + withPadding + bgEnd;
-
-	// Find all \x1b[0m or \x1b[49m that would kill background
-	// Replace with reset + background reapplication
-	const fixedBg = withBg.replace(/\x1b\[0m/g, `\x1b[0m${bgStart}`);
-
-	return fixedBg;
+	return bgFn(withPadding);
 }

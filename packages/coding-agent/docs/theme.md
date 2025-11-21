@@ -6,7 +6,7 @@ Themes allow you to customize the colors used throughout the coding agent TUI.
 
 Every theme must define all color tokens. There are no optional colors.
 
-### Core UI (9 colors)
+### Core UI (10 colors)
 
 | Token | Purpose | Examples |
 |-------|---------|----------|
@@ -18,9 +18,10 @@ Every theme must define all color tokens. There are no optional colors.
 | `error` | Error states | Error messages, diff deletions |
 | `warning` | Warning states | Warning messages |
 | `muted` | Secondary/dimmed text | Metadata, descriptions, output |
+| `dim` | Very dimmed text | Less important info, placeholders |
 | `text` | Default text color | Main content (usually `""`) |
 
-### Backgrounds & Content Text (6 colors)
+### Backgrounds & Content Text (7 colors)
 
 | Token | Purpose |
 |-------|---------|
@@ -29,14 +30,16 @@ Every theme must define all color tokens. There are no optional colors.
 | `toolPendingBg` | Tool execution box (pending state) |
 | `toolSuccessBg` | Tool execution box (success state) |
 | `toolErrorBg` | Tool execution box (error state) |
-| `toolText` | Tool execution box text color (all states) |
+| `toolTitle` | Tool execution title/heading (e.g., `$ command`, `read file.txt`) |
+| `toolOutput` | Tool execution output text |
 
-### Markdown (9 colors)
+### Markdown (10 colors)
 
 | Token | Purpose |
 |-------|---------|
 | `mdHeading` | Heading text (`#`, `##`, etc) |
-| `mdLink` | Link text and URLs |
+| `mdLink` | Link text |
+| `mdLinkUrl` | Link URL (in parentheses) |
 | `mdCode` | Inline code (backticks) |
 | `mdCodeBlock` | Code block content |
 | `mdCodeBlockBorder` | Code block fences (```) |
@@ -71,7 +74,21 @@ Future-proofing for syntax highlighting support:
 | `syntaxOperator` | Operators (`+`, `-`, etc) |
 | `syntaxPunctuation` | Punctuation (`;`, `,`, etc) |
 
-**Total: 36 color tokens** (all required)
+### Thinking Level Borders (5 colors)
+
+Editor border colors that indicate the current thinking/reasoning level:
+
+| Token | Purpose |
+|-------|---------|
+| `thinkingOff` | Border when thinking is off (most subtle) |
+| `thinkingMinimal` | Border for minimal thinking |
+| `thinkingLow` | Border for low thinking |
+| `thinkingMedium` | Border for medium thinking |
+| `thinkingHigh` | Border for high thinking (most prominent) |
+
+These create a visual hierarchy: off → minimal → low → medium → high
+
+**Total: 44 color tokens** (all required)
 
 ## Theme Format
 
@@ -241,7 +258,13 @@ Custom themes are loaded from `~/.pi/agent/themes/*.json`.
        "syntaxNumber": "#ff00ff",
        "syntaxType": "#00aaff",
        "syntaxOperator": "primary",
-       "syntaxPunctuation": "secondary"
+       "syntaxPunctuation": "secondary",
+       
+       "thinkingOff": "secondary",
+       "thinkingMinimal": "primary",
+       "thinkingLow": "#00aaff",
+       "thinkingMedium": "#00ffff",
+       "thinkingHigh": "#ff00ff"
      }
    }
    ```

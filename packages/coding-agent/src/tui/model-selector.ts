@@ -1,8 +1,9 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { Container, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
-import chalk from "chalk";
 import { getAvailableModels } from "../model-config.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { theme } from "../theme/theme.js";
+import { DynamicBorder } from "./dynamic-border.js";
 
 interface ModelItem {
 	provider: string;
@@ -42,12 +43,12 @@ export class ModelSelectorComponent extends Container {
 		this.onCancelCallback = onCancel;
 
 		// Add top border
-		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
+		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
 		// Add hint about API key filtering
 		this.addChild(
-			new Text(chalk.yellow("Only showing models with configured API keys (see README for details)"), 0, 0),
+			new Text(theme.fg("warning", "Only showing models with configured API keys (see README for details)"), 0, 0),
 		);
 		this.addChild(new Spacer(1));
 
@@ -70,7 +71,7 @@ export class ModelSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 
 		// Add bottom border
-		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
+		this.addChild(new DynamicBorder());
 
 		// Load models and do initial render
 		this.loadModels().then(() => {
@@ -150,15 +151,15 @@ export class ModelSelectorComponent extends Container {
 
 			let line = "";
 			if (isSelected) {
-				const prefix = chalk.blue("→ ");
+				const prefix = theme.fg("accent", "→ ");
 				const modelText = `${item.id}`;
-				const providerBadge = chalk.gray(`[${item.provider}]`);
-				const checkmark = isCurrent ? chalk.green(" ✓") : "";
-				line = prefix + chalk.blue(modelText) + " " + providerBadge + checkmark;
+				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+				line = prefix + theme.fg("accent", modelText) + " " + providerBadge + checkmark;
 			} else {
 				const modelText = `  ${item.id}`;
-				const providerBadge = chalk.gray(`[${item.provider}]`);
-				const checkmark = isCurrent ? chalk.green(" ✓") : "";
+				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 				line = modelText + " " + providerBadge + checkmark;
 			}
 
@@ -167,7 +168,7 @@ export class ModelSelectorComponent extends Container {
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.filteredModels.length) {
-			const scrollInfo = chalk.gray(`  (${this.selectedIndex + 1}/${this.filteredModels.length})`);
+			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredModels.length})`);
 			this.listContainer.addChild(new Text(scrollInfo, 0, 0));
 		}
 
@@ -176,10 +177,10 @@ export class ModelSelectorComponent extends Container {
 			// Show error in red
 			const errorLines = this.errorMessage.split("\n");
 			for (const line of errorLines) {
-				this.listContainer.addChild(new Text(chalk.red(line), 0, 0));
+				this.listContainer.addChild(new Text(theme.fg("error", line), 0, 0));
 			}
 		} else if (this.filteredModels.length === 0) {
-			this.listContainer.addChild(new Text(chalk.gray("  No matching models"), 0, 0));
+			this.listContainer.addChild(new Text(theme.fg("muted", "  No matching models"), 0, 0));
 		}
 	}
 
