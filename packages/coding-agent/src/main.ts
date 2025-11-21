@@ -39,6 +39,7 @@ interface Args {
 	model?: string;
 	apiKey?: string;
 	systemPrompt?: string;
+	thinking?: ThinkingLevel;
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
@@ -82,6 +83,17 @@ function parseArgs(args: string[]): Args {
 			result.session = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
 			result.models = args[++i].split(",").map((s) => s.trim());
+		} else if (arg === "--thinking" && i + 1 < args.length) {
+			const level = args[++i];
+			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+				result.thinking = level;
+			} else {
+				console.error(
+					chalk.yellow(
+						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high`,
+					),
+				);
+			}
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -107,6 +119,7 @@ ${chalk.bold("Options:")}
   --session <path>        Use specific session file
   --no-session            Don't save session (ephemeral)
   --models <patterns>     Comma-separated model patterns for quick cycling with Ctrl+P
+  --thinking <level>      Set thinking level: off, minimal, low, medium, high
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
@@ -130,6 +143,9 @@ ${chalk.bold("Examples:")}
 
   # Cycle models with fixed thinking levels
   pi --models sonnet:high,haiku:low
+
+  # Start with a specific thinking level
+  pi --thinking high "Solve this complex problem"
 
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY       - Anthropic Claude API key
@@ -370,7 +386,38 @@ async function resolveModelScope(
 			}
 		}
 
-		// Find all models matching this pattern (case-insensitive partial match)
+		// Check for provider/modelId format (provider is everything before the first /)
+		const slashIndex = modelPattern.indexOf("/");
+		if (slashIndex !== -1) {
+			const provider = modelPattern.substring(0, slashIndex);
+			const modelId = modelPattern.substring(slashIndex + 1);
+			const providerMatch = availableModels.find(
+				(m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
+			);
+			if (providerMatch) {
+				if (
+					!scopedModels.find(
+						(sm) => sm.model.id === providerMatch.id && sm.model.provider === providerMatch.provider,
+					)
+				) {
+					scopedModels.push({ model: providerMatch, thinkingLevel });
+				}
+				continue;
+			}
+			// No exact provider/model match - fall through to other matching
+		}
+
+		// Check for exact ID match (case-insensitive)
+		const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
+		if (exactMatch) {
+			// Exact match found - use it directly
+			if (!scopedModels.find((sm) => sm.model.id === exactMatch.id && sm.model.provider === exactMatch.provider)) {
+				scopedModels.push({ model: exactMatch, thinkingLevel });
+			}
+			continue;
+		}
+
+		// No exact match - fall back to partial matching
 		const matches = availableModels.filter(
 			(m) =>
 				m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
@@ -637,6 +684,12 @@ export async function main(args: string[]) {
 				process.exit(1);
 			}
 			initialModel = model;
+
+			// Also load saved thinking level if we're using saved model
+			const savedThinking = settingsManager.getDefaultThinkingLevel();
+			if (savedThinking) {
+				initialThinking = savedThinking;
+			}
 		}
 	}
 
@@ -767,6 +820,11 @@ export async function main(args: string[]) {
 				}
 			}
 		}
+	}
+
+	// CLI --thinking flag takes highest priority
+	if (parsed.thinking) {
+		initialThinking = parsed.thinking;
 	}
 
 	// Create agent (initialModel can be null in interactive mode)

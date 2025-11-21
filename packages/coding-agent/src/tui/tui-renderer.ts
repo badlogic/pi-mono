@@ -91,9 +91,6 @@ export class TuiRenderer {
 	// Model scope for quick cycling
 	private scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
 
-	// Track if user manually changed thinking (disables auto-thinking from model cycling)
-	private autoThinkingDisabled = false;
-
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
@@ -789,11 +786,9 @@ export class TuiRenderer {
 		// Apply the new thinking level
 		this.agent.setThinkingLevel(nextLevel);
 
-		// Disable auto-thinking since user manually changed it
-		this.autoThinkingDisabled = true;
-
-		// Save thinking level change to session
+		// Save thinking level change to session and settings
 		this.sessionManager.saveThinkingLevelChange(nextLevel);
+		this.settingsManager.setDefaultThinkingLevel(nextLevel);
 
 		// Update border color
 		this.updateEditorBorderColor();
@@ -840,17 +835,16 @@ export class TuiRenderer {
 			// Switch model
 			this.agent.setModel(nextModel);
 
-			// Apply thinking level if not disabled and model supports it
-			if (!this.autoThinkingDisabled && nextModel.reasoning) {
-				this.agent.setThinkingLevel(nextThinking);
-				this.sessionManager.saveThinkingLevelChange(nextThinking);
-				this.updateEditorBorderColor();
-			} else if (!this.autoThinkingDisabled && !nextModel.reasoning && nextThinking !== "off") {
-				// Model doesn't support thinking but user requested it - silently ignore
-				this.agent.setThinkingLevel("off");
-				this.sessionManager.saveThinkingLevelChange("off");
-				this.updateEditorBorderColor();
-			}
+			// Save model change to session and settings
+			this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
+			this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
+
+			// Apply thinking level (silently use "off" if model doesn't support thinking)
+			const effectiveThinking = nextModel.reasoning ? nextThinking : "off";
+			this.agent.setThinkingLevel(effectiveThinking);
+			this.sessionManager.saveThinkingLevelChange(effectiveThinking);
+			this.settingsManager.setDefaultThinkingLevel(effectiveThinking);
+			this.updateEditorBorderColor();
 
 			// Show notification
 			this.chatContainer.addChild(new Spacer(1));
@@ -874,7 +868,7 @@ export class TuiRenderer {
 
 			if (availableModels.length === 1) {
 				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model in scope"), 1, 0));
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model available"), 1, 0));
 				this.ui.requestRender();
 				return;
 			}
@@ -901,6 +895,10 @@ export class TuiRenderer {
 
 			// Switch model
 			this.agent.setModel(nextModel);
+
+			// Save model change to session and settings
+			this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
+			this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 			// Show notification
 			this.chatContainer.addChild(new Spacer(1));
@@ -949,11 +947,9 @@ export class TuiRenderer {
 				// Apply the selected thinking level
 				this.agent.setThinkingLevel(level);
 
-				// Disable auto-thinking since user manually changed it
-				this.autoThinkingDisabled = true;
-
-				// Save thinking level change to session
+				// Save thinking level change to session and settings
 				this.sessionManager.saveThinkingLevelChange(level);
+				this.settingsManager.setDefaultThinkingLevel(level);
 
 				// Update border color
 				this.updateEditorBorderColor();
@@ -1106,9 +1102,6 @@ export class TuiRenderer {
 			(model) => {
 				// Apply the selected model
 				this.agent.setModel(model);
-
-				// Clear scoped models since user manually selected a model
-				this.scopedModels = [];
 
 				// Save model change to session
 				this.sessionManager.saveModelChange(model.provider, model.id);

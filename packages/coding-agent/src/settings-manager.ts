@@ -6,6 +6,7 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 }
@@ -96,6 +97,15 @@ export class SettingsManager {
 
 	setTheme(theme: string): void {
 		this.settings.theme = theme;
+		this.save();
+	}
+
+	getDefaultThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high" | undefined {
+		return this.settings.defaultThinkingLevel;
+	}
+
+	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high"): void {
+		this.settings.defaultThinkingLevel = level;
 		this.save();
 	}
 }
