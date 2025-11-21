@@ -192,6 +192,7 @@ export class Editor implements Component {
 				// Only pass arrow keys to the list, not Enter/Tab (we handle those directly)
 				if (data === "\x1b[A" || data === "\x1b[B") {
 					this.autocompleteList.handleInput(data);
+					return;
 				}
 
 				// If Tab was pressed, always apply the selection
@@ -832,6 +833,11 @@ export class Editor implements Component {
 		this.tryTriggerAutocomplete(true);
 	}
 
+	/*
+https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/559322883
+17 this job fails with https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19
+536643416/job/55932288317 havea  look at .gi
+	 */
 	private forceFileAutocomplete(): void {
 		if (!this.autocompleteProvider) return;
 
