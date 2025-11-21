@@ -170,6 +170,11 @@ export class TuiRenderer {
 			description: "Select color theme (opens selector UI)",
 		};
 
+		const clearCommand: SlashCommand = {
+			name: "clear",
+			description: "Reset current context and start fresh",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
@@ -183,6 +188,7 @@ export class TuiRenderer {
 				loginCommand,
 				logoutCommand,
 				queueCommand,
+				clearCommand,
 			],
 			process.cwd(),
 		);
@@ -379,6 +385,13 @@ export class TuiRenderer {
 			// Check for /theme command
 			if (text === "/theme") {
 				this.showThemeSelector();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /clear command
+			if (text === "/clear") {
+				this.handleClearCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -1370,6 +1383,46 @@ export class TuiRenderer {
 		this.ui.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, getMarkdownTheme()));
 		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleClearCommand(): void {
+		// Abort any in-flight agent work
+		this.agent.abort();
+
+		// Stop loading animation if running
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+
+		// Clear all messages from the context
+		this.agent.clearMessages();
+
+		// Clear message queue to avoid orphaned tool results
+		this.agent.clearMessageQueue();
+
+		// Clear queued messages
+		this.queuedMessages = [];
+		this.updatePendingMessagesDisplay();
+
+		// Clear streaming component to prevent orphaned tool results
+		this.streamingComponent = null;
+
+		// Clear pending tool components
+		this.pendingTools.clear();
+
+		// Clear status and chat displays
+		this.statusContainer.clear();
+		this.chatContainer.clear();
+
+		// Show confirmation message
+		const confirmationText =
+			theme.fg("accent", "✓ Context cleared") + "\n" + theme.fg("muted", "Ready for a fresh conversation");
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(confirmationText, 1, 0));
+
+		// Request render
 		this.ui.requestRender();
 	}
 
