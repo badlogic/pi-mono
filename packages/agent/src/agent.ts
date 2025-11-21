@@ -77,6 +77,8 @@ export class Agent {
 	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
 	private queueMode: "all" | "one-at-a-time";
+	private runningPrompt?: Promise<void>;
+	private resolveRunningPrompt?: () => void;
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -148,11 +150,36 @@ export class Agent {
 		this.abortController?.abort();
 	}
 
+	/**
+	 * Returns a promise that resolves when the current prompt completes.
+	 * Returns immediately resolved promise if no prompt is running.
+	 */
+	waitForIdle(): Promise<void> {
+		return this.runningPrompt ?? Promise.resolve();
+	}
+
+	/**
+	 * Clear all messages and state. Call abort() first if a prompt is in flight.
+	 */
+	reset() {
+		this._state.messages = [];
+		this._state.isStreaming = false;
+		this._state.streamMessage = null;
+		this._state.pendingToolCalls = new Set<string>();
+		this._state.error = undefined;
+		this.messageQueue = [];
+	}
+
 	async prompt(input: string, attachments?: Attachment[]) {
 		const model = this._state.model;
 		if (!model) {
 			throw new Error("No model configured");
 		}
+
+		// Set up running prompt tracking
+		this.runningPrompt = new Promise<void>((resolve) => {
+			this.resolveRunningPrompt = resolve;
+		});
 
 		// Build user message with attachments
 		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
@@ -322,6 +349,9 @@ export class Agent {
 			this._state.streamMessage = null;
 			this._state.pendingToolCalls = new Set<string>();
 			this.abortController = undefined;
+			this.resolveRunningPrompt?.();
+			this.runningPrompt = undefined;
+			this.resolveRunningPrompt = undefined;
 		}
 	}
 

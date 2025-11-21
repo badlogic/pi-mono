@@ -283,21 +283,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			return atMatch[0]; // Return the full @path pattern
 		}
 
-		// Match paths - including those ending with /, ~/, or any word at end for forced extraction
-		// This regex captures:
-		// - Paths starting from beginning of line or after space/quote/equals
-		// - Absolute paths starting with /
-		// - Relative paths with ./ or ../
-		// - Home directory paths with ~/
-		// - The path itself (can include / in the middle)
-		// - For forced extraction, capture any word at the end
-		const matches = text.match(/(?:^|[\s"'=])((?:\/|~\/|\.{1,2}\/)?(?:[^\s"'=]*\/?)*[^\s"'=]*)$/);
-		if (!matches) {
-			// If forced extraction and no matches, return empty string to trigger from current dir
-			return forceExtract ? "" : null;
-		}
+		// Simple approach: find the last whitespace/delimiter and extract the word after it
+		// This avoids catastrophic backtracking from nested quantifiers
+		const lastDelimiterIndex = Math.max(
+			text.lastIndexOf(" "),
+			text.lastIndexOf("\t"),
+			text.lastIndexOf('"'),
+			text.lastIndexOf("'"),
+			text.lastIndexOf("="),
+		);
 
-		const pathPrefix = matches[1] || "";
+		const pathPrefix = lastDelimiterIndex === -1 ? text : text.slice(lastDelimiterIndex + 1);
 
 		// For forced extraction (Tab key), always return something
 		if (forceExtract) {

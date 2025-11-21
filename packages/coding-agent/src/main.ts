@@ -21,17 +21,6 @@ const __dirname = dirname(__filename);
 const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
 const VERSION = packageJson.version;
 
-const envApiKeyMap: Record<KnownProvider, string[]> = {
-	google: ["GEMINI_API_KEY"],
-	openai: ["OPENAI_API_KEY"],
-	anthropic: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
-	xai: ["XAI_API_KEY"],
-	groq: ["GROQ_API_KEY"],
-	cerebras: ["CEREBRAS_API_KEY"],
-	openrouter: ["OPENROUTER_API_KEY"],
-	zai: ["ZAI_API_KEY"],
-};
-
 const defaultModelPerProvider: Record<KnownProvider, string> = {
 	anthropic: "claude-sonnet-4-5",
 	openai: "gpt-5.1-codex",
@@ -478,13 +467,8 @@ async function runInteractiveMode(
 		scopedModels,
 	);
 
-	// Initialize TUI
+	// Initialize TUI (subscribes to agent events internally)
 	await renderer.init();
-
-	// Set interrupt callback
-	renderer.setInterruptCallback(() => {
-		agent.abort();
-	});
 
 	// Render any existing messages (from --continue mode)
 	renderer.renderInitialMessages(agent.state);
@@ -493,12 +477,6 @@ async function runInteractiveMode(
 	if (modelFallbackMessage) {
 		renderer.showWarning(modelFallbackMessage);
 	}
-
-	// Subscribe to agent events
-	agent.subscribe(async (event) => {
-		// Pass all events to the renderer
-		await renderer.handleEvent(event, agent.state);
-	});
 
 	// Interactive loop
 	while (true) {
@@ -718,11 +696,6 @@ export async function main(args: string[]) {
 	// Load previous messages if continuing or resuming
 	// This may update initialModel if restoring from session
 	if (parsed.continue || parsed.resume) {
-		const messages = sessionManager.loadMessages();
-		if (messages.length > 0 && shouldPrintMessages) {
-			console.log(chalk.dim(`Loaded ${messages.length} messages from previous session`));
-		}
-
 		// Load and restore model (overrides initialModel if found and has API key)
 		const savedModel = sessionManager.loadModel();
 		if (savedModel) {
@@ -871,9 +844,6 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Note: Session will be started lazily after first user+assistant message exchange
-	// (unless continuing/resuming, in which case it's already initialized)
-
 	// Log loaded context files (they're already in the system prompt)
 	if (shouldPrintMessages && !parsed.continue && !parsed.resume) {
 		const contextFiles = loadProjectContextFiles();
@@ -884,19 +854,6 @@ export async function main(args: string[]) {
 			}
 		}
 	}
-
-	// Subscribe to agent events to save messages
-	agent.subscribe((event) => {
-		// Save messages on completion
-		if (event.type === "message_end") {
-			sessionManager.saveMessage(event.message);
-
-			// Check if we should initialize session now (after first user+assistant exchange)
-			if (sessionManager.shouldInitializeSession(agent.state.messages)) {
-				sessionManager.startSession(agent.state);
-			}
-		}
-	});
 
 	// Route to appropriate mode
 	if (mode === "rpc") {
@@ -930,8 +887,6 @@ export async function main(args: string[]) {
 				}
 			} else {
 				// Parse current and last versions
-				const currentParts = VERSION.split(".").map(Number);
-				const current = { major: currentParts[0] || 0, minor: currentParts[1] || 0, patch: currentParts[2] || 0 };
 				const changelogPath = getChangelogPath();
 				const entries = parseChangelog(changelogPath);
 				const newEntries = getNewEntries(entries, lastVersion);
