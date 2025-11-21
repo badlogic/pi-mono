@@ -1,6 +1,7 @@
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
-import chalk from "chalk";
 import { getOAuthProviders, type OAuthProviderInfo } from "../oauth/index.js";
+import { theme } from "../theme/theme.js";
+import { DynamicBorder } from "./dynamic-border.js";
 
 /**
  * Component that renders an OAuth provider selector
@@ -24,12 +25,12 @@ export class OAuthSelectorComponent extends Container {
 		this.loadProviders();
 
 		// Add top border
-		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
+		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
 		// Add title
 		const title = mode === "login" ? "Select provider to login:" : "Select provider to logout:";
-		this.addChild(new Text(chalk.bold(title), 0, 0));
+		this.addChild(new Text(theme.bold(title), 0, 0));
 		this.addChild(new Spacer(1));
 
 		// Create list container
@@ -39,7 +40,7 @@ export class OAuthSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 
 		// Add bottom border
-		this.addChild(new Text(chalk.blue("─".repeat(80)), 0, 0));
+		this.addChild(new DynamicBorder());
 
 		// Initial render
 		this.updateList();
@@ -62,11 +63,11 @@ export class OAuthSelectorComponent extends Container {
 
 			let line = "";
 			if (isSelected) {
-				const prefix = chalk.blue("→ ");
-				const text = isAvailable ? chalk.blue(provider.name) : chalk.dim(provider.name);
+				const prefix = theme.fg("accent", "→ ");
+				const text = isAvailable ? theme.fg("accent", provider.name) : theme.fg("dim", provider.name);
 				line = prefix + text;
 			} else {
-				const text = isAvailable ? `  ${provider.name}` : chalk.dim(`  ${provider.name}`);
+				const text = isAvailable ? `  ${provider.name}` : theme.fg("dim", `  ${provider.name}`);
 				line = text;
 			}
 
@@ -77,7 +78,7 @@ export class OAuthSelectorComponent extends Container {
 		if (this.allProviders.length === 0) {
 			const message =
 				this.mode === "login" ? "No OAuth providers available" : "No OAuth providers logged in. Use /login first.";
-			this.listContainer.addChild(new Text(chalk.gray(`  ${message}`), 0, 0));
+			this.listContainer.addChild(new Text(theme.fg("muted", `  ${message}`), 0, 0));
 		}
 	}
 

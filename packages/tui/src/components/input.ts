@@ -129,6 +129,10 @@ export class Input implements Component {
 		this.cursor += cleanText.length;
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(width: number): string[] {
 		// Calculate visible window
 		const prompt = "> ";

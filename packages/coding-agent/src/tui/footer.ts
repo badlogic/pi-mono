@@ -1,12 +1,12 @@
 import type { AgentState } from "@mariozechner/pi-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { visibleWidth } from "@mariozechner/pi-tui";
-import chalk from "chalk";
+import { type Component, visibleWidth } from "@mariozechner/pi-tui";
+import { theme } from "../theme/theme.js";
 
 /**
  * Footer component that shows pwd, token stats, and context usage
  */
-export class FooterComponent {
+export class FooterComponent implements Component {
 	private state: AgentState;
 
 	constructor(state: AgentState) {
@@ -15,6 +15,10 @@ export class FooterComponent {
 
 	updateState(state: AgentState): void {
 		this.state = state;
+	}
+
+	invalidate(): void {
+		// No cached state to invalidate currently
 	}
 
 	render(width: number): string[] {
@@ -50,7 +54,8 @@ export class FooterComponent {
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
 		const contextWindow = this.state.model?.contextWindow || 0;
-		const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "0.0";
+		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
+		const contextPercent = contextPercentValue.toFixed(1);
 
 		// Format token counts (similar to web-ui)
 		const formatTokens = (count: number): string => {
@@ -80,8 +85,18 @@ export class FooterComponent {
 		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
 		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-		if (totalCost) statsParts.push(`$${totalCost.toFixed(3)}`);
-		statsParts.push(`${contextPercent}%`);
+		if (totalCost) statsParts.push(`${totalCost.toFixed(3)}`);
+
+		// Colorize context percentage based on usage
+		let contextPercentStr: string;
+		if (contextPercentValue > 90) {
+			contextPercentStr = theme.fg("error", `${contextPercent}%`);
+		} else if (contextPercentValue > 70) {
+			contextPercentStr = theme.fg("warning", `${contextPercent}%`);
+		} else {
+			contextPercentStr = `${contextPercent}%`;
+		}
+		statsParts.push(contextPercentStr);
 
 		const statsLeft = statsParts.join(" ");
 
@@ -126,6 +141,6 @@ export class FooterComponent {
 		}
 
 		// Return two lines: pwd and stats
-		return [chalk.gray(pwd), chalk.gray(statsLine)];
+		return [theme.fg("dim", pwd), theme.fg("dim", statsLine)];
 	}
 }

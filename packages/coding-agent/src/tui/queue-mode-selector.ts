@@ -1,14 +1,6 @@
-import { type Component, Container, type SelectItem, SelectList } from "@mariozechner/pi-tui";
-import chalk from "chalk";
-
-/**
- * Dynamic border component that adjusts to viewport width
- */
-class DynamicBorder implements Component {
-	render(width: number): string[] {
-		return [chalk.blue("─".repeat(Math.max(1, width)))];
-	}
-}
+import { Container, type SelectItem, SelectList } from "@mariozechner/pi-tui";
+import { getSelectListTheme } from "../theme/theme.js";
+import { DynamicBorder } from "./dynamic-border.js";
 
 /**
  * Component that renders a queue mode selector with borders
@@ -36,7 +28,7 @@ export class QueueModeSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 
 		// Create selector
-		this.selectList = new SelectList(queueModes, 2);
+		this.selectList = new SelectList(queueModes, 2, getSelectListTheme());
 
 		// Preselect current mode
 		const currentIndex = queueModes.findIndex((item) => item.value === currentMode);

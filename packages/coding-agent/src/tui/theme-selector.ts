@@ -1,5 +1,5 @@
 import { Container, type SelectItem, SelectList } from "@mariozechner/pi-tui";
-import { getAvailableThemes, theme } from "../theme/theme.js";
+import { getAvailableThemes, getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
 /**
@@ -7,9 +7,16 @@ import { DynamicBorder } from "./dynamic-border.js";
  */
 export class ThemeSelectorComponent extends Container {
 	private selectList: SelectList;
+	private onPreview: (themeName: string) => void;
 
-	constructor(currentTheme: string, onSelect: (themeName: string) => void, onCancel: () => void) {
+	constructor(
+		currentTheme: string,
+		onSelect: (themeName: string) => void,
+		onCancel: () => void,
+		onPreview: (themeName: string) => void,
+	) {
 		super();
+		this.onPreview = onPreview;
 
 		// Get available themes and create select items
 		const themes = getAvailableThemes();
@@ -20,10 +27,10 @@ export class ThemeSelectorComponent extends Container {
 		}));
 
 		// Add top border
-		this.addChild(new DynamicBorder((text) => theme.fg("border", text)));
+		this.addChild(new DynamicBorder());
 
 		// Create selector
-		this.selectList = new SelectList(themeItems, 10);
+		this.selectList = new SelectList(themeItems, 10, getSelectListTheme());
 
 		// Preselect current theme
 		const currentIndex = themes.indexOf(currentTheme);
@@ -39,10 +46,14 @@ export class ThemeSelectorComponent extends Container {
 			onCancel();
 		};
 
+		this.selectList.onSelectionChange = (item) => {
+			this.onPreview(item.value);
+		};
+
 		this.addChild(this.selectList);
 
 		// Add bottom border
-		this.addChild(new DynamicBorder((text) => theme.fg("border", text)));
+		this.addChild(new DynamicBorder());
 	}
 
 	getSelectList(): SelectList {

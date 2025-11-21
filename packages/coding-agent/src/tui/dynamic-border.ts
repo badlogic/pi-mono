@@ -1,5 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-import chalk from "chalk";
+import { theme } from "../theme/theme.js";
 
 /**
  * Dynamic border component that adjusts to viewport width
@@ -7,8 +7,12 @@ import chalk from "chalk";
 export class DynamicBorder implements Component {
 	private color: (str: string) => string;
 
-	constructor(color: (str: string) => string = chalk.blue) {
+	constructor(color: (str: string) => string = (str) => theme.fg("border", str)) {
 		this.color = color;
+	}
+
+	invalidate(): void {
+		// No cached state to invalidate currently
 	}
 
 	render(width: number): string[] {

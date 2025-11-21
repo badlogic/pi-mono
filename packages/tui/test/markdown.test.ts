@@ -1,6 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import chalk from "chalk";
 import { Markdown } from "../src/components/markdown.js";
+import { defaultMarkdownTheme } from "./test-themes.js";
 
 describe("Markdown component", () => {
 	describe("Nested lists", () => {
@@ -12,6 +14,7 @@ describe("Markdown component", () => {
 - Item 2`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -37,6 +40,7 @@ describe("Markdown component", () => {
       - Level 4`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -57,6 +61,7 @@ describe("Markdown component", () => {
 2. Second`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -77,6 +82,7 @@ describe("Markdown component", () => {
    - More nested`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -97,6 +103,7 @@ describe("Markdown component", () => {
 | Bob | 25 |`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -120,6 +127,7 @@ describe("Markdown component", () => {
 | Long text | Middle | End |`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -141,6 +149,7 @@ describe("Markdown component", () => {
 | B | Short |`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -168,6 +177,7 @@ describe("Markdown component", () => {
 | A | B |`,
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -187,10 +197,16 @@ describe("Markdown component", () => {
 	describe("Pre-styled text (thinking traces)", () => {
 		it("should preserve gray italic styling after inline code", () => {
 			// This replicates how thinking content is rendered in assistant-message.ts
-			const markdown = new Markdown("This is thinking with `inline code` and more text after", 1, 0, {
-				color: "gray",
-				italic: true,
-			});
+			const markdown = new Markdown(
+				"This is thinking with `inline code` and more text after",
+				1,
+				0,
+				defaultMarkdownTheme,
+				{
+					color: (text) => chalk.gray(text),
+					italic: true,
+				},
+			);
 
 			const lines = markdown.render(80);
 			const joinedOutput = lines.join("\n");
@@ -208,10 +224,16 @@ describe("Markdown component", () => {
 		});
 
 		it("should preserve gray italic styling after bold text", () => {
-			const markdown = new Markdown("This is thinking with **bold text** and more after", 1, 0, {
-				color: "gray",
-				italic: true,
-			});
+			const markdown = new Markdown(
+				"This is thinking with **bold text** and more after",
+				1,
+				0,
+				defaultMarkdownTheme,
+				{
+					color: (text) => chalk.gray(text),
+					italic: true,
+				},
+			);
 
 			const lines = markdown.render(80);
 			const joinedOutput = lines.join("\n");
@@ -236,6 +258,7 @@ describe("Markdown component", () => {
 				"This is text with <thinking>hidden content</thinking> that should be visible",
 				0,
 				0,
+				defaultMarkdownTheme,
 			);
 
 			const lines = markdown.render(80);
@@ -250,7 +273,7 @@ describe("Markdown component", () => {
 		});
 
 		it("should render HTML tags in code blocks correctly", () => {
-			const markdown = new Markdown("```html\n<div>Some HTML</div>\n```", 0, 0);
+			const markdown = new Markdown("```html\n<div>Some HTML</div>\n```", 0, 0, defaultMarkdownTheme);
 
 			const lines = markdown.render(80);
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));

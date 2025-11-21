@@ -40,6 +40,10 @@ class KeyLogger implements Component {
 		this.tui.requestRender();
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(width: number): string[] {
 		const lines: string[] = [];
 

@@ -14,6 +14,10 @@ export class Spacer implements Component {
 		this.lines = lines;
 	}
 
+	invalidate(): void {
+		// No cached state to invalidate currently
+	}
+
 	render(_width: number): string[] {
 		const result: string[] = [];
 		for (let i = 0; i < this.lines; i++) {

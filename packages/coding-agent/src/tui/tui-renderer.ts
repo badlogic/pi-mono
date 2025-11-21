@@ -13,7 +13,7 @@ import {
 	TruncatedText,
 	TUI,
 } from "@mariozechner/pi-tui";
-import chalk from "chalk";
+
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
@@ -21,7 +21,7 @@ import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
-import { setTheme } from "../theme/theme.js";
+import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -114,7 +114,7 @@ export class TuiRenderer {
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
-		this.editor = new CustomEditor();
+		this.editor = new CustomEditor(getEditorTheme());
 		this.editorContainer = new Container(); // Container to hold editor or selector
 		this.editorContainer.addChild(this.editor); // Start with editor
 		this.footer = new FooterComponent(agent.state);
@@ -193,34 +193,34 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with logo and instructions
-		const logo = chalk.bold.cyan("pi") + chalk.dim(` v${this.version}`);
+		const logo = theme.bold(theme.fg("accent", "pi")) + theme.fg("dim", ` v${this.version}`);
 		const instructions =
-			chalk.dim("esc") +
-			chalk.gray(" to interrupt") +
+			theme.fg("dim", "esc") +
+			theme.fg("muted", " to interrupt") +
 			"\n" +
-			chalk.dim("ctrl+c") +
-			chalk.gray(" to clear") +
+			theme.fg("dim", "ctrl+c") +
+			theme.fg("muted", " to clear") +
 			"\n" +
-			chalk.dim("ctrl+c twice") +
-			chalk.gray(" to exit") +
+			theme.fg("dim", "ctrl+c twice") +
+			theme.fg("muted", " to exit") +
 			"\n" +
-			chalk.dim("ctrl+k") +
-			chalk.gray(" to delete line") +
+			theme.fg("dim", "ctrl+k") +
+			theme.fg("muted", " to delete line") +
 			"\n" +
-			chalk.dim("shift+tab") +
-			chalk.gray(" to cycle thinking") +
+			theme.fg("dim", "shift+tab") +
+			theme.fg("muted", " to cycle thinking") +
 			"\n" +
-			chalk.dim("ctrl+p") +
-			chalk.gray(" to cycle models") +
+			theme.fg("dim", "ctrl+p") +
+			theme.fg("muted", " to cycle models") +
 			"\n" +
-			chalk.dim("ctrl+o") +
-			chalk.gray(" to expand tools") +
+			theme.fg("dim", "ctrl+o") +
+			theme.fg("muted", " to expand tools") +
 			"\n" +
-			chalk.dim("/") +
-			chalk.gray(" for commands") +
+			theme.fg("dim", "/") +
+			theme.fg("muted", " for commands") +
 			"\n" +
-			chalk.dim("drop files") +
-			chalk.gray(" to attach");
+			theme.fg("dim", "drop files") +
+			theme.fg("muted", " to attach");
 		const header = new Text(logo + "\n" + instructions, 1, 0);
 
 		// Setup UI layout
@@ -230,28 +230,28 @@ export class TuiRenderer {
 
 		// Add new version notification if available
 		if (this.newVersion) {
-			this.ui.addChild(new DynamicBorder(chalk.yellow));
+			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 			this.ui.addChild(
 				new Text(
-					chalk.bold.yellow("Update Available") +
+					theme.bold(theme.fg("warning", "Update Available")) +
 						"\n" +
-						chalk.gray(`New version ${this.newVersion} is available. Run: `) +
-						chalk.cyan("npm install -g @mariozechner/pi-coding-agent"),
+						theme.fg("muted", `New version ${this.newVersion} is available. Run: `) +
+						theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
 					1,
 					0,
 				),
 			);
-			this.ui.addChild(new DynamicBorder(chalk.yellow));
+			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		}
 
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
-			this.ui.addChild(new DynamicBorder(chalk.cyan));
-			this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
+			this.ui.addChild(new DynamicBorder());
+			this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0));
+			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
 			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new DynamicBorder(chalk.cyan));
+			this.ui.addChild(new DynamicBorder());
 		}
 
 		this.ui.addChild(this.chatContainer);
@@ -435,6 +435,13 @@ export class TuiRenderer {
 		// Start the UI
 		this.ui.start();
 		this.isInitialized = true;
+
+		// Set up theme file watcher for live reload
+		onThemeChange(() => {
+			this.ui.invalidate();
+			this.updateEditorBorderColor();
+			this.ui.requestRender();
+		});
 	}
 
 	async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
@@ -454,7 +461,12 @@ export class TuiRenderer {
 					this.loadingAnimation.stop();
 				}
 				this.statusContainer.clear();
-				this.loadingAnimation = new Loader(this.ui, "Working... (esc to interrupt)");
+				this.loadingAnimation = new Loader(
+					this.ui,
+					(spinner) => theme.fg("accent", spinner),
+					(text) => theme.fg("muted", text),
+					"Working... (esc to interrupt)",
+				);
 				this.statusContainer.addChild(this.loadingAnimation);
 				this.ui.requestRender();
 				break;
@@ -718,28 +730,9 @@ export class TuiRenderer {
 		}
 	}
 
-	private getThinkingBorderColor(level: ThinkingLevel): (str: string) => string {
-		// More thinking = more color (gray → dim colors → bright colors)
-		switch (level) {
-			case "off":
-				return chalk.gray;
-			case "minimal":
-				return chalk.dim.blue;
-			case "low":
-				return chalk.blue;
-			case "medium":
-				return chalk.cyan;
-			case "high":
-				return chalk.magenta;
-			default:
-				return chalk.gray;
-		}
-	}
-
 	private updateEditorBorderColor(): void {
 		const level = this.agent.state.thinkingLevel || "off";
-		const color = this.getThinkingBorderColor(level);
-		this.editor.borderColor = color;
+		this.editor.borderColor = theme.getThinkingBorderColor(level);
 		this.ui.requestRender();
 	}
 
@@ -747,7 +740,7 @@ export class TuiRenderer {
 		// Only cycle if model supports thinking
 		if (!this.agent.state.model?.reasoning) {
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(chalk.dim("Current model does not support thinking"), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "Current model does not support thinking"), 1, 0));
 			this.ui.requestRender();
 			return;
 		}
@@ -769,7 +762,7 @@ export class TuiRenderer {
 
 		// Show brief notification
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(chalk.dim(`Thinking level: ${nextLevel}`), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking level: ${nextLevel}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -794,7 +787,7 @@ export class TuiRenderer {
 
 		if (modelsToUse.length === 1) {
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(chalk.dim("Only one model in scope"), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model in scope"), 1, 0));
 			this.ui.requestRender();
 			return;
 		}
@@ -824,7 +817,7 @@ export class TuiRenderer {
 
 		// Show notification
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(chalk.dim(`Switched to ${nextModel.name || nextModel.id}`), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Switched to ${nextModel.name || nextModel.id}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -849,14 +842,14 @@ export class TuiRenderer {
 	showError(errorMessage: string): void {
 		// Show error message in the chat
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(chalk.red(`Error: ${errorMessage}`), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
 		this.ui.requestRender();
 	}
 
 	showWarning(warningMessage: string): void {
 		// Show warning message in the chat
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(chalk.yellow(`Warning: ${warningMessage}`), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -876,7 +869,7 @@ export class TuiRenderer {
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
-				const confirmText = new Text(chalk.dim(`Thinking level: ${level}`), 1, 0);
+				const confirmText = new Text(theme.fg("dim", `Thinking level: ${level}`), 1, 0);
 				this.chatContainer.addChild(confirmText);
 
 				// Hide selector and show editor again
@@ -918,7 +911,7 @@ export class TuiRenderer {
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
-				const confirmText = new Text(chalk.dim(`Queue mode: ${mode}`), 1, 0);
+				const confirmText = new Text(theme.fg("dim", `Queue mode: ${mode}`), 1, 0);
 				this.chatContainer.addChild(confirmText);
 
 				// Hide selector and show editor again
@@ -956,15 +949,27 @@ export class TuiRenderer {
 			currentTheme,
 			(themeName) => {
 				// Apply the selected theme
-				setTheme(themeName);
+				const result = setTheme(themeName);
 
 				// Save theme to settings
 				this.settingsManager.setTheme(themeName);
 
-				// Show confirmation message with proper spacing
+				// Invalidate all components to clear cached rendering
+				this.ui.invalidate();
+
+				// Show confirmation or error message
 				this.chatContainer.addChild(new Spacer(1));
-				const confirmText = new Text(chalk.dim(`Theme: ${themeName}`), 1, 0);
-				this.chatContainer.addChild(confirmText);
+				if (result.success) {
+					const confirmText = new Text(theme.fg("dim", `Theme: ${themeName}`), 1, 0);
+					this.chatContainer.addChild(confirmText);
+				} else {
+					const errorText = new Text(
+						theme.fg("error", `Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`),
+						1,
+						0,
+					);
+					this.chatContainer.addChild(errorText);
+				}
 
 				// Hide selector and show editor again
 				this.hideThemeSelector();
@@ -974,6 +979,15 @@ export class TuiRenderer {
 				// Just hide the selector
 				this.hideThemeSelector();
 				this.ui.requestRender();
+			},
+			(themeName) => {
+				// Preview theme on selection change
+				const result = setTheme(themeName);
+				if (result.success) {
+					this.ui.invalidate();
+					this.ui.requestRender();
+				}
+				// If failed, theme already fell back to dark, just don't re-render
 			},
 		);
 
@@ -1007,7 +1021,7 @@ export class TuiRenderer {
 
 				// Show confirmation message with proper spacing
 				this.chatContainer.addChild(new Spacer(1));
-				const confirmText = new Text(chalk.dim(`Model: ${model.id}`), 1, 0);
+				const confirmText = new Text(theme.fg("dim", `Model: ${model.id}`), 1, 0);
 				this.chatContainer.addChild(confirmText);
 
 				// Hide selector and show editor again
@@ -1055,7 +1069,7 @@ export class TuiRenderer {
 		// Don't show selector if there are no messages or only one message
 		if (userMessages.length <= 1) {
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(chalk.dim("No messages to branch from"), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "No messages to branch from"), 1, 0));
 			this.ui.requestRender();
 			return;
 		}
@@ -1088,7 +1102,7 @@ export class TuiRenderer {
 				// Show confirmation message
 				this.chatContainer.addChild(new Spacer(1));
 				this.chatContainer.addChild(
-					new Text(chalk.dim(`Branched to new session from message ${messageIndex}`), 1, 0),
+					new Text(theme.fg("dim", `Branched to new session from message ${messageIndex}`), 1, 0),
 				);
 
 				// Put the selected message in the editor
@@ -1127,7 +1141,9 @@ export class TuiRenderer {
 			const loggedInProviders = listOAuthProviders();
 			if (loggedInProviders.length === 0) {
 				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(chalk.dim("No OAuth providers logged in. Use /login first."), 1, 0));
+				this.chatContainer.addChild(
+					new Text(theme.fg("dim", "No OAuth providers logged in. Use /login first."), 1, 0),
+				);
 				this.ui.requestRender();
 				return;
 			}
@@ -1144,7 +1160,7 @@ export class TuiRenderer {
 				if (mode === "login") {
 					// Handle login
 					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(chalk.dim(`Logging in to ${providerId}...`), 1, 0));
+					this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
 					this.ui.requestRender();
 
 					try {
@@ -1153,11 +1169,11 @@ export class TuiRenderer {
 							(url: string) => {
 								// Show auth URL to user
 								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(new Text(chalk.cyan("Opening browser to:"), 1, 0));
-								this.chatContainer.addChild(new Text(chalk.cyan(url), 1, 0));
+								this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
+								this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
 								this.chatContainer.addChild(new Spacer(1));
 								this.chatContainer.addChild(
-									new Text(chalk.yellow("Paste the authorization code below:"), 1, 0),
+									new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
 								);
 								this.ui.requestRender();
 
@@ -1189,8 +1205,12 @@ export class TuiRenderer {
 
 						// Success
 						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(new Text(chalk.green(`✓ Successfully logged in to ${providerId}`), 1, 0));
-						this.chatContainer.addChild(new Text(chalk.dim(`Tokens saved to ~/.pi/agent/oauth.json`), 1, 0));
+						this.chatContainer.addChild(
+							new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
+						);
+						this.chatContainer.addChild(
+							new Text(theme.fg("dim", `Tokens saved to ~/.pi/agent/oauth.json`), 1, 0),
+						);
 						this.ui.requestRender();
 					} catch (error: any) {
 						this.showError(`Login failed: ${error.message}`);
@@ -1202,10 +1222,10 @@ export class TuiRenderer {
 
 						this.chatContainer.addChild(new Spacer(1));
 						this.chatContainer.addChild(
-							new Text(chalk.green(`✓ Successfully logged out of ${providerId}`), 1, 0),
+							new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
 						);
 						this.chatContainer.addChild(
-							new Text(chalk.dim(`Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
+							new Text(theme.fg("dim", `Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
 						);
 						this.ui.requestRender();
 					} catch (error: any) {
@@ -1246,13 +1266,13 @@ export class TuiRenderer {
 
 			// Show success message in chat - matching thinking level style
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(chalk.dim(`Session exported to: ${filePath}`), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", `Session exported to: ${filePath}`), 1, 0));
 			this.ui.requestRender();
 		} catch (error: any) {
 			// Show error message in chat
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(
-				new Text(chalk.red(`Failed to export session: ${error.message || "Unknown error"}`), 1, 0),
+				new Text(theme.fg("error", `Failed to export session: ${error.message || "Unknown error"}`), 1, 0),
 			);
 			this.ui.requestRender();
 		}
@@ -1299,29 +1319,29 @@ export class TuiRenderer {
 		const totalTokens = totalInput + totalOutput + totalCacheRead + totalCacheWrite;
 
 		// Build info text
-		let info = `${chalk.bold("Session Info")}\n\n`;
-		info += `${chalk.dim("File:")} ${sessionFile}\n`;
-		info += `${chalk.dim("ID:")} ${this.sessionManager.getSessionId()}\n\n`;
-		info += `${chalk.bold("Messages")}\n`;
-		info += `${chalk.dim("User:")} ${userMessages}\n`;
-		info += `${chalk.dim("Assistant:")} ${assistantMessages}\n`;
-		info += `${chalk.dim("Tool Calls:")} ${toolCalls}\n`;
-		info += `${chalk.dim("Tool Results:")} ${toolResults}\n`;
-		info += `${chalk.dim("Total:")} ${totalMessages}\n\n`;
-		info += `${chalk.bold("Tokens")}\n`;
-		info += `${chalk.dim("Input:")} ${totalInput.toLocaleString()}\n`;
-		info += `${chalk.dim("Output:")} ${totalOutput.toLocaleString()}\n`;
+		let info = `${theme.bold("Session Info")}\n\n`;
+		info += `${theme.fg("dim", "File:")} ${sessionFile}\n`;
+		info += `${theme.fg("dim", "ID:")} ${this.sessionManager.getSessionId()}\n\n`;
+		info += `${theme.bold("Messages")}\n`;
+		info += `${theme.fg("dim", "User:")} ${userMessages}\n`;
+		info += `${theme.fg("dim", "Assistant:")} ${assistantMessages}\n`;
+		info += `${theme.fg("dim", "Tool Calls:")} ${toolCalls}\n`;
+		info += `${theme.fg("dim", "Tool Results:")} ${toolResults}\n`;
+		info += `${theme.fg("dim", "Total:")} ${totalMessages}\n\n`;
+		info += `${theme.bold("Tokens")}\n`;
+		info += `${theme.fg("dim", "Input:")} ${totalInput.toLocaleString()}\n`;
+		info += `${theme.fg("dim", "Output:")} ${totalOutput.toLocaleString()}\n`;
 		if (totalCacheRead > 0) {
-			info += `${chalk.dim("Cache Read:")} ${totalCacheRead.toLocaleString()}\n`;
+			info += `${theme.fg("dim", "Cache Read:")} ${totalCacheRead.toLocaleString()}\n`;
 		}
 		if (totalCacheWrite > 0) {
-			info += `${chalk.dim("Cache Write:")} ${totalCacheWrite.toLocaleString()}\n`;
+			info += `${theme.fg("dim", "Cache Write:")} ${totalCacheWrite.toLocaleString()}\n`;
 		}
-		info += `${chalk.dim("Total:")} ${totalTokens.toLocaleString()}\n`;
+		info += `${theme.fg("dim", "Total:")} ${totalTokens.toLocaleString()}\n`;
 
 		if (totalCost > 0) {
-			info += `\n${chalk.bold("Cost")}\n`;
-			info += `${chalk.dim("Total:")} ${totalCost.toFixed(4)}`;
+			info += `\n${theme.bold("Cost")}\n`;
+			info += `${theme.fg("dim", "Total:")} ${totalCost.toFixed(4)}`;
 		}
 
 		// Show info in chat
@@ -1345,11 +1365,11 @@ export class TuiRenderer {
 
 		// Display in chat
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
-		this.ui.addChild(new Text(chalk.bold.cyan("What's New"), 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 		this.ui.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1));
-		this.chatContainer.addChild(new DynamicBorder(chalk.cyan));
+		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, getMarkdownTheme()));
+		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
@@ -1360,7 +1380,7 @@ export class TuiRenderer {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 
 			for (const message of this.queuedMessages) {
-				const queuedText = chalk.dim("Queued: " + message);
+				const queuedText = theme.fg("dim", "Queued: " + message);
 				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
 			}
 		}

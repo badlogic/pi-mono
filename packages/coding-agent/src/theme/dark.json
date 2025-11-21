@@ -3,19 +3,21 @@
 	"name": "dark",
 	"vars": {
 		"cyan": "#00d7ff",
-		"blue": "#0087ff",
-		"green": "#00ff00",
-		"red": "#ff0000",
+		"blue": "#5f87ff",
+		"green": "#b5bd68",
+		"red": "#cc6666",
 		"yellow": "#ffff00",
-		"gray": 242,
-		"darkGray": 238,
+		"gray": "#808080",
+		"dimGray": "#666666",
+		"darkGray": "#303030",
+		"accent": "#8abeb7",
 		"userMsgBg": "#343541",
 		"toolPendingBg": "#282832",
 		"toolSuccessBg": "#283228",
 		"toolErrorBg": "#3c2828"
 	},
 	"colors": {
-		"accent": "cyan",
+		"accent": "accent",
 		"border": "blue",
 		"borderAccent": "cyan",
 		"borderMuted": "darkGray",
@@ -23,6 +25,7 @@
 		"error": "red",
 		"warning": "yellow",
 		"muted": "gray",
+		"dim": "dimGray",
 		"text": "",
 
 		"userMessageBg": "userMsgBg",
@@ -30,17 +33,19 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
-		"toolText": "",
+		"toolTitle": "",
+		"toolOutput": "gray",
 
-		"mdHeading": "cyan",
-		"mdLink": "blue",
-		"mdCode": "cyan",
-		"mdCodeBlock": "",
+		"mdHeading": "#f0c674",
+		"mdLink": "#81a2be",
+		"mdLinkUrl": "dimGray",
+		"mdCode": "accent",
+		"mdCodeBlock": "green",
 		"mdCodeBlockBorder": "gray",
 		"mdQuote": "gray",
 		"mdQuoteBorder": "gray",
 		"mdHr": "gray",
-		"mdListBullet": "cyan",
+		"mdListBullet": "accent",
 
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
@@ -54,6 +59,12 @@
 		"syntaxNumber": "yellow",
 		"syntaxType": "cyan",
 		"syntaxOperator": "",
-		"syntaxPunctuation": "gray"
+		"syntaxPunctuation": "gray",
+
+		"thinkingOff": "darkGray",
+		"thinkingMinimal": "#4e4e4e",
+		"thinkingLow": "#5f87af",
+		"thinkingMedium": "#81a2be",
+		"thinkingHigh": "#b294bb"
 	}
 }

@@ -1,8 +1,5 @@
-import { Chalk } from "chalk";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
-
-const colorChalk = new Chalk({ level: 3 });
 
 /**
  * Text component - displays multi-line text with word wrapping
@@ -11,23 +8,18 @@ export class Text implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
 	private paddingY: number; // Top/bottom padding
-	private customBgRgb?: { r: number; g: number; b: number };
+	private customBgFn?: (text: string) => string;
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(
-		text: string = "",
-		paddingX: number = 1,
-		paddingY: number = 1,
-		customBgRgb?: { r: number; g: number; b: number },
-	) {
+	constructor(text: string = "", paddingX: number = 1, paddingY: number = 1, customBgFn?: (text: string) => string) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
-		this.customBgRgb = customBgRgb;
+		this.customBgFn = customBgFn;
 	}
 
 	setText(text: string): void {
@@ -37,8 +29,14 @@ export class Text implements Component {
 		this.cachedLines = undefined;
 	}
 
-	setCustomBgRgb(customBgRgb?: { r: number; g: number; b: number }): void {
-		this.customBgRgb = customBgRgb;
+	setCustomBgFn(customBgFn?: (text: string) => string): void {
+		this.customBgFn = customBgFn;
+		this.cachedText = undefined;
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+
+	invalidate(): void {
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
@@ -78,8 +76,8 @@ export class Text implements Component {
 			const lineWithMargins = leftMargin + line + rightMargin;
 
 			// Apply background if specified (this also pads to full width)
-			if (this.customBgRgb) {
-				contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgRgb));
+			if (this.customBgFn) {
+				contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgFn));
 			} else {
 				// No background - just pad to width with spaces
 				const visibleLen = visibleWidth(lineWithMargins);
@@ -92,7 +90,7 @@ export class Text implements Component {
 		const emptyLine = " ".repeat(width);
 		const emptyLines: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
-			const line = this.customBgRgb ? applyBackgroundToLine(emptyLine, width, this.customBgRgb) : emptyLine;
+			const line = this.customBgFn ? applyBackgroundToLine(emptyLine, width, this.customBgFn) : emptyLine;
 			emptyLines.push(line);
 		}
 
