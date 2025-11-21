@@ -97,6 +97,13 @@ export class SessionManager {
 		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
 	}
 
+	/** Reset to a fresh session. Clears pending messages and starts a new session file. */
+	reset(): void {
+		this.pendingMessages = [];
+		this.sessionInitialized = false;
+		this.initNewSession();
+	}
+
 	private findMostRecentlyModifiedSession(): string | null {
 		try {
 			const files = readdirSync(this.sessionDir)

@@ -53,7 +53,7 @@ export class TuiRenderer {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | null = null;
-	private onInterruptCallback?: () => void;
+
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
 	private newVersion: string | null = null;
@@ -93,6 +93,9 @@ export class TuiRenderer {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+
+	// Agent subscription unsubscribe function
+	private unsubscribe?: () => void;
 
 	constructor(
 		agent: Agent,
@@ -170,6 +173,11 @@ export class TuiRenderer {
 			description: "Select color theme (opens selector UI)",
 		};
 
+		const clearCommand: SlashCommand = {
+			name: "clear",
+			description: "Clear context and start a fresh session",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
@@ -183,6 +191,7 @@ export class TuiRenderer {
 				loginCommand,
 				logoutCommand,
 				queueCommand,
+				clearCommand,
 			],
 			process.cwd(),
 		);
@@ -265,7 +274,7 @@ export class TuiRenderer {
 		// Set up custom key handlers on the editor
 		this.editor.onEscape = () => {
 			// Intercept Escape key when processing
-			if (this.loadingAnimation && this.onInterruptCallback) {
+			if (this.loadingAnimation) {
 				// Get all queued messages
 				const queuedText = this.queuedMessages.join("\n\n");
 
@@ -286,7 +295,7 @@ export class TuiRenderer {
 				this.agent.clearMessageQueue();
 
 				// Abort
-				this.onInterruptCallback();
+				this.agent.abort();
 			}
 		};
 
@@ -383,6 +392,13 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /clear command
+			if (text === "/clear") {
+				this.handleClearCommand();
+				this.editor.setText("");
+				return;
+			}
+
 			// Normal message submission - validate model and API key first
 			const currentModel = this.agent.state.model;
 			if (!currentModel) {
@@ -436,6 +452,9 @@ export class TuiRenderer {
 		this.ui.start();
 		this.isInitialized = true;
 
+		// Subscribe to agent events for UI updates and session saving
+		this.subscribeToAgent();
+
 		// Set up theme file watcher for live reload
 		onThemeChange(() => {
 			this.ui.invalidate();
@@ -444,7 +463,24 @@ export class TuiRenderer {
 		});
 	}
 
-	async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
+	private subscribeToAgent(): void {
+		this.unsubscribe = this.agent.subscribe(async (event) => {
+			// Handle UI updates
+			await this.handleEvent(event, this.agent.state);
+
+			// Save messages to session
+			if (event.type === "message_end") {
+				this.sessionManager.saveMessage(event.message);
+
+				// Check if we should initialize session now (after first user+assistant exchange)
+				if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
+					this.sessionManager.startSession(this.agent.state);
+				}
+			}
+		});
+	}
+
+	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}
@@ -708,10 +744,6 @@ export class TuiRenderer {
 				resolve(text);
 			};
 		});
-	}
-
-	setInterruptCallback(callback: () => void): void {
-		this.onInterruptCallback = callback;
 	}
 
 	private handleCtrlC(): void {
@@ -1370,6 +1402,45 @@ export class TuiRenderer {
 		this.ui.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, getMarkdownTheme()));
 		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private async handleClearCommand(): Promise<void> {
+		// Unsubscribe first to prevent processing abort events
+		this.unsubscribe?.();
+
+		// Abort and wait for completion
+		this.agent.abort();
+		await this.agent.waitForIdle();
+
+		// Stop loading animation
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+		this.statusContainer.clear();
+
+		// Reset agent and session
+		this.agent.reset();
+		this.sessionManager.reset();
+
+		// Resubscribe to agent
+		this.subscribeToAgent();
+
+		// Clear UI state
+		this.chatContainer.clear();
+		this.pendingMessagesContainer.clear();
+		this.queuedMessages = [];
+		this.streamingComponent = null;
+		this.pendingTools.clear();
+		this.isFirstUserMessage = true;
+
+		// Show confirmation
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(
+			new Text(theme.fg("accent", "✓ Context cleared") + "\n" + theme.fg("muted", "Started fresh session"), 1, 1),
+		);
+
 		this.ui.requestRender();
 	}
 

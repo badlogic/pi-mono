@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`/clear` Command**: New slash command to reset the conversation context and start a fresh session. Aborts any in-flight agent work, clears all messages, and creates a new session file. ([#48](https://github.com/badlogic/pi-mono/pull/48))
+
 ### Fixed
 
 - **Markdown Link Rendering**: Fixed links with identical text and href (e.g., `https://github.com/badlogic/pi-mono/pull/48/files`) being rendered twice. Now correctly compares raw text instead of styled text (which contains ANSI codes) when determining if link text matches href.
