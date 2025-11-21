@@ -47,6 +47,7 @@ interface Args {
 	noSession?: boolean;
 	session?: string;
 	models?: string[];
+	print?: boolean;
 	messages: string[];
 }
 
@@ -94,6 +95,8 @@ function parseArgs(args: string[]): Args {
 					),
 				);
 			}
+		} else if (arg === "--print" || arg === "-p") {
+			result.print = true;
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -114,6 +117,7 @@ ${chalk.bold("Options:")}
   --api-key <key>         API key (defaults to env vars)
   --system-prompt <text>  System prompt (default: coding assistant prompt)
   --mode <mode>           Output mode: text (default), json, or rpc
+  --print, -p             Non-interactive mode: process prompt and exit
   --continue, -c          Continue previous session
   --resume, -r            Select a session to resume
   --session <path>        Use specific session file
@@ -123,13 +127,16 @@ ${chalk.bold("Options:")}
   --help, -h              Show this help
 
 ${chalk.bold("Examples:")}
-  # Interactive mode (no messages = interactive TUI)
+  # Interactive mode
   pi
 
-  # Single message
+  # Interactive mode with initial prompt
   pi "List all .ts files in src/"
 
-  # Multiple messages
+  # Non-interactive mode (process and exit)
+  pi -p "List all .ts files in src/"
+
+  # Multiple messages (interactive)
   pi "Read package.json" "What dependencies do we have?"
 
   # Continue previous session
@@ -503,6 +510,7 @@ async function runInteractiveMode(
 	modelFallbackMessage: string | null = null,
 	newVersion: string | null = null,
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
+	initialMessages: string[] = [],
 ): Promise<void> {
 	const renderer = new TuiRenderer(
 		agent,
@@ -525,6 +533,16 @@ async function runInteractiveMode(
 		renderer.showWarning(modelFallbackMessage);
 	}
 
+	// Process initial messages if provided (from CLI args)
+	for (const message of initialMessages) {
+		try {
+			await agent.prompt(message);
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			renderer.showError(errorMessage);
+		}
+	}
+
 	// Interactive loop
 	while (true) {
 		const userInput = await renderer.getUserInput();
@@ -532,9 +550,10 @@ async function runInteractiveMode(
 		// Process the message - agent.prompt will add user message and trigger state updates
 		try {
 			await agent.prompt(userInput);
-		} catch (error: any) {
+		} catch (error: unknown) {
 			// Display error in the TUI by adding an error message to the chat
-			renderer.showError(error.message || "Unknown error occurred");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			renderer.showError(errorMessage);
 		}
 	}
 }
@@ -722,7 +741,9 @@ export async function main(args: string[]) {
 	}
 
 	// Determine mode early to know if we should print messages and fail early
-	const isInteractive = parsed.messages.length === 0 && parsed.mode === undefined;
+	// Interactive mode: no --print flag and no --mode flag
+	// Having initial messages doesn't make it non-interactive anymore
+	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	const shouldPrintMessages = isInteractive || mode === "text";
 
@@ -967,7 +988,7 @@ export async function main(args: string[]) {
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
-		// No messages and not RPC - use TUI
+		// Interactive mode - use TUI (may have initial messages from CLI args)
 		await runInteractiveMode(
 			agent,
 			sessionManager,
@@ -977,9 +998,10 @@ export async function main(args: string[]) {
 			modelFallbackMessage,
 			newVersion,
 			scopedModels,
+			parsed.messages,
 		);
 	} else {
-		// CLI mode with messages
+		// Non-interactive mode (--print flag or --mode flag)
 		await runSingleShotMode(agent, sessionManager, parsed.messages, mode);
 	}
 }
