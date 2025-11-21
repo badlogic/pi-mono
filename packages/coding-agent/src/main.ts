@@ -1,4 +1,4 @@
-import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent";
+import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";

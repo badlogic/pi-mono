@@ -1,4 +1,4 @@
-import type { AgentState } from "@mariozechner/pi-agent";
+import type { AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, visibleWidth } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";

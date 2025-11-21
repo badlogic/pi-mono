@@ -1,4 +1,4 @@
-import type { AgentState } from "@mariozechner/pi-agent";
+import type { AgentState } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
