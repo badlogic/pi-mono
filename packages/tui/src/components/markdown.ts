@@ -321,7 +321,8 @@ export class Markdown implements Component {
 				case "link": {
 					const linkText = this.renderInlineTokens(token.tokens || []);
 					// If link text matches href, only show the link once
-					if (linkText === token.href) {
+					// Compare raw text (token.text) not styled text (linkText) since linkText has ANSI codes
+					if (token.text === token.href) {
 						result += this.theme.link(this.theme.underline(linkText)) + this.applyDefaultStyle("");
 					} else {
 						result +=
