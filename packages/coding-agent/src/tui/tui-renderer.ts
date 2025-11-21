@@ -1,4 +1,4 @@
-import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent";
+import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
