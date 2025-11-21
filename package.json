@@ -22,7 +22,7 @@
 		"prepare": "husky"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.3.5",
+		"@biomejs/biome": "2.3.5",
 		"@types/node": "^22.10.5",
 		"@typescript/native-preview": "^7.0.0-dev.20251111.1",
 		"concurrently": "^9.2.1",

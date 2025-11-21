@@ -1,0 +1,33 @@
+# Set breakpoint at main
+b main
+# Run the program
+run
+# Step through to see what happens
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+# Now we're in the loop - let's examine the students array
+p num_students
+p students[0]
+p students[1]
+p students[2]
+# Continue to the crash
+c
+# When it crashes, show backtrace
+bt
+# Examine the frame
+frame variable
+# Look at what students[i] is when it crashes
+p i
+p students[i]
+quit

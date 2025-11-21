@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.3] - 2025-11-21
+
+### Improved
+
+- **Export HTML**: Limited container width to 700px for better readability. Fixed message statistics to match `/session` command output with proper breakdown of User/Assistant/Tool Calls/Tool Results/Total messages.
+- **Dark Theme**: Increased visibility of editor border (darkGray from #303030 to #505050) and thinking minimal indicator (from #4e4e4e to #6e6e6e).
+
 ## [0.8.0] - 2025-11-21
 
 ### Added
