@@ -220,8 +220,22 @@ export class Editor implements Component {
 					return;
 				}
 
-				// If Enter was pressed on a slash command, cancel autocomplete and let it submit
+				// If Enter was pressed on a slash command, apply completion and submit
 				if (data === "\r" && this.autocompletePrefix.startsWith("/")) {
+					const selected = this.autocompleteList.getSelectedItem();
+					if (selected && this.autocompleteProvider) {
+						const result = this.autocompleteProvider.applyCompletion(
+							this.state.lines,
+							this.state.cursorLine,
+							this.state.cursorCol,
+							selected,
+							this.autocompletePrefix,
+						);
+
+						this.state.lines = result.lines;
+						this.state.cursorLine = result.cursorLine;
+						this.state.cursorCol = result.cursorCol;
+					}
 					this.cancelAutocomplete();
 					// Don't return - fall through to submission logic
 				}

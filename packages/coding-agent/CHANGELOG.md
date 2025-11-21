@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- **Slash Command Autocomplete**: Fixed issue where pressing Enter on a highlighted slash command suggestion (e.g., typing `/mod` with `/model` highlighted) would submit the partial text instead of executing the selected command. Now Enter applies the completion and submits in one action. ([#49](https://github.com/badlogic/pi-mono/issues/49))
 - **Model Matching Priority**: The `--models` flag now prioritizes exact matches over partial matches. Supports `provider/modelId` format (e.g., `openrouter/openai/gpt-5.1-codex`) for precise selection. Exact ID matches are tried before partial matching, so `--models gpt-5.1-codex` correctly selects `gpt-5.1-codex` instead of `openai/gpt-5.1-codex-mini`.
 - **Markdown Link Rendering**: Fixed links with identical text and href (e.g., `https://github.com/badlogic/pi-mono/pull/48/files`) being rendered twice. Now correctly compares raw text instead of styled text (which contains ANSI codes) when determining if link text matches href.
 
