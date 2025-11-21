@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.4] - 2025-11-21
+
+### Fixed
+
+- **Read Tool Error Handling**: Fixed issue where the `read` tool would return errors as successful text content instead of throwing. Now properly throws errors for file not found and offset out of bounds conditions.
+
 ## [0.8.3] - 2025-11-21
 
 ### Improved
