@@ -83,18 +83,7 @@ export const readTool: AgentTool<typeof readSchema> = {
 			(async () => {
 				try {
 					// Check if file exists
-					try {
-						await access(absolutePath, constants.R_OK);
-					} catch {
-						if (signal) {
-							signal.removeEventListener("abort", onAbort);
-						}
-						resolve({
-							content: [{ type: "text", text: `Error: File not found: ${path}` }],
-							details: undefined,
-						});
-						return;
-					}
+					await access(absolutePath, constants.R_OK);
 
 					// Check if aborted before reading
 					if (aborted) {
@@ -125,48 +114,41 @@ export const readTool: AgentTool<typeof readSchema> = {
 
 						// Check if offset is out of bounds
 						if (startLine >= lines.length) {
-							content = [
-								{
-									type: "text",
-									text: `Error: Offset ${offset} is beyond end of file (${lines.length} lines total)`,
-								},
-							];
-						} else {
-							// Get the relevant lines
-							const selectedLines = lines.slice(startLine, endLine);
-
-							// Truncate long lines and track which were truncated
-							let hadTruncatedLines = false;
-							const formattedLines = selectedLines.map((line) => {
-								if (line.length > MAX_LINE_LENGTH) {
-									hadTruncatedLines = true;
-									return line.slice(0, MAX_LINE_LENGTH);
-								}
-								return line;
-							});
-
-							let outputText = formattedLines.join("\n");
-
-							// Add notices
-							const notices: string[] = [];
-
-							if (hadTruncatedLines) {
-								notices.push(`Some lines were truncated to ${MAX_LINE_LENGTH} characters for display`);
-							}
-
-							if (endLine < lines.length) {
-								const remaining = lines.length - endLine;
-								notices.push(
-									`${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading`,
-								);
-							}
-
-							if (notices.length > 0) {
-								outputText += `\n\n... (${notices.join(". ")})`;
-							}
-
-							content = [{ type: "text", text: outputText }];
+							throw new Error(`Offset ${offset} is beyond end of file (${lines.length} lines total)`);
 						}
+
+						// Get the relevant lines
+						const selectedLines = lines.slice(startLine, endLine);
+
+						// Truncate long lines and track which were truncated
+						let hadTruncatedLines = false;
+						const formattedLines = selectedLines.map((line) => {
+							if (line.length > MAX_LINE_LENGTH) {
+								hadTruncatedLines = true;
+								return line.slice(0, MAX_LINE_LENGTH);
+							}
+							return line;
+						});
+
+						let outputText = formattedLines.join("\n");
+
+						// Add notices
+						const notices: string[] = [];
+
+						if (hadTruncatedLines) {
+							notices.push(`Some lines were truncated to ${MAX_LINE_LENGTH} characters for display`);
+						}
+
+						if (endLine < lines.length) {
+							const remaining = lines.length - endLine;
+							notices.push(`${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading`);
+						}
+
+						if (notices.length > 0) {
+							outputText += `\n\n... (${notices.join(". ")})`;
+						}
+
+						content = [{ type: "text", text: outputText }];
 					}
 
 					// Check if aborted after reading
