@@ -89,7 +89,10 @@ export class TuiRenderer {
 	private isFirstUserMessage = true;
 
 	// Model scope for quick cycling
-	private scopedModels: Model<any>[] = [];
+	private scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
+
+	// Track if user manually changed thinking (disables auto-thinking from model cycling)
+	private autoThinkingDisabled = false;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -101,7 +104,7 @@ export class TuiRenderer {
 		version: string,
 		changelogMarkdown: string | null = null,
 		newVersion: string | null = null,
-		scopedModels: Model<any>[] = [],
+		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -754,6 +757,9 @@ export class TuiRenderer {
 		// Apply the new thinking level
 		this.agent.setThinkingLevel(nextLevel);
 
+		// Disable auto-thinking since user manually changed it
+		this.autoThinkingDisabled = true;
+
 		// Save thinking level change to session
 		this.sessionManager.saveThinkingLevelChange(nextLevel);
 
@@ -768,57 +774,107 @@ export class TuiRenderer {
 
 	private async cycleModel(): Promise<void> {
 		// Use scoped models if available, otherwise all available models
-		let modelsToUse: Model<any>[];
 		if (this.scopedModels.length > 0) {
-			modelsToUse = this.scopedModels;
+			// Use scoped models with thinking levels
+			if (this.scopedModels.length === 1) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model in scope"), 1, 0));
+				this.ui.requestRender();
+				return;
+			}
+
+			const currentModel = this.agent.state.model;
+			let currentIndex = this.scopedModels.findIndex(
+				(sm) => sm.model.id === currentModel?.id && sm.model.provider === currentModel?.provider,
+			);
+
+			// If current model not in scope, start from first
+			if (currentIndex === -1) {
+				currentIndex = 0;
+			}
+
+			const nextIndex = (currentIndex + 1) % this.scopedModels.length;
+			const nextEntry = this.scopedModels[nextIndex];
+			const nextModel = nextEntry.model;
+			const nextThinking = nextEntry.thinkingLevel;
+
+			// Validate API key
+			const apiKey = await getApiKeyForModel(nextModel);
+			if (!apiKey) {
+				this.showError(`No API key for ${nextModel.provider}/${nextModel.id}`);
+				return;
+			}
+
+			// Switch model
+			this.agent.setModel(nextModel);
+
+			// Apply thinking level if not disabled and model supports it
+			if (!this.autoThinkingDisabled && nextModel.reasoning) {
+				this.agent.setThinkingLevel(nextThinking);
+				this.sessionManager.saveThinkingLevelChange(nextThinking);
+				this.updateEditorBorderColor();
+			} else if (!this.autoThinkingDisabled && !nextModel.reasoning && nextThinking !== "off") {
+				// Model doesn't support thinking but user requested it - silently ignore
+				this.agent.setThinkingLevel("off");
+				this.sessionManager.saveThinkingLevelChange("off");
+				this.updateEditorBorderColor();
+			}
+
+			// Show notification
+			this.chatContainer.addChild(new Spacer(1));
+			const thinkingStr = nextModel.reasoning && nextThinking !== "off" ? ` (thinking: ${nextThinking})` : "";
+			this.chatContainer.addChild(
+				new Text(theme.fg("dim", `Switched to ${nextModel.name || nextModel.id}${thinkingStr}`), 1, 0),
+			);
+			this.ui.requestRender();
 		} else {
+			// Fallback to all available models (no thinking level changes)
 			const { models: availableModels, error } = await getAvailableModels();
 			if (error) {
 				this.showError(`Failed to load models: ${error}`);
 				return;
 			}
-			modelsToUse = availableModels;
-		}
 
-		if (modelsToUse.length === 0) {
-			this.showError("No models available to cycle");
-			return;
-		}
+			if (availableModels.length === 0) {
+				this.showError("No models available to cycle");
+				return;
+			}
 
-		if (modelsToUse.length === 1) {
+			if (availableModels.length === 1) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model in scope"), 1, 0));
+				this.ui.requestRender();
+				return;
+			}
+
+			const currentModel = this.agent.state.model;
+			let currentIndex = availableModels.findIndex(
+				(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
+			);
+
+			// If current model not in scope, start from first
+			if (currentIndex === -1) {
+				currentIndex = 0;
+			}
+
+			const nextIndex = (currentIndex + 1) % availableModels.length;
+			const nextModel = availableModels[nextIndex];
+
+			// Validate API key
+			const apiKey = await getApiKeyForModel(nextModel);
+			if (!apiKey) {
+				this.showError(`No API key for ${nextModel.provider}/${nextModel.id}`);
+				return;
+			}
+
+			// Switch model
+			this.agent.setModel(nextModel);
+
+			// Show notification
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", "Only one model in scope"), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", `Switched to ${nextModel.name || nextModel.id}`), 1, 0));
 			this.ui.requestRender();
-			return;
 		}
-
-		const currentModel = this.agent.state.model;
-		let currentIndex = modelsToUse.findIndex(
-			(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
-		);
-
-		// If current model not in scope, start from first
-		if (currentIndex === -1) {
-			currentIndex = 0;
-		}
-
-		const nextIndex = (currentIndex + 1) % modelsToUse.length;
-		const nextModel = modelsToUse[nextIndex];
-
-		// Validate API key
-		const apiKey = await getApiKeyForModel(nextModel);
-		if (!apiKey) {
-			this.showError(`No API key for ${nextModel.provider}/${nextModel.id}`);
-			return;
-		}
-
-		// Switch model
-		this.agent.setModel(nextModel);
-
-		// Show notification
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", `Switched to ${nextModel.name || nextModel.id}`), 1, 0));
-		this.ui.requestRender();
 	}
 
 	private toggleToolOutputExpansion(): void {
@@ -860,6 +916,9 @@ export class TuiRenderer {
 			(level) => {
 				// Apply the selected thinking level
 				this.agent.setThinkingLevel(level);
+
+				// Disable auto-thinking since user manually changed it
+				this.autoThinkingDisabled = true;
 
 				// Save thinking level change to session
 				this.sessionManager.saveThinkingLevelChange(level);
@@ -1015,6 +1074,9 @@ export class TuiRenderer {
 			(model) => {
 				// Apply the selected model
 				this.agent.setModel(model);
+
+				// Clear scoped models since user manually selected a model
+				this.scopedModels = [];
 
 				// Save model change to session
 				this.sessionManager.saveModelChange(model.provider, model.id);
