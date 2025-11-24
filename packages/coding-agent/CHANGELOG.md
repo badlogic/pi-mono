@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2] - 2025-11-24
+
+### Fixed
+
+- **Edit Tool Dollar Sign Bug**: Fixed critical bug in the `edit` tool where `String.replace()` was interpreting `$` as a special replacement pattern (e.g., `$$`, `$&`, `$'`). When trying to insert `$` into code (like adding a dollar sign to a template literal), the replacement would silently fail and produce unchanged content, but the tool would incorrectly report success. Now uses `indexOf` + `substring` for raw string replacement without special character interpretation. Also added verification that content actually changed, rejecting with a clear error if the replacement produces identical content. ([#53](https://github.com/badlogic/pi-mono/issues/53))
+
 ## [0.9.0] - 2025-11-21
 
 ### Added
