@@ -213,8 +213,24 @@ export const editTool: AgentTool<typeof editSchema> = {
 						return;
 					}
 
-					// Perform replacement
-					const newContent = content.replace(oldText, newText);
+					// Perform replacement using indexOf + substring (raw string replace, no special character interpretation)
+					// String.replace() interprets $ in the replacement string, so we do manual replacement
+					const index = content.indexOf(oldText);
+					const newContent = content.substring(0, index) + newText + content.substring(index + oldText.length);
+
+					// Verify the replacement actually changed something
+					if (content === newContent) {
+						if (signal) {
+							signal.removeEventListener("abort", onAbort);
+						}
+						reject(
+							new Error(
+								`No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`,
+							),
+						);
+						return;
+					}
+
 					await writeFile(absolutePath, newContent, "utf-8");
 
 					// Check if aborted after writing
