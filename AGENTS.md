@@ -12,3 +12,5 @@
 - Do NOT commit unless asked to by the user
 - Keep you answers short and concise and to the point.
 - Do NOT use inline imports ala `await import("./theme/theme.js");`
+- Read `~/agent-tools/browser-tools/README.md` if you need to run an interact with a browser
+- Use GitHub CLI to interact with GitHub issues and pull requests
