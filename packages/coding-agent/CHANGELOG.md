@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.3] - 2025-11-24
+
+### Added
+
+- Added Anthropic Claude Opus 4.5 support
+
 ## [0.9.2] - 2025-11-24
 
 ### Fixed
