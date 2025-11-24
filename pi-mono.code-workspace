@@ -11,6 +11,9 @@
 		{
 			"name": "mini-lit",
 			"path": "../mini-lit"
+		},
+		{
+			"path": "../../agent-tools/browser-tools"
 		}
 	],
 	"settings": {}
