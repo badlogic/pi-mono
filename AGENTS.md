@@ -2,7 +2,8 @@
     - packages/ai/README.md
     - packages/tui/README.md
     - packages/agent/README.md
-    - packages/coding-agent.md
+    - packages/coding-agent/README.md
+    - packages/mom/README.md
     - packages/pods/README.md
     - packages/web-ui/README.md
 - We must NEVER have type `any` anywhere, unless absolutely, positively necessary.

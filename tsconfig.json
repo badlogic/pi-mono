@@ -9,7 +9,8 @@
 			"@mariozechner/pi-agent": ["./packages/agent/src/index.ts"],
 			"@mariozechner/pi-agent-old": ["./packages/agent-old/src/index.ts"],
 			"@mariozechner/coding-agent": ["./packages/coding-agent/src/index.ts"],
-			"@mariozechner/pi": ["./packages/pods/src/index.ts"]
+			"@mariozechner/pi": ["./packages/pods/src/index.ts"],
+			"@mariozechner/pi-mom": ["./packages/mom/src/main.ts"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*"]
