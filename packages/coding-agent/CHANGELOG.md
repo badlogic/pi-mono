@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Footer Cost Display**: Added `$` prefix to cost display in footer. Now shows `$0.078` instead of `0.078`. ([#53](https://github.com/badlogic/pi-mono/issues/53))
+
 ## [0.9.3] - 2025-11-24
 
 ### Added
