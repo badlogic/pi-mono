@@ -85,7 +85,7 @@ export class FooterComponent implements Component {
 		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
 		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-		if (totalCost) statsParts.push(`${totalCost.toFixed(3)}`);
+		if (totalCost) statsParts.push(`$${totalCost.toFixed(3)}`);
 
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
