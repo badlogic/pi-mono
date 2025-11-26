@@ -177,7 +177,11 @@ export class MomBot {
 		// Process attachments (for context, already logged by message handler)
 		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
 
-		let typingMessageTs: string | null = null;
+		// Track the single message for this run
+		let messageTs: string | null = null;
+		let accumulatedText = "";
+		let isThinking = true; // Track if we're still in "thinking" state
+		let updatePromise: Promise<void> = Promise.resolve();
 
 		return {
 			message: {
@@ -190,46 +194,50 @@ export class MomBot {
 			},
 			store: this.store,
 			respond: async (responseText: string) => {
-				let responseTs: string;
+				// Queue updates to avoid race conditions
+				updatePromise = updatePromise.then(async () => {
+					if (isThinking) {
+						// First real response replaces "Thinking..."
+						accumulatedText = responseText;
+						isThinking = false;
+					} else {
+						// Subsequent responses get appended
+						accumulatedText += "\n" + responseText;
+					}
 
-				if (typingMessageTs) {
-					// Update the typing message with the response
-					await this.webClient.chat.update({
-						channel: event.channel,
-						ts: typingMessageTs,
-						text: responseText,
-					});
-					responseTs = typingMessageTs;
-					typingMessageTs = null;
-				} else {
-					// Post a new message
-					const result = await this.webClient.chat.postMessage({
-						channel: event.channel,
-						text: responseText,
-					});
-					responseTs = result.ts as string;
-				}
+					if (messageTs) {
+						// Update existing message
+						await this.webClient.chat.update({
+							channel: event.channel,
+							ts: messageTs,
+							text: accumulatedText,
+						});
+					} else {
+						// Post initial message
+						const result = await this.webClient.chat.postMessage({
+							channel: event.channel,
+							text: accumulatedText,
+						});
+						messageTs = result.ts as string;
+					}
 
-				// Log the bot response
-				await this.store.logBotResponse(event.channel, responseText, responseTs);
+					// Log the response
+					await this.store.logBotResponse(event.channel, responseText, messageTs!);
+				});
+
+				await updatePromise;
 			},
 			setTyping: async (isTyping: boolean) => {
-				if (isTyping && !typingMessageTs) {
-					// Post a "thinking" message (italic)
+				if (isTyping && !messageTs) {
+					// Post initial "thinking" message
+					accumulatedText = "_Thinking..._";
 					const result = await this.webClient.chat.postMessage({
 						channel: event.channel,
-						text: "_Thinking..._",
+						text: accumulatedText,
 					});
-					typingMessageTs = result.ts as string;
-				} else if (!isTyping && typingMessageTs) {
-					// Clear typing state (message will be updated by respond())
-					// If respond() wasn't called, delete the typing message
-					await this.webClient.chat.delete({
-						channel: event.channel,
-						ts: typingMessageTs,
-					});
-					typingMessageTs = null;
+					messageTs = result.ts as string;
 				}
+				// We don't delete/clear anymore - message persists and gets updated
 			},
 			uploadFile: async (filePath: string, title?: string) => {
 				const fileName = title || basename(filePath);

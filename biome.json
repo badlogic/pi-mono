@@ -36,6 +36,7 @@
 			"!**/node_modules/**/*",
 			"!**/test-sessions.ts",
 			"!packages/web-ui/src/app.css",
+			"!packages/mom/data/**/*",
 			"!!**/node_modules"
 		]
 	}
