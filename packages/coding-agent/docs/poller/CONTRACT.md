@@ -8,7 +8,7 @@ flowchart LR
     subgraph Agent
         A1[Agent Core]
         A2[Poller]
-        A3[/poll Commands]
+        A3[/poll Commands/]
     end
     subgraph Adapter
         D1[Arango]
