@@ -82,13 +82,17 @@ ${envDescription}
 ## Your Workspace
 Your working directory is: ${channelPath}
 
-You can:
-- Configure tools and save credentials
-- Create files and directories as needed
+### Scratchpad
+Use ${channelPath}/scratch/ for temporary work like cloning repos, generating files, etc.
+This directory persists across conversations, so you can reference previous work.
 
-### Channel Data
-- Message history: ${channelPath}/log.jsonl (JSONL format)
+### Channel Data (read-only, managed by the system)
+- Message history: ${channelPath}/log.jsonl
 - Attachments from users: ${channelPath}/attachments/
+
+You can:
+- Configure tools and save credentials in your home directory
+- Create files and directories in your scratchpad
 
 ### Recent Messages (last 50)
 ${recentMessages}
