@@ -113,6 +113,18 @@ export class Input implements Component {
 			return;
 		}
 
+		// Word left: CSI 1;3D (Option), CSI 1;5D (Ctrl), ESC b (Terminal.app)
+		if (data === "\x1b[1;3D" || data === "\x1b[1;5D" || data === "\x1bb") {
+			this.moveWordLeft();
+			return;
+		}
+
+		// Word right: CSI 1;3C (Option), CSI 1;5C (Ctrl), ESC f (Terminal.app)
+		if (data === "\x1b[1;3C" || data === "\x1b[1;5C" || data === "\x1bf") {
+			this.moveWordRight();
+			return;
+		}
+
 		// Regular character input
 		if (data.length === 1 && data >= " " && data <= "~") {
 			this.value = this.value.slice(0, this.cursor) + data + this.value.slice(this.cursor);
@@ -127,6 +139,53 @@ export class Input implements Component {
 		// Insert at cursor position
 		this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
 		this.cursor += cleanText.length;
+	}
+
+	/** Word boundaries: whitespace and punctuation. */
+	private moveWordLeft(): void {
+		if (this.cursor === 0) return;
+
+		const isWhitespace = (char: string): boolean => /\s/.test(char);
+		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+
+		let newCursor = this.cursor;
+
+		while (newCursor > 0 && isWhitespace(this.value[newCursor - 1] ?? "")) newCursor--;
+
+		if (newCursor > 0 && isPunctuation(this.value[newCursor - 1] ?? "")) {
+			newCursor--;
+		} else {
+			while (newCursor > 0) {
+				const ch = this.value[newCursor - 1] ?? "";
+				if (isWhitespace(ch) || isPunctuation(ch)) break;
+				newCursor--;
+			}
+		}
+
+		this.cursor = newCursor;
+	}
+
+	private moveWordRight(): void {
+		if (this.cursor >= this.value.length) return;
+
+		const isWhitespace = (char: string): boolean => /\s/.test(char);
+		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+
+		let newCursor = this.cursor;
+
+		if (isPunctuation(this.value[newCursor] ?? "")) {
+			newCursor++;
+		} else {
+			while (newCursor < this.value.length) {
+				const ch = this.value[newCursor] ?? "";
+				if (isWhitespace(ch) || isPunctuation(ch)) break;
+				newCursor++;
+			}
+		}
+
+		while (newCursor < this.value.length && isWhitespace(this.value[newCursor] ?? "")) newCursor++;
+
+		this.cursor = newCursor;
 	}
 
 	invalidate(): void {

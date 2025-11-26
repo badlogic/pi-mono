@@ -129,4 +129,139 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "xab");
 		});
 	});
+
+	describe("Word-by-word navigation", () => {
+		it("moves cursor left by word with Option+Left (ESC+b)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("hello world test");
+
+			// Cursor is at end (position 16)
+			editor.handleInput("\x1bb"); // Option+Left (ESC+b) - move to start of "test"
+
+			// Insert 'X' to verify cursor position
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "hello world Xtest");
+		});
+
+		it("moves cursor right by word with Option+Right (ESC+f)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("hello world test");
+
+			// Move cursor to beginning
+			editor.handleInput("\x01"); // Ctrl+A
+
+			editor.handleInput("\x1bf"); // Option+Right (ESC+f) - move past "hello "
+
+			// Insert 'X' to verify cursor position
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "hello Xworld test");
+		});
+
+		it("moves cursor left by word with Ctrl+Left (CSI 1;5D)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("foo bar baz");
+
+			// Cursor is at end
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left - move to start of "baz"
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "foo bar Xbaz");
+		});
+
+		it("moves cursor right by word with Ctrl+Right (CSI 1;5C)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("foo bar baz");
+
+			editor.handleInput("\x01"); // Ctrl+A - move to start
+
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right - move past "foo "
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "foo Xbar baz");
+		});
+
+		it("handles punctuation as word boundaries when moving left", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("hello.world");
+
+			// Cursor at end (position 11)
+			editor.handleInput("\x1bb"); // move to start of "world"
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "hello.Xworld");
+		});
+
+		it("handles punctuation as word boundaries when moving right", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("hello.world");
+
+			editor.handleInput("\x01"); // move to start
+
+			editor.handleInput("\x1bf"); // move past "hello"
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "helloX.world");
+		});
+
+		it("moves to previous line when at start of line (word left)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("line one\nline two");
+
+			// Move to start of second line
+			editor.handleInput("\x1b[B"); // Down arrow
+			editor.handleInput("\x01"); // Ctrl+A - start of line
+
+			editor.handleInput("\x1bb"); // Option+Left - should go to end of first line
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "line oneX\nline two");
+		});
+
+		it("moves to next line when at end of line (word right)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("line one\nline two");
+
+			// Cursor is at end of second line after setText
+			// Move up to first line
+			editor.handleInput("\x1b[A"); // Up arrow
+			// Move to end of first line
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			// First word-right moves to start of second line
+			editor.handleInput("\x1bf"); // Option+Right - should go to start of second line
+			// Second word-right moves past "line "
+			editor.handleInput("\x1bf"); // Option+Right - move past "line "
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "line one\nline Xtwo");
+		});
+
+		it("skips multiple spaces when moving by word", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("hello    world");
+
+			editor.handleInput("\x1bb"); // move left by word
+
+			editor.handleInput("X");
+
+			const text = editor.getText();
+			assert.strictEqual(text, "hello    Xworld");
+		});
+	});
 });

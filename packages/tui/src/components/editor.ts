@@ -291,6 +291,14 @@ export class Editor implements Component {
 		else if (data === "\x1b\x7f") {
 			this.deleteWordBackwards();
 		}
+		// Word left: CSI 1;3D (Option), CSI 1;5D (Ctrl), ESC b (Terminal.app)
+		else if (data === "\x1b[1;3D" || data === "\x1b[1;5D" || data === "\x1bb") {
+			this.moveWordLeft();
+		}
+		// Word right: CSI 1;3C (Option), CSI 1;5C (Ctrl), ESC f (Terminal.app)
+		else if (data === "\x1b[1;3C" || data === "\x1b[1;5C" || data === "\x1bf") {
+			this.moveWordRight();
+		}
 		// Ctrl+A - Move to start of line
 		else if (data.charCodeAt(0) === 1) {
 			this.moveToLineStart();
@@ -786,6 +794,70 @@ export class Editor implements Component {
 			const maxCol = currentLine.length;
 			this.state.cursorCol = Math.max(0, Math.min(maxCol, newCol));
 		}
+	}
+
+	/** Word boundaries: whitespace and punctuation. Matches deleteWordBackwards behavior. */
+	private moveWordLeft(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		if (this.state.cursorCol === 0) {
+			if (this.state.cursorLine > 0) {
+				this.state.cursorLine--;
+				this.state.cursorCol = (this.state.lines[this.state.cursorLine] || "").length;
+			}
+			return;
+		}
+
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		const isWhitespace = (char: string): boolean => /\s/.test(char);
+		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+
+		let newCol = this.state.cursorCol;
+
+		while (newCol > 0 && isWhitespace(textBeforeCursor[newCol - 1] ?? "")) newCol--;
+
+		if (newCol > 0 && isPunctuation(textBeforeCursor[newCol - 1] ?? "")) {
+			newCol--;
+		} else {
+			while (newCol > 0) {
+				const ch = textBeforeCursor[newCol - 1] ?? "";
+				if (isWhitespace(ch) || isPunctuation(ch)) break;
+				newCol--;
+			}
+		}
+
+		this.state.cursorCol = newCol;
+	}
+
+	private moveWordRight(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		if (this.state.cursorCol >= currentLine.length) {
+			if (this.state.cursorLine < this.state.lines.length - 1) {
+				this.state.cursorLine++;
+				this.state.cursorCol = 0;
+			}
+			return;
+		}
+
+		const isWhitespace = (char: string): boolean => /\s/.test(char);
+		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+
+		let newCol = this.state.cursorCol;
+
+		if (isPunctuation(currentLine[newCol] ?? "")) {
+			newCol++;
+		} else {
+			while (newCol < currentLine.length) {
+				const ch = currentLine[newCol] ?? "";
+				if (isWhitespace(ch) || isPunctuation(ch)) break;
+				newCol++;
+			}
+		}
+
+		while (newCol < currentLine.length && isWhitespace(currentLine[newCol] ?? "")) newCol++;
+
+		this.state.cursorCol = newCol;
 	}
 
 	// Helper method to check if cursor is at start of message (for slash command detection)
