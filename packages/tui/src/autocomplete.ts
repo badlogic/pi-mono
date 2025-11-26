@@ -494,25 +494,28 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 	}
 
-	// Score a file against the query (higher = better match)
-	private scoreFile(filePath: string, query: string): number {
+	// Score an entry against the query (higher = better match)
+	// isDirectory adds bonus to prioritize folders
+	private scoreEntry(filePath: string, query: string, isDirectory: boolean): number {
 		const fileName = basename(filePath);
 		const lowerFileName = fileName.toLowerCase();
 		const lowerQuery = query.toLowerCase();
 
+		let score = 0;
+
 		// Exact filename match (highest)
-		if (lowerFileName === lowerQuery) return 100;
-
+		if (lowerFileName === lowerQuery) score = 100;
 		// Filename starts with query
-		if (lowerFileName.startsWith(lowerQuery)) return 80;
-
+		else if (lowerFileName.startsWith(lowerQuery)) score = 80;
 		// Substring match in filename
-		if (lowerFileName.includes(lowerQuery)) return 50;
-
+		else if (lowerFileName.includes(lowerQuery)) score = 50;
 		// Substring match in full path
-		if (filePath.toLowerCase().includes(lowerQuery)) return 30;
+		else if (filePath.toLowerCase().includes(lowerQuery)) score = 30;
 
-		return 0;
+		// Directories get a bonus to appear first
+		if (isDirectory && score > 0) score += 10;
+
+		return score;
 	}
 
 	// Fuzzy file search using fdfind, fd, or find (fallback)
@@ -522,7 +525,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const fdCommand = this.getFdCommand();
 
 			if (fdCommand) {
-				const args = ["-t", "f", "--max-results", "100"];
+				const args = ["--max-results", "100"];
 
 				if (query) {
 					args.push(query);
@@ -541,8 +544,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				const cmd = [
 					"find",
 					".",
-					"-type",
-					"f",
 					"-iname",
 					`'${pattern}'`,
 					"!",
@@ -578,42 +579,52 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				});
 			}
 
-			const files = result
+			const entries = result
 				.trim()
 				.split("\n")
 				.filter((f) => f.length > 0)
 				.map((f) => (f.startsWith("./") ? f.slice(2) : f));
 
-			// Score and filter files
-			const scoredFiles: { path: string; score: number }[] = [];
+			// Score and filter entries (files and directories)
+			const scoredEntries: { path: string; score: number; isDirectory: boolean }[] = [];
 
-			for (const filePath of files) {
-				const fullPath = join(this.basePath, filePath);
+			for (const entryPath of entries) {
+				const fullPath = join(this.basePath, entryPath);
 
-				if (!isAttachableFile(fullPath)) {
+				let isDirectory: boolean;
+				try {
+					isDirectory = statSync(fullPath).isDirectory();
+				} catch {
+					continue; // Skip if we can't stat
+				}
+
+				// For files, check if attachable
+				if (!isDirectory && !isAttachableFile(fullPath)) {
 					continue;
 				}
 
-				const score = query ? this.scoreFile(filePath, query) : 1;
+				const score = query ? this.scoreEntry(entryPath, query, isDirectory) : 1;
 				if (score > 0) {
-					scoredFiles.push({ path: filePath, score });
+					scoredEntries.push({ path: entryPath, score, isDirectory });
 				}
 			}
 
 			// Sort by score (descending) and take top 20
-			scoredFiles.sort((a, b) => b.score - a.score);
-			const topFiles = scoredFiles.slice(0, 20);
+			scoredEntries.sort((a, b) => b.score - a.score);
+			const topEntries = scoredEntries.slice(0, 20);
 
 			// Build suggestions
 			const suggestions: AutocompleteItem[] = [];
-			for (const { path: filePath } of topFiles) {
-				const fileName = basename(filePath);
-				const dirPath = dirname(filePath);
+			for (const { path: entryPath, isDirectory } of topEntries) {
+				const entryName = basename(entryPath);
+				// Normalize path - remove trailing slash if present, we'll add it back for dirs
+				const normalizedPath = entryPath.endsWith("/") ? entryPath.slice(0, -1) : entryPath;
+				const valuePath = isDirectory ? normalizedPath + "/" : normalizedPath;
 
 				suggestions.push({
-					value: "@" + filePath,
-					label: fileName,
-					description: dirPath === "." ? "" : dirPath,
+					value: "@" + valuePath,
+					label: entryName + (isDirectory ? "/" : ""),
+					description: normalizedPath,
 				});
 			}
 
