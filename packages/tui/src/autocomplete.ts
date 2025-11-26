@@ -536,6 +536,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					encoding: "utf-8",
 					timeout: 2000,
 					maxBuffer: 1024 * 1024,
+					stdio: ["pipe", "pipe", "pipe"],
 				});
 			} else {
 				// Fallback to find
@@ -576,6 +577,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					timeout: 3000,
 					maxBuffer: 1024 * 1024,
 					shell: "/bin/bash",
+					stdio: ["pipe", "pipe", "pipe"],
 				});
 			}
 
@@ -642,12 +644,12 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		try {
-			execSync("fdfind --version", { encoding: "utf-8", timeout: 1000 });
+			execSync("fdfind --version", { encoding: "utf-8", timeout: 1000, stdio: "pipe" });
 			this.fdCommand = "fdfind";
 			return this.fdCommand;
 		} catch {
 			try {
-				execSync("fd --version", { encoding: "utf-8", timeout: 1000 });
+				execSync("fd --version", { encoding: "utf-8", timeout: 1000, stdio: "pipe" });
 				this.fdCommand = "fd";
 				return this.fdCommand;
 			} catch {
