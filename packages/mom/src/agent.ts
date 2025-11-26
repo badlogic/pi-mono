@@ -160,12 +160,18 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				}),
 			});
 
+			// Track pending tool calls to pair args with results
+			const pendingTools = new Map<string, { toolName: string; args: unknown }>();
+
 			// Subscribe to events
 			agent.subscribe(async (event: AgentEvent) => {
 				switch (event.type) {
 					case "tool_execution_start": {
 						const args = event.args as { label?: string };
 						const label = args.label || event.toolName;
+
+						// Store args to pair with result later
+						pendingTools.set(event.toolCallId, { toolName: event.toolName, args: event.args });
 
 						// Log to console
 						console.log(`\n[Tool] ${event.toolName}: ${JSON.stringify(event.args)}`);
@@ -179,13 +185,15 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							isBot: true,
 						});
 
-						// Show only label to user (italic)
+						// Show label in main message only
 						await ctx.respond(`_${label}_`);
 						break;
 					}
 
 					case "tool_execution_end": {
 						const resultStr = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
+						const pending = pendingTools.get(event.toolCallId);
+						pendingTools.delete(event.toolCallId);
 
 						// Log to console
 						console.log(`[Tool Result] ${event.isError ? "ERROR: " : ""}${truncate(resultStr, 1000)}\n`);
@@ -199,7 +207,20 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							isBot: true,
 						});
 
-						// Show brief status to user (only on error)
+						// Post args + result together in thread
+						const argsStr = pending ? JSON.stringify(pending.args, null, 2) : "(args not found)";
+						const threadResult = truncate(resultStr, 2000);
+						await ctx.respondInThread(
+							`*[${event.toolName}]* ${event.isError ? "❌" : "✓"}\n` +
+								"```\n" +
+								argsStr +
+								"\n```\n" +
+								"*Result:*\n```\n" +
+								threadResult +
+								"\n```",
+						);
+
+						// Show brief error in main message if failed
 						if (event.isError) {
 							await ctx.respond(`_Error: ${truncate(resultStr, 200)}_`);
 						}

@@ -16,9 +16,11 @@ export interface SlackMessage {
 export interface SlackContext {
 	message: SlackMessage;
 	store: ChannelStore;
-	/** Send a new message */
+	/** Send/update the main message (accumulates text) */
 	respond(text: string): Promise<void>;
-	/** Show/hide typing indicator. If text is provided to respond() after setTyping(true), it updates the typing message instead of posting new. */
+	/** Post a message in the thread under the main message (for verbose details) */
+	respondInThread(text: string): Promise<void>;
+	/** Show/hide typing indicator */
 	setTyping(isTyping: boolean): Promise<void>;
 	/** Upload a file to the channel */
 	uploadFile(filePath: string, title?: string): Promise<void>;
@@ -225,6 +227,22 @@ export class MomBot {
 					await this.store.logBotResponse(event.channel, responseText, messageTs!);
 				});
 
+				await updatePromise;
+			},
+			respondInThread: async (threadText: string) => {
+				// Queue thread posts to maintain order
+				updatePromise = updatePromise.then(async () => {
+					if (!messageTs) {
+						// No main message yet, just skip
+						return;
+					}
+					// Post in thread under the main message
+					await this.webClient.chat.postMessage({
+						channel: event.channel,
+						thread_ts: messageTs,
+						text: threadText,
+					});
+				});
 				await updatePromise;
 			},
 			setTyping: async (isTyping: boolean) => {
