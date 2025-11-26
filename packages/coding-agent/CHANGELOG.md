@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Emoji Text Wrapping Crash**: Fixed crash when rendering text containing emojis (e.g., 😂) followed by long content like URLs. The `breakLongWord` function in `pi-tui` was iterating over UTF-16 code units instead of grapheme clusters, causing emojis (which are surrogate pairs) to be miscounted during line wrapping. Now uses `Intl.Segmenter` to properly handle multi-codepoint characters.
 - **Footer Cost Display**: Added `$` prefix to cost display in footer. Now shows `$0.078` instead of `0.078`. ([#53](https://github.com/badlogic/pi-mono/issues/53))
 
 ## [0.9.3] - 2025-11-24
