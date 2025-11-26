@@ -51,6 +51,21 @@ Opt-in, idle-only poller for queued messages. Fork-only.
 - SettingsManager returns `poller` block; pass to `createPollerRuntime(agent, pollerConfig)`.
 - Poller is optional; if config absent or `enabled=false`, nothing starts.
 - Logger optional; defaults to console.
+```ts
+import { createPollerRuntime } from "./poller/setup.js";
+
+const pollerSettings = settingsManager.getPollerSettings();
+const runtime = await createPollerRuntime(agent, pollerSettings);
+if (runtime) {
+  // Update UI badge when inbox count changes
+  runtime.poller.events.on("inboxIncrement", (delta) => {
+    // e.g., redraw status bar "Inbox: N"
+  });
+
+  // Use runtime.uiBridge from `/poll` command handlers
+  // to list inbox, toggle on/off, change interval, and update status.
+}
+```
 
 ## Commands
 - `/poll` → list inbox

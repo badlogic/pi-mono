@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseAdapter } from "../../src/poller/db/database-adapter.js";
 import { Poller } from "../../src/poller/poller.js";
 import type { IncomingMessage, Logger, PollerSettings } from "../../src/poller/types.js";
@@ -32,11 +32,18 @@ class FakeAdapter implements DatabaseAdapter {
 		return this.queued;
 	}
 }
-const logger: Logger = {
-	info: () => {},
-	warn: () => {},
-	error: () => {},
-};
+
+function makeLogger(): Logger & {
+	info: ReturnType<typeof vi.fn>;
+	warn: ReturnType<typeof vi.fn>;
+	error: ReturnType<typeof vi.fn>;
+} {
+	return {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	};
+}
 
 function defaultSettings(): PollerSettings {
 	return {
@@ -64,11 +71,13 @@ describe("Poller", () => {
 	let agent: FakeAgent;
 	let adapter: FakeAdapter;
 	let settings: PollerSettings;
+	let logger: Logger;
 
 	beforeEach(() => {
 		agent = new FakeAgent();
 		adapter = new FakeAdapter();
 		settings = defaultSettings();
+		logger = makeLogger();
 	});
 
 	it("claims and enqueues when idle", async () => {
@@ -116,5 +125,40 @@ describe("Poller", () => {
 		await poller.updateStatus("1", "done");
 		expect(adapter.statuses).toEqual([{ id: "1", status: "done" }]);
 		expect(poller.getInboxCount()).toBe(0);
+	});
+
+	it("emits inboxIncrement events for claims and acks", async () => {
+		const deltas: number[] = [];
+		adapter.queued = [makeMessage("1")];
+		const poller = new Poller(agent as any, adapter, settings, logger);
+		poller.events.on("inboxIncrement", (delta) => deltas.push(delta));
+		await poller.init();
+
+		await (poller as any).tick();
+		await poller.updateStatus("1", "acked");
+
+		expect(deltas).toContain(1);
+		expect(deltas).toContain(-1);
+	});
+
+	it("applies backoff and logs degraded after repeated failures", async () => {
+		const failingAdapter: DatabaseAdapter = {
+			init: async () => {},
+			fetchQueued: async () => {
+				throw new Error("db down");
+			},
+			claimMessage: async () => {},
+			updateStatus: async () => {},
+			listInbox: async () => [],
+		};
+		const poller = new Poller(agent as any, failingAdapter, settings, logger);
+		await poller.init();
+
+		await (poller as any).tick();
+		await (poller as any).tick();
+		await (poller as any).tick();
+
+		const warns = (logger as ReturnType<typeof makeLogger>).warn.mock.calls.map((args) => args[0] as string);
+		expect(warns.some((msg) => msg.includes("degraded after"))).toBe(true);
 	});
 });

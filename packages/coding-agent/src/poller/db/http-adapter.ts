@@ -20,7 +20,34 @@ export class HttpAdapter implements DatabaseAdapter {
 	}
 
 	async init(): Promise<void> {
-		await this.request<unknown>("/health");
+		const url = `${this.cfg.baseUrl}/health`;
+		const controller = new AbortController();
+		const timeout = this.cfg.timeoutMs ?? 5000;
+		const timer = setTimeout(() => controller.abort(), timeout);
+		try {
+			const res = await fetch(url, {
+				method: "GET",
+				headers: this.cfg.headers ?? {},
+				signal: controller.signal,
+			});
+			if (!res.ok) {
+				const text = await res.text();
+				throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+			}
+			const contentType = res.headers.get("content-type") ?? "";
+			if (contentType.includes("application/json")) {
+				await res.json();
+			} else {
+				await res.text();
+			}
+		} catch (err) {
+			if ((err as Error).name === "AbortError") {
+				throw new Error(`[poller] HTTP request timeout after ${timeout}ms: ${url}`);
+			}
+			throw err;
+		} finally {
+			clearTimeout(timer);
+		}
 		this.logger.info("[poller] HTTP adapter ready");
 	}
 

@@ -1,0 +1,28 @@
+{
+	"//": "Example poller settings for pi-coding-agent. Copy this file to settings.json and fill in real values.",
+	"poller": {
+		"enabled": true,
+		"pollIntervalMs": 5000,
+		"agentId": "ProjectA",
+		"backend": "arangojs",
+		"arango": {
+			"url": "http://localhost:8529",
+			"database": "agents",
+			"messagesCollection": "messages",
+			"username": "root",
+			"password": "CHANGE_ME"
+		},
+		"batchLimit": 25,
+		"leaseMs": 120000,
+		"backoff": {
+			"initialMs": 1000,
+			"factor": 2,
+			"maxMs": 30000,
+			"failureThreshold": 3
+		},
+		"options": {
+			"lruDedupSize": 128,
+			"autoProcessNext": false
+		}
+	}
+}

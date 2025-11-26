@@ -18,7 +18,8 @@ export class SettingsManager {
 	private settings: Settings;
 
 	constructor(baseDir?: string) {
-		const dir = baseDir || join(homedir(), ".pi", "agent");
+		const defaultDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+		const dir = baseDir || defaultDir;
 		this.settingsPath = join(dir, "settings.json");
 		this.settings = this.load();
 	}

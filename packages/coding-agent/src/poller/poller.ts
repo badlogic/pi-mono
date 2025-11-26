@@ -107,7 +107,9 @@ export class Poller {
 	}
 
 	private isIdle(): boolean {
-		return !(this.agent as any).state?.isStreaming;
+		type AgentLike = { state?: { isStreaming?: boolean } };
+		const agentLike = this.agent as unknown as AgentLike;
+		return !agentLike.state?.isStreaming;
 	}
 
 	private scheduleNext(delayMs: number): void {

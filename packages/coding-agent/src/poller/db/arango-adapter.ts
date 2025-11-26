@@ -26,10 +26,24 @@ export class ArangoAdapter implements DatabaseAdapter {
 	}
 
 	async init(): Promise<void> {
-		const db = new Database({ url: this.cfg.url, databaseName: this.cfg.database });
-		if (this.cfg.username && this.cfg.password) {
-			db.useBasicAuth(this.cfg.username, this.cfg.password);
+		// Connect directly to target database; creation is handled by a separate migration step.
+		const db = new Database({
+			url: this.cfg.url,
+			databaseName: this.cfg.database,
+			auth:
+				this.cfg.username && this.cfg.password
+					? { username: this.cfg.username, password: this.cfg.password }
+					: undefined,
+		});
+
+		// Ensure messages collection exists
+		const collection = db.collection(this.cfg.messagesCollection);
+		if (!(await collection.exists())) {
+			await collection.create();
+			this.logger.info(`[poller] Created Arango collection "${this.cfg.messagesCollection}"`);
 		}
+
+		// Simple ping
 		await db.listCollections();
 		this.db = db;
 		this.logger.info("[poller] Arango adapter ready");

@@ -56,7 +56,30 @@ If you want a pure, upstream-aligned experience, simply remove the poller wiring
 - `QUICKSTART.md` – concrete configuration examples, wiring, and troubleshooting tips.
 
 ## Configure
-Add to your settings (e.g., `~/.pi/agent/settings.json`):
+
+For this experimental fork, the easiest self-contained setup is:
+
+1. Point the coding agent at a project-local settings directory:
+
+   ```bash
+   export PI_CODING_AGENT_DIR=./packages/coding-agent/src/poller
+   ```
+
+2. Copy the example settings file and edit it:
+
+   ```bash
+   cd packages/coding-agent/src/poller
+   cp settings.example.json settings.json
+   # then fill in your real Arango URL, database, collection, and credentials
+   ```
+
+On first startup, the poller will automatically create the configured database and
+messages collection in ArangoDB if they do not exist (similar to python-arango).
+
+If you prefer a global setup, you can still omit `PI_CODING_AGENT_DIR`, in which case
+the coding agent uses the default `~/.pi/agent/settings.json`.
+
+A typical `settings.json` looks like this:
 ```json
 {
   "poller": {
@@ -84,9 +107,19 @@ Add to your settings (e.g., `~/.pi/agent/settings.json`):
 import { createPollerRuntime } from "./poller/setup.js";
 
 const pollerSettings = settingsManager.getPollerSettings();
-const runtime = await createPollerRuntime(agent, pollerSettings, (count) => {
-  // e.g., feed into status bar
-});
+const runtime = await createPollerRuntime(agent, pollerSettings);
+if (runtime) {
+  // Subscribe to inbox count changes for status bar / badge
+  runtime.poller.events.on("inboxIncrement", (delta) => {
+    // e.g., update "Inbox: N" in the TUI
+  });
+
+  // Use runtime.uiBridge from your /poll command handler:
+  // - runtime.uiBridge.listInbox()
+  // - runtime.uiBridge.setEnabled(true|false)
+  // - runtime.uiBridge.setIntervalMs(ms)
+  // - runtime.uiBridge.updateStatus(id, "acked" | "done" | "failed")
+}
 ```
 
 ## Use
