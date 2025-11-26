@@ -23,4 +23,6 @@ packages/*/dist-firefox/
 coverage/
 .nyc_output/
 .pi_config/
-tui-debug.logpackages/coding-agent/docs/poller/Gemini_Generated_Image_t4firdt4firdt4fi.png
+
+
+packages/coding-agent/docs/poller/source/
