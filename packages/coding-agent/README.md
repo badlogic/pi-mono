@@ -469,9 +469,8 @@ Type **`@`** to fuzzy-search for files and folders in your project:
 - Directories are prioritized and shown with trailing `/`
 - Autocomplete triggers immediately when you type `@`
 - Use **Up/Down arrows** to navigate, **Tab**/**Enter** to select
-- Only shows attachable files (text, code, images) and directories
 
-Uses `fdfind`/`fd` for fast searching if available, falls back to `find` on all Unix systems.
+Respects `.gitignore` files and skips hidden files/directories.
 
 ### Path Completion
 
