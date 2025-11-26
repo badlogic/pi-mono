@@ -19,6 +19,7 @@ import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
+import type { IncomingMessage, PollerUiBridge } from "../poller/types.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
@@ -60,6 +61,9 @@ export class TuiRenderer {
 
 	// Message queueing
 	private queuedMessages: string[] = [];
+
+	// Poller integration
+	private poller?: PollerUiBridge;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | null = null;
@@ -105,6 +109,7 @@ export class TuiRenderer {
 		changelogMarkdown: string | null = null,
 		newVersion: string | null = null,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
+		poller?: PollerUiBridge,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -113,6 +118,7 @@ export class TuiRenderer {
 		this.newVersion = newVersion;
 		this.changelogMarkdown = changelogMarkdown;
 		this.scopedModels = scopedModels;
+		this.poller = poller;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -178,6 +184,11 @@ export class TuiRenderer {
 			description: "Clear context and start a fresh session",
 		};
 
+		const pollCommand: SlashCommand = {
+			name: "poll",
+			description: "List inbox or control poller",
+		};
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
@@ -192,6 +203,7 @@ export class TuiRenderer {
 				logoutCommand,
 				queueCommand,
 				clearCommand,
+				pollCommand,
 			],
 			process.cwd(),
 		);
@@ -395,6 +407,13 @@ export class TuiRenderer {
 			// Check for /clear command
 			if (text === "/clear") {
 				this.handleClearCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /poll command
+			if (text.startsWith("/poll")) {
+				await this.handlePollCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -1434,6 +1453,84 @@ export class TuiRenderer {
 		// Show info in chat
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async handlePollCommand(text: string): Promise<void> {
+		if (!this.poller) {
+			this.showError("Poller is not configured.");
+			return;
+		}
+
+		const parts = text.trim().split(/\s+/);
+		const sub = (parts[1] ?? "").toLowerCase();
+
+		try {
+			if (!sub) {
+				const inbox = await this.poller.listInbox(100);
+				const formatted = this.formatInbox(inbox);
+				this.renderPollText(formatted);
+				return;
+			}
+
+			if (sub === "on") {
+				this.poller.setEnabled(true);
+				this.renderPollText(["Polling enabled."]);
+				return;
+			}
+
+			if (sub === "off") {
+				this.poller.setEnabled(false);
+				this.renderPollText(["Polling disabled."]);
+				return;
+			}
+
+			if (sub === "interval") {
+				const ms = Number(parts[2] ?? "");
+				if (!Number.isFinite(ms) || ms <= 0) {
+					this.showError("Usage: /poll interval <ms>");
+					return;
+				}
+				this.poller.setIntervalMs(ms);
+				this.renderPollText([`Polling interval set to ${ms} ms.`]);
+				return;
+			}
+
+			if (sub === "ack" || sub === "done" || sub === "failed") {
+				const id = parts[2];
+				if (!id) {
+					this.showError(`Usage: /poll ${sub} <id>`);
+					return;
+				}
+				await this.poller.updateStatus(id, sub as "acked" | "done" | "failed");
+				this.renderPollText([`Message ${id} marked as ${sub}.`]);
+				return;
+			}
+
+			this.showError("Usage: /poll [on|off|interval <ms>|ack <id>|done <id>|failed <id>]");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			this.showError(message);
+		}
+	}
+
+	private formatInbox(inbox: IncomingMessage[]): string[] {
+		const count = inbox.length;
+		const lines: string[] = [`Inbox (${count} item${count === 1 ? "" : "s"}):`];
+		for (const msg of inbox) {
+			const corr = msg.correlation_id ? ` corr=${msg.correlation_id}` : "";
+			const ref = msg.payload_ref ? ` ref=${msg.payload_ref}` : "";
+			lines.push(`- id=${msg.id} type=${msg.type} from=${msg.from_agent} status=${msg.status}${corr}${ref}`);
+		}
+		if (lines.length === 1) {
+			lines.push("(empty)");
+		}
+		return lines;
+	}
+
+	private renderPollText(lines: string[]): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
 		this.ui.requestRender();
 	}
 

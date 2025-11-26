@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && tailwindcss -i ./src/app.css -o ./dist/app.css --minify",
+		"build": "tsc -p tsconfig.build.json && TAILWINDCSS_DISABLE_LIGHTNINGCSS=1 tailwindcss -i ./src/app.css -o ./dist/app.css --minify",
 		"dev": "concurrently --names \"build,example\" --prefix-colors \"cyan,green\" \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"tailwindcss -i ./src/app.css -o ./dist/app.css --watch\" \"npm run dev --prefix example\"",
 		"dev:tsc": "concurrently --names \"build\" --prefix-colors \"cyan\" \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"tailwindcss -i ./src/app.css -o ./dist/app.css --watch\"",
 		"check": "tsc --noEmit && cd example && tsc --noEmit"

@@ -23,8 +23,13 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.5",
+		"@biomejs/cli-linux-x64": "^2.3.7",
+		"@parcel/watcher-linux-x64-glibc": "^2.5.1",
+		"@rollup/rollup-linux-x64-gnu": "^4.53.3",
+		"@tailwindcss/oxide-linux-x64-gnu": "^4.1.17",
 		"@types/node": "^22.10.5",
 		"@typescript/native-preview": "^7.0.0-dev.20251111.1",
+		"@typescript/native-preview-linux-x64": "^7.0.0-dev.20251126.1",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
 		"tsx": "^4.20.3",
@@ -33,5 +38,8 @@
 	"engines": {
 		"node": ">=20.0.0"
 	},
-	"version": "0.0.2"
+	"version": "0.0.2",
+	"dependencies": {
+		"lightningcss-linux-x64-gnu": "^1.30.2"
+	}
 }

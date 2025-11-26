@@ -8,6 +8,8 @@ import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
+import { createPollerRuntime } from "./poller/setup.js";
+import type { PollerUiBridge } from "./poller/types.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { initTheme } from "./theme/theme.js";
@@ -511,6 +513,7 @@ async function runInteractiveMode(
 	newVersion: string | null = null,
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
 	initialMessages: string[] = [],
+	pollerUi?: PollerUiBridge,
 ): Promise<void> {
 	const renderer = new TuiRenderer(
 		agent,
@@ -520,6 +523,7 @@ async function runInteractiveMode(
 		changelogMarkdown,
 		newVersion,
 		scopedModels,
+		pollerUi,
 	);
 
 	// Initialize TUI (subscribes to agent events internally)
@@ -884,6 +888,24 @@ export async function main(args: string[]) {
 		}),
 	});
 
+	let pollerUi: PollerUiBridge | undefined;
+	if (isInteractive) {
+		const pollerSettings = settingsManager.getPollerSettings();
+		if (pollerSettings) {
+			try {
+				const runtime = await createPollerRuntime(agent, pollerSettings);
+				if (runtime) {
+					pollerUi = runtime.uiBridge;
+				}
+			} catch (error) {
+				if (shouldPrintMessages) {
+					const message = error instanceof Error ? error.message : String(error);
+					console.error(chalk.yellow(`[poller] Disabled: ${message}`));
+				}
+			}
+		}
+	}
+
 	// If initial thinking was requested but model doesn't support it, silently reset to off
 	if (initialThinking !== "off" && initialModel && !initialModel.reasoning) {
 		agent.setThinkingLevel("off");
@@ -1001,6 +1023,7 @@ export async function main(args: string[]) {
 			newVersion,
 			scopedModels,
 			parsed.messages,
+			pollerUi,
 		);
 	} else {
 		// Non-interactive mode (--print flag or --mode flag)
