@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
-import type { PollerSettings } from "./poller/types.js";
+import type { PollerConfigBlock } from "./poller/setup.js";
 
 export interface Settings {
 	lastChangelogVersion?: string;
@@ -10,7 +10,7 @@ export interface Settings {
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
-	poller?: PollerSettings;
+	poller?: PollerConfigBlock;
 }
 
 export class SettingsManager {
@@ -102,11 +102,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getPollerSettings(): PollerSettings | undefined {
+	getPollerSettings(): PollerConfigBlock | undefined {
 		return this.settings.poller;
 	}
 
-	setPollerSettings(poller: PollerSettings): void {
+	setPollerSettings(poller: PollerConfigBlock): void {
 		this.settings.poller = poller;
 		this.save();
 	}

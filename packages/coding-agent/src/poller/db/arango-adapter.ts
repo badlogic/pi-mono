@@ -1,15 +1,28 @@
 import { aql, Database } from "arangojs";
-import type { ArangoBackendConfig, IncomingMessage } from "../types.js";
+import type { ArangoBackendConfig, IncomingMessage, Logger } from "../types.js";
 import type { DatabaseAdapter } from "./database-adapter.js";
 
 const DEFAULT_BATCH_LIMIT = 25;
 
+function validateArangoConfig(cfg: ArangoBackendConfig): void {
+	const missing: string[] = [];
+	if (!cfg.url) missing.push("url");
+	if (!cfg.database) missing.push("database");
+	if (!cfg.messagesCollection) missing.push("messagesCollection");
+	if (missing.length > 0) {
+		throw new Error(`[poller] Arango config missing: ${missing.join(", ")}`);
+	}
+}
+
 export class ArangoAdapter implements DatabaseAdapter {
 	private readonly cfg: ArangoBackendConfig;
+	private readonly logger: Logger;
 	private db: Database | null = null;
 
-	constructor(cfg: ArangoBackendConfig) {
+	constructor(cfg: ArangoBackendConfig, logger: Logger) {
+		validateArangoConfig(cfg);
 		this.cfg = cfg;
+		this.logger = logger;
 	}
 
 	async init(): Promise<void> {
@@ -19,6 +32,7 @@ export class ArangoAdapter implements DatabaseAdapter {
 		}
 		await db.listCollections();
 		this.db = db;
+		this.logger.info("[poller] Arango adapter ready");
 	}
 
 	private get collectionName(): string {

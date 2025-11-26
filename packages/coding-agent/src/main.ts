@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { createPollerRuntime } from "./poller/setup.js";
+import { createPollerRuntime, type PollerConfigBlock } from "./poller/setup.js";
 import type { PollerUiBridge } from "./poller/types.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
@@ -893,7 +893,7 @@ export async function main(args: string[]) {
 		const pollerSettings = settingsManager.getPollerSettings();
 		if (pollerSettings) {
 			try {
-				const runtime = await createPollerRuntime(agent, pollerSettings);
+				const runtime = await createPollerRuntime(agent, pollerSettings as PollerConfigBlock);
 				if (runtime) {
 					pollerUi = runtime.uiBridge;
 				}

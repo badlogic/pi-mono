@@ -1,5 +1,7 @@
 # Poller Module (Fork-only)
 
+![Poller overview diagram](./poller-banana-flow-readme.png)
+
 Opt-in idle-only polling with alerts and `/poll` controls. Pluggable adapters: ArangoDB (`arangojs`) or HTTP (e.g., python-arango service).
 
 ## Configure

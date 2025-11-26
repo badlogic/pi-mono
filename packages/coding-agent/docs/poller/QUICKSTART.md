@@ -1,22 +1,10 @@
-# Polling Module Quickstart (Fork-only Feature)
+# Polling Module Quickstart
 
-Opt-in, idle-only polling that surfaces queued messages to the interactive agent.
+Opt-in, idle-only poller for queued messages. Fork-only.
 
-## What You Get
-- Idle-only: no mid-stream interference.
-- Alert: `[poller] Inbox: +N new item(s). Use /poll to list.`
-- `/poll` commands:
-  - `/poll` – list inbox
-  - `/poll on|off` – enable/disable
-  - `/poll interval <ms>` – set interval
-  - `/poll ack|done|failed <id>` – update status
+## Settings Examples
 
-## Requirements
-- Unique `agentId` per agent.
-- Message store fields: `id`, `to_agent`, `from_agent`, `type`, `status`, optional `correlation_id`, `payload_ref`, `payload`.
-- Backend adapter choice: ArangoDB (node `arangojs`) or HTTP REST (e.g., python-arango service).
-
-## Example Settings (ArangoDB)
+### ArangoDB
 ```json
 {
   "poller": {
@@ -27,9 +15,9 @@ Opt-in, idle-only polling that surfaces queued messages to the interactive agent
     "arango": {
       "url": "http://localhost:8529",
       "database": "agents",
+      "messagesCollection": "messages",
       "username": "root",
-      "password": "openSesame",
-      "messagesCollection": "messages"
+      "password": "openSesame"
     },
     "batchLimit": 25,
     "leaseMs": 120000,
@@ -39,15 +27,7 @@ Opt-in, idle-only polling that surfaces queued messages to the interactive agent
 }
 ```
 
-## Example Settings (HTTP / python-arango)
-Expose endpoints:
-- `GET /health`
-- `GET /messages/queued?agentId=ProjectA&limit=25`
-- `POST /messages/{id}/claim` body `{ "agentId": "ProjectA", "leaseUntilMs": 1730000000000 }`
-- `GET /messages/inbox?agentId=ProjectA&limit=50`
-- `POST /messages/{id}/status` body `{ "status": "acked" }`
-
-Settings:
+### HTTP (e.g., python-arango service)
 ```json
 {
   "poller": {
@@ -57,7 +37,8 @@ Settings:
     "backend": "http",
     "http": {
       "baseUrl": "http://localhost:8080",
-      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+      "headers": { "Authorization": "Bearer TOKEN" },
+      "timeoutMs": 4000
     },
     "batchLimit": 25,
     "leaseMs": 120000,
@@ -67,33 +48,27 @@ Settings:
 ```
 
 ## Wiring
-```ts
-import { createPollerRuntime } from "./poller/setup.js";
+- SettingsManager returns `poller` block; pass to `createPollerRuntime(agent, pollerConfig)`.
+- Poller is optional; if config absent or `enabled=false`, nothing starts.
+- Logger optional; defaults to console.
 
-const pollerSettings = settingsManager.getPollerSettings();
-// Decoupled: if pollerSettings is undefined, nothing is started.
-const runtime = await createPollerRuntime(agent, pollerSettings, (count) => {
-	// optional UI hook: update status bar, etc.
-});
-// runtime?.poller.start() is called inside createPollerRuntime
-```
+## Commands
+- `/poll` → list inbox
+- `/poll on|off`
+- `/poll interval <ms>`
+- `/poll ack <id>` / `/poll done <id>` / `/poll failed <id>`
 
-## Workflow
-- Idle: poller fetches queued, claims with lease, enqueues system prompt, alerts.
-- `/poll` lists inbox; use `/poll ack|done|failed <id>` to update status.
-- Optional: wire inbox count into status bar via `runtime.uiBridge.getInboxCount()`.
-
-## Tests
+## Run Tests
 - Unit smoke: `npm run test -- -w @mariozechner/pi-coding-agent --run test/poller/poller.test.ts`
-- (Add integration as needed against your backend.)
+- Full lint/type: `npm run check`
 
 ## Troubleshooting
-- No alerts: ensure enabled, matching `agentId`, backend healthy.
-- Duplicates: ensure one poller per `agentId`; verify leases; enable LRU dedup.
-- Errors/backoff: degraded notice after repeated failures; recovers on success.
+- No alerts: ensure `enabled=true`, correct `agentId`, backend reachable.
+- Degraded notices: backend failing; verify config/endpoint.
+- Duplicates: ensure unique `agentId`, leases set; enable dedup.
+- Hung HTTP calls: set `http.timeoutMs`.
 
-## Best Practices
-- Interval 5–10s; batch 25.
-- Keep `autoProcessNext` false initially.
-- Avoid logging sensitive payloads; use refs.
-- Fork-only: upstream avoids background behavior.
+## Notes
+- Idle-only: skips while agent is streaming.
+- Lease is not renewed; keep tasks shorter than `leaseMs`.
+- Dedup kept in-process; IDs remain until process restart.

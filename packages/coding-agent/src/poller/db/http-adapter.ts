@@ -1,133 +1,75 @@
-import type { IncomingHttpHeaders } from "node:http";
-import { request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
-import { URL } from "node:url";
-import type { HttpBackendConfig, IncomingMessage } from "../types.js";
+import type { HttpBackendConfig, IncomingMessage, Logger } from "../types.js";
 import type { DatabaseAdapter } from "./database-adapter.js";
 
 const DEFAULT_BATCH_LIMIT = 25;
 
-interface HttpInit {
-	method?: string;
-	headers?: Record<string, string>;
-	body?: string;
-	timeoutMs?: number;
-}
-
-interface JsonResponse<T> {
-	status: number;
-	headers: IncomingHttpHeaders;
-	body: T;
-}
-
-function sendRequest<T>(rawUrl: string, init: HttpInit = {}): Promise<JsonResponse<T>> {
-	return new Promise((resolve, reject) => {
-		const url = new URL(rawUrl);
-		const isHttps = url.protocol === "https:";
-		const client = isHttps ? httpsRequest : httpRequest;
-
-		const req = client(
-			{
-				method: init.method ?? "GET",
-				hostname: url.hostname,
-				port: url.port || (isHttps ? 443 : 80),
-				path: `${url.pathname}${url.search}`,
-				headers: init.headers,
-				timeout: init.timeoutMs ?? 10000,
-			},
-			(res) => {
-				const chunks: Buffer[] = [];
-				res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-				res.on("end", () => {
-					const bodyBuffer = Buffer.concat(chunks);
-					const text = bodyBuffer.toString("utf-8");
-					let parsed: unknown;
-					try {
-						parsed = text.length > 0 ? JSON.parse(text) : null;
-					} catch (error) {
-						reject(error);
-						return;
-					}
-					resolve({ status: res.statusCode ?? 0, headers: res.headers, body: parsed as T });
-				});
-			},
-		);
-
-		req.on("error", reject);
-		req.on("timeout", () => {
-			req.destroy(new Error("Request timed out"));
-		});
-
-		if (init.body) {
-			req.write(init.body);
-		}
-
-		req.end();
-	});
+function validateHttpConfig(cfg: HttpBackendConfig): void {
+	if (!cfg.baseUrl) {
+		throw new Error("[poller] Http config missing: baseUrl");
+	}
 }
 
 export class HttpAdapter implements DatabaseAdapter {
 	private readonly cfg: HttpBackendConfig;
+	private readonly logger: Logger;
 
-	constructor(cfg: HttpBackendConfig) {
+	constructor(cfg: HttpBackendConfig, logger: Logger) {
+		validateHttpConfig(cfg);
 		this.cfg = cfg;
+		this.logger = logger;
 	}
 
 	async init(): Promise<void> {
-		await this.ping();
+		await this.request<unknown>("/health");
+		this.logger.info("[poller] HTTP adapter ready");
 	}
 
 	async fetchQueued(agentId: string, limit: number): Promise<IncomingMessage[]> {
 		const max = this.cfg.batchLimit ?? limit ?? DEFAULT_BATCH_LIMIT;
-		const url = `${this.cfg.baseUrl}/messages/queued?agentId=${encodeURIComponent(agentId)}&limit=${max}`;
-		const res = await sendRequest<IncomingMessage[]>(url, { headers: this.cfg.headers });
-		this.ensureOk(res);
-		return res.body;
+		return this.request<IncomingMessage[]>(`/messages/queued?agentId=${encodeURIComponent(agentId)}&limit=${max}`);
 	}
 
 	async claimMessage(id: string, agentId: string, leaseUntilMs: number): Promise<void> {
-		const url = `${this.cfg.baseUrl}/messages/${encodeURIComponent(id)}/claim`;
-		const res = await sendRequest<unknown>(url, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...(this.cfg.headers ?? {}),
-			},
-			body: JSON.stringify({ agentId, leaseUntilMs }),
-		});
-		this.ensureOk(res);
+		await this.request(`/messages/${encodeURIComponent(id)}/claim`, "POST", { agentId, leaseUntilMs });
 	}
 
 	async updateStatus(id: string, status: "acked" | "done" | "failed"): Promise<void> {
-		const url = `${this.cfg.baseUrl}/messages/${encodeURIComponent(id)}/status`;
-		const res = await sendRequest<unknown>(url, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...(this.cfg.headers ?? {}),
-			},
-			body: JSON.stringify({ status }),
-		});
-		this.ensureOk(res);
+		await this.request(`/messages/${encodeURIComponent(id)}/status`, "POST", { status });
 	}
 
 	async listInbox(agentId: string, limit: number): Promise<IncomingMessage[]> {
-		const max = limit ?? DEFAULT_BATCH_LIMIT;
-		const url = `${this.cfg.baseUrl}/messages/inbox?agentId=${encodeURIComponent(agentId)}&limit=${max}`;
-		const res = await sendRequest<IncomingMessage[]>(url, { headers: this.cfg.headers });
-		this.ensureOk(res);
-		return res.body;
+		return this.request<IncomingMessage[]>(
+			`/messages/inbox?agentId=${encodeURIComponent(agentId)}&limit=${limit ?? DEFAULT_BATCH_LIMIT}`,
+		);
 	}
 
-	private async ping(): Promise<void> {
-		const res = await sendRequest<unknown>(`${this.cfg.baseUrl}/health`, { headers: this.cfg.headers });
-		this.ensureOk(res);
-	}
-
-	private ensureOk<T>(res: JsonResponse<T>): void {
-		if (res.status >= 200 && res.status < 300) {
-			return;
+	private async request<T = unknown>(path: string, method: "GET" | "POST" = "GET", body?: unknown): Promise<T> {
+		const url = `${this.cfg.baseUrl}${path}`;
+		const controller = new AbortController();
+		const timeout = this.cfg.timeoutMs ?? 5000;
+		const timer = setTimeout(() => controller.abort(), timeout);
+		try {
+			const res = await fetch(url, {
+				method,
+				headers: {
+					...(this.cfg.headers ?? {}),
+					...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+				},
+				body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+				signal: controller.signal,
+			});
+			if (!res.ok) {
+				const text = await res.text();
+				throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+			}
+			return (await res.json()) as T;
+		} catch (err) {
+			if ((err as Error).name === "AbortError") {
+				throw new Error(`[poller] HTTP request timeout after ${timeout}ms: ${url}`);
+			}
+			throw err;
+		} finally {
+			clearTimeout(timer);
 		}
-		throw new Error(`HTTP ${res.status}`);
 	}
 }

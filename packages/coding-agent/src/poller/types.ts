@@ -14,11 +14,18 @@ export interface IncomingMessage {
 	lease_until?: number | null;
 }
 
+export interface Logger {
+	info(msg: string): void;
+	warn(msg: string): void;
+	error(msg: string): void;
+	debug?(msg: string): void;
+}
+
 export interface BackoffSettings {
-	initialMs?: number;
-	factor?: number;
-	maxMs?: number;
-	failureThreshold?: number;
+	initialMs: number;
+	factor: number;
+	maxMs: number;
+	failureThreshold: number;
 }
 
 export interface PollerOptions {
@@ -27,24 +34,21 @@ export interface PollerOptions {
 }
 
 export interface PollerSettings {
-	enabled?: boolean;
-	pollIntervalMs?: number;
-	agentId?: string;
+	enabled: boolean;
+	pollIntervalMs: number;
+	agentId: string;
 	batchLimit?: number;
 	leaseMs?: number;
-	backoff?: BackoffSettings;
+	backoff: BackoffSettings;
 	options?: PollerOptions;
-	backend?: "arangojs" | "http";
-	arango?: ArangoBackendConfig;
-	http?: HttpBackendConfig;
 }
 
 export interface ArangoBackendConfig {
 	url: string;
 	database: string;
+	messagesCollection: string;
 	username?: string;
 	password?: string;
-	messagesCollection: string;
 	batchLimit?: number;
 }
 
@@ -52,6 +56,7 @@ export interface HttpBackendConfig {
 	baseUrl: string;
 	headers?: Record<string, string>;
 	batchLimit?: number;
+	timeoutMs?: number;
 }
 
 export interface PollerUiBridge {
@@ -61,4 +66,9 @@ export interface PollerUiBridge {
 	updateStatus(id: string, status: "acked" | "done" | "failed"): Promise<void>;
 	getInboxCount(): number;
 	isEnabled(): boolean;
+}
+
+export interface PollerEvents {
+	on(event: "inboxIncrement", listener: (delta: number) => void): void;
+	emit(event: "inboxIncrement", delta: number): void;
 }

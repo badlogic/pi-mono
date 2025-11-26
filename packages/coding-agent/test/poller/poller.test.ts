@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseAdapter } from "../../src/poller/db/database-adapter.js";
 import { Poller } from "../../src/poller/poller.js";
-import type { IncomingMessage, PollerSettings } from "../../src/poller/types.js";
+import type { IncomingMessage, Logger, PollerSettings } from "../../src/poller/types.js";
 
 class FakeAgent {
 	state = {
@@ -32,7 +32,13 @@ class FakeAdapter implements DatabaseAdapter {
 		return this.queued;
 	}
 }
-function defaultSettings(): Required<PollerSettings> {
+const logger: Logger = {
+	info: () => {},
+	warn: () => {},
+	error: () => {},
+};
+
+function defaultSettings(): PollerSettings {
 	return {
 		enabled: true,
 		pollIntervalMs: 10,
@@ -41,9 +47,6 @@ function defaultSettings(): Required<PollerSettings> {
 		leaseMs: 1000,
 		backoff: { initialMs: 5, factor: 2, maxMs: 50, failureThreshold: 3 },
 		options: { lruDedupSize: 10, autoProcessNext: false },
-		backend: "http",
-		http: { baseUrl: "http://example" },
-		arango: { url: "", database: "", messagesCollection: "" },
 	};
 }
 
@@ -60,7 +63,7 @@ function makeMessage(id: string): IncomingMessage {
 describe("Poller", () => {
 	let agent: FakeAgent;
 	let adapter: FakeAdapter;
-	let settings: Required<PollerSettings>;
+	let settings: PollerSettings;
 
 	beforeEach(() => {
 		agent = new FakeAgent();
@@ -70,7 +73,7 @@ describe("Poller", () => {
 
 	it("claims and enqueues when idle", async () => {
 		adapter.queued = [makeMessage("1")];
-		const poller = new Poller(agent as any, adapter, settings);
+		const poller = new Poller(agent as any, adapter, settings, logger);
 		await poller.init();
 
 		await (poller as any).tick();
@@ -83,7 +86,7 @@ describe("Poller", () => {
 	it("skips when streaming", async () => {
 		agent.state.isStreaming = true;
 		adapter.queued = [makeMessage("1")];
-		const poller = new Poller(agent as any, adapter, settings);
+		const poller = new Poller(agent as any, adapter, settings, logger);
 		await poller.init();
 
 		await (poller as any).tick();
@@ -93,9 +96,9 @@ describe("Poller", () => {
 	});
 
 	it("deduplicates ids when lru enabled", async () => {
-		settings.options.lruDedupSize = 1;
+		settings.options!.lruDedupSize = 1;
 		adapter.queued = [makeMessage("1"), makeMessage("1")];
-		const poller = new Poller(agent as any, adapter, settings);
+		const poller = new Poller(agent as any, adapter, settings, logger);
 		await poller.init();
 
 		await (poller as any).tick();
@@ -105,7 +108,7 @@ describe("Poller", () => {
 
 	it("updates status and decrements inbox count", async () => {
 		adapter.queued = [makeMessage("1")];
-		const poller = new Poller(agent as any, adapter, settings);
+		const poller = new Poller(agent as any, adapter, settings, logger);
 		await poller.init();
 		await (poller as any).tick();
 		expect(poller.getInboxCount()).toBe(1);
