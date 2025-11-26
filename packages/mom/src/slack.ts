@@ -21,12 +21,16 @@ export interface SlackContext {
 	store: ChannelStore;
 	/** Send/update the main message (accumulates text) */
 	respond(text: string): Promise<void>;
+	/** Replace the entire message text (not append) */
+	replaceMessage(text: string): Promise<void>;
 	/** Post a message in the thread under the main message (for verbose details) */
 	respondInThread(text: string): Promise<void>;
 	/** Show/hide typing indicator */
 	setTyping(isTyping: boolean): Promise<void>;
 	/** Upload a file to the channel */
 	uploadFile(filePath: string, title?: string): Promise<void>;
+	/** Set working state (adds/removes working indicator emoji) */
+	setWorking(working: boolean): Promise<void>;
 }
 
 export interface MomHandler {
@@ -201,6 +205,8 @@ export class MomBot {
 		let messageTs: string | null = null;
 		let accumulatedText = "";
 		let isThinking = true; // Track if we're still in "thinking" state
+		let isWorking = true; // Track if still processing
+		const workingIndicator = " ...";
 		let updatePromise: Promise<void> = Promise.resolve();
 
 		return {
@@ -227,18 +233,21 @@ export class MomBot {
 						accumulatedText += "\n" + responseText;
 					}
 
+					// Add working indicator if still working
+					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+
 					if (messageTs) {
 						// Update existing message
 						await this.webClient.chat.update({
 							channel: event.channel,
 							ts: messageTs,
-							text: accumulatedText,
+							text: displayText,
 						});
 					} else {
 						// Post initial message
 						const result = await this.webClient.chat.postMessage({
 							channel: event.channel,
-							text: accumulatedText,
+							text: displayText,
 						});
 						messageTs = result.ts as string;
 					}
@@ -267,8 +276,8 @@ export class MomBot {
 			},
 			setTyping: async (isTyping: boolean) => {
 				if (isTyping && !messageTs) {
-					// Post initial "thinking" message
-					accumulatedText = "_Thinking..._";
+					// Post initial "thinking" message (... auto-appended by working indicator)
+					accumulatedText = "_Thinking_";
 					const result = await this.webClient.chat.postMessage({
 						channel: event.channel,
 						text: accumulatedText,
@@ -287,6 +296,46 @@ export class MomBot {
 					filename: fileName,
 					title: fileName,
 				});
+			},
+			replaceMessage: async (text: string) => {
+				updatePromise = updatePromise.then(async () => {
+					// Replace the accumulated text entirely
+					accumulatedText = text;
+
+					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+
+					if (messageTs) {
+						await this.webClient.chat.update({
+							channel: event.channel,
+							ts: messageTs,
+							text: displayText,
+						});
+					} else {
+						// Post initial message
+						const result = await this.webClient.chat.postMessage({
+							channel: event.channel,
+							text: displayText,
+						});
+						messageTs = result.ts as string;
+					}
+				});
+				await updatePromise;
+			},
+			setWorking: async (working: boolean) => {
+				updatePromise = updatePromise.then(async () => {
+					isWorking = working;
+
+					// If we have a message, update it to add/remove indicator
+					if (messageTs) {
+						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+						await this.webClient.chat.update({
+							channel: event.channel,
+							ts: messageTs,
+							text: displayText,
+						});
+					}
+				});
+				await updatePromise;
 			},
 		};
 	}

@@ -20,6 +20,13 @@
   - Tracks tokens (input, output, cache read, cache write) and costs per run
   - Displays summary at end of each agent run in console and Slack thread
   - Example: `💰 Usage: 12,543 in + 847 out (5,234 cache read, 127 cache write) = $0.0234`
+- Working indicator in Slack messages
+  - Channel messages show "..." while mom is processing
+  - Automatically removed when work completes
+- Improved stop command behavior
+  - Separate "Stopping..." message that updates to "Stopped" when abort completes
+  - Original working message continues to show tool results (including abort errors)
+  - Clean separation between status and results
 
 ### Changed
 
@@ -42,6 +49,9 @@
 - Tool result display now extracts actual text instead of showing JSON wrapper
 - Slack thread messages now show cleaner tool call formatting with duration and label
 - All console logging centralized and removed from scattered locations
+- Agent run now returns `{ stopReason }` instead of throwing exceptions
+  - Clean handling of "aborted", "error", "stop", "length", "toolUse" cases
+  - No more error-based control flow
 
 ### Fixed
 

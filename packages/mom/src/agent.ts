@@ -13,7 +13,7 @@ import { createMomTools, setUploadFunction } from "./tools/index.js";
 const model = getModel("anthropic", "claude-sonnet-4-5");
 
 export interface AgentRunner {
-	run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<void>;
+	run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<{ stopReason: string }>;
 	abort(): void;
 }
 
@@ -316,7 +316,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 
 	return {
-		async run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<void> {
+		async run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<{ stopReason: string }> {
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
@@ -373,6 +373,9 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					total: 0,
 				},
 			};
+
+			// Track stop reason
+			let stopReason = "stop";
 
 			// Subscribe to events
 			agent.subscribe(async (event: AgentEvent) => {
@@ -474,6 +477,11 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						if (event.message.role === "assistant") {
 							const assistantMsg = event.message as any; // AssistantMessage type
 
+							// Track stop reason
+							if (assistantMsg.stopReason) {
+								stopReason = assistantMsg.stopReason;
+							}
+
 							// Accumulate usage
 							if (assistantMsg.usage) {
 								totalUsage.input += assistantMsg.usage.input;
@@ -520,6 +528,8 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				const summary = log.logUsageSummary(logCtx, totalUsage);
 				await ctx.respondInThread(summary);
 			}
+
+			return { stopReason };
 		},
 
 		abort(): void {

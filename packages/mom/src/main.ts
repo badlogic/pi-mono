@@ -68,7 +68,7 @@ if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTH
 await validateSandbox(sandbox);
 
 // Track active agent runs per channel
-const activeRuns = new Map<string, AgentRunner>();
+const activeRuns = new Map<string, { runner: AgentRunner; context: SlackContext; stopContext?: SlackContext }>();
 
 async function handleMessage(ctx: SlackContext, _source: "channel" | "dm"): Promise<void> {
 	const channelId = ctx.message.channel;
@@ -82,11 +82,15 @@ async function handleMessage(ctx: SlackContext, _source: "channel" | "dm"): Prom
 
 	// Check for stop command
 	if (messageText === "stop") {
-		const runner = activeRuns.get(channelId);
-		if (runner) {
+		const active = activeRuns.get(channelId);
+		if (active) {
 			log.logStopRequest(logCtx);
-			runner.abort();
+			// Post a NEW message saying "Stopping..."
 			await ctx.respond("_Stopping..._");
+			// Store this context to update it to "Stopped" later
+			active.stopContext = ctx;
+			// Abort the runner
+			active.runner.abort();
 		} else {
 			await ctx.respond("_Nothing running._");
 		}
@@ -103,23 +107,31 @@ async function handleMessage(ctx: SlackContext, _source: "channel" | "dm"): Prom
 	const channelDir = join(workingDir, channelId);
 
 	const runner = createAgentRunner(sandbox);
-	activeRuns.set(channelId, runner);
+	activeRuns.set(channelId, { runner, context: ctx });
 
 	await ctx.setTyping(true);
-	try {
-		await runner.run(ctx, channelDir, ctx.store);
-	} catch (error) {
-		// Don't report abort errors
-		const msg = error instanceof Error ? error.message : String(error);
-		if (msg.includes("aborted") || msg.includes("Aborted")) {
-			// Already said "Stopping..." - nothing more to say
-		} else {
-			log.logAgentError(logCtx, msg);
-			await ctx.respond(`❌ Error: ${msg}`);
+	await ctx.setWorking(true);
+
+	const result = await runner.run(ctx, channelDir, ctx.store);
+
+	// Remove working indicator
+	await ctx.setWorking(false);
+
+	// Handle different stop reasons
+	const active = activeRuns.get(channelId);
+	if (result.stopReason === "aborted") {
+		// Replace the STOP message with "Stopped"
+		if (active?.stopContext) {
+			await active.stopContext.setWorking(false);
+			await active.stopContext.replaceMessage("_Stopped_");
 		}
-	} finally {
-		activeRuns.delete(channelId);
+	} else if (result.stopReason === "error") {
+		// Agent encountered an error
+		log.logAgentError(logCtx, "Agent stopped with error");
 	}
+	// "stop", "length", "toolUse" are normal completions - nothing extra to do
+
+	activeRuns.delete(channelId);
 }
 
 const bot = new MomBot(
