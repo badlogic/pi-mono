@@ -42,8 +42,23 @@ function getRecentMessages(channelDir: string, count: number): string {
 	return recentLines.join("\n");
 }
 
-function buildSystemPrompt(workspacePath: string, channelId: string, recentMessages: string): string {
+function buildSystemPrompt(
+	workspacePath: string,
+	channelId: string,
+	recentMessages: string,
+	sandboxConfig: SandboxConfig,
+): string {
 	const channelPath = `${workspacePath}/${channelId}`;
+	const isDocker = sandboxConfig.type === "docker";
+
+	const envDescription = isDocker
+		? `You are running inside a Docker container (Alpine Linux).
+- Install tools with: apk add <package>
+- Your changes persist across sessions
+- You have full control over this container`
+		: `You are running directly on the host machine.
+- Be careful with system modifications
+- Use the system's package manager if needed`;
 
 	return `You are mom, a helpful Slack bot assistant.
 
@@ -61,11 +76,13 @@ function buildSystemPrompt(workspacePath: string, channelId: string, recentMessa
   - Links: <url|text>
   - Do NOT use **double asterisks** or [markdown](links)
 
+## Your Environment
+${envDescription}
+
 ## Your Workspace
 Your working directory is: ${channelPath}
 
-This is YOUR computer - you have full control. You can:
-- Install tools with the system package manager (apk, apt, etc.)
+You can:
 - Configure tools and save credentials
 - Create files and directories as needed
 
@@ -114,7 +131,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			const channelId = ctx.message.channel;
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 			const recentMessages = getRecentMessages(channelDir, 50);
-			const systemPrompt = buildSystemPrompt(workspacePath, channelId, recentMessages);
+			const systemPrompt = buildSystemPrompt(workspacePath, channelId, recentMessages, sandboxConfig);
 
 			// Set up file upload function for the attach tool
 			// For Docker, we need to translate paths back to host
