@@ -39,13 +39,63 @@ function getRecentMessages(channelDir: string, count: number): string {
 		return "(no message history yet)";
 	}
 
-	return recentLines.join("\n");
+	// Format as TSV for more concise system prompt
+	const formatted: string[] = [];
+	for (const line of recentLines) {
+		try {
+			const msg = JSON.parse(line);
+			const date = (msg.date || "").substring(0, 19);
+			const user = msg.userName || msg.user;
+			const text = msg.text || "";
+			const attachments = (msg.attachments || []).map((a: { local: string }) => a.local).join(",");
+			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
+		} catch (error) {}
+	}
+
+	return formatted.join("\n");
+}
+
+function getMemory(channelDir: string): string {
+	const parts: string[] = [];
+
+	// Read workspace-level memory (shared across all channels)
+	const workspaceMemoryPath = join(channelDir, "..", "MEMORY.md");
+	if (existsSync(workspaceMemoryPath)) {
+		try {
+			const content = readFileSync(workspaceMemoryPath, "utf-8").trim();
+			if (content) {
+				parts.push("### Global Workspace Memory\n" + content);
+			}
+		} catch (error) {
+			console.error(`Failed to read workspace memory: ${error}`);
+		}
+	}
+
+	// Read channel-specific memory
+	const channelMemoryPath = join(channelDir, "MEMORY.md");
+	if (existsSync(channelMemoryPath)) {
+		try {
+			const content = readFileSync(channelMemoryPath, "utf-8").trim();
+			if (content) {
+				parts.push("### Channel-Specific Memory\n" + content);
+			}
+		} catch (error) {
+			console.error(`Failed to read channel memory: ${error}`);
+		}
+	}
+
+	if (parts.length === 0) {
+		return "(no working memory yet)";
+	}
+
+	return parts.join("\n\n");
 }
 
 function buildSystemPrompt(
 	workspacePath: string,
 	channelId: string,
 	recentMessages: string,
+	memory: string,
 	sandboxConfig: SandboxConfig,
 ): string {
 	const channelPath = `${workspacePath}/${channelId}`;
@@ -60,7 +110,15 @@ function buildSystemPrompt(
 - Be careful with system modifications
 - Use the system's package manager if needed`;
 
+	const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+	const currentDateTime = new Date().toISOString(); // Full ISO 8601
+
 	return `You are mom, a helpful Slack bot assistant.
+
+## Current Date and Time
+- Date: ${currentDate}
+- Full timestamp: ${currentDateTime}
+- Use this when working with dates or searching logs
 
 ## Communication Style
 - Be concise and professional
@@ -82,19 +140,92 @@ ${envDescription}
 ## Your Workspace
 Your working directory is: ${channelPath}
 
-### Scratchpad
-Use ${channelPath}/scratch/ for temporary work like cloning repos, generating files, etc.
-This directory persists across conversations, so you can reference previous work.
+### Directory Structure
+- ${workspacePath}/ - Root workspace (shared across all channels)
+  - MEMORY.md - GLOBAL memory visible to all channels (write global info here)
+  - ${channelId}/ - This channel's directory
+    - MEMORY.md - CHANNEL-SPECIFIC memory (only visible in this channel)
+    - scratch/ - Your working directory for files, repos, etc.
+    - log.jsonl - Message history in JSONL format (one JSON object per line)
+    - attachments/ - Files shared by users (managed by system, read-only)
 
-### Channel Data (read-only, managed by the system)
-- Message history: ${channelPath}/log.jsonl
-- Attachments from users: ${channelPath}/attachments/
+### Message History Format
+Each line in log.jsonl contains:
+{
+  "date": "2025-11-26T10:44:00.123Z",  // ISO 8601 - easy to grep by date!
+  "ts": "1732619040.123456",            // Slack timestamp or epoch ms
+  "user": "U123ABC",                     // User ID or "bot"
+  "userName": "mario",                   // User handle (optional)
+  "text": "message text",
+  "isBot": false
+}
 
-You can:
-- Configure tools and save credentials in your home directory
-- Create files and directories in your scratchpad
+**⚠️ CRITICAL: Efficient Log Queries (Avoid Context Overflow)**
+
+Log files can be VERY LARGE (100K+ lines). The problem is getting too MANY messages, not message length.
+Each message can be up to 10k chars - that's fine. Use head/tail to LIMIT NUMBER OF MESSAGES (10-50 at a time).
+
+**Install jq first (if not already):**
+\`\`\`bash
+${isDocker ? "apk add jq" : "# jq should be available, or install via package manager"}
+\`\`\`
+
+**Essential query patterns:**
+\`\`\`bash
+# Last N messages (compact JSON output)
+tail -20 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text, attachments: [(.attachments // [])[].local]}'
+
+# Or TSV format (easier to read)
+tail -20 log.jsonl | jq -r '[.date[0:19], (.userName // .user), .text, ((.attachments // []) | map(.local) | join(","))] | @tsv'
+
+# Search by date (LIMIT with head/tail!)
+grep '"date":"2025-11-26' log.jsonl | tail -30 | jq -c '{date: .date[0:19], user: (.userName // .user), text, attachments: [(.attachments // [])[].local]}'
+
+# Messages from specific user (count first, then limit)
+grep '"userName":"mario"' log.jsonl | wc -l  # Check count first
+grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], user: .userName, text, attachments: [(.attachments // [])[].local]}'
+
+# Only count (when you just need the number)
+grep '"isBot":false' log.jsonl | wc -l
+
+# Messages with attachments only (limit!)
+grep '"attachments":[{' log.jsonl | tail -10 | jq -r '[.date[0:16], (.userName // .user), .text, (.attachments | map(.local) | join(","))] | @tsv'
+\`\`\`
+
+**KEY RULE:** Always pipe through 'head -N' or 'tail -N' to limit results BEFORE parsing with jq!
+\`\`\`
+
+**Date filtering:**
+- Today: grep '"date":"${currentDate}' log.jsonl
+- Yesterday: grep '"date":"2025-11-25' log.jsonl
+- Date range: grep '"date":"2025-11-(26|27|28)' log.jsonl
+- Time range: grep -E '"date":"2025-11-26T(09|10|11):' log.jsonl
+
+### Working Memory System
+You can maintain working memory across conversations by writing MEMORY.md files.
+
+**IMPORTANT PATH RULES:**
+- Global memory (all channels): ${workspacePath}/MEMORY.md
+- Channel memory (this channel only): ${channelPath}/MEMORY.md
+
+**What to remember:**
+- Project details and architecture → Global memory
+- User preferences and coding style → Global memory
+- Channel-specific context → Channel memory
+- Recurring tasks and patterns → Appropriate memory file
+- Credentials locations (never actual secrets) → Global memory
+- Decisions made and their rationale → Appropriate memory file
+
+**When to update:**
+- After learning something important that will help in future conversations
+- When user asks you to remember something
+- When you discover project structure or conventions
+
+### Current Working Memory
+${memory}
 
 ### Recent Messages (last 50)
+Format: date TAB user TAB text TAB attachments
 ${recentMessages}
 
 ## Tools
@@ -135,7 +266,8 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			const channelId = ctx.message.channel;
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 			const recentMessages = getRecentMessages(channelDir, 50);
-			const systemPrompt = buildSystemPrompt(workspacePath, channelId, recentMessages, sandboxConfig);
+			const memory = getMemory(channelDir);
+			const systemPrompt = buildSystemPrompt(workspacePath, channelId, recentMessages, memory, sandboxConfig);
 
 			// Set up file upload function for the attach tool
 			// For Docker, we need to translate paths back to host
@@ -178,6 +310,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
+							date: new Date().toISOString(),
 							ts: Date.now().toString(),
 							user: "bot",
 							text: `[Tool] ${event.toolName}: ${JSON.stringify(event.args)}`,
@@ -200,6 +333,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
+							date: new Date().toISOString(),
 							ts: Date.now().toString(),
 							user: "bot",
 							text: `[Tool Result] ${event.toolName}: ${event.isError ? "ERROR: " : ""}${truncate(resultStr, 1000)}`,

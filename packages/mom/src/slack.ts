@@ -156,6 +156,7 @@ export class MomBot {
 		const { userName, displayName } = await this.getUserInfo(event.user);
 
 		await this.store.logMessage(event.channel, {
+			date: new Date(parseFloat(event.ts) * 1000).toISOString(),
 			ts: event.ts,
 			user: event.user,
 			userName,
