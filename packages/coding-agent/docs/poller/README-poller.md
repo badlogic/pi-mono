@@ -50,6 +50,11 @@ If you want a pure, upstream-aligned experience, simply remove the poller wiring
   - Removing the import / call in `main.ts`.
   - Dropping the `poller` section from `settings.json`.
 
+## Further reading
+
+- `CONTRACT.md` – full architecture, lifecycle, and acceptance criteria.
+- `QUICKSTART.md` – concrete configuration examples, wiring, and troubleshooting tips.
+
 ## Configure
 Add to your settings (e.g., `~/.pi/agent/settings.json`):
 ```json
