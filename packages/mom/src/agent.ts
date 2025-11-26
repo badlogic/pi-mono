@@ -278,7 +278,7 @@ function extractToolResultText(result: unknown): string {
 	return JSON.stringify(result);
 }
 
-function formatToolArgsForSlack(toolName: string, args: Record<string, unknown>): string {
+function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>): string {
 	const lines: string[] = [];
 
 	for (const [key, value] of Object.entries(args)) {

@@ -70,7 +70,7 @@ await validateSandbox(sandbox);
 // Track active agent runs per channel
 const activeRuns = new Map<string, AgentRunner>();
 
-async function handleMessage(ctx: SlackContext, source: "channel" | "dm"): Promise<void> {
+async function handleMessage(ctx: SlackContext, _source: "channel" | "dm"): Promise<void> {
 	const channelId = ctx.message.channel;
 	const messageText = ctx.message.text.toLowerCase().trim();
 
