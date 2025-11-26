@@ -12,6 +12,14 @@
 - ISO 8601 date field in log.jsonl for easy date-based grepping
   - Format: `"date":"2025-11-26T10:44:00.123Z"`
   - Enables queries like: `grep '"date":"2025-11-26' log.jsonl`
+- Centralized logging system (`src/log.ts`)
+  - Structured, colored console output (green for user messages, yellow for mom activity, dim for details)
+  - Consistent format: `[HH:MM:SS] [context] message`
+  - Type-safe logging functions for all event types
+- Usage tracking and cost reporting
+  - Tracks tokens (input, output, cache read, cache write) and costs per run
+  - Displays summary at end of each agent run in console and Slack thread
+  - Example: `💰 Usage: 12,543 in + 847 out (5,234 cache read, 127 cache write) = $0.0234`
 
 ### Changed
 
@@ -26,6 +34,14 @@
 - Fixed jq patterns to handle null/empty attachments with `(.attachments // [])`
 - Recent messages in system prompt now formatted as TSV (43% token savings vs raw JSONL)
 - Enhanced security documentation with prompt injection risk warnings and mitigations
+- **Moved recent messages from system prompt to user message** for better prompt caching
+  - System prompt is now mostly static (only changes when memory files change)
+  - Enables Anthropic's prompt caching to work effectively
+  - Significantly reduces costs on subsequent requests
+- Switched from Claude Opus 4.5 to Claude Sonnet 4.5 (~40% cost reduction)
+- Tool result display now extracts actual text instead of showing JSON wrapper
+- Slack thread messages now show cleaner tool call formatting with duration and label
+- All console logging centralized and removed from scattered locations
 
 ### Fixed
 

@@ -2,12 +2,14 @@ import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
 import { readFileSync } from "fs";
 import { basename } from "path";
+import * as log from "./log.js";
 import { type Attachment, ChannelStore } from "./store.js";
 
 export interface SlackMessage {
 	text: string; // message content (mentions stripped)
 	rawText: string; // original text with mentions
 	user: string; // user ID
+	userName?: string; // user handle
 	channel: string; // channel ID
 	ts: string; // timestamp (for threading)
 	attachments: Attachment[]; // file attachments
@@ -15,6 +17,7 @@ export interface SlackMessage {
 
 export interface SlackContext {
 	message: SlackMessage;
+	channelName?: string; // channel name for logging (e.g., #dev-team)
 	store: ChannelStore;
 	/** Send/update the main message (accumulates text) */
 	respond(text: string): Promise<void>;
@@ -92,7 +95,7 @@ export class MomBot {
 			// Log the mention (message event may not fire for app_mention)
 			await this.logMessage(slackEvent);
 
-			const ctx = this.createContext(slackEvent);
+			const ctx = await this.createContext(slackEvent);
 			await this.handler.onChannelMention(ctx);
 		});
 
@@ -133,7 +136,7 @@ export class MomBot {
 
 			// Only trigger handler for DMs (channel mentions are handled by app_mention event)
 			if (slackEvent.channel_type === "im") {
-				const ctx = this.createContext({
+				const ctx = await this.createContext({
 					text: slackEvent.text || "",
 					channel: slackEvent.channel,
 					user: slackEvent.user,
@@ -167,15 +170,29 @@ export class MomBot {
 		});
 	}
 
-	private createContext(event: {
+	private async createContext(event: {
 		text: string;
 		channel: string;
 		user: string;
 		ts: string;
 		files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-	}): SlackContext {
+	}): Promise<SlackContext> {
 		const rawText = event.text;
 		const text = rawText.replace(/<@[A-Z0-9]+>/gi, "").trim();
+
+		// Get user info for logging
+		const { userName } = await this.getUserInfo(event.user);
+
+		// Get channel name for logging (best effort)
+		let channelName: string | undefined;
+		try {
+			if (event.channel.startsWith("C")) {
+				const result = await this.webClient.conversations.info({ channel: event.channel });
+				channelName = result.channel?.name ? `#${result.channel.name}` : undefined;
+			}
+		} catch {
+			// Ignore errors - we'll just use the channel ID
+		}
 
 		// Process attachments (for context, already logged by message handler)
 		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
@@ -191,10 +208,12 @@ export class MomBot {
 				text,
 				rawText,
 				user: event.user,
+				userName,
 				channel: event.channel,
 				ts: event.ts,
 				attachments,
 			},
+			channelName,
 			store: this.store,
 			respond: async (responseText: string) => {
 				// Queue updates to avoid race conditions
@@ -276,11 +295,11 @@ export class MomBot {
 		const auth = await this.webClient.auth.test();
 		this.botUserId = auth.user_id as string;
 		await this.socketClient.start();
-		console.log("⚡️ Mom bot connected and listening!");
+		log.logConnected();
 	}
 
 	async stop(): Promise<void> {
 		await this.socketClient.disconnect();
-		console.log("Mom bot disconnected.");
+		log.logDisconnected();
 	}
 }

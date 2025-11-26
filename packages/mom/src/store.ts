@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
+import * as log from "./log.js";
 
 export interface Attachment {
 	original: string; // original filename from uploader
@@ -152,10 +153,10 @@ export class ChannelStore {
 
 			try {
 				await this.downloadAttachment(item.localPath, item.url);
-				console.log(`Downloaded: ${item.localPath}`);
+				// Success - could add success logging here if we have context
 			} catch (error) {
-				console.error(`Failed to download ${item.localPath}:`, error);
-				// Could re-queue for retry here
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				log.logWarning(`Failed to download attachment`, `${item.localPath}: ${errorMsg}`);
 			}
 		}
 

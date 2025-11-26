@@ -2,6 +2,7 @@
 
 import { join, resolve } from "path";
 import { type AgentRunner, createAgentRunner } from "./agent.js";
+import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { MomBot, type SlackContext } from "./slack.js";
 
@@ -53,9 +54,7 @@ function parseArgs(): { workingDir: string; sandbox: SandboxConfig } {
 
 const { workingDir, sandbox } = parseArgs();
 
-console.log("Starting mom bot...");
-console.log(`  Working directory: ${workingDir}`);
-console.log(`  Sandbox: ${sandbox.type === "host" ? "host" : `docker:${sandbox.container}`}`);
+log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
 	console.error("Missing required environment variables:");
@@ -75,11 +74,17 @@ async function handleMessage(ctx: SlackContext, source: "channel" | "dm"): Promi
 	const channelId = ctx.message.channel;
 	const messageText = ctx.message.text.toLowerCase().trim();
 
+	const logCtx = {
+		channelId: ctx.message.channel,
+		userName: ctx.message.userName,
+		channelName: ctx.channelName,
+	};
+
 	// Check for stop command
 	if (messageText === "stop") {
 		const runner = activeRuns.get(channelId);
 		if (runner) {
-			console.log(`Stop requested for channel ${channelId}`);
+			log.logStopRequest(logCtx);
 			runner.abort();
 			await ctx.respond("_Stopping..._");
 		} else {
@@ -94,7 +99,7 @@ async function handleMessage(ctx: SlackContext, source: "channel" | "dm"): Promi
 		return;
 	}
 
-	console.log(`${source === "channel" ? "Channel mention" : "DM"} from <@${ctx.message.user}>: ${ctx.message.text}`);
+	log.logUserMessage(logCtx, ctx.message.text);
 	const channelDir = join(workingDir, channelId);
 
 	const runner = createAgentRunner(sandbox);
@@ -109,7 +114,7 @@ async function handleMessage(ctx: SlackContext, source: "channel" | "dm"): Promi
 		if (msg.includes("aborted") || msg.includes("Aborted")) {
 			// Already said "Stopping..." - nothing more to say
 		} else {
-			console.error("Agent error:", error);
+			log.logAgentError(logCtx, msg);
 			await ctx.respond(`❌ Error: ${msg}`);
 		}
 	} finally {

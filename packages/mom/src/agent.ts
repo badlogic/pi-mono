@@ -3,14 +3,14 @@ import { getModel } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join } from "path";
-
+import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { SlackContext } from "./slack.js";
 import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
 // Hardcoded model for now
-const model = getModel("anthropic", "claude-opus-4-5");
+const model = getModel("anthropic", "claude-sonnet-4-5");
 
 export interface AgentRunner {
 	run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<void>;
@@ -67,7 +67,7 @@ function getMemory(channelDir: string): string {
 				parts.push("### Global Workspace Memory\n" + content);
 			}
 		} catch (error) {
-			console.error(`Failed to read workspace memory: ${error}`);
+			log.logWarning("Failed to read workspace memory", `${workspaceMemoryPath}: ${error}`);
 		}
 	}
 
@@ -80,7 +80,7 @@ function getMemory(channelDir: string): string {
 				parts.push("### Channel-Specific Memory\n" + content);
 			}
 		} catch (error) {
-			console.error(`Failed to read channel memory: ${error}`);
+			log.logWarning("Failed to read channel memory", `${channelMemoryPath}: ${error}`);
 		}
 	}
 
@@ -94,7 +94,6 @@ function getMemory(channelDir: string): string {
 function buildSystemPrompt(
 	workspacePath: string,
 	channelId: string,
-	recentMessages: string,
 	memory: string,
 	sandboxConfig: SandboxConfig,
 ): string {
@@ -224,10 +223,6 @@ You can maintain working memory across conversations by writing MEMORY.md files.
 ### Current Working Memory
 ${memory}
 
-### Recent Messages (last 50)
-Format: date TAB user TAB text TAB attachments
-${recentMessages}
-
 ## Tools
 You have access to: bash, read, edit, write, attach tools.
 - bash: Run shell commands (this is your main tool)
@@ -254,6 +249,68 @@ function truncate(text: string, maxLen: number): string {
 	return text.substring(0, maxLen - 3) + "...";
 }
 
+function extractToolResultText(result: unknown): string {
+	// If it's already a string, return it
+	if (typeof result === "string") {
+		return result;
+	}
+
+	// If it's an object with content array (tool result format)
+	if (
+		result &&
+		typeof result === "object" &&
+		"content" in result &&
+		Array.isArray((result as { content: unknown }).content)
+	) {
+		const content = (result as { content: Array<{ type: string; text?: string }> }).content;
+		const textParts: string[] = [];
+		for (const part of content) {
+			if (part.type === "text" && part.text) {
+				textParts.push(part.text);
+			}
+		}
+		if (textParts.length > 0) {
+			return textParts.join("\n");
+		}
+	}
+
+	// Fallback to JSON
+	return JSON.stringify(result);
+}
+
+function formatToolArgsForSlack(toolName: string, args: Record<string, unknown>): string {
+	const lines: string[] = [];
+
+	for (const [key, value] of Object.entries(args)) {
+		// Skip the label - it's already shown
+		if (key === "label") continue;
+
+		// For read tool, format path with offset/limit
+		if (key === "path" && typeof value === "string") {
+			const offset = args.offset as number | undefined;
+			const limit = args.limit as number | undefined;
+			if (offset !== undefined && limit !== undefined) {
+				lines.push(`${value}:${offset}-${offset + limit}`);
+			} else {
+				lines.push(value);
+			}
+			continue;
+		}
+
+		// Skip offset/limit since we already handled them
+		if (key === "offset" || key === "limit") continue;
+
+		// For other values, format them
+		if (typeof value === "string") {
+			lines.push(value);
+		} else {
+			lines.push(JSON.stringify(value));
+		}
+	}
+
+	return lines.join("\n");
+}
+
 export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 	let agent: Agent | null = null;
 	const executor = createExecutor(sandboxConfig);
@@ -267,7 +324,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 			const recentMessages = getRecentMessages(channelDir, 50);
 			const memory = getMemory(channelDir);
-			const systemPrompt = buildSystemPrompt(workspacePath, channelId, recentMessages, memory, sandboxConfig);
+			const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig);
 
 			// Set up file upload function for the attach tool
 			// For Docker, we need to translate paths back to host
@@ -292,8 +349,30 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				}),
 			});
 
-			// Track pending tool calls to pair args with results
-			const pendingTools = new Map<string, { toolName: string; args: unknown }>();
+			// Create logging context
+			const logCtx = {
+				channelId: ctx.message.channel,
+				userName: ctx.message.userName,
+				channelName: ctx.channelName,
+			};
+
+			// Track pending tool calls to pair args with results and timing
+			const pendingTools = new Map<string, { toolName: string; args: unknown; startTime: number }>();
+
+			// Track usage across all assistant messages in this run
+			const totalUsage = {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0,
+				},
+			};
 
 			// Subscribe to events
 			agent.subscribe(async (event: AgentEvent) => {
@@ -303,10 +382,14 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						const label = args.label || event.toolName;
 
 						// Store args to pair with result later
-						pendingTools.set(event.toolCallId, { toolName: event.toolName, args: event.args });
+						pendingTools.set(event.toolCallId, {
+							toolName: event.toolName,
+							args: event.args,
+							startTime: Date.now(),
+						});
 
 						// Log to console
-						console.log(`\n[Tool] ${event.toolName}: ${JSON.stringify(event.args)}`);
+						log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
 
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
@@ -324,12 +407,18 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					}
 
 					case "tool_execution_end": {
-						const resultStr = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
+						const resultStr = extractToolResultText(event.result);
 						const pending = pendingTools.get(event.toolCallId);
 						pendingTools.delete(event.toolCallId);
 
+						const durationMs = pending ? Date.now() - pending.startTime : 0;
+
 						// Log to console
-						console.log(`[Tool Result] ${event.isError ? "ERROR: " : ""}${truncate(resultStr, 1000)}\n`);
+						if (event.isError) {
+							log.logToolError(logCtx, event.toolName, durationMs, resultStr);
+						} else {
+							log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
+						}
 
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
@@ -342,17 +431,26 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						});
 
 						// Post args + result together in thread
-						const argsStr = pending ? JSON.stringify(pending.args, null, 2) : "(args not found)";
+						const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
+						const argsFormatted = pending
+							? formatToolArgsForSlack(event.toolName, pending.args as Record<string, unknown>)
+							: "(args not found)";
+						const duration = (durationMs / 1000).toFixed(1);
 						const threadResult = truncate(resultStr, 2000);
-						await ctx.respondInThread(
-							`*[${event.toolName}]* ${event.isError ? "❌" : "✓"}\n` +
-								"```\n" +
-								argsStr +
-								"\n```\n" +
-								"*Result:*\n```\n" +
-								threadResult +
-								"\n```",
-						);
+
+						let threadMessage = `*${event.isError ? "✗" : "✓"} ${event.toolName}*`;
+						if (label) {
+							threadMessage += `: ${label}`;
+						}
+						threadMessage += ` (${duration}s)\n`;
+
+						if (argsFormatted) {
+							threadMessage += "```\n" + argsFormatted + "\n```\n";
+						}
+
+						threadMessage += "*Result:*\n```\n" + threadResult + "\n```";
+
+						await ctx.respondInThread(threadMessage);
 
 						// Show brief error in main message if failed
 						if (event.isError) {
@@ -362,25 +460,33 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					}
 
 					case "message_update": {
-						const ev = event.assistantMessageEvent;
-						// Stream deltas to console
-						if (ev.type === "text_delta") {
-							process.stdout.write(ev.delta);
-						} else if (ev.type === "thinking_delta") {
-							process.stdout.write(ev.delta);
-						}
+						// No longer stream to console - just track that we're streaming
 						break;
 					}
 
 					case "message_start":
 						if (event.message.role === "assistant") {
-							process.stdout.write("\n");
+							log.logResponseStart(logCtx);
 						}
 						break;
 
 					case "message_end":
 						if (event.message.role === "assistant") {
-							process.stdout.write("\n");
+							const assistantMsg = event.message as any; // AssistantMessage type
+
+							// Accumulate usage
+							if (assistantMsg.usage) {
+								totalUsage.input += assistantMsg.usage.input;
+								totalUsage.output += assistantMsg.usage.output;
+								totalUsage.cacheRead += assistantMsg.usage.cacheRead;
+								totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
+								totalUsage.cost.input += assistantMsg.usage.cost.input;
+								totalUsage.cost.output += assistantMsg.usage.cost.output;
+								totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
+								totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
+								totalUsage.cost.total += assistantMsg.usage.cost.total;
+							}
+
 							// Extract text from assistant message
 							const content = event.message.content;
 							let text = "";
@@ -391,6 +497,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							}
 							if (text.trim()) {
 								await ctx.respond(text);
+								log.logResponseComplete(logCtx, text.length);
 							}
 						}
 						break;
@@ -398,7 +505,21 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			});
 
 			// Run the agent with user's message
-			await agent.prompt(ctx.message.text || "(attached files)");
+			// Prepend recent messages to the user prompt (not system prompt) for better caching
+			const userPrompt =
+				`Recent conversation history (last 50 messages):\n` +
+				`Format: date TAB user TAB text TAB attachments\n\n` +
+				`${recentMessages}\n\n` +
+				`---\n\n` +
+				`Current message: ${ctx.message.text || "(attached files)"}`;
+
+			await agent.prompt(userPrompt);
+
+			// Log usage summary if there was any usage
+			if (totalUsage.cost.total > 0) {
+				const summary = log.logUsageSummary(logCtx, totalUsage);
+				await ctx.respondInThread(summary);
+			}
 		},
 
 		abort(): void {
