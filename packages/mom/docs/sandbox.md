@@ -1,95 +1,153 @@
-# Mom Sandbox Implementation
+# Mom Docker Sandbox
 
 ## Overview
 
-Mom uses [@anthropic-ai/sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) to restrict what the bash tool can do at the OS level.
+Mom can run tools either directly on the host or inside a Docker container for isolation.
 
-## Current Implementation
+## Why Docker?
 
-Located in `src/sandbox.ts`:
+When mom runs on your machine and is accessible via Slack, anyone in your workspace could potentially:
+- Execute arbitrary commands on your machine
+- Access your files, credentials, etc.
+- Cause damage via prompt injection
 
-```typescript
-import { SandboxManager, type SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime";
+The Docker sandbox isolates mom's tools to a container where she can only access what you explicitly mount.
 
-const runtimeConfig: SandboxRuntimeConfig = {
-  network: {
-    allowedDomains: [], // Currently no network - should be ["*"] for full access
-    deniedDomains: [],
-  },
-  filesystem: {
-    denyRead: ["~/.ssh", "~/.aws", ...], // Sensitive paths
-    allowWrite: [channelDir, scratchpadDir], // Only mom's folders
-    denyWrite: [],
-  },
-};
+## Quick Start
 
-await SandboxManager.initialize(runtimeConfig);
-const sandboxedCommand = await SandboxManager.wrapWithSandbox(command);
+```bash
+# 1. Create and start the container
+cd packages/mom
+./docker.sh create ./data
+
+# 2. Run mom with Docker sandbox
+mom --sandbox=docker:mom-sandbox ./data
 ```
-
-## Key Limitation: Read Access
-
-**Read is deny-only** - allowed everywhere by default. We can only deny specific paths, NOT allow only specific paths.
-
-This means:
-- ❌ Cannot say "only allow reads from channelDir and scratchpadDir"
-- ✅ Can say "deny reads from ~/.ssh, ~/.aws, etc."
-
-The bash tool CAN read files outside the mom data folder. We mitigate by denying sensitive directories.
-
-## Write Access
-
-**Write is allow-only** - denied everywhere by default. This works perfectly for our use case:
-- Only `channelDir` and `scratchpadDir` can be written to
-- Everything else is blocked
-
-## Network Access
-
-- `allowedDomains: []` = no network access
-- `allowedDomains: ["*"]` = full network access
-- `allowedDomains: ["github.com", "*.github.com"]` = specific domains
 
 ## How It Works
 
-- **macOS**: Uses `sandbox-exec` with Seatbelt profiles
-- **Linux**: Uses `bubblewrap` for containerization
-
-The sandbox wraps commands - `SandboxManager.wrapWithSandbox("ls")` returns a modified command that runs inside the sandbox.
-
-## Files
-
-- `src/sandbox.ts` - Sandbox initialization and command wrapping
-- `src/tools/bash.ts` - Uses `wrapCommand()` before executing
-
-## Usage in Agent
-
-```typescript
-// In runAgent():
-await initializeSandbox({ channelDir, scratchpadDir });
-try {
-  // ... run agent
-} finally {
-  await resetSandbox();
-}
+```
+┌─────────────────────────────────────────────────────┐
+│  Host                                               │
+│                                                     │
+│  mom process (Node.js)                              │
+│  ├── Slack connection                               │
+│  ├── LLM API calls                                  │
+│  └── Tool execution ──────┐                         │
+│                           ▼                         │
+│              ┌─────────────────────────┐            │
+│              │  Docker Container       │            │
+│              │  ├── bash, git, gh, etc │            │
+│              │  └── /workspace (mount) │            │
+│              └─────────────────────────┘            │
+└─────────────────────────────────────────────────────┘
 ```
 
-## TODO
+- Mom process runs on host (handles Slack, LLM calls)
+- All tool execution (`bash`, `read`, `write`, `edit`) happens inside the container
+- Only `/workspace` (your data dir) is accessible to the container
 
-1. **Update network config** - Change `allowedDomains: []` to `["*"]` for full network access
-2. **Consider stricter read restrictions** - Current approach denies known sensitive paths but allows reads elsewhere
-3. **Test on Linux** - Requires `bubblewrap` and `socat` installed
+## Container Setup
 
-## Dependencies
+Use the provided script:
 
-macOS:
-- `ripgrep` (brew install ripgrep)
+```bash
+./docker.sh create <data-dir>   # Create and start container
+./docker.sh start               # Start existing container
+./docker.sh stop                # Stop container
+./docker.sh remove              # Remove container
+./docker.sh status              # Check if running
+./docker.sh shell               # Open shell in container
+```
 
-Linux:
-- `bubblewrap` (apt install bubblewrap)
-- `socat` (apt install socat)
-- `ripgrep` (apt install ripgrep)
+Or manually:
 
-## Reference
+```bash
+docker run -d --name mom-sandbox \
+  -v /path/to/mom-data:/workspace \
+  alpine:latest tail -f /dev/null
+```
 
-- [sandbox-runtime README](https://github.com/anthropic-experimental/sandbox-runtime)
-- [Claude Code Sandboxing Docs](https://docs.claude.com/en/docs/claude-code/sandboxing)
+## Mom Manages Her Own Computer
+
+The container is treated as mom's personal computer. She can:
+
+- Install tools: `apk add github-cli git curl`
+- Configure credentials: `gh auth login`
+- Create files and directories
+- Persist state across restarts
+
+When mom needs a tool, she installs it. When she needs credentials, she asks you.
+
+### Example Flow
+
+```
+User: "@mom check the spine-runtimes repo"
+Mom:  "I need gh CLI. Installing..."
+      (runs: apk add github-cli)
+Mom:  "I need a GitHub token. Please provide one."
+User: "ghp_xxxx..."
+Mom:  (runs: echo "ghp_xxxx" | gh auth login --with-token)
+Mom:  "Done. Checking repo..."
+```
+
+## Persistence
+
+The container persists across:
+- `docker stop` / `docker start`
+- Host reboots
+
+Installed tools and configs remain until you `docker rm` the container.
+
+To start fresh: `./docker.sh remove && ./docker.sh create ./data`
+
+## CLI Options
+
+```bash
+# Run on host (default, no isolation)
+mom ./data
+
+# Run with Docker sandbox
+mom --sandbox=docker:mom-sandbox ./data
+
+# Explicit host mode
+mom --sandbox=host ./data
+```
+
+## Security Considerations
+
+**What the container CAN do:**
+- Read/write files in `/workspace` (your data dir)
+- Make network requests (for git, gh, curl, etc.)
+- Install packages
+- Run any commands
+
+**What the container CANNOT do:**
+- Access files outside `/workspace`
+- Access your host's credentials
+- Affect your host system
+
+**For maximum security:**
+1. Create a dedicated GitHub bot account with limited repo access
+2. Only share that bot's token with mom
+3. Don't mount sensitive directories
+
+## Troubleshooting
+
+### Container not running
+```bash
+./docker.sh status  # Check status
+./docker.sh start   # Start it
+```
+
+### Reset container
+```bash
+./docker.sh remove
+./docker.sh create ./data
+```
+
+### Missing tools
+Ask mom to install them, or manually:
+```bash
+docker exec mom-sandbox apk add <package>
+```

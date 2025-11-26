@@ -2,9 +2,8 @@
 
 import { join, resolve } from "path";
 import { type AgentRunner, createAgentRunner } from "./agent.js";
+import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { MomBot, type SlackContext } from "./slack.js";
-
-console.log("Starting mom bot...");
 
 const MOM_SLACK_APP_TOKEN = process.env.MOM_SLACK_APP_TOKEN;
 const MOM_SLACK_BOT_TOKEN = process.env.MOM_SLACK_BOT_TOKEN;
@@ -12,14 +11,51 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_OAUTH_TOKEN = process.env.ANTHROPIC_OAUTH_TOKEN;
 
 // Parse command line arguments
-const args = process.argv.slice(2);
-if (args.length !== 1) {
-	console.error("Usage: mom <working-directory>");
-	console.error("Example: mom ./mom-data");
-	process.exit(1);
+function parseArgs(): { workingDir: string; sandbox: SandboxConfig } {
+	const args = process.argv.slice(2);
+	let sandbox: SandboxConfig = { type: "host" };
+	let workingDir: string | undefined;
+
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg.startsWith("--sandbox=")) {
+			sandbox = parseSandboxArg(arg.slice("--sandbox=".length));
+		} else if (arg === "--sandbox") {
+			const next = args[++i];
+			if (!next) {
+				console.error("Error: --sandbox requires a value (host or docker:<container-name>)");
+				process.exit(1);
+			}
+			sandbox = parseSandboxArg(next);
+		} else if (!arg.startsWith("-")) {
+			workingDir = arg;
+		} else {
+			console.error(`Unknown option: ${arg}`);
+			process.exit(1);
+		}
+	}
+
+	if (!workingDir) {
+		console.error("Usage: mom [--sandbox=host|docker:<container-name>] <working-directory>");
+		console.error("");
+		console.error("Options:");
+		console.error("  --sandbox=host                  Run tools directly on host (default)");
+		console.error("  --sandbox=docker:<container>    Run tools in Docker container");
+		console.error("");
+		console.error("Examples:");
+		console.error("  mom ./data");
+		console.error("  mom --sandbox=docker:mom-sandbox ./data");
+		process.exit(1);
+	}
+
+	return { workingDir: resolve(workingDir), sandbox };
 }
 
-const workingDir = resolve(args[0]);
+const { workingDir, sandbox } = parseArgs();
+
+console.log("Starting mom bot...");
+console.log(`  Working directory: ${workingDir}`);
+console.log(`  Sandbox: ${sandbox.type === "host" ? "host" : `docker:${sandbox.container}`}`);
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
 	console.error("Missing required environment variables:");
@@ -28,6 +64,9 @@ if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTH
 	if (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN) console.error("  - ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
 	process.exit(1);
 }
+
+// Validate sandbox configuration
+await validateSandbox(sandbox);
 
 // Track active agent runs per channel
 const activeRuns = new Map<string, AgentRunner>();
@@ -58,7 +97,7 @@ async function handleMessage(ctx: SlackContext, source: "channel" | "dm"): Promi
 	console.log(`${source === "channel" ? "Channel mention" : "DM"} from <@${ctx.message.user}>: ${ctx.message.text}`);
 	const channelDir = join(workingDir, channelId);
 
-	const runner = createAgentRunner();
+	const runner = createAgentRunner(sandbox);
 	activeRuns.set(channelId, runner);
 
 	await ctx.setTyping(true);

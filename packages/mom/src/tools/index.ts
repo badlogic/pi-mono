@@ -1,13 +1,19 @@
-export { attachTool, setUploadFunction } from "./attach.js";
-export { bashTool } from "./bash.js";
-export { editTool } from "./edit.js";
-export { readTool } from "./read.js";
-export { writeTool } from "./write.js";
-
+import type { AgentTool } from "@mariozechner/pi-ai";
+import type { Executor } from "../sandbox.js";
 import { attachTool } from "./attach.js";
-import { bashTool } from "./bash.js";
-import { editTool } from "./edit.js";
-import { readTool } from "./read.js";
-import { writeTool } from "./write.js";
+import { createBashTool } from "./bash.js";
+import { createEditTool } from "./edit.js";
+import { createReadTool } from "./read.js";
+import { createWriteTool } from "./write.js";
 
-export const momTools = [readTool, bashTool, editTool, writeTool, attachTool];
+export { setUploadFunction } from "./attach.js";
+
+export function createMomTools(executor: Executor): AgentTool<any>[] {
+	return [
+		createReadTool(executor),
+		createBashTool(executor),
+		createEditTool(executor),
+		createWriteTool(executor),
+		attachTool,
+	];
+}
