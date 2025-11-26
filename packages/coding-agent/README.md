@@ -526,7 +526,7 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 
 ## Project Context Files
 
-The agent automatically loads context from `AGENTS.md` or `CLAUDE.md` files at the start of new sessions (not when continuing/resuming). These files are loaded in hierarchical order to support both global preferences and monorepo structures.
+The agent automatically loads context from `AGENTS.md` or `CLAUDE.md` files at startup. These files are loaded in hierarchical order to support both global preferences and monorepo structures.
 
 ### File Locations
 
