@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2025-11-27
+
 ### Added
 
 - **Fuzzy File Search (`@`)**: Type `@` followed by a search term to fuzzy-search files and folders across your project. Respects `.gitignore` and skips hidden files. Directories are prioritized in results. Based on [PR #60](https://github.com/badlogic/pi-mono/pull/60) by [@fightbulc](https://github.com/fightbulc), reimplemented with pure Node.js for fast, dependency-free searching.

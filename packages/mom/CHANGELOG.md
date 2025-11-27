@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2025-11-27
+
 ### Added
 
 - Working memory system with MEMORY.md files
