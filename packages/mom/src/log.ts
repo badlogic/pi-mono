@@ -160,6 +160,10 @@ export function logStopRequest(ctx: LogContext): void {
 }
 
 // System
+export function logInfo(message: string): void {
+	console.log(chalk.blue(`${timestamp()} [system] ${message}`));
+}
+
 export function logWarning(message: string, details?: string): void {
 	console.log(chalk.yellow(`${timestamp()} [system] ⚠ ${message}`));
 	if (details) {

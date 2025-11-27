@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Timestamps now use Slack format (seconds.microseconds) and messages are sorted by `ts` field
+  - **Migration required**: Run `npx tsx scripts/migrate-timestamps.ts ./data` to fix existing logs
+  - Without migration, message context will be incorrectly ordered
+
+### Added
+
+- Channel and user ID mappings in system prompt
+  - Fetches all channels bot is member of and all workspace users at startup
+  - Mom can now reference channels by name and mention users properly
+- Skills documentation in system prompt
+  - Explains custom CLI tools pattern with SKILL.md files
+  - Encourages mom to create reusable tools for recurring tasks
+- Debug output: writes `last_prompt.txt` to channel directory with full context
+- Bash working directory info in system prompt (/ for Docker, cwd for host)
+- Token-efficient log queries that filter out tool calls/results for summaries
+
+### Changed
+
+- Turn-based message context instead of raw line count (#68)
+  - Groups consecutive bot messages (tool calls/results) as single turn
+  - "50 turns" now means ~50 conversation exchanges, not 50 log lines
+  - Prevents tool-heavy runs from pushing out conversation context
+- Messages sorted by Slack timestamp before building context
+  - Fixes out-of-order issues from async attachment downloads
+  - Added monotonic counter for sub-millisecond ordering
+- Condensed system prompt from ~5k to ~2.7k chars
+  - More concise workspace layout (tree format)
+  - Clearer log query examples (conversation-only vs full details)
+  - Removed redundant guidelines section
+- User prompt simplified: removed duplicate "Current message" (already in history)
+- Tool status labels (`_→ label_`) no longer logged to jsonl
+- Thread messages and thinking no longer double-logged
+
+### Fixed
+
+- Duplicate message logging: removed redundant log from app_mention handler
+- Username obfuscation in thread messages to prevent unwanted pings
+  - Handles @username, bare username, and <@USERID> formats
+  - Escapes special regex characters in usernames
+
 ## [0.10.1] - 2025-11-27
 
 ### Changed

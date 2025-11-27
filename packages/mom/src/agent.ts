@@ -1,16 +1,38 @@
 import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync } from "fs";
-import { mkdir } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
-import type { SlackContext } from "./slack.js";
+import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
 import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
 // Hardcoded model for now
 const model = getModel("anthropic", "claude-sonnet-4-5");
+
+/**
+ * Convert Date.now() to Slack timestamp format (seconds.microseconds)
+ * Uses a monotonic counter to ensure ordering even within the same millisecond
+ */
+let lastTsMs = 0;
+let tsCounter = 0;
+
+function toSlackTs(): string {
+	const now = Date.now();
+	if (now === lastTsMs) {
+		// Same millisecond - increment counter for sub-ms ordering
+		tsCounter++;
+	} else {
+		// New millisecond - reset counter
+		lastTsMs = now;
+		tsCounter = 0;
+	}
+	const seconds = Math.floor(now / 1000);
+	const micros = (now % 1000) * 1000 + tsCounter; // ms to micros + counter
+	return `${seconds}.${micros.toString().padStart(6, "0")}`;
+}
 
 export interface AgentRunner {
 	run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<{ stopReason: string }>;
@@ -25,7 +47,17 @@ function getAnthropicApiKey(): string {
 	return key;
 }
 
-function getRecentMessages(channelDir: string, count: number): string {
+interface LogMessage {
+	date?: string;
+	ts?: string;
+	user?: string;
+	userName?: string;
+	text?: string;
+	attachments?: Array<{ local: string }>;
+	isBot?: boolean;
+}
+
+function getRecentMessages(channelDir: string, turnCount: number): string {
 	const logPath = join(channelDir, "log.jsonl");
 	if (!existsSync(logPath)) {
 		return "(no message history yet)";
@@ -33,23 +65,72 @@ function getRecentMessages(channelDir: string, count: number): string {
 
 	const content = readFileSync(logPath, "utf-8");
 	const lines = content.trim().split("\n").filter(Boolean);
-	const recentLines = lines.slice(-count);
 
-	if (recentLines.length === 0) {
+	if (lines.length === 0) {
 		return "(no message history yet)";
 	}
 
-	// Format as TSV for more concise system prompt
-	const formatted: string[] = [];
-	for (const line of recentLines) {
+	// Parse all messages and sort by Slack timestamp
+	// (attachment downloads can cause out-of-order logging)
+	const messages: LogMessage[] = [];
+	for (const line of lines) {
 		try {
-			const msg = JSON.parse(line);
+			messages.push(JSON.parse(line));
+		} catch {}
+	}
+	messages.sort((a, b) => {
+		const tsA = parseFloat(a.ts || "0");
+		const tsB = parseFloat(b.ts || "0");
+		return tsA - tsB;
+	});
+
+	// Group into "turns" - a turn is either:
+	// - A single user message (isBot: false)
+	// - A sequence of consecutive bot messages (isBot: true) coalesced into one turn
+	// We walk backwards to get the last N turns
+	const turns: LogMessage[][] = [];
+	let currentTurn: LogMessage[] = [];
+	let lastWasBot: boolean | null = null;
+
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		const isBot = msg.isBot === true;
+
+		if (lastWasBot === null) {
+			// First message
+			currentTurn.unshift(msg);
+			lastWasBot = isBot;
+		} else if (isBot && lastWasBot) {
+			// Consecutive bot messages - same turn
+			currentTurn.unshift(msg);
+		} else {
+			// Transition - save current turn and start new one
+			turns.unshift(currentTurn);
+			currentTurn = [msg];
+			lastWasBot = isBot;
+
+			// Stop if we have enough turns
+			if (turns.length >= turnCount) {
+				break;
+			}
+		}
+	}
+
+	// Don't forget the last turn we were building
+	if (currentTurn.length > 0 && turns.length < turnCount) {
+		turns.unshift(currentTurn);
+	}
+
+	// Flatten turns back to messages and format as TSV
+	const formatted: string[] = [];
+	for (const turn of turns) {
+		for (const msg of turn) {
 			const date = (msg.date || "").substring(0, 19);
-			const user = msg.userName || msg.user;
+			const user = msg.userName || msg.user || "";
 			const text = msg.text || "";
-			const attachments = (msg.attachments || []).map((a: { local: string }) => a.local).join(",");
+			const attachments = (msg.attachments || []).map((a) => a.local).join(",");
 			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
-		} catch (error) {}
+		}
 	}
 
 	return formatted.join("\n");
@@ -96,151 +177,112 @@ function buildSystemPrompt(
 	channelId: string,
 	memory: string,
 	sandboxConfig: SandboxConfig,
+	channels: ChannelInfo[],
+	users: UserInfo[],
 ): string {
 	const channelPath = `${workspacePath}/${channelId}`;
 	const isDocker = sandboxConfig.type === "docker";
 
+	// Format channel mappings
+	const channelMappings =
+		channels.length > 0 ? channels.map((c) => `${c.id}\t#${c.name}`).join("\n") : "(no channels loaded)";
+
+	// Format user mappings
+	const userMappings =
+		users.length > 0 ? users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`).join("\n") : "(no users loaded)";
+
 	const envDescription = isDocker
 		? `You are running inside a Docker container (Alpine Linux).
+- Bash working directory: / (use cd or absolute paths)
 - Install tools with: apk add <package>
-- Your changes persist across sessions
-- You have full control over this container`
+- Your changes persist across sessions`
 		: `You are running directly on the host machine.
-- Be careful with system modifications
-- Use the system's package manager if needed`;
+- Bash working directory: ${process.cwd()}
+- Be careful with system modifications`;
 
 	const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 	const currentDateTime = new Date().toISOString(); // Full ISO 8601
 
-	return `You are mom, a helpful Slack bot assistant.
+	return `You are mom, a Slack bot assistant. Be concise. No emojis.
 
-## Current Date and Time
-- Date: ${currentDate}
-- Full timestamp: ${currentDateTime}
-- Use this when working with dates or searching logs
+## Context
+- Date: ${currentDate} (${currentDateTime})
+- You receive the last 50 conversation turns. If you need older context, search log.jsonl.
 
-## Communication Style
-- Be concise and professional
-- Do not use emojis unless the user communicates informally with you
-- Get to the point quickly
-- If you need clarification, ask directly
-- Use Slack's mrkdwn format (NOT standard Markdown):
-  - Bold: *text* (single asterisks)
-  - Italic: _text_
-  - Strikethrough: ~text~
-  - Code: \`code\`
-  - Code block: \`\`\`code\`\`\`
-  - Links: <url|text>
-  - Do NOT use **double asterisks** or [markdown](links)
+## Slack Formatting (mrkdwn, NOT Markdown)
+Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
+Do NOT use **double asterisks** or [markdown](links).
 
-## Your Environment
+## Slack IDs
+Channels: ${channelMappings}
+
+Users: ${userMappings}
+
+When mentioning users, use <@username> format (e.g., <@mario>).
+
+## Environment
 ${envDescription}
 
-## Your Workspace
-Your working directory is: ${channelPath}
+## Workspace Layout
+${workspacePath}/
+├── MEMORY.md                    # Global memory (all channels)
+├── skills/                      # Global CLI tools you create
+└── ${channelId}/                # This channel
+    ├── MEMORY.md                # Channel-specific memory
+    ├── log.jsonl                # Full message history
+    ├── attachments/             # User-shared files
+    ├── scratch/                 # Your working directory
+    └── skills/                  # Channel-specific tools
 
-### Directory Structure
-- ${workspacePath}/ - Root workspace (shared across all channels)
-  - MEMORY.md - GLOBAL memory visible to all channels (write global info here)
-  - ${channelId}/ - This channel's directory
-    - MEMORY.md - CHANNEL-SPECIFIC memory (only visible in this channel)
-    - scratch/ - Your working directory for files, repos, etc.
-    - log.jsonl - Message history in JSONL format (one JSON object per line)
-    - attachments/ - Files shared by users (managed by system, read-only)
+## Skills (Custom CLI Tools)
+You can create reusable CLI tools for recurring tasks (email, APIs, data processing, etc.).
+Store in \`${workspacePath}/skills/<name>/\` or \`${channelPath}/skills/<name>/\`.
+Each skill needs a \`SKILL.md\` documenting usage. Read it before using a skill.
+List skills in global memory so you remember them.
 
-### Message History Format
-Each line in log.jsonl contains:
-{
-  "date": "2025-11-26T10:44:00.123Z",  // ISO 8601 - easy to grep by date!
-  "ts": "1732619040.123456",            // Slack timestamp or epoch ms
-  "user": "U123ABC",                     // User ID or "bot"
-  "userName": "mario",                   // User handle (optional)
-  "text": "message text",
-  "isBot": false
-}
+## Memory
+Write to MEMORY.md files to persist context across conversations.
+- Global (${workspacePath}/MEMORY.md): skills, preferences, project info
+- Channel (${channelPath}/MEMORY.md): channel-specific decisions, ongoing work
+Update when you learn something important or when asked to remember something.
 
-**⚠️ CRITICAL: Efficient Log Queries (Avoid Context Overflow)**
-
-Log files can be VERY LARGE (100K+ lines). The problem is getting too MANY messages, not message length.
-Each message can be up to 10k chars - that's fine. Use head/tail to LIMIT NUMBER OF MESSAGES (10-50 at a time).
-
-**Install jq first (if not already):**
-\`\`\`bash
-${isDocker ? "apk add jq" : "# jq should be available, or install via package manager"}
-\`\`\`
-
-**Essential query patterns:**
-\`\`\`bash
-# Last N messages (compact JSON output)
-tail -20 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text, attachments: [(.attachments // [])[].local]}'
-
-# Or TSV format (easier to read)
-tail -20 log.jsonl | jq -r '[.date[0:19], (.userName // .user), .text, ((.attachments // []) | map(.local) | join(","))] | @tsv'
-
-# Search by date (LIMIT with head/tail!)
-grep '"date":"2025-11-26' log.jsonl | tail -30 | jq -c '{date: .date[0:19], user: (.userName // .user), text, attachments: [(.attachments // [])[].local]}'
-
-# Messages from specific user (count first, then limit)
-grep '"userName":"mario"' log.jsonl | wc -l  # Check count first
-grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], user: .userName, text, attachments: [(.attachments // [])[].local]}'
-
-# Only count (when you just need the number)
-grep '"isBot":false' log.jsonl | wc -l
-
-# Messages with attachments only (limit!)
-grep '"attachments":[{' log.jsonl | tail -10 | jq -r '[.date[0:16], (.userName // .user), .text, (.attachments | map(.local) | join(","))] | @tsv'
-\`\`\`
-
-**KEY RULE:** Always pipe through 'head -N' or 'tail -N' to limit results BEFORE parsing with jq!
-\`\`\`
-
-**Date filtering:**
-- Today: grep '"date":"${currentDate}' log.jsonl
-- Yesterday: grep '"date":"2025-11-25' log.jsonl
-- Date range: grep '"date":"2025-11-(26|27|28)' log.jsonl
-- Time range: grep -E '"date":"2025-11-26T(09|10|11):' log.jsonl
-
-### Working Memory System
-You can maintain working memory across conversations by writing MEMORY.md files.
-
-**IMPORTANT PATH RULES:**
-- Global memory (all channels): ${workspacePath}/MEMORY.md
-- Channel memory (this channel only): ${channelPath}/MEMORY.md
-
-**What to remember:**
-- Project details and architecture → Global memory
-- User preferences and coding style → Global memory
-- Channel-specific context → Channel memory
-- Recurring tasks and patterns → Appropriate memory file
-- Credentials locations (never actual secrets) → Global memory
-- Decisions made and their rationale → Appropriate memory file
-
-**When to update:**
-- After learning something important that will help in future conversations
-- When user asks you to remember something
-- When you discover project structure or conventions
-
-### Current Working Memory
+### Current Memory
 ${memory}
 
+## Log Queries (CRITICAL: limit output to avoid context overflow)
+Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
+The log contains user messages AND your tool calls/results. Filter appropriately.
+${isDocker ? "Install jq: apk add jq" : ""}
+
+**Conversation only (excludes tool calls/results) - use for summaries:**
+\`\`\`bash
+# Recent conversation (no [Tool] or [Tool Result] lines)
+grep -v '"text":"\\[Tool' log.jsonl | tail -30 | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
+
+# Yesterday's conversation
+grep '"date":"2025-11-26' log.jsonl | grep -v '"text":"\\[Tool' | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
+
+# Specific user's messages
+grep '"userName":"mario"' log.jsonl | grep -v '"text":"\\[Tool' | tail -20 | jq -c '{date: .date[0:19], text}'
+\`\`\`
+
+**Full details (includes tool calls) - use when you need technical context:**
+\`\`\`bash
+# Raw recent entries
+tail -20 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
+
+# Count all messages
+wc -l log.jsonl
+\`\`\`
+
 ## Tools
-You have access to: bash, read, edit, write, attach tools.
-- bash: Run shell commands (this is your main tool)
+- bash: Run shell commands (primary tool). Install packages as needed.
 - read: Read files
-- edit: Edit files surgically
-- write: Create/overwrite files
-- attach: Share a file with the user in Slack
+- write: Create/overwrite files  
+- edit: Surgical file edits
+- attach: Share files to Slack
 
-Each tool requires a "label" parameter - brief description shown to the user.
-
-## Guidelines
-- Be concise and helpful
-- Use bash for most operations
-- If you need a tool, install it
-- If you need credentials, ask the user
-
-## CRITICAL
-- DO NOT USE EMOJIS. KEEP YOUR RESPONSES AS SHORT AS POSSIBLE.
+Each tool requires a "label" parameter (shown to user).
 `;
 }
 
@@ -324,7 +366,20 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 			const recentMessages = getRecentMessages(channelDir, 50);
 			const memory = getMemory(channelDir);
-			const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig);
+			const systemPrompt = buildSystemPrompt(
+				workspacePath,
+				channelId,
+				memory,
+				sandboxConfig,
+				ctx.channels,
+				ctx.users,
+			);
+
+			// Debug: log context sizes
+			log.logInfo(
+				`Context sizes - system: ${systemPrompt.length} chars, messages: ${recentMessages.length} chars, memory: ${memory.length} chars`,
+			);
+			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
 
 			// Set up file upload function for the attach tool
 			// For Docker, we need to translate paths back to host
@@ -415,10 +470,13 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					});
 				},
 				// Enqueue a message that may need splitting
-				enqueueMessage(text: string, target: "main" | "thread", errorContext: string): void {
+				enqueueMessage(text: string, target: "main" | "thread", errorContext: string, log = true): void {
 					const parts = splitForSlack(text);
 					for (const part of parts) {
-						this.enqueue(() => (target === "main" ? ctx.respond(part) : ctx.respondInThread(part)), errorContext);
+						this.enqueue(
+							() => (target === "main" ? ctx.respond(part, log) : ctx.respondInThread(part)),
+							errorContext,
+						);
 					}
 				},
 				flush(): Promise<void> {
@@ -446,7 +504,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
 							date: new Date().toISOString(),
-							ts: Date.now().toString(),
+							ts: toSlackTs(),
 							user: "bot",
 							text: `[Tool] ${event.toolName}: ${JSON.stringify(event.args)}`,
 							attachments: [],
@@ -454,7 +512,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						});
 
 						// Show label in main message only
-						queue.enqueue(() => ctx.respond(`_→ ${label}_`), "tool label");
+						queue.enqueue(() => ctx.respond(`_→ ${label}_`, false), "tool label");
 						break;
 					}
 
@@ -475,7 +533,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						// Log to jsonl
 						await store.logMessage(ctx.message.channel, {
 							date: new Date().toISOString(),
-							ts: Date.now().toString(),
+							ts: toSlackTs(),
 							user: "bot",
 							text: `[Tool Result] ${event.toolName}: ${event.isError ? "ERROR: " : ""}${truncate(resultStr, 1000)}`,
 							attachments: [],
@@ -500,11 +558,11 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 						threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
 
-						queue.enqueueMessage(threadMessage, "thread", "tool result thread");
+						queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
 
 						// Show brief error in main message if failed
 						if (event.isError) {
-							queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`), "tool error");
+							queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`, false), "tool error");
 						}
 						break;
 					}
@@ -560,14 +618,14 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							for (const thinking of thinkingParts) {
 								log.logThinking(logCtx, thinking);
 								queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
-								queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread");
+								queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
 							}
 
 							// Post text to main message and thread
 							if (text.trim()) {
 								log.logResponse(logCtx, text);
 								queue.enqueueMessage(text, "main", "response main");
-								queue.enqueueMessage(text, "thread", "response thread");
+								queue.enqueueMessage(text, "thread", "response thread", false);
 							}
 						}
 						break;
@@ -576,12 +634,18 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			// Run the agent with user's message
 			// Prepend recent messages to the user prompt (not system prompt) for better caching
+			// The current message is already the last entry in recentMessages
 			const userPrompt =
-				`Recent conversation history (last 50 messages):\n` +
+				`Conversation history (last 50 turns). Respond to the last message.\n` +
 				`Format: date TAB user TAB text TAB attachments\n\n` +
-				`${recentMessages}\n\n` +
-				`---\n\n` +
-				`Current message: ${ctx.message.text || "(attached files)"}`;
+				recentMessages;
+			// Debug: write full context to file
+			const toolDefs = tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+			const debugPrompt =
+				`=== SYSTEM PROMPT (${systemPrompt.length} chars) ===\n\n${systemPrompt}\n\n` +
+				`=== TOOL DEFINITIONS (${JSON.stringify(toolDefs).length} chars) ===\n\n${JSON.stringify(toolDefs, null, 2)}\n\n` +
+				`=== USER PROMPT (${userPrompt.length} chars) ===\n\n${userPrompt}`;
+			await writeFile(join(channelDir, "last_prompt.txt"), debugPrompt, "utf-8");
 
 			await agent.prompt(userPrompt);
 

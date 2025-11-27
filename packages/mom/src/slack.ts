@@ -19,8 +19,12 @@ export interface SlackContext {
 	message: SlackMessage;
 	channelName?: string; // channel name for logging (e.g., #dev-team)
 	store: ChannelStore;
-	/** Send/update the main message (accumulates text) */
-	respond(text: string): Promise<void>;
+	/** All channels the bot is a member of */
+	channels: ChannelInfo[];
+	/** All known users in the workspace */
+	users: UserInfo[];
+	/** Send/update the main message (accumulates text). Set log=false to skip logging. */
+	respond(text: string, log?: boolean): Promise<void>;
 	/** Replace the entire message text (not append) */
 	replaceMessage(text: string): Promise<void>;
 	/** Post a message in the thread under the main message (for verbose details) */
@@ -44,6 +48,17 @@ export interface MomBotConfig {
 	workingDir: string; // directory for channel data and attachments
 }
 
+export interface ChannelInfo {
+	id: string;
+	name: string;
+}
+
+export interface UserInfo {
+	id: string;
+	userName: string;
+	displayName: string;
+}
+
 export class MomBot {
 	private socketClient: SocketModeClient;
 	private webClient: WebClient;
@@ -51,6 +66,7 @@ export class MomBot {
 	private botUserId: string | null = null;
 	public readonly store: ChannelStore;
 	private userCache: Map<string, { userName: string; displayName: string }> = new Map();
+	private channelCache: Map<string, string> = new Map(); // id -> name
 
 	constructor(handler: MomHandler, config: MomBotConfig) {
 		this.handler = handler;
@@ -62,6 +78,113 @@ export class MomBot {
 		});
 
 		this.setupEventHandlers();
+	}
+
+	/**
+	 * Fetch all channels the bot is a member of
+	 */
+	private async fetchChannels(): Promise<void> {
+		try {
+			let cursor: string | undefined;
+			do {
+				const result = await this.webClient.conversations.list({
+					types: "public_channel,private_channel",
+					exclude_archived: true,
+					limit: 200,
+					cursor,
+				});
+
+				const channels = result.channels as Array<{ id?: string; name?: string; is_member?: boolean }> | undefined;
+				if (channels) {
+					for (const channel of channels) {
+						if (channel.id && channel.name && channel.is_member) {
+							this.channelCache.set(channel.id, channel.name);
+						}
+					}
+				}
+
+				cursor = result.response_metadata?.next_cursor;
+			} while (cursor);
+		} catch (error) {
+			log.logWarning("Failed to fetch channels", String(error));
+		}
+	}
+
+	/**
+	 * Fetch all workspace users
+	 */
+	private async fetchUsers(): Promise<void> {
+		try {
+			let cursor: string | undefined;
+			do {
+				const result = await this.webClient.users.list({
+					limit: 200,
+					cursor,
+				});
+
+				const members = result.members as
+					| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+					| undefined;
+				if (members) {
+					for (const user of members) {
+						if (user.id && user.name && !user.deleted) {
+							this.userCache.set(user.id, {
+								userName: user.name,
+								displayName: user.real_name || user.name,
+							});
+						}
+					}
+				}
+
+				cursor = result.response_metadata?.next_cursor;
+			} while (cursor);
+		} catch (error) {
+			log.logWarning("Failed to fetch users", String(error));
+		}
+	}
+
+	/**
+	 * Get all known channels (id -> name)
+	 */
+	getChannels(): ChannelInfo[] {
+		return Array.from(this.channelCache.entries()).map(([id, name]) => ({ id, name }));
+	}
+
+	/**
+	 * Get all known users
+	 */
+	getUsers(): UserInfo[] {
+		return Array.from(this.userCache.entries()).map(([id, { userName, displayName }]) => ({
+			id,
+			userName,
+			displayName,
+		}));
+	}
+
+	/**
+	 * Obfuscate usernames and user IDs in text to prevent pinging people
+	 * e.g., "nate" -> "n_a_t_e", "@mario" -> "@m_a_r_i_o", "<@U123>" -> "<@U_1_2_3>"
+	 */
+	private obfuscateUsernames(text: string): string {
+		let result = text;
+
+		// Obfuscate user IDs like <@U16LAL8LS>
+		result = result.replace(/<@([A-Z0-9]+)>/gi, (_match, id) => {
+			return `<@${id.split("").join("_")}>`;
+		});
+
+		// Obfuscate usernames
+		for (const { userName } of this.userCache.values()) {
+			// Escape special regex characters in username
+			const escaped = userName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			// Match @username, <@username>, or bare username (case insensitive, word boundary)
+			const pattern = new RegExp(`(<@|@)?(\\b${escaped}\\b)`, "gi");
+			result = result.replace(pattern, (_match, prefix, name) => {
+				const obfuscated = name.split("").join("_");
+				return (prefix || "") + obfuscated;
+			});
+		}
+		return result;
 	}
 
 	private async getUserInfo(userId: string): Promise<{ userName: string; displayName: string }> {
@@ -85,6 +208,7 @@ export class MomBot {
 
 	private setupEventHandlers(): void {
 		// Handle @mentions in channels
+		// Note: We don't log here - the message event handler logs all messages
 		this.socketClient.on("app_mention", async ({ event, ack }) => {
 			await ack();
 
@@ -95,9 +219,6 @@ export class MomBot {
 				ts: string;
 				files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 			};
-
-			// Log the mention (message event may not fire for app_mention)
-			await this.logMessage(slackEvent);
 
 			const ctx = await this.createContext(slackEvent);
 			await this.handler.onChannelMention(ctx);
@@ -221,7 +342,9 @@ export class MomBot {
 			},
 			channelName,
 			store: this.store,
-			respond: async (responseText: string) => {
+			channels: this.getChannels(),
+			users: this.getUsers(),
+			respond: async (responseText: string, log = true) => {
 				// Queue updates to avoid race conditions
 				updatePromise = updatePromise.then(async () => {
 					if (isThinking) {
@@ -252,8 +375,10 @@ export class MomBot {
 						messageTs = result.ts as string;
 					}
 
-					// Log the response
-					await this.store.logBotResponse(event.channel, responseText, messageTs!);
+					// Log the response if requested
+					if (log) {
+						await this.store.logBotResponse(event.channel, responseText, messageTs!);
+					}
 				});
 
 				await updatePromise;
@@ -265,11 +390,13 @@ export class MomBot {
 						// No main message yet, just skip
 						return;
 					}
+					// Obfuscate usernames to avoid pinging people in thread details
+					const obfuscatedText = this.obfuscateUsernames(threadText);
 					// Post in thread under the main message
 					await this.webClient.chat.postMessage({
 						channel: event.channel,
 						thread_ts: messageTs,
-						text: threadText,
+						text: obfuscatedText,
 					});
 				});
 				await updatePromise;
@@ -343,6 +470,11 @@ export class MomBot {
 	async start(): Promise<void> {
 		const auth = await this.webClient.auth.test();
 		this.botUserId = auth.user_id as string;
+
+		// Fetch channels and users in parallel
+		await Promise.all([this.fetchChannels(), this.fetchUsers()]);
+		log.logInfo(`Loaded ${this.channelCache.size} channels, ${this.userCache.size} users`);
+
 		await this.socketClient.start();
 		log.logConnected();
 	}
