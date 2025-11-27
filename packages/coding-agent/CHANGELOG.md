@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CLI File Arguments (`@file`)**: Include files in your initial message using the `@` prefix (e.g., `pi @prompt.md @image.png "Do this"`). All `@file` arguments are combined into the first message. Text files are wrapped in `<file name="path">content</file>` tags. Images (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`) are attached as base64-encoded attachments. Supports `~` expansion, relative/absolute paths. Empty files are skipped. Works in interactive, `--print`, and `--mode text/json` modes. Not supported in `--mode rpc`. ([#54](https://github.com/badlogic/pi-mono/issues/54))
+
 ### Fixed
 
 - **Editor Cursor Navigation**: Fixed broken up/down arrow key navigation in the editor when lines wrap. Previously, pressing up/down would move between logical lines instead of visual (wrapped) lines, causing the cursor to jump unexpectedly. Now cursor navigation is based on rendered lines. Also fixed a bug where the cursor would appear on two lines simultaneously when positioned at a wrap boundary. Added word by word navigation via Option+Left/Right or Ctrl+Left/Right. ([#61](https://github.com/badlogic/pi-mono/pull/61))
