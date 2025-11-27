@@ -377,11 +377,21 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			// Track stop reason
 			let stopReason = "stop";
 
-			// Slack message limit is 40,000 characters
+			// Slack message limit is 40,000 characters - split into multiple messages if needed
 			const SLACK_MAX_LENGTH = 40000;
-			const truncateForSlack = (text: string): string => {
-				if (text.length <= SLACK_MAX_LENGTH) return text;
-				return text.substring(0, SLACK_MAX_LENGTH - 100) + "\n\n_(truncated - message too long)_";
+			const splitForSlack = (text: string): string[] => {
+				if (text.length <= SLACK_MAX_LENGTH) return [text];
+				const parts: string[] = [];
+				let remaining = text;
+				let partNum = 1;
+				while (remaining.length > 0) {
+					const chunk = remaining.substring(0, SLACK_MAX_LENGTH - 50);
+					remaining = remaining.substring(SLACK_MAX_LENGTH - 50);
+					const suffix = remaining.length > 0 ? `\n_(continued ${partNum}...)_` : "";
+					parts.push(chunk + suffix);
+					partNum++;
+				}
+				return parts;
 			};
 
 			// Promise queue to ensure ctx.respond/respondInThread calls execute in order
@@ -403,6 +413,13 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							}
 						}
 					});
+				},
+				// Enqueue a message that may need splitting
+				enqueueMessage(text: string, target: "main" | "thread", errorContext: string): void {
+					const parts = splitForSlack(text);
+					for (const part of parts) {
+						this.enqueue(() => (target === "main" ? ctx.respond(part) : ctx.respondInThread(part)), errorContext);
+					}
 				},
 				flush(): Promise<void> {
 					return this.chain;
@@ -471,8 +488,6 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							? formatToolArgsForSlack(event.toolName, pending.args as Record<string, unknown>)
 							: "(args not found)";
 						const duration = (durationMs / 1000).toFixed(1);
-						const threadResult = truncate(resultStr, 2000);
-
 						let threadMessage = `*${event.isError ? "✗" : "✓"} ${event.toolName}*`;
 						if (label) {
 							threadMessage += `: ${label}`;
@@ -483,9 +498,9 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							threadMessage += "```\n" + argsFormatted + "\n```\n";
 						}
 
-						threadMessage += "*Result:*\n```\n" + threadResult + "\n```";
+						threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
 
-						queue.enqueue(() => ctx.respondInThread(truncateForSlack(threadMessage)), "tool result thread");
+						queue.enqueueMessage(threadMessage, "thread", "tool result thread");
 
 						// Show brief error in main message if failed
 						if (event.isError) {
@@ -544,15 +559,15 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							// Post thinking to main message and thread
 							for (const thinking of thinkingParts) {
 								log.logThinking(logCtx, thinking);
-								queue.enqueue(() => ctx.respond(truncateForSlack(`_${thinking}_`)), "thinking main");
-								queue.enqueue(() => ctx.respondInThread(truncateForSlack(`_${thinking}_`)), "thinking thread");
+								queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
+								queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread");
 							}
 
 							// Post text to main message and thread
 							if (text.trim()) {
 								log.logResponse(logCtx, text);
-								queue.enqueue(() => ctx.respond(truncateForSlack(text)), "response main");
-								queue.enqueue(() => ctx.respondInThread(truncateForSlack(text)), "response thread");
+								queue.enqueueMessage(text, "main", "response main");
+								queue.enqueueMessage(text, "thread", "response thread");
 							}
 						}
 						break;
@@ -583,7 +598,12 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					.join("\n") || "";
 			if (finalText.trim()) {
 				try {
-					await ctx.replaceMessage(truncateForSlack(finalText));
+					// For the main message, truncate if too long (full text is in thread)
+					const mainText =
+						finalText.length > SLACK_MAX_LENGTH
+							? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+							: finalText;
+					await ctx.replaceMessage(mainText);
 				} catch (err) {
 					const errMsg = err instanceof Error ? err.message : String(err);
 					log.logWarning("Failed to replace message with final text", errMsg);
