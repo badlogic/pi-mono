@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **HTML Export Prefix**: Exported session files now use `pi-session-` prefix (e.g., `pi-session-2025-11-13T12-27-53-866Z_xxx.html`) for easier `.gitignore` filtering ([#72](https://github.com/badlogic/pi-mono/issues/72))
+
 ## [0.10.1] - 2025-11-27
 
 ### Added
