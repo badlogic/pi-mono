@@ -15,6 +15,7 @@
 
 ### Improved
 
+- **Git Branch Display**: Footer now shows the active git branch after the directory path (e.g., `~/project (main)`). Branch is detected by reading `.git/HEAD` directly (fast, synchronous). Cache is refreshed after each assistant message to detect branch changes from git commands executed by the agent. ([#55](https://github.com/badlogic/pi-mono/issues/55))
 - **HTML Export**: Added timestamps to each message, fixed text clipping with proper word-wrapping CSS, improved font selection (`ui-monospace`, `Cascadia Code`, `Source Code Pro`), reduced font sizes for more compact display (12px base), added model switch indicators in conversation timeline, created dedicated Tokens & Cost section with cumulative statistics (input/output/cache tokens, cost breakdown by type), added context usage display showing token count and percentage for the last model used, and now displays all models used during the session. ([#51](https://github.com/badlogic/pi-mono/issues/51), [#52](https://github.com/badlogic/pi-mono/issues/52))
 
 ## [0.10.0] - 2025-11-27
