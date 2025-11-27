@@ -377,16 +377,32 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			// Track stop reason
 			let stopReason = "stop";
 
+			// Slack message limit is 40,000 characters
+			const SLACK_MAX_LENGTH = 40000;
+			const truncateForSlack = (text: string): string => {
+				if (text.length <= SLACK_MAX_LENGTH) return text;
+				return text.substring(0, SLACK_MAX_LENGTH - 100) + "\n\n_(truncated - message too long)_";
+			};
+
 			// Promise queue to ensure ctx.respond/respondInThread calls execute in order
+			// Handles errors gracefully by posting to thread instead of crashing
 			const queue = {
 				chain: Promise.resolve(),
-				enqueue<T>(fn: () => Promise<T>): Promise<T> {
-					const result = this.chain.then(fn);
-					this.chain = result.then(
-						() => {},
-						() => {},
-					); // swallow errors for chain
-					return result;
+				enqueue(fn: () => Promise<void>, errorContext: string): void {
+					this.chain = this.chain.then(async () => {
+						try {
+							await fn();
+						} catch (err) {
+							const errMsg = err instanceof Error ? err.message : String(err);
+							log.logWarning(`Slack API error (${errorContext})`, errMsg);
+							// Try to post error to thread, but don't crash if that fails too
+							try {
+								await ctx.respondInThread(`_Error: ${errMsg}_`);
+							} catch {
+								// Ignore - we tried our best
+							}
+						}
+					});
 				},
 				flush(): Promise<void> {
 					return this.chain;
@@ -421,7 +437,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						});
 
 						// Show label in main message only
-						queue.enqueue(() => ctx.respond(`_→ ${label}_`));
+						queue.enqueue(() => ctx.respond(`_→ ${label}_`), "tool label");
 						break;
 					}
 
@@ -469,11 +485,11 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 						threadMessage += "*Result:*\n```\n" + threadResult + "\n```";
 
-						queue.enqueue(() => ctx.respondInThread(threadMessage));
+						queue.enqueue(() => ctx.respondInThread(truncateForSlack(threadMessage)), "tool result thread");
 
 						// Show brief error in main message if failed
 						if (event.isError) {
-							queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`));
+							queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`), "tool error");
 						}
 						break;
 					}
@@ -528,15 +544,15 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							// Post thinking to main message and thread
 							for (const thinking of thinkingParts) {
 								log.logThinking(logCtx, thinking);
-								queue.enqueue(() => ctx.respond(`_${thinking}_`));
-								queue.enqueue(() => ctx.respondInThread(`_${thinking}_`));
+								queue.enqueue(() => ctx.respond(truncateForSlack(`_${thinking}_`)), "thinking main");
+								queue.enqueue(() => ctx.respondInThread(truncateForSlack(`_${thinking}_`)), "thinking thread");
 							}
 
 							// Post text to main message and thread
 							if (text.trim()) {
 								log.logResponse(logCtx, text);
-								queue.enqueue(() => ctx.respond(text));
-								queue.enqueue(() => ctx.respondInThread(text));
+								queue.enqueue(() => ctx.respond(truncateForSlack(text)), "response main");
+								queue.enqueue(() => ctx.respondInThread(truncateForSlack(text)), "response thread");
 							}
 						}
 						break;
@@ -566,13 +582,18 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					.map((c) => c.text)
 					.join("\n") || "";
 			if (finalText.trim()) {
-				await ctx.replaceMessage(finalText);
+				try {
+					await ctx.replaceMessage(truncateForSlack(finalText));
+				} catch (err) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log.logWarning("Failed to replace message with final text", errMsg);
+				}
 			}
 
 			// Log usage summary if there was any usage
 			if (totalUsage.cost.total > 0) {
 				const summary = log.logUsageSummary(logCtx, totalUsage);
-				queue.enqueue(() => ctx.respondInThread(summary));
+				queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
 				await queue.flush();
 			}
 
