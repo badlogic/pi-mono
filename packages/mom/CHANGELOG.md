@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2025-11-27
+
 ### Changed
 
 - Reduced tool verbosity in main Slack messages (#65)
