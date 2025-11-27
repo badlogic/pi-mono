@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.2] - 2025-11-27
+
 ### Breaking Changes
 
 - Timestamps now use Slack format (seconds.microseconds) and messages are sorted by `ts` field
