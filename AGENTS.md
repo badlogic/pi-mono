@@ -8,8 +8,9 @@
     - packages/web-ui/README.md
 - We must NEVER have type `any` anywhere, unless absolutely, positively necessary.
 - If you are working with an external API, check node_modules for the type definitions as needed instead of assuming things.
-- Always run `npm run check` in the project's root directory after making code changes.
+- Always run `npm run check` in the project's root directory after making code changes. Do not tail the output, you must get the full output to see ALL errors.
 - You must NEVER run `npm run dev` yourself. Doing is means you failed the user hard.
+- You must NEVER run `npm run build` yourself. Only ever run `npm run check`.
 - Do NOT commit unless asked to by the user
 - Keep you answers short and concise and to the point.
 - Do NOT use inline imports ala `await import("./theme/theme.js");`

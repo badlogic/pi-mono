@@ -28,6 +28,9 @@ export class Editor implements Component {
 
 	private theme: EditorTheme;
 
+	// Store last render width for cursor navigation
+	private lastWidth: number = 80;
+
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
 
@@ -63,6 +66,9 @@ export class Editor implements Component {
 	}
 
 	render(width: number): string[] {
+		// Store width for cursor navigation
+		this.lastWidth = width;
+
 		const horizontal = this.borderColor("─");
 
 		// Layout the text - use full width
@@ -363,6 +369,18 @@ export class Editor implements Component {
 			// Delete key
 			this.handleForwardDelete();
 		}
+		// Word navigation (Option/Alt + Arrow or Ctrl + Arrow)
+		// Option+Left: \x1b[1;3D or \x1bb
+		// Option+Right: \x1b[1;3C or \x1bf
+		// Ctrl+Left: \x1b[1;5D
+		// Ctrl+Right: \x1b[1;5C
+		else if (data === "\x1b[1;3D" || data === "\x1bb" || data === "\x1b[1;5D") {
+			// Word left
+			this.moveWordBackwards();
+		} else if (data === "\x1b[1;3C" || data === "\x1bf" || data === "\x1b[1;5C") {
+			// Word right
+			this.moveWordForwards();
+		}
 		// Arrow keys
 		else if (data === "\x1b[A") {
 			// Up
@@ -430,7 +448,12 @@ export class Editor implements Component {
 					const chunkStart = chunkIndex * maxLineLength;
 					const chunkEnd = chunkStart + chunk.length;
 					const cursorPos = this.state.cursorCol;
-					const hasCursorInChunk = isCurrentLine && cursorPos >= chunkStart && cursorPos <= chunkEnd;
+					const isLastChunk = chunkIndex === chunks.length - 1;
+					// For non-last chunks, cursor at chunkEnd belongs to the next chunk
+					const hasCursorInChunk =
+						isCurrentLine &&
+						cursorPos >= chunkStart &&
+						(isLastChunk ? cursorPos <= chunkEnd : cursorPos < chunkEnd);
 
 					if (hasCursorInChunk) {
 						layoutLines.push({
@@ -803,24 +826,180 @@ export class Editor implements Component {
 		}
 	}
 
+	/**
+	 * Build a mapping from visual lines to logical positions.
+	 * Returns an array where each element represents a visual line with:
+	 * - logicalLine: index into this.state.lines
+	 * - startCol: starting column in the logical line
+	 * - length: length of this visual line segment
+	 */
+	private buildVisualLineMap(width: number): Array<{ logicalLine: number; startCol: number; length: number }> {
+		const visualLines: Array<{ logicalLine: number; startCol: number; length: number }> = [];
+
+		for (let i = 0; i < this.state.lines.length; i++) {
+			const line = this.state.lines[i] || "";
+			if (line.length === 0) {
+				// Empty line still takes one visual line
+				visualLines.push({ logicalLine: i, startCol: 0, length: 0 });
+			} else if (line.length <= width) {
+				visualLines.push({ logicalLine: i, startCol: 0, length: line.length });
+			} else {
+				// Line needs wrapping
+				for (let pos = 0; pos < line.length; pos += width) {
+					const segmentLength = Math.min(width, line.length - pos);
+					visualLines.push({ logicalLine: i, startCol: pos, length: segmentLength });
+				}
+			}
+		}
+
+		return visualLines;
+	}
+
+	/**
+	 * Find the visual line index for the current cursor position.
+	 */
+	private findCurrentVisualLine(
+		visualLines: Array<{ logicalLine: number; startCol: number; length: number }>,
+	): number {
+		for (let i = 0; i < visualLines.length; i++) {
+			const vl = visualLines[i];
+			if (!vl) continue;
+			if (vl.logicalLine === this.state.cursorLine) {
+				const colInSegment = this.state.cursorCol - vl.startCol;
+				// Cursor is in this segment if it's within range
+				// For the last segment of a logical line, cursor can be at length (end position)
+				const isLastSegmentOfLine =
+					i === visualLines.length - 1 || visualLines[i + 1]?.logicalLine !== vl.logicalLine;
+				if (colInSegment >= 0 && (colInSegment < vl.length || (isLastSegmentOfLine && colInSegment <= vl.length))) {
+					return i;
+				}
+			}
+		}
+		// Fallback: return last visual line
+		return visualLines.length - 1;
+	}
+
 	private moveCursor(deltaLine: number, deltaCol: number): void {
+		const width = this.lastWidth;
+
 		if (deltaLine !== 0) {
-			const newLine = this.state.cursorLine + deltaLine;
-			if (newLine >= 0 && newLine < this.state.lines.length) {
-				this.state.cursorLine = newLine;
-				// Clamp cursor column to new line length
-				const line = this.state.lines[this.state.cursorLine] || "";
-				this.state.cursorCol = Math.min(this.state.cursorCol, line.length);
+			// Build visual line map for navigation
+			const visualLines = this.buildVisualLineMap(width);
+			const currentVisualLine = this.findCurrentVisualLine(visualLines);
+
+			// Calculate column position within current visual line
+			const currentVL = visualLines[currentVisualLine];
+			const visualCol = currentVL ? this.state.cursorCol - currentVL.startCol : 0;
+
+			// Move to target visual line
+			const targetVisualLine = currentVisualLine + deltaLine;
+
+			if (targetVisualLine >= 0 && targetVisualLine < visualLines.length) {
+				const targetVL = visualLines[targetVisualLine];
+				if (targetVL) {
+					this.state.cursorLine = targetVL.logicalLine;
+					// Try to maintain visual column position, clamped to line length
+					const targetCol = targetVL.startCol + Math.min(visualCol, targetVL.length);
+					const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+					this.state.cursorCol = Math.min(targetCol, logicalLine.length);
+				}
 			}
 		}
 
 		if (deltaCol !== 0) {
-			// Move column
-			const newCol = this.state.cursorCol + deltaCol;
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
-			const maxCol = currentLine.length;
-			this.state.cursorCol = Math.max(0, Math.min(maxCol, newCol));
+
+			if (deltaCol > 0) {
+				// Moving right
+				if (this.state.cursorCol < currentLine.length) {
+					this.state.cursorCol++;
+				} else if (this.state.cursorLine < this.state.lines.length - 1) {
+					// Wrap to start of next logical line
+					this.state.cursorLine++;
+					this.state.cursorCol = 0;
+				}
+			} else {
+				// Moving left
+				if (this.state.cursorCol > 0) {
+					this.state.cursorCol--;
+				} else if (this.state.cursorLine > 0) {
+					// Wrap to end of previous logical line
+					this.state.cursorLine--;
+					const prevLine = this.state.lines[this.state.cursorLine] || "";
+					this.state.cursorCol = prevLine.length;
+				}
+			}
 		}
+	}
+
+	private isWordBoundary(char: string): boolean {
+		return /\s/.test(char) || /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+	}
+
+	private moveWordBackwards(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		// If at start of line, move to end of previous line
+		if (this.state.cursorCol === 0) {
+			if (this.state.cursorLine > 0) {
+				this.state.cursorLine--;
+				const prevLine = this.state.lines[this.state.cursorLine] || "";
+				this.state.cursorCol = prevLine.length;
+			}
+			return;
+		}
+
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		let newCol = this.state.cursorCol;
+		const lastChar = textBeforeCursor[newCol - 1] ?? "";
+
+		// If immediately on whitespace or punctuation, skip that single boundary char
+		if (this.isWordBoundary(lastChar)) {
+			newCol -= 1;
+		}
+
+		// Now skip the "word" (non-boundary characters)
+		while (newCol > 0) {
+			const ch = textBeforeCursor[newCol - 1] ?? "";
+			if (this.isWordBoundary(ch)) {
+				break;
+			}
+			newCol -= 1;
+		}
+
+		this.state.cursorCol = newCol;
+	}
+
+	private moveWordForwards(): void {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		// If at end of line, move to start of next line
+		if (this.state.cursorCol >= currentLine.length) {
+			if (this.state.cursorLine < this.state.lines.length - 1) {
+				this.state.cursorLine++;
+				this.state.cursorCol = 0;
+			}
+			return;
+		}
+
+		let newCol = this.state.cursorCol;
+		const charAtCursor = currentLine[newCol] ?? "";
+
+		// If on whitespace or punctuation, skip it
+		if (this.isWordBoundary(charAtCursor)) {
+			newCol += 1;
+		}
+
+		// Skip the "word" (non-boundary characters)
+		while (newCol < currentLine.length) {
+			const ch = currentLine[newCol] ?? "";
+			if (this.isWordBoundary(ch)) {
+				break;
+			}
+			newCol += 1;
+		}
+
+		this.state.cursorCol = newCol;
 	}
 
 	// Helper method to check if cursor is at start of message (for slash command detection)

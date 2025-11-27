@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Editor Cursor Navigation**: Fixed broken up/down arrow key navigation in the editor when lines wrap. Previously, pressing up/down would move between logical lines instead of visual (wrapped) lines, causing the cursor to jump unexpectedly. Now cursor navigation is based on rendered lines. Also fixed a bug where the cursor would appear on two lines simultaneously when positioned at a wrap boundary. Added word by word navigation via Option+Left/Right or Ctrl+Left/Right. ([#61](https://github.com/badlogic/pi-mono/pull/61))
 - **Edit Diff Line Number Alignment**: Fixed two issues with diff display in the edit tool:
   1. Line numbers were incorrect for edits far from the start of a file (e.g., showing 1, 2, 3 instead of 336, 337, 338). The skip count for context lines was being added after displaying lines instead of before.
   2. When diff lines wrapped due to terminal width, the line number prefix lost its leading space alignment, and code indentation (spaces/tabs after line numbers) was lost. Rewrote `splitIntoTokensWithAnsi` in `pi-tui` to preserve whitespace as separate tokens instead of discarding it, so wrapped lines maintain proper alignment and indentation.

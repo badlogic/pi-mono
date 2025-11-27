@@ -517,24 +517,31 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 
 ### Keyboard Shortcuts
 
-- **Ctrl+W**: Delete word backwards (stops at whitespace or punctuation)
-- **Option+Backspace** (Ghostty): Delete word backwards (same as Ctrl+W)
+**Navigation:**
+- **Arrow keys**: Move cursor (Up/Down navigate visual lines, Left/Right move by character)
+- **Option+Left** / **Ctrl+Left**: Move word backwards
+- **Option+Right** / **Ctrl+Right**: Move word forwards
+- **Ctrl+A** / **Home**: Jump to start of line
+- **Ctrl+E** / **End**: Jump to end of line
+
+**Editing:**
+- **Enter**: Send message
+- **Shift+Enter** / **Alt+Enter**: Insert new line (multi-line input)
+- **Backspace**: Delete character backwards
+- **Delete** (or **Fn+Backspace**): Delete character forwards
+- **Ctrl+W** / **Option+Backspace**: Delete word backwards (stops at whitespace or punctuation)
 - **Ctrl+U**: Delete to start of line (at line start: merge with previous line)
-- **Cmd+Backspace** (Ghostty): Delete to start of line (same as Ctrl+U)
 - **Ctrl+K**: Delete to end of line (at line end: merge with next line)
+
+**Completion:**
+- **Tab**: Path completion / Apply autocomplete selection
+- **Escape**: Cancel autocomplete (when autocomplete is active)
+
+**Other:**
 - **Ctrl+C**: Clear editor (first press) / Exit pi (second press)
-- **Tab**: Path completion
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Ctrl+P**: Cycle models (use `--models` to scope)
 - **Ctrl+O**: Toggle tool output expansion (collapsed ↔ full output)
-- **Enter**: Send message
-- **Shift+Enter**: Insert new line (multi-line input)
-- **Backspace**: Delete character backwards
-- **Delete** (or **Fn+Backspace**): Delete character forwards
-- **Arrow keys**: Move cursor (Up/Down/Left/Right)
-- **Ctrl+A** / **Home** / **Cmd+Left** (macOS): Jump to start of line
-- **Ctrl+E** / **End** / **Cmd+Right** (macOS): Jump to end of line
-- **Escape**: Cancel autocomplete (when autocomplete is active)
 
 ## Project Context Files
 
