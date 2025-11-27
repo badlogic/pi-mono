@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Edit Diff Line Number Alignment**: Fixed two issues with diff display in the edit tool:
+  1. Line numbers were incorrect for edits far from the start of a file (e.g., showing 1, 2, 3 instead of 336, 337, 338). The skip count for context lines was being added after displaying lines instead of before.
+  2. When diff lines wrapped due to terminal width, the line number prefix lost its leading space alignment, and code indentation (spaces/tabs after line numbers) was lost. Rewrote `splitIntoTokensWithAnsi` in `pi-tui` to preserve whitespace as separate tokens instead of discarding it, so wrapped lines maintain proper alignment and indentation.
+
 ## [0.10.0] - 2025-11-27
 
 ### Added
