@@ -1,19 +1,30 @@
-- When receiving the first user message, you MUST read README.md in full. Then ask the user which module(s) they want to work on. Then you MUST read the corresponding README.md files in full, in parallel:
-    - packages/ai/README.md
-    - packages/tui/README.md
-    - packages/agent/README.md
-    - packages/coding-agent/README.md
-    - packages/mom/README.md
-    - packages/pods/README.md
-    - packages/web-ui/README.md
-- We must NEVER have type `any` anywhere, unless absolutely, positively necessary.
-- If you are working with an external API, check node_modules for the type definitions as needed instead of assuming things.
-- Always run `npm run check` in the project's root directory after making code changes. Do not tail the output, you must get the full output to see ALL errors.
-- You must NEVER run `npm run dev` yourself. Doing is means you failed the user hard.
-- You must NEVER run `npm run build` yourself. Only ever run `npm run check`.
-- Do NOT commit unless asked to by the user
-- Keep you answers short and concise and to the point.
-- Do NOT use inline imports ala `await import("./theme/theme.js");`
-- Read `~/agent-tools/browser-tools/README.md` if you need to run an interact with a browser
-- Use GitHub CLI to interact with GitHub issues and pull requests
-- Use `tmux` (installed globally) if you need to interact with a TUI app
+# Development Rules
+
+## First Message
+Read README.md, then ask which module(s) to work on. Read those README.md files in parallel:
+- packages/ai/README.md
+- packages/tui/README.md
+- packages/agent/README.md
+- packages/coding-agent/README.md
+- packages/mom/README.md
+- packages/pods/README.md
+- packages/web-ui/README.md
+
+## Code Quality
+- No `any` types unless absolutely necessary
+- Check node_modules for external API type definitions instead of guessing
+- No inline imports like `await import("./foo.js")`
+
+## Commands
+- After code changes: `npm run check` (get full output, no tail)
+- NEVER run: `npm run dev`, `npm run build`
+- NEVER commit unless user asks
+
+## Tools
+- GitHub CLI for issues/PRs
+- Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:proxy, pkg:tui, pkg:web-ui
+- Browser tools (~/agent-tools/browser-tools/README.md): browser automation for frontend testing, web searches, fetching documentation
+- TUI interaction: use tmux
+
+## Style
+- Keep answers short and concise

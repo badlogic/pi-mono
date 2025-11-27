@@ -9,6 +9,10 @@
   1. Line numbers were incorrect for edits far from the start of a file (e.g., showing 1, 2, 3 instead of 336, 337, 338). The skip count for context lines was being added after displaying lines instead of before.
   2. When diff lines wrapped due to terminal width, the line number prefix lost its leading space alignment, and code indentation (spaces/tabs after line numbers) was lost. Rewrote `splitIntoTokensWithAnsi` in `pi-tui` to preserve whitespace as separate tokens instead of discarding it, so wrapped lines maintain proper alignment and indentation.
 
+### Improved
+
+- **HTML Export**: Added timestamps to each message, fixed text clipping with proper word-wrapping CSS, improved font selection (`ui-monospace`, `Cascadia Code`, `Source Code Pro`), reduced font sizes for more compact display (12px base), added model switch indicators in conversation timeline, created dedicated Tokens & Cost section with cumulative statistics (input/output/cache tokens, cost breakdown by type), added context usage display showing token count and percentage for the last model used, and now displays all models used during the session. ([#51](https://github.com/badlogic/pi-mono/issues/51), [#52](https://github.com/badlogic/pi-mono/issues/52))
+
 ## [0.10.0] - 2025-11-27
 
 ### Added
