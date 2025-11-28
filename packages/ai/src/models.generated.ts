@@ -141,6 +141,23 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 4096,
 		} satisfies Model<"anthropic-messages">,
+		"claude-opus-4-5-20251101": {
+			id: "claude-opus-4-5-20251101",
+			name: "Claude Opus 4.5",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			baseUrl: "https://api.anthropic.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 200000,
+			maxTokens: 64000,
+		} satisfies Model<"anthropic-messages">,
 		"claude-sonnet-4-5": {
 			id: "claude-sonnet-4-5",
 			name: "Claude Sonnet 4.5 (latest)",
@@ -2023,7 +2040,7 @@ export const MODELS = {
 				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
-			maxTokens: 32000,
+			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
 		"allenai/olmo-3-7b-instruct": {
 			id: "allenai/olmo-3-7b-instruct",

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prompt Restoration on API Key Error**: When submitting a message fails due to missing API key, the prompt is now restored to the editor instead of being lost. ([#77](https://github.com/badlogic/pi-mono/issues/77))
+
 ## [0.10.2] - 2025-11-27
 
 ### Changed
