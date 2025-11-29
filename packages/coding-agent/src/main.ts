@@ -7,7 +7,7 @@ import { homedir } from "os";
 import { dirname, extname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
+import { findModel, getApiKeyForModel, getAvailableModels, getChatGptOAuthContext } from "./model-config.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { initTheme } from "./theme/theme.js";
@@ -1115,6 +1115,10 @@ export async function main(args: string[]) {
 					);
 				}
 				return key;
+			},
+			// OAuth context for ChatGPT backend (OpenAI OAuth tokens)
+			getOAuthContext: async (model) => {
+				return getChatGptOAuthContext(model);
 			},
 		}),
 	});

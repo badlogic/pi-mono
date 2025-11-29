@@ -7,6 +7,7 @@ export interface OAuthCredentials {
 	refresh: string;
 	access: string;
 	expires: number;
+	accountId?: string; // Used by OpenAI for the chatgpt-account-id header
 }
 
 interface OAuthStorageFormat {

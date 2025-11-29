@@ -37,6 +37,16 @@ export interface StreamOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/**
+	 * Additional headers to send with API requests.
+	 * These are merged with model.headers, with these taking precedence.
+	 */
+	headers?: Record<string, string>;
+	/**
+	 * Override the base URL from the model.
+	 * Used for OAuth flows that require different endpoints (e.g., ChatGPT backend for OpenAI OAuth).
+	 */
+	baseUrlOverride?: string;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

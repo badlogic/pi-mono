@@ -1,11 +1,21 @@
 import {
 	type AgentContext,
+	type AgentEvent,
 	type AgentLoopConfig,
 	agentLoop,
 	type Message,
+	type Model,
 	type UserMessage,
 } from "@mariozechner/pi-ai";
 import type { AgentRunConfig, AgentTransport } from "./types.js";
+
+/**
+ * OAuth context for providers that require special endpoints/headers (e.g., ChatGPT backend for OpenAI OAuth)
+ */
+export interface OAuthContext {
+	baseUrl: string;
+	headers: Record<string, string>;
+}
 
 export interface ProviderTransportOptions {
 	/**
@@ -13,6 +23,13 @@ export interface ProviderTransportOptions {
 	 * If not provided, transport will try to use environment variables.
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Function to retrieve OAuth context for a model.
+	 * Returns base URL and headers needed for OAuth flows (e.g., ChatGPT backend for OpenAI OAuth).
+	 * If null is returned, standard API endpoint is used.
+	 */
+	getOAuthContext?: (model: Model<any>) => Promise<OAuthContext | null> | OAuthContext | null;
 
 	/**
 	 * Optional CORS proxy URL for browser environments.
@@ -33,7 +50,12 @@ export class ProviderTransport implements AgentTransport {
 		this.options = options;
 	}
 
-	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+	async *run(
+		messages: Message[],
+		userMessage: Message,
+		cfg: AgentRunConfig,
+		signal?: AbortSignal,
+	): AsyncIterable<AgentEvent> {
 		// Get API key
 		let apiKey: string | undefined;
 		if (this.options.getApiKey) {
@@ -42,6 +64,12 @@ export class ProviderTransport implements AgentTransport {
 
 		if (!apiKey) {
 			throw new Error(`No API key found for provider: ${cfg.model.provider}`);
+		}
+
+		// Check for OAuth context (e.g., ChatGPT backend for OpenAI OAuth)
+		let oauthContext: OAuthContext | null = null;
+		if (this.options.getOAuthContext) {
+			oauthContext = await this.options.getOAuthContext(cfg.model);
 		}
 
 		// Clone model and modify baseUrl if CORS proxy is enabled
@@ -65,6 +93,9 @@ export class ProviderTransport implements AgentTransport {
 			reasoning: cfg.reasoning,
 			apiKey,
 			getQueuedMessages: cfg.getQueuedMessages,
+			// Pass OAuth context if available (for ChatGPT backend, etc.)
+			baseUrlOverride: oauthContext?.baseUrl,
+			headers: oauthContext?.headers,
 		};
 
 		// Yield events from agentLoop

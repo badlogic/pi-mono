@@ -6,6 +6,7 @@ export {
 	type AgentTransport,
 	AppTransport,
 	type AppTransportOptions,
+	type OAuthContext,
 	ProviderTransport,
 	type ProviderTransportOptions,
 	type ProxyAssistantMessageEvent,

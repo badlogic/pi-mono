@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { generatePKCE } from "./pkce.js";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -6,15 +6,6 @@ const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
 const REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback";
 const SCOPES = "org:create_api_key user:profile user:inference";
-
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { verifier: string; challenge: string } {
-	const verifier = randomBytes(32).toString("base64url");
-	const challenge = createHash("sha256").update(verifier).digest("base64url");
-	return { verifier, challenge };
-}
 
 /**
  * Login with Anthropic OAuth (device code flow)

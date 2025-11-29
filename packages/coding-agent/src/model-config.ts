@@ -4,7 +4,7 @@ import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { getOAuthToken } from "./oauth/index.js";
+import { getOAuthToken, getOpenAIOAuthCredentials, type OpenAICredentials } from "./oauth/index.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -252,8 +252,97 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 		// 3. Fall back to ANTHROPIC_API_KEY env var
 	}
 
+	// For OpenAI, check OAuth first
+	if (model.provider === "openai") {
+		// 1. Check OAuth storage (auto-refresh if needed)
+		const oauthToken = await getOAuthToken("openai");
+		if (oauthToken) {
+			return oauthToken;
+		}
+
+		// 2. Check OPENAI_OAUTH_TOKEN env var (manual OAuth token)
+		const oauthEnv = process.env.OPENAI_OAUTH_TOKEN;
+		if (oauthEnv) {
+			return oauthEnv;
+		}
+
+		// 3. Fall back to OPENAI_API_KEY env var
+	}
+
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai
 	return getApiKey(model.provider as KnownProvider);
+}
+
+/**
+ * Get OpenAI OAuth credentials for API calls (includes accountId for headers)
+ */
+export async function getOpenAICredentialsForModel(model: Model<Api>): Promise<OpenAICredentials | null> {
+	if (model.provider !== "openai") {
+		return null;
+	}
+
+	return await getOpenAIOAuthCredentials();
+}
+
+/**
+ * ChatGPT backend OAuth context for API calls.
+ * When using OpenAI OAuth tokens, requests must go to ChatGPT backend with special headers.
+ */
+export interface ChatGptOAuthContext {
+	baseUrl: string;
+	headers: Record<string, string>;
+}
+
+// ChatGPT backend base URL for OAuth tokens (from official Codex CLI)
+const CHATGPT_BACKEND_URL = "https://chatgpt.com/backend-api/codex";
+
+/**
+ * Generate a unique conversation ID for ChatGPT backend
+ */
+function generateConversationId(): string {
+	return `conv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+}
+
+// Cached conversation ID for the session
+let sessionConversationId: string | null = null;
+
+/**
+ * Get the ChatGPT OAuth context for a model (base URL and required headers).
+ * Returns null if not using OpenAI OAuth or if credentials are missing.
+ */
+export async function getChatGptOAuthContext(model: Model<Api>): Promise<ChatGptOAuthContext | null> {
+	if (model.provider !== "openai") {
+		return null;
+	}
+
+	const credentials = await getOpenAIOAuthCredentials();
+	if (!credentials) {
+		return null;
+	}
+
+	// Generate or reuse conversation ID for the session
+	if (!sessionConversationId) {
+		sessionConversationId = generateConversationId();
+	}
+
+	// Build headers required for ChatGPT backend
+	// Based on numman-ali/opencode-openai-codex-auth and official Codex CLI
+	// Headers must be prefixed with "openai-"
+	const headers: Record<string, string> = {
+		"openai-originator": "codex_cli_rs",
+		"openai-session-id": sessionConversationId,
+		"openai-beta": "responses-1.0",
+	};
+
+	// Add account ID header if available
+	if (credentials.accountId) {
+		headers["openai-chatgpt-account-id"] = credentials.accountId;
+	}
+
+	return {
+		baseUrl: CHATGPT_BACKEND_URL,
+		headers,
+	};
 }
 
 /**

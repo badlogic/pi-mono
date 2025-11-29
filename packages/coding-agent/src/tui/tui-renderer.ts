@@ -18,7 +18,7 @@ import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
-import { listOAuthProviders, login, logout } from "../oauth/index.js";
+import { getOAuthProviders, listOAuthProviders, login, loginWithBrowser, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
@@ -1251,50 +1251,69 @@ export class TuiRenderer {
 				this.hideOAuthSelector();
 
 				if (mode === "login") {
+					// Get flow type for the provider
+					const providers = getOAuthProviders();
+					const providerInfo = providers.find((p) => p.id === providerId);
+					const flowType = providerInfo?.flowType || "manual";
+
 					// Handle login
 					this.chatContainer.addChild(new Spacer(1));
 					this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
 					this.ui.requestRender();
 
 					try {
-						await login(
-							providerId,
-							(url: string) => {
-								// Show auth URL to user
+						if (flowType === "browser") {
+							// Browser flow (OpenAI) - automatic callback
+							await loginWithBrowser(providerId, (status: string) => {
 								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
-								this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
-								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(
-									new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
-								);
+								this.chatContainer.addChild(new Text(theme.fg("dim", status), 1, 0));
 								this.ui.requestRender();
-
-								// Open URL in browser
-								const openCmd =
-									process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-								exec(`${openCmd} "${url}"`);
-							},
-							async () => {
-								// Prompt for code with a simple Input
-								return new Promise<string>((resolve) => {
-									const codeInput = new Input();
-									codeInput.onSubmit = () => {
-										const code = codeInput.getValue();
-										// Restore editor
-										this.editorContainer.clear();
-										this.editorContainer.addChild(this.editor);
-										this.ui.setFocus(this.editor);
-										resolve(code);
-									};
-
-									this.editorContainer.clear();
-									this.editorContainer.addChild(codeInput);
-									this.ui.setFocus(codeInput);
+							});
+						} else {
+							// Manual flow (Anthropic) - paste code
+							await login(
+								providerId,
+								(url: string) => {
+									// Show auth URL to user
+									this.chatContainer.addChild(new Spacer(1));
+									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
+									this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
+									this.chatContainer.addChild(new Spacer(1));
+									this.chatContainer.addChild(
+										new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
+									);
 									this.ui.requestRender();
-								});
-							},
-						);
+
+									// Open URL in browser
+									const openCmd =
+										process.platform === "darwin"
+											? "open"
+											: process.platform === "win32"
+												? "start"
+												: "xdg-open";
+									exec(`${openCmd} "${url}"`);
+								},
+								async () => {
+									// Prompt for code with a simple Input
+									return new Promise<string>((resolve) => {
+										const codeInput = new Input();
+										codeInput.onSubmit = () => {
+											const code = codeInput.getValue();
+											// Restore editor
+											this.editorContainer.clear();
+											this.editorContainer.addChild(this.editor);
+											this.ui.setFocus(this.editor);
+											resolve(code);
+										};
+
+										this.editorContainer.clear();
+										this.editorContainer.addChild(codeInput);
+										this.ui.setFocus(codeInput);
+										this.ui.requestRender();
+									});
+								},
+							);
+						}
 
 						// Success
 						this.chatContainer.addChild(new Spacer(1));

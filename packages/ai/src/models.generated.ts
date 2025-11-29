@@ -876,6 +876,23 @@ export const MODELS = {
 			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-responses">,
+		"gpt-5.1-codex-max": {
+			id: "gpt-5.1-codex-max",
+			name: "GPT-5.1 Codex Max",
+			api: "openai-responses",
+			provider: "openai",
+			baseUrl: "https://api.openai.com/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 10,
+				cacheRead: 0.125,
+				cacheWrite: 0,
+			},
+			contextWindow: 400000,
+			maxTokens: 128000,
+		} satisfies Model<"openai-responses">,
 		"o3-mini": {
 			id: "o3-mini",
 			name: "o3-mini",
