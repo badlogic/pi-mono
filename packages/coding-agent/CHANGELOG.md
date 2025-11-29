@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2025-11-29
 
 ### Added
 
@@ -15,6 +15,7 @@
 
 - **Prompt Restoration on API Key Error**: When submitting a message fails due to missing API key, the prompt is now restored to the editor instead of being lost. ([#77](https://github.com/badlogic/pi-mono/issues/77))
 - **File `@` Autocomplete Performance**: Fixed severe UI jank when using `@` for file attachment in large repositories. The file picker now uses `fd` (a fast file finder) instead of synchronous directory walking with minimatch. On a 55k file repo, search time dropped from ~900ms to ~10ms per keystroke. If `fd` is not installed, it will be automatically downloaded to `~/.pi/agent/tools/` on first use. ([#69](https://github.com/badlogic/pi-mono/issues/69))
+- **File Selector Styling**: Selected items in file autocomplete (`@` and Tab) now use consistent accent color for the entire line instead of mixed colors.
 
 ## [0.10.2] - 2025-11-27
 
