@@ -14,6 +14,9 @@
 		},
 		{
 			"path": "../../agent-tools/browser-tools"
+		},
+		{
+			"path": "../pi-terminal-bench"
 		}
 	],
 	"settings": {}
