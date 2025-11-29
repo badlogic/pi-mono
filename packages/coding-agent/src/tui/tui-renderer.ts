@@ -14,10 +14,10 @@ import {
 	TUI,
 } from "@mariozechner/pi-tui";
 
-import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
+import { openUrl } from "../oauth/browser.js";
 import { getOAuthProviders, listOAuthProviders, login, loginWithBrowser, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
@@ -1304,7 +1304,9 @@ export class TuiRenderer {
 			providerId,
 			(url: string) => {
 				this.showAuthUrl(url);
-				this.openBrowser(url);
+				openUrl(url).catch(() => {
+					// Ignore browser open errors - user can copy URL manually
+				});
 			},
 			() => this.promptForAuthCode(),
 		);
@@ -1317,11 +1319,6 @@ export class TuiRenderer {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0));
 		this.ui.requestRender();
-	}
-
-	private openBrowser(url: string): void {
-		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-		exec(`${openCmd} "${url}"`);
 	}
 
 	private async promptForAuthCode(): Promise<string> {
