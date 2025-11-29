@@ -1228,8 +1228,7 @@ export class TuiRenderer {
 	}
 
 	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
-		// For logout mode, filter to only show logged-in providers
-		let providersToShow: string[] = [];
+		// For logout mode, only show logged-in providers
 		if (mode === "logout") {
 			const loggedInProviders = listOAuthProviders();
 			if (loggedInProviders.length === 0) {
@@ -1240,113 +1239,21 @@ export class TuiRenderer {
 				this.ui.requestRender();
 				return;
 			}
-			providersToShow = loggedInProviders;
 		}
 
 		// Create OAuth selector
 		this.oauthSelector = new OAuthSelectorComponent(
 			mode,
 			async (providerId: any) => {
-				// Hide selector first
 				this.hideOAuthSelector();
 
 				if (mode === "login") {
-					// Get flow type for the provider
-					const providers = getOAuthProviders();
-					const providerInfo = providers.find((p) => p.id === providerId);
-					const flowType = providerInfo?.flowType || "manual";
-
-					// Handle login
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
-					this.ui.requestRender();
-
-					try {
-						if (flowType === "browser") {
-							// Browser flow (OpenAI) - automatic callback
-							await loginWithBrowser(providerId, (status: string) => {
-								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(new Text(theme.fg("dim", status), 1, 0));
-								this.ui.requestRender();
-							});
-						} else {
-							// Manual flow (Anthropic) - paste code
-							await login(
-								providerId,
-								(url: string) => {
-									// Show auth URL to user
-									this.chatContainer.addChild(new Spacer(1));
-									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
-									this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
-									this.chatContainer.addChild(new Spacer(1));
-									this.chatContainer.addChild(
-										new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
-									);
-									this.ui.requestRender();
-
-									// Open URL in browser
-									const openCmd =
-										process.platform === "darwin"
-											? "open"
-											: process.platform === "win32"
-												? "start"
-												: "xdg-open";
-									exec(`${openCmd} "${url}"`);
-								},
-								async () => {
-									// Prompt for code with a simple Input
-									return new Promise<string>((resolve) => {
-										const codeInput = new Input();
-										codeInput.onSubmit = () => {
-											const code = codeInput.getValue();
-											// Restore editor
-											this.editorContainer.clear();
-											this.editorContainer.addChild(this.editor);
-											this.ui.setFocus(this.editor);
-											resolve(code);
-										};
-
-										this.editorContainer.clear();
-										this.editorContainer.addChild(codeInput);
-										this.ui.setFocus(codeInput);
-										this.ui.requestRender();
-									});
-								},
-							);
-						}
-
-						// Success
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(
-							new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
-						);
-						this.chatContainer.addChild(
-							new Text(theme.fg("dim", `Tokens saved to ~/.pi/agent/oauth.json`), 1, 0),
-						);
-						this.ui.requestRender();
-					} catch (error: any) {
-						this.showError(`Login failed: ${error.message}`);
-					}
+					await this.handleOAuthLogin(providerId);
 				} else {
-					// Handle logout
-					try {
-						await logout(providerId);
-
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(
-							new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
-						);
-						this.chatContainer.addChild(
-							new Text(theme.fg("dim", `Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
-						);
-						this.ui.requestRender();
-					} catch (error: any) {
-						this.showError(`Logout failed: ${error.message}`);
-					}
+					await this.handleOAuthLogout(providerId);
 				}
 			},
 			() => {
-				// Cancel - just hide the selector
 				this.hideOAuthSelector();
 				this.ui.requestRender();
 			},
@@ -1357,6 +1264,97 @@ export class TuiRenderer {
 		this.editorContainer.addChild(this.oauthSelector);
 		this.ui.setFocus(this.oauthSelector);
 		this.ui.requestRender();
+	}
+
+	private async handleOAuthLogin(providerId: any): Promise<void> {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
+		this.ui.requestRender();
+
+		try {
+			const providers = getOAuthProviders();
+			const providerInfo = providers.find((p) => p.id === providerId);
+			const flowType = providerInfo?.flowType || "manual";
+
+			if (flowType === "browser") {
+				await this.handleBrowserFlow(providerId);
+			} else {
+				await this.handleManualFlow(providerId);
+			}
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0));
+			this.chatContainer.addChild(new Text(theme.fg("dim", `Tokens saved to ~/.pi/agent/oauth.json`), 1, 0));
+			this.ui.requestRender();
+		} catch (error: any) {
+			this.showError(`Login failed: ${error.message}`);
+		}
+	}
+
+	private async handleBrowserFlow(providerId: any): Promise<void> {
+		await loginWithBrowser(providerId, (status: string) => {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("dim", status), 1, 0));
+			this.ui.requestRender();
+		});
+	}
+
+	private async handleManualFlow(providerId: any): Promise<void> {
+		await login(
+			providerId,
+			(url: string) => {
+				this.showAuthUrl(url);
+				this.openBrowser(url);
+			},
+			() => this.promptForAuthCode(),
+		);
+	}
+
+	private showAuthUrl(url: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private openBrowser(url: string): void {
+		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+		exec(`${openCmd} "${url}"`);
+	}
+
+	private async promptForAuthCode(): Promise<string> {
+		return new Promise<string>((resolve) => {
+			const codeInput = new Input();
+			codeInput.onSubmit = () => {
+				const code = codeInput.getValue();
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.ui.setFocus(this.editor);
+				resolve(code);
+			};
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(codeInput);
+			this.ui.setFocus(codeInput);
+			this.ui.requestRender();
+		});
+	}
+
+	private async handleOAuthLogout(providerId: any): Promise<void> {
+		try {
+			await logout(providerId);
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0));
+			this.chatContainer.addChild(
+				new Text(theme.fg("dim", `Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
+			);
+			this.ui.requestRender();
+		} catch (error: any) {
+			this.showError(`Logout failed: ${error.message}`);
+		}
 	}
 
 	private hideOAuthSelector(): void {
