@@ -145,14 +145,14 @@ export class SelectList implements Component {
 	}
 
 	handleInput(keyData: string): void {
-		// Up arrow
+		// Up arrow - wrap to bottom when at top
 		if (keyData === "\x1b[A") {
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+			this.selectedIndex = this.selectedIndex === 0 ? this.filteredItems.length - 1 : this.selectedIndex - 1;
 			this.notifySelectionChange();
 		}
-		// Down arrow
+		// Down arrow - wrap to top when at bottom
 		else if (keyData === "\x1b[B") {
-			this.selectedIndex = Math.min(this.filteredItems.length - 1, this.selectedIndex + 1);
+			this.selectedIndex = this.selectedIndex === this.filteredItems.length - 1 ? 0 : this.selectedIndex + 1;
 			this.notifySelectionChange();
 		}
 		// Enter

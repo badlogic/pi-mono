@@ -185,14 +185,14 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	handleInput(keyData: string): void {
-		// Up arrow
+		// Up arrow - wrap to bottom when at top
 		if (keyData === "\x1b[A") {
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+			this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 		}
-		// Down arrow
+		// Down arrow - wrap to top when at bottom
 		else if (keyData === "\x1b[B") {
-			this.selectedIndex = Math.min(this.filteredModels.length - 1, this.selectedIndex + 1);
+			this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 		}
 		// Enter
