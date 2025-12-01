@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.4] - 2025-12-01
+
+### Improved
+
+- **TUI Crash Diagnostics**: When a render error occurs (line exceeds terminal width), all rendered lines are now written to `~/.pi/agent/pi-crash.log` with their indices and visible widths for easier debugging.
+
+### Fixed
+
+- **Session Selector Crash with Wide Characters**: Fixed crash when running `pi -r` to resume sessions containing emojis, CJK characters, or other wide Unicode characters. The session list was using character count instead of visible terminal width for truncation, causing lines to exceed terminal width. Added `truncateToWidth()` utility that properly handles ANSI codes and wide characters. ([#85](https://github.com/badlogic/pi-mono/issues/85))
+
 ## [0.11.3] - 2025-12-01
 
 ### Added

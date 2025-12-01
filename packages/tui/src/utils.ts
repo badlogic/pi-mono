@@ -285,3 +285,60 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 	const withPadding = line + padding;
 	return bgFn(withPadding);
 }
+
+/**
+ * Truncate text to fit within a maximum visible width, adding ellipsis if needed.
+ * Properly handles ANSI escape codes (they don't count toward width).
+ *
+ * @param text - Text to truncate (may contain ANSI codes)
+ * @param maxWidth - Maximum visible width
+ * @param ellipsis - Ellipsis string to append when truncating (default: "...")
+ * @returns Truncated text with ellipsis if it exceeded maxWidth
+ */
+export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "..."): string {
+	const textVisibleWidth = visibleWidth(text);
+
+	if (textVisibleWidth <= maxWidth) {
+		return text;
+	}
+
+	const ellipsisWidth = visibleWidth(ellipsis);
+	const targetWidth = maxWidth - ellipsisWidth;
+
+	if (targetWidth <= 0) {
+		return ellipsis.substring(0, maxWidth);
+	}
+
+	let currentWidth = 0;
+	let truncateAt = 0;
+	let i = 0;
+
+	while (i < text.length && currentWidth < targetWidth) {
+		// Skip ANSI escape sequences (include them in output but don't count width)
+		if (text[i] === "\x1b" && text[i + 1] === "[") {
+			let j = i + 2;
+			while (j < text.length && !/[a-zA-Z]/.test(text[j]!)) {
+				j++;
+			}
+			// Include the final letter of the escape sequence
+			j++;
+			truncateAt = j;
+			i = j;
+			continue;
+		}
+
+		const char = text[i]!;
+		const charWidth = visibleWidth(char);
+
+		if (currentWidth + charWidth > targetWidth) {
+			break;
+		}
+
+		currentWidth += charWidth;
+		truncateAt = i + 1;
+		i++;
+	}
+
+	// Add reset code before ellipsis to prevent styling leaking into it
+	return text.substring(0, truncateAt) + "\x1b[0m" + ellipsis;
+}

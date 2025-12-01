@@ -2,6 +2,9 @@
  * Minimal TUI implementation with differential rendering
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { Terminal } from "./terminal.js";
 import { visibleWidth } from "./utils.js";
 
@@ -220,7 +223,20 @@ export class TUI extends Container {
 			if (i > firstChanged) buffer += "\r\n";
 			buffer += "\x1b[2K"; // Clear current line
 			if (visibleWidth(newLines[i]) > width) {
-				throw new Error(`Rendered line ${i} exceeds terminal width\n\n${newLines[i]}`);
+				// Log all lines to crash file for debugging
+				const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
+				const crashData = [
+					`Crash at ${new Date().toISOString()}`,
+					`Terminal width: ${width}`,
+					`Line ${i} visible width: ${visibleWidth(newLines[i])}`,
+					"",
+					"=== All rendered lines ===",
+					...newLines.map((line, idx) => `[${idx}] (w=${visibleWidth(line)}) ${line}`),
+					"",
+				].join("\n");
+				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
+				fs.writeFileSync(crashLogPath, crashData);
+				throw new Error(`Rendered line ${i} exceeds terminal width. Debug log written to ${crashLogPath}`);
 			}
 			buffer += newLines[i];
 		}

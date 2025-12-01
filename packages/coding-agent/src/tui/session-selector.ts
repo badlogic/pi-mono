@@ -1,4 +1,4 @@
-import { type Component, Container, Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Input, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import type { SessionManager } from "../session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -107,17 +107,17 @@ class SessionList implements Component {
 			// Normalize first message to single line
 			const normalizedMessage = session.firstMessage.replace(/\n/g, " ").trim();
 
-			// First line: cursor + message
+			// First line: cursor + message (truncate to visible width)
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const maxMsgWidth = width - 2; // Account for cursor
-			const truncatedMsg = normalizedMessage.substring(0, maxMsgWidth);
+			const maxMsgWidth = width - 2; // Account for cursor (2 visible chars)
+			const truncatedMsg = truncateToWidth(normalizedMessage, maxMsgWidth, "...");
 			const messageLine = cursor + (isSelected ? theme.bold(truncatedMsg) : truncatedMsg);
 
-			// Second line: metadata (dimmed)
+			// Second line: metadata (dimmed) - also truncate for safety
 			const modified = formatDate(session.modified);
 			const msgCount = `${session.messageCount} message${session.messageCount !== 1 ? "s" : ""}`;
 			const metadata = `  ${modified} · ${msgCount}`;
-			const metadataLine = theme.fg("dim", metadata);
+			const metadataLine = theme.fg("dim", truncateToWidth(metadata, width, ""));
 
 			lines.push(messageLine);
 			lines.push(metadataLine);
@@ -126,7 +126,8 @@ class SessionList implements Component {
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.filteredSessions.length) {
-			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredSessions.length})`);
+			const scrollText = `  (${this.selectedIndex + 1}/${this.filteredSessions.length})`;
+			const scrollInfo = theme.fg("muted", truncateToWidth(scrollText, width, ""));
 			lines.push(scrollInfo);
 		}
 

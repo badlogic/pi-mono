@@ -59,9 +59,10 @@ These commands:
 
 Complete release process:
 
-1. **Update CHANGELOG.md** (if changes affect coding-agent):
+1. **Add changes to CHANGELOG.md** (if changes affect coding-agent):
    ```bash
    # Add your changes to the [Unreleased] section in packages/coding-agent/CHANGELOG.md
+   # Always add new entries under [Unreleased], never under already-released versions
    ```
 
 2. **Bump version** (all packages):
@@ -71,10 +72,11 @@ Complete release process:
    npm run version:major    # For breaking changes
    ```
 
-3. **Update CHANGELOG.md version** (if changes affect coding-agent):
+3. **Finalize CHANGELOG.md for release** (if changes affect coding-agent):
    ```bash
-   # Move the [Unreleased] section to the new version number with today's date
+   # Change [Unreleased] to the new version number with today's date
    # e.g., ## [0.7.16] - 2025-11-17
+   # Then add a new empty [Unreleased] section at the top
    ```
 
 4. **Commit and tag**:
@@ -89,6 +91,12 @@ Complete release process:
 5. **Publish to npm**:
    ```bash
    npm run publish        # Publish all packages to npm
+   ```
+
+6. **Add new [Unreleased] section** (for next development cycle):
+   ```bash
+   # Add a new [Unreleased] section at the top of CHANGELOG.md
+   # Commit: git commit -am "Add [Unreleased] section"
    ```
 
 ## License

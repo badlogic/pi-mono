@@ -1,5 +1,5 @@
 import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { truncateToWidth, visibleWidth } from "../utils.js";
 
 /**
  * Text component that truncates to fit viewport width
@@ -41,46 +41,7 @@ export class TruncatedText implements Component {
 		}
 
 		// Truncate text if needed (accounting for ANSI codes)
-		let displayText = singleLineText;
-		const textVisibleWidth = visibleWidth(singleLineText);
-
-		if (textVisibleWidth > availableWidth) {
-			// Need to truncate - walk through the string character by character
-			let currentWidth = 0;
-			let truncateAt = 0;
-			let i = 0;
-			const ellipsisWidth = 3;
-			const targetWidth = availableWidth - ellipsisWidth;
-
-			while (i < singleLineText.length && currentWidth < targetWidth) {
-				// Skip ANSI escape sequences (include them in output but don't count width)
-				if (singleLineText[i] === "\x1b" && singleLineText[i + 1] === "[") {
-					let j = i + 2;
-					while (j < singleLineText.length && !/[a-zA-Z]/.test(singleLineText[j])) {
-						j++;
-					}
-					// Include the final letter of the escape sequence
-					j++;
-					truncateAt = j;
-					i = j;
-					continue;
-				}
-
-				const char = singleLineText[i];
-				const charWidth = visibleWidth(char);
-
-				if (currentWidth + charWidth > targetWidth) {
-					break;
-				}
-
-				currentWidth += charWidth;
-				truncateAt = i + 1;
-				i++;
-			}
-
-			// Add reset code before ellipsis to prevent styling leaking into it
-			displayText = singleLineText.substring(0, truncateAt) + "\x1b[0m...";
-		}
+		const displayText = truncateToWidth(singleLineText, availableWidth);
 
 		// Add horizontal padding
 		const leftPadding = " ".repeat(this.paddingX);
