@@ -364,7 +364,16 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			const channelId = ctx.message.channel;
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
-			const recentMessages = getRecentMessages(channelDir, 50);
+			const recentMessagesFromLog = getRecentMessages(channelDir, 50);
+
+			// Append the current message (may not be in log yet due to race condition
+			// between app_mention and message events)
+			const currentMsgDate = new Date(parseFloat(ctx.message.ts) * 1000).toISOString().substring(0, 19);
+			const currentMsgUser = ctx.message.userName || ctx.message.user;
+			const currentMsgAttachments = ctx.message.attachments.map((a) => a.local).join(",");
+			const currentMsgLine = `${currentMsgDate}\t${currentMsgUser}\t${ctx.message.rawText}\t${currentMsgAttachments}`;
+			const recentMessages = recentMessagesFromLog + "\n" + currentMsgLine;
+
 			const memory = getMemory(channelDir);
 			const systemPrompt = buildSystemPrompt(
 				workspacePath,
