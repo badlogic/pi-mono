@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.2] - 2025-12-01
+
+### Fixed
+
+- **RPC Mode Session Management**: Fixed session files not being saved in RPC mode (`--mode rpc`). Since version 0.9.0, the `agent.subscribe()` call with session management logic was only present in the TUI renderer, causing RPC mode to skip saving messages to session files. RPC mode now properly saves sessions just like interactive mode. ([#83](https://github.com/badlogic/pi-mono/issues/83))
+
 ## [0.11.1] - 2025-11-29
 
 ### Added

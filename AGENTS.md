@@ -21,6 +21,13 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - NEVER run: `npm run dev`, `npm run build`
 - NEVER commit unless user asks
 
+## GitHub Issues
+
+When creating issues:
+- Add `pkg:*` labels to indicate which package(s) the issue affects
+  - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:mom`, `pkg:pods`, `pkg:proxy`, `pkg:tui`, `pkg:web-ui`
+- If an issue spans multiple packages, add all relevant labels
+
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:proxy, pkg:tui, pkg:web-ui
