@@ -456,6 +456,71 @@ Clear the conversation context and start a fresh session:
 
 Aborts any in-flight agent work, clears all messages, and creates a new session file.
 
+### Custom Slash Commands
+
+Define reusable prompt templates as Markdown files that appear in the `/` autocomplete.
+
+**Locations:**
+- **Global:** `~/.pi/agent/commands/*.md` - available in all sessions
+- **Project:** `.pi/commands/*.md` - project-specific commands
+
+**File format:**
+
+```markdown
+---
+description: Review staged git changes
+---
+Review the staged changes (`git diff --cached`). Focus on:
+- Bugs and logic errors
+- Security issues
+- Error handling gaps
+- Code style per AGENTS.md
+```
+
+The filename (without `.md`) becomes the command name. The optional `description` frontmatter field is shown in autocomplete. If omitted, the first line of content is used.
+
+**Arguments (bash-style):**
+
+Commands support positional arguments with quote-aware parsing:
+
+```markdown
+---
+description: Create a component with features
+---
+Create a React component named $1 with these features: $@
+```
+
+Usage: `/component Button "has onClick handler" "supports disabled"`
+- `$1` = `Button`
+- `$2` = `has onClick handler`
+- `$@` = `Button has onClick handler supports disabled`
+
+**Namespacing:**
+
+Subdirectories create namespaced commands. A file at `.pi/commands/frontend/component.md` creates `/component` with description showing `(project:frontend)`.
+
+**Source indicators:**
+
+Commands show their source in autocomplete:
+- `(user)` - from `~/.pi/agent/commands/`
+- `(project)` - from `.pi/commands/`
+- `(project:subdir)` - from `.pi/commands/subdir/`
+
+**CLI usage:**
+
+Custom slash commands also work from the command line:
+
+```bash
+# Non-interactive mode
+pi -p "/review"
+
+# With arguments
+pi -p '/component Button "handles click events"'
+
+# Interactive mode with initial command
+pi "/review"
+```
+
 ## Editor Features
 
 The interactive input editor includes several productivity features:

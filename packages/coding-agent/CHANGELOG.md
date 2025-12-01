@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.11.5] - 2025-12-01
+
+### Added
+
+- **Custom Slash Commands**: Define reusable prompt templates as Markdown files. Place files in `~/.pi/agent/commands/` (global) or `.pi/commands/` (project-specific). Commands appear in `/` autocomplete with source indicators like `(user)` or `(project)`. Supports bash-style arguments (`$1`, `$2`, `$@`) with quote-aware parsing. Subdirectories create namespaced commands (e.g., `.pi/commands/frontend/component.md` shows as `(project:frontend)`). Optional `description` field in YAML frontmatter. Works from CLI as well (`pi -p "/review"`). ([#86](https://github.com/badlogic/pi-mono/issues/86))
+
 ## [0.11.4] - 2025-12-01
 
 ### Improved

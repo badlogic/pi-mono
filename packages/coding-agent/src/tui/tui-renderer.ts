@@ -21,6 +21,7 @@ import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CustomEditor } from "./custom-editor.js";
@@ -96,6 +97,9 @@ export class TuiRenderer {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
+
+	// File-based slash commands
+	private fileCommands: FileSlashCommand[] = [];
 
 	constructor(
 		agent: Agent,
@@ -179,6 +183,15 @@ export class TuiRenderer {
 			description: "Clear context and start a fresh session",
 		};
 
+		// Load file-based slash commands
+		this.fileCommands = loadSlashCommands();
+
+		// Convert file commands to SlashCommand format
+		const fileSlashCommands: SlashCommand[] = this.fileCommands.map((cmd) => ({
+			name: cmd.name,
+			description: cmd.description,
+		}));
+
 		// Setup autocomplete for file paths and slash commands
 		const autocompleteProvider = new CombinedAutocompleteProvider(
 			[
@@ -193,6 +206,7 @@ export class TuiRenderer {
 				logoutCommand,
 				queueCommand,
 				clearCommand,
+				...fileSlashCommands,
 			],
 			process.cwd(),
 			fdPath,
@@ -400,6 +414,9 @@ export class TuiRenderer {
 				this.editor.setText("");
 				return;
 			}
+
+			// Check for file-based slash commands
+			text = expandSlashCommand(text, this.fileCommands);
 
 			// Normal message submission - validate model and API key first
 			const currentModel = this.agent.state.model;

@@ -11,6 +11,7 @@ import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
+import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
 import { initTheme } from "./theme/theme.js";
 import { allTools, codingTools, type ToolName } from "./tools/index.js";
 import { ensureTool } from "./tools-manager.js";
@@ -732,10 +733,13 @@ async function runInteractiveMode(
 		renderer.showWarning(modelFallbackMessage);
 	}
 
+	// Load file-based slash commands for expansion
+	const fileCommands = loadSlashCommands();
+
 	// Process initial message with attachments if provided (from @file args)
 	if (initialMessage) {
 		try {
-			await agent.prompt(initialMessage, initialAttachments);
+			await agent.prompt(expandSlashCommand(initialMessage, fileCommands), initialAttachments);
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			renderer.showError(errorMessage);
@@ -745,7 +749,7 @@ async function runInteractiveMode(
 	// Process remaining initial messages if provided (from CLI args)
 	for (const message of initialMessages) {
 		try {
-			await agent.prompt(message);
+			await agent.prompt(expandSlashCommand(message, fileCommands));
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			renderer.showError(errorMessage);
@@ -775,6 +779,9 @@ async function runSingleShotMode(
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 ): Promise<void> {
+	// Load file-based slash commands for expansion
+	const fileCommands = loadSlashCommands();
+
 	if (mode === "json") {
 		// Subscribe to all events and output as JSON
 		agent.subscribe((event) => {
@@ -785,12 +792,12 @@ async function runSingleShotMode(
 
 	// Send initial message with attachments if provided
 	if (initialMessage) {
-		await agent.prompt(initialMessage, initialAttachments);
+		await agent.prompt(expandSlashCommand(initialMessage, fileCommands), initialAttachments);
 	}
 
 	// Send remaining messages
 	for (const message of messages) {
-		await agent.prompt(message);
+		await agent.prompt(expandSlashCommand(message, fileCommands));
 	}
 
 	// In text mode, only output the final assistant message
