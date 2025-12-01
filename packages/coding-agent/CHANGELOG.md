@@ -2,6 +2,10 @@
 
 ## [0.11.2] - 2025-12-01
 
+### Added
+
+- **Circular Menu Navigation**: All menus (model selector, message history, file picker) now wrap around when navigating past the first or last item. Pressing up at the top jumps to the bottom, and pressing down at the bottom jumps to the top. ([#82](https://github.com/badlogic/pi-mono/pull/82) by [@butelo](https://github.com/butelo))
+
 ### Fixed
 
 - **RPC Mode Session Management**: Fixed session files not being saved in RPC mode (`--mode rpc`). Since version 0.9.0, the `agent.subscribe()` call with session management logic was only present in the TUI renderer, causing RPC mode to skip saving messages to session files. RPC mode now properly saves sessions just like interactive mode. ([#83](https://github.com/badlogic/pi-mono/issues/83))
