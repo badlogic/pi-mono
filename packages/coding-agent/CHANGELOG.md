@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.11.4] - 2025-12-01
 
 ### Improved
