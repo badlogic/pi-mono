@@ -637,7 +637,7 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 
 **Editing:**
 - **Enter**: Send message
-- **Shift+Enter** / **Alt+Enter**: Insert new line (multi-line input)
+- **Shift+Enter** / **Alt+Enter**: Insert new line (multi-line input). On WSL, use **Ctrl+Enter** instead.
 - **Backspace**: Delete character backwards
 - **Delete** (or **Fn+Backspace**): Delete character forwards
 - **Ctrl+W** / **Option+Backspace**: Delete word backwards (stops at whitespace or punctuation)
