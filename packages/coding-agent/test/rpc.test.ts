@@ -7,16 +7,13 @@ import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-// Skip RPC integration test on CI runners; it depends on external LLM calls and can exit early
-const maybeDescribe = process.env.CI ? describe.skip : describe;
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * RPC mode tests.
  * Regression test for issue #83: https://github.com/badlogic/pi-mono/issues/83
  */
-maybeDescribe("RPC mode", () => {
+describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_TOKEN)("RPC mode", () => {
 	let agent: ChildProcess;
 	let sessionDir: string;
 
@@ -38,13 +35,17 @@ maybeDescribe("RPC mode", () => {
 
 	test("should save messages to session file", async () => {
 		// Spawn agent in RPC mode with custom session directory
-		agent = spawn("node", ["dist/cli.js", "--mode", "rpc"], {
-			cwd: join(__dirname, ".."),
-			env: {
-				...process.env,
-				PI_CODING_AGENT_DIR: sessionDir,
+		agent = spawn(
+			"node",
+			["dist/cli.js", "--mode", "rpc", "--provider", "anthropic", "--model", "claude-sonnet-4-5"],
+			{
+				cwd: join(__dirname, ".."),
+				env: {
+					...process.env,
+					PI_CODING_AGENT_DIR: sessionDir,
+				},
 			},
-		});
+		);
 
 		const events: AgentEvent[] = [];
 
