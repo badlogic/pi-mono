@@ -364,9 +364,11 @@ When calculating `keepLastMessages` for COMPACTION 2, we only count messages bet
 
 Use **pi-ai directly** (not the full agent loop) for summarization:
 - No tools needed
-- Set `maxTokens: 8192` for bounded output
+- Set `maxTokens` to `0.8 * reserveTokens` (leaves 20% for prompt overhead and safety margin)
 - Pass abort signal for cancellation
 - Use the currently selected model
+
+With default `reserveTokens: 16384`, maxTokens = ~13107.
 
 **Prompt** (based on Codex, enhanced):
 ```markdown
@@ -443,6 +445,43 @@ u1, a1, u2
 
 This effectively "undoes" the compaction, letting users recover if important context was lost.
 
+### Auto-Compaction Trigger
+
+Auto-compaction is checked in the agent subscription callback after each `message_end` event for assistant messages. If context tokens exceed the threshold, compaction runs.
+
+**Trigger flow (similar to `/clear` command):**
+
+```typescript
+async handleAutoCompaction(): Promise<void> {
+  // 1. Unsubscribe to stop processing events (no more messages added to state/session)
+  this.unsubscribe?.();
+  
+  // 2. Abort current agent run and wait for completion
+  this.agent.abort();
+  await this.agent.waitForIdle();
+  
+  // 3. Stop loading animation
+  if (this.loadingAnimation) {
+    this.loadingAnimation.stop();
+    this.loadingAnimation = null;
+  }
+  this.statusContainer.clear();
+  
+  // 4. Perform compaction on current state:
+  //    - Generate summary using pi-ai directly
+  //    - Write compaction event to session file
+  //    - Rebuild agent messages (summary as user msg + kept messages)
+  //    - Rebuild UI to reflect new state
+  
+  // 5. Resubscribe to agent
+  this.subscribeToAgent();
+  
+  // 6. Show compaction notification to user
+}
+```
+
+This mirrors the `/clear` command pattern: unsubscribe first to prevent processing abort events, then abort and wait, then do the work, then resubscribe.
+
 ### Implementation Steps
 
 1. Add `compaction` field to `Settings` interface and `SettingsManager`
@@ -450,8 +489,9 @@ This effectively "undoes" the compaction, letting users recover if important con
 3. Update session loader to handle compaction events
 4. Add `/compact` command handler
 5. Add `/autocompact` command with selector UI
-6. Add compaction trigger check after each assistant turn
-7. Implement summarization function using pi-ai
-8. Add compaction event to RPC/JSON output types
-9. Update footer to show when auto-compact is disabled
-10. Ensure `/branch` UI shows all user messages (including pre-compaction)
+6. Add auto-compaction check in subscription callback after assistant `message_end`
+7. Implement `handleAutoCompaction()` following the unsubscribe/abort/wait/compact/resubscribe pattern
+8. Implement summarization function using pi-ai
+9. Add compaction event to RPC/JSON output types
+10. Update footer to show when auto-compact is disabled
+11. Ensure `/branch` UI shows all user messages (including pre-compaction)
