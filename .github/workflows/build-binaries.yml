@@ -46,52 +46,48 @@ jobs:
         run: |
           cd packages/coding-agent
 
-          # Create output directory
-          mkdir -p binaries
+          # Create output directories for each platform
+          mkdir -p binaries/{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}
 
-          # Build for each platform
-          declare -a targets=(
-            "bun-darwin-arm64:pi-darwin-arm64"
-            "bun-darwin-x64:pi-darwin-x64"
-            "bun-linux-x64:pi-linux-x64"
-            "bun-linux-arm64:pi-linux-arm64"
-            "bun-windows-x64:pi-windows-x64.exe"
-          )
-
-          for target_pair in "${targets[@]}"; do
-            IFS=':' read -r target outfile <<< "$target_pair"
-            echo "Building for $target..."
-            bun build --compile --target="$target" ./dist/cli.js --outfile "binaries/$outfile"
-          done
+          # Build for each platform - binary is always named 'pi' (or 'pi.exe' for Windows)
+          echo "Building for darwin-arm64..."
+          bun build --compile --target=bun-darwin-arm64 ./dist/cli.js --outfile binaries/darwin-arm64/pi
+          
+          echo "Building for darwin-x64..."
+          bun build --compile --target=bun-darwin-x64 ./dist/cli.js --outfile binaries/darwin-x64/pi
+          
+          echo "Building for linux-x64..."
+          bun build --compile --target=bun-linux-x64 ./dist/cli.js --outfile binaries/linux-x64/pi
+          
+          echo "Building for linux-arm64..."
+          bun build --compile --target=bun-linux-arm64 ./dist/cli.js --outfile binaries/linux-arm64/pi
+          
+          echo "Building for windows-x64..."
+          bun build --compile --target=bun-windows-x64 ./dist/cli.js --outfile binaries/windows-x64/pi.exe
 
       - name: Create release archives
         run: |
           cd packages/coding-agent
 
-          # Files to include with each binary
-          cp package.json binaries/
-          cp README.md binaries/
-          cp CHANGELOG.md binaries/
-          mkdir -p binaries/theme
-          cp dist/theme/*.json binaries/theme/
+          # Copy shared files to each platform directory
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do
+            cp package.json binaries/$platform/
+            cp README.md binaries/$platform/
+            cp CHANGELOG.md binaries/$platform/
+            mkdir -p binaries/$platform/theme
+            cp dist/theme/*.json binaries/$platform/theme/
+          done
 
-          # Create archives for each platform
+          # Create archives
           cd binaries
 
-          # macOS arm64
-          tar -czf pi-darwin-arm64.tar.gz pi-darwin-arm64 package.json README.md CHANGELOG.md theme/
+          # Unix platforms (tar.gz)
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            tar -czf pi-$platform.tar.gz -C $platform .
+          done
           
-          # macOS x64
-          tar -czf pi-darwin-x64.tar.gz pi-darwin-x64 package.json README.md CHANGELOG.md theme/
-          
-          # Linux x64
-          tar -czf pi-linux-x64.tar.gz pi-linux-x64 package.json README.md CHANGELOG.md theme/
-          
-          # Linux arm64
-          tar -czf pi-linux-arm64.tar.gz pi-linux-arm64 package.json README.md CHANGELOG.md theme/
-          
-          # Windows x64 (zip)
-          zip -r pi-windows-x64.zip pi-windows-x64.exe package.json README.md CHANGELOG.md theme/
+          # Windows (zip)
+          cd windows-x64 && zip -r ../pi-windows-x64.zip . && cd ..
 
       - name: Extract changelog for this version
         id: changelog
