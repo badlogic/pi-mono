@@ -24,6 +24,10 @@ export function setupCompaction(agent: Agent): CompactionHandles {
 		const ctx = buildContext(signal);
 		if (!ctx) return messages;
 		const res = await compactor.maybeCompact(messages, ctx);
+		if (res.compacted) {
+			// Persist into agent state so future turns start from the compacted transcript
+			agent.replaceMessages(res.messages as any);
+		}
 		return res.messages;
 	};
 

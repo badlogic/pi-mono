@@ -111,6 +111,10 @@ async function streamAssistantResponse(
 	const processedMessages = config.preprocessor
 		? await config.preprocessor(context.messages, signal)
 		: [...context.messages];
+
+	// Persist preprocessor output so subsequent turns use the compacted transcript
+	context.messages = processedMessages;
+
 	const processedContext: Context = {
 		systemPrompt: context.systemPrompt,
 		messages: [...processedMessages].map((m) => {
