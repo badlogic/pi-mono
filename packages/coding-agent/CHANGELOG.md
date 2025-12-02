@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.1] - 2025-12-02
+
+### Changed
+
+- **Binary Archive Structure**: Binary downloads now contain `pi` (or `pi.exe` on Windows) instead of platform-suffixed names like `pi-darwin-arm64`, making it easier to use after extraction.
+
 ## [0.12.0] - 2025-12-02
 
 ### Added
