@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.6] - 2025-12-02
+
 ### Added
 
 - **OAuth Login Status Indicator**: The `/login` provider selector now shows "✓ logged in" next to providers where you're already authenticated. This makes it clear at a glance whether you're using your Claude Pro/Max subscription. ([#88](https://github.com/badlogic/pi-mono/pull/88) by [@steipete](https://github.com/steipete))
