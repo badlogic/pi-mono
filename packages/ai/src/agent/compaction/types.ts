@@ -19,6 +19,7 @@ export interface CompactionConfig {
 	triggerRatio: number; // start compacting when estimated / contextWindow exceeds this
 	hardRatio: number; // always compact if above this
 	tailMessages: number; // raw messages to keep uncompressed at the tail
+	summaryPrompt?: string;
 }
 
 export interface CompactionStats {

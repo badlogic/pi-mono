@@ -11,9 +11,7 @@ import type {
 	ToolCall,
 	UserMessage,
 } from "@mariozechner/pi-ai";
-import { agentLoop } from "@mariozechner/pi-ai";
-import { AssistantMessageEventStream } from "@mariozechner/pi-ai/src/utils/event-stream.js";
-import { parseStreamingJson } from "@mariozechner/pi-ai/src/utils/json-parse.js";
+import { AssistantMessageEventStream, agentLoop, parseStreamingJson } from "@mariozechner/pi-ai";
 import { clearAuthToken, getAuthToken } from "../../utils/auth-token.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ProxyAssistantMessageEvent } from "./proxy-types.js";

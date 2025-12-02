@@ -1,7 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@mariozechner/pi-ai": ["../ai/src/index.ts"],
+      "@mariozechner/pi-tui": ["../tui/src/index.ts"],
+      "@mariozechner/pi-ai/dist/utils/*": ["../ai/src/utils/*"],
+      "@mariozechner/pi-ai/dist/*": ["../ai/src/*"]
+    }
   },
   "include": ["src/**/*"]
 }

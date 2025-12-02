@@ -17,7 +17,7 @@ const DEFAULT_CONFIG: CompactionConfig = {
 	tailMessages: 8,
 };
 
-const SUMMARY_SYSTEM_PROMPT = `You are compressing a coding agent's transcript.
+const DEFAULT_SUMMARY_PROMPT = `You are compressing a coding agent's transcript.
 Summarize facts only. Capture:
 - current goal or task
 - key decisions and rationale
@@ -61,6 +61,7 @@ async function summarizeSlice(
 	model: Model<any>,
 	slice: Message[],
 	options: { signal?: AbortSignal },
+	summaryPrompt: string,
 ): Promise<AssistantMessage> {
 	const summaryMessages: UserMessage[] = slice.map((m) => ({
 		role: "user",
@@ -71,7 +72,7 @@ async function summarizeSlice(
 	const maxTokens = Math.min(512, Math.max(128, Math.floor(model.maxTokens / 4)));
 	const summary = await completeSimple(
 		model,
-		{ systemPrompt: SUMMARY_SYSTEM_PROMPT, messages: summaryMessages },
+		{ systemPrompt: summaryPrompt, messages: summaryMessages },
 		{
 			temperature: 0,
 			maxTokens,
@@ -123,9 +124,11 @@ function buildBoundaryMessage(
 
 export class ConversationCompactor {
 	private config: CompactionConfig;
+	private summaryPrompt: string;
 
 	constructor(config?: Partial<CompactionConfig>) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
+		this.summaryPrompt = config?.summaryPrompt || DEFAULT_SUMMARY_PROMPT;
 	}
 
 	async maybeCompact(
@@ -159,7 +162,7 @@ export class ConversationCompactor {
 			return { messages, compacted: false, reason: "nothing-to-compact" };
 		}
 
-		const summary = await summarizeSlice(ctx.model, slice, { signal: ctx.signal });
+		const summary = await summarizeSlice(ctx.model, slice, { signal: ctx.signal }, this.summaryPrompt);
 		const boundary = buildBoundaryMessage(ctx.model, options.force ? "manual" : "auto", tokensBefore);
 
 		const compactedMessages = [...messages.slice(0, start), boundary, summary, ...tail];

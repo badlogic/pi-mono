@@ -11,7 +11,8 @@ export interface CompactionHandles {
 }
 
 export function setupCompaction(agent: Agent): CompactionHandles {
-	const compactor = new ConversationCompactor();
+	const summaryPrompt = process.env.PI_COMPACT_PROMPT?.trim();
+	const compactor = new ConversationCompactor({ summaryPrompt });
 
 	const buildContext = (signal?: AbortSignal) => {
 		const model = agent.state.model;
