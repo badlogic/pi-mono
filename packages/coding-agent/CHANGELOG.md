@@ -5,6 +5,7 @@
 ### Added
 
 - **OAuth Login Status Indicator**: The `/login` provider selector now shows "✓ logged in" next to providers where you're already authenticated. This makes it clear at a glance whether you're using your Claude Pro/Max subscription. ([#88](https://github.com/badlogic/pi-mono/pull/88) by [@steipete](https://github.com/steipete))
+- **Subscription Cost Indicator**: The footer now shows "(sub)" next to the cost when using an OAuth subscription (e.g., `$0.123 (sub)`). This makes it visible without needing `/login` that you're using your Claude Pro/Max subscription.
 
 ## [0.11.5] - 2025-12-01
 

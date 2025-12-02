@@ -17,7 +17,7 @@ import {
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
-import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
+import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
@@ -1318,7 +1318,8 @@ export class TuiRenderer {
 							},
 						);
 
-						// Success
+						// Success - invalidate OAuth cache so footer updates
+						invalidateOAuthCache();
 						this.chatContainer.addChild(new Spacer(1));
 						this.chatContainer.addChild(
 							new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
@@ -1335,6 +1336,8 @@ export class TuiRenderer {
 					try {
 						await logout(providerId);
 
+						// Invalidate OAuth cache so footer updates
+						invalidateOAuthCache();
 						this.chatContainer.addChild(new Spacer(1));
 						this.chatContainer.addChild(
 							new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
