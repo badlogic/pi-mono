@@ -38,4 +38,10 @@ When creating issues:
 - Keep answers short and concise
 - No emojis in commits, issues, PR comments, or code
 - No fluff or cheerful filler text
-- Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user! 🎉")
+- Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
+
+## Changelog
+- New entries ALWAYS go under `## [Unreleased]` section
+- NEVER modify already-released version sections (e.g., `## [0.12.2]`)
+- Each version section is immutable once released
+- When releasing: rename `[Unreleased]` to the new version, then add a fresh empty `[Unreleased]` section

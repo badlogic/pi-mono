@@ -76,7 +76,8 @@ Complete release process:
    ```bash
    # Change [Unreleased] to the new version number with today's date
    # e.g., ## [0.7.16] - 2025-11-17
-   # Then add a new empty [Unreleased] section at the top
+   # NEVER add entries to already-released version sections
+   # Each version section is immutable once released
    ```
 
 4. **Commit and tag**:
