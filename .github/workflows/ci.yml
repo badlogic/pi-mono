@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - "@mariozechner/pi-ai"
+          - "@mariozechner/pi-agent-core"
+          - "@mariozechner/pi-coding-agent"
+          - "@mariozechner/pi-mom"
+          - "@mariozechner/pi-tui"
+          - "@mariozechner/pi-web-ui"
+          - "@mariozechner/pi-proxy"
+          - "@mariozechner/pi"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install canvas build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspaces
+        run: npm run build --workspaces --if-present
+
+      - name: Install web-ui example deps
+        if: matrix.package == '@mariozechner/pi-web-ui'
+        run: npm install --prefix packages/web-ui/example
+
+      - name: Check
+        run: npm run --if-present check --workspace ${{ matrix.package }}
+
+      - name: Test
+        run: npm test --if-present --workspace ${{ matrix.package }}

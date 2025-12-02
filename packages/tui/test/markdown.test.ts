@@ -1,8 +1,11 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import chalk from "chalk";
+import { Chalk } from "chalk";
 import { Markdown } from "../src/components/markdown.js";
 import { defaultMarkdownTheme } from "./test-themes.js";
+
+// Force full color in CI so ANSI assertions are deterministic
+const chalk = new Chalk({ level: 3 });
 
 describe("Markdown component", () => {
 	describe("Nested lists", () => {
@@ -218,9 +221,9 @@ describe("Markdown component", () => {
 			assert.ok(joinedOutput.includes("\x1b[90m"), "Should have gray color code");
 			assert.ok(joinedOutput.includes("\x1b[3m"), "Should have italic code");
 
-			// Verify that after the inline code (cyan text), we reapply gray italic
-			const hasCyan = joinedOutput.includes("\x1b[36m"); // cyan
-			assert.ok(hasCyan, "Should have cyan for inline code");
+			// Verify that inline code is styled (theme uses yellow)
+			const hasCodeColor = joinedOutput.includes("\x1b[33m");
+			assert.ok(hasCodeColor, "Should style inline code");
 		});
 
 		it("should preserve gray italic styling after bold text", () => {

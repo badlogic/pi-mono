@@ -7,13 +7,16 @@ import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
+// Skip RPC integration test on CI runners; it depends on external LLM calls and can exit early
+const maybeDescribe = process.env.CI ? describe.skip : describe;
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * RPC mode tests.
  * Regression test for issue #83: https://github.com/badlogic/pi-mono/issues/83
  */
-describe("RPC mode", () => {
+maybeDescribe("RPC mode", () => {
 	let agent: ChildProcess;
 	let sessionDir: string;
 

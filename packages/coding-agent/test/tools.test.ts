@@ -50,10 +50,7 @@ describe("Coding Agent Tools", () => {
 		it("should handle non-existent files", async () => {
 			const testFile = join(testDir, "nonexistent.txt");
 
-			const result = await readTool.execute("test-call-2", { path: testFile });
-
-			expect(getTextOutput(result)).toContain("Error");
-			expect(getTextOutput(result)).toContain("File not found");
+			await expect(readTool.execute("test-call-2", { path: testFile })).rejects.toThrow(/ENOENT|not found/i);
 		});
 
 		it("should truncate files exceeding line limit", async () => {
@@ -139,11 +136,9 @@ describe("Coding Agent Tools", () => {
 			const testFile = join(testDir, "short.txt");
 			writeFileSync(testFile, "Line 1\nLine 2\nLine 3");
 
-			const result = await readTool.execute("test-call-8", { path: testFile, offset: 100 });
-			const output = getTextOutput(result);
-
-			expect(output).toContain("Error: Offset 100 is beyond end of file");
-			expect(output).toContain("3 lines total");
+			await expect(readTool.execute("test-call-8", { path: testFile, offset: 100 })).rejects.toThrow(
+				/Offset 100 is beyond end of file \(3 lines total\)/,
+			);
 		});
 
 		it("should show both truncation notices when applicable", async () => {
@@ -206,13 +201,13 @@ describe("Coding Agent Tools", () => {
 			const originalContent = "Hello, world!";
 			writeFileSync(testFile, originalContent);
 
-			const result = await editTool.execute("test-call-6", {
-				path: testFile,
-				oldText: "nonexistent",
-				newText: "testing",
-			});
-
-			expect(getTextOutput(result)).toContain("Could not find the exact text");
+			await expect(
+				editTool.execute("test-call-6", {
+					path: testFile,
+					oldText: "nonexistent",
+					newText: "testing",
+				}),
+			).rejects.toThrow(/Could not find the exact text/);
 		});
 
 		it("should fail if text appears multiple times", async () => {
@@ -220,13 +215,13 @@ describe("Coding Agent Tools", () => {
 			const originalContent = "foo foo foo";
 			writeFileSync(testFile, originalContent);
 
-			const result = await editTool.execute("test-call-7", {
-				path: testFile,
-				oldText: "foo",
-				newText: "bar",
-			});
-
-			expect(getTextOutput(result)).toContain("Found 3 occurrences");
+			await expect(
+				editTool.execute("test-call-7", {
+					path: testFile,
+					oldText: "foo",
+					newText: "bar",
+				}),
+			).rejects.toThrow(/Found 3 occurrences/);
 		});
 	});
 
@@ -239,16 +234,16 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should handle command errors", async () => {
-			const result = await bashTool.execute("test-call-9", { command: "exit 1" });
-
-			expect(getTextOutput(result)).toContain("Command failed");
+			await expect(bashTool.execute("test-call-9", { command: "exit 1" })).rejects.toThrow(
+				/(Command failed|code 1)/,
+			);
 		});
 
 		it("should respect timeout", async () => {
-			const result = await bashTool.execute("test-call-10", { command: "sleep 35" });
-
-			expect(getTextOutput(result)).toContain("Command failed");
-		}, 35000);
+			await expect(bashTool.execute("test-call-10", { command: "sleep 5", timeout: 1 })).rejects.toThrow(
+				/timed out/i,
+			);
+		});
 	});
 
 	describe("grep tool", () => {

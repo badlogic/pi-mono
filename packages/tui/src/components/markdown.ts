@@ -48,6 +48,7 @@ export class Markdown implements Component {
 	private paddingY: number; // Top/bottom padding
 	private defaultTextStyle?: DefaultTextStyle;
 	private theme: MarkdownTheme;
+	private defaultStylePrefix?: string;
 
 	// Cache for rendered output
 	private cachedText?: string;
@@ -193,6 +194,40 @@ export class Markdown implements Component {
 		return styled;
 	}
 
+	private getDefaultStylePrefix(): string {
+		if (!this.defaultTextStyle) {
+			return "";
+		}
+
+		if (this.defaultStylePrefix !== undefined) {
+			return this.defaultStylePrefix;
+		}
+
+		const sentinel = "\u0000";
+		let styled = sentinel;
+
+		if (this.defaultTextStyle.color) {
+			styled = this.defaultTextStyle.color(styled);
+		}
+
+		if (this.defaultTextStyle.bold) {
+			styled = this.theme.bold(styled);
+		}
+		if (this.defaultTextStyle.italic) {
+			styled = this.theme.italic(styled);
+		}
+		if (this.defaultTextStyle.strikethrough) {
+			styled = this.theme.strikethrough(styled);
+		}
+		if (this.defaultTextStyle.underline) {
+			styled = this.theme.underline(styled);
+		}
+
+		const sentinelIndex = styled.indexOf(sentinel);
+		this.defaultStylePrefix = sentinelIndex >= 0 ? styled.slice(0, sentinelIndex) : "";
+		return this.defaultStylePrefix;
+	}
+
 	private renderToken(token: Token, width: number, nextTokenType?: string): string[] {
 		const lines: string[] = [];
 
@@ -302,20 +337,20 @@ export class Markdown implements Component {
 				case "strong": {
 					// Apply bold, then reapply default style after
 					const boldContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.bold(boldContent) + this.applyDefaultStyle("");
+					result += this.theme.bold(boldContent) + this.getDefaultStylePrefix();
 					break;
 				}
 
 				case "em": {
 					// Apply italic, then reapply default style after
 					const italicContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.italic(italicContent) + this.applyDefaultStyle("");
+					result += this.theme.italic(italicContent) + this.getDefaultStylePrefix();
 					break;
 				}
 
 				case "codespan":
 					// Apply code styling without backticks
-					result += this.theme.code(token.text) + this.applyDefaultStyle("");
+					result += this.theme.code(token.text) + this.getDefaultStylePrefix();
 					break;
 
 				case "link": {
@@ -323,12 +358,12 @@ export class Markdown implements Component {
 					// If link text matches href, only show the link once
 					// Compare raw text (token.text) not styled text (linkText) since linkText has ANSI codes
 					if (token.text === token.href) {
-						result += this.theme.link(this.theme.underline(linkText)) + this.applyDefaultStyle("");
+						result += this.theme.link(this.theme.underline(linkText)) + this.getDefaultStylePrefix();
 					} else {
 						result +=
 							this.theme.link(this.theme.underline(linkText)) +
 							this.theme.linkUrl(` (${token.href})`) +
-							this.applyDefaultStyle("");
+							this.getDefaultStylePrefix();
 					}
 					break;
 				}
@@ -339,7 +374,7 @@ export class Markdown implements Component {
 
 				case "del": {
 					const delContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.strikethrough(delContent) + this.applyDefaultStyle("");
+					result += this.theme.strikethrough(delContent) + this.getDefaultStylePrefix();
 					break;
 				}
 
