@@ -311,6 +311,55 @@ Example session file after compaction:
 
 **Multiple compactions:** When doing a second compaction, don't cross the first compaction boundary. The new summary incorporates the previous summary (since current context already includes it).
 
+#### Example: Single Compaction
+
+Session file with messages (u=user, a=assistant, t=toolResult):
+```
+u1, a1, t1, t1, a1, u2, a2, u3, a3, t3, a3, t3, a3, u4, a4, t4, a4
+```
+
+Compaction triggers, keeping last 4 messages. The compaction event is appended:
+```
+u1, a1, t1, t1, a1, u2, a2, u3, a3, t3, a3, t3, a3, u4, a4, t4, a4
+[COMPACTION: summary="...", keepLastMessages=4]
+```
+
+Session loader builds context:
+```
+[summary_as_user_msg], u4, a4, t4, a4
+```
+
+New messages after compaction are appended:
+```
+u1, a1, t1, t1, a1, u2, a2, u3, a3, t3, a3, t3, a3, u4, a4, t4, a4
+[COMPACTION: summary="...", keepLastMessages=4]
+u5, a5
+```
+
+Session loader now builds:
+```
+[summary_as_user_msg], u4, a4, t4, a4, u5, a5
+```
+
+#### Example: Multiple Compactions
+
+After more messages, second compaction triggers:
+```
+u1, a1, t1, t1, a1, u2, a2, u3, a3, t3, a3, t3, a3, u4, a4, t4, a4
+[COMPACTION 1: summary="...", keepLastMessages=4]
+u5, a5, u6, a6, t6, a6, u7, a7
+[COMPACTION 2: summary="...", keepLastMessages=3]
+```
+
+Session loader finds COMPACTION 2 (latest), builds:
+```
+[summary2_as_user_msg], u7, a7
+```
+
+Note: COMPACTION 2's summary incorporates COMPACTION 1's summary because the summarization model received the full current context (which included summary1 as first message).
+
+When calculating `keepLastMessages` for COMPACTION 2, we only count messages between COMPACTION 1 and COMPACTION 2 (cannot cross the boundary).
+
 ### Summarization
 
 Use **pi-ai directly** (not the full agent loop) for summarization:
@@ -352,6 +401,48 @@ Works in all modes:
 - **Print/JSON**: Compaction events emitted as output
 - **RPC**: Compaction events sent to client
 
+### Interaction with /branch
+
+The `/branch` command lets users create a new session from a previous user message. With compaction:
+
+- **Branch UI shows ALL user messages** in the session file, both before and after any compaction events
+- **Branching copies the session file** up to the selected user message, including all compaction events and messages
+
+#### Example: Branching After Compaction
+
+Session file:
+```
+u1, a1, u2, a2
+[COMPACTION: summary="...", keepLastMessages=2]
+u3, a3, u4, a4
+```
+
+User branches at u3. New session file:
+```
+u1, a1, u2, a2
+[COMPACTION: summary="...", keepLastMessages=2]
+u3
+```
+
+Session loader builds context for new session:
+```
+[summary_as_user_msg], u2, a2, u3
+```
+
+#### Example: Branching Before Compaction
+
+Same session file, user branches at u2. New session file:
+```
+u1, a1, u2
+```
+
+No compaction in new session. Session loader builds:
+```
+u1, a1, u2
+```
+
+This effectively "undoes" the compaction, letting users recover if important context was lost.
+
 ### Implementation Steps
 
 1. Add `compaction` field to `Settings` interface and `SettingsManager`
@@ -363,3 +454,4 @@ Works in all modes:
 7. Implement summarization function using pi-ai
 8. Add compaction event to RPC/JSON output types
 9. Update footer to show when auto-compact is disabled
+10. Ensure `/branch` UI shows all user messages (including pre-compaction)
