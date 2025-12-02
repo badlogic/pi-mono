@@ -7,9 +7,14 @@ const __dirname = dirname(__filename);
 
 /**
  * Detect if we're running as a Bun compiled binary.
- * Bun binaries have import.meta.url starting with "file:///$bunfs/"
+ * Bun binaries have import.meta.url containing "%7EBUN" (URL-encoded ~BUN virtual filesystem path)
  */
-export const isBunBinary = import.meta.url.startsWith("file:///$bunfs/");
+export const isBunBinary = import.meta.url.includes("%7EBUN");
+
+/**
+ * Type definition for Bun global (only available when running via Bun)
+ */
+declare const Bun: { main: string } | undefined;
 
 /**
  * Get the base directory for resolving package assets (themes, package.json, README.md, CHANGELOG.md).
@@ -19,7 +24,7 @@ export const isBunBinary = import.meta.url.startsWith("file:///$bunfs/");
  */
 export function getPackageDir(): string {
 	if (isBunBinary) {
-		// Bun binary: resolve relative to the executable
+		// Bun binary: process.execPath points to the compiled executable
 		return dirname(process.execPath);
 	}
 	// Node.js: check if package.json exists in __dirname (dist/) or parent (src/ case)
@@ -32,7 +37,7 @@ export function getPackageDir(): string {
 
 /**
  * Get path to the theme directory
- * - For Bun binary: dist/theme/ next to executable
+ * - For Bun binary: theme/ next to executable
  * - For Node.js (dist/): dist/theme/
  * - For tsx (src/): src/theme/
  */
