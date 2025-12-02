@@ -52,14 +52,20 @@ Extract and run:
 ```bash
 # macOS/Linux
 tar -xzf pi-darwin-arm64.tar.gz
-./pi-darwin-arm64
+./pi
 
 # Windows
 unzip pi-windows-x64.zip
-pi-windows-x64.exe
+pi.exe
 ```
 
 The archive includes the binary plus supporting files (README, CHANGELOG, themes). Keep them together in the same directory.
+
+**macOS users**: The binary is not signed. macOS will block it on first run. To fix:
+```bash
+xattr -d com.apple.quarantine ./pi
+```
+Or right-click the binary in Finder and select "Open".
 
 ### Build Binary from Source
 
