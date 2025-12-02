@@ -15,6 +15,7 @@
 	"scripts": {
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-theme-assets",
+		"build:binary": "command -v bun >/dev/null 2>&1 || { echo 'Error: Bun is required for building the binary. Install it from https://bun.sh'; exit 1; } && npm run build && bun build --compile --bytecode ./dist/cli.js --outfile dist/pi",
 		"copy-theme-assets": "cp src/theme/*.json dist/theme/",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"check": "tsgo --noEmit",
