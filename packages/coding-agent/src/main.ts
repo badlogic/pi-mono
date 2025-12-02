@@ -4,11 +4,11 @@ import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
-import { dirname, extname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
+import { getPackageJsonPath, getReadmePath } from "./paths.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
@@ -19,9 +19,7 @@ import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
 
 // Get version from package.json
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const packageJson = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
 const VERSION = packageJson.version;
 
 const defaultModelPerProvider: Record<KnownProvider, string> = {
@@ -374,7 +372,7 @@ function buildSystemPrompt(customPrompt?: string, selectedTools?: ToolName[]): s
 	});
 
 	// Get absolute path to README.md
-	const readmePath = resolve(join(__dirname, "../README.md"));
+	const readmePath = getReadmePath();
 
 	// Build tools list based on selected tools
 	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);

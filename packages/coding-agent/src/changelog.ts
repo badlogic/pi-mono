@@ -1,6 +1,4 @@
 import { existsSync, readFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
 
 export interface ChangelogEntry {
 	major: number;
@@ -97,11 +95,5 @@ export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): C
 	return entries.filter((entry) => compareVersions(entry, last) > 0);
 }
 
-/**
- * Get the path to the CHANGELOG.md file
- */
-export function getChangelogPath(): string {
-	const __filename = fileURLToPath(import.meta.url);
-	const __dirname = dirname(__filename);
-	return join(__dirname, "../CHANGELOG.md");
-}
+// Re-export getChangelogPath from paths.ts for convenience
+export { getChangelogPath } from "./paths.js";

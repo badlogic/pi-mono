@@ -31,8 +31,49 @@ Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the
 
 ## Installation
 
+### npm (recommended)
+
 ```bash
 npm install -g @mariozechner/pi-coding-agent
+```
+
+### Standalone Binary
+
+Pre-built binaries are available on the [GitHub Releases](https://github.com/badlogic/pi-mono/releases) page. Download the archive for your platform:
+
+- `pi-darwin-arm64.tar.gz` - macOS Apple Silicon
+- `pi-darwin-x64.tar.gz` - macOS Intel
+- `pi-linux-x64.tar.gz` - Linux x64
+- `pi-linux-arm64.tar.gz` - Linux ARM64
+- `pi-windows-x64.zip` - Windows x64
+
+Extract and run:
+
+```bash
+# macOS/Linux
+tar -xzf pi-darwin-arm64.tar.gz
+./pi-darwin-arm64
+
+# Windows
+unzip pi-windows-x64.zip
+pi-windows-x64.exe
+```
+
+The archive includes the binary plus supporting files (README, CHANGELOG, themes). Keep them together in the same directory.
+
+### Build Binary from Source
+
+Requires [Bun](https://bun.sh) 1.0+:
+
+```bash
+git clone https://github.com/badlogic/pi-mono.git
+cd pi-mono
+npm install
+cd packages/coding-agent
+npm run build:binary
+
+# Binary and supporting files are in dist/
+./dist/pi
 ```
 
 ## Quick Start
@@ -1092,6 +1133,23 @@ Things that might happen eventually:
   - Ask the agent to write a summary .md file you can load in a new session
   - Switch to a model with bigger context (e.g., Gemini) using `/model` and either continue with that model, or let it summarize the session to a .md file to be loaded in a new session
 - **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
+
+## Development
+
+### Path Resolution
+
+The codebase supports three execution modes:
+- **npm**: Running via `node dist/cli.js` after npm install
+- **Bun binary**: Standalone compiled binary with files alongside
+- **tsx**: Running directly from source via `npx tsx src/cli.ts`
+
+All path resolution for package assets (package.json, README.md, CHANGELOG.md, themes) must go through `src/paths.ts`:
+
+```typescript
+import { getPackageDir, getThemeDir, getPackageJsonPath, getReadmePath, getChangelogPath } from "./paths.js";
+```
+
+**Never use `__dirname` directly** for resolving package assets. The `paths.ts` module handles the differences between execution modes automatically.
 
 ## License
 

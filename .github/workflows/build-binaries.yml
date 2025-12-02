@@ -1,0 +1,99 @@
+name: Build Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe5 # v2.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: |
+          cd packages/coding-agent
+          npm run build
+
+      - name: Build binaries for all platforms
+        run: |
+          cd packages/coding-agent
+
+          # Create output directory
+          mkdir -p binaries
+
+          # Build for each platform
+          declare -a targets=(
+            "bun-darwin-arm64:pi-darwin-arm64"
+            "bun-darwin-x64:pi-darwin-x64"
+            "bun-linux-x64:pi-linux-x64"
+            "bun-linux-arm64:pi-linux-arm64"
+            "bun-windows-x64:pi-windows-x64.exe"
+          )
+
+          for target_pair in "${targets[@]}"; do
+            IFS=':' read -r target outfile <<< "$target_pair"
+            echo "Building for $target..."
+            bun build --compile --target="$target" ./dist/cli.js --outfile "binaries/$outfile"
+          done
+
+      - name: Create release archives
+        run: |
+          cd packages/coding-agent
+
+          # Files to include with each binary
+          cp package.json binaries/
+          cp README.md binaries/
+          cp CHANGELOG.md binaries/
+          mkdir -p binaries/theme
+          cp dist/theme/*.json binaries/theme/
+
+          # Create archives for each platform
+          cd binaries
+
+          # macOS arm64
+          tar -czf pi-darwin-arm64.tar.gz pi-darwin-arm64 package.json README.md CHANGELOG.md theme/
+          
+          # macOS x64
+          tar -czf pi-darwin-x64.tar.gz pi-darwin-x64 package.json README.md CHANGELOG.md theme/
+          
+          # Linux x64
+          tar -czf pi-linux-x64.tar.gz pi-linux-x64 package.json README.md CHANGELOG.md theme/
+          
+          # Linux arm64
+          tar -czf pi-linux-arm64.tar.gz pi-linux-arm64 package.json README.md CHANGELOG.md theme/
+          
+          # Windows x64 (zip)
+          zip -r pi-windows-x64.zip pi-windows-x64.exe package.json README.md CHANGELOG.md theme/
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd packages/coding-agent/binaries
+          
+          # Upload all archives to the release
+          gh release upload "${{ github.ref_name }}" \
+            pi-darwin-arm64.tar.gz \
+            pi-darwin-x64.tar.gz \
+            pi-linux-x64.tar.gz \
+            pi-linux-arm64.tar.gz \
+            pi-windows-x64.zip \
+            --clobber

@@ -1,13 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { getThemeDir } from "../paths.js";
 
 // ============================================================================
 // Types & Schema
@@ -321,8 +319,9 @@ let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
-		const darkPath = path.join(__dirname, "dark.json");
-		const lightPath = path.join(__dirname, "light.json");
+		const themeDir = getThemeDir();
+		const darkPath = path.join(themeDir, "dark.json");
+		const lightPath = path.join(themeDir, "light.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,

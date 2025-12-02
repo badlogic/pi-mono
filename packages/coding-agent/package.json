@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-coding-agent",
-	"version": "0.11.6",
+	"version": "0.12.0",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"bin": {
@@ -14,18 +14,19 @@
 	],
 	"scripts": {
 		"clean": "rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-theme-assets",
-		"build:binary": "command -v bun >/dev/null 2>&1 || { echo 'Error: Bun is required for building the binary. Install it from https://bun.sh'; exit 1; } && npm run build && bun build --compile --bytecode ./dist/cli.js --outfile dist/pi",
-		"copy-theme-assets": "cp src/theme/*.json dist/theme/",
+		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-assets",
+		"build:binary": "command -v bun >/dev/null 2>&1 || { echo 'Error: Bun is required for building the binary. Install it from https://bun.sh'; exit 1; } && npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
+		"copy-assets": "cp src/theme/*.json dist/theme/",
+		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"check": "tsgo --noEmit",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "^0.11.6",
-		"@mariozechner/pi-ai": "^0.11.6",
-		"@mariozechner/pi-tui": "^0.11.6",
+		"@mariozechner/pi-agent-core": "^0.12.0",
+		"@mariozechner/pi-ai": "^0.12.0",
+		"@mariozechner/pi-tui": "^0.12.0",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",
 		"glob": "^11.0.3"

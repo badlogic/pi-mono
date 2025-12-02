@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2025-12-02
+
+### Added
+
+- **Standalone Binary Support**: Build a self-contained binary using Bun with `npm run build:binary`. Pre-built binaries for macOS (arm64/x64), Linux (x64/arm64), and Windows (x64) are available on GitHub Releases. Based on [#89](https://github.com/badlogic/pi-mono/pull/89) by [@steipete](https://github.com/steipete), extended with cross-platform path resolution and GitHub Actions for automated release builds.
+
 ## [0.11.6] - 2025-12-02
 
 ### Added

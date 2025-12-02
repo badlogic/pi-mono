@@ -2,14 +2,12 @@ import type { AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { basename } from "path";
+import { getPackageJsonPath } from "./paths.js";
 import type { SessionManager } from "./session-manager.js";
 
 // Get version from package.json
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const packageJson = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
 const VERSION = packageJson.version;
 
 /**
