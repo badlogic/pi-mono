@@ -25,6 +25,18 @@ npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ```
 
+### CI
+
+GitHub Actions runs on push to `main` and on pull requests. The workflow runs `npm run check` and `npm run test` for each package in parallel.
+
+**Do not add LLM API keys as secrets to this repository.** Tests that require LLM access use `describe.skipIf()` to skip when API keys are missing. This is intentional:
+
+- PRs from external contributors would have access to secrets in the CI environment
+- Malicious PR code could exfiltrate API keys
+- Tests that need LLM calls are skipped on CI and run locally by developers who have keys configured
+
+If you need to run LLM-dependent tests, run them locally with your own API keys.
+
 ### Development
 
 Start watch builds for all packages:
