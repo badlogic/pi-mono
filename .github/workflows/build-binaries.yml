@@ -37,10 +37,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: |
-          cd packages/coding-agent
-          npm run build
+      - name: Build all packages
+        run: npm run build
 
       - name: Build binaries for all platforms
         run: |
