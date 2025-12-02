@@ -4,7 +4,7 @@ import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
-import { extname, join, resolve } from "path";
+import { basename, extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
@@ -20,7 +20,11 @@ import { TuiRenderer } from "./tui/tui-renderer.js";
 
 // Get version from package.json
 const packageJson = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
-const VERSION = packageJson.version;
+export const VERSION = packageJson.version;
+
+// Derive binary name from the invoked executable (pi, tau, etc.)
+const invokedBin = basename(process.argv[1] || "pi").replace(/\.(m?js)$/i, "");
+export const BIN_NAME = invokedBin || "pi";
 
 const defaultModelPerProvider: Record<KnownProvider, string> = {
 	anthropic: "claude-sonnet-4-5",

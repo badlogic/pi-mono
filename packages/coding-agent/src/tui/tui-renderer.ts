@@ -20,6 +20,7 @@ import {
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { exportSessionToHtml } from "../export-html.js";
+import { BIN_NAME } from "../main.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
 import type { SessionManager } from "../session-manager.js";
@@ -221,7 +222,7 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with logo and instructions
-		const logo = theme.bold(theme.fg("accent", "pi")) + theme.fg("dim", ` v${this.version}`);
+		const logo = theme.bold(theme.fg("accent", BIN_NAME)) + theme.fg("dim", ` v${this.version}`);
 		const instructions =
 			theme.fg("dim", "esc") +
 			theme.fg("muted", " to interrupt") +
