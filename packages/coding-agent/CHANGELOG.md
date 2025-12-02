@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.2] - 2025-12-02
+
 ### Fixed
 
 - **Windows Binary Path Resolution**: Fixed Bun compiled binary on Windows failing to find `package.json` and other assets. The binary was incorrectly using the Bun runtime's virtual filesystem path (`B:\~BUN\`) instead of the actual executable location. Now uses `process.execPath` which correctly points to the compiled binary, and updated detection to check for `%7EBUN` (URL-encoded `~BUN`) in `import.meta.url`.
