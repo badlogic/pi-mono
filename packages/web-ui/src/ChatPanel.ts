@@ -146,7 +146,7 @@ export class ChatPanel extends LitElement {
 		// Temporarily disable the onArtifactsChange callback to prevent auto-opening on load
 		const originalCallback = this.artifactsPanel.onArtifactsChange;
 		this.artifactsPanel.onArtifactsChange = undefined;
-		await this.artifactsPanel.reconstructFromMessages(this.agent.state.messages);
+		await this.artifactsPanel.reconstructFromMessages(this.agent.state.messages as any);
 		this.artifactsPanel.onArtifactsChange = originalCallback;
 
 		this.hasArtifacts = this.artifactsPanel.artifacts.size > 0;

@@ -1,4 +1,4 @@
-import type { ImageContent, Message, QueuedMessage, TextContent } from "@mariozechner/pi-ai";
+import type { AgentLoopConfig, ImageContent, Message, QueuedMessage, TextContent } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentTransport } from "./transports/types.js";
 import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
@@ -57,6 +57,8 @@ export interface AgentOptions {
 	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
 	queueMode?: "all" | "one-at-a-time";
+	// Optional preprocessor to compact/prune messages before each LLM call
+	preprocessor?: AgentLoopConfig["preprocessor"];
 }
 
 export class Agent {
@@ -79,12 +81,14 @@ export class Agent {
 	private queueMode: "all" | "one-at-a-time";
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
+	private preprocessor?: AgentLoopConfig["preprocessor"];
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
 		this.transport = opts.transport;
 		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
 		this.queueMode = opts.queueMode || "one-at-a-time";
+		this.preprocessor = opts.preprocessor;
 	}
 
 	get state(): AgentState {
@@ -119,6 +123,10 @@ export class Agent {
 
 	setTools(t: typeof this._state.tools) {
 		this._state.tools = t;
+	}
+
+	setPreprocessor(fn?: AgentLoopConfig["preprocessor"]) {
+		this.preprocessor = fn;
 	}
 
 	replaceMessages(ms: AppMessage[]) {
@@ -221,6 +229,7 @@ export class Agent {
 			tools: this._state.tools,
 			model,
 			reasoning,
+			preprocessor: this.preprocessor,
 			getQueuedMessages: async <T>() => {
 				// Return queued messages based on queue mode
 				if (this.queueMode === "one-at-a-time") {

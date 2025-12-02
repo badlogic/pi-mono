@@ -65,6 +65,7 @@ export class ProviderTransport implements AgentTransport {
 			reasoning: cfg.reasoning,
 			apiKey,
 			getQueuedMessages: cfg.getQueuedMessages,
+			preprocessor: cfg.preprocessor,
 		};
 
 		// Yield events from agentLoop

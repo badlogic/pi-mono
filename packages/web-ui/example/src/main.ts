@@ -210,12 +210,17 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 		onApiKeyRequired: async (provider: string) => {
 			return await ApiKeyPromptDialog.prompt(provider);
 		},
-		toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
+		toolsFactory: (
+			agentInstance: Agent,
+			agentInterface: any,
+			artifactsPanel: any,
+			runtimeProvidersFactory: any,
+		) => {
 			// Create javascript_repl tool with access to attachments + artifacts
 			const replTool = createJavaScriptReplTool();
 			replTool.runtimeProvidersFactory = runtimeProvidersFactory;
 			return [replTool];
-		}
+		},
 	});
 };
 

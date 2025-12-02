@@ -364,6 +364,7 @@ export class AppTransport implements AgentTransport {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
 			getQueuedMessages: cfg.getQueuedMessages,
+			preprocessor: cfg.preprocessor,
 		};
 
 		// Yield events from the upstream agentLoop iterator

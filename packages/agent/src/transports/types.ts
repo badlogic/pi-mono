@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentTool, Message, Model, QueuedMessage } from "@mariozechner/pi-ai";
+import type { AgentEvent, AgentLoopConfig, AgentTool, Message, Model, QueuedMessage } from "@mariozechner/pi-ai";
 
 /**
  * The minimal configuration needed to run an agent turn.
@@ -9,6 +9,7 @@ export interface AgentRunConfig {
 	model: Model<any>;
 	reasoning?: "low" | "medium" | "high";
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
+	preprocessor?: AgentLoopConfig["preprocessor"];
 }
 
 /**

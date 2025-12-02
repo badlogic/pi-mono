@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
+import type { AssistantMessage, CompactionResult, Message, Model } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -97,6 +97,7 @@ export class TuiRenderer {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+	private onCompact?: () => Promise<CompactionResult>;
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
@@ -113,6 +114,7 @@ export class TuiRenderer {
 		newVersion: string | null = null,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
+		onCompact?: () => Promise<CompactionResult>,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -122,6 +124,7 @@ export class TuiRenderer {
 		this.changelogMarkdown = changelogMarkdown;
 		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
+		this.onCompact = onCompact;
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -414,6 +417,43 @@ export class TuiRenderer {
 			// Check for /clear command
 			if (text === "/clear") {
 				this.handleClearCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /compact command
+			if (text === "/compact") {
+				if (!this.onCompact) {
+					this.showWarning("Compaction is not available in this mode");
+					this.editor.setText("");
+					return;
+				}
+
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Running compaction..."), 1, 0));
+				this.ui.requestRender();
+
+				try {
+					const res = await this.onCompact();
+					if (res.compacted) {
+						// Re-render chat with compacted messages
+						this.chatContainer.clear();
+						this.isFirstUserMessage = true;
+						this.renderInitialMessages(this.agent.state);
+						this.chatContainer.addChild(new Spacer(1));
+						const before = res.stats?.tokensBefore ?? "?";
+						const after = res.stats?.tokensAfter ?? "?";
+						this.chatContainer.addChild(
+							new Text(theme.fg("dim", `Compacted (${before} → ${after} tokens)`), 1, 0),
+						);
+					} else {
+						this.showWarning(res.reason || "Compaction skipped");
+					}
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : "Compaction failed";
+					this.showError(message);
+				}
+
 				this.editor.setText("");
 				return;
 			}
