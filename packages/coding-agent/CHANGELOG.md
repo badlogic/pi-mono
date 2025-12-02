@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.12.4] - 2025-12-02
+
+### Added
+
+- **`/debug` Command**: New slash command that writes debug information to `~/.pi/agent/pi-debug.log`, including terminal width and all rendered lines with their visible widths. Useful for diagnosing rendering issues.
+
+### Fixed
+
+- **Windows Carriage Return Handling**: Fixed tool output containing stray `\r` characters on Windows, which could cause rendering issues. Carriage returns are now stripped from bash output.
+
 ## [0.12.3] - 2025-12-02
 
 ### Fixed
