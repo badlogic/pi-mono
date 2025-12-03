@@ -1,4 +1,4 @@
-import { type Api, type Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import { existsSync } from "fs";
 import { join } from "path";
 
@@ -15,25 +15,25 @@ export interface VibeProxyInfo {
 export async function detectVibeProxy(): Promise<VibeProxyInfo> {
 	// Check common VibeProxy ports
 	const defaultPorts = [8318, 8317];
-	
+
 	for (const port of defaultPorts) {
 		try {
 			// Test if the endpoint is accessible
 			const response = await fetch(`http://localhost:${port}/`, {
-				method: 'GET',
-				signal: AbortSignal.timeout(2000) // 2 second timeout
+				method: "GET",
+				signal: AbortSignal.timeout(2000), // 2 second timeout
 			});
-			
+
 			if (response.ok) {
 				const data = await response.json();
-				
+
 				// This looks like VibeProxy/OpenAI-compatible endpoint
 				if (data.endpoints && Array.isArray(data.endpoints)) {
 					// Try to get available models
 					let models: any[] = [];
 					try {
 						const modelsResponse = await fetch(`http://localhost:${port}/v1/models`, {
-							signal: AbortSignal.timeout(5000)
+							signal: AbortSignal.timeout(5000),
 						});
 						if (modelsResponse.ok) {
 							const modelsData = await modelsResponse.json();
@@ -42,11 +42,11 @@ export async function detectVibeProxy(): Promise<VibeProxyInfo> {
 					} catch {
 						// Models endpoint not available, that's ok
 					}
-					
+
 					return {
 						running: true,
 						port,
-						models
+						models,
 					};
 				}
 			}
@@ -54,7 +54,7 @@ export async function detectVibeProxy(): Promise<VibeProxyInfo> {
 			// Port not available or not VibeProxy, try next
 		}
 	}
-	
+
 	return { running: false, port: 8318 };
 }
 
@@ -66,9 +66,9 @@ export function generateVibeProxyConfig(models: any[]): Model<Api>[] {
 		// Fallback to common models if auto-detection fails
 		return getFallbackVibeProxyModels();
 	}
-	
+
 	const vibeproxyModels: Model<Api>[] = [];
-	
+
 	for (const model of models) {
 		// Map VibeProxy models to our Model interface
 		const piModel: Model<any> = {
@@ -83,15 +83,15 @@ export function generateVibeProxyConfig(models: any[]): Model<Api>[] {
 				input: 0, // VibeProxy handles costs via subscription
 				output: 0,
 				cacheRead: 0,
-				cacheWrite: 0
+				cacheWrite: 0,
 			},
 			contextWindow: 200000, // Default large context window
-			maxTokens: getMaxTokensForModel(model.id)
+			maxTokens: getMaxTokensForModel(model.id),
 		};
-		
+
 		vibeproxyModels.push(piModel);
 	}
-	
+
 	return vibeproxyModels;
 }
 
@@ -117,10 +117,10 @@ function getFallbackVibeProxyModels(): Model<Api>[] {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
-				cacheWrite: 0
+				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192
+			maxTokens: 8192,
 		},
 		{
 			id: "claude-opus-4-20250514",
@@ -134,10 +134,10 @@ function getFallbackVibeProxyModels(): Model<Api>[] {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
-				cacheWrite: 0
+				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 4096
+			maxTokens: 4096,
 		},
 		{
 			id: "claude-3-5-sonnet-20250219",
@@ -151,10 +151,10 @@ function getFallbackVibeProxyModels(): Model<Api>[] {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
-				cacheWrite: 0
+				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192
+			maxTokens: 8192,
 		},
 		{
 			id: "gpt-5.1-codex",
@@ -168,13 +168,13 @@ function getFallbackVibeProxyModels(): Model<Api>[] {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
-				cacheWrite: 0
+				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192
-		}
+			maxTokens: 8192,
+		},
 	];
-	
+
 	return fallbackModels;
 }
 

@@ -446,10 +446,7 @@ export async function findModelAsync(
  * Find a specific model by provider and ID
  * Returns { model, error } - either model or error message
  */
-export function findModel(
-	provider: string,
-	modelId: string,
-): { model: Model<Api> | null; error: string | null } {
+export function findModel(provider: string, modelId: string): { model: Model<Api> | null; error: string | null } {
 	return findModelSync(provider, modelId);
 }
 
