@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.5] - 2025-12-03
+
 ### Added
 
 - **Forking/Rebranding Support**: All branding (app name, config directory, environment variable names) is now configurable via `piConfig` in `package.json`. Forks can change `piConfig.name` and `piConfig.configDir` to rebrand the CLI without code changes. Affects CLI banner, help text, config paths, and error messages. ([#95](https://github.com/badlogic/pi-mono/pull/95))
