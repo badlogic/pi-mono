@@ -188,6 +188,16 @@ export class TuiRenderer {
 			description: "Clear context and start a fresh session",
 		};
 
+		const compactCommand: SlashCommand = {
+			name: "compact",
+			description: "Manually compact the session context",
+		};
+
+		const autocompactCommand: SlashCommand = {
+			name: "autocompact",
+			description: "Toggle automatic context compaction",
+		};
+
 		// Load file-based slash commands
 		this.fileCommands = loadSlashCommands();
 
@@ -211,6 +221,8 @@ export class TuiRenderer {
 				logoutCommand,
 				queueCommand,
 				clearCommand,
+				compactCommand,
+				autocompactCommand,
 				...fileSlashCommands,
 			],
 			process.cwd(),
