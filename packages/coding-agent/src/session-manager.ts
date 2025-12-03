@@ -12,6 +12,10 @@ function uuidv4(): string {
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+// ============================================================================
+// Session entry types
+// ============================================================================
+
 export interface SessionHeader {
 	type: "session";
 	id: string;
@@ -20,7 +24,7 @@ export interface SessionHeader {
 	provider: string;
 	modelId: string;
 	thinkingLevel: string;
-	branchedFrom?: string; // Path to the session file this was branched from
+	branchedFrom?: string;
 }
 
 export interface SessionMessageEntry {
@@ -40,6 +44,129 @@ export interface ModelChangeEntry {
 	timestamp: string;
 	provider: string;
 	modelId: string;
+}
+
+export interface CompactionEntry {
+	type: "compaction";
+	timestamp: string;
+	summary: string;
+	firstKeptEntryIndex: number; // Index into session entries where we start keeping
+	tokensBefore: number;
+}
+
+/** Union of all session entry types */
+export type SessionEntry =
+	| SessionHeader
+	| SessionMessageEntry
+	| ThinkingLevelChangeEntry
+	| ModelChangeEntry
+	| CompactionEntry;
+
+// ============================================================================
+// Session loading with compaction support
+// ============================================================================
+
+export interface LoadedSession {
+	messages: AppMessage[];
+	thinkingLevel: string;
+	model: { provider: string; modelId: string } | null;
+}
+
+const SUMMARY_PREFIX = `Another language model worked on this task and produced a summary. Use this to continue the work without duplicating effort:
+
+`;
+
+/**
+ * Create a user message containing the summary with the standard prefix.
+ */
+export function createSummaryMessage(summary: string): AppMessage {
+	return {
+		role: "user",
+		content: SUMMARY_PREFIX + summary,
+		timestamp: Date.now(),
+	};
+}
+
+/**
+ * Parse session file content into entries.
+ */
+export function parseSessionEntries(content: string): SessionEntry[] {
+	const entries: SessionEntry[] = [];
+	const lines = content.trim().split("\n");
+
+	for (const line of lines) {
+		if (!line.trim()) continue;
+		try {
+			const entry = JSON.parse(line) as SessionEntry;
+			entries.push(entry);
+		} catch {
+			// Skip malformed lines
+		}
+	}
+
+	return entries;
+}
+
+/**
+ * Load session from entries, handling compaction events.
+ *
+ * Algorithm:
+ * 1. Find latest compaction event (if any)
+ * 2. Keep all entries from firstKeptEntryIndex onwards (extracting messages)
+ * 3. Prepend summary as user message
+ */
+export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
+	// Find model and thinking level (always scan all entries)
+	let thinkingLevel = "off";
+	let model: { provider: string; modelId: string } | null = null;
+
+	for (const entry of entries) {
+		if (entry.type === "session") {
+			thinkingLevel = entry.thinkingLevel;
+			model = { provider: entry.provider, modelId: entry.modelId };
+		} else if (entry.type === "thinking_level_change") {
+			thinkingLevel = entry.thinkingLevel;
+		} else if (entry.type === "model_change") {
+			model = { provider: entry.provider, modelId: entry.modelId };
+		}
+	}
+
+	// Find latest compaction event
+	let latestCompactionIndex = -1;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		if (entries[i].type === "compaction") {
+			latestCompactionIndex = i;
+			break;
+		}
+	}
+
+	// No compaction: return all messages
+	if (latestCompactionIndex === -1) {
+		const messages: AppMessage[] = [];
+		for (const entry of entries) {
+			if (entry.type === "message") {
+				messages.push(entry.message);
+			}
+		}
+		return { messages, thinkingLevel, model };
+	}
+
+	const compactionEvent = entries[latestCompactionIndex] as CompactionEntry;
+
+	// Extract messages from firstKeptEntryIndex to end (skipping compaction entries)
+	const keptMessages: AppMessage[] = [];
+	for (let i = compactionEvent.firstKeptEntryIndex; i < entries.length; i++) {
+		const entry = entries[i];
+		if (entry.type === "message") {
+			keptMessages.push(entry.message);
+		}
+	}
+
+	// Build final messages: summary + kept messages
+	const summaryMessage = createSummaryMessage(compactionEvent.summary);
+	const messages = [summaryMessage, ...keptMessages];
+
+	return { messages, thinkingLevel, model };
 }
 
 export class SessionManager {
@@ -208,77 +335,38 @@ export class SessionManager {
 		}
 	}
 
-	loadMessages(): any[] {
-		if (!existsSync(this.sessionFile)) return [];
-
-		const messages: any[] = [];
-		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
-
-		for (const line of lines) {
-			try {
-				const entry = JSON.parse(line);
-				if (entry.type === "message") {
-					messages.push(entry.message);
-				}
-			} catch {
-				// Skip malformed lines
-			}
-		}
-
-		return messages;
+	saveCompaction(entry: CompactionEntry): void {
+		if (!this.enabled) return;
+		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
 	}
 
+	/**
+	 * Load session data (messages, model, thinking level) with compaction support.
+	 */
+	loadSession(): LoadedSession {
+		const entries = this.loadEntries();
+		return loadSessionFromEntries(entries);
+	}
+
+	/**
+	 * @deprecated Use loadSession().messages instead
+	 */
+	loadMessages(): AppMessage[] {
+		return this.loadSession().messages;
+	}
+
+	/**
+	 * @deprecated Use loadSession().thinkingLevel instead
+	 */
 	loadThinkingLevel(): string {
-		if (!existsSync(this.sessionFile)) return "off";
-
-		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
-
-		// Find the most recent thinking level (from session header or change event)
-		let lastThinkingLevel = "off";
-		for (const line of lines) {
-			try {
-				const entry = JSON.parse(line);
-				if (entry.type === "session" && entry.thinkingLevel) {
-					lastThinkingLevel = entry.thinkingLevel;
-				} else if (entry.type === "thinking_level_change" && entry.thinkingLevel) {
-					lastThinkingLevel = entry.thinkingLevel;
-				}
-			} catch {
-				// Skip malformed lines
-			}
-		}
-
-		return lastThinkingLevel;
+		return this.loadSession().thinkingLevel;
 	}
 
+	/**
+	 * @deprecated Use loadSession().model instead
+	 */
 	loadModel(): { provider: string; modelId: string } | null {
-		if (!existsSync(this.sessionFile)) return null;
-
-		const lines = readFileSync(this.sessionFile, "utf8").trim().split("\n");
-
-		// Find the most recent model (from session header or change event)
-		let lastProvider: string | null = null;
-		let lastModelId: string | null = null;
-
-		for (const line of lines) {
-			try {
-				const entry = JSON.parse(line);
-				if (entry.type === "session" && entry.provider && entry.modelId) {
-					lastProvider = entry.provider;
-					lastModelId = entry.modelId;
-				} else if (entry.type === "model_change" && entry.provider && entry.modelId) {
-					lastProvider = entry.provider;
-					lastModelId = entry.modelId;
-				}
-			} catch {
-				// Skip malformed lines
-			}
-		}
-
-		if (lastProvider && lastModelId) {
-			return { provider: lastProvider, modelId: lastModelId };
-		}
-		return null;
+		return this.loadSession().model;
 	}
 
 	getSessionId(): string {
@@ -287,6 +375,29 @@ export class SessionManager {
 
 	getSessionFile(): string {
 		return this.sessionFile;
+	}
+
+	/**
+	 * Load all entries from the session file.
+	 */
+	loadEntries(): SessionEntry[] {
+		if (!existsSync(this.sessionFile)) return [];
+
+		const content = readFileSync(this.sessionFile, "utf8");
+		const entries: SessionEntry[] = [];
+		const lines = content.trim().split("\n");
+
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			try {
+				const entry = JSON.parse(line) as SessionEntry;
+				entries.push(entry);
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		return entries;
 	}
 
 	/**
