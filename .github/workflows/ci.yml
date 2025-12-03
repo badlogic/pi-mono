@@ -11,22 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-and-test:
-    name: ${{ matrix.package }}
+  build-check-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - "@mariozechner/pi-ai"
-          - "@mariozechner/pi-agent-core"
-          - "@mariozechner/pi-coding-agent"
-          - "@mariozechner/pi-mom"
-          - "@mariozechner/pi-tui"
-          - "@mariozechner/pi-web-ui"
-          - "@mariozechner/pi-proxy"
-          - "@mariozechner/pi"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,11 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build workspaces
+      - name: Build
         run: npm run build
 
       - name: Check
-        run: npm run --if-present check --workspace ${{ matrix.package }}
+        run: npm run check
 
       - name: Test
-        run: npm test --if-present --workspace ${{ matrix.package }}
+        run: npm test
