@@ -5,7 +5,7 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
-import { getToolsDir } from "./config.js";
+import { APP_NAME, getToolsDir } from "./config.js";
 
 const TOOLS_DIR = getToolsDir();
 
@@ -93,7 +93,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 // Fetch latest release version from GitHub
 async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-		headers: { "User-Agent": "pi-coding-agent" },
+		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
 	});
 
 	if (!response.ok) {
