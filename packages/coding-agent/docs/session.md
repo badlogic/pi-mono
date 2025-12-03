@@ -10,6 +10,12 @@ Sessions are stored as JSONL (JSON Lines) files. Each line is a JSON object with
 
 Where `<path>` is the working directory with `/` replaced by `-`.
 
+## Type Definitions
+
+- [`src/session-manager.ts`](../src/session-manager.ts) - Session entry types (`SessionHeader`, `SessionMessageEntry`, etc.)
+- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AppMessage`, `Attachment`, `ThinkingLevel`
+- [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `UserMessage`, `AssistantMessage`, `ToolResultMessage`, `Usage`, `ToolCall`
+
 ## Entry Types
 
 ### SessionHeader
@@ -22,7 +28,7 @@ First line of the file. Defines session metadata.
 
 ### SessionMessageEntry
 
-A message in the conversation. The `message` field contains an `AppMessage` (see [RPC.md](./RPC.md#message-types)).
+A message in the conversation. The `message` field contains an `AppMessage` (see [rpc.md](./rpc.md#message-types)).
 
 ```json
 {"type":"message","timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"user","content":"Hello","timestamp":1733234567890}}
@@ -45,10 +51,6 @@ Emitted when the user changes the thinking/reasoning level.
 ```json
 {"type":"thinking_level_change","timestamp":"2024-12-03T14:06:00.000Z","thinkingLevel":"high"}
 ```
-
-## Type Definitions
-
-See [`src/session-manager.ts`](../src/session-manager.ts) for entry types and [`packages/agent/src/types.ts`](../../agent/src/types.ts) for `AppMessage`.
 
 ## Parsing Example
 
