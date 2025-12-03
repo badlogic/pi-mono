@@ -49,10 +49,6 @@ jobs:
       - name: Build workspaces
         run: npm run build --workspaces --if-present
 
-      - name: Install web-ui example deps
-        if: matrix.package == '@mariozechner/pi-web-ui'
-        run: npm install --prefix packages/web-ui/example
-
       - name: Check
         run: npm run --if-present check --workspace ${{ matrix.package }}
 
