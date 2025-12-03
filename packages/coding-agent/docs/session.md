@@ -26,6 +26,12 @@ First line of the file. Defines session metadata.
 {"type":"session","id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","provider":"anthropic","modelId":"claude-sonnet-4-5","thinkingLevel":"off"}
 ```
 
+For branched sessions, includes the source session path:
+
+```json
+{"type":"session","id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","provider":"anthropic","modelId":"claude-sonnet-4-5","thinkingLevel":"off","branchedFrom":"/path/to/original/session.jsonl"}
+```
+
 ### SessionMessageEntry
 
 A message in the conversation. The `message` field contains an `AppMessage` (see [rpc.md](./rpc.md#message-types)).

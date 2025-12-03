@@ -246,17 +246,18 @@ interface Settings {
 ```
 
 **Why these defaults:**
-- `reserveTokens: 16384` - Room for summary output (~8k) plus safety margin (~8k)
+- `reserveTokens: 16384` - Room for summary output (~13k) plus safety margin (~3k)
 - `keepRecentTokens: 20000` - Preserves recent context verbatim, summary focuses on older content
 
 ### Token Calculation
 
-Context tokens are calculated from assistant messages as:
+Context tokens are calculated from the **last non-aborted assistant message** using the same formula as the footer:
+
 ```
 contextTokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite
 ```
 
-The diff between consecutive (non-aborted, non-error) assistant messages gives the tokens added by that turn. Verified against actual session files.
+This gives total context size across all providers. The `input` field represents non-cached input tokens, so adding `cacheRead` and `cacheWrite` gives the true total input.
 
 **Trigger condition:**
 ```typescript
@@ -353,12 +354,12 @@ u5, a5, u6, a6, t6, a6, u7, a7
 
 Session loader finds COMPACTION 2 (latest), builds:
 ```
-[summary2_as_user_msg], u7, a7
+[summary2_as_user_msg], u6, a6, t6, a6, u7, a7
 ```
 
 Note: COMPACTION 2's summary incorporates COMPACTION 1's summary because the summarization model received the full current context (which included summary1 as first message).
 
-When calculating `keepLastMessages` for COMPACTION 2, we only count messages between COMPACTION 1 and COMPACTION 2 (cannot cross the boundary).
+**Boundary rule:** When calculating `keepLastMessages` for COMPACTION 2, we only count messages between COMPACTION 1 and COMPACTION 2. If `keepLastMessages` exceeds the available messages (e.g., keepLastMessages=10 but only 6 messages exist after COMPACTION 1), we take all available messages up to the boundary. We never cross a compaction boundary.
 
 ### Summarization
 
@@ -367,6 +368,7 @@ Use **pi-ai directly** (not the full agent loop) for summarization:
 - Set `maxTokens` to `0.8 * reserveTokens` (leaves 20% for prompt overhead and safety margin)
 - Pass abort signal for cancellation
 - Use the currently selected model
+- **Reasoning disabled** (thinking level "off") since we just need a summary, not extended reasoning
 
 With default `reserveTokens: 16384`, maxTokens = ~13107.
 
@@ -407,8 +409,20 @@ Works in all modes:
 
 The `/branch` command lets users create a new session from a previous user message. With compaction:
 
-- **Branch UI shows ALL user messages** in the session file, both before and after any compaction events
-- **Branching copies the session file** up to the selected user message, including all compaction events and messages
+- **Branch UI reads from session file directly** (not from `state.messages`) to show ALL user messages, including those before compaction events
+- **Branching copies the raw session file** line-by-line up to (but excluding) the selected user message, preserving all compaction events and intermediate entries
+
+#### Why read from session file instead of state.messages
+
+After compaction, `state.messages` only contains `[summary_user_msg, ...kept_messages, ...new_messages]`. The pre-compaction messages are not in state. To allow branching to any historical point, we must read the session file directly.
+
+#### Reworked createBranchedSession
+
+Current implementation iterates `state.messages` and writes fresh entries. New implementation:
+1. Read session file line by line
+2. For each line, check if it's the target user message
+3. Copy all lines up to (but excluding) the target user message
+4. The target user message text goes into the editor
 
 #### Example: Branching After Compaction
 
@@ -423,24 +437,25 @@ User branches at u3. New session file:
 ```
 u1, a1, u2, a2
 [COMPACTION: summary="...", keepLastMessages=2]
-u3
 ```
 
 Session loader builds context for new session:
 ```
-[summary_as_user_msg], u2, a2, u3
+[summary_as_user_msg], u2, a2
 ```
+
+User's editor contains u3's text for editing/resubmission.
 
 #### Example: Branching Before Compaction
 
 Same session file, user branches at u2. New session file:
 ```
-u1, a1, u2
+u1, a1
 ```
 
 No compaction in new session. Session loader builds:
 ```
-u1, a1, u2
+u1, a1
 ```
 
 This effectively "undoes" the compaction, letting users recover if important context was lost.
@@ -448,6 +463,12 @@ This effectively "undoes" the compaction, letting users recover if important con
 ### Auto-Compaction Trigger
 
 Auto-compaction is checked in the agent subscription callback after each `message_end` event for assistant messages. If context tokens exceed the threshold, compaction runs.
+
+**Why abort mid-turn:** If auto-compaction triggers after an assistant message that contains tool calls, we abort immediately rather than waiting for tool results. Waiting would risk:
+1. Tool results filling remaining context, leaving no room for the summary
+2. Context overflow before the next check point (agent_end)
+
+The abort causes some work loss, but the summary captures progress up to that point.
 
 **Trigger flow (similar to `/clear` command):**
 
@@ -468,7 +489,7 @@ async handleAutoCompaction(): Promise<void> {
   this.statusContainer.clear();
   
   // 4. Perform compaction on current state:
-  //    - Generate summary using pi-ai directly
+  //    - Generate summary using pi-ai directly (no tools, reasoning off)
   //    - Write compaction event to session file
   //    - Rebuild agent messages (summary as user msg + kept messages)
   //    - Rebuild UI to reflect new state
@@ -486,12 +507,13 @@ This mirrors the `/clear` command pattern: unsubscribe first to prevent processi
 
 1. Add `compaction` field to `Settings` interface and `SettingsManager`
 2. Add `CompactionEvent` type to session manager
-3. Update session loader to handle compaction events
-4. Add `/compact` command handler
-5. Add `/autocompact` command with selector UI
-6. Add auto-compaction check in subscription callback after assistant `message_end`
-7. Implement `handleAutoCompaction()` following the unsubscribe/abort/wait/compact/resubscribe pattern
-8. Implement summarization function using pi-ai
-9. Add compaction event to RPC/JSON output types
-10. Update footer to show when auto-compact is disabled
-11. Ensure `/branch` UI shows all user messages (including pre-compaction)
+3. Update session loader to handle compaction events (find latest, apply keepLastMessages with boundary rule)
+4. Rework `createBranchedSession` to copy raw session file lines instead of re-serializing from state
+5. Update `/branch` UI to read user messages from session file directly
+6. Add `/compact` command handler
+7. Add `/autocompact` command with selector UI
+8. Add auto-compaction check in subscription callback after assistant `message_end`
+9. Implement `handleAutoCompaction()` following the unsubscribe/abort/wait/compact/resubscribe pattern
+10. Implement summarization function using pi-ai (no tools, reasoning off)
+11. Add compaction event to RPC/JSON output types
+12. Update footer to show when auto-compact is disabled

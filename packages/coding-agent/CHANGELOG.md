@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Branch Source Tracking**: Branched sessions now store `branchedFrom` in the session header, containing the path to the original session file. Useful for tracing session lineage.
+
 ## [0.12.5] - 2025-12-03
 
 ### Added
