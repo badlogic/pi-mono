@@ -561,4 +561,36 @@ export class SessionManager {
 
 		return newSessionFile;
 	}
+
+	/**
+	 * Create a branched session from session entries up to (but not including) a specific entry index.
+	 * This preserves compaction events and all entry types.
+	 * Returns the new session file path.
+	 */
+	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string {
+		const newSessionId = uuidv4();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
+
+		// Copy all entries up to (but not including) the branch point
+		for (let i = 0; i < branchBeforeIndex; i++) {
+			const entry = entries[i];
+
+			if (entry.type === "session") {
+				// Rewrite session header with new ID and branchedFrom
+				const newHeader: SessionHeader = {
+					...entry,
+					id: newSessionId,
+					timestamp: new Date().toISOString(),
+					branchedFrom: this.sessionFile,
+				};
+				appendFileSync(newSessionFile, JSON.stringify(newHeader) + "\n");
+			} else {
+				// Copy other entries as-is
+				appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+			}
+		}
+
+		return newSessionFile;
+	}
 }

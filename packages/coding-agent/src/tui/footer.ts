@@ -14,9 +14,14 @@ export class FooterComponent implements Component {
 	private cachedBranch: string | null | undefined = undefined; // undefined = not checked yet, null = not in git repo, string = branch name
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
+	private autoCompactEnabled: boolean = true;
 
 	constructor(state: AgentState) {
 		this.state = state;
+	}
+
+	setAutoCompactEnabled(enabled: boolean): void {
+		this.autoCompactEnabled = enabled;
 	}
 
 	/**
@@ -180,12 +185,13 @@ export class FooterComponent implements Component {
 
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
+		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
 		if (contextPercentValue > 90) {
-			contextPercentStr = theme.fg("error", `${contextPercent}%`);
+			contextPercentStr = theme.fg("error", `${contextPercent}%${autoIndicator}`);
 		} else if (contextPercentValue > 70) {
-			contextPercentStr = theme.fg("warning", `${contextPercent}%`);
+			contextPercentStr = theme.fg("warning", `${contextPercent}%${autoIndicator}`);
 		} else {
-			contextPercentStr = `${contextPercent}%`;
+			contextPercentStr = `${contextPercent}%${autoIndicator}`;
 		}
 		statsParts.push(contextPercentStr);
 

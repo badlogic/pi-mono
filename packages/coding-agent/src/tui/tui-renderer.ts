@@ -18,11 +18,12 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
+import { calculateContextTokens, compact, getLastAssistantUsage, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
-import type { SessionManager } from "../session-manager.js";
+import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
@@ -129,6 +130,7 @@ export class TuiRenderer {
 		this.editorContainer = new Container(); // Container to hold editor or selector
 		this.editorContainer.addChild(this.editor); // Start with editor
 		this.footer = new FooterComponent(agent.state);
+		this.footer.setAutoCompactEnabled(this.settingsManager.getCompactionEnabled());
 
 		// Define slash commands
 		const thinkingCommand: SlashCommand = {
@@ -418,6 +420,21 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /compact command
+			if (text === "/compact" || text.startsWith("/compact ")) {
+				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+				this.handleCompactCommand(customInstructions);
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /autocompact command
+			if (text === "/autocompact") {
+				this.handleAutocompactCommand();
+				this.editor.setText("");
+				return;
+			}
+
 			// Check for /debug command
 			if (text === "/debug") {
 				this.handleDebugCommand();
@@ -511,8 +528,82 @@ export class TuiRenderer {
 				if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
 					this.sessionManager.startSession(this.agent.state);
 				}
+
+				// Check for auto-compaction after assistant messages
+				if (event.message.role === "assistant") {
+					await this.checkAutoCompaction();
+				}
 			}
 		});
+	}
+
+	private async checkAutoCompaction(): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
+
+		// Get last assistant usage
+		const entries = this.sessionManager.loadEntries();
+		const lastUsage = getLastAssistantUsage(entries);
+		if (!lastUsage) return;
+
+		const contextTokens = calculateContextTokens(lastUsage);
+		const contextWindow = this.agent.state.model.contextWindow;
+
+		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
+
+		// Trigger auto-compaction
+		await this.handleAutoCompaction();
+	}
+
+	private async handleAutoCompaction(): Promise<void> {
+		// Unsubscribe to stop processing events
+		this.unsubscribe?.();
+
+		// Abort current agent run and wait for completion
+		this.agent.abort();
+		await this.agent.waitForIdle();
+
+		// Stop loading animation
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+		this.statusContainer.clear();
+
+		// Show compacting status
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("muted", "Auto-compacting context..."), 1, 1));
+		this.ui.requestRender();
+
+		try {
+			const apiKey = await getApiKeyForModel(this.agent.state.model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${this.agent.state.model.provider}`);
+			}
+
+			const entries = this.sessionManager.loadEntries();
+			const settings = this.settingsManager.getCompactionSettings();
+			const compactionEntry = await compact(entries, this.agent.state.model, settings, apiKey);
+
+			// Save and reload
+			this.sessionManager.saveCompaction(compactionEntry);
+			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			this.agent.replaceMessages(loaded.messages);
+
+			// Rebuild UI
+			this.chatContainer.clear();
+			this.rebuildChatFromMessages();
+
+			this.showSuccess(
+				"✓ Context auto-compacted",
+				`Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`,
+			);
+		} catch (error) {
+			this.showError(`Auto-compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		// Resubscribe
+		this.subscribeToAgent();
 	}
 
 	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
@@ -784,6 +875,50 @@ export class TuiRenderer {
 		});
 	}
 
+	private rebuildChatFromMessages(): void {
+		// Reset state and re-render messages from agent state
+		this.isFirstUserMessage = true;
+		this.pendingTools.clear();
+
+		for (const message of this.agent.state.messages) {
+			if (message.role === "user") {
+				const userMsg = message as any;
+				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
+				const textContent = textBlocks.map((c: any) => c.text).join("");
+				if (textContent) {
+					const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
+					this.chatContainer.addChild(userComponent);
+					this.isFirstUserMessage = false;
+				}
+			} else if (message.role === "assistant") {
+				const assistantMsg = message as AssistantMessage;
+				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				this.chatContainer.addChild(assistantComponent);
+
+				for (const content of assistantMsg.content) {
+					if (content.type === "toolCall") {
+						const component = new ToolExecutionComponent(content.name, content.arguments);
+						this.chatContainer.addChild(component);
+						this.pendingTools.set(content.id, component);
+					}
+				}
+			} else if (message.role === "toolResult") {
+				const component = this.pendingTools.get(message.toolCallId);
+				if (component) {
+					component.updateResult({
+						content: message.content,
+						details: message.details,
+						isError: message.isError,
+					});
+					this.pendingTools.delete(message.toolCallId);
+				}
+			}
+		}
+
+		this.pendingTools.clear();
+		this.ui.requestRender();
+	}
+
 	private handleCtrlC(): void {
 		// Handle Ctrl+C double-press logic
 		const now = Date.now();
@@ -974,6 +1109,15 @@ export class TuiRenderer {
 		// Show warning message in the chat
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private showSuccess(message: string, detail?: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		const text = detail
+			? `${theme.fg("success", message)}\n${theme.fg("muted", detail)}`
+			: theme.fg("success", message);
+		this.chatContainer.addChild(new Text(text, 1, 1));
 		this.ui.requestRender();
 	}
 
@@ -1176,18 +1320,30 @@ export class TuiRenderer {
 	}
 
 	private showUserMessageSelector(): void {
-		// Extract all user messages from the current state
+		// Read from session file directly to see ALL historical user messages
+		// (including those before compaction events)
+		const entries = this.sessionManager.loadEntries();
 		const userMessages: Array<{ index: number; text: string }> = [];
 
-		for (let i = 0; i < this.agent.state.messages.length; i++) {
-			const message = this.agent.state.messages[i];
-			if (message.role === "user") {
-				const userMsg = message as any;
-				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
-				const textContent = textBlocks.map((c: any) => c.text).join("");
-				if (textContent) {
-					userMessages.push({ index: i, text: textContent });
-				}
+		const getUserMessageText = (content: string | Array<{ type: string; text?: string }>): string => {
+			if (typeof content === "string") return content;
+			if (Array.isArray(content)) {
+				return content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("");
+			}
+			return "";
+		};
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+			if (entry.type !== "message") continue;
+			if (entry.message.role !== "user") continue;
+
+			const textContent = getUserMessageText(entry.message.content);
+			if (textContent) {
+				userMessages.push({ index: i, text: textContent });
 			}
 		}
 
@@ -1202,22 +1358,23 @@ export class TuiRenderer {
 		// Create user message selector
 		this.userMessageSelector = new UserMessageSelectorComponent(
 			userMessages,
-			(messageIndex) => {
+			(entryIndex) => {
 				// Get the selected user message text to put in the editor
-				const selectedMessage = this.agent.state.messages[messageIndex];
-				const selectedUserMsg = selectedMessage as any;
-				const textBlocks = selectedUserMsg.content.filter((c: any) => c.type === "text");
-				const selectedText = textBlocks.map((c: any) => c.text).join("");
+				const selectedEntry = entries[entryIndex];
+				if (selectedEntry.type !== "message") return;
+				if (selectedEntry.message.role !== "user") return;
 
-				// Create a branched session with messages UP TO (but not including) the selected message
-				const newSessionFile = this.sessionManager.createBranchedSession(this.agent.state, messageIndex - 1);
+				const selectedText = getUserMessageText(selectedEntry.message.content);
+
+				// Create a branched session by copying entries up to (but not including) the selected entry
+				const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
 
 				// Set the new session file as active
 				this.sessionManager.setSessionFile(newSessionFile);
 
-				// Truncate messages in agent state to before the selected message
-				const truncatedMessages = this.agent.state.messages.slice(0, messageIndex);
-				this.agent.replaceMessages(truncatedMessages);
+				// Reload the session
+				const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+				this.agent.replaceMessages(loaded.messages);
 
 				// Clear and re-render the chat
 				this.chatContainer.clear();
@@ -1226,9 +1383,7 @@ export class TuiRenderer {
 
 				// Show confirmation message
 				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(
-					new Text(theme.fg("dim", `Branched to new session from message ${messageIndex}`), 1, 0),
-				);
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
 
 				// Put the selected message in the editor
 				this.editor.setText(selectedText);
@@ -1568,6 +1723,89 @@ export class TuiRenderer {
 		);
 
 		this.ui.requestRender();
+	}
+
+	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+		// Check if there are any messages to compact
+		const entries = this.sessionManager.loadEntries();
+		const messageCount = entries.filter((e) => e.type === "message").length;
+
+		if (messageCount < 2) {
+			this.showWarning("Nothing to compact (no messages yet)");
+			return;
+		}
+
+		// Unsubscribe first to prevent processing events during compaction
+		this.unsubscribe?.();
+
+		// Abort and wait for completion
+		this.agent.abort();
+		await this.agent.waitForIdle();
+
+		// Stop loading animation
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+		this.statusContainer.clear();
+
+		// Show compacting status
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("muted", "Compacting context..."), 1, 1));
+		this.ui.requestRender();
+
+		try {
+			// Get API key for current model
+			const apiKey = await getApiKeyForModel(this.agent.state.model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${this.agent.state.model.provider}`);
+			}
+
+			// Perform compaction
+			const settings = this.settingsManager.getCompactionSettings();
+			const compactionEntry = await compact(
+				entries,
+				this.agent.state.model,
+				settings,
+				apiKey,
+				undefined,
+				customInstructions,
+			);
+
+			// Save compaction to session
+			this.sessionManager.saveCompaction(compactionEntry);
+
+			// Reload session
+			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			this.agent.replaceMessages(loaded.messages);
+
+			// Rebuild UI
+			this.chatContainer.clear();
+			this.rebuildChatFromMessages();
+
+			// Show success
+			this.showSuccess(
+				"✓ Context compacted",
+				`Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`,
+			);
+		} catch (error) {
+			this.showError(`Compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		// Resubscribe to agent
+		this.subscribeToAgent();
+	}
+
+	private handleAutocompactCommand(): void {
+		const currentEnabled = this.settingsManager.getCompactionEnabled();
+		const newState = !currentEnabled;
+		this.settingsManager.setCompactionEnabled(newState);
+		this.footer.setAutoCompactEnabled(newState);
+
+		this.showSuccess(
+			`✓ Auto-compact ${newState ? "enabled" : "disabled"}`,
+			newState ? "Context will be compacted automatically when nearing limits" : "Use /compact to manually compact",
+		);
 	}
 
 	private updatePendingMessagesDisplay(): void {

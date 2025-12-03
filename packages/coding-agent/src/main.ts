@@ -6,6 +6,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
+import { compact } from "./compaction.js";
 import {
 	APP_NAME,
 	CONFIG_DIR_NAME,
@@ -17,7 +18,7 @@ import {
 } from "./config.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { SessionManager } from "./session-manager.js";
+import { loadSessionFromEntries, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
 import { initTheme } from "./theme/theme.js";
@@ -814,7 +815,11 @@ async function runSingleShotMode(
 	}
 }
 
-async function runRpcMode(agent: Agent, sessionManager: SessionManager): Promise<void> {
+async function runRpcMode(
+	agent: Agent,
+	sessionManager: SessionManager,
+	settingsManager: SettingsManager,
+): Promise<void> {
 	// Subscribe to all events and output as JSON (same pattern as tui-renderer)
 	agent.subscribe(async (event) => {
 		console.log(JSON.stringify(event));
@@ -851,6 +856,35 @@ async function runRpcMode(agent: Agent, sessionManager: SessionManager): Promise
 				await agent.prompt(input.message, input.attachments);
 			} else if (input.type === "abort") {
 				agent.abort();
+			} else if (input.type === "compact") {
+				// Handle compaction request
+				try {
+					const apiKey = await getApiKeyForModel(agent.state.model);
+					if (!apiKey) {
+						throw new Error(`No API key for ${agent.state.model.provider}`);
+					}
+
+					const entries = sessionManager.loadEntries();
+					const settings = settingsManager.getCompactionSettings();
+					const compactionEntry = await compact(
+						entries,
+						agent.state.model,
+						settings,
+						apiKey,
+						undefined,
+						input.customInstructions,
+					);
+
+					// Save and reload
+					sessionManager.saveCompaction(compactionEntry);
+					const loaded = loadSessionFromEntries(sessionManager.loadEntries());
+					agent.replaceMessages(loaded.messages);
+
+					// Emit compaction event (compactionEntry already has type: "compaction")
+					console.log(JSON.stringify(compactionEntry));
+				} catch (error: any) {
+					console.log(JSON.stringify({ type: "error", error: `Compaction failed: ${error.message}` }));
+				}
 			}
 		} catch (error: any) {
 			// Output error as JSON
@@ -1219,7 +1253,7 @@ export async function main(args: string[]) {
 	// Route to appropriate mode
 	if (mode === "rpc") {
 		// RPC mode - headless operation
-		await runRpcMode(agent, sessionManager);
+		await runRpcMode(agent, sessionManager, settingsManager);
 	} else if (isInteractive) {
 		// Check for new version (don't block startup if it takes too long)
 		let newVersion: string | null = null;

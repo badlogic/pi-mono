@@ -2,6 +2,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getAgentDir } from "./config.js";
 
+export interface CompactionSettings {
+	enabled?: boolean; // default: true
+	reserveTokens?: number; // default: 16384
+	keepRecentTokens?: number; // default: 20000
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -9,6 +15,7 @@ export interface Settings {
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
+	compaction?: CompactionSettings;
 }
 
 export class SettingsManager {
@@ -107,5 +114,33 @@ export class SettingsManager {
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high"): void {
 		this.settings.defaultThinkingLevel = level;
 		this.save();
+	}
+
+	getCompactionEnabled(): boolean {
+		return this.settings.compaction?.enabled ?? true;
+	}
+
+	setCompactionEnabled(enabled: boolean): void {
+		if (!this.settings.compaction) {
+			this.settings.compaction = {};
+		}
+		this.settings.compaction.enabled = enabled;
+		this.save();
+	}
+
+	getCompactionReserveTokens(): number {
+		return this.settings.compaction?.reserveTokens ?? 16384;
+	}
+
+	getCompactionKeepRecentTokens(): number {
+		return this.settings.compaction?.keepRecentTokens ?? 20000;
+	}
+
+	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+		return {
+			enabled: this.getCompactionEnabled(),
+			reserveTokens: this.getCompactionReserveTokens(),
+			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+		};
 	}
 }
