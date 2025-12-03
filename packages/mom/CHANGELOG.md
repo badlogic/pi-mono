@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Message backfill on startup (#103)
+  - Fetches missed messages from Slack using `conversations.history` API when mom restarts
+  - Backfills up to 3 pages (3000 messages) per channel since last logged timestamp
+  - Includes mom's own responses and user messages (excludes other bots)
+  - Downloads attachments from backfilled messages
+  - Logs progress: channel count, per-channel message counts, total with duration
+
 ## [0.10.2] - 2025-11-27
 
 ### Breaking Changes

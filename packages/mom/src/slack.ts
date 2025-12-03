@@ -1,5 +1,5 @@
 import { SocketModeClient } from "@slack/socket-mode";
-import { WebClient } from "@slack/web-api";
+import { type ConversationsHistoryResponse, WebClient } from "@slack/web-api";
 import { readFileSync } from "fs";
 import { basename } from "path";
 import * as log from "./log.js";
@@ -467,6 +467,113 @@ export class MomBot {
 		};
 	}
 
+	/**
+	 * Backfill missed messages for a single channel
+	 * Returns the number of messages backfilled
+	 */
+	private async backfillChannel(channelId: string): Promise<number> {
+		const lastTs = this.store.getLastTimestamp(channelId);
+
+		// Collect messages from up to 3 pages
+		type Message = NonNullable<ConversationsHistoryResponse["messages"]>[number];
+		const allMessages: Message[] = [];
+
+		let cursor: string | undefined;
+		let pageCount = 0;
+		const maxPages = 3;
+
+		do {
+			const result = await this.webClient.conversations.history({
+				channel: channelId,
+				oldest: lastTs ?? undefined,
+				inclusive: false,
+				limit: 1000,
+				cursor,
+			});
+
+			if (result.messages) {
+				allMessages.push(...result.messages);
+			}
+
+			cursor = result.response_metadata?.next_cursor;
+			pageCount++;
+		} while (cursor && pageCount < maxPages);
+
+		// Filter messages: include mom's messages, exclude other bots
+		const relevantMessages = allMessages.filter((msg) => {
+			// Always include mom's own messages
+			if (msg.user === this.botUserId) return true;
+			// Exclude other bot messages
+			if (msg.bot_id) return false;
+			// Standard filters for user messages
+			if (msg.subtype !== undefined && msg.subtype !== "file_share") return false;
+			if (!msg.user) return false;
+			if (!msg.text && (!msg.files || msg.files.length === 0)) return false;
+			return true;
+		});
+
+		// Reverse to chronological order (API returns newest first)
+		relevantMessages.reverse();
+
+		// Log each message
+		for (const msg of relevantMessages) {
+			const isMomMessage = msg.user === this.botUserId;
+			const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts!) : [];
+
+			if (isMomMessage) {
+				// Log mom's message as bot response
+				await this.store.logMessage(channelId, {
+					date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
+					ts: msg.ts!,
+					user: "bot",
+					text: msg.text || "",
+					attachments,
+					isBot: true,
+				});
+			} else {
+				// Log user message
+				const { userName, displayName } = await this.getUserInfo(msg.user!);
+				await this.store.logMessage(channelId, {
+					date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
+					ts: msg.ts!,
+					user: msg.user!,
+					userName,
+					displayName,
+					text: msg.text || "",
+					attachments,
+					isBot: false,
+				});
+			}
+		}
+
+		return relevantMessages.length;
+	}
+
+	/**
+	 * Backfill missed messages for all channels
+	 */
+	private async backfillAllChannels(): Promise<void> {
+		const startTime = Date.now();
+		log.logBackfillStart(this.channelCache.size);
+
+		let totalMessages = 0;
+
+		for (const [channelId, channelName] of this.channelCache) {
+			try {
+				const count = await this.backfillChannel(channelId);
+				if (count > 0) {
+					log.logBackfillChannel(channelName, count);
+				}
+				totalMessages += count;
+			} catch (error) {
+				log.logWarning(`Failed to backfill channel #${channelName}`, String(error));
+			}
+		}
+
+		const durationMs = Date.now() - startTime;
+		log.logBackfillComplete(totalMessages, durationMs);
+	}
+
 	async start(): Promise<void> {
 		const auth = await this.webClient.auth.test();
 		this.botUserId = auth.user_id as string;
@@ -474,6 +581,9 @@ export class MomBot {
 		// Fetch channels and users in parallel
 		await Promise.all([this.fetchChannels(), this.fetchUsers()]);
 		log.logInfo(`Loaded ${this.channelCache.size} channels, ${this.userCache.size} users`);
+
+		// Backfill any messages missed while offline
+		await this.backfillAllChannels();
 
 		await this.socketClient.start();
 		log.logConnected();

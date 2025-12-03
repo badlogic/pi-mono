@@ -242,3 +242,17 @@ export function logConnected(): void {
 export function logDisconnected(): void {
 	console.log("Mom bot disconnected.");
 }
+
+// Backfill
+export function logBackfillStart(channelCount: number): void {
+	console.log(chalk.blue(`${timestamp()} [system] Backfilling ${channelCount} channels...`));
+}
+
+export function logBackfillChannel(channelName: string, messageCount: number): void {
+	console.log(chalk.blue(`${timestamp()} [system]   #${channelName}: ${messageCount} messages`));
+}
+
+export function logBackfillComplete(totalMessages: number, durationMs: number): void {
+	const duration = (durationMs / 1000).toFixed(1);
+	console.log(chalk.blue(`${timestamp()} [system] Backfill complete: ${totalMessages} messages in ${duration}s`));
+}

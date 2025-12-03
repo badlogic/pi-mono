@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
 import * as log from "./log.js";
@@ -74,7 +74,7 @@ export class ChannelStore {
 	 */
 	processAttachments(
 		channelId: string,
-		files: Array<{ name: string; url_private_download?: string; url_private?: string }>,
+		files: Array<{ name?: string; url_private_download?: string; url_private?: string }>,
 		timestamp: string,
 	): Attachment[] {
 		const attachments: Attachment[] = [];
@@ -82,6 +82,10 @@ export class ChannelStore {
 		for (const file of files) {
 			const url = file.url_private_download || file.url_private;
 			if (!url) continue;
+			if (!file.name) {
+				log.logWarning("Attachment missing name, skipping", url);
+				continue;
+			}
 
 			const filename = this.generateLocalFilename(file.name, timestamp);
 			const localPath = `${channelId}/attachments/${filename}`;
@@ -137,6 +141,30 @@ export class ChannelStore {
 			attachments: [],
 			isBot: true,
 		});
+	}
+
+	/**
+	 * Get the timestamp of the last logged message for a channel
+	 * Returns null if no log exists
+	 */
+	getLastTimestamp(channelId: string): string | null {
+		const logPath = join(this.workingDir, channelId, "log.jsonl");
+		if (!existsSync(logPath)) {
+			return null;
+		}
+
+		try {
+			const content = readFileSync(logPath, "utf-8");
+			const lines = content.trim().split("\n");
+			if (lines.length === 0 || lines[0] === "") {
+				return null;
+			}
+			const lastLine = lines[lines.length - 1];
+			const message = JSON.parse(lastLine) as LoggedMessage;
+			return message.ts;
+		} catch {
+			return null;
+		}
 	}
 
 	/**
