@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
@@ -19,6 +18,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
+import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout } from "../oauth/index.js";
@@ -221,7 +221,7 @@ export class TuiRenderer {
 		if (this.isInitialized) return;
 
 		// Add header with logo and instructions
-		const logo = theme.bold(theme.fg("accent", "pi")) + theme.fg("dim", ` v${this.version}`);
+		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 		const instructions =
 			theme.fg("dim", "esc") +
 			theme.fg("muted", " to interrupt") +
@@ -434,7 +434,7 @@ export class TuiRenderer {
 				this.showError(
 					"No model selected.\n\n" +
 						"Set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n" +
-						"or create ~/.pi/agent/models.json\n\n" +
+						`or create ${getModelsPath()}\n\n` +
 						"Then use /model to select a model.",
 				);
 				return;
@@ -445,7 +445,7 @@ export class TuiRenderer {
 			if (!apiKey) {
 				this.showError(
 					`No API key found for ${currentModel.provider}.\n\n` +
-						`Set the appropriate environment variable or update ~/.pi/agent/models.json`,
+						`Set the appropriate environment variable or update ${getModelsPath()}`,
 				);
 				this.editor.setText(text);
 				return;
@@ -1334,9 +1334,7 @@ export class TuiRenderer {
 						this.chatContainer.addChild(
 							new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
 						);
-						this.chatContainer.addChild(
-							new Text(theme.fg("dim", `Tokens saved to ~/.pi/agent/oauth.json`), 1, 0),
-						);
+						this.chatContainer.addChild(new Text(theme.fg("dim", `Tokens saved to ${getOAuthPath()}`), 1, 0));
 						this.ui.requestRender();
 					} catch (error: any) {
 						this.showError(`Login failed: ${error.message}`);
@@ -1353,7 +1351,7 @@ export class TuiRenderer {
 							new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
 						);
 						this.chatContainer.addChild(
-							new Text(theme.fg("dim", `Credentials removed from ~/.pi/agent/oauth.json`), 1, 0),
+							new Text(theme.fg("dim", `Credentials removed from ${getOAuthPath()}`), 1, 0),
 						);
 						this.ui.requestRender();
 					} catch (error: any) {
@@ -1545,7 +1543,7 @@ export class TuiRenderer {
 		const width = (this.ui as any).terminal.columns;
 		const allLines = this.ui.render(width);
 
-		const debugLogPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
+		const debugLogPath = getDebugLogPath();
 		const debugData = [
 			`Debug output at ${new Date().toISOString()}`,
 			`Terminal width: ${width}`,
@@ -1566,11 +1564,7 @@ export class TuiRenderer {
 		// Show confirmation
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(
-			new Text(
-				theme.fg("accent", "✓ Debug log written") + "\n" + theme.fg("muted", `~/.pi/agent/pi-debug.log`),
-				1,
-				1,
-			),
+			new Text(theme.fg("accent", "✓ Debug log written") + "\n" + theme.fg("muted", debugLogPath), 1, 1),
 		);
 
 		this.ui.requestRender();

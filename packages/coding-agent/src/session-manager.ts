@@ -1,8 +1,8 @@
 import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
-import { homedir } from "os";
 import { join, resolve } from "path";
+import { getAgentDir } from "./config.js";
 
 function uuidv4(): string {
 	const bytes = randomBytes(16);
@@ -83,7 +83,7 @@ export class SessionManager {
 		// Replace all path separators and colons (for Windows drive letters) with dashes
 		const safePath = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
 
-		const configDir = resolve(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi/agent/"));
+		const configDir = getAgentDir();
 		const sessionDir = join(configDir, "sessions", safePath);
 		if (!existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });

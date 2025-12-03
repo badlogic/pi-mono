@@ -2,8 +2,7 @@ import { type Api, getApiKey, getModels, getProviders, type KnownProvider, type 
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { getModelsPath } from "./config.js";
 import { getOAuthToken, type SupportedOAuthProvider } from "./oauth/index.js";
 import { loadOAuthCredentials } from "./oauth/storage.js";
 
@@ -75,11 +74,11 @@ export function resolveApiKey(keyConfig: string): string | undefined {
 }
 
 /**
- * Load custom models from ~/.pi/agent/models.json
+ * Load custom models from models.json in agent config dir
  * Returns { models, error } - either models array or error message
  */
 function loadCustomModels(): { models: Model<Api>[]; error: string | null } {
-	const configPath = join(homedir(), ".pi", "agent", "models.json");
+	const configPath = getModelsPath();
 	if (!existsSync(configPath)) {
 		return { models: [], error: null };
 	}

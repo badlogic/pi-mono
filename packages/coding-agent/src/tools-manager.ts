@@ -1,12 +1,13 @@
 import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "fs";
-import { arch, homedir, platform } from "os";
+import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
+import { getToolsDir } from "./config.js";
 
-const TOOLS_DIR = join(homedir(), ".pi", "agent", "tools");
+const TOOLS_DIR = getToolsDir();
 
 interface ToolConfig {
 	name: string;

@@ -1,6 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { getAgentDir, getOAuthPath } from "../config.js";
 
 export interface OAuthCredentials {
 	type: "oauth";
@@ -14,18 +13,10 @@ interface OAuthStorageFormat {
 }
 
 /**
- * Get path to oauth.json
- */
-function getOAuthFilePath(): string {
-	const configDir = join(homedir(), ".pi", "agent");
-	return join(configDir, "oauth.json");
-}
-
-/**
  * Ensure the config directory exists
  */
 function ensureConfigDir(): void {
-	const configDir = join(homedir(), ".pi", "agent");
+	const configDir = getAgentDir();
 	if (!existsSync(configDir)) {
 		mkdirSync(configDir, { recursive: true, mode: 0o700 });
 	}
@@ -35,7 +26,7 @@ function ensureConfigDir(): void {
  * Load all OAuth credentials from oauth.json
  */
 function loadStorage(): OAuthStorageFormat {
-	const filePath = getOAuthFilePath();
+	const filePath = getOAuthPath();
 	if (!existsSync(filePath)) {
 		return {};
 	}
@@ -54,7 +45,7 @@ function loadStorage(): OAuthStorageFormat {
  */
 function saveStorage(storage: OAuthStorageFormat): void {
 	ensureConfigDir();
-	const filePath = getOAuthFilePath();
+	const filePath = getOAuthPath();
 	writeFileSync(filePath, JSON.stringify(storage, null, 2), "utf-8");
 	// Set permissions to owner read/write only
 	chmodSync(filePath, 0o600);

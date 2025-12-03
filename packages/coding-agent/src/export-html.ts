@@ -3,12 +3,8 @@ import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename } from "path";
-import { getPackageJsonPath } from "./paths.js";
+import { VERSION } from "./config.js";
 import type { SessionManager } from "./session-manager.js";
-
-// Get version from package.json
-const packageJson = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
-const VERSION = packageJson.version;
 
 /**
  * TUI Color scheme (matching exact RGB values from TUI components)

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
-import { homedir } from "os";
 import { join, resolve } from "path";
+import { CONFIG_DIR_NAME, getCommandsDir } from "./config.js";
 
 /**
  * Represents a custom slash command loaded from a file
@@ -167,19 +167,18 @@ function loadCommandsFromDir(dir: string, source: "user" | "project", subdir: st
 
 /**
  * Load all custom slash commands from:
- * 1. Global: ~/.pi/agent/commands/
- * 2. Project: ./.pi/commands/
+ * 1. Global: ~/{CONFIG_DIR_NAME}/agent/commands/
+ * 2. Project: ./{CONFIG_DIR_NAME}/commands/
  */
 export function loadSlashCommands(): FileSlashCommand[] {
 	const commands: FileSlashCommand[] = [];
 
-	// 1. Load global commands from ~/.pi/agent/commands/
-	const homeDir = homedir();
-	const globalCommandsDir = resolve(process.env.PI_CODING_AGENT_DIR || join(homeDir, ".pi/agent/"), "commands");
+	// 1. Load global commands from ~/{CONFIG_DIR_NAME}/agent/commands/
+	const globalCommandsDir = getCommandsDir();
 	commands.push(...loadCommandsFromDir(globalCommandsDir, "user"));
 
-	// 2. Load project commands from ./.pi/commands/
-	const projectCommandsDir = resolve(process.cwd(), ".pi/commands");
+	// 2. Load project commands from ./{CONFIG_DIR_NAME}/commands/
+	const projectCommandsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "commands");
 	commands.push(...loadCommandsFromDir(projectCommandsDir, "project"));
 
 	return commands;

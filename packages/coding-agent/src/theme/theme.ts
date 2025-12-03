@@ -1,11 +1,10 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-import { getThemeDir } from "../paths.js";
+import { getCustomThemesDir, getThemesDir } from "../config.js";
 
 // ============================================================================
 // Types & Schema
@@ -323,9 +322,9 @@ let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
-		const themeDir = getThemeDir();
-		const darkPath = path.join(themeDir, "dark.json");
-		const lightPath = path.join(themeDir, "light.json");
+		const themesDir = getThemesDir();
+		const darkPath = path.join(themesDir, "dark.json");
+		const lightPath = path.join(themesDir, "light.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
@@ -334,15 +333,11 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 	return BUILTIN_THEMES;
 }
 
-function getThemesDir(): string {
-	return path.join(os.homedir(), ".pi", "agent", "themes");
-}
-
 export function getAvailableThemes(): string[] {
 	const themes = new Set<string>(Object.keys(getBuiltinThemes()));
-	const themesDir = getThemesDir();
-	if (fs.existsSync(themesDir)) {
-		const files = fs.readdirSync(themesDir);
+	const customThemesDir = getCustomThemesDir();
+	if (fs.existsSync(customThemesDir)) {
+		const files = fs.readdirSync(customThemesDir);
 		for (const file of files) {
 			if (file.endsWith(".json")) {
 				themes.add(file.slice(0, -5));
@@ -357,8 +352,8 @@ function loadThemeJson(name: string): ThemeJson {
 	if (name in builtinThemes) {
 		return builtinThemes[name];
 	}
-	const themesDir = getThemesDir();
-	const themePath = path.join(themesDir, `${name}.json`);
+	const customThemesDir = getCustomThemesDir();
+	const themePath = path.join(customThemesDir, `${name}.json`);
 	if (!fs.existsSync(themePath)) {
 		throw new Error(`Theme not found: ${name}`);
 	}
@@ -474,8 +469,8 @@ function startThemeWatcher(): void {
 		return;
 	}
 
-	const themesDir = getThemesDir();
-	const themeFile = path.join(themesDir, `${currentThemeName}.json`);
+	const customThemesDir = getCustomThemesDir();
+	const themeFile = path.join(customThemesDir, `${currentThemeName}.json`);
 
 	// Only watch if the file exists
 	if (!fs.existsSync(themeFile)) {

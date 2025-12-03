@@ -1141,6 +1141,30 @@ Things that might happen eventually:
 
 ## Development
 
+### Forking / Rebranding
+
+All branding (app name, config directory) is configurable via `package.json`:
+
+```json
+{
+  "piConfig": {
+    "name": "pi",
+    "configDir": ".pi"
+  }
+}
+```
+
+To create a fork with different branding:
+1. Change `piConfig.name` to your app name (e.g., `"tau"`)
+2. Change `piConfig.configDir` to your config directory (e.g., `".tau"`)
+3. Change the `bin` field to your command name: `"bin": { "tau": "dist/cli.js" }`
+
+This affects:
+- CLI banner and help text
+- Config directory (`~/.pi/agent/` → `~/.tau/agent/`)
+- Environment variable name (`PI_CODING_AGENT_DIR` → `TAU_CODING_AGENT_DIR`)
+- All user-facing paths in error messages and documentation
+
 ### Path Resolution
 
 The codebase supports three execution modes:

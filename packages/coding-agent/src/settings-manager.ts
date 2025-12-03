@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { dirname, join } from "path";
+import { getAgentDir } from "./config.js";
 
 export interface Settings {
 	lastChangelogVersion?: string;
@@ -16,7 +16,7 @@ export class SettingsManager {
 	private settings: Settings;
 
 	constructor(baseDir?: string) {
-		const dir = baseDir || join(homedir(), ".pi", "agent");
+		const dir = baseDir || getAgentDir();
 		this.settingsPath = join(dir, "settings.json");
 		this.settings = this.load();
 	}

@@ -6,9 +6,17 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
+import {
+	APP_NAME,
+	CONFIG_DIR_NAME,
+	ENV_AGENT_DIR,
+	getAgentDir,
+	getModelsPath,
+	getReadmePath,
+	VERSION,
+} from "./config.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { getPackageJsonPath, getReadmePath } from "./paths.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
@@ -17,10 +25,6 @@ import { allTools, codingTools, type ToolName } from "./tools/index.js";
 import { ensureTool } from "./tools-manager.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
-
-// Get version from package.json
-const packageJson = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
-const VERSION = packageJson.version;
 
 const defaultModelPerProvider: Record<KnownProvider, string> = {
 	anthropic: "claude-sonnet-4-5",
@@ -220,10 +224,10 @@ function processFileArguments(fileArgs: string[]): { textContent: string; imageA
 }
 
 function printHelp() {
-	console.log(`${chalk.bold("pi")} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
-  pi [options] [@files...] [messages...]
+  ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Options:")}
   --provider <name>       Provider name (default: google)
@@ -245,41 +249,41 @@ ${chalk.bold("Options:")}
 
 ${chalk.bold("Examples:")}
   # Interactive mode
-  pi
+  ${APP_NAME}
 
   # Interactive mode with initial prompt
-  pi "List all .ts files in src/"
+  ${APP_NAME} "List all .ts files in src/"
 
   # Include files in initial message
-  pi @prompt.md @image.png "What color is the sky?"
+  ${APP_NAME} @prompt.md @image.png "What color is the sky?"
 
   # Non-interactive mode (process and exit)
-  pi -p "List all .ts files in src/"
+  ${APP_NAME} -p "List all .ts files in src/"
 
   # Multiple messages (interactive)
-  pi "Read package.json" "What dependencies do we have?"
+  ${APP_NAME} "Read package.json" "What dependencies do we have?"
 
   # Continue previous session
-  pi --continue "What did we discuss?"
+  ${APP_NAME} --continue "What did we discuss?"
 
   # Use different model
-  pi --provider openai --model gpt-4o-mini "Help me refactor this code"
+  ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"
 
   # Limit model cycling to specific models
-  pi --models claude-sonnet,claude-haiku,gpt-4o
+  ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
 
   # Cycle models with fixed thinking levels
-  pi --models sonnet:high,haiku:low
+  ${APP_NAME} --models sonnet:high,haiku:low
 
   # Start with a specific thinking level
-  pi --thinking high "Solve this complex problem"
+  ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  pi --tools read,grep,find,ls -p "Review the code in src/"
+  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
 
   # Export a session file to HTML
-  pi --export ~/.pi/agent/sessions/--path--/session.jsonl
-  pi --export session.jsonl output.html
+  ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
+  ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY       - Anthropic Claude API key
@@ -291,7 +295,7 @@ ${chalk.bold("Environment Variables:")}
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
-  PI_CODING_AGENT_DIR     - Session storage directory (default: ~/.pi/agent)
+  ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents
@@ -488,16 +492,15 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 
 /**
  * Load all project context files in order:
- * 1. Global: ~/.pi/agent/AGENTS.md or CLAUDE.md
+ * 1. Global: ~/{CONFIG_DIR_NAME}/agent/AGENTS.md or CLAUDE.md
  * 2. Parent directories (top-most first) down to cwd
  * Each returns {path, content} for separate messages
  */
 function loadProjectContextFiles(): Array<{ path: string; content: string }> {
 	const contextFiles: Array<{ path: string; content: string }> = [];
 
-	// 1. Load global context from ~/.pi/agent/
-	const homeDir = homedir();
-	const globalContextDir = resolve(process.env.PI_CODING_AGENT_DIR || join(homeDir, ".pi/agent/"));
+	// 1. Load global context from ~/{CONFIG_DIR_NAME}/agent/
+	const globalContextDir = getAgentDir();
 	const globalContext = loadContextFileFromDir(globalContextDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);
@@ -1028,7 +1031,7 @@ export async function main(args: string[]) {
 		console.error(chalk.red("No models available."));
 		console.error(chalk.yellow("\nSet an API key environment variable:"));
 		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
-		console.error(chalk.yellow("\nOr create ~/.pi/agent/models.json"));
+		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
 		process.exit(1);
 	}
 
@@ -1108,7 +1111,7 @@ export async function main(args: string[]) {
 							console.error(chalk.red("\nNo models available."));
 							console.error(chalk.yellow("Set an API key environment variable:"));
 							console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
-							console.error(chalk.yellow("\nOr create ~/.pi/agent/models.json"));
+							console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
 						}
 						process.exit(1);
 					}
@@ -1153,7 +1156,7 @@ export async function main(args: string[]) {
 				const key = await getApiKeyForModel(currentModel);
 				if (!key) {
 					throw new Error(
-						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ~/.pi/agent/models.json`,
+						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ${getModelsPath()}`,
 					);
 				}
 				return key;
