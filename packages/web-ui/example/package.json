@@ -1,13 +1,14 @@
 {
   "name": "pi-web-ui-example",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@mariozechner/mini-lit": "^0.2.0",
