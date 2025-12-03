@@ -11,6 +11,8 @@ Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the
 - [API Keys](#api-keys)
 - [OAuth Authentication (Optional)](#oauth-authentication-optional)
 - [Custom Models and Providers](#custom-models-and-providers)
+  - [VibeProxy (Automatic)](#vibeproxy-automatic)
+  - [Configuration File Structure](#configuration-file-structure)
 - [Themes](#themes)
 - [Slash Commands](#slash-commands)
 - [Editor Features](#editor-features)
@@ -163,6 +165,25 @@ To logout:
 ## Custom Models and Providers
 
 You can add custom models and providers (like Ollama, vLLM, LM Studio, or any custom API endpoint) via `~/.pi/agent/models.json`. Supports OpenAI-compatible APIs (`openai-completions`, `openai-responses`), Anthropic Messages API (`anthropic-messages`), and Google Generative AI API (`google-generative-ai`). This file is loaded fresh every time you open the `/model` selector, allowing live updates without restarting.
+
+### VibeProxy (Automatic)
+
+**Pi includes automatic VibeProxy support!** If you have [VibeProxy](https://github.com/automazeio/vibeproxy) running on your Mac, Pi will automatically detect it and make its models available as first-class citizens:
+
+```bash
+# Auto-detected when VibeProxy is running
+pi --provider vibeproxy --model claude-sonnet-4-20250514
+
+# List all available VibeProxy models
+pi --provider vibeproxy --models
+```
+
+VibeProxy provides:
+- Access to Claude Code and ChatGPT subscriptions without API keys
+- Automatic model discovery
+- Seamlessly integrated like built-in providers
+
+See [VIBERPROXY.md](docs/VIBERPROXY.md) for detailed setup instructions.
 
 ### Configuration File Structure
 
