@@ -6,6 +6,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { getOAuthToken, type SupportedOAuthProvider } from "./oauth/index.js";
 import { loadOAuthCredentials } from "./oauth/storage.js";
+import { detectVibeProxy, generateVibeProxyConfig } from "./vibeproxy.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -226,6 +227,55 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 }
 
 /**
+ * Load VibeProxy models through auto-detection
+ */
+async function loadVibeProxyModels(): Promise<Model<Api>[]> {
+	try {
+		const vibeproxyInfo = await detectVibeProxy();
+
+		if (vibeproxyInfo.running) {
+			const models = generateVibeProxyConfig(vibeproxyInfo.models || []);
+
+			// Register the VibeProxy API key config
+			customProviderApiKeys.set("vibeproxy", "dummy");
+
+			return models;
+		}
+	} catch (error) {
+		// VibeProxy detection failed, silently continue without it
+		console.debug("VibeProxy detection failed:", error);
+	}
+
+	return [];
+}
+
+/**
+ * Get all models (built-in + custom), freshly loaded
+ * Returns { models, error } - either models array or error message
+ * @deprecated Use loadAndMergeModels instead for VibeProxy support
+ */
+export function loadAndMergeModelsWithoutVibeProxy(): { models: Model<Api>[]; error: string | null } {
+	const builtInModels: Model<Api>[] = [];
+	const providers = getProviders();
+
+	// Load all built-in models
+	for (const provider of providers) {
+		const providerModels = getModels(provider as KnownProvider);
+		builtInModels.push(...(providerModels as Model<Api>[]));
+	}
+
+	// Load custom models
+	const { models: customModels, error } = loadCustomModels();
+
+	if (error) {
+		return { models: [], error };
+	}
+
+	// Merge: custom models come after built-in
+	return { models: [...builtInModels, ...customModels], error: null };
+}
+
+/**
  * Get API key for a model (checks custom providers first, then built-in)
  * Now async to support OAuth token refresh
  */
@@ -258,11 +308,90 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 }
 
 /**
- * Get only models that have valid API keys available
+ * Get all models (built-in + custom), freshly loaded with VibeProxy auto-discovery
+ * Returns { models, error } - either models array or error message
+ * Use this for VibeProxy-aware functionality
+ */
+export async function loadAndMergeModelsAsync(): Promise<{ models: Model<Api>[]; error: string | null }> {
+	const builtInModels: Model<Api>[] = [];
+	const providers = getProviders();
+
+	// Load all built-in models
+	for (const provider of providers) {
+		const providerModels = getModels(provider as KnownProvider);
+		builtInModels.push(...(providerModels as Model<Api>[]));
+	}
+
+	// Load custom models (including VibeProxy if configured)
+	const { models: customModels, error } = loadCustomModels();
+
+	if (error) {
+		return { models: [], error };
+	}
+
+	// Auto-detect VibeProxy and add it if available
+	const vibeproxyModels = await loadVibeProxyModels();
+
+	// Merge: built-in -> vibeproxy -> custom (custom takes precedence)
+	return { models: [...builtInModels, ...vibeproxyModels, ...customModels], error: null };
+}
+
+/**
+ * Get only models that have valid API keys available (synchronous version)
+ * Returns { models, error } - either models array or error message
+ */
+export function getAvailableModelsSync(): { models: Model<Api>[]; error: string | null } {
+	const { models: allModels, error } = loadAndMergeModels();
+
+	if (error) {
+		return { models: [], error };
+	}
+
+	const availableModels: Model<Api>[] = [];
+	for (const model of allModels) {
+		// For sync version, skip async API key validation
+		// VibeProxy and other local providers don't need real API keys
+		const isLocalProvider = model.provider === "vibeproxy" || model.baseUrl?.includes("localhost");
+		if (isLocalProvider || syncGetApiKey(model.provider as KnownProvider)) {
+			availableModels.push(model);
+		}
+	}
+
+	return { models: availableModels, error: null };
+}
+
+/**
+ * Sync version of getApiKey for simple validation
+ */
+function syncGetApiKey(provider: KnownProvider): string | undefined {
+	switch (provider) {
+		case "anthropic":
+			return process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_OAUTH_TOKEN;
+		case "openai":
+			return process.env.OPENAI_API_KEY;
+		case "google":
+			return process.env.GEMINI_API_KEY;
+		case "groq":
+			return process.env.GROQ_API_KEY;
+		case "cerebras":
+			return process.env.CEREBRAS_API_KEY;
+		case "xai":
+			return process.env.XAI_API_KEY;
+		case "openrouter":
+			return process.env.OPENROUTER_API_KEY;
+		case "zai":
+			return process.env.ZAI_API_KEY;
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * Get only models that have valid API keys available (async version with full validation)
  * Returns { models, error } - either models array or error message
  */
 export async function getAvailableModels(): Promise<{ models: Model<Api>[]; error: string | null }> {
-	const { models: allModels, error } = loadAndMergeModels();
+	const { models: allModels, error } = await loadAndMergeModelsAsync();
 
 	if (error) {
 		return { models: [], error };
@@ -280,11 +409,12 @@ export async function getAvailableModels(): Promise<{ models: Model<Api>[]; erro
 }
 
 /**
- * Find a specific model by provider and ID
+ * Find a specific model by provider and ID (synchronous version without VibeProxy)
  * Returns { model, error } - either model or error message
+ * @deprecated Use findModelAsync for VibeProxy support
  */
-export function findModel(provider: string, modelId: string): { model: Model<Api> | null; error: string | null } {
-	const { models: allModels, error } = loadAndMergeModels();
+export function findModelSync(provider: string, modelId: string): { model: Model<Api> | null; error: string | null } {
+	const { models: allModels, error } = loadAndMergeModelsWithoutVibeProxy();
 
 	if (error) {
 		return { model: null, error };
@@ -292,6 +422,35 @@ export function findModel(provider: string, modelId: string): { model: Model<Api
 
 	const model = allModels.find((m) => m.provider === provider && m.id === modelId) || null;
 	return { model, error: null };
+}
+
+/**
+ * Find a specific model by provider and ID (async version with VibeProxy support)
+ * Returns { model, error } - either model or error message
+ */
+export async function findModelAsync(
+	provider: string,
+	modelId: string,
+): Promise<{ model: Model<Api> | null; error: string | null }> {
+	const { models: allModels, error } = await loadAndMergeModels();
+
+	if (error) {
+		return { model: null, error };
+	}
+
+	const model = allModels.find((m) => m.provider === provider && m.id === modelId) || null;
+	return { model, error: null };
+}
+
+/**
+ * Find a specific model by provider and ID
+ * Returns { model, error } - either model or error message
+ */
+export function findModel(
+	provider: string,
+	modelId: string,
+): { model: Model<Api> | null; error: string | null } {
+	return findModelSync(provider, modelId);
 }
 
 /**
