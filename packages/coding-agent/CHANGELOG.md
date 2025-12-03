@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **VibeProxy Integration**: Automatic detection and integration with [VibeProxy](https://github.com/automazeio/vibeproxy). When VibeProxy is running on localhost (ports 8318 or 8317), Pi automatically discovers and makes available Claude and GPT models through your existing Claude Code/ChatGPT subscriptions without requiring API keys. Models appear as first-class citizens under the `vibeproxy` provider with auto-detected capabilities and context windows. Includes comprehensive test coverage and documentation.
+
 ## [0.12.4] - 2025-12-02
 
 ### Added
