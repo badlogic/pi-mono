@@ -47,7 +47,7 @@ jobs:
         run: npm ci
 
       - name: Build workspaces
-        run: npm run build --workspaces --if-present
+        run: npm run build
 
       - name: Check
         run: npm run --if-present check --workspace ${{ matrix.package }}
