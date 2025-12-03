@@ -195,15 +195,15 @@ Emitted when an error occurs during input processing.
 
 All types are defined in the following source files:
 
-- **Agent types**: [`packages/agent/src/types.ts`](../packages/agent/src/types.ts)
-- **AI types**: [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
-- **Agent loop types**: [`packages/ai/src/agent/types.ts`](../packages/ai/src/agent/types.ts)
+- **Agent types**: [`packages/agent/src/types.ts`](../../agent/src/types.ts)
+- **AI types**: [`packages/ai/src/types.ts`](../../ai/src/types.ts)
+- **Agent loop types**: [`packages/ai/src/agent/types.ts`](../../ai/src/agent/types.ts)
 
 ### Message Types
 
 #### UserMessage
 
-Defined in [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
+Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
 
 ```typescript
 interface UserMessage {
@@ -215,7 +215,7 @@ interface UserMessage {
 
 #### UserMessageWithAttachments
 
-Defined in [`packages/agent/src/types.ts`](../packages/agent/src/types.ts)
+Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
 
 Extends `UserMessage` with optional attachments for the agent layer:
 
@@ -227,7 +227,7 @@ type UserMessageWithAttachments = UserMessage & {
 
 #### AssistantMessage
 
-Defined in [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
+Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
 
 ```typescript
 interface AssistantMessage {
@@ -245,7 +245,7 @@ interface AssistantMessage {
 
 #### ToolResultMessage
 
-Defined in [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
+Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
 
 ```typescript
 interface ToolResultMessage<TDetails = any> {
@@ -261,7 +261,7 @@ interface ToolResultMessage<TDetails = any> {
 
 #### AppMessage
 
-Defined in [`packages/agent/src/types.ts`](../packages/agent/src/types.ts)
+Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
 
 Union type of all message types including custom app messages:
 
@@ -319,7 +319,7 @@ interface ToolCall {
 
 ### Attachment
 
-Defined in [`packages/agent/src/types.ts`](../packages/agent/src/types.ts)
+Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
 
 ```typescript
 interface Attachment {
@@ -336,7 +336,7 @@ interface Attachment {
 
 ### Usage
 
-Defined in [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
+Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
 
 ```typescript
 interface Usage {
@@ -362,7 +362,7 @@ type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
 ### AssistantMessageEvent
 
-Defined in [`packages/ai/src/types.ts`](../packages/ai/src/types.ts)
+Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
 
 Streaming events for assistant message generation:
 
@@ -384,12 +384,119 @@ type AssistantMessageEvent =
 
 ### AgentToolResult
 
-Defined in [`packages/ai/src/agent/types.ts`](../packages/ai/src/agent/types.ts)
+Defined in [`packages/ai/src/agent/types.ts`](../../ai/src/agent/types.ts)
 
 ```typescript
 interface AgentToolResult<T> {
   content: (TextContent | ImageContent)[];
   details: T;
+}
+```
+
+---
+
+## Correlating Tool Calls with Results
+
+When the assistant invokes tools, you'll receive separate events for the tool call (in the `AssistantMessage`) and the result (in a `ToolResultMessage`). To display them together, correlate them using the `toolCallId`.
+
+### Event Flow
+
+1. `message_end` with `AssistantMessage` containing `ToolCall` items in `content[]`
+2. `tool_execution_start` with `toolCallId`, `toolName`, and `args`
+3. `tool_execution_end` with `toolCallId`, `result`, and `isError`
+4. `message_end` with `ToolResultMessage` containing `toolCallId` and `content[]`
+
+### Correlation Strategy
+
+Track pending tool calls by `toolCallId`, then merge with results:
+
+```typescript
+// Track pending tool calls
+const pendingTools = new Map<string, { name: string; args: any }>();
+
+function handleEvent(event: any) {
+  if (event.type === "tool_execution_start") {
+    // Store tool call info
+    pendingTools.set(event.toolCallId, {
+      name: event.toolName,
+      args: event.args
+    });
+  }
+  
+  if (event.type === "tool_execution_end") {
+    const toolCall = pendingTools.get(event.toolCallId);
+    if (toolCall) {
+      // Now you have both the call and result
+      const merged = {
+        name: toolCall.name,
+        args: toolCall.args,
+        result: event.result,
+        isError: event.isError
+      };
+      
+      // Format for display
+      displayToolExecution(merged);
+      pendingTools.delete(event.toolCallId);
+    }
+  }
+}
+```
+
+### Display Formatting Example
+
+Format tool executions for a chat interface (e.g., WhatsApp):
+
+```typescript
+function displayToolExecution(tool: {
+  name: string;
+  args: any;
+  result: { content: Array<{ type: string; text?: string }> } | string;
+  isError: boolean;
+}): string {
+  const resultText = typeof tool.result === "string"
+    ? tool.result
+    : tool.result.content
+        .filter(c => c.type === "text")
+        .map(c => c.text)
+        .join("\n");
+
+  switch (tool.name) {
+    case "bash":
+      return `$ ${tool.args.command}\n${resultText}`;
+    
+    case "read":
+      return `📄 ${tool.args.path}\n${resultText.slice(0, 500)}...`;
+    
+    case "write":
+      return `✏️ Wrote ${tool.args.path}`;
+    
+    case "edit":
+      return `✏️ Edited ${tool.args.path}`;
+    
+    default:
+      return `🔧 ${tool.name}: ${resultText.slice(0, 200)}`;
+  }
+}
+```
+
+### Alternative: Using turn_end
+
+The `turn_end` event provides the assistant message and all tool results together:
+
+```typescript
+if (event.type === "turn_end") {
+  const { message, toolResults } = event;
+  
+  // Extract tool calls from assistant message
+  const toolCalls = message.content.filter(c => c.type === "toolCall");
+  
+  // Match each tool call with its result by toolCallId
+  for (const call of toolCalls) {
+    const result = toolResults.find(r => r.toolCallId === call.id);
+    if (result) {
+      // Display merged tool call + result
+    }
+  }
 }
 ```
 
@@ -433,7 +540,7 @@ interface AgentToolResult<T> {
 
 ## Example Client
 
-See [`packages/coding-agent/test/rpc-example.ts`](../packages/coding-agent/test/rpc-example.ts) for a complete example of an interactive RPC client.
+See [`test/rpc-example.ts`](../test/rpc-example.ts) for a complete example of an interactive RPC client.
 
 ```typescript
 import { spawn } from "node:child_process";
