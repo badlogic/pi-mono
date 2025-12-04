@@ -192,7 +192,9 @@ describe("createSummaryMessage", () => {
 	it("should create user message with prefix", () => {
 		const msg = createSummaryMessage("This is the summary");
 		expect(msg.role).toBe("user");
-		expect(msg.content).toContain("Another language model worked on this task");
+		expect(msg.content).toContain(
+			"The conversation history before this point was compacted into the following summary:",
+		);
 		expect(msg.content).toContain("This is the summary");
 	});
 });
