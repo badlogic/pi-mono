@@ -72,9 +72,13 @@ export interface LoadedSession {
 	model: { provider: string; modelId: string } | null;
 }
 
-const SUMMARY_PREFIX = `Another language model worked on this task and produced a summary. Use this to continue the work without duplicating effort:
+export const SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 
+<summary>
 `;
+
+export const SUMMARY_SUFFIX = `
+</summary>`;
 
 /**
  * Create a user message containing the summary with the standard prefix.
@@ -82,7 +86,7 @@ const SUMMARY_PREFIX = `Another language model worked on this task and produced 
 export function createSummaryMessage(summary: string): AppMessage {
 	return {
 		role: "user",
-		content: SUMMARY_PREFIX + summary,
+		content: SUMMARY_PREFIX + summary + SUMMARY_SUFFIX,
 		timestamp: Date.now(),
 	};
 }
@@ -115,6 +119,18 @@ export function parseSessionEntries(content: string): SessionEntry[] {
  * 2. Keep all entries from firstKeptEntryIndex onwards (extracting messages)
  * 3. Prepend summary as user message
  */
+/**
+ * Get the latest compaction entry from session entries, if any.
+ */
+export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		if (entries[i].type === "compaction") {
+			return entries[i] as CompactionEntry;
+		}
+	}
+	return null;
+}
+
 export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 	// Find model and thinking level (always scan all entries)
 	let thinkingLevel = "off";

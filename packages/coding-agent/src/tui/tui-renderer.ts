@@ -22,12 +22,19 @@ import { calculateContextTokens, compact, getLastAssistantUsage, shouldCompact }
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
-import { listOAuthProviders, login, logout } from "../oauth/index.js";
-import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
+import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
+import {
+	getLatestCompactionEntry,
+	loadSessionFromEntries,
+	type SessionManager,
+	SUMMARY_PREFIX,
+	SUMMARY_SUFFIX,
+} from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
+import { CompactionComponent } from "./compaction.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
@@ -564,58 +571,7 @@ export class TuiRenderer {
 		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
 
 		// Trigger auto-compaction
-		await this.handleAutoCompaction();
-	}
-
-	private async handleAutoCompaction(): Promise<void> {
-		// Unsubscribe to stop processing events
-		this.unsubscribe?.();
-
-		// Abort current agent run and wait for completion
-		this.agent.abort();
-		await this.agent.waitForIdle();
-
-		// Stop loading animation
-		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
-		}
-		this.statusContainer.clear();
-
-		// Show compacting status
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("muted", "Auto-compacting context..."), 1, 1));
-		this.ui.requestRender();
-
-		try {
-			const apiKey = await getApiKeyForModel(this.agent.state.model);
-			if (!apiKey) {
-				throw new Error(`No API key for ${this.agent.state.model.provider}`);
-			}
-
-			const entries = this.sessionManager.loadEntries();
-			const settings = this.settingsManager.getCompactionSettings();
-			const compactionEntry = await compact(entries, this.agent.state.model, settings, apiKey);
-
-			// Save and reload
-			this.sessionManager.saveCompaction(compactionEntry);
-			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
-			this.agent.replaceMessages(loaded.messages);
-
-			// Rebuild UI
-			this.chatContainer.clear();
-			this.rebuildChatFromMessages();
-
-			this.showSuccess(
-				"✓ Context auto-compacted",
-				`Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`,
-			);
-		} catch (error) {
-			this.showError(`Auto-compaction failed: ${error instanceof Error ? error.message : String(error)}`);
-		}
-
-		// Resubscribe
-		this.subscribeToAgent();
+		await this.executeCompaction(undefined, true);
 	}
 
 	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
@@ -648,9 +604,12 @@ export class TuiRenderer {
 			case "message_start":
 				if (event.message.role === "user") {
 					// Check if this is a queued message
-					const userMsg = event.message as any;
-					const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
-					const messageText = textBlocks.map((c: any) => c.text).join("");
+					const userMsg = event.message;
+					const textBlocks =
+						typeof userMsg.content === "string"
+							? [{ type: "text", text: userMsg.content }]
+							: userMsg.content.filter((c) => c.type === "text");
+					const messageText = textBlocks.map((c) => c.text).join("");
 
 					const queuedIndex = this.queuedMessages.indexOf(messageText);
 					if (queuedIndex !== -1) {
@@ -789,17 +748,20 @@ export class TuiRenderer {
 
 	private addMessageToChat(message: Message): void {
 		if (message.role === "user") {
-			const userMsg = message as any;
+			const userMsg = message;
 			// Extract text content from content blocks
-			const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
-			const textContent = textBlocks.map((c: any) => c.text).join("");
+			const textBlocks =
+				typeof userMsg.content === "string"
+					? [{ type: "text", text: userMsg.content }]
+					: userMsg.content.filter((c) => c.type === "text");
+			const textContent = textBlocks.map((c) => c.text).join("");
 			if (textContent) {
 				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
 				this.chatContainer.addChild(userComponent);
 				this.isFirstUserMessage = false;
 			}
 		} else if (message.role === "assistant") {
-			const assistantMsg = message as AssistantMessage;
+			const assistantMsg = message;
 
 			// Add assistant message component
 			const assistantComponent = new AssistantMessageComponent(assistantMsg);
@@ -819,18 +781,32 @@ export class TuiRenderer {
 		// Update editor border color based on current thinking level
 		this.updateEditorBorderColor();
 
+		// Get compaction info if any
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
+
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
 
 			if (message.role === "user") {
-				const userMsg = message as any;
-				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
-				const textContent = textBlocks.map((c: any) => c.text).join("");
+				const userMsg = message;
+				const textBlocks =
+					typeof userMsg.content === "string"
+						? [{ type: "text", text: userMsg.content }]
+						: userMsg.content.filter((c) => c.type === "text");
+				const textContent = textBlocks.map((c) => c.text).join("");
 				if (textContent) {
-					const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-					this.chatContainer.addChild(userComponent);
-					this.isFirstUserMessage = false;
+					// Check if this is a compaction summary message
+					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
+						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
+						const component = new CompactionComponent(compactionEntry.tokensBefore, summary);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+					} else {
+						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
+						this.chatContainer.addChild(userComponent);
+						this.isFirstUserMessage = false;
+					}
 				}
 			} else if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
@@ -892,18 +868,32 @@ export class TuiRenderer {
 		this.isFirstUserMessage = true;
 		this.pendingTools.clear();
 
+		// Get compaction info if any
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
+
 		for (const message of this.agent.state.messages) {
 			if (message.role === "user") {
-				const userMsg = message as any;
-				const textBlocks = userMsg.content.filter((c: any) => c.type === "text");
-				const textContent = textBlocks.map((c: any) => c.text).join("");
+				const userMsg = message;
+				const textBlocks =
+					typeof userMsg.content === "string"
+						? [{ type: "text", text: userMsg.content }]
+						: userMsg.content.filter((c) => c.type === "text");
+				const textContent = textBlocks.map((c) => c.text).join("");
 				if (textContent) {
-					const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-					this.chatContainer.addChild(userComponent);
-					this.isFirstUserMessage = false;
+					// Check if this is a compaction summary message
+					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
+						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
+						const component = new CompactionComponent(compactionEntry.tokensBefore, summary);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+					} else {
+						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
+						this.chatContainer.addChild(userComponent);
+						this.isFirstUserMessage = false;
+					}
 				}
 			} else if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
+				const assistantMsg = message;
 				const assistantComponent = new AssistantMessageComponent(assistantMsg);
 				this.chatContainer.addChild(assistantComponent);
 
@@ -1095,9 +1085,11 @@ export class TuiRenderer {
 	private toggleToolOutputExpansion(): void {
 		this.toolOutputExpanded = !this.toolOutputExpanded;
 
-		// Update all tool execution components
+		// Update all tool execution and compaction components
 		for (const child of this.chatContainer.children) {
 			if (child instanceof ToolExecutionComponent) {
+				child.setExpanded(this.toolOutputExpanded);
+			} else if (child instanceof CompactionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}
@@ -1445,7 +1437,7 @@ export class TuiRenderer {
 		// Create OAuth selector
 		this.oauthSelector = new OAuthSelectorComponent(
 			mode,
-			async (providerId: any) => {
+			async (providerId: string) => {
 				// Hide selector first
 				this.hideOAuthSelector();
 
@@ -1457,7 +1449,7 @@ export class TuiRenderer {
 
 					try {
 						await login(
-							providerId,
+							providerId as SupportedOAuthProvider,
 							(url: string) => {
 								// Show auth URL to user
 								this.chatContainer.addChild(new Spacer(1));
@@ -1509,7 +1501,7 @@ export class TuiRenderer {
 				} else {
 					// Handle logout
 					try {
-						await logout(providerId);
+						await logout(providerId as SupportedOAuthProvider);
 
 						// Invalidate OAuth cache so footer updates
 						invalidateOAuthCache();
@@ -1707,7 +1699,7 @@ export class TuiRenderer {
 
 	private handleDebugCommand(): void {
 		// Force a render and capture all lines with their widths
-		const width = (this.ui as any).terminal.columns;
+		const width = this.ui.terminal.columns;
 		const allLines = this.ui.render(width);
 
 		const debugLogPath = getDebugLogPath();
@@ -1737,16 +1729,13 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
-		// Check if there are any messages to compact
-		const entries = this.sessionManager.loadEntries();
-		const messageCount = entries.filter((e) => e.type === "message").length;
+	private compactionAbortController: AbortController | null = null;
 
-		if (messageCount < 2) {
-			this.showWarning("Nothing to compact (no messages yet)");
-			return;
-		}
-
+	/**
+	 * Shared logic to execute context compaction.
+	 * Handles aborting agent, showing loader, performing compaction, updating session/UI.
+	 */
+	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
 		// Unsubscribe first to prevent processing events during compaction
 		this.unsubscribe?.();
 
@@ -1761,9 +1750,27 @@ export class TuiRenderer {
 		}
 		this.statusContainer.clear();
 
-		// Show compacting status
+		// Create abort controller for compaction
+		this.compactionAbortController = new AbortController();
+
+		// Set up escape handler during compaction
+		const originalOnEscape = this.editor.onEscape;
+		this.editor.onEscape = () => {
+			if (this.compactionAbortController) {
+				this.compactionAbortController.abort();
+			}
+		};
+
+		// Show compacting status with loader
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("muted", "Compacting context..."), 1, 1));
+		const label = isAuto ? "Auto-compacting context... (esc to cancel)" : "Compacting context... (esc to cancel)";
+		const compactingLoader = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			label,
+		);
+		this.statusContainer.addChild(compactingLoader);
 		this.ui.requestRender();
 
 		try {
@@ -1773,16 +1780,22 @@ export class TuiRenderer {
 				throw new Error(`No API key for ${this.agent.state.model.provider}`);
 			}
 
-			// Perform compaction
+			// Perform compaction with abort signal
+			const entries = this.sessionManager.loadEntries();
 			const settings = this.settingsManager.getCompactionSettings();
 			const compactionEntry = await compact(
 				entries,
 				this.agent.state.model,
 				settings,
 				apiKey,
-				undefined,
+				this.compactionAbortController.signal,
 				customInstructions,
 			);
+
+			// Check if aborted after compact returned
+			if (this.compactionAbortController.signal.aborted) {
+				throw new Error("Compaction cancelled");
+			}
 
 			// Save compaction to session
 			this.sessionManager.saveCompaction(compactionEntry);
@@ -1795,17 +1808,47 @@ export class TuiRenderer {
 			this.chatContainer.clear();
 			this.rebuildChatFromMessages();
 
-			// Show success
-			this.showSuccess(
-				"✓ Context compacted",
-				`Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`,
-			);
+			// Add compaction component at current position so user can see/expand the summary
+			const compactionComponent = new CompactionComponent(compactionEntry.tokensBefore, compactionEntry.summary);
+			compactionComponent.setExpanded(this.toolOutputExpanded);
+			this.chatContainer.addChild(compactionComponent);
+
+			// Update footer with new state (fixes context % display)
+			this.footer.updateState(this.agent.state);
+
+			// Show success message
+			const successTitle = isAuto ? "✓ Context auto-compacted" : "✓ Context compacted";
+			this.showSuccess(successTitle, `Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`);
 		} catch (error) {
-			this.showError(`Compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+			const message = error instanceof Error ? error.message : String(error);
+			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {
+				this.showError("Compaction cancelled");
+			} else {
+				this.showError(`Compaction failed: ${message}`);
+			}
+		} finally {
+			// Clean up
+			compactingLoader.stop();
+			this.statusContainer.clear();
+			this.compactionAbortController = null;
+			this.editor.onEscape = originalOnEscape;
 		}
 
 		// Resubscribe to agent
 		this.subscribeToAgent();
+	}
+
+	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+		// Check if there are any messages to compact
+		const entries = this.sessionManager.loadEntries();
+		const messageCount = entries.filter((e) => e.type === "message").length;
+
+		if (messageCount < 2) {
+			this.showWarning("Nothing to compact (no messages yet)");
+			return;
+		}
+
+		await this.executeCompaction(customInstructions, false);
 	}
 
 	private handleAutocompactCommand(): void {

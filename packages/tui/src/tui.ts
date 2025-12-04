@@ -73,7 +73,7 @@ export class Container implements Component {
  * TUI - Main class for managing terminal UI with differential rendering
  */
 export class TUI extends Container {
-	private terminal: Terminal;
+	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
 	private focusedComponent: Component | null = null;

@@ -6,31 +6,70 @@ import { basename } from "path";
 import { APP_NAME, VERSION } from "./config.js";
 import type { SessionManager } from "./session-manager.js";
 
-/**
- * TUI Color scheme (matching exact RGB values from TUI components)
- */
-const COLORS = {
-	// Backgrounds
-	userMessageBg: "rgb(52, 53, 65)", // Dark slate
-	toolPendingBg: "rgb(40, 40, 50)", // Dark blue-gray
-	toolSuccessBg: "rgb(40, 50, 40)", // Dark green
-	toolErrorBg: "rgb(60, 40, 40)", // Dark red
-	bodyBg: "rgb(24, 24, 30)", // Very dark background
-	containerBg: "rgb(30, 30, 36)", // Slightly lighter container
+// ============================================================================
+// Types
+// ============================================================================
 
-	// Text colors (matching chalk colors)
-	text: "rgb(229, 229, 231)", // Light gray (close to white)
-	textDim: "rgb(161, 161, 170)", // Dimmed gray
-	cyan: "rgb(103, 232, 249)", // Cyan for paths
-	green: "rgb(34, 197, 94)", // Green for success
-	red: "rgb(239, 68, 68)", // Red for errors
-	yellow: "rgb(234, 179, 8)", // Yellow for warnings
-	italic: "rgb(161, 161, 170)", // Gray italic for thinking
+interface MessageEvent {
+	type: "message";
+	message: Message;
+	timestamp?: number;
+}
+
+interface ModelChangeEvent {
+	type: "model_change";
+	provider: string;
+	modelId: string;
+	timestamp?: number;
+}
+
+interface CompactionEvent {
+	type: "compaction";
+	timestamp: string;
+	summary: string;
+	tokensBefore: number;
+}
+
+type SessionEvent = MessageEvent | ModelChangeEvent | CompactionEvent;
+
+interface ParsedSessionData {
+	sessionId: string;
+	timestamp: string;
+	systemPrompt?: string;
+	modelsUsed: Set<string>;
+	messages: Message[];
+	toolResultsMap: Map<string, ToolResultMessage>;
+	sessionEvents: SessionEvent[];
+	tokenStats: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	costStats: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	tools?: { name: string; description: string }[];
+	contextWindow?: number;
+	isStreamingFormat?: boolean;
+}
+
+// ============================================================================
+// Color scheme (matching TUI)
+// ============================================================================
+
+const COLORS = {
+	userMessageBg: "rgb(52, 53, 65)",
+	toolPendingBg: "rgb(40, 40, 50)",
+	toolSuccessBg: "rgb(40, 50, 40)",
+	toolErrorBg: "rgb(60, 40, 40)",
+	bodyBg: "rgb(24, 24, 30)",
+	containerBg: "rgb(30, 30, 36)",
+	text: "rgb(229, 229, 231)",
+	textDim: "rgb(161, 161, 170)",
+	cyan: "rgb(103, 232, 249)",
+	green: "rgb(34, 197, 94)",
+	red: "rgb(239, 68, 68)",
+	yellow: "rgb(234, 179, 8)",
 };
 
-/**
- * Escape HTML special characters
- */
+// ============================================================================
+// Utility functions
+// ============================================================================
+
 function escapeHtml(text: string): string {
 	return text
 		.replace(/&/g, "&amp;")
@@ -40,893 +79,25 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, "&#039;");
 }
 
-/**
- * Shorten path with tilde notation
- */
 function shortenPath(path: string): string {
 	const home = homedir();
-	if (path.startsWith(home)) {
-		return "~" + path.slice(home.length);
-	}
-	return path;
+	return path.startsWith(home) ? "~" + path.slice(home.length) : path;
 }
 
-/**
- * Replace tabs with 3 spaces
- */
 function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
 }
 
-/**
- * Format tool execution matching TUI ToolExecutionComponent
- */
-function formatToolExecution(
-	toolName: string,
-	args: any,
-	result?: ToolResultMessage,
-): { html: string; bgColor: string } {
-	let html = "";
-	const isError = result?.isError || false;
-	const bgColor = result ? (isError ? COLORS.toolErrorBg : COLORS.toolSuccessBg) : COLORS.toolPendingBg;
-
-	// Get text output from result
-	const getTextOutput = (): string => {
-		if (!result) return "";
-		const textBlocks = result.content.filter((c) => c.type === "text");
-		return textBlocks.map((c: any) => c.text).join("\n");
-	};
-
-	// Format based on tool type (matching TUI logic exactly)
-	if (toolName === "bash") {
-		const command = args?.command || "";
-		html = `<div class="tool-command">$ ${escapeHtml(command || "...")}</div>`;
-
-		if (result) {
-			const output = getTextOutput().trim();
-			if (output) {
-				const lines = output.split("\n");
-				const maxLines = 5;
-				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
-
-				if (remaining > 0) {
-					// Truncated output - make it expandable
-					html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
-					html += '<div class="output-preview">';
-					for (const line of displayLines) {
-						html += `<div>${escapeHtml(line)}</div>`;
-					}
-					html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
-					html += "</div>";
-					html += '<div class="output-full">';
-					for (const line of lines) {
-						html += `<div>${escapeHtml(line)}</div>`;
-					}
-					html += "</div>";
-					html += "</div>";
-				} else {
-					// Short output - show all
-					html += '<div class="tool-output">';
-					for (const line of displayLines) {
-						html += `<div>${escapeHtml(line)}</div>`;
-					}
-					html += "</div>";
-				}
-			}
-		}
-	} else if (toolName === "read") {
-		const path = shortenPath(args?.file_path || args?.path || "");
-		html = `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
-
-		if (result) {
-			const output = getTextOutput();
-			const lines = output.split("\n");
-			const maxLines = 10;
-			const displayLines = lines.slice(0, maxLines);
-			const remaining = lines.length - maxLines;
-
-			if (remaining > 0) {
-				// Truncated output - make it expandable
-				html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
-				html += '<div class="output-preview">';
-				for (const line of displayLines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
-				html += "</div>";
-				html += '<div class="output-full">';
-				for (const line of lines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += "</div>";
-				html += "</div>";
-			} else {
-				// Short output - show all
-				html += '<div class="tool-output">';
-				for (const line of displayLines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += "</div>";
-			}
-		}
-	} else if (toolName === "write") {
-		const path = shortenPath(args?.file_path || args?.path || "");
-		const fileContent = args?.content || "";
-		const lines = fileContent ? fileContent.split("\n") : [];
-		const totalLines = lines.length;
-
-		html = `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(path || "...")}</span>`;
-		if (totalLines > 10) {
-			html += ` <span class="line-count">(${totalLines} lines)</span>`;
-		}
-		html += "</div>";
-
-		if (fileContent) {
-			const maxLines = 10;
-			const displayLines = lines.slice(0, maxLines);
-			const remaining = lines.length - maxLines;
-
-			if (remaining > 0) {
-				// Truncated output - make it expandable
-				html += '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
-				html += '<div class="output-preview">';
-				for (const line of displayLines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
-				html += "</div>";
-				html += '<div class="output-full">';
-				for (const line of lines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += "</div>";
-				html += "</div>";
-			} else {
-				// Short output - show all
-				html += '<div class="tool-output">';
-				for (const line of displayLines) {
-					html += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-				}
-				html += "</div>";
-			}
-		}
-
-		if (result) {
-			const output = getTextOutput().trim();
-			if (output) {
-				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
-			}
-		}
-	} else if (toolName === "edit") {
-		const path = shortenPath(args?.file_path || args?.path || "");
-		html = `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
-
-		// Show diff if available from result.details.diff
-		if (result?.details?.diff) {
-			const diffLines = result.details.diff.split("\n");
-			html += '<div class="tool-diff">';
-			for (const line of diffLines) {
-				if (line.startsWith("+")) {
-					html += `<div class="diff-line-new">${escapeHtml(line)}</div>`;
-				} else if (line.startsWith("-")) {
-					html += `<div class="diff-line-old">${escapeHtml(line)}</div>`;
-				} else {
-					html += `<div class="diff-line-context">${escapeHtml(line)}</div>`;
-				}
-			}
-			html += "</div>";
-		}
-
-		if (result) {
-			const output = getTextOutput().trim();
-			if (output) {
-				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
-			}
-		}
-	} else {
-		// Generic tool
-		html = `<div class="tool-header"><span class="tool-name">${escapeHtml(toolName)}</span></div>`;
-		html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
-
-		if (result) {
-			const output = getTextOutput();
-			if (output) {
-				html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
-			}
-		}
-	}
-
-	return { html, bgColor };
-}
-
-/**
- * Format timestamp for display
- */
 function formatTimestamp(timestamp: number | string | undefined): string {
 	if (!timestamp) return "";
 	const date = new Date(typeof timestamp === "string" ? timestamp : timestamp);
 	return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-/**
- * Format model change event
- */
-function formatModelChange(event: any): string {
-	const timestamp = formatTimestamp(event.timestamp);
-	const timestampHtml = timestamp ? `<div class="message-timestamp">${timestamp}</div>` : "";
-	const modelInfo = `${event.provider}/${event.modelId}`;
-	return `<div class="model-change">${timestampHtml}<div class="model-change-text">Switched to model: <span class="model-name">${escapeHtml(modelInfo)}</span></div></div>`;
-}
+// ============================================================================
+// Parsing functions
+// ============================================================================
 
-/**
- * Format a message as HTML (matching TUI component styling)
- */
-function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>): string {
-	let html = "";
-	const timestamp = (message as any).timestamp;
-	const timestampHtml = timestamp ? `<div class="message-timestamp">${formatTimestamp(timestamp)}</div>` : "";
-
-	if (message.role === "user") {
-		const userMsg = message as UserMessage;
-		let textContent = "";
-
-		if (typeof userMsg.content === "string") {
-			textContent = userMsg.content;
-		} else {
-			const textBlocks = userMsg.content.filter((c) => c.type === "text");
-			textContent = textBlocks.map((c: any) => c.text).join("");
-		}
-
-		if (textContent.trim()) {
-			html += `<div class="user-message">${timestampHtml}${escapeHtml(textContent).replace(/\n/g, "<br>")}</div>`;
-		}
-	} else if (message.role === "assistant") {
-		const assistantMsg = message as AssistantMessage;
-		html += timestampHtml ? `<div class="assistant-message">${timestampHtml}` : "";
-
-		// Render text and thinking content
-		for (const content of assistantMsg.content) {
-			if (content.type === "text" && content.text.trim()) {
-				html += `<div class="assistant-text">${escapeHtml(content.text.trim()).replace(/\n/g, "<br>")}</div>`;
-			} else if (content.type === "thinking" && content.thinking.trim()) {
-				html += `<div class="thinking-text">${escapeHtml(content.thinking.trim()).replace(/\n/g, "<br>")}</div>`;
-			}
-		}
-
-		// Render tool calls with their results
-		for (const content of assistantMsg.content) {
-			if (content.type === "toolCall") {
-				const toolResult = toolResultsMap.get(content.id);
-				const { html: toolHtml, bgColor } = formatToolExecution(content.name, content.arguments, toolResult);
-				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
-			}
-		}
-
-		// Show error/abort status if no tool calls
-		const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
-		if (!hasToolCalls) {
-			if (assistantMsg.stopReason === "aborted") {
-				html += '<div class="error-text">Aborted</div>';
-			} else if (assistantMsg.stopReason === "error") {
-				const errorMsg = assistantMsg.errorMessage || "Unknown error";
-				html += `<div class="error-text">Error: ${escapeHtml(errorMsg)}</div>`;
-			}
-		}
-
-		// Close the assistant message wrapper if we opened one
-		if (timestampHtml) {
-			html += "</div>";
-		}
-	}
-
-	return html;
-}
-
-/**
- * Export session to a self-contained HTML file matching TUI visual style
- */
-export function exportSessionToHtml(sessionManager: SessionManager, state: AgentState, outputPath?: string): string {
-	const sessionFile = sessionManager.getSessionFile();
-	const timestamp = new Date().toISOString();
-
-	// Use pi-session- prefix + session filename + .html if no output path provided
-	if (!outputPath) {
-		const sessionBasename = basename(sessionFile, ".jsonl");
-		outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
-	}
-
-	// Read and parse session data
-	const sessionContent = readFileSync(sessionFile, "utf8");
-	const lines = sessionContent.trim().split("\n");
-
-	let sessionHeader: any = null;
-	const messages: Message[] = [];
-	const toolResultsMap = new Map<string, ToolResultMessage>();
-	const sessionEvents: any[] = []; // Track all events including model changes
-	const modelsUsed = new Set<string>(); // Track unique models used
-
-	// Cumulative token and cost stats
-	const tokenStats = {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-	};
-	const costStats = {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-	};
-
-	for (const line of lines) {
-		try {
-			const entry = JSON.parse(line);
-			if (entry.type === "session") {
-				sessionHeader = entry;
-				// Track initial model from session header
-				if (entry.modelId) {
-					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : entry.modelId;
-					modelsUsed.add(modelInfo);
-				}
-			} else if (entry.type === "message") {
-				messages.push(entry.message);
-				sessionEvents.push(entry);
-				// Build map of tool call ID to result
-				if (entry.message.role === "toolResult") {
-					toolResultsMap.set(entry.message.toolCallId, entry.message);
-				}
-				// Accumulate token and cost stats from assistant messages
-				if (entry.message.role === "assistant" && entry.message.usage) {
-					const usage = entry.message.usage;
-					tokenStats.input += usage.input || 0;
-					tokenStats.output += usage.output || 0;
-					tokenStats.cacheRead += usage.cacheRead || 0;
-					tokenStats.cacheWrite += usage.cacheWrite || 0;
-
-					if (usage.cost) {
-						costStats.input += usage.cost.input || 0;
-						costStats.output += usage.cost.output || 0;
-						costStats.cacheRead += usage.cost.cacheRead || 0;
-						costStats.cacheWrite += usage.cost.cacheWrite || 0;
-					}
-				}
-			} else if (entry.type === "model_change") {
-				sessionEvents.push(entry);
-				// Track model from model change event
-				if (entry.modelId) {
-					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : entry.modelId;
-					modelsUsed.add(modelInfo);
-				}
-			}
-		} catch {
-			// Skip malformed lines
-		}
-	}
-
-	// Calculate message stats (matching session command)
-	const userMessages = messages.filter((m) => m.role === "user").length;
-	const assistantMessages = messages.filter((m) => m.role === "assistant").length;
-	const toolResultMessages = messages.filter((m) => m.role === "toolResult").length;
-	const totalMessages = messages.length;
-
-	// Count tool calls from assistant messages
-	let toolCallsCount = 0;
-	for (const message of messages) {
-		if (message.role === "assistant") {
-			const assistantMsg = message as AssistantMessage;
-			toolCallsCount += assistantMsg.content.filter((c) => c.type === "toolCall").length;
-		}
-	}
-
-	// Get last assistant message for context percentage calculation (skip aborted messages)
-	const lastAssistantMessage = messages
-		.slice()
-		.reverse()
-		.find((m) => m.role === "assistant" && (m as AssistantMessage).stopReason !== "aborted") as
-		| AssistantMessage
-		| undefined;
-
-	// Calculate context percentage from last message (input + output + cacheRead + cacheWrite)
-	const contextTokens = lastAssistantMessage
-		? lastAssistantMessage.usage.input +
-			lastAssistantMessage.usage.output +
-			lastAssistantMessage.usage.cacheRead +
-			lastAssistantMessage.usage.cacheWrite
-		: 0;
-
-	// Get the model info from the last assistant message
-	const lastModel = lastAssistantMessage?.model || state.model?.id || "unknown";
-	const lastProvider = lastAssistantMessage?.provider || "";
-	const lastModelInfo = lastProvider ? `${lastProvider}/${lastModel}` : lastModel;
-
-	const contextWindow = state.model?.contextWindow || 0;
-	const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "0.0";
-
-	// Generate messages HTML (including model changes in chronological order)
-	let messagesHtml = "";
-	for (const event of sessionEvents) {
-		if (event.type === "message" && event.message.role !== "toolResult") {
-			// Skip toolResult messages as they're rendered with their tool calls
-			messagesHtml += formatMessage(event.message, toolResultsMap);
-		} else if (event.type === "model_change") {
-			messagesHtml += formatModelChange(event);
-		}
-	}
-
-	// Generate HTML (matching TUI aesthetic)
-	const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Session Export - ${basename(sessionFile)}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-            font-size: 12px;
-            line-height: 1.6;
-            color: ${COLORS.text};
-            background: ${COLORS.bodyBg};
-            padding: 24px;
-        }
-
-        .container {
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        .header {
-            margin-bottom: 24px;
-            padding: 16px;
-            background: ${COLORS.containerBg};
-            border-radius: 4px;
-        }
-
-        .header h1 {
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 12px;
-            color: ${COLORS.cyan};
-        }
-
-        .header-info {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            font-size: 11px;
-        }
-
-        .info-item {
-            color: ${COLORS.textDim};
-            display: flex;
-            align-items: baseline;
-        }
-
-        .info-label {
-            font-weight: 600;
-            margin-right: 8px;
-            min-width: 100px;
-        }
-
-        .info-value {
-            color: ${COLORS.text};
-            flex: 1;
-        }
-
-        .info-value.cost {
-            font-family: 'SF Mono', monospace;
-        }
-
-        .messages {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        /* Message timestamp */
-        .message-timestamp {
-            font-size: 10px;
-            color: ${COLORS.textDim};
-            margin-bottom: 4px;
-            opacity: 0.8;
-        }
-
-        /* User message - matching TUI UserMessageComponent */
-        .user-message {
-            background: ${COLORS.userMessageBg};
-            padding: 12px 16px;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        /* Assistant message wrapper */
-        .assistant-message {
-            padding: 0;
-        }
-
-        /* Assistant text - matching TUI AssistantMessageComponent */
-        .assistant-text {
-            padding: 12px 16px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        /* Thinking text - gray italic */
-        .thinking-text {
-            padding: 12px 16px;
-            color: ${COLORS.italic};
-            font-style: italic;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        /* Model change */
-        .model-change {
-            padding: 8px 16px;
-            background: rgb(40, 40, 50);
-            border-radius: 4px;
-        }
-
-        .model-change-text {
-            color: ${COLORS.textDim};
-            font-size: 11px;
-        }
-
-        .model-name {
-            color: ${COLORS.cyan};
-            font-weight: bold;
-        }
-
-        /* Tool execution - matching TUI ToolExecutionComponent */
-        .tool-execution {
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-top: 8px;
-        }
-
-        .tool-header {
-            font-weight: bold;
-        }
-
-        .tool-name {
-            font-weight: bold;
-        }
-
-        .tool-path {
-            color: ${COLORS.cyan};
-            word-break: break-all;
-        }
-
-        .line-count {
-            color: ${COLORS.textDim};
-        }
-
-        .tool-command {
-            font-weight: bold;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        .tool-output {
-            margin-top: 12px;
-            color: ${COLORS.textDim};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            font-family: inherit;
-            overflow-x: auto;
-        }
-
-        .tool-output > div {
-            line-height: 1.4;
-        }
-
-        .tool-output pre {
-            margin: 0;
-            font-family: inherit;
-            color: inherit;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        /* Expandable tool output */
-        .tool-output.expandable {
-            cursor: pointer;
-        }
-
-        .tool-output.expandable:hover {
-            opacity: 0.9;
-        }
-
-        .tool-output.expandable .output-full {
-            display: none;
-        }
-
-        .tool-output.expandable.expanded .output-preview {
-            display: none;
-        }
-
-        .tool-output.expandable.expanded .output-full {
-            display: block;
-        }
-
-        .expand-hint {
-            color: ${COLORS.cyan};
-            font-style: italic;
-            margin-top: 4px;
-        }
-
-        /* System prompt section */
-        .system-prompt {
-            background: rgb(60, 55, 40);
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-        }
-
-        .system-prompt-header {
-            font-weight: bold;
-            color: ${COLORS.yellow};
-            margin-bottom: 8px;
-        }
-
-        .system-prompt-content {
-            color: ${COLORS.textDim};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            font-size: 11px;
-        }
-
-        .tools-list {
-            background: rgb(60, 55, 40);
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-        }
-
-        .tools-header {
-            font-weight: bold;
-            color: ${COLORS.yellow};
-            margin-bottom: 8px;
-        }
-
-        .tools-content {
-            color: ${COLORS.textDim};
-            font-size: 11px;
-        }
-
-        .tool-item {
-            margin: 4px 0;
-        }
-
-        .tool-item-name {
-            font-weight: bold;
-            color: ${COLORS.text};
-        }
-
-        /* Diff styling */
-        .tool-diff {
-            margin-top: 12px;
-            font-size: 11px;
-            font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-            overflow-x: auto;
-            max-width: 100%;
-        }
-
-        .diff-line-old {
-            color: ${COLORS.red};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .diff-line-new {
-            color: ${COLORS.green};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .diff-line-context {
-            color: ${COLORS.textDim};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        /* Error text */
-        .error-text {
-            color: ${COLORS.red};
-            padding: 12px 16px;
-        }
-
-        .footer {
-            margin-top: 48px;
-            padding: 20px;
-            text-align: center;
-            color: ${COLORS.textDim};
-            font-size: 10px;
-        }
-
-        @media print {
-            body {
-                background: white;
-                color: black;
-            }
-            .tool-execution {
-                border: 1px solid #ddd;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>${APP_NAME} v${VERSION}</h1>
-            <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">Session:</span>
-                    <span class="info-value">${escapeHtml(sessionHeader?.id || "unknown")}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Date:</span>
-                    <span class="info-value">${sessionHeader?.timestamp ? new Date(sessionHeader.timestamp).toLocaleString() : timestamp}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Models:</span>
-                    <span class="info-value">${
-								Array.from(modelsUsed)
-									.map((m) => escapeHtml(m))
-									.join(", ") || escapeHtml(sessionHeader?.model || state.model.id)
-							}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="header">
-            <h1>Messages</h1>
-            <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">User:</span>
-                    <span class="info-value">${userMessages}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Assistant:</span>
-                    <span class="info-value">${assistantMessages}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Tool Calls:</span>
-                    <span class="info-value">${toolCallsCount}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="header">
-            <h1>Tokens & Cost</h1>
-            <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">Input:</span>
-                    <span class="info-value">${tokenStats.input.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Output:</span>
-                    <span class="info-value">${tokenStats.output.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Read:</span>
-                    <span class="info-value">${tokenStats.cacheRead.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Write:</span>
-                    <span class="info-value">${tokenStats.cacheWrite.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total:</span>
-                    <span class="info-value">${(tokenStats.input + tokenStats.output + tokenStats.cacheRead + tokenStats.cacheWrite).toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Input Cost:</span>
-                    <span class="info-value cost">$${costStats.input.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Output Cost:</span>
-                    <span class="info-value cost">$${costStats.output.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Read Cost:</span>
-                    <span class="info-value cost">$${costStats.cacheRead.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Write Cost:</span>
-                    <span class="info-value cost">$${costStats.cacheWrite.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total Cost:</span>
-                    <span class="info-value cost"><strong>$${(costStats.input + costStats.output + costStats.cacheRead + costStats.cacheWrite).toFixed(4)}</strong></span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Context Usage:</span>
-                    <span class="info-value">${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${contextPercent}%) - ${escapeHtml(lastModelInfo)}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="system-prompt">
-            <div class="system-prompt-header">System Prompt</div>
-            <div class="system-prompt-content">${escapeHtml(sessionHeader?.systemPrompt || state.systemPrompt)}</div>
-        </div>
-
-        <div class="tools-list">
-            <div class="tools-header">Available Tools</div>
-            <div class="tools-content">
-                ${state.tools
-							.map(
-								(tool) =>
-									`<div class="tool-item"><span class="tool-item-name">${escapeHtml(tool.name)}</span> - ${escapeHtml(tool.description)}</div>`,
-							)
-							.join("")}
-            </div>
-        </div>
-
-        <div class="messages">
-            ${messagesHtml}
-        </div>
-
-        <div class="footer">
-            Generated by ${APP_NAME} coding-agent on ${new Date().toLocaleString()}
-        </div>
-    </div>
-</body>
-</html>`;
-
-	// Write HTML file
-	writeFileSync(outputPath, html, "utf8");
-
-	return outputPath;
-}
-
-/**
- * Parsed session data structure for HTML generation
- */
-interface ParsedSessionData {
-	sessionId: string;
-	timestamp: string;
-	cwd?: string;
-	systemPrompt?: string;
-	modelsUsed: Set<string>;
-	messages: Message[];
-	toolResultsMap: Map<string, ToolResultMessage>;
-	sessionEvents: any[];
-	tokenStats: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	costStats: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	tools?: { name: string; description: string }[];
-	isStreamingFormat?: boolean;
-}
-
-/**
- * Parse session manager format (type: "session", "message", "model_change")
- */
 function parseSessionManagerFormat(lines: string[]): ParsedSessionData {
 	const data: ParsedSessionData = {
 		sessionId: "unknown",
@@ -940,54 +111,81 @@ function parseSessionManagerFormat(lines: string[]): ParsedSessionData {
 	};
 
 	for (const line of lines) {
+		let entry: { type: string; [key: string]: unknown };
 		try {
-			const entry = JSON.parse(line);
-			if (entry.type === "session") {
-				data.sessionId = entry.id || "unknown";
-				data.timestamp = entry.timestamp || data.timestamp;
-				data.cwd = entry.cwd;
-				data.systemPrompt = entry.systemPrompt;
+			entry = JSON.parse(line) as { type: string; [key: string]: unknown };
+		} catch {
+			continue;
+		}
+
+		switch (entry.type) {
+			case "session":
+				data.sessionId = (entry.id as string) || "unknown";
+				data.timestamp = (entry.timestamp as string) || data.timestamp;
+				data.systemPrompt = entry.systemPrompt as string | undefined;
 				if (entry.modelId) {
-					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : entry.modelId;
+					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : (entry.modelId as string);
 					data.modelsUsed.add(modelInfo);
 				}
-			} else if (entry.type === "message") {
-				data.messages.push(entry.message);
-				data.sessionEvents.push(entry);
-				if (entry.message.role === "toolResult") {
-					data.toolResultsMap.set(entry.message.toolCallId, entry.message);
-				}
-				if (entry.message.role === "assistant" && entry.message.usage) {
-					const usage = entry.message.usage;
-					data.tokenStats.input += usage.input || 0;
-					data.tokenStats.output += usage.output || 0;
-					data.tokenStats.cacheRead += usage.cacheRead || 0;
-					data.tokenStats.cacheWrite += usage.cacheWrite || 0;
-					if (usage.cost) {
-						data.costStats.input += usage.cost.input || 0;
-						data.costStats.output += usage.cost.output || 0;
-						data.costStats.cacheRead += usage.cost.cacheRead || 0;
-						data.costStats.cacheWrite += usage.cost.cacheWrite || 0;
+				break;
+
+			case "message": {
+				const message = entry.message as Message;
+				data.messages.push(message);
+				data.sessionEvents.push({
+					type: "message",
+					message,
+					timestamp: entry.timestamp as number | undefined,
+				});
+
+				if (message.role === "toolResult") {
+					const toolResult = message as ToolResultMessage;
+					data.toolResultsMap.set(toolResult.toolCallId, toolResult);
+				} else if (message.role === "assistant") {
+					const assistantMsg = message as AssistantMessage;
+					if (assistantMsg.usage) {
+						data.tokenStats.input += assistantMsg.usage.input || 0;
+						data.tokenStats.output += assistantMsg.usage.output || 0;
+						data.tokenStats.cacheRead += assistantMsg.usage.cacheRead || 0;
+						data.tokenStats.cacheWrite += assistantMsg.usage.cacheWrite || 0;
+						if (assistantMsg.usage.cost) {
+							data.costStats.input += assistantMsg.usage.cost.input || 0;
+							data.costStats.output += assistantMsg.usage.cost.output || 0;
+							data.costStats.cacheRead += assistantMsg.usage.cost.cacheRead || 0;
+							data.costStats.cacheWrite += assistantMsg.usage.cost.cacheWrite || 0;
+						}
 					}
 				}
-			} else if (entry.type === "model_change") {
-				data.sessionEvents.push(entry);
+				break;
+			}
+
+			case "model_change":
+				data.sessionEvents.push({
+					type: "model_change",
+					provider: entry.provider as string,
+					modelId: entry.modelId as string,
+					timestamp: entry.timestamp as number | undefined,
+				});
 				if (entry.modelId) {
-					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : entry.modelId;
+					const modelInfo = entry.provider ? `${entry.provider}/${entry.modelId}` : (entry.modelId as string);
 					data.modelsUsed.add(modelInfo);
 				}
-			}
-		} catch {
-			// Skip malformed lines
+				break;
+
+			case "compaction":
+				data.sessionEvents.push({
+					type: "compaction",
+					timestamp: entry.timestamp as string,
+					summary: entry.summary as string,
+					tokensBefore: entry.tokensBefore as number,
+				});
+				break;
 		}
 	}
 
 	return data;
 }
 
-/**
- * Parse streaming event format (type: "agent_start", "message_start", "message_end", etc.)
- */
 function parseStreamingEventFormat(lines: string[]): ParsedSessionData {
 	const data: ParsedSessionData = {
 		sessionId: "unknown",
@@ -1003,94 +201,332 @@ function parseStreamingEventFormat(lines: string[]): ParsedSessionData {
 
 	let timestampSet = false;
 
-	// Track messages by collecting message_end events (which have the final state)
 	for (const line of lines) {
+		let entry: { type: string; message?: Message };
 		try {
-			const entry = JSON.parse(line);
+			entry = JSON.parse(line) as { type: string; message?: Message };
+		} catch {
+			continue;
+		}
 
-			if (entry.type === "message_end" && entry.message) {
-				const msg = entry.message;
-				data.messages.push(msg);
-				data.sessionEvents.push({ type: "message", message: msg, timestamp: msg.timestamp });
+		if (entry.type === "message_end" && entry.message) {
+			const msg = entry.message;
+			data.messages.push(msg);
+			data.sessionEvents.push({
+				type: "message",
+				message: msg,
+				timestamp: (msg as { timestamp?: number }).timestamp,
+			});
 
-				// Build tool results map
-				if (msg.role === "toolResult") {
-					data.toolResultsMap.set(msg.toolCallId, msg);
+			if (msg.role === "toolResult") {
+				const toolResult = msg as ToolResultMessage;
+				data.toolResultsMap.set(toolResult.toolCallId, toolResult);
+			} else if (msg.role === "assistant") {
+				const assistantMsg = msg as AssistantMessage;
+				if (assistantMsg.model) {
+					const modelInfo = assistantMsg.provider
+						? `${assistantMsg.provider}/${assistantMsg.model}`
+						: assistantMsg.model;
+					data.modelsUsed.add(modelInfo);
 				}
-
-				// Track models and accumulate stats from assistant messages
-				if (msg.role === "assistant") {
-					if (msg.model) {
-						const modelInfo = msg.provider ? `${msg.provider}/${msg.model}` : msg.model;
-						data.modelsUsed.add(modelInfo);
+				if (assistantMsg.usage) {
+					data.tokenStats.input += assistantMsg.usage.input || 0;
+					data.tokenStats.output += assistantMsg.usage.output || 0;
+					data.tokenStats.cacheRead += assistantMsg.usage.cacheRead || 0;
+					data.tokenStats.cacheWrite += assistantMsg.usage.cacheWrite || 0;
+					if (assistantMsg.usage.cost) {
+						data.costStats.input += assistantMsg.usage.cost.input || 0;
+						data.costStats.output += assistantMsg.usage.cost.output || 0;
+						data.costStats.cacheRead += assistantMsg.usage.cost.cacheRead || 0;
+						data.costStats.cacheWrite += assistantMsg.usage.cost.cacheWrite || 0;
 					}
-					if (msg.usage) {
-						data.tokenStats.input += msg.usage.input || 0;
-						data.tokenStats.output += msg.usage.output || 0;
-						data.tokenStats.cacheRead += msg.usage.cacheRead || 0;
-						data.tokenStats.cacheWrite += msg.usage.cacheWrite || 0;
-						if (msg.usage.cost) {
-							data.costStats.input += msg.usage.cost.input || 0;
-							data.costStats.output += msg.usage.cost.output || 0;
-							data.costStats.cacheRead += msg.usage.cost.cacheRead || 0;
-							data.costStats.cacheWrite += msg.usage.cost.cacheWrite || 0;
-						}
-					}
-				}
-
-				// Use first message timestamp as session timestamp
-				if (!timestampSet && msg.timestamp) {
-					data.timestamp = new Date(msg.timestamp).toISOString();
-					timestampSet = true;
 				}
 			}
-		} catch {
-			// Skip malformed lines
+
+			if (!timestampSet && (msg as { timestamp?: number }).timestamp) {
+				data.timestamp = new Date((msg as { timestamp: number }).timestamp).toISOString();
+				timestampSet = true;
+			}
 		}
 	}
 
-	// Generate a session ID from the timestamp
 	data.sessionId = `stream-${data.timestamp.replace(/[:.]/g, "-")}`;
-
 	return data;
 }
 
-/**
- * Detect the format of a session file by examining the first valid JSON line
- */
 function detectFormat(lines: string[]): "session-manager" | "streaming-events" | "unknown" {
 	for (const line of lines) {
 		try {
-			const entry = JSON.parse(line);
+			const entry = JSON.parse(line) as { type: string };
 			if (entry.type === "session") return "session-manager";
 			if (entry.type === "agent_start" || entry.type === "message_start" || entry.type === "turn_start") {
 				return "streaming-events";
 			}
-		} catch {
-			// Skip malformed lines
-		}
+		} catch {}
 	}
 	return "unknown";
 }
 
-/**
- * Generate HTML from parsed session data
- */
-function generateHtml(data: ParsedSessionData, inputFilename: string): string {
-	// Calculate message stats
-	const userMessages = data.messages.filter((m) => m.role === "user").length;
-	const assistantMessages = data.messages.filter((m) => m.role === "assistant").length;
+function parseSessionFile(content: string): ParsedSessionData {
+	const lines = content
+		.trim()
+		.split("\n")
+		.filter((l) => l.trim());
 
-	// Count tool calls from assistant messages
-	let toolCallsCount = 0;
-	for (const message of data.messages) {
-		if (message.role === "assistant") {
-			const assistantMsg = message as AssistantMessage;
-			toolCallsCount += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+	if (lines.length === 0) {
+		throw new Error("Empty session file");
+	}
+
+	const format = detectFormat(lines);
+	if (format === "unknown") {
+		throw new Error("Unknown session file format");
+	}
+
+	return format === "session-manager" ? parseSessionManagerFormat(lines) : parseStreamingEventFormat(lines);
+}
+
+// ============================================================================
+// HTML formatting functions
+// ============================================================================
+
+function formatToolExecution(
+	toolName: string,
+	args: Record<string, unknown>,
+	result?: ToolResultMessage,
+): { html: string; bgColor: string } {
+	let html = "";
+	const isError = result?.isError || false;
+	const bgColor = result ? (isError ? COLORS.toolErrorBg : COLORS.toolSuccessBg) : COLORS.toolPendingBg;
+
+	const getTextOutput = (): string => {
+		if (!result) return "";
+		const textBlocks = result.content.filter((c) => c.type === "text");
+		return textBlocks.map((c) => (c as { type: "text"; text: string }).text).join("\n");
+	};
+
+	const formatExpandableOutput = (lines: string[], maxLines: number): string => {
+		const displayLines = lines.slice(0, maxLines);
+		const remaining = lines.length - maxLines;
+
+		if (remaining > 0) {
+			let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+			out += '<div class="output-preview">';
+			for (const line of displayLines) {
+				out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+			}
+			out += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+			out += "</div>";
+			out += '<div class="output-full">';
+			for (const line of lines) {
+				out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+			}
+			out += "</div></div>";
+			return out;
+		}
+
+		let out = '<div class="tool-output">';
+		for (const line of displayLines) {
+			out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+		}
+		out += "</div>";
+		return out;
+	};
+
+	switch (toolName) {
+		case "bash": {
+			const command = (args?.command as string) || "";
+			html = `<div class="tool-command">$ ${escapeHtml(command || "...")}</div>`;
+			if (result) {
+				const output = getTextOutput().trim();
+				if (output) {
+					html += formatExpandableOutput(output.split("\n"), 5);
+				}
+			}
+			break;
+		}
+
+		case "read": {
+			const path = shortenPath((args?.file_path as string) || (args?.path as string) || "");
+			html = `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
+			if (result) {
+				const output = getTextOutput();
+				if (output) {
+					html += formatExpandableOutput(output.split("\n"), 10);
+				}
+			}
+			break;
+		}
+
+		case "write": {
+			const path = shortenPath((args?.file_path as string) || (args?.path as string) || "");
+			const fileContent = (args?.content as string) || "";
+			const lines = fileContent ? fileContent.split("\n") : [];
+
+			html = `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(path || "...")}</span>`;
+			if (lines.length > 10) {
+				html += ` <span class="line-count">(${lines.length} lines)</span>`;
+			}
+			html += "</div>";
+
+			if (fileContent) {
+				html += formatExpandableOutput(lines, 10);
+			}
+			if (result) {
+				const output = getTextOutput().trim();
+				if (output) {
+					html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+				}
+			}
+			break;
+		}
+
+		case "edit": {
+			const path = shortenPath((args?.file_path as string) || (args?.path as string) || "");
+			html = `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
+
+			if (result?.details?.diff) {
+				const diffLines = result.details.diff.split("\n");
+				html += '<div class="tool-diff">';
+				for (const line of diffLines) {
+					if (line.startsWith("+")) {
+						html += `<div class="diff-line-new">${escapeHtml(line)}</div>`;
+					} else if (line.startsWith("-")) {
+						html += `<div class="diff-line-old">${escapeHtml(line)}</div>`;
+					} else {
+						html += `<div class="diff-line-context">${escapeHtml(line)}</div>`;
+					}
+				}
+				html += "</div>";
+			}
+			if (result) {
+				const output = getTextOutput().trim();
+				if (output) {
+					html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+				}
+			}
+			break;
+		}
+
+		default: {
+			html = `<div class="tool-header"><span class="tool-name">${escapeHtml(toolName)}</span></div>`;
+			html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
+			if (result) {
+				const output = getTextOutput();
+				if (output) {
+					html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+				}
+			}
 		}
 	}
 
-	// Get last assistant message for context info
+	return { html, bgColor };
+}
+
+function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>): string {
+	let html = "";
+	const timestamp = (message as { timestamp?: number }).timestamp;
+	const timestampHtml = timestamp ? `<div class="message-timestamp">${formatTimestamp(timestamp)}</div>` : "";
+
+	if (message.role === "user") {
+		const userMsg = message as UserMessage;
+		let textContent = "";
+
+		if (typeof userMsg.content === "string") {
+			textContent = userMsg.content;
+		} else {
+			const textBlocks = userMsg.content.filter((c) => c.type === "text");
+			textContent = textBlocks.map((c) => (c as { type: "text"; text: string }).text).join("");
+		}
+
+		if (textContent.trim()) {
+			html += `<div class="user-message">${timestampHtml}${escapeHtml(textContent).replace(/\n/g, "<br>")}</div>`;
+		}
+	} else if (message.role === "assistant") {
+		const assistantMsg = message as AssistantMessage;
+		html += timestampHtml ? `<div class="assistant-message">${timestampHtml}` : "";
+
+		for (const content of assistantMsg.content) {
+			if (content.type === "text" && content.text.trim()) {
+				html += `<div class="assistant-text">${escapeHtml(content.text.trim()).replace(/\n/g, "<br>")}</div>`;
+			} else if (content.type === "thinking" && content.thinking.trim()) {
+				html += `<div class="thinking-text">${escapeHtml(content.thinking.trim()).replace(/\n/g, "<br>")}</div>`;
+			}
+		}
+
+		for (const content of assistantMsg.content) {
+			if (content.type === "toolCall") {
+				const toolResult = toolResultsMap.get(content.id);
+				const { html: toolHtml, bgColor } = formatToolExecution(
+					content.name,
+					content.arguments as Record<string, unknown>,
+					toolResult,
+				);
+				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
+			}
+		}
+
+		const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
+		if (!hasToolCalls) {
+			if (assistantMsg.stopReason === "aborted") {
+				html += '<div class="error-text">Aborted</div>';
+			} else if (assistantMsg.stopReason === "error") {
+				html += `<div class="error-text">Error: ${escapeHtml(assistantMsg.errorMessage || "Unknown error")}</div>`;
+			}
+		}
+
+		if (timestampHtml) {
+			html += "</div>";
+		}
+	}
+
+	return html;
+}
+
+function formatModelChange(event: ModelChangeEvent): string {
+	const timestamp = formatTimestamp(event.timestamp);
+	const timestampHtml = timestamp ? `<div class="message-timestamp">${timestamp}</div>` : "";
+	const modelInfo = `${event.provider}/${event.modelId}`;
+	return `<div class="model-change">${timestampHtml}<div class="model-change-text">Switched to model: <span class="model-name">${escapeHtml(modelInfo)}</span></div></div>`;
+}
+
+function formatCompaction(event: CompactionEvent): string {
+	const timestamp = formatTimestamp(event.timestamp);
+	const timestampHtml = timestamp ? `<div class="message-timestamp">${timestamp}</div>` : "";
+	const summaryHtml = escapeHtml(event.summary).replace(/\n/g, "<br>");
+
+	return `<div class="compaction-container">
+		<div class="compaction-header" onclick="this.parentElement.classList.toggle('expanded')">
+			${timestampHtml}
+			<div class="compaction-header-row">
+				<span class="compaction-toggle">▶</span>
+				<span class="compaction-title">Context compacted from ${event.tokensBefore.toLocaleString()} tokens</span>
+				<span class="compaction-hint">(click to expand summary)</span>
+			</div>
+		</div>
+		<div class="compaction-content">
+			<div class="compaction-summary">
+				<div class="compaction-summary-header">Summary sent to model</div>
+				<div class="compaction-summary-content">${summaryHtml}</div>
+			</div>
+		</div>
+	</div>`;
+}
+
+// ============================================================================
+// HTML generation
+// ============================================================================
+
+function generateHtml(data: ParsedSessionData, filename: string): string {
+	const userMessages = data.messages.filter((m) => m.role === "user").length;
+	const assistantMessages = data.messages.filter((m) => m.role === "assistant").length;
+
+	let toolCallsCount = 0;
+	for (const message of data.messages) {
+		if (message.role === "assistant") {
+			toolCallsCount += (message as AssistantMessage).content.filter((c) => c.type === "toolCall").length;
+		}
+	}
+
 	const lastAssistantMessage = data.messages
 		.slice()
 		.reverse()
@@ -1109,20 +545,35 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
 	const lastProvider = lastAssistantMessage?.provider || "";
 	const lastModelInfo = lastProvider ? `${lastProvider}/${lastModel}` : lastModel;
 
-	// Generate messages HTML
+	const contextWindow = data.contextWindow || 0;
+	const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : null;
+
 	let messagesHtml = "";
 	for (const event of data.sessionEvents) {
-		if (event.type === "message" && event.message.role !== "toolResult") {
-			messagesHtml += formatMessage(event.message, data.toolResultsMap);
-		} else if (event.type === "model_change") {
-			messagesHtml += formatModelChange(event);
+		switch (event.type) {
+			case "message":
+				if (event.message.role !== "toolResult") {
+					messagesHtml += formatMessage(event.message, data.toolResultsMap);
+				}
+				break;
+			case "model_change":
+				messagesHtml += formatModelChange(event);
+				break;
+			case "compaction":
+				messagesHtml += formatCompaction(event);
+				break;
 		}
 	}
 
-	// Tools section (only if tools info available)
+	const systemPromptHtml = data.systemPrompt
+		? `<div class="system-prompt">
+            <div class="system-prompt-header">System Prompt</div>
+            <div class="system-prompt-content">${escapeHtml(data.systemPrompt)}</div>
+        </div>`
+		: "";
+
 	const toolsHtml = data.tools
-		? `
-        <div class="tools-list">
+		? `<div class="tools-list">
             <div class="tools-header">Available Tools</div>
             <div class="tools-content">
                 ${data.tools.map((tool) => `<div class="tool-item"><span class="tool-item-name">${escapeHtml(tool.name)}</span> - ${escapeHtml(tool.description)}</div>`).join("")}
@@ -1130,28 +581,24 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
         </div>`
 		: "";
 
-	// System prompt section (only if available)
-	const systemPromptHtml = data.systemPrompt
-		? `
-        <div class="system-prompt">
-            <div class="system-prompt-header">System Prompt</div>
-            <div class="system-prompt-content">${escapeHtml(data.systemPrompt)}</div>
+	const streamingNotice = data.isStreamingFormat
+		? `<div class="streaming-notice">
+            <em>Note: This session was reconstructed from raw agent event logs, which do not contain system prompt or tool definitions.</em>
         </div>`
 		: "";
+
+	const contextUsageText = contextPercent
+		? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${contextPercent}%) - ${escapeHtml(lastModelInfo)}`
+		: `${contextTokens.toLocaleString()} tokens (last turn) - ${escapeHtml(lastModelInfo)}`;
 
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Session Export - ${escapeHtml(inputFilename)}</title>
+    <title>Session Export - ${escapeHtml(filename)}</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
             font-size: 12px;
@@ -1160,67 +607,26 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
             background: ${COLORS.bodyBg};
             padding: 24px;
         }
-
-        .container {
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
+        .container { max-width: 700px; margin: 0 auto; }
         .header {
             margin-bottom: 24px;
             padding: 16px;
             background: ${COLORS.containerBg};
             border-radius: 4px;
         }
-
         .header h1 {
             font-size: 14px;
             font-weight: bold;
             margin-bottom: 12px;
             color: ${COLORS.cyan};
         }
-
-        .header-info {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            font-size: 11px;
-        }
-
-        .info-item {
-            color: ${COLORS.textDim};
-            display: flex;
-            align-items: baseline;
-        }
-
-        .info-label {
-            font-weight: 600;
-            margin-right: 8px;
-            min-width: 100px;
-        }
-
-        .info-value {
-            color: ${COLORS.text};
-            flex: 1;
-        }
-
-        .info-value.cost {
-            font-family: 'SF Mono', monospace;
-        }
-
-        .messages {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .message-timestamp {
-            font-size: 10px;
-            color: ${COLORS.textDim};
-            margin-bottom: 4px;
-            opacity: 0.8;
-        }
-
+        .header-info { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+        .info-item { color: ${COLORS.textDim}; display: flex; align-items: baseline; }
+        .info-label { font-weight: 600; margin-right: 8px; min-width: 100px; }
+        .info-value { color: ${COLORS.text}; flex: 1; }
+        .info-value.cost { font-family: 'SF Mono', monospace; }
+        .messages { display: flex; flex-direction: column; gap: 16px; }
+        .message-timestamp { font-size: 10px; color: ${COLORS.textDim}; margin-bottom: 4px; opacity: 0.8; }
         .user-message {
             background: ${COLORS.userMessageBg};
             padding: 12px 16px;
@@ -1230,76 +636,36 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
             overflow-wrap: break-word;
             word-break: break-word;
         }
-
-        .assistant-message {
-            padding: 0;
-        }
-
-        .assistant-text {
+        .assistant-message { padding: 0; }
+        .assistant-text, .thinking-text {
             padding: 12px 16px;
             white-space: pre-wrap;
             word-wrap: break-word;
             overflow-wrap: break-word;
             word-break: break-word;
         }
-
-        .thinking-text {
-            padding: 12px 16px;
-            color: ${COLORS.italic};
-            font-style: italic;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        .model-change {
-            padding: 8px 16px;
-            background: rgb(40, 40, 50);
-            border-radius: 4px;
-        }
-
-        .model-change-text {
-            color: ${COLORS.textDim};
-            font-size: 11px;
-        }
-
-        .model-name {
-            color: ${COLORS.cyan};
-            font-weight: bold;
-        }
-
-        .tool-execution {
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-top: 8px;
-        }
-
-        .tool-header {
-            font-weight: bold;
-        }
-
-        .tool-name {
-            font-weight: bold;
-        }
-
-        .tool-path {
-            color: ${COLORS.cyan};
-            word-break: break-all;
-        }
-
-        .line-count {
-            color: ${COLORS.textDim};
-        }
-
-        .tool-command {
-            font-weight: bold;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
+        .thinking-text { color: ${COLORS.textDim}; font-style: italic; }
+        .model-change { padding: 8px 16px; background: rgb(40, 40, 50); border-radius: 4px; }
+        .model-change-text { color: ${COLORS.textDim}; font-size: 11px; }
+        .model-name { color: ${COLORS.cyan}; font-weight: bold; }
+        .compaction-container { background: rgb(60, 55, 35); border-radius: 4px; overflow: hidden; }
+        .compaction-header { padding: 12px 16px; cursor: pointer; }
+        .compaction-header:hover { background: rgba(255, 255, 255, 0.05); }
+        .compaction-header-row { display: flex; align-items: center; gap: 8px; }
+        .compaction-toggle { color: ${COLORS.cyan}; font-size: 10px; transition: transform 0.2s; }
+        .compaction-container.expanded .compaction-toggle { transform: rotate(90deg); }
+        .compaction-title { color: ${COLORS.text}; font-weight: bold; }
+        .compaction-hint { color: ${COLORS.textDim}; font-size: 11px; }
+        .compaction-content { display: none; padding: 0 16px 16px 16px; }
+        .compaction-container.expanded .compaction-content { display: block; }
+        .compaction-summary { background: rgba(0, 0, 0, 0.2); border-radius: 4px; padding: 12px; }
+        .compaction-summary-header { font-weight: bold; color: ${COLORS.cyan}; margin-bottom: 8px; font-size: 11px; }
+        .compaction-summary-content { color: ${COLORS.text}; white-space: pre-wrap; word-wrap: break-word; }
+        .tool-execution { padding: 12px 16px; border-radius: 4px; margin-top: 8px; }
+        .tool-header, .tool-name { font-weight: bold; }
+        .tool-path { color: ${COLORS.cyan}; word-break: break-all; }
+        .line-count { color: ${COLORS.textDim}; }
+        .tool-command { font-weight: bold; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
         .tool-output {
             margin-top: 12px;
             color: ${COLORS.textDim};
@@ -1310,155 +676,27 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
             font-family: inherit;
             overflow-x: auto;
         }
-
-        .tool-output > div {
-            line-height: 1.4;
-        }
-
-        .tool-output pre {
-            margin: 0;
-            font-family: inherit;
-            color: inherit;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .tool-output.expandable {
-            cursor: pointer;
-        }
-
-        .tool-output.expandable:hover {
-            opacity: 0.9;
-        }
-
-        .tool-output.expandable .output-full {
-            display: none;
-        }
-
-        .tool-output.expandable.expanded .output-preview {
-            display: none;
-        }
-
-        .tool-output.expandable.expanded .output-full {
-            display: block;
-        }
-
-        .expand-hint {
-            color: ${COLORS.cyan};
-            font-style: italic;
-            margin-top: 4px;
-        }
-
-        .system-prompt {
-            background: rgb(60, 55, 40);
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-        }
-
-        .system-prompt-header {
-            font-weight: bold;
-            color: ${COLORS.yellow};
-            margin-bottom: 8px;
-        }
-
-        .system-prompt-content {
-            color: ${COLORS.textDim};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            font-size: 11px;
-        }
-
-        .tools-list {
-            background: rgb(60, 55, 40);
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-        }
-
-        .tools-header {
-            font-weight: bold;
-            color: ${COLORS.yellow};
-            margin-bottom: 8px;
-        }
-
-        .tools-content {
-            color: ${COLORS.textDim};
-            font-size: 11px;
-        }
-
-        .tool-item {
-            margin: 4px 0;
-        }
-
-        .tool-item-name {
-            font-weight: bold;
-            color: ${COLORS.text};
-        }
-
-        .tool-diff {
-            margin-top: 12px;
-            font-size: 11px;
-            font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-            overflow-x: auto;
-            max-width: 100%;
-        }
-
-        .diff-line-old {
-            color: ${COLORS.red};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .diff-line-new {
-            color: ${COLORS.green};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .diff-line-context {
-            color: ${COLORS.textDim};
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .error-text {
-            color: ${COLORS.red};
-            padding: 12px 16px;
-        }
-
-        .footer {
-            margin-top: 48px;
-            padding: 20px;
-            text-align: center;
-            color: ${COLORS.textDim};
-            font-size: 10px;
-        }
-
-        .streaming-notice {
-            background: rgb(50, 45, 35);
-            padding: 12px 16px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-            color: ${COLORS.textDim};
-            font-size: 11px;
-        }
-
-        @media print {
-            body {
-                background: white;
-                color: black;
-            }
-            .tool-execution {
-                border: 1px solid #ddd;
-            }
-        }
+        .tool-output > div { line-height: 1.4; }
+        .tool-output pre { margin: 0; font-family: inherit; color: inherit; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+        .tool-output.expandable { cursor: pointer; }
+        .tool-output.expandable:hover { opacity: 0.9; }
+        .tool-output.expandable .output-full { display: none; }
+        .tool-output.expandable.expanded .output-preview { display: none; }
+        .tool-output.expandable.expanded .output-full { display: block; }
+        .expand-hint { color: ${COLORS.cyan}; font-style: italic; margin-top: 4px; }
+        .system-prompt, .tools-list { background: rgb(60, 55, 40); padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
+        .system-prompt-header, .tools-header { font-weight: bold; color: ${COLORS.yellow}; margin-bottom: 8px; }
+        .system-prompt-content, .tools-content { color: ${COLORS.textDim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; font-size: 11px; }
+        .tool-item { margin: 4px 0; }
+        .tool-item-name { font-weight: bold; color: ${COLORS.text}; }
+        .tool-diff { margin-top: 12px; font-size: 11px; font-family: inherit; overflow-x: auto; max-width: 100%; }
+        .diff-line-old { color: ${COLORS.red}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+        .diff-line-new { color: ${COLORS.green}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+        .diff-line-context { color: ${COLORS.textDim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+        .error-text { color: ${COLORS.red}; padding: 12px 16px; }
+        .footer { margin-top: 48px; padding: 20px; text-align: center; color: ${COLORS.textDim}; font-size: 10px; }
+        .streaming-notice { background: rgb(50, 45, 35); padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; color: ${COLORS.textDim}; font-size: 11px; }
+        @media print { body { background: white; color: black; } .tool-execution { border: 1px solid #ddd; } }
     </style>
 </head>
 <body>
@@ -1466,103 +704,45 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
         <div class="header">
             <h1>${APP_NAME} v${VERSION}</h1>
             <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">Session:</span>
-                    <span class="info-value">${escapeHtml(data.sessionId)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Date:</span>
-                    <span class="info-value">${new Date(data.timestamp).toLocaleString()}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Models:</span>
-                    <span class="info-value">${
-								Array.from(data.modelsUsed)
-									.map((m) => escapeHtml(m))
-									.join(", ") || "unknown"
-							}</span>
-                </div>
+                <div class="info-item"><span class="info-label">Session:</span><span class="info-value">${escapeHtml(data.sessionId)}</span></div>
+                <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${new Date(data.timestamp).toLocaleString()}</span></div>
+                <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${
+							Array.from(data.modelsUsed)
+								.map((m) => escapeHtml(m))
+								.join(", ") || "unknown"
+						}</span></div>
             </div>
         </div>
 
         <div class="header">
             <h1>Messages</h1>
             <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">User:</span>
-                    <span class="info-value">${userMessages}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Assistant:</span>
-                    <span class="info-value">${assistantMessages}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Tool Calls:</span>
-                    <span class="info-value">${toolCallsCount}</span>
-                </div>
+                <div class="info-item"><span class="info-label">User:</span><span class="info-value">${userMessages}</span></div>
+                <div class="info-item"><span class="info-label">Assistant:</span><span class="info-value">${assistantMessages}</span></div>
+                <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${toolCallsCount}</span></div>
             </div>
         </div>
 
         <div class="header">
             <h1>Tokens & Cost</h1>
             <div class="header-info">
-                <div class="info-item">
-                    <span class="info-label">Input:</span>
-                    <span class="info-value">${data.tokenStats.input.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Output:</span>
-                    <span class="info-value">${data.tokenStats.output.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Read:</span>
-                    <span class="info-value">${data.tokenStats.cacheRead.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Write:</span>
-                    <span class="info-value">${data.tokenStats.cacheWrite.toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total:</span>
-                    <span class="info-value">${(data.tokenStats.input + data.tokenStats.output + data.tokenStats.cacheRead + data.tokenStats.cacheWrite).toLocaleString()} tokens</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Input Cost:</span>
-                    <span class="info-value cost">$${data.costStats.input.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Output Cost:</span>
-                    <span class="info-value cost">$${data.costStats.output.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Read Cost:</span>
-                    <span class="info-value cost">$${data.costStats.cacheRead.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Cache Write Cost:</span>
-                    <span class="info-value cost">$${data.costStats.cacheWrite.toFixed(4)}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total Cost:</span>
-                    <span class="info-value cost"><strong>$${(data.costStats.input + data.costStats.output + data.costStats.cacheRead + data.costStats.cacheWrite).toFixed(4)}</strong></span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Context Usage:</span>
-                    <span class="info-value">${contextTokens.toLocaleString()} tokens (last turn) - ${escapeHtml(lastModelInfo)}</span>
-                </div>
+                <div class="info-item"><span class="info-label">Input:</span><span class="info-value">${data.tokenStats.input.toLocaleString()} tokens</span></div>
+                <div class="info-item"><span class="info-label">Output:</span><span class="info-value">${data.tokenStats.output.toLocaleString()} tokens</span></div>
+                <div class="info-item"><span class="info-label">Cache Read:</span><span class="info-value">${data.tokenStats.cacheRead.toLocaleString()} tokens</span></div>
+                <div class="info-item"><span class="info-label">Cache Write:</span><span class="info-value">${data.tokenStats.cacheWrite.toLocaleString()} tokens</span></div>
+                <div class="info-item"><span class="info-label">Total:</span><span class="info-value">${(data.tokenStats.input + data.tokenStats.output + data.tokenStats.cacheRead + data.tokenStats.cacheWrite).toLocaleString()} tokens</span></div>
+                <div class="info-item"><span class="info-label">Input Cost:</span><span class="info-value cost">$${data.costStats.input.toFixed(4)}</span></div>
+                <div class="info-item"><span class="info-label">Output Cost:</span><span class="info-value cost">$${data.costStats.output.toFixed(4)}</span></div>
+                <div class="info-item"><span class="info-label">Cache Read Cost:</span><span class="info-value cost">$${data.costStats.cacheRead.toFixed(4)}</span></div>
+                <div class="info-item"><span class="info-label">Cache Write Cost:</span><span class="info-value cost">$${data.costStats.cacheWrite.toFixed(4)}</span></div>
+                <div class="info-item"><span class="info-label">Total Cost:</span><span class="info-value cost"><strong>$${(data.costStats.input + data.costStats.output + data.costStats.cacheRead + data.costStats.cacheWrite).toFixed(4)}</strong></span></div>
+                <div class="info-item"><span class="info-label">Context Usage:</span><span class="info-value">${contextUsageText}</span></div>
             </div>
         </div>
 
         ${systemPromptHtml}
         ${toolsHtml}
-
-        ${
-				data.isStreamingFormat
-					? `<div class="streaming-notice">
-            <em>Note: This session was reconstructed from raw agent event logs, which do not contain system prompt or tool definitions.</em>
-        </div>`
-					: ""
-			}
+        ${streamingNotice}
 
         <div class="messages">
             ${messagesHtml}
@@ -1576,9 +756,40 @@ function generateHtml(data: ParsedSessionData, inputFilename: string): string {
 </html>`;
 }
 
+// ============================================================================
+// Public API
+// ============================================================================
+
 /**
- * Export a session file to HTML (standalone, without AgentState or SessionManager)
- * Auto-detects format: session manager format or streaming event format
+ * Export session to HTML using SessionManager and AgentState.
+ * Used by TUI's /export command.
+ */
+export function exportSessionToHtml(sessionManager: SessionManager, state: AgentState, outputPath?: string): string {
+	const sessionFile = sessionManager.getSessionFile();
+	const content = readFileSync(sessionFile, "utf8");
+	const data = parseSessionFile(content);
+
+	// Enrich with data from AgentState (tools, context window)
+	data.tools = state.tools.map((t) => ({ name: t.name, description: t.description }));
+	data.contextWindow = state.model?.contextWindow;
+	if (!data.systemPrompt) {
+		data.systemPrompt = state.systemPrompt;
+	}
+
+	if (!outputPath) {
+		const sessionBasename = basename(sessionFile, ".jsonl");
+		outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
+	}
+
+	const html = generateHtml(data, basename(sessionFile));
+	writeFileSync(outputPath, html, "utf8");
+	return outputPath;
+}
+
+/**
+ * Export session file to HTML (standalone, without AgentState).
+ * Auto-detects format: session manager format or streaming event format.
+ * Used by CLI for exporting arbitrary session files.
  */
 export function exportFromFile(inputPath: string, outputPath?: string): string {
 	if (!existsSync(inputPath)) {
@@ -1586,23 +797,8 @@ export function exportFromFile(inputPath: string, outputPath?: string): string {
 	}
 
 	const content = readFileSync(inputPath, "utf8");
-	const lines = content
-		.trim()
-		.split("\n")
-		.filter((l) => l.trim());
+	const data = parseSessionFile(content);
 
-	if (lines.length === 0) {
-		throw new Error(`Empty file: ${inputPath}`);
-	}
-
-	const format = detectFormat(lines);
-	if (format === "unknown") {
-		throw new Error(`Unknown session file format: ${inputPath}`);
-	}
-
-	const data = format === "session-manager" ? parseSessionManagerFormat(lines) : parseStreamingEventFormat(lines);
-
-	// Generate output path if not provided
 	if (!outputPath) {
 		const inputBasename = basename(inputPath, ".jsonl");
 		outputPath = `${APP_NAME}-session-${inputBasename}.html`;
@@ -1610,6 +806,5 @@ export function exportFromFile(inputPath: string, outputPath?: string): string {
 
 	const html = generateHtml(data, basename(inputPath));
 	writeFileSync(outputPath, html, "utf8");
-
 	return outputPath;
 }

@@ -8,7 +8,7 @@
 import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import { type CompactionEntry, loadSessionFromEntries, type SessionEntry } from "./session-manager.js";
+import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 // ============================================================================
 // Types
@@ -225,8 +225,10 @@ export async function compact(
 	signal?: AbortSignal,
 	customInstructions?: string,
 ): Promise<CompactionEntry> {
-	// Reconstruct current messages from entries
-	const { messages: currentMessages } = loadSessionFromEntries(entries);
+	// Don't compact if the last entry is already a compaction
+	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
+		throw new Error("Already compacted");
+	}
 
 	// Find previous compaction boundary
 	let prevCompactionIndex = -1;
@@ -246,9 +248,29 @@ export async function compact(
 	// Find cut point (entry index) within the valid range
 	const firstKeptEntryIndex = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
-	// Generate summary from the full current context
+	// Extract messages to summarize (before the cut point)
+	const messagesToSummarize: AppMessage[] = [];
+	for (let i = boundaryStart; i < firstKeptEntryIndex; i++) {
+		const entry = entries[i];
+		if (entry.type === "message") {
+			messagesToSummarize.push(entry.message);
+		}
+	}
+
+	// Also include the previous summary if there was a compaction
+	if (prevCompactionIndex >= 0) {
+		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
+		// Prepend the previous summary as context
+		messagesToSummarize.unshift({
+			role: "user",
+			content: `Previous session summary:\n${prevCompaction.summary}`,
+			timestamp: Date.now(),
+		});
+	}
+
+	// Generate summary from messages before the cut point
 	const summary = await generateSummary(
-		currentMessages,
+		messagesToSummarize,
 		model,
 		settings.reserveTokens,
 		apiKey,
