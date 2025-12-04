@@ -13,7 +13,7 @@ export function copyToClipboard(text: string): void {
 		} else {
 			// Linux - try xclip first, fall back to xsel
 			try {
-				execSync("xclip -selection clipboard", options);
+				execSync("xclip -selection clipboard -i", options);
 			} catch {
 				execSync("xsel --clipboard --input", options);
 			}
