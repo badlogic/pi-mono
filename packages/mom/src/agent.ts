@@ -249,6 +249,15 @@ Update when you learn something important or when asked to remember something.
 ### Current Memory
 ${memory}
 
+## System Configuration Log
+Maintain ${workspacePath}/SYSTEM.md to log all environment modifications:
+- Installed packages (apk add, npm install, pip install)
+- Environment variables set
+- Config files modified (~/.gitconfig, cron jobs, etc.)
+- Skill dependencies installed
+
+Update this file whenever you modify the environment. On fresh container, read it first to restore your setup.
+
 ## Log Queries (CRITICAL: limit output to avoid context overflow)
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
 The log contains user messages AND your tool calls/results. Filter appropriately.

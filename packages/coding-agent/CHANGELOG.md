@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.10] - 2025-12-04
+
+### Added
+
+- Added `gpt-5.1-codex-max` model support
+
 ## [0.12.9] - 2025-12-04
 
 ### Added

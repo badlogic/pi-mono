@@ -344,6 +344,26 @@ async function generateModels() {
 		});
 	}
 
+	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5.1-codex-max")) {
+		allModels.push({
+			id: "gpt-5.1-codex-max",
+			name: "GPT-5.1 Codex Max",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
+			provider: "openai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 10,
+				cacheRead: 0.125,
+				cacheWrite: 0,
+			},
+			contextWindow: 400000,
+			maxTokens: 128000,
+		});
+	}
+
 	// Add missing Grok models
 	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
 		allModels.push({

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.10] - 2025-12-04
+
+### Added
+
+- Added `gpt-5.1-codex-max` model support
+
 ### Fixed
 
 - **OpenAI Token Counting**: Fixed `usage.input` to exclude cached tokens for OpenAI providers. Previously, `input` included cached tokens, causing double-counting when calculating total context size via `input + cacheRead`. Now `input` represents non-cached input tokens across all providers, making `input + output + cacheRead + cacheWrite` the correct formula for total context size.
