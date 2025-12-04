@@ -502,6 +502,16 @@ Clear the conversation context and start a fresh session:
 
 Aborts any in-flight agent work, clears all messages, and creates a new session file.
 
+### /copy
+
+Copy the last agent message to clipboard:
+
+```
+/copy
+```
+
+Extracts text content from the most recent assistant message and copies it to the system clipboard. Works cross-platform (macOS, Windows, Linux). On Linux, requires `xclip` or `xsel` to be installed.
+
 ### /compact
 
 Manually compact the conversation context to reduce token usage:
