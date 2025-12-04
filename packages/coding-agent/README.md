@@ -17,6 +17,7 @@ Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the
 - [Project Context Files](#project-context-files)
 - [Image Support](#image-support)
 - [Session Management](#session-management)
+- [Context Compaction](#context-compaction)
 - [CLI Options](#cli-options)
 - [Tools](#tools)
 - [Usage](#usage)
@@ -25,7 +26,6 @@ Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the
 - [To-Dos](#to-dos)
 - [Planning](#planning)
 - [Background Bash](#background-bash)
-- [Planned Features](#planned-features)
 - [License](#license)
 - [See Also](#see-also)
 
@@ -502,6 +502,27 @@ Clear the conversation context and start a fresh session:
 
 Aborts any in-flight agent work, clears all messages, and creates a new session file.
 
+### /compact
+
+Manually compact the conversation context to reduce token usage:
+
+```
+/compact                           # Use default summary instructions
+/compact Focus on the API changes  # Custom instructions for summary
+```
+
+Creates a summary of the conversation so far, replacing the message history with a condensed version. See [Context Compaction](#context-compaction) for details.
+
+### /autocompact
+
+Toggle automatic context compaction:
+
+```
+/autocompact
+```
+
+When enabled, the agent automatically compacts context when usage exceeds the configured threshold. The current state (enabled/disabled) is shown after toggling. See [Context Compaction](#context-compaction) for details.
+
 ### Custom Slash Commands
 
 Define reusable prompt templates as Markdown files that appear in the `/` autocomplete.
@@ -757,6 +778,61 @@ To use a specific session file instead of auto-generating one:
 ```bash
 pi --session /path/to/my-session.jsonl
 ```
+
+## Context Compaction
+
+Long sessions can exhaust the model's context window. Context compaction summarizes the conversation history into a condensed form, preserving key information while dramatically reducing token usage.
+
+### How It Works
+
+When compaction runs (manually via `/compact` or automatically):
+
+1. The current conversation is sent to the model with instructions to create a comprehensive summary
+2. The summary captures key decisions, code changes, file modifications, and ongoing tasks
+3. The original messages are replaced with the summary as a single "context handoff" message
+4. The session continues with the compacted context
+
+The summary is displayed in the TUI as a collapsible block (toggle with `o` key). HTML exports also show compaction summaries as collapsible sections.
+
+### Manual Compaction
+
+Use `/compact` to manually trigger compaction at any time:
+
+```
+/compact                           # Default summary
+/compact Focus on the API changes  # Custom instructions guide what to emphasize
+```
+
+Custom instructions are appended to the default summary prompt, letting you focus the summary on specific aspects of the conversation.
+
+### Automatic Compaction
+
+Enable auto-compaction with `/autocompact`. When enabled, compaction triggers automatically when context usage exceeds `contextWindow - reserveTokens`.
+
+The context percentage is shown in the footer. When it approaches 100%, auto-compaction kicks in (if enabled) or you should manually compact.
+
+### Configuration
+
+Power users can tune compaction behavior in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 20000
+  }
+}
+```
+
+- **enabled**: Whether auto-compaction is active (toggle with `/autocompact`)
+- **reserveTokens**: Token buffer to keep free (default: 20,000). Auto-compaction triggers when `contextTokens > contextWindow - reserveTokens`
+
+### Supported Modes
+
+Context compaction works in both interactive and RPC modes:
+
+- **Interactive**: Use `/compact` and `/autocompact` commands
+- **RPC**: Send `{"type":"compact"}` for manual compaction. Auto-compaction emits `{"type":"compaction","auto":true}` events. See [RPC documentation](docs/rpc.md) for details.
 
 ## CLI Options
 
@@ -1129,15 +1205,6 @@ The agent can read, update, and reference the plan as it works. Unlike ephemeral
 ## Background Bash
 
 **pi does not and will not implement background bash execution.** Instead, tell the agent to use `tmux` or something like [tterminal-cp](https://mariozechner.at/posts/2025-08-15-mcp-vs-cli/). Bonus points: you can watch the agent interact with a CLI like a debugger and even intervene if necessary.
-
-## Planned Features
-
-Things that might happen eventually:
-
-- **Auto-compaction**: Currently, watch the context percentage at the bottom. When it approaches 80%, either:
-  - Ask the agent to write a summary .md file you can load in a new session
-  - Switch to a model with bigger context (e.g., Gemini) using `/model` and either continue with that model, or let it summarize the session to a .md file to be loaded in a new session
-- **Better RPC mode docs**: It works, you'll figure it out (see `test/rpc-example.ts`)
 
 ## Development
 

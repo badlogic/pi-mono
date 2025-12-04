@@ -1867,10 +1867,10 @@ export class TuiRenderer {
 		this.settingsManager.setCompactionEnabled(newState);
 		this.footer.setAutoCompactEnabled(newState);
 
-		this.showSuccess(
-			`✓ Auto-compact ${newState ? "enabled" : "disabled"}`,
-			newState ? "Context will be compacted automatically when nearing limits" : "Use /compact to manually compact",
-		);
+		// Show brief notification (same style as thinking level toggle)
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Auto-compaction: ${newState ? "on" : "off"}`), 1, 0));
+		this.ui.requestRender();
 	}
 
 	private updatePendingMessagesDisplay(): void {
