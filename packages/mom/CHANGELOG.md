@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Slack API errors (msg_too_long) no longer crash the process
+  - Added try/catch error handling to all Slack API calls in the message queue
+  - Main channel messages truncated at 35K with note to ask for elaboration
+  - Thread messages truncated at 20K
+  - replaceMessage also truncated at 35K
+
 - Private channel messages not being logged
   - Added `message.groups` to required bot events in README
   - Added `groups:history` and `groups:read` to required scopes in README
