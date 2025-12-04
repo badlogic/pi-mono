@@ -7,9 +7,12 @@ import { getMarkdownTheme, theme } from "../theme/theme.js";
  */
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
+	private hideThinkingBlock: boolean;
 
-	constructor(message?: AssistantMessage) {
+	constructor(message?: AssistantMessage, hideThinkingBlock = false) {
 		super();
+
+		this.hideThinkingBlock = hideThinkingBlock;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -18,6 +21,10 @@ export class AssistantMessageComponent extends Container {
 		if (message) {
 			this.updateContent(message);
 		}
+	}
+
+	setHideThinkingBlock(hide: boolean): void {
+		this.hideThinkingBlock = hide;
 	}
 
 	updateContent(message: AssistantMessage): void {
@@ -39,7 +46,7 @@ export class AssistantMessageComponent extends Container {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
-			} else if (content.type === "thinking" && content.thinking.trim()) {
+			} else if (content.type === "thinking" && content.thinking.trim() && !this.hideThinkingBlock) {
 				// Thinking traces in muted color, italic
 				// Use Markdown component with default text style for consistent styling
 				this.contentContainer.addChild(
