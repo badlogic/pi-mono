@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Context Compaction**: Long sessions can now be compacted to reduce context usage while preserving recent conversation history. ([#92](https://github.com/badlogic/pi-mono/issues/92))
+- **Context Compaction**: Long sessions can now be compacted to reduce context usage while preserving recent conversation history. ([#92](https://github.com/badlogic/pi-mono/issues/92), [docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md#context-compaction))
   - `/compact [instructions]`: Manually compact context with optional custom instructions for the summary
   - `/autocompact`: Toggle automatic compaction when context exceeds threshold
   - Compaction summarizes older messages while keeping recent messages (default 20k tokens) verbatim
