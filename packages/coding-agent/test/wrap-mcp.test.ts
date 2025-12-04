@@ -2,10 +2,17 @@ import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildMcpCommand, checkPi, deriveDirName, deriveServerName } from "../src/wrap-mcp/discovery.js";
+import {
+	checkPi,
+	deriveDirName,
+	deriveServerName,
+	isNpmNotFoundError,
+	isUvxNotFoundError,
+} from "../src/wrap-mcp/discovery.js";
 import { parseWrapMcpArgs } from "../src/wrap-mcp/index.js";
 import { resolvePath } from "../src/wrap-mcp/output.js";
 import { detectLocalAgentsFile, getGlobalAgentsPath } from "../src/wrap-mcp/registration.js";
+import { buildMcpCommand, getRunnerType, hasExplicitRunner, toModuleName } from "../src/wrap-mcp/runner.js";
 
 describe("deriveServerName", () => {
 	it("handles simple package names", () => {
@@ -28,6 +35,10 @@ describe("deriveServerName", () => {
 	it("handles packages without -mcp suffix", () => {
 		expect(deriveServerName("my-tool")).toBe("my-tool");
 	});
+
+	it("handles Python-style package names", () => {
+		expect(deriveServerName("mcp-server-fetch")).toBe("server-fetch");
+	});
 });
 
 describe("deriveDirName", () => {
@@ -37,28 +48,164 @@ describe("deriveDirName", () => {
 	});
 });
 
+describe("toModuleName", () => {
+	it("converts hyphens to underscores", () => {
+		expect(toModuleName("mcp-server-fetch")).toBe("mcp_server_fetch");
+	});
+
+	it("preserves names without hyphens", () => {
+		expect(toModuleName("mcpserver")).toBe("mcpserver");
+	});
+
+	it("handles multiple hyphens", () => {
+		expect(toModuleName("my-cool-mcp-server")).toBe("my_cool_mcp_server");
+	});
+});
+
+describe("hasExplicitRunner", () => {
+	it("returns false when no options", () => {
+		expect(hasExplicitRunner({})).toBe(false);
+	});
+
+	it("returns true for --uvx", () => {
+		expect(hasExplicitRunner({ uvx: true })).toBe(true);
+	});
+
+	it("returns true for --pip", () => {
+		expect(hasExplicitRunner({ pip: true })).toBe(true);
+	});
+
+	it("returns true for --command", () => {
+		expect(hasExplicitRunner({ command: "docker run mcp" })).toBe(true);
+	});
+
+	it("returns false for empty command string", () => {
+		expect(hasExplicitRunner({ command: "" })).toBe(false);
+	});
+});
+
+describe("getRunnerType", () => {
+	it("returns npx by default", () => {
+		expect(getRunnerType({})).toBe("npx");
+	});
+
+	it("returns uvx when --uvx", () => {
+		expect(getRunnerType({ uvx: true })).toBe("uvx");
+	});
+
+	it("returns pip when --pip", () => {
+		expect(getRunnerType({ pip: true })).toBe("pip");
+	});
+
+	it("returns command when --command", () => {
+		expect(getRunnerType({ command: "docker run mcp" })).toBe("command");
+	});
+
+	it("command takes precedence over other flags", () => {
+		expect(getRunnerType({ uvx: true, command: "docker" })).toBe("command");
+	});
+});
+
 describe("buildMcpCommand", () => {
-	it("builds npx command for simple package", () => {
-		expect(buildMcpCommand("chrome-devtools-mcp")).toBe("npx -y chrome-devtools-mcp@latest");
+	describe("npx runner", () => {
+		it("builds npx command for simple package", () => {
+			expect(buildMcpCommand("chrome-devtools-mcp", "npx")).toBe("npx -y chrome-devtools-mcp@latest");
+		});
+
+		it("builds npx command for scoped package", () => {
+			expect(buildMcpCommand("@anthropic-ai/chrome-devtools-mcp", "npx")).toBe(
+				"npx -y @anthropic-ai/chrome-devtools-mcp@latest",
+			);
+		});
+
+		it("preserves explicit version", () => {
+			expect(buildMcpCommand("my-mcp@1.2.3", "npx")).toBe("npx -y my-mcp@1.2.3");
+			expect(buildMcpCommand("@org/my-mcp@2.0.0", "npx")).toBe("npx -y @org/my-mcp@2.0.0");
+		});
 	});
 
-	it("builds npx command for scoped package", () => {
-		expect(buildMcpCommand("@anthropic-ai/chrome-devtools-mcp")).toBe(
-			"npx -y @anthropic-ai/chrome-devtools-mcp@latest",
-		);
+	describe("uvx runner", () => {
+		it("builds uvx command", () => {
+			expect(buildMcpCommand("mcp-server-fetch", "uvx")).toBe("uvx mcp-server-fetch");
+		});
+
+		it("does not add suffix for uvx", () => {
+			expect(buildMcpCommand("mcp-server-fetch", "uvx")).not.toContain("@latest");
+		});
 	});
 
-	it("preserves explicit version", () => {
-		expect(buildMcpCommand("my-mcp@1.2.3")).toBe("npx -y my-mcp@1.2.3");
-		expect(buildMcpCommand("@org/my-mcp@2.0.0")).toBe("npx -y @org/my-mcp@2.0.0");
+	describe("pip runner", () => {
+		it("builds pip command with module transform", () => {
+			expect(buildMcpCommand("mcp-server-fetch", "pip")).toBe("python -m mcp_server_fetch");
+		});
+
+		it("transforms hyphens to underscores", () => {
+			expect(buildMcpCommand("my-cool-package", "pip")).toBe("python -m my_cool_package");
+		});
+	});
+
+	describe("command runner", () => {
+		it("returns custom command", () => {
+			expect(buildMcpCommand("anything", "command", "docker run -i mcp/fetch")).toBe("docker run -i mcp/fetch");
+		});
+
+		it("throws if command runner without custom command", () => {
+			expect(() => buildMcpCommand("pkg", "command")).toThrow("Custom command required");
+		});
+
+		it("throws if custom command is undefined", () => {
+			expect(() => buildMcpCommand("pkg", "command", undefined)).toThrow();
+		});
 	});
 });
 
 describe("checkPi", () => {
 	it("returns boolean indicating pi availability", () => {
-		// checkPi uses `which pi` which should work on this system
 		const result = checkPi();
 		expect(typeof result).toBe("boolean");
+	});
+});
+
+describe("isNpmNotFoundError", () => {
+	it("detects E404 error", () => {
+		expect(isNpmNotFoundError("npm error code E404")).toBe(true);
+	});
+
+	it("detects '404 not found' error", () => {
+		expect(isNpmNotFoundError("npm error 404 Not Found")).toBe(true);
+	});
+
+	it("detects 'not in this registry' error", () => {
+		expect(isNpmNotFoundError("'pkg@latest' is not in this registry")).toBe(true);
+	});
+
+	it("returns false for other errors", () => {
+		expect(isNpmNotFoundError("ECONNREFUSED")).toBe(false);
+		expect(isNpmNotFoundError("ETIMEDOUT")).toBe(false);
+		expect(isNpmNotFoundError("permission denied")).toBe(false);
+	});
+
+	it("handles empty string", () => {
+		expect(isNpmNotFoundError("")).toBe(false);
+	});
+});
+
+describe("isUvxNotFoundError", () => {
+	it("detects 'no solution found' error", () => {
+		expect(isUvxNotFoundError("No solution found when resolving tool dependencies")).toBe(true);
+	});
+
+	it("detects 'not found in the package registry' error", () => {
+		expect(isUvxNotFoundError("was not found in the package registry")).toBe(true);
+	});
+
+	it("returns false for other errors", () => {
+		expect(isUvxNotFoundError("permission denied")).toBe(false);
+		expect(isUvxNotFoundError("timeout")).toBe(false);
+	});
+
+	it("handles empty string", () => {
+		expect(isUvxNotFoundError("")).toBe(false);
 	});
 });
 
@@ -69,6 +216,9 @@ describe("parseWrapMcpArgs", () => {
 		expect(args.local).toBe(false);
 		expect(args.force).toBe(false);
 		expect(args.help).toBe(false);
+		expect(args.uvx).toBe(false);
+		expect(args.pip).toBe(false);
+		expect(args.command).toBeUndefined();
 	});
 
 	it("parses --local flag", () => {
@@ -93,11 +243,40 @@ describe("parseWrapMcpArgs", () => {
 		expect(args.force).toBe(true);
 	});
 
+	it("parses --uvx flag", () => {
+		const args = parseWrapMcpArgs("/wrap-mcp mcp-server-fetch --uvx");
+		expect(args.packageName).toBe("mcp-server-fetch");
+		expect(args.uvx).toBe(true);
+	});
+
+	it("parses --pip flag", () => {
+		const args = parseWrapMcpArgs("/wrap-mcp mcp-server-fetch --pip");
+		expect(args.packageName).toBe("mcp-server-fetch");
+		expect(args.pip).toBe(true);
+	});
+
+	it("parses --command option", () => {
+		// Note: Our parser uses simple whitespace splitting, so complex commands
+		// with spaces should be passed as a single token (handled by shell quoting
+		// before reaching our parser in TUI). For testing, use a simple command.
+		const args = parseWrapMcpArgs("/wrap-mcp fetch --command docker-run-mcp");
+		expect(args.packageName).toBe("fetch");
+		expect(args.command).toBe("docker-run-mcp");
+	});
+
 	it("handles combined flags", () => {
 		const args = parseWrapMcpArgs("/wrap-mcp @org/mcp@1.0.0 --local --name custom --force");
 		expect(args.packageName).toBe("@org/mcp@1.0.0");
 		expect(args.local).toBe(true);
 		expect(args.name).toBe("custom");
+		expect(args.force).toBe(true);
+	});
+
+	it("combines runner and other options", () => {
+		const args = parseWrapMcpArgs("/wrap-mcp mcp-server-fetch --uvx --local --force");
+		expect(args.packageName).toBe("mcp-server-fetch");
+		expect(args.uvx).toBe(true);
+		expect(args.local).toBe(true);
 		expect(args.force).toBe(true);
 	});
 
@@ -141,6 +320,20 @@ describe("parseWrapMcpArgs", () => {
 		expect(args.packageName).toBe("my-pkg");
 		expect(args.name).toBeUndefined();
 		expect(args.force).toBe(true);
+	});
+
+	it("does not consume next flag as --command value", () => {
+		const args = parseWrapMcpArgs("/wrap-mcp my-pkg --command --force");
+		expect(args.packageName).toBe("my-pkg");
+		expect(args.command).toBeUndefined();
+		expect(args.force).toBe(true);
+	});
+
+	it("defaults runner flags to false", () => {
+		const args = parseWrapMcpArgs("/wrap-mcp my-mcp");
+		expect(args.uvx).toBe(false);
+		expect(args.pip).toBe(false);
+		expect(args.command).toBeUndefined();
 	});
 });
 

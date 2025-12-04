@@ -538,30 +538,38 @@ When enabled, the agent automatically compacts context when usage exceeds the co
 Convert an MCP (Model Context Protocol) server into standalone CLI tools:
 
 ```
-/wrap-mcp <mcp-package> [--local] [--name <name>] [--force]
+/wrap-mcp <package> [options]
 ```
 
-**Arguments:**
-- `<mcp-package>` - npm package name (e.g., `chrome-devtools-mcp`, `@org/mcp@1.2.3`)
+**Runner Options (optional - skip auto-detection):**
+- `--uvx` - Force uvx runner for Python packages
+- `--pip` - Force pip runner (requires prior `pip install`)
+- `--command <cmd>` - Force explicit command (docker, custom paths)
+
+Without runner flags, `/wrap-mcp` auto-detects: tries npm first, then falls back to uvx.
+
+**Other Options:**
 - `--local` - Register to local codebase's `AGENTS.md` instead of global
 - `--name <name>` - Custom output directory name (default: derived from package)
 - `--force` - Overwrite existing output directory
 
 **Examples:**
 ```
-/wrap-mcp chrome-devtools-mcp
+/wrap-mcp chrome-devtools-mcp              # npm package (auto-detected)
+/wrap-mcp mcp-server-fetch                 # PyPI package (auto-fallback to uvx)
+/wrap-mcp mcp-server-fetch --uvx           # Skip npm, use uvx directly
+/wrap-mcp server --command ./run-mcp.sh --name my-tools
 /wrap-mcp @anthropic-ai/chrome-devtools-mcp --local
-/wrap-mcp my-mcp --name my-tools --force
 ```
 
 This command:
 1. Discovers all tools from the MCP server via [mcporter](https://github.com/steipete/mcporter)
 2. Groups tools intelligently using Pi
 3. Generates executable wrapper scripts with proper arg parsing
-4. Creates a complete directory at `~/agent-tools/<name>/` with README and install script
+4. Creates a complete directory at `~/agent-tools/<name>/` with README
 5. Auto-registers to `~/.pi/agent/AGENTS.md` (or local `AGENTS.md` with `--local`)
 
-After generation, run `./install.sh` in the output directory to symlink tools to `~/.local/bin`.
+Tools can be invoked directly with full path (`~/agent-tools/<name>/tool.js`) or add the folder to your PATH.
 
 ### Custom Slash Commands
 

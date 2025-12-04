@@ -1818,25 +1818,31 @@ export class TuiRenderer {
 ${theme.fg("muted", "Usage:")}
   /wrap-mcp <mcp-package> [options]
 
-${theme.fg("muted", "Options:")}
-  --local          Register to local AGENTS.md instead of global
-  --name <name>    Custom output directory name
-  --force, -f      Overwrite existing output directory
-  --help, -h       Show this help message
+${theme.fg("muted", "Runner Options (optional, skip auto-detection):")}
+  --uvx              Force uvx runner for Python packages
+  --pip              Force pip runner (requires prior pip install)
+  --command <cmd>    Force explicit command (docker, custom paths)
+
+${theme.fg("muted", "Note:")} Without runner flags, auto-detects: tries npm first, then uvx.
+
+${theme.fg("muted", "Other Options:")}
+  --local            Register to local AGENTS.md instead of global
+  --name <name>      Custom output directory name
+  --force, -f        Overwrite existing output directory
+  --help, -h         Show this help message
 
 ${theme.fg("muted", "Examples:")}
-  /wrap-mcp chrome-devtools-mcp
-  /wrap-mcp @anthropic-ai/mcp-server --local
-  /wrap-mcp my-mcp --name my-tools --force`;
+  /wrap-mcp chrome-devtools-mcp         # npm package (auto-detected)
+  /wrap-mcp mcp-server-fetch            # PyPI package (auto-fallback to uvx)
+  /wrap-mcp mcp-server-fetch --uvx      # Skip npm, use uvx directly
+  /wrap-mcp server --command ./run-mcp.sh --name my-tools`;
 			this.chatContainer.addChild(new Text(helpText, 1, 0));
 			this.ui.requestRender();
 			return;
 		}
 
 		if (!args.packageName) {
-			this.showError(
-				"Usage: /wrap-mcp <mcp-package> [--local] [--name <name>] [--force]\n\nRun /wrap-mcp --help for more information.",
-			);
+			this.showError("Usage: /wrap-mcp <mcp-package> [options]\n\nRun /wrap-mcp --help for more information.");
 			return;
 		}
 
@@ -1856,6 +1862,9 @@ ${theme.fg("muted", "Examples:")}
 				name: args.name,
 				local: args.local,
 				force: args.force,
+				uvx: args.uvx,
+				pip: args.pip,
+				command: args.command,
 				onProgress: (msg) => {
 					wrapLoader.setMessage(msg);
 				},
@@ -1868,11 +1877,10 @@ ${theme.fg("muted", "Examples:")}
 			if (result.success) {
 				// Show success message
 				this.chatContainer.addChild(new Spacer(1));
-				let successMsg = theme.fg("success", `✓ Created ${result.toolCount} tools in ${result.outputDir}`);
+				let successMsg = theme.fg("success", `✓ Created ${result.toolCount} tool(s) in ${result.outputDir}`);
 				if (result.registeredPath) {
 					successMsg += "\n" + theme.fg("muted", `Registered to: ${result.registeredPath}`);
 				}
-				successMsg += "\n" + theme.fg("muted", `Run: cd ${result.outputDir} && ./install.sh`);
 
 				if (result.error) {
 					// Partial success with warning

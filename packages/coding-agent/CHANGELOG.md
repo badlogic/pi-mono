@@ -5,6 +5,7 @@
 ### Added
 
 - **`/wrap-mcp` Command**: Convert MCP (Model Context Protocol) servers into standalone CLI tools. Discovers tools via mcporter, groups them intelligently using Pi, generates executable wrappers, and auto-registers to `~/.pi/agent/AGENTS.md`. Use `--local` to register to local codebase's AGENTS.md instead.
+- **`/wrap-mcp` Python Support**: The command now auto-detects package sources - tries npm first, then falls back to uvx (Python/PyPI). Explicit runner flags (`--uvx`, `--pip`, `--command`) allow skipping auto-detection for Python packages or custom setups like Docker.
 
 ## [0.12.9] - 2025-12-04
 
