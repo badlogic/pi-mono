@@ -38,11 +38,9 @@ export class CompactionComponent extends Container {
 			);
 		} else {
 			// Collapsed: just show the header line with user message styling
-			const isMac = process.platform === "darwin";
-			const shortcut = isMac ? "CMD+O" : "CTRL+O";
 			this.addChild(
 				new Text(
-					theme.fg("userMessageText", `--- Earlier messages compacted (${shortcut} to expand) ---`),
+					theme.fg("userMessageText", `--- Earlier messages compacted (CTRL+O to expand) ---`),
 					1,
 					1,
 					(text: string) => theme.bg("userMessageBg", text),

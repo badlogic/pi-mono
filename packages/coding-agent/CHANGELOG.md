@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.12.8] - 2025-12-04
+
+- Fix: Use CTRL+O consistently for compaction expand shortcut (not CMD+O on Mac)
+
 ## [0.12.7] - 2025-12-04
 
 ### Added
