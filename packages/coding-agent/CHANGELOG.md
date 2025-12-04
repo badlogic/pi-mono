@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`/wrap-mcp` Command**: Convert MCP (Model Context Protocol) servers into standalone CLI tools. Discovers tools via mcporter, groups them intelligently using Pi, generates executable wrappers, and auto-registers to `~/.pi/agent/AGENTS.md`. Use `--local` to register to local codebase's AGENTS.md instead.
+
 ## [0.12.9] - 2025-12-04
 
 ### Added

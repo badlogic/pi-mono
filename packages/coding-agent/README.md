@@ -533,6 +533,36 @@ Toggle automatic context compaction:
 
 When enabled, the agent automatically compacts context when usage exceeds the configured threshold. The current state (enabled/disabled) is shown after toggling. See [Context Compaction](#context-compaction) for details.
 
+### /wrap-mcp
+
+Convert an MCP (Model Context Protocol) server into standalone CLI tools:
+
+```
+/wrap-mcp <mcp-package> [--local] [--name <name>] [--force]
+```
+
+**Arguments:**
+- `<mcp-package>` - npm package name (e.g., `chrome-devtools-mcp`, `@org/mcp@1.2.3`)
+- `--local` - Register to local codebase's `AGENTS.md` instead of global
+- `--name <name>` - Custom output directory name (default: derived from package)
+- `--force` - Overwrite existing output directory
+
+**Examples:**
+```
+/wrap-mcp chrome-devtools-mcp
+/wrap-mcp @anthropic-ai/chrome-devtools-mcp --local
+/wrap-mcp my-mcp --name my-tools --force
+```
+
+This command:
+1. Discovers all tools from the MCP server via [mcporter](https://github.com/steipete/mcporter)
+2. Groups tools intelligently using Pi
+3. Generates executable wrapper scripts with proper arg parsing
+4. Creates a complete directory at `~/agent-tools/<name>/` with README and install script
+5. Auto-registers to `~/.pi/agent/AGENTS.md` (or local `AGENTS.md` with `--local`)
+
+After generation, run `./install.sh` in the output directory to symlink tools to `~/.local/bin`.
+
 ### Custom Slash Commands
 
 Define reusable prompt templates as Markdown files that appear in the `/` autocomplete.

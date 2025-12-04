@@ -34,6 +34,7 @@ import {
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
+import { parseWrapMcpArgs, wrapMcp } from "../wrap-mcp/index.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
 import { CompactionComponent } from "./compaction.js";
 import { CustomEditor } from "./custom-editor.js";
@@ -211,6 +212,11 @@ export class TuiRenderer {
 			description: "Toggle automatic context compaction",
 		};
 
+		const wrapMcpCommand: SlashCommand = {
+			name: "wrap-mcp",
+			description: "Convert MCP server to CLI tools",
+		};
+
 		// Load file-based slash commands
 		this.fileCommands = loadSlashCommands();
 
@@ -237,6 +243,7 @@ export class TuiRenderer {
 				clearCommand,
 				compactCommand,
 				autocompactCommand,
+				wrapMcpCommand,
 				...fileSlashCommands,
 			],
 			process.cwd(),
@@ -471,6 +478,13 @@ export class TuiRenderer {
 			// Check for /debug command
 			if (text === "/debug") {
 				this.handleDebugCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /wrap-mcp command
+			if (text.startsWith("/wrap-mcp")) {
+				await this.handleWrapMcpCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -1789,6 +1803,92 @@ export class TuiRenderer {
 		this.chatContainer.addChild(
 			new Text(theme.fg("accent", "✓ Debug log written") + "\n" + theme.fg("muted", debugLogPath), 1, 1),
 		);
+
+		this.ui.requestRender();
+	}
+
+	private async handleWrapMcpCommand(text: string): Promise<void> {
+		const args = parseWrapMcpArgs(text);
+
+		// Handle --help flag
+		if (args.help) {
+			this.chatContainer.addChild(new Spacer(1));
+			const helpText = `${theme.bold("/wrap-mcp")} - Convert MCP server to CLI tools
+
+${theme.fg("muted", "Usage:")}
+  /wrap-mcp <mcp-package> [options]
+
+${theme.fg("muted", "Options:")}
+  --local          Register to local AGENTS.md instead of global
+  --name <name>    Custom output directory name
+  --force, -f      Overwrite existing output directory
+  --help, -h       Show this help message
+
+${theme.fg("muted", "Examples:")}
+  /wrap-mcp chrome-devtools-mcp
+  /wrap-mcp @anthropic-ai/mcp-server --local
+  /wrap-mcp my-mcp --name my-tools --force`;
+			this.chatContainer.addChild(new Text(helpText, 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		if (!args.packageName) {
+			this.showError(
+				"Usage: /wrap-mcp <mcp-package> [--local] [--name <name>] [--force]\n\nRun /wrap-mcp --help for more information.",
+			);
+			return;
+		}
+
+		// Show loader in status container (like compaction does)
+		const wrapLoader = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			"Wrapping MCP server...",
+		);
+		this.statusContainer.addChild(wrapLoader);
+		this.ui.requestRender();
+
+		try {
+			const result = await wrapMcp({
+				packageName: args.packageName,
+				name: args.name,
+				local: args.local,
+				force: args.force,
+				onProgress: (msg) => {
+					wrapLoader.setMessage(msg);
+				},
+			});
+
+			// Stop loader and clear status
+			wrapLoader.stop();
+			this.statusContainer.clear();
+
+			if (result.success) {
+				// Show success message
+				this.chatContainer.addChild(new Spacer(1));
+				let successMsg = theme.fg("success", `✓ Created ${result.toolCount} tools in ${result.outputDir}`);
+				if (result.registeredPath) {
+					successMsg += "\n" + theme.fg("muted", `Registered to: ${result.registeredPath}`);
+				}
+				successMsg += "\n" + theme.fg("muted", `Run: cd ${result.outputDir} && ./install.sh`);
+
+				if (result.error) {
+					// Partial success with warning
+					successMsg += "\n" + theme.fg("warning", `Warning: ${result.error}`);
+				}
+
+				this.chatContainer.addChild(new Text(successMsg, 1, 0));
+			} else {
+				this.showError(result.error || "Failed to wrap MCP server");
+			}
+		} catch (error: any) {
+			// Stop loader and clear status on error
+			wrapLoader.stop();
+			this.statusContainer.clear();
+			this.showError(error.message || "Failed to wrap MCP server");
+		}
 
 		this.ui.requestRender();
 	}
