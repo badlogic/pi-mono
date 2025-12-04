@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
+import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
@@ -155,6 +156,11 @@ export class TuiRenderer {
 			description: "Export session to HTML file",
 		};
 
+		const copyCommand: SlashCommand = {
+			name: "copy",
+			description: "Copy last agent message to clipboard",
+		};
+
 		const sessionCommand: SlashCommand = {
 			name: "session",
 			description: "Show session info and stats",
@@ -221,6 +227,7 @@ export class TuiRenderer {
 				modelCommand,
 				themeCommand,
 				exportCommand,
+				copyCommand,
 				sessionCommand,
 				changelogCommand,
 				branchCommand,
@@ -379,6 +386,13 @@ export class TuiRenderer {
 			// Check for /export command
 			if (text.startsWith("/export")) {
 				this.handleExportCommand(text);
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /copy command
+			if (text === "/copy") {
+				this.handleCopyCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -1571,6 +1585,46 @@ export class TuiRenderer {
 			);
 			this.ui.requestRender();
 		}
+	}
+
+	private handleCopyCommand(): void {
+		// Find the last assistant message
+		const lastAssistantMessage = this.agent.state.messages
+			.slice()
+			.reverse()
+			.find((m) => m.role === "assistant");
+
+		if (!lastAssistantMessage) {
+			this.showError("No agent messages to copy yet.");
+			return;
+		}
+
+		// Extract raw text content from all text blocks
+		let textContent = "";
+
+		for (const content of lastAssistantMessage.content) {
+			if (content.type === "text") {
+				textContent += content.text;
+			}
+		}
+
+		if (!textContent.trim()) {
+			this.showError("Last agent message contains no text content.");
+			return;
+		}
+
+		// Copy to clipboard using cross-platform compatible method
+		try {
+			copyToClipboard(textContent);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+
+		// Show confirmation message
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", "Copied last agent message to clipboard"), 1, 0));
+		this.ui.requestRender();
 	}
 
 	private handleSessionCommand(): void {
