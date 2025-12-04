@@ -18,7 +18,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
-import { calculateContextTokens, compact, getLastAssistantUsage, shouldCompact } from "../compaction.js";
+import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
@@ -560,12 +560,22 @@ export class TuiRenderer {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last assistant usage
-		const entries = this.sessionManager.loadEntries();
-		const lastUsage = getLastAssistantUsage(entries);
-		if (!lastUsage) return;
+		// Get last non-aborted assistant message from agent state
+		const messages = this.agent.state.messages;
+		let lastAssistant: AssistantMessage | null = null;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				const assistantMsg = msg as AssistantMessage;
+				if (assistantMsg.stopReason !== "aborted") {
+					lastAssistant = assistantMsg;
+					break;
+				}
+			}
+		}
+		if (!lastAssistant) return;
 
-		const contextTokens = calculateContextTokens(lastUsage);
+		const contextTokens = calculateContextTokens(lastAssistant.usage);
 		const contextWindow = this.agent.state.model.contextWindow;
 
 		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
