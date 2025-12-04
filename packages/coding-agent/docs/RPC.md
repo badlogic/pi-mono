@@ -41,6 +41,19 @@ Abort the current agent operation:
 }
 ```
 
+#### Compact Message
+
+Compact the conversation context to reduce token usage:
+
+```json
+{
+  "type": "compact",
+  "customInstructions": "Focus on code changes"  // Optional
+}
+```
+
+The `customInstructions` field is optional and allows you to guide what the summary should focus on.
+
 ## Output Protocol
 
 The agent emits JSON events to stdout, one per line. Events follow the `AgentEvent` type hierarchy.
@@ -58,6 +71,7 @@ The agent emits JSON events to stdout, one per line. Events follow the `AgentEve
 | `message_end` | A message completes |
 | `tool_execution_start` | Tool execution begins |
 | `tool_execution_end` | Tool execution completes |
+| `compaction` | Context was compacted (manual or auto) |
 | `error` | An error occurred |
 
 ### Event Schemas
@@ -188,6 +202,26 @@ Emitted when an error occurs during input processing.
   "error": "Error message"
 }
 ```
+
+#### compaction
+
+Emitted when context compaction completes, either from a manual `compact` command or auto-compaction.
+
+```json
+{
+  "type": "compaction",
+  "summary": "Summary of the conversation...",
+  "tokensBefore": 150000,
+  "auto": true  // Only present for auto-compaction
+}
+```
+
+Fields:
+- `summary`: The generated summary that replaces the conversation history
+- `tokensBefore`: Token count before compaction
+- `auto`: Present and `true` only for automatic compaction (omitted for manual)
+
+Auto-compaction triggers when context usage exceeds `contextWindow - reserveTokens` (default 20k reserve).
 
 ---
 
