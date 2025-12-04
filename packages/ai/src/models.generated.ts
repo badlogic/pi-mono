@@ -1989,7 +1989,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
-			maxTokens: 4096,
+			maxTokens: 65535,
 		} satisfies Model<"openai-completions">,
 		"amazon/nova-2-lite-v1": {
 			id: "amazon/nova-2-lite-v1",
@@ -2006,7 +2006,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
-			maxTokens: 4096,
+			maxTokens: 65535,
 		} satisfies Model<"openai-completions">,
 		"mistralai/mistral-large-2512": {
 			id: "mistralai/mistral-large-2512",
@@ -2161,18 +2161,18 @@ export const MODELS = {
 			contextWindow: 65536,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
-		"x-ai/grok-4.1-fast:free": {
-			id: "x-ai/grok-4.1-fast:free",
-			name: "xAI: Grok 4.1 Fast (free)",
+		"x-ai/grok-4.1-fast": {
+			id: "x-ai/grok-4.1-fast",
+			name: "xAI: Grok 4.1 Fast",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
+				input: 0.19999999999999998,
+				output: 0.5,
+				cacheRead: 0.049999999999999996,
 				cacheWrite: 0,
 			},
 			contextWindow: 2000000,
