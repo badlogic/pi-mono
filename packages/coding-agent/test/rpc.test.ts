@@ -6,6 +6,7 @@ import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { CompactionEntry } from "../src/session-manager.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -135,4 +136,98 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(roles).toContain("user");
 		expect(roles).toContain("assistant");
 	}, 90000);
+
+	test("should handle manual compaction", async () => {
+		// Spawn agent in RPC mode
+		agent = spawn(
+			"node",
+			["dist/cli.js", "--mode", "rpc", "--provider", "anthropic", "--model", "claude-sonnet-4-5"],
+			{
+				cwd: join(__dirname, ".."),
+				env: {
+					...process.env,
+					PI_CODING_AGENT_DIR: sessionDir,
+				},
+			},
+		);
+
+		const events: (AgentEvent | CompactionEntry | { type: "error"; error: string })[] = [];
+
+		const rl = readline.createInterface({ input: agent.stdout!, terminal: false });
+
+		let stderr = "";
+		agent.stderr?.on("data", (data) => {
+			stderr += data.toString();
+		});
+
+		// Helper to wait for a specific event type
+		const waitForEvent = (eventType: string, timeout = 60000) =>
+			new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(() => reject(new Error(`Timeout waiting for ${eventType}`)), timeout);
+
+				const checkExisting = () => {
+					if (events.some((e) => e.type === eventType)) {
+						clearTimeout(timer);
+						resolve();
+						return true;
+					}
+					return false;
+				};
+
+				if (checkExisting()) return;
+
+				const handler = (line: string) => {
+					try {
+						const event = JSON.parse(line);
+						events.push(event);
+						if (event.type === eventType) {
+							clearTimeout(timer);
+							rl.off("line", handler);
+							resolve();
+						}
+					} catch {
+						// Ignore non-JSON
+					}
+				};
+				rl.on("line", handler);
+			});
+
+		// First, send a prompt to have some messages to compact
+		agent.stdin!.write(JSON.stringify({ type: "prompt", message: "Say hello" }) + "\n");
+		await waitForEvent("agent_end");
+
+		// Clear events to focus on compaction
+		events.length = 0;
+
+		// Send compact command
+		agent.stdin!.write(JSON.stringify({ type: "compact" }) + "\n");
+		await waitForEvent("compaction");
+
+		// Verify compaction event
+		const compactionEvent = events.find((e) => e.type === "compaction") as CompactionEntry | undefined;
+		expect(compactionEvent).toBeDefined();
+		expect(compactionEvent!.summary).toBeDefined();
+		expect(compactionEvent!.tokensBefore).toBeGreaterThan(0);
+
+		// Wait for file writes
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		agent.kill("SIGTERM");
+
+		// Verify compaction was saved to session file
+		const sessionsPath = join(sessionDir, "sessions");
+		const sessionDirs = readdirSync(sessionsPath);
+		const cwdSessionDir = join(sessionsPath, sessionDirs[0]);
+		const sessionFiles = readdirSync(cwdSessionDir).filter((f) => f.endsWith(".jsonl"));
+		const sessionContent = readFileSync(join(cwdSessionDir, sessionFiles[0]), "utf8");
+		const entries = sessionContent
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+
+		// Should have a compaction entry
+		const compactionEntries = entries.filter((e: { type: string }) => e.type === "compaction");
+		expect(compactionEntries.length).toBe(1);
+		expect(compactionEntries[0].summary).toBeDefined();
+	}, 120000);
 });

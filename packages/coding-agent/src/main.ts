@@ -1,12 +1,12 @@
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
+import type { Api, AssistantMessage, KnownProvider, Model } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
-import { compact } from "./compaction.js";
+import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import {
 	APP_NAME,
 	CONFIG_DIR_NAME,
@@ -820,6 +820,61 @@ async function runRpcMode(
 	sessionManager: SessionManager,
 	settingsManager: SettingsManager,
 ): Promise<void> {
+	// Track if auto-compaction is in progress
+	let autoCompactionInProgress = false;
+
+	// Auto-compaction helper
+	const checkAutoCompaction = async () => {
+		if (autoCompactionInProgress) return;
+
+		const settings = settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
+
+		// Get last non-aborted assistant message
+		const messages = agent.state.messages;
+		let lastAssistant: AssistantMessage | null = null;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				const assistantMsg = msg as AssistantMessage;
+				if (assistantMsg.stopReason !== "aborted") {
+					lastAssistant = assistantMsg;
+					break;
+				}
+			}
+		}
+		if (!lastAssistant) return;
+
+		const contextTokens = calculateContextTokens(lastAssistant.usage);
+		const contextWindow = agent.state.model.contextWindow;
+
+		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
+
+		// Trigger auto-compaction
+		autoCompactionInProgress = true;
+		try {
+			const apiKey = await getApiKeyForModel(agent.state.model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${agent.state.model.provider}`);
+			}
+
+			const entries = sessionManager.loadEntries();
+			const compactionEntry = await compact(entries, agent.state.model, settings, apiKey);
+
+			sessionManager.saveCompaction(compactionEntry);
+			const loaded = loadSessionFromEntries(sessionManager.loadEntries());
+			agent.replaceMessages(loaded.messages);
+
+			// Emit auto-compaction event
+			console.log(JSON.stringify({ ...compactionEntry, auto: true }));
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.log(JSON.stringify({ type: "error", error: `Auto-compaction failed: ${message}` }));
+		} finally {
+			autoCompactionInProgress = false;
+		}
+	};
+
 	// Subscribe to all events and output as JSON (same pattern as tui-renderer)
 	agent.subscribe(async (event) => {
 		console.log(JSON.stringify(event));
@@ -835,6 +890,11 @@ async function runRpcMode(
 			// Check if we should initialize session now (after first user+assistant exchange)
 			if (sessionManager.shouldInitializeSession(agent.state.messages)) {
 				sessionManager.startSession(agent.state);
+			}
+
+			// Check for auto-compaction after assistant messages
+			if (event.message.role === "assistant") {
+				await checkAutoCompaction();
 			}
 		}
 	});
