@@ -781,7 +781,7 @@ pi --session /path/to/my-session.jsonl
 
 ## Context Compaction
 
-> **Note:** Compaction should generally be avoided as it is lossy. The agent loses access to the full session history after compaction. Try to size your tasks such that compaction will not be necessary.
+> **Note:** Compaction should generally be avoided as it is lossy. The agent loses access to the full session history after compaction. Try to size your tasks such that compaction will not be necessary. Alternatively, watch the context usage in the footer. When it approaches 85-90%, ask the agent to write a summary of what's been done to a markdown file, then start a new session and load that file into the context.
 
 Long sessions can exhaust the model's context window. Context compaction summarizes older conversation history while preserving recent messages, allowing sessions to continue indefinitely.
 
