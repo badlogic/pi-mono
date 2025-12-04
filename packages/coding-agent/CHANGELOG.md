@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.9] - 2025-12-04
+
 ### Added
 
 - **`/copy` Command**: Copy the last agent message to clipboard. Works cross-platform (macOS, Windows, Linux). Useful for extracting text from rendered Markdown output. ([#105](https://github.com/badlogic/pi-mono/pull/105) by [@markusylisiurunen](https://github.com/markusylisiurunen))
