@@ -1895,9 +1895,9 @@ export class TuiRenderer {
 			if (child.stdout) {
 				child.stdout.on("data", (data: Buffer) => {
 					stdout += data.toString();
-					// Limit buffer size to 10MB
-					if (stdout.length > 10 * 1024 * 1024) {
-						stdout = stdout.slice(0, 10 * 1024 * 1024);
+					// Limit buffer size to 2MB
+					if (stdout.length > 2 * 1024 * 1024) {
+						stdout = stdout.slice(0, 2 * 1024 * 1024);
 					}
 				});
 			}
@@ -1905,9 +1905,9 @@ export class TuiRenderer {
 			if (child.stderr) {
 				child.stderr.on("data", (data: Buffer) => {
 					stderr += data.toString();
-					// Limit buffer size to 10MB
-					if (stderr.length > 10 * 1024 * 1024) {
-						stderr = stderr.slice(0, 10 * 1024 * 1024);
+					// Limit buffer size to 1MB
+					if (stderr.length > 1 * 1024 * 1024) {
+						stderr = stderr.slice(0, 1 * 1024 * 1024);
 					}
 				});
 			}
