@@ -31,6 +31,8 @@ npm install @mariozechner/pi-mom
    - `chat:write`
    - `files:read`
    - `files:write`
+   - `groups:history`
+   - `groups:read`
    - `im:history`
    - `im:read`
    - `im:write`
@@ -38,6 +40,7 @@ npm install @mariozechner/pi-mom
 5. **Subscribe to Bot Events** (Event Subscriptions):
    - `app_mention`
    - `message.channels`
+   - `message.groups`
    - `message.im`
 6. Install the app to your workspace. Get the **Bot User OAuth Token**. This is `MOM_SLACK_BOT_TOKEN`
 7. Add mom to any channels where you want her to operate (she'll only see messages in channels she's added to)

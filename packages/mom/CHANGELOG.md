@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Private channel messages not being logged
+  - Added `message.groups` to required bot events in README
+  - Added `groups:history` and `groups:read` to required scopes in README
+  - `app_mention` handler now logs messages directly instead of relying on `message` event
+  - Added deduplication in `ChannelStore.logMessage()` to prevent double-logging
+
 ### Added
 
 - Message backfill on startup (#103)

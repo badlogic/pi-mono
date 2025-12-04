@@ -208,7 +208,6 @@ export class MomBot {
 
 	private setupEventHandlers(): void {
 		// Handle @mentions in channels
-		// Note: We don't log here - the message event handler logs all messages
 		this.socketClient.on("app_mention", async ({ event, ack }) => {
 			await ack();
 
@@ -219,6 +218,15 @@ export class MomBot {
 				ts: string;
 				files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 			};
+
+			// Log the mention message (message event may not fire for all channel types)
+			await this.logMessage({
+				text: slackEvent.text,
+				channel: slackEvent.channel,
+				user: slackEvent.user,
+				ts: slackEvent.ts,
+				files: slackEvent.files,
+			});
 
 			const ctx = await this.createContext(slackEvent);
 			await this.handler.onChannelMention(ctx);
