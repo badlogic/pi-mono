@@ -32,6 +32,7 @@ import {
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { getShellConfig } from "../shell-config.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
@@ -115,6 +116,9 @@ export class TuiRenderer {
 
 	// Track if editor is in bash mode (text starts with !)
 	private isBashMode = false;
+
+	// Track running bash command process for cancellation
+	private bashProcess: ReturnType<typeof spawn> | null = null;
 
 	constructor(
 		agent: Agent,
@@ -349,6 +353,17 @@ export class TuiRenderer {
 
 				// Abort
 				this.agent.abort();
+			} else if (this.bashProcess) {
+				// Kill running bash command
+				if (this.bashProcess.pid) {
+					killProcessTree(this.bashProcess.pid);
+				}
+				this.bashProcess = null;
+			} else if (this.isBashMode) {
+				// Cancel bash mode and clear editor
+				this.editor.setText("");
+				this.isBashMode = false;
+				this.updateEditorBorderColor();
 			}
 		};
 
@@ -1830,16 +1845,13 @@ export class TuiRenderer {
 			// Execute bash command
 			const { stdout, stderr } = await this.executeBashCommand(command);
 
-			// Build the message text
-			let messageText = `Ran \`${command}\``;
-			if (stdout) {
-				messageText += `\n<stdout>\n${stdout}\n</stdout>`;
-			}
-			if (stderr) {
-				messageText += `\n<stderr>\n${stderr}\n</stderr>`;
-			}
-			if (!stdout && !stderr) {
-				messageText += "\n(no output)";
+			// Build the message text, format like a user would naturally share command output
+			let messageText = `Ran \`${command}\`\n`;
+			const output = [stdout, stderr].filter(Boolean).join("\n");
+			if (output) {
+				messageText += "```\n" + output + "\n```";
+			} else {
+				messageText += "(no output)";
 			}
 
 			// Create user message
@@ -1868,11 +1880,14 @@ export class TuiRenderer {
 
 	private executeBashCommand(command: string): Promise<{ stdout: string; stderr: string }> {
 		return new Promise((resolve, reject) => {
-			const shell = process.platform === "win32" ? "bash.exe" : "sh";
-			const child = spawn(shell, ["-c", command], {
+			const { shell, args } = getShellConfig();
+			const child = spawn(shell, [...args, command], {
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
+
+			// Track process for cancellation
+			this.bashProcess = child;
 
 			let stdout = "";
 			let stderr = "";
@@ -1900,24 +1915,27 @@ export class TuiRenderer {
 			// 30 second timeout
 			const timeoutHandle = setTimeout(() => {
 				if (child.pid) {
-					try {
-						process.kill(-child.pid, "SIGKILL");
-					} catch {
-						// Process may already be dead
-					}
+					killProcessTree(child.pid);
 				}
 				reject(new Error("Command execution timeout (30s)"));
 			}, 30000);
 
 			child.on("close", (code: number | null) => {
 				clearTimeout(timeoutHandle);
+				this.bashProcess = null;
+
+				// Check if killed (code is null when process is killed)
+				if (code === null) {
+					reject(new Error("Command cancelled"));
+					return;
+				}
 
 				// Trim trailing newlines from output
 				stdout = stdout.replace(/\n+$/, "");
 				stderr = stderr.replace(/\n+$/, "");
 
-				// Don't reject on non-zero exit - we want to show the error in stderr
-				if (code !== 0 && code !== null && !stderr) {
+				// Don't reject on non-zero exit as we want to show the error in stderr
+				if (code !== 0 && !stderr) {
 					stderr = `Command exited with code ${code}`;
 				}
 
@@ -1926,6 +1944,7 @@ export class TuiRenderer {
 
 			child.on("error", (err) => {
 				clearTimeout(timeoutHandle);
+				this.bashProcess = null;
 				reject(err);
 			});
 		});
@@ -2087,6 +2106,35 @@ export class TuiRenderer {
 		if (this.isInitialized) {
 			this.ui.stop();
 			this.isInitialized = false;
+		}
+	}
+}
+
+/**
+ * Kill a process and all its children (cross-platform)
+ */
+function killProcessTree(pid: number): void {
+	if (process.platform === "win32") {
+		// Use taskkill on Windows to kill process tree
+		try {
+			spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
+				stdio: "ignore",
+				detached: true,
+			});
+		} catch {
+			// Ignore errors if taskkill fails
+		}
+	} else {
+		// Use SIGKILL on Unix/Linux/Mac
+		try {
+			process.kill(-pid, "SIGKILL");
+		} catch {
+			// Fallback to killing just the child if process group kill fails
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {
+				// Process already dead
+			}
 		}
 	}
 }
