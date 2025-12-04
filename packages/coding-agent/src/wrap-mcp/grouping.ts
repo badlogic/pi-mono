@@ -3,11 +3,10 @@
  * Uses Pi's non-interactive mode to intelligently group MCP tools
  */
 
-import { execSync } from "child_process";
 import { unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { McpTool } from "./discovery.js";
+import { execAsync, type McpTool } from "./discovery.js";
 
 export interface ToolGroup {
 	filename: string;
@@ -152,23 +151,15 @@ export async function groupTools(serverName: string, tools: McpTool[]): Promise<
 	try {
 		writeFileSync(tempFile, prompt, "utf-8");
 
-		const output = execSync(`pi -p --no-session --tools "" @"${tempFile}"`, {
-			encoding: "utf-8",
-			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 120000, // 2 minutes for grouping
-			maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-		});
+		const output = await execAsync(`pi -p --no-session --tools "" @"${tempFile}"`, 120000);
 
 		const response = parseGroupingResponse(output);
 		const validated = validateGrouping(response, tools);
 
 		return validated.groups;
 	} catch (error: any) {
-		if (error.killed) {
+		if (error.message === "Command timed out") {
 			throw new Error("Grouping timed out after 2 minutes");
-		}
-		if (error.stderr?.includes("pi")) {
-			throw new Error(`Pi error: ${error.stderr}`);
 		}
 		throw new Error(`Grouping failed: ${error.message}`);
 	} finally {

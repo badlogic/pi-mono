@@ -3,7 +3,8 @@
  * Discovers available tools and their schemas from an MCP server
  */
 
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
+import { existsSync } from "fs";
 
 export interface McpTool {
 	name: string;
@@ -112,6 +113,85 @@ export function checkPi(): boolean {
 }
 
 /**
+ * Get shell configuration based on platform
+ */
+function getShellConfig(): { shell: string; args: string[] } {
+	if (process.platform === "win32") {
+		const paths: string[] = [];
+		const programFiles = process.env.ProgramFiles;
+		if (programFiles) {
+			paths.push(`${programFiles}\\Git\\bin\\bash.exe`);
+		}
+		const programFilesX86 = process.env["ProgramFiles(x86)"];
+		if (programFilesX86) {
+			paths.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
+		}
+
+		for (const path of paths) {
+			if (existsSync(path)) {
+				return { shell: path, args: ["-c"] };
+			}
+		}
+
+		throw new Error(
+			"Git Bash not found. Please install Git for Windows from https://git-scm.com/download/win\n" +
+				`Searched in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
+		);
+	}
+	return { shell: "sh", args: ["-c"] };
+}
+
+/**
+ * Run a shell command asynchronously (non-blocking)
+ * @param cmd - Command to run
+ * @param timeout - Timeout in ms
+ * @returns stdout output
+ */
+export function execAsync(cmd: string, timeout: number): Promise<string> {
+	// Get shell config first (may throw on Windows if Git Bash not found)
+	const { shell, args } = getShellConfig();
+
+	return new Promise((resolve, reject) => {
+		const child = spawn(shell, [...args, cmd], {
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		let stdout = "";
+		let stderr = "";
+		let timedOut = false;
+
+		const timer = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGTERM");
+		}, timeout);
+
+		child.stdout?.on("data", (data) => {
+			stdout += data.toString();
+		});
+
+		child.stderr?.on("data", (data) => {
+			stderr += data.toString();
+		});
+
+		child.on("close", (code) => {
+			clearTimeout(timer);
+			if (timedOut) {
+				reject(new Error("Command timed out"));
+			} else if (code !== 0) {
+				reject(new Error(stderr || `Command exited with code ${code}`));
+			} else {
+				resolve(stdout);
+			}
+		});
+
+		child.on("error", (err) => {
+			clearTimeout(timer);
+			reject(err);
+		});
+	});
+}
+
+/**
  * Discover tools from an MCP server
  * @param packageName - npm package name
  * @returns Discovery result with server info and tools
@@ -124,11 +204,7 @@ export async function discoverTools(packageName: string): Promise<DiscoveryResul
 	const cmd = `npx mcporter list --stdio "${mcpCommand}" --name "${serverName}" --schema --json`;
 
 	try {
-		const output = execSync(cmd, {
-			encoding: "utf-8",
-			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 60000, // 60 second timeout
-		});
+		const output = await execAsync(cmd, 60000);
 
 		// Parse the JSON output
 		const data = JSON.parse(output);
@@ -143,11 +219,8 @@ export async function discoverTools(packageName: string): Promise<DiscoveryResul
 			tools: data.tools,
 		};
 	} catch (error: any) {
-		if (error.killed) {
+		if (error.message === "Command timed out") {
 			throw new Error("Discovery timed out after 60 seconds");
-		}
-		if (error.stderr) {
-			throw new Error(`mcporter error: ${error.stderr}`);
 		}
 		throw new Error(`Discovery failed: ${error.message}`);
 	}

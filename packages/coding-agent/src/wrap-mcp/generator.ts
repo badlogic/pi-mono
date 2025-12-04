@@ -3,11 +3,10 @@
  * Generates CLI wrapper scripts using Pi
  */
 
-import { execSync } from "child_process";
 import { unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { McpTool } from "./discovery.js";
+import { execAsync, type McpTool } from "./discovery.js";
 import type { ToolGroup } from "./grouping.js";
 
 /**
@@ -158,19 +157,14 @@ export async function generateWrapper(
 	try {
 		writeFileSync(tempFile, prompt, "utf-8");
 
-		const output = execSync(`pi -p --no-session --tools "" @"${tempFile}"`, {
-			encoding: "utf-8",
-			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 60000, // 1 minute per wrapper
-			maxBuffer: 10 * 1024 * 1024,
-		});
+		const output = await execAsync(`pi -p --no-session --tools "" @"${tempFile}"`, 60000);
 
 		const code = cleanGeneratedCode(output);
 		validateGeneratedCode(code, group.filename);
 
 		return code;
 	} catch (error: any) {
-		if (error.killed) {
+		if (error.message === "Command timed out") {
 			throw new Error(`${group.filename}: Generation timed out`);
 		}
 		throw new Error(`${group.filename}: ${error.message}`);
