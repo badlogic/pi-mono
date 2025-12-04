@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Context Compaction**: Long sessions can now be compacted to reduce context usage while preserving conversation history. ([#92](https://github.com/badlogic/pi-mono/issues/92))
+  - `/compact [instructions]`: Manually compact context with optional custom instructions for the summary
+  - `/autocompact`: Toggle automatic compaction when context exceeds threshold
+  - Auto-compaction triggers when context reaches `contextWindow - reserveTokens` (default 20k reserve)
+  - Compacted sessions show a collapsible summary in the TUI (toggle with `o` key)
+  - HTML exports include compaction summaries as collapsible sections
+  - RPC mode supports `{"type":"compact"}` command and auto-compaction (emits compaction events)
 - **Branch Source Tracking**: Branched sessions now store `branchedFrom` in the session header, containing the path to the original session file. Useful for tracing session lineage.
 
 ## [0.12.5] - 2025-12-03
