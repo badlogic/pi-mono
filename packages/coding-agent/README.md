@@ -781,16 +781,19 @@ pi --session /path/to/my-session.jsonl
 
 ## Context Compaction
 
-Long sessions can exhaust the model's context window. Context compaction summarizes the conversation history into a condensed form, preserving key information while dramatically reducing token usage.
+Long sessions can exhaust the model's context window. Context compaction summarizes older conversation history while preserving recent messages, allowing sessions to continue indefinitely.
 
 ### How It Works
 
 When compaction runs (manually via `/compact` or automatically):
 
-1. The current conversation is sent to the model with instructions to create a comprehensive summary
-2. The summary captures key decisions, code changes, file modifications, and ongoing tasks
-3. The original messages are replaced with the summary as a single "context handoff" message
-4. The session continues with the compacted context
+1. A **cut point** is calculated to keep approximately `keepRecentTokens` (default: 20k) worth of recent messages
+2. Messages **before** the cut point are sent to the model for summarization
+3. Messages **after** the cut point are kept verbatim
+4. The summary replaces the older messages as a "context handoff" message
+5. If there was a previous compaction, its summary is included as context for the new summary (chaining)
+
+Cut points are always placed at user message boundaries to preserve turn integrity.
 
 The summary is displayed in the TUI as a collapsible block (toggle with `o` key). HTML exports also show compaction summaries as collapsible sections.
 
@@ -819,13 +822,15 @@ Power users can tune compaction behavior in `~/.pi/agent/settings.json`:
 {
   "compaction": {
     "enabled": true,
-    "reserveTokens": 20000
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
   }
 }
 ```
 
 - **enabled**: Whether auto-compaction is active (toggle with `/autocompact`)
-- **reserveTokens**: Token buffer to keep free (default: 20,000). Auto-compaction triggers when `contextTokens > contextWindow - reserveTokens`
+- **reserveTokens**: Token buffer to keep free (default: 16,384). Auto-compaction triggers when `contextTokens > contextWindow - reserveTokens`
+- **keepRecentTokens**: How many tokens worth of recent messages to preserve verbatim (default: 20,000). Older messages are summarized.
 
 ### Supported Modes
 

@@ -4,10 +4,11 @@
 
 ### Added
 
-- **Context Compaction**: Long sessions can now be compacted to reduce context usage while preserving conversation history. ([#92](https://github.com/badlogic/pi-mono/issues/92))
+- **Context Compaction**: Long sessions can now be compacted to reduce context usage while preserving recent conversation history. ([#92](https://github.com/badlogic/pi-mono/issues/92))
   - `/compact [instructions]`: Manually compact context with optional custom instructions for the summary
   - `/autocompact`: Toggle automatic compaction when context exceeds threshold
-  - Auto-compaction triggers when context reaches `contextWindow - reserveTokens` (default 20k reserve)
+  - Compaction summarizes older messages while keeping recent messages (default 20k tokens) verbatim
+  - Auto-compaction triggers when context reaches `contextWindow - reserveTokens` (default 16k reserve)
   - Compacted sessions show a collapsible summary in the TUI (toggle with `o` key)
   - HTML exports include compaction summaries as collapsible sections
   - RPC mode supports `{"type":"compact"}` command and auto-compaction (emits compaction events)
