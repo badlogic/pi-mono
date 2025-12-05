@@ -243,6 +243,94 @@ describe("Editor component", () => {
 			editor.handleInput("\x1b[B"); // Down - exit to empty
 			assert.strictEqual(editor.getText(), "");
 		});
+
+		it("initializeHistory populates history from empty", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.initializeHistory(["first", "second", "third"]);
+
+			editor.handleInput("\x1b[A"); // Up
+			assert.strictEqual(editor.getText(), "third"); // Most recent
+
+			editor.handleInput("\x1b[A"); // Up
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1b[A"); // Up
+			assert.strictEqual(editor.getText(), "first"); // Oldest
+		});
+
+		it("initializeHistory limits to 100 entries", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			const prompts = [];
+			for (let i = 0; i < 150; i++) {
+				prompts.push(`prompt ${i}`);
+			}
+			editor.initializeHistory(prompts);
+
+			// Navigate to oldest
+			for (let i = 0; i < 100; i++) {
+				editor.handleInput("\x1b[A");
+			}
+
+			// Should be at prompt 50 (oldest of last 100)
+			assert.strictEqual(editor.getText(), "prompt 50");
+
+			// One more Up should not change anything
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "prompt 50");
+		});
+
+		it("initializeHistory skips consecutive duplicates", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.initializeHistory(["first", "second", "second", "third", "third", "third"]);
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "third");
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "first");
+
+			// No more entries
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "first");
+		});
+
+		it("initializeHistory skips empty strings", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.initializeHistory(["first", "", "   ", "second"]);
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "first");
+
+			// No more entries
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "first");
+		});
+
+		it("addToHistory works after initializeHistory", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.initializeHistory(["old1", "old2"]);
+			editor.addToHistory("new1");
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "new1"); // Most recent
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "old2");
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "old1");
+		});
 	});
 
 	describe("Unicode text editing behavior", () => {

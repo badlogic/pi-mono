@@ -81,6 +81,19 @@ export class Editor implements Component {
 		}
 	}
 
+	initializeHistory(prompts: string[]): void {
+		const limited = prompts.slice(-100);
+		for (const prompt of limited) {
+			const trimmed = prompt.trim();
+			if (!trimmed) continue;
+			if (this.history.length > 0 && this.history[0] === trimmed) continue;
+			this.history.unshift(trimmed);
+		}
+		if (this.history.length > 100) {
+			this.history.length = 100;
+		}
+	}
+
 	private isEditorEmpty(): boolean {
 		return this.state.lines.length === 1 && this.state.lines[0] === "";
 	}

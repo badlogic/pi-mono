@@ -143,6 +143,19 @@ export class TuiRenderer {
 		this.footer = new FooterComponent(agent.state);
 		this.footer.setAutoCompactEnabled(this.settingsManager.getCompactionEnabled());
 
+		// Initialize prompt history from session messages (for continue/resume)
+		if (agent.state.messages.length > 0) {
+			const userMessages = agent.state.messages.filter((m) => m.role === "user");
+			const prompts = userMessages.map((msg) => {
+				if (typeof msg.content === "string") {
+					return msg.content;
+				}
+				const textBlocks = (msg.content as any[]).filter((c: any) => c.type === "text");
+				return textBlocks.map((b: any) => b.text).join("\n");
+			});
+			this.editor.initializeHistory(prompts);
+		}
+
 		// Define slash commands
 		const thinkingCommand: SlashCommand = {
 			name: "thinking",
