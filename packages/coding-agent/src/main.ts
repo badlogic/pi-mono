@@ -817,7 +817,15 @@ async function runSingleShotMode(
 	if (mode === "text") {
 		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
 		if (lastMessage.role === "assistant") {
-			for (const content of lastMessage.content) {
+			const assistantMsg = lastMessage as AssistantMessage;
+
+			// Check for error/aborted and output error message
+			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
+				process.exit(1);
+			}
+
+			for (const content of assistantMsg.content) {
 				if (content.type === "text") {
 					console.log(content.text);
 				}

@@ -46,6 +46,7 @@ const ProviderConfigSchema = Type.Object({
 		]),
 	),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+	authHeader: Type.Optional(Type.Boolean()),
 	models: Type.Array(ModelDefinitionSchema),
 });
 
@@ -177,8 +178,16 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 			}
 
 			// Merge headers: provider headers are base, model headers override
-			const headers =
+			let headers =
 				providerConfig.headers || modelDef.headers ? { ...providerConfig.headers, ...modelDef.headers } : undefined;
+
+			// If authHeader is true, add Authorization header with resolved API key
+			if (providerConfig.authHeader) {
+				const resolvedKey = resolveApiKey(providerConfig.apiKey);
+				if (resolvedKey) {
+					headers = { ...headers, Authorization: `Bearer ${resolvedKey}` };
+				}
+			}
 
 			models.push({
 				id: modelDef.id,
