@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Prompt History Navigation**: Browse previously submitted prompts using Up/Down arrow keys when the editor is empty. Press Up to cycle through older prompts, Down to return to newer ones or clear the editor. Similar to shell history and Claude Code's prompt history feature. History is session-scoped and stores up to 100 entries.
+
 ## [0.12.10] - 2025-12-04
 
 ### Added

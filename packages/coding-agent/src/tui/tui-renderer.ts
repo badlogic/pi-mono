@@ -516,6 +516,9 @@ export class TuiRenderer {
 				// Update pending messages display
 				this.updatePendingMessagesDisplay();
 
+				// Add to history for up/down arrow navigation
+				this.editor.addToHistory(text);
+
 				// Clear editor
 				this.editor.setText("");
 				this.ui.requestRender();
@@ -526,6 +529,9 @@ export class TuiRenderer {
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
+
+			// Add to history for up/down arrow navigation
+			this.editor.addToHistory(text);
 		};
 
 		// Start the UI

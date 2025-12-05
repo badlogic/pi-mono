@@ -661,6 +661,8 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 
 **Navigation:**
 - **Arrow keys**: Move cursor (Up/Down navigate visual lines, Left/Right move by character)
+- **Up Arrow** (empty editor): Browse previous prompts (history)
+- **Down Arrow** (browsing history): Browse newer prompts or return to empty editor
 - **Option+Left** / **Ctrl+Left**: Move word backwards
 - **Option+Right** / **Ctrl+Right**: Move word forwards
 - **Ctrl+A** / **Home**: Jump to start of line
