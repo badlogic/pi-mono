@@ -196,7 +196,7 @@ export class FooterComponent implements Component {
 		}
 		statsParts.push(contextPercentStr);
 
-		const statsLeft = statsParts.join(" ");
+		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
 		const modelName = this.state.model?.id || "no-model";
@@ -210,8 +210,16 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		const statsLeftWidth = visibleWidth(statsLeft);
+		let statsLeftWidth = visibleWidth(statsLeft);
 		const rightSideWidth = visibleWidth(rightSide);
+
+		// If statsLeft is too wide, truncate it
+		if (statsLeftWidth > width) {
+			// Truncate statsLeft to fit width (no room for right side)
+			const plainStatsLeft = statsLeft.replace(/\x1b\[[0-9;]*m/g, "");
+			statsLeft = plainStatsLeft.substring(0, width - 3) + "...";
+			statsLeftWidth = visibleWidth(statsLeft);
+		}
 
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
