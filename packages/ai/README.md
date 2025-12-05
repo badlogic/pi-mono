@@ -15,6 +15,11 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenRouter**
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
+## Image handling
+
+- Oversize images are dropped before provider calls, and a short note is injected into the conversation so the model knows what was removed and can retry with smaller files.
+- Limits: Anthropic (<=30 MB, dimensions <=8000px; if >20 images, keep <=2000px; max 100 images), OpenAI (<=20 MB), Gemini (<=7 MB).
+
 ## Installation
 
 ```bash

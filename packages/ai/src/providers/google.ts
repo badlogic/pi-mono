@@ -329,6 +329,7 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 	let transformedMessages = transformMessages(context.messages, model);
 	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
 		providerLabel: "Gemini",
+		// Gemini inlineData limit ~7MB per image (Vertex docs, Dec 2025)
 		maxBytes: 7 * 1024 * 1024,
 	});
 	transformedMessages = sanitized;

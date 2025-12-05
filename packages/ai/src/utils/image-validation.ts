@@ -44,7 +44,7 @@ export function sanitizeImages(messages: Message[], limits: ImageValidationLimit
 
 		for (let j = 0; j < msg.content.length; j++) {
 			const block = msg.content[j];
-			if ((block as any).type !== "image") continue;
+			if (block.type !== "image") continue;
 			const img = block as ImageContent;
 			const sizeBytes = Buffer.byteLength(img.data, "base64");
 			const dims = limits.maxDimension || limits.manyImageLimit ? safeImageSize(img) : undefined;

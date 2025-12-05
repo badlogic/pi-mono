@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **Image validation**: Drop or resize-hint oversize images before Anthropic, OpenAI, and Gemini calls; the model receives a note when images are removed so it can retry with smaller files.
+- **Provider error surfacing**: If a provider rejects a request after validation, we now return the error as assistant text instead of throwing, letting the calling model react and self-correct.
+
 ## [0.12.10] - 2025-12-04
 
 ### Added

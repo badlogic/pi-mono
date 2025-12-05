@@ -413,6 +413,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 	let transformedMessages = transformMessages(messages, model);
 	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
 		providerLabel: "Anthropic",
+		// Anthropic Messages: up to 30MB per image, max dimension 8k (Dec 2025 docs)
 		maxBytes: 30 * 1024 * 1024,
 		maxDimension: 8000,
 		manyImageLimit: { threshold: 20, maxDimension: 2000 },
@@ -420,7 +421,7 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 	});
 	transformedMessages = sanitized;
 
-	// If we dropped images, append a system note so the model knows what happened
+	// Let the model know when images were dropped due to provider limits so it can retry with smaller files
 	if (note) {
 		transformedMessages.push({
 			role: "user",
