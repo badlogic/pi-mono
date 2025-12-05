@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.13] - 2025-12-05
+
 ### Changed
 
 - **Faster startup**: Version check now runs in parallel with TUI initialization instead of blocking startup for up to 1 second. Update notifications appear in chat when the check completes.
