@@ -93,6 +93,14 @@ input.onSubmit = (value) => console.log(value);
 input.setValue("initial");
 ```
 
+**Key Bindings:**
+- `Enter` - Submit
+- `Ctrl+A` / `Ctrl+E` - Line start/end
+- `Ctrl+W` or `Option+Backspace` - Delete word backwards
+- `Ctrl+U` - Delete to start of line
+- `Ctrl+K` - Delete to end of line
+- Arrow keys, Backspace, Delete work as expected
+
 ### Editor
 
 Multi-line text editor with autocomplete, file completion, and paste handling.

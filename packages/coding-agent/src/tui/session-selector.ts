@@ -1,4 +1,5 @@
 import { type Component, Container, Input, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { fuzzyFilter } from "../fuzzy.js";
 import type { SessionManager } from "../session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -42,20 +43,7 @@ class SessionList implements Component {
 	}
 
 	private filterSessions(query: string): void {
-		if (!query.trim()) {
-			this.filteredSessions = this.allSessions;
-		} else {
-			const searchTokens = query
-				.toLowerCase()
-				.split(/\s+/)
-				.filter((t) => t);
-			this.filteredSessions = this.allSessions.filter((session) => {
-				// Search through all messages in the session
-				const searchText = session.allMessagesText.toLowerCase();
-				return searchTokens.every((token) => searchText.includes(token));
-			});
-		}
-
+		this.filteredSessions = fuzzyFilter(this.allSessions, query, (session) => session.allMessagesText);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
 
