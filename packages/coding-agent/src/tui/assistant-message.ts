@@ -41,15 +41,22 @@ export class AssistantMessageComponent extends Container {
 		}
 
 		// Render content in order
-		for (const content of message.content) {
+		for (let i = 0; i < message.content.length; i++) {
+			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
+				// Check if there's text content after this thinking block
+				const hasTextAfter = message.content.slice(i + 1).some((c) => c.type === "text" && c.text.trim());
+
 				if (this.hideThinkingBlock) {
 					// Show static "Thinking..." label when hidden
 					this.contentContainer.addChild(new Text(theme.fg("muted", "Thinking..."), 1, 0));
+					if (hasTextAfter) {
+						this.contentContainer.addChild(new Spacer(1));
+					}
 				} else {
 					// Thinking traces in muted color, italic
 					// Use Markdown component with default text style for consistent styling
