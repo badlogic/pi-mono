@@ -684,6 +684,7 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Ctrl+P**: Cycle models (use `--models` to scope)
 - **Ctrl+O**: Toggle tool output expansion (collapsed ↔ full output)
+- **Ctrl+T**: Toggle thinking block visibility (shows full content ↔ static "Thinking..." label)
 
 ## Project Context Files
 

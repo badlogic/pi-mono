@@ -107,6 +107,9 @@ export class TuiRenderer {
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
+	// Thinking block visibility state
+	private hideThinkingBlock = false;
+
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
 
@@ -211,6 +214,9 @@ export class TuiRenderer {
 			description: "Toggle automatic context compaction",
 		};
 
+		// Load hide thinking block setting
+		this.hideThinkingBlock = settingsManager.getHideThinkingBlock();
+
 		// Load file-based slash commands
 		this.fileCommands = loadSlashCommands();
 
@@ -271,6 +277,9 @@ export class TuiRenderer {
 			"\n" +
 			theme.fg("dim", "ctrl+o") +
 			theme.fg("muted", " to expand tools") +
+			"\n" +
+			theme.fg("dim", "ctrl+t") +
+			theme.fg("muted", " to toggle thinking") +
 			"\n" +
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
@@ -360,6 +369,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlO = () => {
 			this.toggleToolOutputExpansion();
+		};
+
+		this.editor.onCtrlT = () => {
+			this.toggleThinkingBlockVisibility();
 		};
 
 		// Handle editor submission
@@ -648,7 +661,7 @@ export class TuiRenderer {
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					// Create assistant component for streaming
-					this.streamingComponent = new AssistantMessageComponent();
+					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(event.message as AssistantMessage);
 					this.ui.requestRender();
@@ -788,7 +801,7 @@ export class TuiRenderer {
 			const assistantMsg = message;
 
 			// Add assistant message component
-			const assistantComponent = new AssistantMessageComponent(assistantMsg);
+			const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 			this.chatContainer.addChild(assistantComponent);
 		}
 		// Note: tool calls and results are now handled via tool_execution_start/end events
@@ -834,7 +847,7 @@ export class TuiRenderer {
 				}
 			} else if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 				this.chatContainer.addChild(assistantComponent);
 
 				// Create tool execution components for any tool calls
@@ -918,7 +931,7 @@ export class TuiRenderer {
 				}
 			} else if (message.role === "assistant") {
 				const assistantMsg = message;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 				this.chatContainer.addChild(assistantComponent);
 
 				for (const content of assistantMsg.content) {
@@ -1118,6 +1131,28 @@ export class TuiRenderer {
 			}
 		}
 
+		this.ui.requestRender();
+	}
+
+	private toggleThinkingBlockVisibility(): void {
+		this.hideThinkingBlock = !this.hideThinkingBlock;
+		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+
+		// Update all assistant message components and rebuild their content
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent) {
+				child.setHideThinkingBlock(this.hideThinkingBlock);
+			}
+		}
+
+		// Rebuild chat to apply visibility change
+		this.chatContainer.clear();
+		this.rebuildChatFromMessages();
+
+		// Show brief notification
+		const status = this.hideThinkingBlock ? "hidden" : "visible";
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking blocks: ${status}`), 1, 0));
 		this.ui.requestRender();
 	}
 
