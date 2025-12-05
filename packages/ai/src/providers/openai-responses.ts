@@ -25,6 +25,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeImages } from "../utils/image-validation.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
@@ -367,7 +368,20 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 function convertMessages(model: Model<"openai-responses">, context: Context): ResponseInput {
 	const messages: ResponseInput = [];
 
-	const transformedMessages = transformMessages(context.messages, model);
+	let transformedMessages = transformMessages(context.messages, model);
+	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
+		providerLabel: "OpenAI",
+		maxBytes: 20 * 1024 * 1024,
+	});
+	transformedMessages = sanitized;
+
+	if (note) {
+		transformedMessages.push({
+			role: "user",
+			content: [{ type: "text", text: note }],
+			timestamp: Date.now(),
+		});
+	}
 
 	if (context.systemPrompt) {
 		const role = model.reasoning ? "developer" : "system";

@@ -23,6 +23,7 @@ import type {
 	ToolResultMessage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeImages } from "../utils/image-validation.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
@@ -406,7 +407,24 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 	const params: MessageParam[] = [];
 
 	// Transform messages for cross-provider compatibility
-	const transformedMessages = transformMessages(messages, model);
+	let transformedMessages = transformMessages(messages, model);
+	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
+		providerLabel: "Anthropic",
+		maxBytes: 30 * 1024 * 1024,
+		maxDimension: 8000,
+		manyImageLimit: { threshold: 20, maxDimension: 2000 },
+		maxImages: 100,
+	});
+	transformedMessages = sanitized;
+
+	// If we dropped images, append a system note so the model knows what happened
+	if (note) {
+		transformedMessages.push({
+			role: "user",
+			content: [{ type: "text", text: note }],
+			timestamp: Date.now(),
+		});
+	}
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];

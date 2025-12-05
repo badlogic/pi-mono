@@ -22,6 +22,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeImages } from "../utils/image-validation.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
@@ -322,7 +323,20 @@ function buildParams(
 }
 function convertMessages(model: Model<"google-generative-ai">, context: Context): Content[] {
 	const contents: Content[] = [];
-	const transformedMessages = transformMessages(context.messages, model);
+	let transformedMessages = transformMessages(context.messages, model);
+	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
+		providerLabel: "Gemini",
+		maxBytes: 7 * 1024 * 1024,
+	});
+	transformedMessages = sanitized;
+
+	if (note) {
+		transformedMessages.push({
+			role: "user",
+			content: [{ type: "text", text: note }],
+			timestamp: Date.now(),
+		});
+	}
 
 	for (const msg of transformedMessages) {
 		if (msg.role === "user") {
