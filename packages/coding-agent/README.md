@@ -926,6 +926,13 @@ Custom system prompt. Can be:
 
 If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
 
+**--append-system-prompt <text|file>**
+Append additional text or file contents to the system prompt. Can be:
+- Inline text: `--append-system-prompt "Also consider edge cases"`
+- File path: `--append-system-prompt ./extra-instructions.txt`
+
+If the argument is a valid file path, the file contents will be appended. Otherwise, the text is appended directly. This complements `--system-prompt` for layering custom instructions without replacing the base system prompt. Works in both custom and default system prompts.
+
 **--mode <mode>**
 Output mode for non-interactive usage (implies `--print`). Options:
 - `text` (default): Output only the final assistant message text
