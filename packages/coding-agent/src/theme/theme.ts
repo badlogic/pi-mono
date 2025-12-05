@@ -72,6 +72,8 @@ const ThemeJsonSchema = Type.Object({
 		thinkingLow: ColorValueSchema,
 		thinkingMedium: ColorValueSchema,
 		thinkingHigh: ColorValueSchema,
+		// Bash Mode (1 color)
+		bashMode: ColorValueSchema,
 	}),
 });
 
@@ -119,7 +121,8 @@ export type ThemeColor =
 	| "thinkingMinimal"
 	| "thinkingLow"
 	| "thinkingMedium"
-	| "thinkingHigh";
+	| "thinkingHigh"
+	| "bashMode";
 
 export type ThemeBg = "userMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 
@@ -311,6 +314,10 @@ export class Theme {
 			default:
 				return (str: string) => this.fg("thinkingOff", str);
 		}
+	}
+
+	getBashModeBorderColor(): (str: string) => string {
+		return (str: string) => this.fg("bashMode", str);
 	}
 }
 

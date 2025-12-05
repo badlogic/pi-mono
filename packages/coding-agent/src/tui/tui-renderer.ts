@@ -16,7 +16,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
@@ -32,6 +32,7 @@ import {
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { getShellConfig } from "../shell-config.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
@@ -112,6 +113,12 @@ export class TuiRenderer {
 
 	// File-based slash commands
 	private fileCommands: FileSlashCommand[] = [];
+
+	// Track if editor is in bash mode (text starts with !)
+	private isBashMode = false;
+
+	// Track running bash command process for cancellation
+	private bashProcess: ReturnType<typeof spawn> | null = null;
 
 	constructor(
 		agent: Agent,
@@ -275,6 +282,9 @@ export class TuiRenderer {
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
 			"\n" +
+			theme.fg("dim", "!") +
+			theme.fg("muted", " to run bash") +
+			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
 		const header = new Text(logo + "\n" + instructions, 1, 0);
@@ -343,6 +353,17 @@ export class TuiRenderer {
 
 				// Abort
 				this.agent.abort();
+			} else if (this.bashProcess) {
+				// Kill running bash command
+				if (this.bashProcess.pid) {
+					killProcessTree(this.bashProcess.pid);
+				}
+				this.bashProcess = null;
+			} else if (this.isBashMode) {
+				// Cancel bash mode and clear editor
+				this.editor.setText("");
+				this.isBashMode = false;
+				this.updateEditorBorderColor();
 			}
 		};
 
@@ -360,6 +381,15 @@ export class TuiRenderer {
 
 		this.editor.onCtrlO = () => {
 			this.toggleToolOutputExpansion();
+		};
+
+		// Handle editor text changes for bash mode detection
+		this.editor.onChange = (text: string) => {
+			const wasBashMode = this.isBashMode;
+			this.isBashMode = text.trimStart().startsWith("!");
+			if (wasBashMode !== this.isBashMode) {
+				this.updateEditorBorderColor();
+			}
 		};
 
 		// Handle editor submission
@@ -473,6 +503,19 @@ export class TuiRenderer {
 				this.handleDebugCommand();
 				this.editor.setText("");
 				return;
+			}
+
+			// Check for bash command (!<command>)
+			if (text.startsWith("!")) {
+				const command = text.slice(1).trim();
+				if (command) {
+					this.handleBashCommand(command);
+					this.editor.setText("");
+					// Reset bash mode since editor is now empty
+					this.isBashMode = false;
+					this.updateEditorBorderColor();
+					return;
+				}
 			}
 
 			// Check for file-based slash commands
@@ -962,8 +1005,12 @@ export class TuiRenderer {
 	}
 
 	private updateEditorBorderColor(): void {
-		const level = this.agent.state.thinkingLevel || "off";
-		this.editor.borderColor = theme.getThinkingBorderColor(level);
+		if (this.isBashMode) {
+			this.editor.borderColor = theme.getBashModeBorderColor();
+		} else {
+			const level = this.agent.state.thinkingLevel || "off";
+			this.editor.borderColor = theme.getThinkingBorderColor(level);
+		}
 		this.ui.requestRender();
 	}
 
@@ -1793,6 +1840,116 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
+	private async handleBashCommand(command: string): Promise<void> {
+		try {
+			// Execute bash command
+			const { stdout, stderr } = await this.executeBashCommand(command);
+
+			// Build the message text, format like a user would naturally share command output
+			let messageText = `Ran \`${command}\`\n`;
+			const output = [stdout, stderr].filter(Boolean).join("\n");
+			if (output) {
+				messageText += "```\n" + output + "\n```";
+			} else {
+				messageText += "(no output)";
+			}
+
+			// Create user message
+			const userMessage = {
+				role: "user" as const,
+				content: [{ type: "text" as const, text: messageText }],
+				timestamp: Date.now(),
+			};
+
+			// Add to agent state (don't trigger LLM call)
+			this.agent.appendMessage(userMessage);
+
+			// Save to session
+			this.sessionManager.saveMessage(userMessage);
+
+			// Render in chat
+			this.addMessageToChat(userMessage);
+
+			// Update UI
+			this.ui.requestRender();
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			this.showError(`Failed to execute bash command: ${errorMessage}`);
+		}
+	}
+
+	private executeBashCommand(command: string): Promise<{ stdout: string; stderr: string }> {
+		return new Promise((resolve, reject) => {
+			const { shell, args } = getShellConfig();
+			const child = spawn(shell, [...args, command], {
+				detached: true,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+
+			// Track process for cancellation
+			this.bashProcess = child;
+
+			let stdout = "";
+			let stderr = "";
+
+			if (child.stdout) {
+				child.stdout.on("data", (data: Buffer) => {
+					stdout += data.toString();
+					// Limit buffer size to 2MB
+					if (stdout.length > 2 * 1024 * 1024) {
+						stdout = stdout.slice(0, 2 * 1024 * 1024);
+					}
+				});
+			}
+
+			if (child.stderr) {
+				child.stderr.on("data", (data: Buffer) => {
+					stderr += data.toString();
+					// Limit buffer size to 1MB
+					if (stderr.length > 1 * 1024 * 1024) {
+						stderr = stderr.slice(0, 1 * 1024 * 1024);
+					}
+				});
+			}
+
+			// 30 second timeout
+			const timeoutHandle = setTimeout(() => {
+				if (child.pid) {
+					killProcessTree(child.pid);
+				}
+				reject(new Error("Command execution timeout (30s)"));
+			}, 30000);
+
+			child.on("close", (code: number | null) => {
+				clearTimeout(timeoutHandle);
+				this.bashProcess = null;
+
+				// Check if killed (code is null when process is killed)
+				if (code === null) {
+					reject(new Error("Command cancelled"));
+					return;
+				}
+
+				// Trim trailing newlines from output
+				stdout = stdout.replace(/\n+$/, "");
+				stderr = stderr.replace(/\n+$/, "");
+
+				// Don't reject on non-zero exit as we want to show the error in stderr
+				if (code !== 0 && !stderr) {
+					stderr = `Command exited with code ${code}`;
+				}
+
+				resolve({ stdout, stderr });
+			});
+
+			child.on("error", (err) => {
+				clearTimeout(timeoutHandle);
+				this.bashProcess = null;
+				reject(err);
+			});
+		});
+	}
+
 	private compactionAbortController: AbortController | null = null;
 
 	/**
@@ -1949,6 +2106,35 @@ export class TuiRenderer {
 		if (this.isInitialized) {
 			this.ui.stop();
 			this.isInitialized = false;
+		}
+	}
+}
+
+/**
+ * Kill a process and all its children (cross-platform)
+ */
+function killProcessTree(pid: number): void {
+	if (process.platform === "win32") {
+		// Use taskkill on Windows to kill process tree
+		try {
+			spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
+				stdio: "ignore",
+				detached: true,
+			});
+		} catch {
+			// Ignore errors if taskkill fails
+		}
+	} else {
+		// Use SIGKILL on Unix/Linux/Mac
+		try {
+			process.kill(-pid, "SIGKILL");
+		} catch {
+			// Fallback to killing just the child if process group kill fails
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {
+				// Process already dead
+			}
 		}
 	}
 }

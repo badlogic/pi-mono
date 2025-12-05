@@ -64,6 +64,8 @@
 		"thinkingMinimal": "#9e9e9e",
 		"thinkingLow": "#5f87af",
 		"thinkingMedium": "#5f8787",
-		"thinkingHigh": "#875f87"
+		"thinkingHigh": "#875f87",
+
+		"bashMode": "green"
 	}
 }
