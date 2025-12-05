@@ -245,6 +245,9 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			if (output.content.length === 0 && output.errorMessage) {
+				output.content.push({ type: "text", text: `Error: ${output.errorMessage}` });
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
