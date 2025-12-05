@@ -1,5 +1,6 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { Container, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { fuzzyFilter } from "../fuzzy.js";
 import { getAvailableModels } from "../model-config.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { theme } from "../theme/theme.js";
@@ -114,19 +115,7 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	private filterModels(query: string): void {
-		if (!query.trim()) {
-			this.filteredModels = this.allModels;
-		} else {
-			const searchTokens = query
-				.toLowerCase()
-				.split(/\s+/)
-				.filter((t) => t);
-			this.filteredModels = this.allModels.filter(({ provider, id, model }) => {
-				const searchText = `${provider} ${id} ${model.name}`.toLowerCase();
-				return searchTokens.every((token) => searchText.includes(token));
-			});
-		}
-
+		this.filteredModels = fuzzyFilter(this.allModels, query, ({ provider, id }) => `${provider} ${id}`);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
 		this.updateList();
 	}
