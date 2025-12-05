@@ -35,27 +35,199 @@ function extractAnsiCode(str: string, pos: number): { code: string; length: numb
  * Track active ANSI SGR codes to preserve styling across line breaks.
  */
 class AnsiCodeTracker {
-	private activeAnsiCodes: string[] = [];
+	// Track individual attributes separately so we can reset them specifically
+	private bold = false;
+	private dim = false;
+	private italic = false;
+	private underline = false;
+	private blink = false;
+	private inverse = false;
+	private hidden = false;
+	private strikethrough = false;
+	private fgColor: string | null = null; // Stores the full code like "31" or "38;5;240"
+	private bgColor: string | null = null; // Stores the full code like "41" or "48;5;240"
 
 	process(ansiCode: string): void {
 		if (!ansiCode.endsWith("m")) {
 			return;
 		}
 
-		// Full reset clears everything
-		if (ansiCode === "\x1b[0m" || ansiCode === "\x1b[m") {
-			this.activeAnsiCodes.length = 0;
-		} else {
-			this.activeAnsiCodes.push(ansiCode);
+		// Extract the parameters between \x1b[ and m
+		const match = ansiCode.match(/\x1b\[([\d;]*)m/);
+		if (!match) return;
+
+		const params = match[1];
+		if (params === "" || params === "0") {
+			// Full reset
+			this.reset();
+			return;
+		}
+
+		// Parse parameters (can be semicolon-separated)
+		const parts = params.split(";");
+		let i = 0;
+		while (i < parts.length) {
+			const code = Number.parseInt(parts[i], 10);
+
+			// Handle 256-color and RGB codes which consume multiple parameters
+			if (code === 38 || code === 48) {
+				// 38;5;N (256 color fg) or 38;2;R;G;B (RGB fg)
+				// 48;5;N (256 color bg) or 48;2;R;G;B (RGB bg)
+				if (parts[i + 1] === "5" && parts[i + 2] !== undefined) {
+					// 256 color: 38;5;N or 48;5;N
+					const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]}`;
+					if (code === 38) {
+						this.fgColor = colorCode;
+					} else {
+						this.bgColor = colorCode;
+					}
+					i += 3;
+					continue;
+				} else if (parts[i + 1] === "2" && parts[i + 4] !== undefined) {
+					// RGB color: 38;2;R;G;B or 48;2;R;G;B
+					const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}`;
+					if (code === 38) {
+						this.fgColor = colorCode;
+					} else {
+						this.bgColor = colorCode;
+					}
+					i += 5;
+					continue;
+				}
+			}
+
+			// Standard SGR codes
+			switch (code) {
+				case 0:
+					this.reset();
+					break;
+				case 1:
+					this.bold = true;
+					break;
+				case 2:
+					this.dim = true;
+					break;
+				case 3:
+					this.italic = true;
+					break;
+				case 4:
+					this.underline = true;
+					break;
+				case 5:
+					this.blink = true;
+					break;
+				case 7:
+					this.inverse = true;
+					break;
+				case 8:
+					this.hidden = true;
+					break;
+				case 9:
+					this.strikethrough = true;
+					break;
+				case 21:
+					this.bold = false;
+					break; // Some terminals
+				case 22:
+					this.bold = false;
+					this.dim = false;
+					break;
+				case 23:
+					this.italic = false;
+					break;
+				case 24:
+					this.underline = false;
+					break;
+				case 25:
+					this.blink = false;
+					break;
+				case 27:
+					this.inverse = false;
+					break;
+				case 28:
+					this.hidden = false;
+					break;
+				case 29:
+					this.strikethrough = false;
+					break;
+				case 39:
+					this.fgColor = null;
+					break; // Default fg
+				case 49:
+					this.bgColor = null;
+					break; // Default bg
+				default:
+					// Standard foreground colors 30-37, 90-97
+					if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+						this.fgColor = String(code);
+					}
+					// Standard background colors 40-47, 100-107
+					else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
+						this.bgColor = String(code);
+					}
+					break;
+			}
+			i++;
 		}
 	}
 
+	private reset(): void {
+		this.bold = false;
+		this.dim = false;
+		this.italic = false;
+		this.underline = false;
+		this.blink = false;
+		this.inverse = false;
+		this.hidden = false;
+		this.strikethrough = false;
+		this.fgColor = null;
+		this.bgColor = null;
+	}
+
 	getActiveCodes(): string {
-		return this.activeAnsiCodes.join("");
+		const codes: string[] = [];
+		if (this.bold) codes.push("1");
+		if (this.dim) codes.push("2");
+		if (this.italic) codes.push("3");
+		if (this.underline) codes.push("4");
+		if (this.blink) codes.push("5");
+		if (this.inverse) codes.push("7");
+		if (this.hidden) codes.push("8");
+		if (this.strikethrough) codes.push("9");
+		if (this.fgColor) codes.push(this.fgColor);
+		if (this.bgColor) codes.push(this.bgColor);
+
+		if (codes.length === 0) return "";
+		return `\x1b[${codes.join(";")}m`;
 	}
 
 	hasActiveCodes(): boolean {
-		return this.activeAnsiCodes.length > 0;
+		return (
+			this.bold ||
+			this.dim ||
+			this.italic ||
+			this.underline ||
+			this.blink ||
+			this.inverse ||
+			this.hidden ||
+			this.strikethrough ||
+			this.fgColor !== null ||
+			this.bgColor !== null
+		);
+	}
+
+	/**
+	 * Get reset codes for attributes that need to be turned off at line end,
+	 * specifically underline which bleeds into padding.
+	 * Returns empty string if no problematic attributes are active.
+	 */
+	getLineEndReset(): string {
+		// Only underline causes visual bleeding into padding
+		// Other attributes like colors don't visually bleed to padding
+		if (this.underline) {
+			return "\x1b[24m"; // Underline off only
+		}
+		return "";
 	}
 }
 
@@ -78,13 +250,15 @@ function updateTrackerFromText(text: string, tracker: AnsiCodeTracker): void {
 function splitIntoTokensWithAnsi(text: string): string[] {
 	const tokens: string[] = [];
 	let current = "";
+	let pendingAnsi = ""; // ANSI codes waiting to be attached to next visible content
 	let inWhitespace = false;
 	let i = 0;
 
 	while (i < text.length) {
 		const ansiResult = extractAnsiCode(text, i);
 		if (ansiResult) {
-			current += ansiResult.code;
+			// Hold ANSI codes separately - they'll be attached to the next visible char
+			pendingAnsi += ansiResult.code;
 			i += ansiResult.length;
 			continue;
 		}
@@ -98,9 +272,20 @@ function splitIntoTokensWithAnsi(text: string): string[] {
 			current = "";
 		}
 
+		// Attach any pending ANSI codes to this visible character
+		if (pendingAnsi) {
+			current += pendingAnsi;
+			pendingAnsi = "";
+		}
+
 		inWhitespace = charIsSpace;
 		current += char;
 		i++;
+	}
+
+	// Handle any remaining pending ANSI codes (attach to last token)
+	if (pendingAnsi) {
+		current += pendingAnsi;
 	}
 
 	if (current) {
@@ -161,12 +346,17 @@ function wrapSingleLine(line: string, width: number): string[] {
 		// Token itself is too long - break it character by character
 		if (tokenVisibleLength > width && !isWhitespace) {
 			if (currentLine) {
+				// Add specific reset for underline only (preserves background)
+				const lineEndReset = tracker.getLineEndReset();
+				if (lineEndReset) {
+					currentLine += lineEndReset;
+				}
 				wrapped.push(currentLine);
 				currentLine = "";
 				currentVisibleLength = 0;
 			}
 
-			// Break long token
+			// Break long token - breakLongWord handles its own resets
 			const broken = breakLongWord(token, width, tracker);
 			wrapped.push(...broken.slice(0, -1));
 			currentLine = broken[broken.length - 1];
@@ -178,8 +368,13 @@ function wrapSingleLine(line: string, width: number): string[] {
 		const totalNeeded = currentVisibleLength + tokenVisibleLength;
 
 		if (totalNeeded > width && currentVisibleLength > 0) {
-			// Wrap to next line - don't carry trailing whitespace
-			wrapped.push(currentLine.trimEnd());
+			// Add specific reset for underline only (preserves background)
+			let lineToWrap = currentLine.trimEnd();
+			const lineEndReset = tracker.getLineEndReset();
+			if (lineEndReset) {
+				lineToWrap += lineEndReset;
+			}
+			wrapped.push(lineToWrap);
 			if (isWhitespace) {
 				// Don't start new line with whitespace
 				currentLine = tracker.getActiveCodes();
@@ -198,6 +393,7 @@ function wrapSingleLine(line: string, width: number): string[] {
 	}
 
 	if (currentLine) {
+		// No reset at end of final line - let caller handle it
 		wrapped.push(currentLine);
 	}
 
@@ -251,6 +447,11 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 		const graphemeWidth = visibleWidth(grapheme);
 
 		if (currentWidth + graphemeWidth > width) {
+			// Add specific reset for underline only (preserves background)
+			const lineEndReset = tracker.getLineEndReset();
+			if (lineEndReset) {
+				currentLine += lineEndReset;
+			}
 			lines.push(currentLine);
 			currentLine = tracker.getActiveCodes();
 			currentWidth = 0;
@@ -261,6 +462,7 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 	}
 
 	if (currentLine) {
+		// No reset at end of final segment - caller handles continuation
 		lines.push(currentLine);
 	}
 
