@@ -49,3 +49,30 @@ When closing issues via commit:
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
 - When releasing: rename `[Unreleased]` to the new version, then add a fresh empty `[Unreleased]` section
+
+## Releasing
+
+1. **Bump version** (all packages use lockstep versioning):
+   ```bash
+   npm run version:patch    # For bug fixes
+   npm run version:minor    # For new features
+   npm run version:major    # For breaking changes
+   ```
+
+2. **Finalize CHANGELOG.md**: Change `[Unreleased]` to the new version with today's date (e.g., `## [0.12.12] - 2025-12-05`)
+
+3. **Commit and tag**:
+   ```bash
+   git add .
+   git commit -m "Release v0.12.12"
+   git tag v0.12.12
+   git push origin main
+   git push origin v0.12.12
+   ```
+
+4. **Publish to npm**:
+   ```bash
+   npm run publish
+   ```
+
+5. **Add new [Unreleased] section** at top of CHANGELOG.md for next cycle, commit it
