@@ -309,36 +309,53 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 		return ellipsis.substring(0, maxWidth);
 	}
 
-	let currentWidth = 0;
-	let truncateAt = 0;
+	// Separate ANSI codes from visible content using grapheme segmentation
 	let i = 0;
+	const segments: Array<{ type: "ansi" | "grapheme"; value: string }> = [];
 
-	while (i < text.length && currentWidth < targetWidth) {
-		// Skip ANSI escape sequences (include them in output but don't count width)
-		if (text[i] === "\x1b" && text[i + 1] === "[") {
-			let j = i + 2;
-			while (j < text.length && !/[a-zA-Z]/.test(text[j]!)) {
-				j++;
+	while (i < text.length) {
+		const ansiResult = extractAnsiCode(text, i);
+		if (ansiResult) {
+			segments.push({ type: "ansi", value: ansiResult.code });
+			i += ansiResult.length;
+		} else {
+			// Find the next ANSI code or end of string
+			let end = i;
+			while (end < text.length) {
+				const nextAnsi = extractAnsiCode(text, end);
+				if (nextAnsi) break;
+				end++;
 			}
-			// Include the final letter of the escape sequence
-			j++;
-			truncateAt = j;
-			i = j;
+			// Segment this non-ANSI portion into graphemes
+			const textPortion = text.slice(i, end);
+			for (const seg of segmenter.segment(textPortion)) {
+				segments.push({ type: "grapheme", value: seg.segment });
+			}
+			i = end;
+		}
+	}
+
+	// Build truncated string from segments
+	let result = "";
+	let currentWidth = 0;
+
+	for (const seg of segments) {
+		if (seg.type === "ansi") {
+			result += seg.value;
 			continue;
 		}
 
-		const char = text[i]!;
-		const charWidth = visibleWidth(char);
+		const grapheme = seg.value;
+		const graphemeWidth = visibleWidth(grapheme);
 
-		if (currentWidth + charWidth > targetWidth) {
+		if (currentWidth + graphemeWidth > targetWidth) {
 			break;
 		}
 
-		currentWidth += charWidth;
-		truncateAt = i + 1;
-		i++;
+		result += grapheme;
+		currentWidth += graphemeWidth;
 	}
 
 	// Add reset code before ellipsis to prevent styling leaking into it
-	return text.substring(0, truncateAt) + "\x1b[0m" + ellipsis;
+	return result + "\x1b[0m" + ellipsis;
 }

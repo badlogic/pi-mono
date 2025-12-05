@@ -16,6 +16,7 @@ export interface Settings {
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	hideThinkingBlock?: boolean;
 }
 
 export class SettingsManager {
@@ -142,5 +143,14 @@ export class SettingsManager {
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
 		};
+	}
+
+	getHideThinkingBlock(): boolean {
+		return this.settings.hideThinkingBlock ?? false;
+	}
+
+	setHideThinkingBlock(hide: boolean): void {
+		this.settings.hideThinkingBlock = hide;
+		this.save();
 	}
 }

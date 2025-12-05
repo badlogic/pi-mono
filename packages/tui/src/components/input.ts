@@ -113,11 +113,67 @@ export class Input implements Component {
 			return;
 		}
 
+		if (data.charCodeAt(0) === 23) {
+			// Ctrl+W - delete word backwards
+			this.deleteWordBackwards();
+			return;
+		}
+
+		if (data === "\x1b\x7f") {
+			// Option/Alt+Backspace - delete word backwards
+			this.deleteWordBackwards();
+			return;
+		}
+
+		if (data.charCodeAt(0) === 21) {
+			// Ctrl+U - delete from cursor to start of line
+			this.value = this.value.slice(this.cursor);
+			this.cursor = 0;
+			return;
+		}
+
+		if (data.charCodeAt(0) === 11) {
+			// Ctrl+K - delete from cursor to end of line
+			this.value = this.value.slice(0, this.cursor);
+			return;
+		}
+
 		// Regular character input
 		if (data.length === 1 && data >= " " && data <= "~") {
 			this.value = this.value.slice(0, this.cursor) + data + this.value.slice(this.cursor);
 			this.cursor++;
 		}
+	}
+
+	private deleteWordBackwards(): void {
+		if (this.cursor === 0) {
+			return;
+		}
+
+		const text = this.value.slice(0, this.cursor);
+		let deleteFrom = this.cursor;
+
+		const isWhitespace = (char: string): boolean => /\s/.test(char);
+		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+
+		const charBeforeCursor = text[deleteFrom - 1] ?? "";
+
+		// If immediately on whitespace or punctuation, delete that single boundary char
+		if (isWhitespace(charBeforeCursor) || isPunctuation(charBeforeCursor)) {
+			deleteFrom -= 1;
+		} else {
+			// Otherwise, delete a run of non-boundary characters (the "word")
+			while (deleteFrom > 0) {
+				const ch = text[deleteFrom - 1] ?? "";
+				if (isWhitespace(ch) || isPunctuation(ch)) {
+					break;
+				}
+				deleteFrom -= 1;
+			}
+		}
+
+		this.value = text.slice(0, deleteFrom) + this.value.slice(this.cursor);
+		this.cursor = deleteFrom;
 	}
 
 	private handlePaste(pastedText: string): void {

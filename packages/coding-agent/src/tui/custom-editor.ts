@@ -9,8 +9,15 @@ export class CustomEditor extends Editor {
 	public onShiftTab?: () => void;
 	public onCtrlP?: () => void;
 	public onCtrlO?: () => void;
+	public onCtrlT?: () => void;
 
 	handleInput(data: string): void {
+		// Intercept Ctrl+T for thinking block visibility toggle
+		if (data === "\x14" && this.onCtrlT) {
+			this.onCtrlT();
+			return;
+		}
+
 		// Intercept Ctrl+O for tool output expansion
 		if (data === "\x0f" && this.onCtrlO) {
 			this.onCtrlO();

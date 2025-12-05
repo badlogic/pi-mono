@@ -25,10 +25,10 @@ export class CompactionComponent extends Container {
 
 	private updateDisplay(): void {
 		this.clear();
-		this.addChild(new Spacer(1));
 
 		if (this.expanded) {
 			// Show header + summary as markdown (like user message)
+			this.addChild(new Spacer(1));
 			const header = `**Context compacted from ${this.tokensBefore.toLocaleString()} tokens**\n\n`;
 			this.addChild(
 				new Markdown(header + this.summary, 1, 1, getMarkdownTheme(), {
@@ -36,17 +36,17 @@ export class CompactionComponent extends Container {
 					color: (text: string) => theme.fg("userMessageText", text),
 				}),
 			);
+			this.addChild(new Spacer(1));
 		} else {
-			// Collapsed: just show the header line with user message styling
+			// Collapsed: simple text in warning color with token count
+			const tokenStr = this.tokensBefore.toLocaleString();
 			this.addChild(
 				new Text(
-					theme.fg("userMessageText", `--- Earlier messages compacted (CTRL+O to expand) ---`),
+					theme.fg("warning", `Earlier messages compacted from ${tokenStr} tokens (ctrl+o to expand)`),
 					1,
 					1,
-					(text: string) => theme.bg("userMessageBg", text),
 				),
 			);
 		}
-		this.addChild(new Spacer(1));
 	}
 }

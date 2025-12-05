@@ -291,6 +291,36 @@ You can add custom HTTP headers to bypass Cloudflare bot detection, add authenti
 - **Model-level `headers`**: Additional headers for specific models (merged with provider headers)
 - Model headers override provider headers when keys conflict
 
+### Authorization Header
+
+Some providers require an explicit `Authorization: Bearer <token>` header. Set `authHeader: true` to automatically add this header using the resolved `apiKey`:
+
+```json
+{
+  "providers": {
+    "qwen": {
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKey": "QWEN_API_KEY",
+      "authHeader": true,
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "qwen3-coder-plus",
+          "name": "Qwen3 Coder Plus",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 1000000,
+          "maxTokens": 65536
+        }
+      ]
+    }
+  }
+}
+```
+
+When `authHeader: true`, the resolved API key is added as `Authorization: Bearer <apiKey>` to the model headers. This is useful for providers that don't use the standard OpenAI authentication mechanism.
+
 ### Model Selection Priority
 
 When starting `pi`, models are selected in this order:
@@ -686,6 +716,7 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Ctrl+P**: Cycle models (use `--models` to scope)
 - **Ctrl+O**: Toggle tool output expansion (collapsed ↔ full output)
+- **Ctrl+T**: Toggle thinking block visibility (shows full content ↔ static "Thinking..." label)
 
 ## Project Context Files
 
@@ -927,6 +958,13 @@ Custom system prompt. Can be:
 - File path: `--system-prompt ./my-prompt.txt`
 
 If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
+
+**--append-system-prompt <text|file>**
+Append additional text or file contents to the system prompt. Can be:
+- Inline text: `--append-system-prompt "Also consider edge cases"`
+- File path: `--append-system-prompt ./extra-instructions.txt`
+
+If the argument is a valid file path, the file contents will be appended. Otherwise, the text is appended directly. This complements `--system-prompt` for layering custom instructions without replacing the base system prompt. Works in both custom and default system prompts.
 
 **--mode <mode>**
 Output mode for non-interactive usage (implies `--print`). Options:

@@ -145,7 +145,9 @@ export class FooterComponent implements Component {
 		const formatTokens = (count: number): string => {
 			if (count < 1000) return count.toString();
 			if (count < 10000) return (count / 1000).toFixed(1) + "k";
-			return Math.round(count / 1000) + "k";
+			if (count < 1000000) return Math.round(count / 1000) + "k";
+			if (count < 10000000) return (count / 1000000).toFixed(1) + "M";
+			return Math.round(count / 1000000) + "M";
 		};
 
 		// Replace home directory with ~
@@ -186,7 +188,7 @@ export class FooterComponent implements Component {
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-		const contextPercentDisplay = `${contextPercent}% of ${formatTokens(contextWindow)}${autoIndicator}`;
+		const contextPercentDisplay = `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
 		if (contextPercentValue > 90) {
 			contextPercentStr = theme.fg("error", contextPercentDisplay);
 		} else if (contextPercentValue > 70) {
@@ -196,7 +198,7 @@ export class FooterComponent implements Component {
 		}
 		statsParts.push(contextPercentStr);
 
-		const statsLeft = statsParts.join(" ");
+		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
 		const modelName = this.state.model?.id || "no-model";
@@ -210,8 +212,16 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		const statsLeftWidth = visibleWidth(statsLeft);
+		let statsLeftWidth = visibleWidth(statsLeft);
 		const rightSideWidth = visibleWidth(rightSide);
+
+		// If statsLeft is too wide, truncate it
+		if (statsLeftWidth > width) {
+			// Truncate statsLeft to fit width (no room for right side)
+			const plainStatsLeft = statsLeft.replace(/\x1b\[[0-9;]*m/g, "");
+			statsLeft = plainStatsLeft.substring(0, width - 3) + "...";
+			statsLeftWidth = visibleWidth(statsLeft);
+		}
 
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
