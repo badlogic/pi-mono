@@ -529,6 +529,9 @@ export class TuiRenderer {
 				// Update pending messages display
 				this.updatePendingMessagesDisplay();
 
+				// Add to history for up/down arrow navigation
+				this.editor.addToHistory(text);
+
 				// Clear editor
 				this.editor.setText("");
 				this.ui.requestRender();
@@ -539,6 +542,9 @@ export class TuiRenderer {
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
+
+			// Add to history for up/down arrow navigation
+			this.editor.addToHistory(text);
 		};
 
 		// Start the UI
@@ -888,6 +894,22 @@ export class TuiRenderer {
 		}
 		// Clear pending tools after rendering initial messages
 		this.pendingTools.clear();
+
+		// Populate editor history with user messages from the session (oldest first so newest is at index 0)
+		for (const message of state.messages) {
+			if (message.role === "user") {
+				const textBlocks =
+					typeof message.content === "string"
+						? [{ type: "text", text: message.content }]
+						: message.content.filter((c) => c.type === "text");
+				const textContent = textBlocks.map((c) => c.text).join("");
+				// Skip compaction summary messages
+				if (textContent && !textContent.startsWith(SUMMARY_PREFIX)) {
+					this.editor.addToHistory(textContent);
+				}
+			}
+		}
+
 		this.ui.requestRender();
 	}
 

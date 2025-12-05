@@ -48,6 +48,10 @@ export class Editor implements Component {
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
 
+	// Prompt history for up/down navigation
+	private history: string[] = [];
+	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
+
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
@@ -59,6 +63,66 @@ export class Editor implements Component {
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
 		this.autocompleteProvider = provider;
+	}
+
+	/**
+	 * Add a prompt to history for up/down arrow navigation.
+	 * Called after successful submission.
+	 */
+	addToHistory(text: string): void {
+		const trimmed = text.trim();
+		if (!trimmed) return;
+		// Don't add consecutive duplicates
+		if (this.history.length > 0 && this.history[0] === trimmed) return;
+		this.history.unshift(trimmed);
+		// Limit history size
+		if (this.history.length > 100) {
+			this.history.pop();
+		}
+	}
+
+	private isEditorEmpty(): boolean {
+		return this.state.lines.length === 1 && this.state.lines[0] === "";
+	}
+
+	private isOnFirstVisualLine(): boolean {
+		const visualLines = this.buildVisualLineMap(this.lastWidth);
+		const currentVisualLine = this.findCurrentVisualLine(visualLines);
+		return currentVisualLine === 0;
+	}
+
+	private isOnLastVisualLine(): boolean {
+		const visualLines = this.buildVisualLineMap(this.lastWidth);
+		const currentVisualLine = this.findCurrentVisualLine(visualLines);
+		return currentVisualLine === visualLines.length - 1;
+	}
+
+	private navigateHistory(direction: 1 | -1): void {
+		if (this.history.length === 0) return;
+
+		const newIndex = this.historyIndex - direction; // Up(-1) increases index, Down(1) decreases
+		if (newIndex < -1 || newIndex >= this.history.length) return;
+
+		this.historyIndex = newIndex;
+
+		if (this.historyIndex === -1) {
+			// Returned to "current" state - clear editor
+			this.setTextInternal("");
+		} else {
+			this.setTextInternal(this.history[this.historyIndex] || "");
+		}
+	}
+
+	/** Internal setText that doesn't reset history state - used by navigateHistory */
+	private setTextInternal(text: string): void {
+		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+		this.state.lines = lines.length === 0 ? [""] : lines;
+		this.state.cursorLine = this.state.lines.length - 1;
+		this.state.cursorCol = this.state.lines[this.state.cursorLine]?.length || 0;
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
 	}
 
 	invalidate(): void {
@@ -342,6 +406,7 @@ export class Editor implements Component {
 			};
 			this.pastes.clear();
 			this.pasteCounter = 0;
+			this.historyIndex = -1; // Exit history browsing mode
 
 			// Notify that editor is now empty
 			if (this.onChange) {
@@ -383,11 +448,21 @@ export class Editor implements Component {
 		}
 		// Arrow keys
 		else if (data === "\x1b[A") {
-			// Up
-			this.moveCursor(-1, 0);
+			// Up - history navigation or cursor movement
+			if (this.isEditorEmpty()) {
+				this.navigateHistory(-1); // Start browsing history
+			} else if (this.historyIndex > -1 && this.isOnFirstVisualLine()) {
+				this.navigateHistory(-1); // Navigate to older history entry
+			} else {
+				this.moveCursor(-1, 0); // Cursor movement (within text or history entry)
+			}
 		} else if (data === "\x1b[B") {
-			// Down
-			this.moveCursor(1, 0);
+			// Down - history navigation or cursor movement
+			if (this.historyIndex > -1 && this.isOnLastVisualLine()) {
+				this.navigateHistory(1); // Navigate to newer history entry or clear
+			} else {
+				this.moveCursor(1, 0); // Cursor movement (within text or history entry)
+			}
 		} else if (data === "\x1b[C") {
 			// Right
 			this.moveCursor(0, 1);
@@ -479,24 +554,14 @@ export class Editor implements Component {
 	}
 
 	setText(text: string): void {
-		// Split text into lines, handling different line endings
-		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-
-		// Ensure at least one empty line
-		this.state.lines = lines.length === 0 ? [""] : lines;
-
-		// Reset cursor to end of text
-		this.state.cursorLine = this.state.lines.length - 1;
-		this.state.cursorCol = this.state.lines[this.state.cursorLine]?.length || 0;
-
-		// Notify of change
-		if (this.onChange) {
-			this.onChange(this.getText());
-		}
+		this.historyIndex = -1; // Exit history browsing mode
+		this.setTextInternal(text);
 	}
 
 	// All the editor methods from before...
 	private insertCharacter(char: string): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const line = this.state.lines[this.state.cursorLine] || "";
 
 		const before = line.slice(0, this.state.cursorCol);
@@ -544,6 +609,8 @@ export class Editor implements Component {
 	}
 
 	private handlePaste(pastedText: string): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		// Clean the pasted text
 		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
@@ -632,6 +699,8 @@ export class Editor implements Component {
 	}
 
 	private addNewLine(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		const before = currentLine.slice(0, this.state.cursorCol);
@@ -651,6 +720,8 @@ export class Editor implements Component {
 	}
 
 	private handleBackspace(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		if (this.state.cursorCol > 0) {
 			// Delete character in current line
 			const line = this.state.lines[this.state.cursorLine] || "";
@@ -704,6 +775,8 @@ export class Editor implements Component {
 	}
 
 	private deleteToStartOfLine(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol > 0) {
@@ -725,6 +798,8 @@ export class Editor implements Component {
 	}
 
 	private deleteToEndOfLine(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
@@ -743,6 +818,8 @@ export class Editor implements Component {
 	}
 
 	private deleteWordBackwards(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		// If at start of line, behave like backspace at column 0 (merge with previous line)
@@ -791,6 +868,8 @@ export class Editor implements Component {
 	}
 
 	private handleForwardDelete(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
