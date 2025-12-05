@@ -42,6 +42,7 @@ import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
+import { SessionSelectorComponent } from "./session-selector.js";
 import { ThemeSelectorComponent } from "./theme-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
@@ -94,6 +95,9 @@ export class TuiRenderer {
 
 	// User message selector (for branching)
 	private userMessageSelector: UserMessageSelectorComponent | null = null;
+
+	// Session selector (for resume)
+	private sessionSelector: SessionSelectorComponent | null = null;
 
 	// OAuth selector
 	private oauthSelector: any | null = null;
@@ -214,6 +218,11 @@ export class TuiRenderer {
 			description: "Toggle automatic context compaction",
 		};
 
+		const resumeCommand: SlashCommand = {
+			name: "resume",
+			description: "Resume a different session",
+		};
+
 		// Load hide thinking block setting
 		this.hideThinkingBlock = settingsManager.getHideThinkingBlock();
 
@@ -243,6 +252,7 @@ export class TuiRenderer {
 				clearCommand,
 				compactCommand,
 				autocompactCommand,
+				resumeCommand,
 				...fileSlashCommands,
 			],
 			process.cwd(),
@@ -484,6 +494,13 @@ export class TuiRenderer {
 			// Check for /debug command
 			if (text === "/debug") {
 				this.handleDebugCommand();
+				this.editor.setText("");
+				return;
+			}
+
+			// Check for /resume command
+			if (text === "/resume") {
+				this.showSessionSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -1465,6 +1482,53 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.userMessageSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showSessionSelector(): void {
+		// Create session selector
+		this.sessionSelector = new SessionSelectorComponent(
+			this.sessionManager,
+			(sessionPath) => {
+				// Set the selected session as active
+				this.sessionManager.setSessionFile(sessionPath);
+
+				// Reload the session
+				const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+				this.agent.replaceMessages(loaded.messages);
+
+				// Clear and re-render the chat
+				this.chatContainer.clear();
+				this.isFirstUserMessage = true;
+				this.renderInitialMessages(this.agent.state);
+
+				// Show confirmation message
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.fg("dim", "Resumed session"), 1, 0));
+
+				// Hide selector and show editor again
+				this.hideSessionSelector();
+				this.ui.requestRender();
+			},
+			() => {
+				// Just hide the selector
+				this.hideSessionSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.sessionSelector);
+		this.ui.setFocus(this.sessionSelector.getSessionList());
+		this.ui.requestRender();
+	}
+
+	private hideSessionSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.sessionSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 

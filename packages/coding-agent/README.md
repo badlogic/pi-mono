@@ -502,6 +502,16 @@ This allows you to explore alternative conversation paths without losing your cu
 /branch
 ```
 
+### /resume
+
+Switch to a different session. Opens an interactive selector showing all available sessions. Select a session to load it and continue where you left off.
+
+This is equivalent to the `--resume` CLI flag but can be used mid-session.
+
+```
+/resume
+```
+
 ### /login
 
 Login with OAuth to use subscription-based models (Claude Pro/Max):
