@@ -27,12 +27,17 @@ function makeMessage(images: ImageContent[]): Message {
 	return { role: "user", content: images, timestamp: Date.now() };
 }
 
+function oversize(base64: string, maxBytes: number): string {
+	const target = Math.ceil(1.7 * maxBytes); // ensure we exceed the provider cap even after base64 overhead
+	const current = Buffer.byteLength(base64, "base64");
+	const pad = Math.max(0, target - current);
+	return base64 + "A".repeat(pad);
+}
+
 function main() {
 	const base = readFileSync(join(__dirname, "..", "..", "test", "data", "red-circle.png")).toString("base64");
 
-	// Pad to exceed Gemini inlineData limit (~7MB per file)
-	const targetBytes = 8 * 1024 * 1024;
-	const padded = base + "A".repeat(targetBytes - Buffer.byteLength(base, "base64"));
+	const padded = oversize(base, 7 * 1024 * 1024);
 
 	const images = [makeImage(base), makeImage(padded)];
 
