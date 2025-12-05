@@ -291,6 +291,36 @@ You can add custom HTTP headers to bypass Cloudflare bot detection, add authenti
 - **Model-level `headers`**: Additional headers for specific models (merged with provider headers)
 - Model headers override provider headers when keys conflict
 
+### Authorization Header
+
+Some providers require an explicit `Authorization: Bearer <token>` header. Set `authHeader: true` to automatically add this header using the resolved `apiKey`:
+
+```json
+{
+  "providers": {
+    "qwen": {
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKey": "QWEN_API_KEY",
+      "authHeader": true,
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "qwen3-coder-plus",
+          "name": "Qwen3 Coder Plus",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 1000000,
+          "maxTokens": 65536
+        }
+      ]
+    }
+  }
+}
+```
+
+When `authHeader: true`, the resolved API key is added as `Authorization: Bearer <apiKey>` to the model headers. This is useful for providers that don't use the standard OpenAI authentication mechanism.
+
 ### Model Selection Priority
 
 When starting `pi`, models are selected in this order:
