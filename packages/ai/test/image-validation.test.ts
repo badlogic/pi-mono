@@ -78,6 +78,22 @@ describe("sanitizeImages", () => {
 		expect(note).toBeDefined();
 	});
 
+	it("keeps images at the byte limit boundary", () => {
+		const limit = 1 * 1024 * 1024; // 1MB
+		const buffer = Buffer.alloc(limit - 1024); // just under limit
+		const near = makeImage(buffer.toString("base64"));
+
+		const { messages, note } = sanitizeImages([makeMessageWithImages([near])], {
+			providerLabel: "Test",
+			maxBytes: limit,
+		});
+
+		expect(messages).toHaveLength(1);
+		const remaining = messages[0]?.content as ImageContent[];
+		expect(remaining).toHaveLength(1);
+		expect(note).toBeUndefined();
+	});
+
 	it("returns no note when nothing is removed", () => {
 		const { messages, note } = sanitizeImages([makeMessageWithImages([makeImage(redPngBase64)])], {
 			providerLabel: "Test",
