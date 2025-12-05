@@ -220,7 +220,7 @@ export async function wrapMcp(options: WrapMcpOptions): Promise<WrapMcpResult> {
 		progress("Generating supporting files...");
 		files["package.json"] = generatePackageJson(dirName, `${serverName} automation`);
 		files["README.md"] = generateReadme(dirName, groups);
-		files["AGENTS-ENTRY.md"] = generateAgentsEntry(dirName, groups);
+		files["AGENTS-ENTRY.md"] = generateAgentsEntry(dirName, groups, discovery.description);
 
 		// Step 8: Write files
 		progress("Writing files...");

@@ -12,7 +12,13 @@ import {
 import { parseWrapMcpArgs } from "../src/wrap-mcp/index.js";
 import { resolvePath } from "../src/wrap-mcp/output.js";
 import { detectLocalAgentsFile, getGlobalAgentsPath } from "../src/wrap-mcp/registration.js";
-import { buildMcpCommand, getRunnerType, hasExplicitRunner, toModuleName } from "../src/wrap-mcp/runner.js";
+import {
+	buildMcpCommand,
+	fetchPackageDescription,
+	getRunnerType,
+	hasExplicitRunner,
+	toModuleName,
+} from "../src/wrap-mcp/runner.js";
 
 describe("deriveServerName", () => {
 	it("handles simple package names", () => {
@@ -392,5 +398,22 @@ describe("detectLocalAgentsFile", () => {
 	it("returns AGENTS.md path when neither exists", () => {
 		const result = detectLocalAgentsFile(testDir);
 		expect(result).toBe(join(testDir, "AGENTS.md"));
+	});
+});
+
+describe("fetchPackageDescription", () => {
+	it("returns undefined for command runner", async () => {
+		const result = await fetchPackageDescription("anything", "command");
+		expect(result).toBeUndefined();
+	});
+
+	it("returns undefined for non-existent npm package", async () => {
+		const result = await fetchPackageDescription("this-package-definitely-does-not-exist-xyz-123", "npx");
+		expect(result).toBeUndefined();
+	});
+
+	it("returns undefined for non-existent PyPI package", async () => {
+		const result = await fetchPackageDescription("this-package-definitely-does-not-exist-xyz-123", "uvx");
+		expect(result).toBeUndefined();
 	});
 });

@@ -9,6 +9,7 @@ import { existsSync } from "fs";
 import {
 	buildMcpCommand,
 	checkUvx,
+	fetchPackageDescription,
 	getRunnerType,
 	hasExplicitRunner,
 	type RunnerOptions,
@@ -29,6 +30,7 @@ export interface DiscoveryResult {
 	mcpCommand: string;
 	tools: McpTool[];
 	runner: RunnerType;
+	description?: string;
 }
 
 /**
@@ -297,6 +299,7 @@ async function runMcporter(
 
 /**
  * Try discovery with a specific runner
+ * Fetches package description in parallel with mcporter call
  */
 async function tryRunner(
 	packageName: string,
@@ -306,25 +309,33 @@ async function tryRunner(
 ): Promise<{ discovery: DiscoveryResult; stderr: string } | { error: Error; stderr: string }> {
 	const mcpCommand = buildMcpCommand(packageName, runnerType, customCommand);
 
-	try {
-		const { result, stderr } = await runMcporter(mcpCommand, serverName);
+	// Run mcporter and description fetch in parallel
+	const [mcporterResult, description] = await Promise.all([
+		runMcporter(mcpCommand, serverName).catch((error) => ({ error })),
+		fetchPackageDescription(packageName, runnerType),
+	]);
 
-		if (result.status !== "ok" || !result.tools) {
-			return { error: new Error(result.error || "Discovery failed"), stderr };
-		}
-
-		return {
-			discovery: {
-				serverName,
-				mcpCommand,
-				tools: result.tools,
-				runner: runnerType,
-			},
-			stderr,
-		};
-	} catch (error: any) {
-		return { error, stderr: "" };
+	// Handle mcporter error
+	if ("error" in mcporterResult) {
+		return { error: mcporterResult.error, stderr: "" };
 	}
+
+	const { result, stderr } = mcporterResult;
+
+	if (result.status !== "ok" || !result.tools) {
+		return { error: new Error(result.error || "Discovery failed"), stderr };
+	}
+
+	return {
+		discovery: {
+			serverName,
+			mcpCommand,
+			tools: result.tools,
+			runner: runnerType,
+			description,
+		},
+		stderr,
+	};
 }
 
 /**
