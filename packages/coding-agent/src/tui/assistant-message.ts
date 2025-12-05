@@ -46,16 +46,21 @@ export class AssistantMessageComponent extends Container {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
-			} else if (content.type === "thinking" && content.thinking.trim() && !this.hideThinkingBlock) {
-				// Thinking traces in muted color, italic
-				// Use Markdown component with default text style for consistent styling
-				this.contentContainer.addChild(
-					new Markdown(content.thinking.trim(), 1, 0, getMarkdownTheme(), {
-						color: (text: string) => theme.fg("muted", text),
-						italic: true,
-					}),
-				);
-				this.contentContainer.addChild(new Spacer(1));
+			} else if (content.type === "thinking" && content.thinking.trim()) {
+				if (this.hideThinkingBlock) {
+					// Show static "Thinking..." label when hidden
+					this.contentContainer.addChild(new Text(theme.fg("muted", "Thinking..."), 1, 0));
+				} else {
+					// Thinking traces in muted color, italic
+					// Use Markdown component with default text style for consistent styling
+					this.contentContainer.addChild(
+						new Markdown(content.thinking.trim(), 1, 0, getMarkdownTheme(), {
+							color: (text: string) => theme.fg("muted", text),
+							italic: true,
+						}),
+					);
+					this.contentContainer.addChild(new Spacer(1));
+				}
 			}
 		}
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Thinking Block Toggle**: Added `Ctrl+T` shortcut to toggle visibility of LLM thinking blocks. When toggled off, shows a static "Thinking..." label instead of full content. Useful for reducing visual clutter during long conversations. ([#113](https://github.com/badlogic/pi-mono/pull/113))
+
 ## [0.12.10] - 2025-12-04
 
 ### Added
