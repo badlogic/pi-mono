@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Footer display**: Token counts now use M suffix for millions (e.g., `10.2M` instead of `10184k`). Context display shortened from `61.3% of 200k` to `61.3%/200k`.
+
 ## [0.12.11] - 2025-12-05
 
 ### Changed
