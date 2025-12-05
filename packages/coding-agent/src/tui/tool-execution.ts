@@ -85,7 +85,17 @@ export class ToolExecutionComponent extends Container {
 
 		// Strip ANSI codes and carriage returns from raw output
 		// (bash may emit colors/formatting, and Windows may include \r)
-		let output = textBlocks.map((c: any) => stripAnsi(c.text || "").replace(/\r/g, "")).join("\n");
+		let output = textBlocks
+			.map((c: any) => {
+				let text = stripAnsi(c.text || "").replace(/\r/g, "");
+				// stripAnsi misses some escape sequences like standalone ESC \ (String Terminator)
+				// and leaves orphaned fragments from malformed sequences (e.g. TUI output captured to file)
+				// Clean up: remove ESC + any following char, and control chars except newline/tab
+				text = text.replace(/\x1b./g, "");
+				text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
+				return text;
+			})
+			.join("\n");
 
 		// Add indicator for images
 		if (imageBlocks.length > 0) {
