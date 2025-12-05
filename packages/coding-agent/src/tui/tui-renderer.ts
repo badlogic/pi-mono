@@ -1175,15 +1175,6 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
-	private showSuccess(message: string, detail?: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		const text = detail
-			? `${theme.fg("success", message)}\n${theme.fg("muted", detail)}`
-			: theme.fg("success", message);
-		this.chatContainer.addChild(new Text(text, 1, 1));
-		this.ui.requestRender();
-	}
-
 	private showThinkingSelector(): void {
 		// Create thinking selector with current level
 		this.thinkingSelector = new ThinkingSelectorComponent(
@@ -1914,10 +1905,6 @@ export class TuiRenderer {
 
 			// Update footer with new state (fixes context % display)
 			this.footer.updateState(this.agent.state);
-
-			// Show success message
-			const successTitle = isAuto ? "✓ Context auto-compacted" : "✓ Context compacted";
-			this.showSuccess(successTitle, `Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {
