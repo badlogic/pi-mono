@@ -70,7 +70,6 @@ export class TuiRenderer {
 
 	private lastSigintTime = 0;
 	private changelogMarkdown: string | null = null;
-	private newVersion: string | null = null;
 
 	// Message queueing
 	private queuedMessages: string[] = [];
@@ -126,7 +125,6 @@ export class TuiRenderer {
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
-		newVersion: string | null = null,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
 	) {
@@ -134,7 +132,6 @@ export class TuiRenderer {
 		this.sessionManager = sessionManager;
 		this.settingsManager = settingsManager;
 		this.version = version;
-		this.newVersion = newVersion;
 		this.changelogMarkdown = changelogMarkdown;
 		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
@@ -302,22 +299,6 @@ export class TuiRenderer {
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(header);
 		this.ui.addChild(new Spacer(1));
-
-		// Add new version notification if available
-		if (this.newVersion) {
-			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-			this.ui.addChild(
-				new Text(
-					theme.bold(theme.fg("warning", "Update Available")) +
-						"\n" +
-						theme.fg("muted", `New version ${this.newVersion} is available. Run: `) +
-						theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
-					1,
-					0,
-				),
-			);
-			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		}
 
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
@@ -1211,6 +1192,24 @@ export class TuiRenderer {
 		// Show warning message in the chat
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	showNewVersionNotification(newVersion: string): void {
+		// Show new version notification in the chat
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+		this.chatContainer.addChild(
+			new Text(
+				theme.bold(theme.fg("warning", "Update Available")) +
+					"\n" +
+					theme.fg("muted", `New version ${newVersion} is available. Run: `) +
+					theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
+				1,
+				0,
+			),
+		);
+		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
 	}
 

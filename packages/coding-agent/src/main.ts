@@ -717,7 +717,7 @@ async function runInteractiveMode(
 	version: string,
 	changelogMarkdown: string | null = null,
 	modelFallbackMessage: string | null = null,
-	newVersion: string | null = null,
+	versionCheckPromise: Promise<string | null>,
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
 	initialMessages: string[] = [],
 	initialMessage?: string,
@@ -730,13 +730,19 @@ async function runInteractiveMode(
 		settingsManager,
 		version,
 		changelogMarkdown,
-		newVersion,
 		scopedModels,
 		fdPath,
 	);
 
 	// Initialize TUI (subscribes to agent events internally)
 	await renderer.init();
+
+	// Handle version check result when it completes (don't block)
+	versionCheckPromise.then((newVersion) => {
+		if (newVersion) {
+			renderer.showNewVersionNotification(newVersion);
+		}
+	});
 
 	// Render any existing messages (from --continue mode)
 	renderer.renderInitialMessages(agent.state);
@@ -1334,16 +1340,8 @@ export async function main(args: string[]) {
 		// RPC mode - headless operation
 		await runRpcMode(agent, sessionManager, settingsManager);
 	} else if (isInteractive) {
-		// Check for new version (don't block startup if it takes too long)
-		let newVersion: string | null = null;
-		try {
-			newVersion = await Promise.race([
-				checkForNewVersion(VERSION),
-				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)), // 1 second timeout
-			]);
-		} catch (e) {
-			// Ignore errors
-		}
+		// Check for new version in the background (don't block startup)
+		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
 
 		// Check if we should show changelog (only in interactive mode, only for new sessions)
 		let changelogMarkdown: string | null = null;
@@ -1394,7 +1392,7 @@ export async function main(args: string[]) {
 			VERSION,
 			changelogMarkdown,
 			modelFallbackMessage,
-			newVersion,
+			versionCheckPromise,
 			scopedModels,
 			parsed.messages,
 			initialMessage,
