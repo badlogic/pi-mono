@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.12.14] - 2025-12-06
+
+### Added
+
+- **Double-Escape Branch Shortcut**: Press Escape twice with an empty editor to quickly open the `/branch` selector for conversation branching.
+
 ## [0.12.13] - 2025-12-05
 
 ### Changed

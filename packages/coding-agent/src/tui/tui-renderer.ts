@@ -69,6 +69,7 @@ export class TuiRenderer {
 	private loadingAnimation: Loader | null = null;
 
 	private lastSigintTime = 0;
+	private lastEscapeTime = 0;
 	private changelogMarkdown: string | null = null;
 
 	// Message queueing
@@ -343,6 +344,15 @@ export class TuiRenderer {
 
 				// Abort
 				this.agent.abort();
+			} else if (!this.editor.getText().trim()) {
+				// Double-escape with empty editor triggers /branch
+				const now = Date.now();
+				if (now - this.lastEscapeTime < 500) {
+					this.showUserMessageSelector();
+					this.lastEscapeTime = 0; // Reset to prevent triple-escape
+				} else {
+					this.lastEscapeTime = now;
+				}
 			}
 		};
 
