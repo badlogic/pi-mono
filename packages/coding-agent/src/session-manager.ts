@@ -80,6 +80,22 @@ export const SUMMARY_PREFIX = `The conversation history before this point was co
 export const SUMMARY_SUFFIX = `
 </summary>`;
 
+function sanitizeMessage(message: AppMessage): AppMessage {
+	if (!message) return message;
+	if (Array.isArray((message as any).content)) {
+		const content = (message as any).content.map((c: any) => {
+			if (c?.type === "text" && typeof c.text !== "string") {
+				return { ...c, text: String(c.text ?? "") };
+			}
+			return c;
+		});
+		return { ...message, content };
+	}
+	const raw = (message as any).content;
+	const text = typeof raw === "string" ? raw : raw != null ? String(raw) : "";
+	return { ...message, content: [{ type: "text", text }] as any };
+}
+
 /**
  * Create a user message containing the summary with the standard prefix.
  */
@@ -161,7 +177,7 @@ export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 		const messages: AppMessage[] = [];
 		for (const entry of entries) {
 			if (entry.type === "message") {
-				messages.push(entry.message);
+				messages.push(sanitizeMessage(entry.message));
 			}
 		}
 		return { messages, thinkingLevel, model };
@@ -174,7 +190,7 @@ export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 	for (let i = compactionEvent.firstKeptEntryIndex; i < entries.length; i++) {
 		const entry = entries[i];
 		if (entry.type === "message") {
-			keptMessages.push(entry.message);
+			keptMessages.push(sanitizeMessage(entry.message));
 		}
 	}
 

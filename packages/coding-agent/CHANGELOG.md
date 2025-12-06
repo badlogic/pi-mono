@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- RPC `prompt` input is normalized to flatten text blocks and coerce non-string text values, preventing malformed content from reaching the agent.
+
 ## [0.12.14] - 2025-12-06
 
 ### Added
