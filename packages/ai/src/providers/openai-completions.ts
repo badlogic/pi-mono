@@ -50,6 +50,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				totalTokens: 0,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",
@@ -106,14 +107,18 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			for await (const chunk of openaiStream) {
 				if (chunk.usage) {
 					const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens || 0;
+					const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens || 0;
+					const input = (chunk.usage.prompt_tokens || 0) - cachedTokens;
+					const outputTokens = (chunk.usage.completion_tokens || 0) + reasoningTokens;
 					output.usage = {
 						// OpenAI includes cached tokens in prompt_tokens, so subtract to get non-cached input
-						input: (chunk.usage.prompt_tokens || 0) - cachedTokens,
-						output:
-							(chunk.usage.completion_tokens || 0) +
-							(chunk.usage.completion_tokens_details?.reasoning_tokens || 0),
+						input,
+						output: outputTokens,
 						cacheRead: cachedTokens,
 						cacheWrite: 0,
+						// Compute totalTokens ourselves since we add reasoning_tokens to output
+						// and some providers (e.g., Groq) don't include them in total_tokens
+						totalTokens: input + outputTokens + cachedTokens,
 						cost: {
 							input: 0,
 							output: 0,
