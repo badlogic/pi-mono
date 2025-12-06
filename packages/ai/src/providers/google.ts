@@ -22,6 +22,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeImages } from "../utils/image-validation.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
 import { transformMessages } from "./transorm-messages.js";
@@ -244,6 +245,9 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			if (output.content.length === 0 && output.errorMessage) {
+				output.content.push({ type: "text", text: `Error: ${output.errorMessage}` });
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -322,7 +326,21 @@ function buildParams(
 }
 function convertMessages(model: Model<"google-generative-ai">, context: Context): Content[] {
 	const contents: Content[] = [];
-	const transformedMessages = transformMessages(context.messages, model);
+	let transformedMessages = transformMessages(context.messages, model);
+	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
+		providerLabel: "Gemini",
+		// Gemini inlineData limit ~7MB per image (Vertex docs, Dec 2025)
+		maxBytes: 7 * 1024 * 1024,
+	});
+	transformedMessages = sanitized;
+
+	if (note) {
+		transformedMessages.push({
+			role: "user",
+			content: [{ type: "text", text: note }],
+			timestamp: Date.now(),
+		});
+	}
 
 	for (const msg of transformedMessages) {
 		if (msg.role === "user") {

@@ -23,6 +23,7 @@ import type {
 	ToolResultMessage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeImages } from "../utils/image-validation.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { validateToolArguments } from "../utils/validation.js";
@@ -271,6 +272,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			if (output.content.length === 0 && output.errorMessage) {
+				output.content.push({ type: "text", text: `Error: ${output.errorMessage}` });
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -406,7 +410,25 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 	const params: MessageParam[] = [];
 
 	// Transform messages for cross-provider compatibility
-	const transformedMessages = transformMessages(messages, model);
+	let transformedMessages = transformMessages(messages, model);
+	const { messages: sanitized, note } = sanitizeImages(transformedMessages, {
+		providerLabel: "Anthropic",
+		// Anthropic Messages: up to 30MB per image, max dimension 8k (Dec 2025 docs)
+		maxBytes: 30 * 1024 * 1024,
+		maxDimension: 8000,
+		manyImageLimit: { threshold: 20, maxDimension: 2000 },
+		maxImages: 100,
+	});
+	transformedMessages = sanitized;
+
+	// Let the model know when images were dropped due to provider limits so it can retry with smaller files
+	if (note) {
+		transformedMessages.push({
+			role: "user",
+			content: [{ type: "text", text: note }],
+			timestamp: Date.now(),
+		});
+	}
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
