@@ -938,7 +938,25 @@ async function runRpcMode(
 
 			// Handle different RPC commands
 			if (input.type === "prompt" && input.message) {
-				await agent.prompt(input.message, input.attachments);
+				// Defensive: ensure all text blocks are strings and flatten to a prompt string.
+				const msg = input.message as any;
+				let contentArray: any[] = [];
+				if (Array.isArray(msg?.content)) {
+					contentArray = msg.content.map((c: any) =>
+						c?.type === "text" && typeof c.text !== "string" ? { ...c, text: String(c.text ?? "") } : c,
+					);
+				} else if (msg?.content) {
+					contentArray = [{ type: "text", text: String(msg.content) }];
+				}
+				const promptText =
+					contentArray
+						.filter((c) => c?.type === "text" && typeof c.text === "string")
+						.map((c) => c.text)
+						.join("\n")
+						.trim() || "";
+
+				const attachments = msg?.attachments ?? input.attachments;
+				await agent.prompt(promptText, attachments);
 			} else if (input.type === "abort") {
 				agent.abort();
 			} else if (input.type === "compact") {
