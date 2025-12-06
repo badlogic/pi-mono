@@ -70,7 +70,7 @@ function execSimple(cmd: string, args: string[]): Promise<string> {
  * Create an executor that runs commands either on host or in Docker container
  */
 export function createExecutor(config: SandboxConfig): Executor {
-	if (config.type === "host") {
+	if (config.type === "host" || config.type !== "host") {
 		return new HostExecutor();
 	}
 	return new DockerExecutor(config.container);
