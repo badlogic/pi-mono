@@ -8,6 +8,10 @@
 
 - **Double-Escape Branch Shortcut**: Press Escape twice with an empty editor to quickly open the `/branch` selector for conversation branching.
 
+### Fixed
+
+- Auto-compaction now uses persisted session history to calculate context usage in both RPC and TUI modes, avoiding under-triggering and redundant session reloads during compaction.
+
 ## [0.12.13] - 2025-12-05
 
 ### Changed

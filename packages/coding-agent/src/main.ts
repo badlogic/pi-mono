@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
-import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import { calculateContextTokens, compact, getLatestUsageFromSession, shouldCompact } from "./compaction.js";
 import {
 	APP_NAME,
 	CONFIG_DIR_NAME,
@@ -855,22 +855,10 @@ async function runRpcMode(
 		const settings = settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last non-aborted assistant message
-		const messages = agent.state.messages;
-		let lastAssistant: AssistantMessage | null = null;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				const assistantMsg = msg as AssistantMessage;
-				if (assistantMsg.stopReason !== "aborted") {
-					lastAssistant = assistantMsg;
-					break;
-				}
-			}
-		}
-		if (!lastAssistant) return;
+		const { usage, entries } = getLatestUsageFromSession(sessionManager, agent);
+		if (!usage) return;
 
-		const contextTokens = calculateContextTokens(lastAssistant.usage);
+		const contextTokens = calculateContextTokens(usage);
 		const contextWindow = agent.state.model.contextWindow;
 
 		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
@@ -883,7 +871,6 @@ async function runRpcMode(
 				throw new Error(`No API key for ${agent.state.model.provider}`);
 			}
 
-			const entries = sessionManager.loadEntries();
 			const compactionEntry = await compact(entries, agent.state.model, settings, apiKey);
 
 			sessionManager.saveCompaction(compactionEntry);

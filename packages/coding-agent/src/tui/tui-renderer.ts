@@ -19,7 +19,7 @@ import {
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { copyToClipboard } from "../clipboard.js";
-import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
+import { calculateContextTokens, compact, getLatestUsageFromSession, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
@@ -27,6 +27,7 @@ import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "
 import {
 	getLatestCompactionEntry,
 	loadSessionFromEntries,
+	type SessionEntry,
 	type SessionManager,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
@@ -601,28 +602,16 @@ export class TuiRenderer {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last non-aborted assistant message from agent state
-		const messages = this.agent.state.messages;
-		let lastAssistant: AssistantMessage | null = null;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				const assistantMsg = msg as AssistantMessage;
-				if (assistantMsg.stopReason !== "aborted") {
-					lastAssistant = assistantMsg;
-					break;
-				}
-			}
-		}
-		if (!lastAssistant) return;
+		const { usage, entries } = getLatestUsageFromSession(this.sessionManager, this.agent as any);
+		if (!usage) return;
 
-		const contextTokens = calculateContextTokens(lastAssistant.usage);
+		const contextTokens = calculateContextTokens(usage);
 		const contextWindow = this.agent.state.model.contextWindow;
 
 		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
 
 		// Trigger auto-compaction
-		await this.executeCompaction(undefined, true);
+		await this.executeCompaction(undefined, true, entries);
 	}
 
 	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
@@ -1962,7 +1951,11 @@ export class TuiRenderer {
 	 * Shared logic to execute context compaction.
 	 * Handles aborting agent, showing loader, performing compaction, updating session/UI.
 	 */
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
+	private async executeCompaction(
+		customInstructions?: string,
+		isAuto = false,
+		preloadedEntries?: SessionEntry[],
+	): Promise<void> {
 		// Unsubscribe first to prevent processing events during compaction
 		this.unsubscribe?.();
 
@@ -2008,7 +2001,7 @@ export class TuiRenderer {
 			}
 
 			// Perform compaction with abort signal
-			const entries = this.sessionManager.loadEntries();
+			const entries = preloadedEntries ?? this.sessionManager.loadEntries();
 			const settings = this.settingsManager.getCompactionSettings();
 			const compactionEntry = await compact(
 				entries,

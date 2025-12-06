@@ -5,10 +5,10 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { Agent, AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import type { CompactionEntry, SessionEntry } from "./session-manager.js";
+import type { CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
 
 // ============================================================================
 // Types
@@ -70,6 +70,34 @@ export function getLastAssistantUsage(entries: SessionEntry[]): Usage | null {
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
 	return contextTokens > contextWindow - settings.reserveTokens;
+}
+
+/**
+ * Shared helper to get latest assistant usage, preferring persisted session history.
+ * Returns both usage and the loaded entries to allow callers to reuse them.
+ */
+export function getLatestUsageFromSession(
+	sessionManager: SessionManager,
+	agent: Agent,
+): { usage: Usage | null; entries: SessionEntry[] } {
+	const entries = sessionManager.loadEntries();
+	const usageFromEntries = getLastAssistantUsage(entries);
+	if (usageFromEntries) {
+		return { usage: usageFromEntries, entries };
+	}
+
+	const messages = agent.state.messages;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			const assistantMsg = msg as AssistantMessage;
+			if (assistantMsg.stopReason !== "aborted" && assistantMsg.usage) {
+				return { usage: assistantMsg.usage, entries };
+			}
+		}
+	}
+
+	return { usage: null, entries };
 }
 
 // ============================================================================
