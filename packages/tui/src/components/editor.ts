@@ -1,6 +1,10 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import type { Component } from "../tui.js";
+import { visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
+
+// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
+const segmenter = new Intl.Segmenter();
 
 interface EditorState {
 	lines: string[];
@@ -146,7 +150,7 @@ export class Editor implements Component {
 		// Render each layout line
 		for (const layoutLine of layoutLines) {
 			let displayText = layoutLine.text;
-			let visibleLength = layoutLine.text.length;
+			let lineVisibleWidth = visibleWidth(layoutLine.text);
 
 			// Add cursor if this line has it
 			if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
@@ -154,34 +158,43 @@ export class Editor implements Component {
 				const after = displayText.slice(layoutLine.cursorPos);
 
 				if (after.length > 0) {
-					// Cursor is on a character - replace it with highlighted version
-					const cursor = `\x1b[7m${after[0]}\x1b[0m`;
-					const restAfter = after.slice(1);
+					// Cursor is on a character (grapheme) - replace it with highlighted version
+					// Get the first grapheme from 'after'
+					const afterGraphemes = [...segmenter.segment(after)];
+					const firstGrapheme = afterGraphemes[0]?.segment || "";
+					const restAfter = after.slice(firstGrapheme.length);
+					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
 					displayText = before + cursor + restAfter;
-					// visibleLength stays the same - we're replacing, not adding
+					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
-					if (layoutLine.text.length < width) {
+					if (lineVisibleWidth < width) {
 						// We have room - add highlighted space
 						const cursor = "\x1b[7m \x1b[0m";
 						displayText = before + cursor;
-						// visibleLength increases by 1 - we're adding a space
-						visibleLength = layoutLine.text.length + 1;
+						// lineVisibleWidth increases by 1 - we're adding a space
+						lineVisibleWidth = lineVisibleWidth + 1;
 					} else {
-						// Line is at full width - use reverse video on last character if possible
+						// Line is at full width - use reverse video on last grapheme if possible
 						// or just show cursor at the end without adding space
-						if (before.length > 0) {
-							const lastChar = before[before.length - 1];
-							const cursor = `\x1b[7m${lastChar}\x1b[0m`;
-							displayText = before.slice(0, -1) + cursor;
+						const beforeGraphemes = [...segmenter.segment(before)];
+						if (beforeGraphemes.length > 0) {
+							const lastGrapheme = beforeGraphemes[beforeGraphemes.length - 1]?.segment || "";
+							const cursor = `\x1b[7m${lastGrapheme}\x1b[0m`;
+							// Rebuild 'before' without the last grapheme
+							const beforeWithoutLast = beforeGraphemes
+								.slice(0, -1)
+								.map((g) => g.segment)
+								.join("");
+							displayText = beforeWithoutLast + cursor;
 						}
-						// visibleLength stays the same
+						// lineVisibleWidth stays the same
 					}
 				}
 			}
 
-			// Calculate padding based on actual visible length
-			const padding = " ".repeat(Math.max(0, width - visibleLength));
+			// Calculate padding based on actual visible width
+			const padding = " ".repeat(Math.max(0, width - lineVisibleWidth));
 
 			// Render the line (no side borders, just horizontal lines above and below)
 			result.push(displayText + padding);
@@ -493,9 +506,9 @@ export class Editor implements Component {
 		for (let i = 0; i < this.state.lines.length; i++) {
 			const line = this.state.lines[i] || "";
 			const isCurrentLine = i === this.state.cursorLine;
-			const maxLineLength = contentWidth;
+			const lineVisibleWidth = visibleWidth(line);
 
-			if (line.length <= maxLineLength) {
+			if (lineVisibleWidth <= contentWidth) {
 				// Line fits in one layout line
 				if (isCurrentLine) {
 					layoutLines.push({
@@ -510,35 +523,64 @@ export class Editor implements Component {
 					});
 				}
 			} else {
-				// Line needs wrapping
-				const chunks = [];
-				for (let pos = 0; pos < line.length; pos += maxLineLength) {
-					chunks.push(line.slice(pos, pos + maxLineLength));
+				// Line needs wrapping - use grapheme-aware chunking
+				const chunks: { text: string; startIndex: number; endIndex: number }[] = [];
+				let currentChunk = "";
+				let currentWidth = 0;
+				let chunkStartIndex = 0;
+				let currentIndex = 0;
+
+				for (const seg of segmenter.segment(line)) {
+					const grapheme = seg.segment;
+					const graphemeWidth = visibleWidth(grapheme);
+
+					if (currentWidth + graphemeWidth > contentWidth && currentChunk !== "") {
+						// Start a new chunk
+						chunks.push({
+							text: currentChunk,
+							startIndex: chunkStartIndex,
+							endIndex: currentIndex,
+						});
+						currentChunk = grapheme;
+						currentWidth = graphemeWidth;
+						chunkStartIndex = currentIndex;
+					} else {
+						currentChunk += grapheme;
+						currentWidth += graphemeWidth;
+					}
+					currentIndex += grapheme.length;
+				}
+
+				// Push the last chunk
+				if (currentChunk !== "") {
+					chunks.push({
+						text: currentChunk,
+						startIndex: chunkStartIndex,
+						endIndex: currentIndex,
+					});
 				}
 
 				for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
 					const chunk = chunks[chunkIndex];
 					if (!chunk) continue;
 
-					const chunkStart = chunkIndex * maxLineLength;
-					const chunkEnd = chunkStart + chunk.length;
 					const cursorPos = this.state.cursorCol;
 					const isLastChunk = chunkIndex === chunks.length - 1;
-					// For non-last chunks, cursor at chunkEnd belongs to the next chunk
+					// For non-last chunks, cursor at endIndex belongs to the next chunk
 					const hasCursorInChunk =
 						isCurrentLine &&
-						cursorPos >= chunkStart &&
-						(isLastChunk ? cursorPos <= chunkEnd : cursorPos < chunkEnd);
+						cursorPos >= chunk.startIndex &&
+						(isLastChunk ? cursorPos <= chunk.endIndex : cursorPos < chunk.endIndex);
 
 					if (hasCursorInChunk) {
 						layoutLines.push({
-							text: chunk,
+							text: chunk.text,
 							hasCursor: true,
-							cursorPos: cursorPos - chunkStart,
+							cursorPos: cursorPos - chunk.startIndex,
 						});
 					} else {
 						layoutLines.push({
-							text: chunk,
+							text: chunk.text,
 							hasCursor: false,
 						});
 					}
@@ -917,16 +959,44 @@ export class Editor implements Component {
 
 		for (let i = 0; i < this.state.lines.length; i++) {
 			const line = this.state.lines[i] || "";
+			const lineVisWidth = visibleWidth(line);
 			if (line.length === 0) {
 				// Empty line still takes one visual line
 				visualLines.push({ logicalLine: i, startCol: 0, length: 0 });
-			} else if (line.length <= width) {
+			} else if (lineVisWidth <= width) {
 				visualLines.push({ logicalLine: i, startCol: 0, length: line.length });
 			} else {
-				// Line needs wrapping
-				for (let pos = 0; pos < line.length; pos += width) {
-					const segmentLength = Math.min(width, line.length - pos);
-					visualLines.push({ logicalLine: i, startCol: pos, length: segmentLength });
+				// Line needs wrapping - use grapheme-aware chunking
+				let currentWidth = 0;
+				let chunkStartIndex = 0;
+				let currentIndex = 0;
+
+				for (const seg of segmenter.segment(line)) {
+					const grapheme = seg.segment;
+					const graphemeWidth = visibleWidth(grapheme);
+
+					if (currentWidth + graphemeWidth > width && currentIndex > chunkStartIndex) {
+						// Start a new chunk
+						visualLines.push({
+							logicalLine: i,
+							startCol: chunkStartIndex,
+							length: currentIndex - chunkStartIndex,
+						});
+						chunkStartIndex = currentIndex;
+						currentWidth = graphemeWidth;
+					} else {
+						currentWidth += graphemeWidth;
+					}
+					currentIndex += grapheme.length;
+				}
+
+				// Push the last chunk
+				if (currentIndex > chunkStartIndex) {
+					visualLines.push({
+						logicalLine: i,
+						startCol: chunkStartIndex,
+						length: currentIndex - chunkStartIndex,
+					});
 				}
 			}
 		}
