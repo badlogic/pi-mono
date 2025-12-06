@@ -19,7 +19,7 @@
 	"scripts": {
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-assets",
-		"build:binary": "command -v bun >/dev/null 2>&1 || { echo 'Error: Bun is required for building the binary. Install it from https://bun.sh'; exit 1; } && npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
+		"build:binary": "npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
 		"copy-assets": "cp src/theme/*.json dist/theme/",
 		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
