@@ -12,6 +12,7 @@ export interface SlackMessage {
 	userName?: string; // user handle
 	channel: string; // channel ID
 	ts: string; // timestamp (for threading)
+	thread_ts?: string; // parent thread timestamp (if message is in a thread)
 	attachments: Attachment[]; // file attachments
 }
 
@@ -216,8 +217,14 @@ export class MomBot {
 				channel: string;
 				user: string;
 				ts: string;
+				thread_ts?: string; // Present when mention is in a thread
 				files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 			};
+
+			// If this is a thread reply, fetch and log the full thread for context
+			if (slackEvent.thread_ts) {
+				await this.fetchAndLogThread(slackEvent.channel, slackEvent.thread_ts);
+			}
 
 			// Log the mention message (message event may not fire for all channel types)
 			await this.logMessage({
@@ -225,6 +232,7 @@ export class MomBot {
 				channel: slackEvent.channel,
 				user: slackEvent.user,
 				ts: slackEvent.ts,
+				thread_ts: slackEvent.thread_ts,
 				files: slackEvent.files,
 			});
 
@@ -281,11 +289,73 @@ export class MomBot {
 		});
 	}
 
+	/**
+	 * Fetch and log all messages in a thread (for context when replying in threads)
+	 * Skips messages already logged (deduped by store)
+	 */
+	private async fetchAndLogThread(channelId: string, threadTs: string): Promise<void> {
+		try {
+			const result = await this.webClient.conversations.replies({
+				channel: channelId,
+				ts: threadTs,
+				limit: 100,
+			});
+
+			const messages = result.messages as
+				| Array<{
+						ts?: string;
+						thread_ts?: string;
+						user?: string;
+						bot_id?: string;
+						text?: string;
+						files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
+				  }>
+				| undefined;
+
+			if (!messages) return;
+
+			for (const msg of messages) {
+				if (!msg.ts || !msg.text) continue;
+
+				const isBotMessage = !!msg.bot_id || msg.user === this.botUserId;
+				const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts) : [];
+
+				if (isBotMessage) {
+					await this.store.logMessage(channelId, {
+						date: new Date(parseFloat(msg.ts) * 1000).toISOString(),
+						ts: msg.ts,
+						thread_ts: msg.thread_ts,
+						user: "bot",
+						text: msg.text,
+						attachments,
+						isBot: true,
+					});
+				} else if (msg.user) {
+					const { userName, displayName } = await this.getUserInfo(msg.user);
+					await this.store.logMessage(channelId, {
+						date: new Date(parseFloat(msg.ts) * 1000).toISOString(),
+						ts: msg.ts,
+						thread_ts: msg.thread_ts,
+						user: msg.user,
+						userName,
+						displayName,
+						text: msg.text,
+						attachments,
+						isBot: false,
+					});
+				}
+			}
+		} catch (error) {
+			log.logWarning("Failed to fetch thread replies", String(error));
+		}
+	}
+
 	private async logMessage(event: {
 		text: string;
 		channel: string;
 		user: string;
 		ts: string;
+		thread_ts?: string;
 		files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 	}): Promise<void> {
 		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
@@ -294,6 +364,7 @@ export class MomBot {
 		await this.store.logMessage(event.channel, {
 			date: new Date(parseFloat(event.ts) * 1000).toISOString(),
 			ts: event.ts,
+			...(event.thread_ts && { thread_ts: event.thread_ts }),
 			user: event.user,
 			userName,
 			displayName,
@@ -308,6 +379,7 @@ export class MomBot {
 		channel: string;
 		user: string;
 		ts: string;
+		thread_ts?: string; // Present when message is in a thread
 		files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 	}): Promise<SlackContext> {
 		const rawText = event.text;
@@ -346,6 +418,7 @@ export class MomBot {
 				userName,
 				channel: event.channel,
 				ts: event.ts,
+				thread_ts: event.thread_ts,
 				attachments,
 			},
 			channelName,
@@ -384,10 +457,11 @@ export class MomBot {
 								text: displayText,
 							});
 						} else {
-							// Post initial message
+							// Post initial message (in thread if original was in a thread)
 							const result = await this.webClient.chat.postMessage({
 								channel: event.channel,
 								text: displayText,
+								...(event.thread_ts && { thread_ts: event.thread_ts }),
 							});
 							messageTs = result.ts as string;
 						}
@@ -435,10 +509,12 @@ export class MomBot {
 			setTyping: async (isTyping: boolean) => {
 				if (isTyping && !messageTs) {
 					// Post initial "thinking" message (... auto-appended by working indicator)
+					// Post in thread if original message was in a thread
 					accumulatedText = "_Thinking_";
 					const result = await this.webClient.chat.postMessage({
 						channel: event.channel,
 						text: accumulatedText,
+						...(event.thread_ts && { thread_ts: event.thread_ts }),
 					});
 					messageTs = result.ts as string;
 				}
@@ -476,10 +552,11 @@ export class MomBot {
 								text: displayText,
 							});
 						} else {
-							// Post initial message
+							// Post initial message (in thread if original was in a thread)
 							const result = await this.webClient.chat.postMessage({
 								channel: event.channel,
 								text: displayText,
+								...(event.thread_ts && { thread_ts: event.thread_ts }),
 							});
 							messageTs = result.ts as string;
 						}

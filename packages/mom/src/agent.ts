@@ -50,6 +50,7 @@ function getAnthropicApiKey(): string {
 interface LogMessage {
 	date?: string;
 	ts?: string;
+	thread_ts?: string;
 	user?: string;
 	userName?: string;
 	text?: string;
@@ -57,7 +58,31 @@ interface LogMessage {
 	isBot?: boolean;
 }
 
-function getRecentMessages(channelDir: string, turnCount: number): string {
+/**
+ * Format messages as TSV for the prompt
+ */
+function formatMessages(messages: LogMessage[]): string {
+	const formatted: string[] = [];
+	for (const msg of messages) {
+		const date = (msg.date || "").substring(0, 19);
+		const user = msg.userName || msg.user || "";
+		let text = msg.text || "";
+		// Truncate bot messages (tool results can be huge)
+		if (msg.isBot) {
+			text = truncateForContext(text, 50000, 2000, msg.ts);
+		}
+		const attachments = (msg.attachments || []).map((a) => a.local).join(",");
+		formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
+	}
+	return formatted.join("\n");
+}
+
+/**
+ * Get recent messages, with thread context if currently in a thread.
+ * When in a thread: returns thread messages + recent channel context.
+ * When not in a thread: returns recent channel messages (excluding thread replies).
+ */
+function getRecentMessages(channelDir: string, turnCount: number, currentThreadTs?: string): string {
 	const logPath = join(channelDir, "log.jsonl");
 	if (!existsSync(logPath)) {
 		return "(no message history yet)";
@@ -72,17 +97,45 @@ function getRecentMessages(channelDir: string, turnCount: number): string {
 
 	// Parse all messages and sort by Slack timestamp
 	// (attachment downloads can cause out-of-order logging)
-	const messages: LogMessage[] = [];
+	const allMessages: LogMessage[] = [];
 	for (const line of lines) {
 		try {
-			messages.push(JSON.parse(line));
+			allMessages.push(JSON.parse(line));
 		} catch {}
 	}
-	messages.sort((a, b) => {
+	allMessages.sort((a, b) => {
 		const tsA = parseFloat(a.ts || "0");
 		const tsB = parseFloat(b.ts || "0");
 		return tsA - tsB;
 	});
+
+	// If we're in a thread, get thread messages + some channel context
+	if (currentThreadTs) {
+		// Get all messages from this thread
+		const threadMessages = allMessages.filter((m) => m.thread_ts === currentThreadTs || m.ts === currentThreadTs);
+
+		// Get recent top-level channel messages (not in any thread) for context
+		const channelMessages = allMessages.filter((m) => !m.thread_ts);
+		const recentChannelMessages = channelMessages.slice(-20); // Last 20 top-level messages
+
+		// Combine: channel context, then thread header, then thread messages
+		const parts: string[] = [];
+
+		if (recentChannelMessages.length > 0) {
+			parts.push("=== Recent Channel Messages ===");
+			parts.push(formatMessages(recentChannelMessages));
+		}
+
+		if (threadMessages.length > 0) {
+			parts.push("\n=== Current Thread ===");
+			parts.push(formatMessages(threadMessages));
+		}
+
+		return parts.join("\n");
+	}
+
+	// Not in a thread: get recent top-level messages only
+	const topLevelMessages = allMessages.filter((m) => !m.thread_ts);
 
 	// Group into "turns" - a turn is either:
 	// - A single user message (isBot: false)
@@ -92,8 +145,8 @@ function getRecentMessages(channelDir: string, turnCount: number): string {
 	let currentTurn: LogMessage[] = [];
 	let lastWasBot: boolean | null = null;
 
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
+	for (let i = topLevelMessages.length - 1; i >= 0; i--) {
+		const msg = topLevelMessages[i];
 		const isBot = msg.isBot === true;
 
 		if (lastWasBot === null) {
@@ -121,23 +174,15 @@ function getRecentMessages(channelDir: string, turnCount: number): string {
 		turns.unshift(currentTurn);
 	}
 
-	// Flatten turns back to messages and format as TSV
-	const formatted: string[] = [];
+	// Flatten turns back to messages
+	const flattenedMessages: LogMessage[] = [];
 	for (const turn of turns) {
 		for (const msg of turn) {
-			const date = (msg.date || "").substring(0, 19);
-			const user = msg.userName || msg.user || "";
-			let text = msg.text || "";
-			// Truncate bot messages (tool results can be huge)
-			if (msg.isBot) {
-				text = truncateForContext(text, 50000, 2000, msg.ts);
-			}
-			const attachments = (msg.attachments || []).map((a) => a.local).join(",");
-			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
+			flattenedMessages.push(msg);
 		}
 	}
 
-	return formatted.join("\n");
+	return formatMessages(flattenedMessages);
 }
 
 /**
@@ -414,7 +459,8 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			const channelId = ctx.message.channel;
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
-			const recentMessages = getRecentMessages(channelDir, 50);
+			const isInThread = !!ctx.message.thread_ts;
+			const recentMessages = getRecentMessages(channelDir, 50, ctx.message.thread_ts);
 
 			const memory = getMemory(channelDir);
 			const systemPrompt = buildSystemPrompt(
@@ -665,18 +711,24 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 							const text = textParts.join("\n");
 
-							// Post thinking to main message and thread
+							// Post thinking to main message (and thread if not already in a thread)
 							for (const thinking of thinkingParts) {
 								log.logThinking(logCtx, thinking);
 								queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
-								queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
+								// Skip thread duplicate when already in a thread (main IS the thread)
+								if (!isInThread) {
+									queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
+								}
 							}
 
-							// Post text to main message and thread
+							// Post text to main message (and thread if not already in a thread)
 							if (text.trim()) {
 								log.logResponse(logCtx, text);
 								queue.enqueueMessage(text, "main", "response main");
-								queue.enqueueMessage(text, "thread", "response thread", false);
+								// Skip thread duplicate when already in a thread (main IS the thread)
+								if (!isInThread) {
+									queue.enqueueMessage(text, "thread", "response thread", false);
+								}
 							}
 						}
 						break;
