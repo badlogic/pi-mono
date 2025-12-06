@@ -11,6 +11,7 @@ export interface Attachment {
 export interface LoggedMessage {
 	date: string; // ISO 8601 date (e.g., "2025-11-26T10:44:00.000Z") for easy grepping
 	ts: string; // slack timestamp or epoch ms
+	thread_ts?: string; // parent thread timestamp (present if message is in a thread)
 	user: string; // user ID (or "bot" for bot responses)
 	userName?: string; // handle (e.g., "mario")
 	displayName?: string; // display name (e.g., "Mario Zechner")
