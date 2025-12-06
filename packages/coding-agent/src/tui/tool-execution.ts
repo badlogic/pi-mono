@@ -115,7 +115,6 @@ export class ToolExecutionComponent extends Container {
 			text = theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`));
 
 			if (this.result) {
-				// Show output without code fences - more minimal
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
@@ -128,17 +127,28 @@ export class ToolExecutionComponent extends Container {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
 				}
+
+				// Show truncation notice at the bottom in warning color if present in details
+				const truncation = this.result.details?.truncation;
+				const fullOutputPath = this.result.details?.fullOutputPath;
+				if (truncation?.truncated) {
+					if (fullOutputPath) {
+						text += "\n" + theme.fg("warning", `[Full output: ${fullOutputPath}]`);
+					}
+					text += "\n" + theme.fg("warning", truncation.notice);
+				}
 			}
 		} else if (this.toolName === "read") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
 			const offset = this.args?.offset;
 			const limit = this.args?.limit;
 
-			// Build path display with offset/limit suffix
+			// Build path display with offset/limit suffix (in warning color if offset/limit used)
 			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-			if (offset !== undefined) {
-				const endLine = limit !== undefined ? offset + limit : "";
-				pathDisplay += theme.fg("toolOutput", `:${offset}${endLine ? `-${endLine}` : ""}`);
+			if (offset !== undefined || limit !== undefined) {
+				const startLine = offset ?? 1;
+				const endLine = limit !== undefined ? startLine + limit - 1 : "";
+				pathDisplay += theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
 			}
 
 			text = theme.fg("toolTitle", theme.bold("read")) + " " + pathDisplay;
@@ -146,6 +156,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result) {
 				const output = this.getTextOutput();
 				const lines = output.split("\n");
+
 				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
@@ -153,6 +164,12 @@ export class ToolExecutionComponent extends Container {
 				text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", replaceTabs(line))).join("\n");
 				if (remaining > 0) {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+				}
+
+				// Show truncation notice at the bottom in warning color if present in details
+				const truncation = this.result.details?.truncation;
+				if (truncation?.truncated) {
+					text += "\n" + theme.fg("warning", truncation.notice);
 				}
 			}
 		} else if (this.toolName === "write") {
@@ -231,6 +248,16 @@ export class ToolExecutionComponent extends Container {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
 				}
+
+				// Show truncation notice from details
+				const entryLimit = this.result.details?.entryLimitReached;
+				const truncation = this.result.details?.truncation;
+				if (entryLimit) {
+					text += "\n" + theme.fg("warning", `[Truncated: ${entryLimit} entries limit reached]`);
+				}
+				if (truncation?.truncated) {
+					text += "\n" + theme.fg("warning", truncation.notice);
+				}
 			}
 		} else if (this.toolName === "find") {
 			const pattern = this.args?.pattern || "";
@@ -258,6 +285,16 @@ export class ToolExecutionComponent extends Container {
 					if (remaining > 0) {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
+				}
+
+				// Show truncation notice from details
+				const resultLimit = this.result.details?.resultLimitReached;
+				const truncation = this.result.details?.truncation;
+				if (resultLimit) {
+					text += "\n" + theme.fg("warning", `[Truncated: ${resultLimit} results limit reached]`);
+				}
+				if (truncation?.truncated) {
+					text += "\n" + theme.fg("warning", truncation.notice);
 				}
 			}
 		} else if (this.toolName === "grep") {
@@ -290,6 +327,16 @@ export class ToolExecutionComponent extends Container {
 					if (remaining > 0) {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
+				}
+
+				// Show truncation notice from details
+				const matchLimit = this.result.details?.matchLimitReached;
+				const truncation = this.result.details?.truncation;
+				if (matchLimit) {
+					text += "\n" + theme.fg("warning", `[Truncated: ${matchLimit} matches limit reached]`);
+				}
+				if (truncation?.truncated) {
+					text += "\n" + theme.fg("warning", truncation.notice);
 				}
 			}
 		} else {

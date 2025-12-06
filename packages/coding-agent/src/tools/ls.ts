@@ -3,6 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import nodePath from "path";
+import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -24,11 +25,15 @@ const lsSchema = Type.Object({
 
 const DEFAULT_LIMIT = 500;
 
+interface LsToolDetails {
+	truncation?: TruncationResult;
+	entryLimitReached?: number;
+}
+
 export const lsTool: AgentTool<typeof lsSchema> = {
 	name: "ls",
 	label: "ls",
-	description:
-		"List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles.",
+	description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 	parameters: lsSchema,
 	execute: async (_toolCallId: string, { path, limit }: { path?: string; limit?: number }, signal?: AbortSignal) => {
 		return new Promise((resolve, reject) => {
@@ -97,16 +102,27 @@ export const lsTool: AgentTool<typeof lsSchema> = {
 
 				signal?.removeEventListener("abort", onAbort);
 
-				let output = results.join("\n");
-				if (truncated) {
-					const remaining = entries.length - effectiveLimit;
-					output += `\n\n(truncated, ${remaining} more entries)`;
-				}
 				if (results.length === 0) {
-					output = "(empty directory)";
+					resolve({ content: [{ type: "text", text: "(empty directory)" }], details: undefined });
+					return;
 				}
 
-				resolve({ content: [{ type: "text", text: output }], details: undefined });
+				const rawOutput = results.join("\n");
+				let details: LsToolDetails | undefined;
+
+				// Apply byte truncation
+				const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+				const output = truncation.content;
+
+				// Include truncation info in details (entry limit or byte limit)
+				if (truncated || truncation.truncated) {
+					details = {
+						truncation: truncation.truncated ? truncation : undefined,
+						entryLimitReached: truncated ? effectiveLimit : undefined,
+					};
+				}
+
+				resolve({ content: [{ type: "text", text: output }], details });
 			} catch (e: any) {
 				signal?.removeEventListener("abort", onAbort);
 				reject(e);

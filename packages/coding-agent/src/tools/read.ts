@@ -4,6 +4,7 @@ import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
 import { extname, resolve as resolvePath } from "path";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -43,14 +44,14 @@ const readSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
 
-const MAX_LINES = 2000;
-const MAX_LINE_LENGTH = 2000;
+interface ReadToolDetails {
+	truncation?: TruncationResult;
+}
 
 export const readTool: AgentTool<typeof readSchema> = {
 	name: "read",
 	label: "read",
-	description:
-		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
+	description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files.`,
 	parameters: readSchema,
 	execute: async (
 		_toolCallId: string,
@@ -60,119 +61,115 @@ export const readTool: AgentTool<typeof readSchema> = {
 		const absolutePath = resolvePath(expandPath(path));
 		const mimeType = isImageFile(absolutePath);
 
-		return new Promise<{ content: (TextContent | ImageContent)[]; details: undefined }>((resolve, reject) => {
-			// Check if already aborted
-			if (signal?.aborted) {
-				reject(new Error("Operation aborted"));
-				return;
-			}
-
-			let aborted = false;
-
-			// Set up abort handler
-			const onAbort = () => {
-				aborted = true;
-				reject(new Error("Operation aborted"));
-			};
-
-			if (signal) {
-				signal.addEventListener("abort", onAbort, { once: true });
-			}
-
-			// Perform the read operation
-			(async () => {
-				try {
-					// Check if file exists
-					await access(absolutePath, constants.R_OK);
-
-					// Check if aborted before reading
-					if (aborted) {
-						return;
-					}
-
-					// Read the file based on type
-					let content: (TextContent | ImageContent)[];
-
-					if (mimeType) {
-						// Read as image (binary)
-						const buffer = await readFile(absolutePath);
-						const base64 = buffer.toString("base64");
-
-						content = [
-							{ type: "text", text: `Read image file [${mimeType}]` },
-							{ type: "image", data: base64, mimeType },
-						];
-					} else {
-						// Read as text
-						const textContent = await readFile(absolutePath, "utf-8");
-						const lines = textContent.split("\n");
-
-						// Apply offset and limit (matching Claude Code Read tool behavior)
-						const startLine = offset ? Math.max(0, offset - 1) : 0; // 1-indexed to 0-indexed
-						const maxLines = limit || MAX_LINES;
-						const endLine = Math.min(startLine + maxLines, lines.length);
-
-						// Check if offset is out of bounds
-						if (startLine >= lines.length) {
-							throw new Error(`Offset ${offset} is beyond end of file (${lines.length} lines total)`);
-						}
-
-						// Get the relevant lines
-						const selectedLines = lines.slice(startLine, endLine);
-
-						// Truncate long lines and track which were truncated
-						let hadTruncatedLines = false;
-						const formattedLines = selectedLines.map((line) => {
-							if (line.length > MAX_LINE_LENGTH) {
-								hadTruncatedLines = true;
-								return line.slice(0, MAX_LINE_LENGTH);
-							}
-							return line;
-						});
-
-						let outputText = formattedLines.join("\n");
-
-						// Add notices
-						const notices: string[] = [];
-
-						if (hadTruncatedLines) {
-							notices.push(`Some lines were truncated to ${MAX_LINE_LENGTH} characters for display`);
-						}
-
-						if (endLine < lines.length) {
-							const remaining = lines.length - endLine;
-							notices.push(`${remaining} more lines not shown. Use offset=${endLine + 1} to continue reading`);
-						}
-
-						if (notices.length > 0) {
-							outputText += `\n\n... (${notices.join(". ")})`;
-						}
-
-						content = [{ type: "text", text: outputText }];
-					}
-
-					// Check if aborted after reading
-					if (aborted) {
-						return;
-					}
-
-					// Clean up abort handler
-					if (signal) {
-						signal.removeEventListener("abort", onAbort);
-					}
-
-					resolve({ content, details: undefined });
-				} catch (error: any) {
-					// Clean up abort handler
-					if (signal) {
-						signal.removeEventListener("abort", onAbort);
-					}
-
-					if (!aborted) {
-						reject(error);
-					}
+		return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
+			(resolve, reject) => {
+				// Check if already aborted
+				if (signal?.aborted) {
+					reject(new Error("Operation aborted"));
+					return;
 				}
-			})();
-		});
+
+				let aborted = false;
+
+				// Set up abort handler
+				const onAbort = () => {
+					aborted = true;
+					reject(new Error("Operation aborted"));
+				};
+
+				if (signal) {
+					signal.addEventListener("abort", onAbort, { once: true });
+				}
+
+				// Perform the read operation
+				(async () => {
+					try {
+						// Check if file exists
+						await access(absolutePath, constants.R_OK);
+
+						// Check if aborted before reading
+						if (aborted) {
+							return;
+						}
+
+						// Read the file based on type
+						let content: (TextContent | ImageContent)[];
+						let details: ReadToolDetails | undefined;
+
+						if (mimeType) {
+							// Read as image (binary)
+							const buffer = await readFile(absolutePath);
+							const base64 = buffer.toString("base64");
+
+							content = [
+								{ type: "text", text: `Read image file [${mimeType}]` },
+								{ type: "image", data: base64, mimeType },
+							];
+						} else {
+							// Read as text
+							const textContent = await readFile(absolutePath, "utf-8");
+							const lines = textContent.split("\n");
+
+							// Apply offset if specified (1-indexed to 0-indexed)
+							const startLine = offset ? Math.max(0, offset - 1) : 0;
+
+							// Check if offset is out of bounds
+							if (startLine >= lines.length) {
+								throw new Error(`Offset ${offset} is beyond end of file (${lines.length} lines total)`);
+							}
+
+							// If limit is specified by user, use it; otherwise we'll let truncateHead decide
+							let selectedContent: string;
+							if (limit !== undefined) {
+								const endLine = Math.min(startLine + limit, lines.length);
+								selectedContent = lines.slice(startLine, endLine).join("\n");
+							} else {
+								selectedContent = lines.slice(startLine).join("\n");
+							}
+
+							// Apply truncation (respects both line and byte limits)
+							const truncation = truncateHead(selectedContent);
+
+							let outputText = truncation.content;
+
+							// Add continuation hint if there's more content after our selection
+							// (only relevant when user specified limit and there's more in the file)
+							if (limit !== undefined && startLine + limit < lines.length && !truncation.truncated) {
+								const remaining = lines.length - (startLine + limit);
+								outputText += `\n\n[${remaining} more lines in file. Use offset=${startLine + limit + 1} to continue]`;
+							}
+
+							content = [{ type: "text", text: outputText }];
+
+							// Include truncation info in details if truncation occurred
+							if (truncation.truncated) {
+								details = { truncation };
+							}
+						}
+
+						// Check if aborted after reading
+						if (aborted) {
+							return;
+						}
+
+						// Clean up abort handler
+						if (signal) {
+							signal.removeEventListener("abort", onAbort);
+						}
+
+						resolve({ content, details });
+					} catch (error: any) {
+						// Clean up abort handler
+						if (signal) {
+							signal.removeEventListener("abort", onAbort);
+						}
+
+						if (!aborted) {
+							reject(error);
+						}
+					}
+				})();
+			},
+		);
 	},
 };

@@ -6,6 +6,7 @@ import { globSync } from "glob";
 import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../tools-manager.js";
+import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -30,11 +31,15 @@ const findSchema = Type.Object({
 
 const DEFAULT_LIMIT = 1000;
 
+interface FindToolDetails {
+	truncation?: TruncationResult;
+	resultLimitReached?: number;
+}
+
 export const findTool: AgentTool<typeof findSchema> = {
 	name: "find",
 	label: "find",
-	description:
-		"Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore.",
+	description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 	parameters: findSchema,
 	execute: async (
 		_toolCallId: string,
@@ -112,7 +117,7 @@ export const findTool: AgentTool<typeof findSchema> = {
 						return;
 					}
 
-					let output = result.stdout?.trim() || "";
+					const output = result.stdout?.trim() || "";
 
 					if (result.status !== 0) {
 						const errorMsg = result.stderr?.trim() || `fd exited with code ${result.status}`;
@@ -124,41 +129,56 @@ export const findTool: AgentTool<typeof findSchema> = {
 					}
 
 					if (!output) {
-						output = "No files found matching pattern";
-					} else {
-						const lines = output.split("\n");
-						const relativized: string[] = [];
-
-						for (const rawLine of lines) {
-							const line = rawLine.replace(/\r$/, "").trim();
-							if (!line) {
-								continue;
-							}
-
-							const hadTrailingSlash = line.endsWith("/") || line.endsWith("\\");
-							let relativePath = line;
-							if (line.startsWith(searchPath)) {
-								relativePath = line.slice(searchPath.length + 1); // +1 for the /
-							} else {
-								relativePath = path.relative(searchPath, line);
-							}
-
-							if (hadTrailingSlash && !relativePath.endsWith("/")) {
-								relativePath += "/";
-							}
-
-							relativized.push(relativePath);
-						}
-
-						output = relativized.join("\n");
-
-						const count = relativized.length;
-						if (count >= effectiveLimit) {
-							output += `\n\n(truncated, ${effectiveLimit} results shown)`;
-						}
+						resolve({
+							content: [{ type: "text", text: "No files found matching pattern" }],
+							details: undefined,
+						});
+						return;
 					}
 
-					resolve({ content: [{ type: "text", text: output }], details: undefined });
+					const lines = output.split("\n");
+					const relativized: string[] = [];
+
+					for (const rawLine of lines) {
+						const line = rawLine.replace(/\r$/, "").trim();
+						if (!line) {
+							continue;
+						}
+
+						const hadTrailingSlash = line.endsWith("/") || line.endsWith("\\");
+						let relativePath = line;
+						if (line.startsWith(searchPath)) {
+							relativePath = line.slice(searchPath.length + 1); // +1 for the /
+						} else {
+							relativePath = path.relative(searchPath, line);
+						}
+
+						if (hadTrailingSlash && !relativePath.endsWith("/")) {
+							relativePath += "/";
+						}
+
+						relativized.push(relativePath);
+					}
+
+					const rawOutput = relativized.join("\n");
+					let details: FindToolDetails | undefined;
+
+					// Check if we hit the result limit
+					const hitResultLimit = relativized.length >= effectiveLimit;
+
+					// Apply byte truncation
+					const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+					const resultOutput = truncation.content;
+
+					// Include truncation info in details (result limit or byte limit)
+					if (hitResultLimit || truncation.truncated) {
+						details = {
+							truncation: truncation.truncated ? truncation : undefined,
+							resultLimitReached: hitResultLimit ? effectiveLimit : undefined,
+						};
+					}
+
+					resolve({ content: [{ type: "text", text: resultOutput }], details });
 				} catch (e: any) {
 					signal?.removeEventListener("abort", onAbort);
 					reject(e);

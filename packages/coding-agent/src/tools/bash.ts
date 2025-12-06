@@ -1,8 +1,12 @@
+import { randomBytes } from "node:crypto";
+import { createWriteStream, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { spawn, spawnSync } from "child_process";
-import { existsSync } from "fs";
 import { SettingsManager } from "../settings-manager.js";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
 
@@ -118,31 +122,52 @@ function killProcessTree(pid: number): void {
 	}
 }
 
+/**
+ * Generate a unique temp file path for bash output
+ */
+function getTempFilePath(): string {
+	const id = randomBytes(8).toString("hex");
+	return join(tmpdir(), `pi-bash-${id}.log`);
+}
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
 });
 
+interface BashToolDetails {
+	truncation?: TruncationResult;
+	fullOutputPath?: string;
+}
+
 export const bashTool: AgentTool<typeof bashSchema> = {
 	name: "bash",
 	label: "bash",
-	description:
-		"Execute a bash command in the current working directory. Returns stdout and stderr. Optionally provide a timeout in seconds.",
+	description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 	parameters: bashSchema,
 	execute: async (
 		_toolCallId: string,
 		{ command, timeout }: { command: string; timeout?: number },
 		signal?: AbortSignal,
 	) => {
-		return new Promise((resolve, _reject) => {
+		return new Promise((resolve, reject) => {
 			const { shell, args } = getShellConfig();
 			const child = spawn(shell, [...args, command], {
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
-			let stdout = "";
-			let stderr = "";
+			// We'll stream to a temp file if output gets large
+			let tempFilePath: string | undefined;
+			let tempFileStream: ReturnType<typeof createWriteStream> | undefined;
+			let totalBytes = 0;
+
+			// Keep a rolling buffer of the last chunk for tail truncation
+			const chunks: Buffer[] = [];
+			let chunksBytes = 0;
+			// Keep more than we need so we have enough for truncation
+			const maxChunksBytes = DEFAULT_MAX_BYTES * 2;
+
 			let timedOut = false;
 
 			// Set timeout if provided
@@ -154,26 +179,41 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 				}, timeout * 1000);
 			}
 
-			// Collect stdout
-			if (child.stdout) {
-				child.stdout.on("data", (data) => {
-					stdout += data.toString();
-					// Limit buffer size
-					if (stdout.length > 10 * 1024 * 1024) {
-						stdout = stdout.slice(0, 10 * 1024 * 1024);
-					}
-				});
-			}
+			const handleData = (data: Buffer) => {
+				totalBytes += data.length;
 
-			// Collect stderr
-			if (child.stderr) {
-				child.stderr.on("data", (data) => {
-					stderr += data.toString();
-					// Limit buffer size
-					if (stderr.length > 10 * 1024 * 1024) {
-						stderr = stderr.slice(0, 10 * 1024 * 1024);
+				// Start writing to temp file once we exceed the threshold
+				if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+					tempFilePath = getTempFilePath();
+					tempFileStream = createWriteStream(tempFilePath);
+					// Write all buffered chunks to the file
+					for (const chunk of chunks) {
+						tempFileStream.write(chunk);
 					}
-				});
+				}
+
+				// Write to temp file if we have one
+				if (tempFileStream) {
+					tempFileStream.write(data);
+				}
+
+				// Keep rolling buffer of recent data
+				chunks.push(data);
+				chunksBytes += data.length;
+
+				// Trim old chunks if buffer is too large
+				while (chunksBytes > maxChunksBytes && chunks.length > 1) {
+					const removed = chunks.shift()!;
+					chunksBytes -= removed.length;
+				}
+			};
+
+			// Collect stdout and stderr together
+			if (child.stdout) {
+				child.stdout.on("data", handleData);
+			}
+			if (child.stderr) {
+				child.stderr.on("data", handleData);
 			}
 
 			// Handle process exit
@@ -185,44 +225,49 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 					signal.removeEventListener("abort", onAbort);
 				}
 
+				// Close temp file stream
+				if (tempFileStream) {
+					tempFileStream.end();
+				}
+
+				// Combine all buffered chunks
+				const fullBuffer = Buffer.concat(chunks);
+				const fullOutput = fullBuffer.toString("utf-8");
+
 				if (signal?.aborted) {
-					let output = "";
-					if (stdout) output += stdout;
-					if (stderr) {
-						if (output) output += "\n";
-						output += stderr;
-					}
+					let output = fullOutput;
 					if (output) output += "\n\n";
 					output += "Command aborted";
-					_reject(new Error(output));
+					reject(new Error(output));
 					return;
 				}
 
 				if (timedOut) {
-					let output = "";
-					if (stdout) output += stdout;
-					if (stderr) {
-						if (output) output += "\n";
-						output += stderr;
-					}
+					let output = fullOutput;
 					if (output) output += "\n\n";
 					output += `Command timed out after ${timeout} seconds`;
-					_reject(new Error(output));
+					reject(new Error(output));
 					return;
 				}
 
-				let output = "";
-				if (stdout) output += stdout;
-				if (stderr) {
-					if (output) output += "\n";
-					output += stderr;
+				// Apply tail truncation
+				const truncation = truncateTail(fullOutput);
+				let outputText = truncation.content || "(no output)";
+
+				// Build details with truncation info
+				let details: BashToolDetails | undefined;
+				if (truncation.truncated) {
+					details = {
+						truncation,
+						fullOutputPath: tempFilePath,
+					};
 				}
 
 				if (code !== 0 && code !== null) {
-					if (output) output += "\n\n";
-					_reject(new Error(`${output}Command exited with code ${code}`));
+					outputText += `\n\nCommand exited with code ${code}`;
+					reject(new Error(outputText));
 				} else {
-					resolve({ content: [{ type: "text", text: output || "(no output)" }], details: undefined });
+					resolve({ content: [{ type: "text", text: outputText }], details });
 				}
 			});
 

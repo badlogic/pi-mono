@@ -6,6 +6,7 @@ import { readFileSync, type Stats, statSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../tools-manager.js";
+import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -36,11 +37,15 @@ const grepSchema = Type.Object({
 
 const DEFAULT_LIMIT = 100;
 
+interface GrepToolDetails {
+	truncation?: TruncationResult;
+	matchLimitReached?: number;
+}
+
 export const grepTool: AgentTool<typeof grepSchema> = {
 	name: "grep",
 	label: "grep",
-	description:
-		"Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore.",
+	description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 	parameters: grepSchema,
 	execute: async (
 		_toolCallId: string,
@@ -251,12 +256,22 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 							return;
 						}
 
-						let output = outputLines.join("\n");
-						if (truncated) {
-							output += `\n\n(truncated, limit of ${effectiveLimit} matches reached)`;
+						// Apply byte truncation
+						const rawOutput = outputLines.join("\n");
+						const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+
+						const output = truncation.content;
+						let details: GrepToolDetails | undefined;
+
+						// Include truncation info in details (match limit or byte limit)
+						if (truncated || truncation.truncated) {
+							details = {
+								truncation: truncation.truncated ? truncation : undefined,
+								matchLimitReached: truncated ? effectiveLimit : undefined,
+							};
 						}
 
-						settle(() => resolve({ content: [{ type: "text", text: output }], details: undefined }));
+						settle(() => resolve({ content: [{ type: "text", text: output }], details }));
 					});
 				} catch (err) {
 					settle(() => reject(err as Error));
