@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.13.2] - 2025-12-07
+
 ### Changed
 
 - **Tool output truncation**: All tools now enforce consistent truncation limits with actionable notices for the LLM. ([#134](https://github.com/badlogic/pi-mono/issues/134))
