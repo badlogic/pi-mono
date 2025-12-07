@@ -6,6 +6,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
+import { isGitRepo } from "./checkpointer.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import {
 	APP_NAME,
@@ -724,6 +725,8 @@ async function runInteractiveMode(
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
 ): Promise<void> {
+	const gitAvailable = isGitRepo(process.cwd());
+
 	const renderer = new TuiRenderer(
 		agent,
 		sessionManager,
@@ -732,6 +735,7 @@ async function runInteractiveMode(
 		changelogMarkdown,
 		scopedModels,
 		fdPath,
+		gitAvailable,
 	);
 
 	// Initialize TUI (subscribes to agent events internally)

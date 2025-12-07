@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
+import { createCheckpoint, listCheckpoints, pruneCheckpoints, restoreCheckpoint } from "../checkpointer.js";
 import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
@@ -25,16 +26,20 @@ import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
 import {
+	type CheckpointEntry,
 	getLatestCompactionEntry,
 	loadSessionFromEntries,
+	type SessionEntry,
 	type SessionManager,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
+	uuidv4,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
+import { type BranchAction, BranchActionSelectorComponent } from "./branch-action-selector.js";
 import { CompactionComponent } from "./compaction.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -96,6 +101,9 @@ export class TuiRenderer {
 	// User message selector (for branching)
 	private userMessageSelector: UserMessageSelectorComponent | null = null;
 
+	// Branch action selector (for choosing restore options)
+	private branchActionSelector: BranchActionSelectorComponent | null = null;
+
 	// Session selector (for resume)
 	private sessionSelector: SessionSelectorComponent | null = null;
 
@@ -120,6 +128,10 @@ export class TuiRenderer {
 	// File-based slash commands
 	private fileCommands: FileSlashCommand[] = [];
 
+	// Git checkpointing
+	private gitAvailable = false;
+	private gitCheckpointFailed = false; // Disable checkpointing after first failure
+
 	constructor(
 		agent: Agent,
 		sessionManager: SessionManager,
@@ -128,6 +140,7 @@ export class TuiRenderer {
 		changelogMarkdown: string | null = null,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
+		gitAvailable = false,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -135,6 +148,7 @@ export class TuiRenderer {
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
 		this.scopedModels = scopedModels;
+		this.gitAvailable = gitAvailable;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -651,6 +665,14 @@ export class TuiRenderer {
 				this.statusContainer.addChild(this.loadingAnimation);
 				this.ui.requestRender();
 				break;
+
+			case "turn_start": {
+				// Create checkpoint at start of each assistant turn (synchronous)
+				if (this.gitAvailable) {
+					this.createTurnCheckpoint();
+				}
+				break;
+			}
 
 			case "message_start":
 				if (event.message.role === "user") {
@@ -1425,7 +1447,21 @@ export class TuiRenderer {
 		// Read from session file directly to see ALL historical user messages
 		// (including those before compaction events)
 		const entries = this.sessionManager.loadEntries();
-		const userMessages: Array<{ index: number; text: string }> = [];
+		const userMessages: Array<{
+			index: number;
+			text: string;
+			checkpointId?: string;
+			timestamp?: string;
+		}> = [];
+
+		// Collect all checkpoints from session
+		const checkpoints = entries.filter((e): e is CheckpointEntry => e.type === "checkpoint");
+
+		// Get all existing checkpoint IDs in one git call (instead of N calls)
+		const existingCheckpointIds = this.gitAvailable ? new Set(listCheckpoints(process.cwd())) : new Set<string>();
+
+		// Filter to only valid (still existing in git) checkpoints
+		const validCheckpoints = checkpoints.filter((cp) => existingCheckpointIds.has(cp.checkpointId));
 
 		const getUserMessageText = (content: string | Array<{ type: string; text?: string }>): string => {
 			if (typeof content === "string") return content;
@@ -1444,9 +1480,25 @@ export class TuiRenderer {
 			if (entry.message.role !== "user") continue;
 
 			const textContent = getUserMessageText(entry.message.content);
-			if (textContent) {
-				userMessages.push({ index: i, text: textContent });
+			if (!textContent) continue;
+
+			// Find checkpoint with timestamp closest to but <= message timestamp
+			// This is the checkpoint created just before this message was processed
+			let bestCheckpoint: CheckpointEntry | undefined;
+			for (const cp of validCheckpoints) {
+				if (cp.timestamp <= entry.timestamp) {
+					if (!bestCheckpoint || cp.timestamp > bestCheckpoint.timestamp) {
+						bestCheckpoint = cp;
+					}
+				}
 			}
+
+			userMessages.push({
+				index: i,
+				text: textContent,
+				checkpointId: bestCheckpoint?.checkpointId,
+				timestamp: entry.timestamp,
+			});
 		}
 
 		// Don't show selector if there are no messages or only one message
@@ -1457,45 +1509,25 @@ export class TuiRenderer {
 			return;
 		}
 
-		// Create user message selector
+		// Create user message selector with modified onSelect callback
 		this.userMessageSelector = new UserMessageSelectorComponent(
 			userMessages,
 			(entryIndex) => {
-				// Get the selected user message text to put in the editor
-				const selectedEntry = entries[entryIndex];
-				if (selectedEntry.type !== "message") return;
-				if (selectedEntry.message.role !== "user") return;
+				const selected = userMessages.find((m) => m.index === entryIndex);
+				if (!selected) return;
 
-				const selectedText = getUserMessageText(selectedEntry.message.content);
-
-				// Create a branched session by copying entries up to (but not including) the selected entry
-				const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
-
-				// Set the new session file as active
-				this.sessionManager.setSessionFile(newSessionFile);
-
-				// Reload the session
-				const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
-				this.agent.replaceMessages(loaded.messages);
-
-				// Clear and re-render the chat
-				this.chatContainer.clear();
-				this.isFirstUserMessage = true;
-				this.renderInitialMessages(this.agent.state);
-
-				// Show confirmation message
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
-
-				// Put the selected message in the editor
-				this.editor.setText(selectedText);
-
-				// Hide selector and show editor again
-				this.hideUserMessageSelector();
-				this.ui.requestRender();
+				// If checkpoint exists, show action menu with code restore options
+				// Note: We already validated against existingCheckpointIds when building the list,
+				// so no need to re-check here (the selector is shown immediately after list is built)
+				if (selected.checkpointId) {
+					this.showBranchActionSelector(selected, entries, entryIndex);
+				} else {
+					// No valid checkpoint - just do conversation branch (existing behavior)
+					this.hideUserMessageSelector();
+					this.executeBranch(entries, entryIndex, "conversation");
+				}
 			},
 			() => {
-				// Just hide the selector
 				this.hideUserMessageSelector();
 				this.ui.requestRender();
 			},
@@ -1514,6 +1546,98 @@ export class TuiRenderer {
 		this.editorContainer.addChild(this.editor);
 		this.userMessageSelector = null;
 		this.ui.setFocus(this.editor);
+	}
+
+	private showBranchActionSelector(
+		selected: { index: number; text: string; checkpointId?: string },
+		entries: SessionEntry[],
+		entryIndex: number,
+	): void {
+		this.hideUserMessageSelector();
+
+		this.branchActionSelector = new BranchActionSelectorComponent(
+			(action) => {
+				this.hideBranchActionSelector();
+				this.executeBranch(entries, entryIndex, action, selected.checkpointId);
+			},
+			() => {
+				this.hideBranchActionSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.branchActionSelector);
+		this.ui.setFocus(this.branchActionSelector.getSelectList());
+		this.ui.requestRender();
+	}
+
+	private hideBranchActionSelector(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.branchActionSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private executeBranch(
+		entries: SessionEntry[],
+		entryIndex: number,
+		action: BranchAction,
+		checkpointId?: string,
+	): void {
+		const selectedEntry = entries[entryIndex];
+		if (selectedEntry.type !== "message" || selectedEntry.message.role !== "user") return;
+
+		// Extract text from user message content (same logic as in showUserMessageSelector)
+		const content = selectedEntry.message.content;
+		const selectedText =
+			typeof content === "string"
+				? content
+				: content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("");
+
+		try {
+			// Restore code if requested
+			if ((action === "code" || action === "both") && checkpointId) {
+				restoreCheckpoint(process.cwd(), checkpointId); // Sync, blocking is fine here
+			}
+
+			// Branch conversation if requested
+			if (action === "conversation" || action === "both") {
+				const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
+				this.sessionManager.setSessionFile(newSessionFile);
+
+				const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+				this.agent.replaceMessages(loaded.messages);
+
+				this.chatContainer.clear();
+				this.isFirstUserMessage = true;
+				this.renderInitialMessages(this.agent.state);
+			}
+
+			// Show result message
+			const statusMsg =
+				action === "code"
+					? "Files restored to checkpoint"
+					: action === "both"
+						? "Files and conversation restored"
+						: "Branched to new session";
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("dim", statusMsg), 1, 0));
+
+			// Put selected message in editor for editing (only for conversation branch)
+			// For "code only", leave editor empty - user is continuing current conversation
+			if (action !== "code") {
+				this.editor.setText(selectedText);
+			}
+		} catch (error) {
+			this.showError(`Rewind failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		this.ui.requestRender();
 	}
 
 	private showSessionSelector(): void {
@@ -1957,6 +2081,37 @@ export class TuiRenderer {
 	}
 
 	private compactionAbortController: AbortController | null = null;
+
+	/**
+	 * Create a git checkpoint at the start of each assistant turn.
+	 * Called synchronously from turn_start event handler.
+	 */
+	private createTurnCheckpoint(): void {
+		// Skip if checkpointing previously failed (e.g., .git deleted mid-session)
+		if (this.gitCheckpointFailed) return;
+
+		try {
+			const checkpointId = uuidv4();
+			const data = createCheckpoint(process.cwd(), checkpointId);
+
+			// Save to session using new saveCheckpoint method
+			const entry: CheckpointEntry = {
+				type: "checkpoint",
+				timestamp: data.timestamp,
+				checkpointId: data.id,
+			};
+			this.sessionManager.saveCheckpoint(entry);
+
+			// Prune old checkpoints periodically (~10% chance each turn)
+			if (Math.random() < 0.1) {
+				pruneCheckpoints(process.cwd());
+			}
+		} catch {
+			// Silent failure - checkpointing is best-effort
+			// Disable future attempts after first failure (e.g., .git deleted)
+			this.gitCheckpointFailed = true;
+		}
+	}
 
 	/**
 	 * Shared logic to execute context compaction.

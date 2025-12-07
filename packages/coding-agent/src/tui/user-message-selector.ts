@@ -6,6 +6,7 @@ interface UserMessageItem {
 	index: number; // Index in the full messages array
 	text: string; // The message text
 	timestamp?: string; // Optional timestamp if available
+	checkpointId?: string; // Associated checkpoint (if any)
 }
 
 /**
@@ -60,9 +61,15 @@ class UserMessageList implements Component {
 
 			lines.push(messageLine);
 
-			// Second line: metadata (position in history)
+			// Second line: metadata with checkpoint/timestamp info
 			const position = i + 1;
-			const metadata = `  Message ${position} of ${this.messages.length}`;
+			let metadata = `  Message ${position} of ${this.messages.length}`;
+			if (message.checkpointId) {
+				metadata += " • ↩ rewind"; // Indicator that code rewind is available
+			}
+			if (message.timestamp) {
+				metadata += ` • ${this.formatRelativeTime(message.timestamp)}`;
+			}
 			const metadataLine = theme.fg("muted", metadata);
 			lines.push(metadataLine);
 			lines.push(""); // Blank line between messages
@@ -105,6 +112,16 @@ class UserMessageList implements Component {
 				this.onCancel();
 			}
 		}
+	}
+
+	private formatRelativeTime(timestamp: string): string {
+		const diff = Date.now() - new Date(timestamp).getTime();
+		const minutes = Math.floor(diff / 60000);
+		if (minutes < 1) return "just now";
+		if (minutes < 60) return `${minutes}m ago`;
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours}h ago`;
+		return `${Math.floor(hours / 24)}d ago`;
 	}
 }
 

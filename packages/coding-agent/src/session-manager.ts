@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { join, resolve } from "path";
 import { getAgentDir } from "./config.js";
 
-function uuidv4(): string {
+export function uuidv4(): string {
 	const bytes = randomBytes(16);
 	bytes[6] = (bytes[6] & 0x0f) | 0x40;
 	bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -54,13 +54,22 @@ export interface CompactionEntry {
 	tokensBefore: number;
 }
 
+export interface CheckpointEntry {
+	type: "checkpoint";
+	timestamp: string; // ISO timestamp - used for matching with messages
+	checkpointId: string; // UUID, matches git ref
+	// Note: SHA values are stored in git commit message, not duplicated here
+	// Note: No turnIndex - we use timestamp-based matching instead (more robust)
+}
+
 /** Union of all session entry types */
 export type SessionEntry =
 	| SessionHeader
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
-	| CompactionEntry;
+	| CompactionEntry
+	| CheckpointEntry;
 
 // ============================================================================
 // Session loading with compaction support
@@ -354,6 +363,16 @@ export class SessionManager {
 	saveCompaction(entry: CompactionEntry): void {
 		if (!this.enabled) return;
 		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+	}
+
+	saveCheckpoint(entry: CheckpointEntry): void {
+		if (!this.enabled) return;
+		// Checkpoints are saved immediately (not queued) since they occur during active sessions
+		if (this.sessionInitialized) {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		}
+		// If session not initialized yet, skip - checkpoint will be lost but that's acceptable
+		// since early checkpoints (before first exchange) have minimal value
 	}
 
 	/**
