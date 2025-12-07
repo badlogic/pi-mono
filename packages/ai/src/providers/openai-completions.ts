@@ -285,8 +285,11 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream_options: { include_usage: true },
 	};
 
-	// Cerebras/xAI/Mistral dont like the "store" field
+	// Cerebras/xAI/Mistral and LiteLLM proxies don't like the "store" field.
+	// Use DISABLE_OPENAI_EXTRA_PARAMS=1 to skip store for custom proxies.
+	const disableExtraParams = process.env.DISABLE_OPENAI_EXTRA_PARAMS === "1";
 	if (
+		!disableExtraParams &&
 		!model.baseUrl.includes("cerebras.ai") &&
 		!model.baseUrl.includes("api.x.ai") &&
 		!model.baseUrl.includes("mistral.ai") &&
