@@ -221,6 +221,7 @@ export class Agent {
 			tools: this._state.tools,
 			model,
 			reasoning,
+			validateToolCallsAtProvider: false,
 			getQueuedMessages: async <T>() => {
 				// Return queued messages based on queue mode
 				if (this.queueMode === "one-at-a-time") {

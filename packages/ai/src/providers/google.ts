@@ -43,6 +43,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 	options?: GoogleOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
+	const shouldValidateToolCalls = options?.validateToolCallsAtProvider !== false;
 
 	(async () => {
 		const output: AssistantMessage = {
@@ -167,7 +168,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 							};
 
 							// Validate tool arguments if tool definition is available
-							if (context.tools) {
+							if (shouldValidateToolCalls && context.tools) {
 								const tool = context.tools.find((t) => t.name === toolCall.name);
 								if (tool) {
 									toolCall.arguments = validateToolArguments(tool, toolCall);

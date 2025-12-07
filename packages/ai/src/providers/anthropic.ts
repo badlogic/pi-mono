@@ -92,6 +92,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 	options?: AnthropicOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
+	const shouldValidateToolCalls = options?.validateToolCallsAtProvider !== false;
 
 	(async () => {
 		const output: AssistantMessage = {
@@ -233,7 +234,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 							block.arguments = parseStreamingJson(block.partialJson);
 
 							// Validate tool arguments if tool definition is available
-							if (context.tools) {
+							if (shouldValidateToolCalls && context.tools) {
 								const tool = context.tools.find((t) => t.name === block.name);
 								if (tool) {
 									block.arguments = validateToolArguments(tool, block);

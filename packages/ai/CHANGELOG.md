@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `validateToolCallsAtProvider` option to streaming and agent APIs to optionally skip provider-level tool-call validation (default on), allowing agent loops to surface schema errors as toolResult messages and retry.
+
 ## [0.13.0] - 2025-12-06
 
 ### Breaking Changes

@@ -77,6 +77,7 @@ function streamSimpleProxy(
 						temperature: options.temperature,
 						maxTokens: options.maxTokens,
 						reasoning: options.reasoning,
+						validateToolCallsAtProvider: options.validateToolCallsAtProvider,
 						// Don't send apiKey or signal - those are added server-side
 					},
 				}),
@@ -365,6 +366,7 @@ export class AppTransport implements AgentTransport {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
 			getQueuedMessages: cfg.getQueuedMessages,
+			validateToolCallsAtProvider: cfg.validateToolCallsAtProvider ?? false,
 		};
 
 		// Yield events from the upstream agentLoop iterator

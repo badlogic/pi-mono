@@ -270,6 +270,20 @@ for await (const event of s) {
 - Full validation only occurs at `toolcall_end` when arguments are complete
 - The Google provider does not support function call streaming. Instead, you will receive a single `toolcall_delta` event with the full arguments.
 
+### Provider tool-call validation
+
+By default, providers validate streamed tool calls against your tool schema and abort the stream on validation errors. Set `validateToolCallsAtProvider: false` on `stream`, `streamSimple`, `complete`, `completeSimple`, or `AgentLoopConfig` to skip provider-level validation and let downstream code (for example, `agentLoop` via `executeToolCalls` → `validateToolArguments`) surface schema errors as `toolResult` messages. This enables the model to retry after receiving a validation error.
+
+```typescript
+await streamSimple(model, context, {
+  apiKey: 'your-key',
+  validateToolCallsAtProvider: false
+});
+```
+
+- `true` (default): Provider validates tool calls and emits an error if arguments do not match the schema
+- `false`: Provider emits tool calls even when arguments are invalid; callers must validate and handle errors themselves
+
 ### Complete Event Reference
 
 All streaming events emitted during assistant message generation:

@@ -120,6 +120,7 @@ function mapOptionsForApi<TApi extends Api>(
 		maxTokens: options?.maxTokens || Math.min(model.maxTokens, 32000),
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
+		validateToolCallsAtProvider: options?.validateToolCallsAtProvider ?? true,
 	};
 
 	switch (model.api) {

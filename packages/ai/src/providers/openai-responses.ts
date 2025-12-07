@@ -45,6 +45,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	options?: OpenAIResponsesOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
+	const shouldValidateToolCalls = options?.validateToolCallsAtProvider !== false;
 
 	// Start async processing
 	(async () => {
@@ -240,7 +241,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						};
 
 						// Validate tool arguments if tool definition is available
-						if (context.tools) {
+						if (shouldValidateToolCalls && context.tools) {
 							const tool = context.tools.find((t) => t.name === toolCall.name);
 							if (tool) {
 								toolCall.arguments = validateToolArguments(tool, toolCall);

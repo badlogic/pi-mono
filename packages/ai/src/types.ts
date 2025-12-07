@@ -37,6 +37,12 @@ export interface StreamOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/**
+	 * Controls whether providers validate streamed tool calls against the tool schema.
+	 * Defaults to true. Set to false to skip provider-level validation and allow
+	 * downstream consumers (e.g., agentLoop) to handle validation failures.
+	 */
+	validateToolCallsAtProvider?: boolean;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
