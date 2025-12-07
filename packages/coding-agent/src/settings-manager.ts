@@ -17,6 +17,7 @@ export interface Settings {
 	theme?: string;
 	compaction?: CompactionSettings;
 	hideThinkingBlock?: boolean;
+	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 }
 
 export class SettingsManager {
@@ -151,6 +152,15 @@ export class SettingsManager {
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.settings.hideThinkingBlock = hide;
+		this.save();
+	}
+
+	getShellPath(): string | undefined {
+		return this.settings.shellPath;
+	}
+
+	setShellPath(path: string | undefined): void {
+		this.settings.shellPath = path;
 		this.save();
 	}
 }

@@ -3,6 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import nodePath from "path";
+import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -24,11 +25,15 @@ const lsSchema = Type.Object({
 
 const DEFAULT_LIMIT = 500;
 
+interface LsToolDetails {
+	truncation?: TruncationResult;
+	entryLimitReached?: number;
+}
+
 export const lsTool: AgentTool<typeof lsSchema> = {
 	name: "ls",
 	label: "ls",
-	description:
-		"List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles.",
+	description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 	parameters: lsSchema,
 	execute: async (_toolCallId: string, { path, limit }: { path?: string; limit?: number }, signal?: AbortSignal) => {
 		return new Promise((resolve, reject) => {
@@ -71,11 +76,11 @@ export const lsTool: AgentTool<typeof lsSchema> = {
 
 				// Format entries with directory indicators
 				const results: string[] = [];
-				let truncated = false;
+				let entryLimitReached = false;
 
 				for (const entry of entries) {
 					if (results.length >= effectiveLimit) {
-						truncated = true;
+						entryLimitReached = true;
 						break;
 					}
 
@@ -97,16 +102,39 @@ export const lsTool: AgentTool<typeof lsSchema> = {
 
 				signal?.removeEventListener("abort", onAbort);
 
-				let output = results.join("\n");
-				if (truncated) {
-					const remaining = entries.length - effectiveLimit;
-					output += `\n\n(truncated, ${remaining} more entries)`;
-				}
 				if (results.length === 0) {
-					output = "(empty directory)";
+					resolve({ content: [{ type: "text", text: "(empty directory)" }], details: undefined });
+					return;
 				}
 
-				resolve({ content: [{ type: "text", text: output }], details: undefined });
+				// Apply byte truncation (no line limit since we already have entry limit)
+				const rawOutput = results.join("\n");
+				const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+
+				let output = truncation.content;
+				const details: LsToolDetails = {};
+
+				// Build notices
+				const notices: string[] = [];
+
+				if (entryLimitReached) {
+					notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
+					details.entryLimitReached = effectiveLimit;
+				}
+
+				if (truncation.truncated) {
+					notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+					details.truncation = truncation;
+				}
+
+				if (notices.length > 0) {
+					output += `\n\n[${notices.join(". ")}]`;
+				}
+
+				resolve({
+					content: [{ type: "text", text: output }],
+					details: Object.keys(details).length > 0 ? details : undefined,
+				});
 			} catch (e: any) {
 				signal?.removeEventListener("abort", onAbort);
 				reject(e);

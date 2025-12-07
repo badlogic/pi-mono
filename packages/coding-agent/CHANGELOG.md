@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [0.13.2] - 2025-12-07
+
+### Changed
+
+- **Tool output truncation**: All tools now enforce consistent truncation limits with actionable notices for the LLM. ([#134](https://github.com/badlogic/pi-mono/issues/134))
+  - **Limits**: 2000 lines OR 50KB (whichever hits first), never partial lines
+  - **read**: Shows `[Showing lines X-Y of Z. Use offset=N to continue]`. If first line exceeds 50KB, suggests bash command
+  - **bash**: Tail truncation with temp file. Shows `[Showing lines X-Y of Z. Full output: /tmp/...]`
+  - **grep**: Pre-truncates match lines to 500 chars. Shows match limit and line truncation notices
+  - **find/ls**: Shows result/entry limit notices
+  - TUI displays truncation warnings in yellow at bottom of tool output (visible even when collapsed)
+
+## [0.13.1] - 2025-12-06
+
+### Added
+
+- **Flexible Windows shell configuration**: The bash tool now supports multiple shell sources beyond Git Bash. Resolution order: (1) custom `shellPath` in settings.json, (2) Git Bash in standard locations, (3) any bash.exe on PATH. This enables Cygwin, MSYS2, and other bash environments. Configure with `~/.pi/agent/settings.json`: `{"shellPath": "C:\\cygwin64\\bin\\bash.exe"}`.
+
+### Fixed
+
+- **Windows binary detection**: Fixed Bun compiled binary detection on Windows by checking for URL-encoded `%7EBUN` in addition to `$bunfs` and `~BUN` in `import.meta.url`. This ensures the binary correctly locates supporting files (package.json, themes, etc.) next to the executable.
+
+## [0.12.15] - 2025-12-06
+
+### Fixed
+
+- **Editor crash with emojis/CJK characters**: Fixed crash when pasting or typing text containing wide characters (emojis like ✅, CJK characters) that caused line width to exceed terminal width. The editor now uses grapheme-aware text wrapping with proper visible width calculation.
+
 ## [0.12.14] - 2025-12-06
 
 ### Added

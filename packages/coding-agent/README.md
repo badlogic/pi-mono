@@ -2,11 +2,12 @@
 
 A radically simple and opinionated coding agent with multi-model support (including mid-session switching), a simple yet powerful CLI for headless coding tasks, and many creature comforts you might be used to from other coding agents.
 
-Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the "modern" Windows Terminal).
+Works on Linux, macOS, and Windows (needs a bash shell, see [Windows Shell Configuration](#windows-shell-configuration)).
 
 ## Table of Contents
 
 - [Installation](#installation)
+- [Windows Shell Configuration](#windows-shell-configuration)
 - [Quick Start](#quick-start)
 - [API Keys](#api-keys)
 - [OAuth Authentication (Optional)](#oauth-authentication-optional)
@@ -80,6 +81,29 @@ npm run build:binary
 # Binary and supporting files are in dist/
 ./dist/pi
 ```
+
+## Windows Shell Configuration
+
+On Windows, pi requires a bash shell. The following locations are checked in order:
+
+1. **Custom shell path** from `~/.pi/agent/settings.json` (if configured)
+2. **Git Bash** in standard locations (`C:\Program Files\Git\bin\bash.exe`)
+3. **bash.exe on PATH** (Cygwin, MSYS2, WSL, etc.)
+
+For most users, installing [Git for Windows](https://git-scm.com/download/win) is sufficient.
+
+### Custom Shell Path
+
+If you use Cygwin, MSYS2, or have bash in a non-standard location, add the path to your settings:
+
+```json
+// ~/.pi/agent/settings.json
+{
+  "shellPath": "C:\\cygwin64\\bin\\bash.exe"
+}
+```
+
+Alternatively, ensure your bash is on the system PATH.
 
 ## Quick Start
 
