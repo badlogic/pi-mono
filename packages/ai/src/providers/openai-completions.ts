@@ -333,6 +333,7 @@ function convertMessages(model: Model<"openai-completions">, context: Context): 
 		// Cerebras/xAi/Mistral/Chutes don't like the "developer" role
 		const useDeveloperRole =
 			model.reasoning &&
+			!model.provider.includes("ollama") &&
 			!model.baseUrl.includes("cerebras.ai") &&
 			!model.baseUrl.includes("api.x.ai") &&
 			!model.baseUrl.includes("mistral.ai") &&
