@@ -128,7 +128,23 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Truncation notice is now in the text content itself, TUI just shows it
+				// Show truncation warning at the bottom (outside collapsed area)
+				const truncation = this.result.details?.truncation;
+				const fullOutputPath = this.result.details?.fullOutputPath;
+				if (truncation?.truncated || fullOutputPath) {
+					const warnings: string[] = [];
+					if (fullOutputPath) {
+						warnings.push(`Full output: ${fullOutputPath}`);
+					}
+					if (truncation?.truncated) {
+						if (truncation.truncatedBy === "lines") {
+							warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
+						} else {
+							warnings.push(`Truncated: ${truncation.outputLines} lines shown (30KB limit)`);
+						}
+					}
+					text += "\n" + theme.fg("warning", `[${warnings.join(". ")}]`);
+				}
 			}
 		} else if (this.toolName === "read") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
@@ -158,7 +174,22 @@ export class ToolExecutionComponent extends Container {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 
-				// Truncation notice is now in the text content itself
+				// Show truncation warning at the bottom (outside collapsed area)
+				const truncation = this.result.details?.truncation;
+				if (truncation?.truncated) {
+					if (truncation.firstLineExceedsLimit) {
+						text += "\n" + theme.fg("warning", `[First line exceeds 30KB limit]`);
+					} else if (truncation.truncatedBy === "lines") {
+						text +=
+							"\n" +
+							theme.fg(
+								"warning",
+								`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines]`,
+							);
+					} else {
+						text += "\n" + theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (30KB limit)]`);
+					}
+				}
 			}
 		} else if (this.toolName === "write") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
@@ -237,7 +268,19 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Truncation notice is now in the text content itself
+				// Show truncation warning at the bottom (outside collapsed area)
+				const entryLimit = this.result.details?.entryLimitReached;
+				const truncation = this.result.details?.truncation;
+				if (entryLimit || truncation?.truncated) {
+					const warnings: string[] = [];
+					if (entryLimit) {
+						warnings.push(`${entryLimit} entries limit`);
+					}
+					if (truncation?.truncated) {
+						warnings.push("30KB limit");
+					}
+					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+				}
 			}
 		} else if (this.toolName === "find") {
 			const pattern = this.args?.pattern || "";
@@ -267,7 +310,19 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Truncation notice is now in the text content itself
+				// Show truncation warning at the bottom (outside collapsed area)
+				const resultLimit = this.result.details?.resultLimitReached;
+				const truncation = this.result.details?.truncation;
+				if (resultLimit || truncation?.truncated) {
+					const warnings: string[] = [];
+					if (resultLimit) {
+						warnings.push(`${resultLimit} results limit`);
+					}
+					if (truncation?.truncated) {
+						warnings.push("30KB limit");
+					}
+					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+				}
 			}
 		} else if (this.toolName === "grep") {
 			const pattern = this.args?.pattern || "";
@@ -301,7 +356,23 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Truncation notice is now in the text content itself
+				// Show truncation warning at the bottom (outside collapsed area)
+				const matchLimit = this.result.details?.matchLimitReached;
+				const truncation = this.result.details?.truncation;
+				const linesTruncated = this.result.details?.linesTruncated;
+				if (matchLimit || truncation?.truncated || linesTruncated) {
+					const warnings: string[] = [];
+					if (matchLimit) {
+						warnings.push(`${matchLimit} matches limit`);
+					}
+					if (truncation?.truncated) {
+						warnings.push("30KB limit");
+					}
+					if (linesTruncated) {
+						warnings.push("some lines truncated");
+					}
+					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+				}
 			}
 		} else {
 			// Generic tool
