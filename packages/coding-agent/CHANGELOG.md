@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool output truncation**: All tools now enforce consistent truncation limits with actionable notices for the LLM. ([#134](https://github.com/badlogic/pi-mono/issues/134))
+  - **Limits**: 2000 lines OR 50KB (whichever hits first), never partial lines
+  - **read**: Shows `[Showing lines X-Y of Z. Use offset=N to continue]`. If first line exceeds 50KB, suggests bash command
+  - **bash**: Tail truncation with temp file. Shows `[Showing lines X-Y of Z. Full output: /tmp/...]`
+  - **grep**: Pre-truncates match lines to 500 chars. Shows match limit and line truncation notices
+  - **find/ls**: Shows result/entry limit notices
+  - TUI displays truncation warnings in yellow at bottom of tool output (visible even when collapsed)
+
 ## [0.13.1] - 2025-12-06
 
 ### Added
