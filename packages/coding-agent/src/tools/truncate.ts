@@ -4,10 +4,13 @@
  * Truncation is based on two independent limits - whichever is hit first wins:
  * - Line limit (default: 2000 lines)
  * - Byte limit (default: 30KB)
+ *
+ * Never returns partial lines (except bash tail truncation edge case).
  */
 
 export const DEFAULT_MAX_LINES = 2000;
 export const DEFAULT_MAX_BYTES = 30 * 1024; // 30KB
+export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
 
 export interface TruncationResult {
 	/** The truncated content */
@@ -20,12 +23,14 @@ export interface TruncationResult {
 	totalLines: number;
 	/** Total number of bytes in the original content */
 	totalBytes: number;
-	/** Number of lines in the truncated output */
+	/** Number of complete lines in the truncated output */
 	outputLines: number;
 	/** Number of bytes in the truncated output */
 	outputBytes: number;
-	/** Human-readable truncation notice (empty if not truncated) */
-	notice: string;
+	/** Whether the last line was partially truncated (only for tail truncation edge case) */
+	lastLinePartial: boolean;
+	/** Whether the first line exceeded the byte limit (for head truncation) */
+	firstLineExceedsLimit: boolean;
 }
 
 export interface TruncationOptions {
@@ -38,7 +43,7 @@ export interface TruncationOptions {
 /**
  * Format bytes as human-readable size.
  */
-function formatSize(bytes: number): string {
+export function formatSize(bytes: number): string {
 	if (bytes < 1024) {
 		return `${bytes}B`;
 	} else if (bytes < 1024 * 1024) {
@@ -49,30 +54,11 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Generate a truncation notice.
- */
-function makeNotice(
-	direction: "head" | "tail",
-	truncatedBy: "lines" | "bytes",
-	totalLines: number,
-	totalBytes: number,
-	outputLines: number,
-	outputBytes: number,
-): string {
-	const totalSize = formatSize(totalBytes);
-	const outputSize = formatSize(outputBytes);
-	const directionText = direction === "head" ? "first" : "last";
-
-	if (truncatedBy === "lines") {
-		return `[Truncated: ${totalLines} lines / ${totalSize} total, showing ${directionText} ${outputLines} lines]`;
-	} else {
-		return `[Truncated: ${totalLines} lines / ${totalSize} total, showing ${directionText} ${outputSize}]`;
-	}
-}
-
-/**
  * Truncate content from the head (keep first N lines/bytes).
  * Suitable for file reads where you want to see the beginning.
+ *
+ * Never returns partial lines. If first line exceeds byte limit,
+ * returns empty content with firstLineExceedsLimit=true.
  */
 export function truncateHead(content: string, options: TruncationOptions = {}): TruncationResult {
 	const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
@@ -92,11 +78,28 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			totalBytes,
 			outputLines: totalLines,
 			outputBytes: totalBytes,
-			notice: "",
+			lastLinePartial: false,
+			firstLineExceedsLimit: false,
 		};
 	}
 
-	// Determine which limit we'll hit first
+	// Check if first line alone exceeds byte limit
+	const firstLineBytes = Buffer.byteLength(lines[0], "utf-8");
+	if (firstLineBytes > maxBytes) {
+		return {
+			content: "",
+			truncated: true,
+			truncatedBy: "bytes",
+			totalLines,
+			totalBytes,
+			outputLines: 0,
+			outputBytes: 0,
+			lastLinePartial: false,
+			firstLineExceedsLimit: true,
+		};
+	}
+
+	// Collect complete lines that fit
 	const outputLinesArr: string[] = [];
 	let outputBytesCount = 0;
 	let truncatedBy: "lines" | "bytes" = "lines";
@@ -107,12 +110,6 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 
 		if (outputBytesCount + lineBytes > maxBytes) {
 			truncatedBy = "bytes";
-			// If this is the first line and it alone exceeds maxBytes, include partial
-			if (i === 0) {
-				const truncatedLine = truncateStringToBytes(line, maxBytes);
-				outputLinesArr.push(truncatedLine);
-				outputBytesCount = Buffer.byteLength(truncatedLine, "utf-8");
-			}
 			break;
 		}
 
@@ -136,13 +133,16 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 		totalBytes,
 		outputLines: outputLinesArr.length,
 		outputBytes: finalOutputBytes,
-		notice: makeNotice("head", truncatedBy, totalLines, totalBytes, outputLinesArr.length, finalOutputBytes),
+		lastLinePartial: false,
+		firstLineExceedsLimit: false,
 	};
 }
 
 /**
  * Truncate content from the tail (keep last N lines/bytes).
  * Suitable for bash output where you want to see the end (errors, final results).
+ *
+ * May return partial first line if the last line of original content exceeds byte limit.
  */
 export function truncateTail(content: string, options: TruncationOptions = {}): TruncationResult {
 	const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
@@ -162,7 +162,8 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 			totalBytes,
 			outputLines: totalLines,
 			outputBytes: totalBytes,
-			notice: "",
+			lastLinePartial: false,
+			firstLineExceedsLimit: false,
 		};
 	}
 
@@ -170,6 +171,7 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 	const outputLinesArr: string[] = [];
 	let outputBytesCount = 0;
 	let truncatedBy: "lines" | "bytes" = "lines";
+	let lastLinePartial = false;
 
 	for (let i = lines.length - 1; i >= 0 && outputLinesArr.length < maxLines; i--) {
 		const line = lines[i];
@@ -177,12 +179,13 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 
 		if (outputBytesCount + lineBytes > maxBytes) {
 			truncatedBy = "bytes";
-			// If this is the first line we're adding and it alone exceeds maxBytes, include partial
+			// Edge case: if we haven't added ANY lines yet and this line exceeds maxBytes,
+			// take the end of the line (partial)
 			if (outputLinesArr.length === 0) {
-				// Take the end of the line
 				const truncatedLine = truncateStringToBytesFromEnd(line, maxBytes);
 				outputLinesArr.unshift(truncatedLine);
 				outputBytesCount = Buffer.byteLength(truncatedLine, "utf-8");
+				lastLinePartial = true;
 			}
 			break;
 		}
@@ -207,27 +210,9 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 		totalBytes,
 		outputLines: outputLinesArr.length,
 		outputBytes: finalOutputBytes,
-		notice: makeNotice("tail", truncatedBy, totalLines, totalBytes, outputLinesArr.length, finalOutputBytes),
+		lastLinePartial,
+		firstLineExceedsLimit: false,
 	};
-}
-
-/**
- * Truncate a string to fit within a byte limit (from the start).
- * Handles multi-byte UTF-8 characters correctly.
- */
-function truncateStringToBytes(str: string, maxBytes: number): string {
-	const buf = Buffer.from(str, "utf-8");
-	if (buf.length <= maxBytes) {
-		return str;
-	}
-
-	// Find a valid UTF-8 boundary
-	let end = maxBytes;
-	while (end > 0 && (buf[end] & 0xc0) === 0x80) {
-		end--;
-	}
-
-	return buf.slice(0, end).toString("utf-8");
 }
 
 /**
@@ -249,4 +234,18 @@ function truncateStringToBytesFromEnd(str: string, maxBytes: number): string {
 	}
 
 	return buf.slice(start).toString("utf-8");
+}
+
+/**
+ * Truncate a single line to max characters, adding [truncated] suffix.
+ * Used for grep match lines.
+ */
+export function truncateLine(
+	line: string,
+	maxChars: number = GREP_MAX_LINE_LENGTH,
+): { text: string; wasTruncated: boolean } {
+	if (line.length <= maxChars) {
+		return { text: line, wasTruncated: false };
+	}
+	return { text: line.slice(0, maxChars) + "... [truncated]", wasTruncated: true };
 }

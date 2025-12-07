@@ -128,15 +128,7 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation notice at the bottom in warning color if present in details
-				const truncation = this.result.details?.truncation;
-				const fullOutputPath = this.result.details?.fullOutputPath;
-				if (truncation?.truncated) {
-					if (fullOutputPath) {
-						text += "\n" + theme.fg("warning", `[Full output: ${fullOutputPath}]`);
-					}
-					text += "\n" + theme.fg("warning", truncation.notice);
-				}
+				// Truncation notice is now in the text content itself, TUI just shows it
 			}
 		} else if (this.toolName === "read") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
@@ -166,11 +158,7 @@ export class ToolExecutionComponent extends Container {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 
-				// Show truncation notice at the bottom in warning color if present in details
-				const truncation = this.result.details?.truncation;
-				if (truncation?.truncated) {
-					text += "\n" + theme.fg("warning", truncation.notice);
-				}
+				// Truncation notice is now in the text content itself
 			}
 		} else if (this.toolName === "write") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
@@ -249,15 +237,7 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation notice from details
-				const entryLimit = this.result.details?.entryLimitReached;
-				const truncation = this.result.details?.truncation;
-				if (entryLimit) {
-					text += "\n" + theme.fg("warning", `[Truncated: ${entryLimit} entries limit reached]`);
-				}
-				if (truncation?.truncated) {
-					text += "\n" + theme.fg("warning", truncation.notice);
-				}
+				// Truncation notice is now in the text content itself
 			}
 		} else if (this.toolName === "find") {
 			const pattern = this.args?.pattern || "";
@@ -287,15 +267,7 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation notice from details
-				const resultLimit = this.result.details?.resultLimitReached;
-				const truncation = this.result.details?.truncation;
-				if (resultLimit) {
-					text += "\n" + theme.fg("warning", `[Truncated: ${resultLimit} results limit reached]`);
-				}
-				if (truncation?.truncated) {
-					text += "\n" + theme.fg("warning", truncation.notice);
-				}
+				// Truncation notice is now in the text content itself
 			}
 		} else if (this.toolName === "grep") {
 			const pattern = this.args?.pattern || "";
@@ -329,15 +301,7 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation notice from details
-				const matchLimit = this.result.details?.matchLimitReached;
-				const truncation = this.result.details?.truncation;
-				if (matchLimit) {
-					text += "\n" + theme.fg("warning", `[Truncated: ${matchLimit} matches limit reached]`);
-				}
-				if (truncation?.truncated) {
-					text += "\n" + theme.fg("warning", truncation.notice);
-				}
+				// Truncation notice is now in the text content itself
 			}
 		} else {
 			// Generic tool

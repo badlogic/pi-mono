@@ -6,7 +6,7 @@ import { globSync } from "glob";
 import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../tools-manager.js";
-import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
+import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -160,25 +160,39 @@ export const findTool: AgentTool<typeof findSchema> = {
 						relativized.push(relativePath);
 					}
 
-					const rawOutput = relativized.join("\n");
-					let details: FindToolDetails | undefined;
-
 					// Check if we hit the result limit
-					const hitResultLimit = relativized.length >= effectiveLimit;
+					const resultLimitReached = relativized.length >= effectiveLimit;
 
-					// Apply byte truncation
+					// Apply byte truncation (no line limit since we already have result limit)
+					const rawOutput = relativized.join("\n");
 					const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-					const resultOutput = truncation.content;
 
-					// Include truncation info in details (result limit or byte limit)
-					if (hitResultLimit || truncation.truncated) {
-						details = {
-							truncation: truncation.truncated ? truncation : undefined,
-							resultLimitReached: hitResultLimit ? effectiveLimit : undefined,
-						};
+					let resultOutput = truncation.content;
+					const details: FindToolDetails = {};
+
+					// Build notices
+					const notices: string[] = [];
+
+					if (resultLimitReached) {
+						notices.push(
+							`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+						);
+						details.resultLimitReached = effectiveLimit;
 					}
 
-					resolve({ content: [{ type: "text", text: resultOutput }], details });
+					if (truncation.truncated) {
+						notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+						details.truncation = truncation;
+					}
+
+					if (notices.length > 0) {
+						resultOutput += `\n\n[${notices.join(". ")}]`;
+					}
+
+					resolve({
+						content: [{ type: "text", text: resultOutput }],
+						details: Object.keys(details).length > 0 ? details : undefined,
+					});
 				} catch (e: any) {
 					signal?.removeEventListener("abort", onAbort);
 					reject(e);

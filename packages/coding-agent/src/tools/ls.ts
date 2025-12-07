@@ -3,7 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import nodePath from "path";
-import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
+import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -76,11 +76,11 @@ export const lsTool: AgentTool<typeof lsSchema> = {
 
 				// Format entries with directory indicators
 				const results: string[] = [];
-				let truncated = false;
+				let entryLimitReached = false;
 
 				for (const entry of entries) {
 					if (results.length >= effectiveLimit) {
-						truncated = true;
+						entryLimitReached = true;
 						break;
 					}
 
@@ -107,22 +107,34 @@ export const lsTool: AgentTool<typeof lsSchema> = {
 					return;
 				}
 
+				// Apply byte truncation (no line limit since we already have entry limit)
 				const rawOutput = results.join("\n");
-				let details: LsToolDetails | undefined;
-
-				// Apply byte truncation
 				const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-				const output = truncation.content;
 
-				// Include truncation info in details (entry limit or byte limit)
-				if (truncated || truncation.truncated) {
-					details = {
-						truncation: truncation.truncated ? truncation : undefined,
-						entryLimitReached: truncated ? effectiveLimit : undefined,
-					};
+				let output = truncation.content;
+				const details: LsToolDetails = {};
+
+				// Build notices
+				const notices: string[] = [];
+
+				if (entryLimitReached) {
+					notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
+					details.entryLimitReached = effectiveLimit;
 				}
 
-				resolve({ content: [{ type: "text", text: output }], details });
+				if (truncation.truncated) {
+					notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+					details.truncation = truncation;
+				}
+
+				if (notices.length > 0) {
+					output += `\n\n[${notices.join(". ")}]`;
+				}
+
+				resolve({
+					content: [{ type: "text", text: output }],
+					details: Object.keys(details).length > 0 ? details : undefined,
+				});
 			} catch (e: any) {
 				signal?.removeEventListener("abort", onAbort);
 				reject(e);

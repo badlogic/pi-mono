@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
 import { extname, resolve as resolvePath } from "path";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateHead } from "./truncate.js";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -108,43 +108,66 @@ export const readTool: AgentTool<typeof readSchema> = {
 						} else {
 							// Read as text
 							const textContent = await readFile(absolutePath, "utf-8");
-							const lines = textContent.split("\n");
+							const allLines = textContent.split("\n");
+							const totalFileLines = allLines.length;
 
 							// Apply offset if specified (1-indexed to 0-indexed)
 							const startLine = offset ? Math.max(0, offset - 1) : 0;
+							const startLineDisplay = startLine + 1; // For display (1-indexed)
 
 							// Check if offset is out of bounds
-							if (startLine >= lines.length) {
-								throw new Error(`Offset ${offset} is beyond end of file (${lines.length} lines total)`);
+							if (startLine >= allLines.length) {
+								throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
 							}
 
 							// If limit is specified by user, use it; otherwise we'll let truncateHead decide
 							let selectedContent: string;
+							let userLimitedLines: number | undefined;
 							if (limit !== undefined) {
-								const endLine = Math.min(startLine + limit, lines.length);
-								selectedContent = lines.slice(startLine, endLine).join("\n");
+								const endLine = Math.min(startLine + limit, allLines.length);
+								selectedContent = allLines.slice(startLine, endLine).join("\n");
+								userLimitedLines = endLine - startLine;
 							} else {
-								selectedContent = lines.slice(startLine).join("\n");
+								selectedContent = allLines.slice(startLine).join("\n");
 							}
 
 							// Apply truncation (respects both line and byte limits)
 							const truncation = truncateHead(selectedContent);
 
-							let outputText = truncation.content;
+							let outputText: string;
 
-							// Add continuation hint if there's more content after our selection
-							// (only relevant when user specified limit and there's more in the file)
-							if (limit !== undefined && startLine + limit < lines.length && !truncation.truncated) {
-								const remaining = lines.length - (startLine + limit);
-								outputText += `\n\n[${remaining} more lines in file. Use offset=${startLine + limit + 1} to continue]`;
+							if (truncation.firstLineExceedsLimit) {
+								// First line at offset exceeds 30KB - tell model to use bash
+								const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
+								outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+								details = { truncation };
+							} else if (truncation.truncated) {
+								// Truncation occurred - build actionable notice
+								const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
+								const nextOffset = endLineDisplay + 1;
+
+								outputText = truncation.content;
+
+								if (truncation.truncatedBy === "lines") {
+									outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue]`;
+								} else {
+									outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue]`;
+								}
+								details = { truncation };
+							} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
+								// User specified limit, there's more content, but no truncation
+								const endLineDisplay = startLineDisplay + userLimitedLines - 1;
+								const remaining = allLines.length - (startLine + userLimitedLines);
+								const nextOffset = startLine + userLimitedLines + 1;
+
+								outputText = truncation.content;
+								outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue]`;
+							} else {
+								// No truncation, no user limit exceeded
+								outputText = truncation.content;
 							}
 
 							content = [{ type: "text", text: outputText }];
-
-							// Include truncation info in details if truncation occurred
-							if (truncation.truncated) {
-								details = { truncation };
-							}
 						}
 
 						// Check if aborted after reading

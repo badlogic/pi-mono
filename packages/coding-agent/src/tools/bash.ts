@@ -6,7 +6,7 @@ import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { spawn, spawnSync } from "child_process";
 import { SettingsManager } from "../settings-manager.js";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.js";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
 
@@ -256,11 +256,26 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 
 				// Build details with truncation info
 				let details: BashToolDetails | undefined;
+
 				if (truncation.truncated) {
 					details = {
 						truncation,
 						fullOutputPath: tempFilePath,
 					};
+
+					// Build actionable notice
+					const startLine = truncation.totalLines - truncation.outputLines + 1;
+					const endLine = truncation.totalLines;
+
+					if (truncation.lastLinePartial) {
+						// Edge case: last line alone > 30KB
+						const lastLineSize = formatSize(Buffer.byteLength(fullOutput.split("\n").pop() || "", "utf-8"));
+						outputText += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${tempFilePath}]`;
+					} else if (truncation.truncatedBy === "lines") {
+						outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${tempFilePath}]`;
+					} else {
+						outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${tempFilePath}]`;
+					}
 				}
 
 				if (code !== 0 && code !== null) {

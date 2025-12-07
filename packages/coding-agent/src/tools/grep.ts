@@ -6,7 +6,14 @@ import { readFileSync, type Stats, statSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../tools-manager.js";
-import { DEFAULT_MAX_BYTES, type TruncationResult, truncateHead } from "./truncate.js";
+import {
+	DEFAULT_MAX_BYTES,
+	formatSize,
+	GREP_MAX_LINE_LENGTH,
+	type TruncationResult,
+	truncateHead,
+	truncateLine,
+} from "./truncate.js";
 
 /**
  * Expand ~ to home directory
@@ -40,12 +47,13 @@ const DEFAULT_LIMIT = 100;
 interface GrepToolDetails {
 	truncation?: TruncationResult;
 	matchLimitReached?: number;
+	linesTruncated?: boolean;
 }
 
 export const grepTool: AgentTool<typeof grepSchema> = {
 	name: "grep",
 	label: "grep",
-	description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+	description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
 	parameters: grepSchema,
 	execute: async (
 		_toolCallId: string,
@@ -148,7 +156,8 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 					const rl = createInterface({ input: child.stdout });
 					let stderr = "";
 					let matchCount = 0;
-					let truncated = false;
+					let matchLimitReached = false;
+					let linesTruncated = false;
 					let aborted = false;
 					let killedDueToLimit = false;
 					const outputLines: string[] = [];
@@ -176,7 +185,7 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 						stderr += chunk.toString();
 					});
 
-					const formatBlock = (filePath: string, lineNumber: number) => {
+					const formatBlock = (filePath: string, lineNumber: number): string[] => {
 						const relativePath = formatPath(filePath);
 						const lines = getFileLines(filePath);
 						if (!lines.length) {
@@ -192,10 +201,16 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 							const sanitized = lineText.replace(/\r/g, "");
 							const isMatchLine = current === lineNumber;
 
+							// Truncate long lines
+							const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
+							if (wasTruncated) {
+								linesTruncated = true;
+							}
+
 							if (isMatchLine) {
-								block.push(`${relativePath}:${current}: ${sanitized}`);
+								block.push(`${relativePath}:${current}: ${truncatedText}`);
 							} else {
-								block.push(`${relativePath}-${current}- ${sanitized}`);
+								block.push(`${relativePath}-${current}- ${truncatedText}`);
 							}
 						}
 
@@ -224,7 +239,7 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 							}
 
 							if (matchCount >= effectiveLimit) {
-								truncated = true;
+								matchLimitReached = true;
 								stopChild(true);
 							}
 						}
@@ -256,22 +271,45 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 							return;
 						}
 
-						// Apply byte truncation
+						// Apply byte truncation (no line limit since we already have match limit)
 						const rawOutput = outputLines.join("\n");
 						const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 
-						const output = truncation.content;
-						let details: GrepToolDetails | undefined;
+						let output = truncation.content;
+						const details: GrepToolDetails = {};
 
-						// Include truncation info in details (match limit or byte limit)
-						if (truncated || truncation.truncated) {
-							details = {
-								truncation: truncation.truncated ? truncation : undefined,
-								matchLimitReached: truncated ? effectiveLimit : undefined,
-							};
+						// Build notices
+						const notices: string[] = [];
+
+						if (matchLimitReached) {
+							notices.push(
+								`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+							);
+							details.matchLimitReached = effectiveLimit;
 						}
 
-						settle(() => resolve({ content: [{ type: "text", text: output }], details }));
+						if (truncation.truncated) {
+							notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+							details.truncation = truncation;
+						}
+
+						if (linesTruncated) {
+							notices.push(
+								`Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,
+							);
+							details.linesTruncated = true;
+						}
+
+						if (notices.length > 0) {
+							output += `\n\n[${notices.join(". ")}]`;
+						}
+
+						settle(() =>
+							resolve({
+								content: [{ type: "text", text: output }],
+								details: Object.keys(details).length > 0 ? details : undefined,
+							}),
+						);
 					});
 				} catch (err) {
 					settle(() => reject(err as Error));
