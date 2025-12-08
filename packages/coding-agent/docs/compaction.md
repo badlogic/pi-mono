@@ -260,11 +260,18 @@ contextTokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite
 This gives total context size across all providers. The `input` field represents non-cached input tokens, so adding `cacheRead` and `cacheWrite` gives the true total input.
 
 **Trigger condition:**
-```typescript
-if (contextTokens > model.contextWindow - settings.compaction.reserveTokens) {
-  await compact({ auto: true });
-}
-```
+
+- **Per-turn threshold (existing):** after each assistant message, auto-compaction runs when
+  ```typescript
+  if (contextTokens > model.contextWindow - settings.compaction.reserveTokens) {
+    await compact({ auto: true });
+  }
+  ```
+- **Post-tool projection (new):** after each tool finishes, we estimate how many tokens its
+  result will add and, if the projected total exceeds `contextWindow - reserveTokens`, we
+  mark the turn for compaction. When the turn ends, compaction runs *before* the next model
+  call.
+
 
 ### Turn Boundaries
 

@@ -1,5 +1,6 @@
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, AssistantMessage, KnownProvider, Model } from "@mariozechner/pi-ai";
+import { isContextOverflow } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
@@ -16,6 +17,11 @@ import {
 	getReadmePath,
 	VERSION,
 } from "./config.js";
+import {
+	estimateToolResultTokens,
+	getLastAssistantUsageFromMessages,
+	shouldTriggerCompactionAfterTurn,
+} from "./context-budget.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, SessionManager } from "./session-manager.js";
@@ -847,37 +853,28 @@ async function runRpcMode(
 ): Promise<void> {
 	// Track if auto-compaction is in progress
 	let autoCompactionInProgress = false;
+	let projectedToolTokensThisTurn = 0;
+	let needsCompactionAfterTurn = false;
 
 	// Auto-compaction helper
-	const checkAutoCompaction = async () => {
+	const checkAutoCompaction = async (force: boolean = false) => {
 		if (autoCompactionInProgress) return;
 
 		const settings = settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last non-aborted assistant message
-		const messages = agent.state.messages;
-		let lastAssistant: AssistantMessage | null = null;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				const assistantMsg = msg as AssistantMessage;
-				if (assistantMsg.stopReason !== "aborted") {
-					lastAssistant = assistantMsg;
-					break;
-				}
-			}
-		}
-		if (!lastAssistant) return;
-
-		const contextTokens = calculateContextTokens(lastAssistant.usage);
-		const contextWindow = agent.state.model.contextWindow;
-
-		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
-
-		// Trigger auto-compaction
 		autoCompactionInProgress = true;
 		try {
+			// Get last non-aborted assistant message
+			const lastUsage = getLastAssistantUsageFromMessages(agent.state.messages);
+			if (!lastUsage) return;
+
+			const contextTokens = calculateContextTokens(lastUsage);
+			const contextWindow = agent.state.model.contextWindow;
+
+			if (!force && !shouldCompact(contextTokens, contextWindow, settings)) return;
+
+			// Trigger auto-compaction
 			const apiKey = await getApiKeyForModel(agent.state.model);
 			if (!apiKey) {
 				throw new Error(`No API key for ${agent.state.model.provider}`);
@@ -904,6 +901,32 @@ async function runRpcMode(
 	agent.subscribe(async (event) => {
 		console.log(JSON.stringify(event));
 
+		// Track per-turn context budget
+		if (event.type === "turn_start") {
+			projectedToolTokensThisTurn = 0;
+			needsCompactionAfterTurn = false;
+		}
+
+		if (event.type === "tool_execution_end") {
+			const addedTokens = estimateToolResultTokens(event.result);
+			if (addedTokens > 0) {
+				projectedToolTokensThisTurn += addedTokens;
+				const settings = settingsManager.getCompactionSettings();
+				const lastUsage = getLastAssistantUsageFromMessages(agent.state.messages);
+				if (
+					shouldTriggerCompactionAfterTurn({
+						lastUsage,
+						estimatedAddedTokens: projectedToolTokensThisTurn,
+						contextWindow: agent.state.model.contextWindow,
+						reserveTokens: settings.reserveTokens,
+						enabled: settings.enabled,
+					})
+				) {
+					needsCompactionAfterTurn = true;
+				}
+			}
+		}
+
 		// Save messages to session
 		if (event.type === "message_end") {
 			sessionManager.saveMessage(event.message);
@@ -917,10 +940,24 @@ async function runRpcMode(
 				sessionManager.startSession(agent.state);
 			}
 
-			// Check for auto-compaction after assistant messages
+			// Check for auto-compaction after assistant messages (original behavior)
 			if (event.message.role === "assistant") {
 				await checkAutoCompaction();
 			}
+
+			// Overflow recovery: if provider reported context overflow, compact before next turn
+			if (
+				event.message.role === "assistant" &&
+				isContextOverflow(event.message as AssistantMessage, agent.state.model.contextWindow)
+			) {
+				needsCompactionAfterTurn = true;
+			}
+		}
+
+		// After the turn completes, run forced compaction if tools projected overflow
+		if (event.type === "turn_end" && needsCompactionAfterTurn) {
+			needsCompactionAfterTurn = false;
+			await checkAutoCompaction(true);
 		}
 	});
 

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
+import { isContextOverflow } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -21,6 +22,11 @@ import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
+import {
+	estimateToolResultTokens,
+	getLastAssistantUsageFromMessages,
+	shouldTriggerCompactionAfterTurn,
+} from "../context-budget.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
@@ -80,6 +86,11 @@ export class TuiRenderer {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+
+	// Context budget tracking for the current turn
+	private projectedToolTokensThisTurn = 0;
+	private needsCompactionAfterTurn = false;
+	private autoCompactionInProgress = false;
 
 	// Thinking level selector
 	private thinkingSelector: ThinkingSelectorComponent | null = null;
@@ -597,32 +608,38 @@ export class TuiRenderer {
 		});
 	}
 
-	private async checkAutoCompaction(): Promise<void> {
+	private async checkAutoCompaction(force: boolean = false): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last non-aborted assistant message from agent state
-		const messages = this.agent.state.messages;
-		let lastAssistant: AssistantMessage | null = null;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				const assistantMsg = msg as AssistantMessage;
-				if (assistantMsg.stopReason !== "aborted") {
-					lastAssistant = assistantMsg;
-					break;
+		if (this.autoCompactionInProgress) return;
+		this.autoCompactionInProgress = true;
+		try {
+			// Get last non-aborted assistant message from agent state
+			const messages = this.agent.state.messages;
+			let lastAssistant: AssistantMessage | null = null;
+			for (let i = messages.length - 1; i >= 0; i--) {
+				const msg = messages[i];
+				if (msg.role === "assistant") {
+					const assistantMsg = msg as AssistantMessage;
+					if (assistantMsg.stopReason !== "aborted") {
+						lastAssistant = assistantMsg;
+						break;
+					}
 				}
 			}
+			if (!lastAssistant) return;
+
+			const contextTokens = calculateContextTokens(lastAssistant.usage);
+			const contextWindow = this.agent.state.model.contextWindow;
+
+			if (!force && !shouldCompact(contextTokens, contextWindow, settings)) return;
+
+			// Trigger auto-compaction
+			await this.executeCompaction(undefined, true);
+		} finally {
+			this.autoCompactionInProgress = false;
 		}
-		if (!lastAssistant) return;
-
-		const contextTokens = calculateContextTokens(lastAssistant.usage);
-		const contextWindow = this.agent.state.model.contextWindow;
-
-		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
-
-		// Trigger auto-compaction
-		await this.executeCompaction(undefined, true);
 	}
 
 	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
@@ -634,6 +651,12 @@ export class TuiRenderer {
 		this.footer.updateState(state);
 
 		switch (event.type) {
+			case "turn_start": {
+				// Reset per-turn context budget tracking
+				this.projectedToolTokensThisTurn = 0;
+				this.needsCompactionAfterTurn = false;
+				break;
+			}
 			case "agent_start":
 				// Show loading animation
 				// Note: Don't disable submit - we handle queuing in onSubmit callback
@@ -718,10 +741,8 @@ export class TuiRenderer {
 				}
 				if (this.streamingComponent && event.message.role === "assistant") {
 					const assistantMsg = event.message as AssistantMessage;
-
 					// Update streaming component with final message (includes stopReason)
 					this.streamingComponent.updateContent(assistantMsg);
-
 					// If message was aborted or errored, mark all pending tool components as failed
 					if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
 						const errorMessage =
@@ -734,12 +755,17 @@ export class TuiRenderer {
 						}
 						this.pendingTools.clear();
 					}
-
 					// Keep the streaming component - it's now the final assistant message
 					this.streamingComponent = null;
-
 					// Invalidate footer cache to refresh git branch (in case agent executed git commands)
 					this.footer.invalidate();
+				}
+				// Overflow recovery: if provider reported context overflow, compact before next turn
+				if (
+					event.message.role === "assistant" &&
+					isContextOverflow(event.message as AssistantMessage, this.agent.state.model.contextWindow)
+				) {
+					this.needsCompactionAfterTurn = true;
 				}
 				this.ui.requestRender();
 				break;
@@ -775,6 +801,34 @@ export class TuiRenderer {
 					component.updateResult(resultData);
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
+				}
+
+				// Update context budget projection for this turn
+				const addedTokens = estimateToolResultTokens(event.result);
+				if (addedTokens > 0) {
+					this.projectedToolTokensThisTurn += addedTokens;
+					const settings = this.settingsManager.getCompactionSettings();
+					const lastUsage = getLastAssistantUsageFromMessages(this.agent.state.messages);
+					if (
+						shouldTriggerCompactionAfterTurn({
+							lastUsage,
+							estimatedAddedTokens: this.projectedToolTokensThisTurn,
+							contextWindow: this.agent.state.model.contextWindow,
+							reserveTokens: settings.reserveTokens,
+							enabled: settings.enabled,
+						})
+					) {
+						this.needsCompactionAfterTurn = true;
+					}
+				}
+				break;
+			}
+
+			case "turn_end": {
+				// If tools pushed projected usage over threshold, compact before next turn
+				if (this.needsCompactionAfterTurn) {
+					this.needsCompactionAfterTurn = false;
+					await this.checkAutoCompaction(true);
 				}
 				break;
 			}
