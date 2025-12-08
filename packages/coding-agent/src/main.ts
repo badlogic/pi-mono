@@ -11,18 +11,20 @@ import {
 	APP_NAME,
 	CONFIG_DIR_NAME,
 	ENV_AGENT_DIR,
+	ENV_SESSION_ID,
 	getAgentDir,
 	getModelsPath,
 	getReadmePath,
 	VERSION,
 } from "./config.js";
+import { EventReceiver, generateSessionId, sendEvent } from "./control-channel.js";
 import { exportFromFile } from "./export-html.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
 import { initTheme } from "./theme/theme.js";
-import { allTools, codingTools, type ToolName } from "./tools/index.js";
+import { allTools, codingTools, createWaitForEventTool, type ToolName } from "./tools/index.js";
 import { ensureTool } from "./tools-manager.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
@@ -57,6 +59,7 @@ interface Args {
 	tools?: ToolName[];
 	print?: boolean;
 	export?: string;
+	sendEvent?: string;
 	messages: string[];
 	fileArgs: string[];
 }
@@ -125,6 +128,8 @@ function parseArgs(args: string[]): Args {
 			result.print = true;
 		} else if (arg === "--export" && i + 1 < args.length) {
 			result.export = args[++i];
+		} else if (arg === "--send-event" && i + 1 < args.length) {
+			result.sendEvent = args[++i];
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (!arg.startsWith("-")) {
@@ -250,6 +255,7 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high
   --export <file>                Export session file to HTML and exit
+  --session <id> --send-event <json>  Send event to a running session
   --help, -h                     Show this help
 
 ${chalk.bold("Examples:")}
@@ -290,6 +296,9 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
   ${APP_NAME} --export session.jsonl output.html
 
+  # Send an event to a running session (use $${ENV_SESSION_ID} from within the session)
+  ${APP_NAME} --session $${ENV_SESSION_ID} --send-event '{"type":"test_result","passed":true}'
+
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY       - Anthropic Claude API key
   ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
@@ -301,15 +310,17 @@ ${chalk.bold("Environment Variables:")}
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  ${ENV_SESSION_ID.padEnd(23)} - Current session ID (set automatically, use with --send-event)
 
-${chalk.bold("Available Tools (default: read, bash, edit, write):")}
-  read   - Read file contents
-  bash   - Execute bash commands
-  edit   - Edit files with find/replace
-  write  - Write files (creates/overwrites)
-  grep   - Search file contents (read-only, off by default)
-  find   - Find files by glob pattern (read-only, off by default)
-  ls     - List directory contents (read-only, off by default)
+${chalk.bold("Available Tools (default: read, bash, edit, write, wait_for_event):")}
+  read           - Read file contents
+  bash           - Execute bash commands
+  edit           - Edit files with find/replace
+  write          - Write files (creates/overwrites)
+  grep           - Search file contents (read-only, off by default)
+  find           - Find files by glob pattern (read-only, off by default)
+  ls             - List directory contents (read-only, off by default)
+  wait_for_event - Wait for external events (always enabled)
 `);
 }
 
@@ -723,6 +734,7 @@ async function runInteractiveMode(
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
+	eventReceiver: EventReceiver | null = null,
 ): Promise<void> {
 	const renderer = new TuiRenderer(
 		agent,
@@ -732,6 +744,7 @@ async function runInteractiveMode(
 		changelogMarkdown,
 		scopedModels,
 		fdPath,
+		eventReceiver,
 	);
 
 	// Initialize TUI (subscribes to agent events internally)
@@ -844,6 +857,7 @@ async function runRpcMode(
 	agent: Agent,
 	sessionManager: SessionManager,
 	settingsManager: SettingsManager,
+	eventReceiver: EventReceiver | null = null,
 ): Promise<void> {
 	// Track if auto-compaction is in progress
 	let autoCompactionInProgress = false;
@@ -977,6 +991,29 @@ async function runRpcMode(
 		}
 	});
 
+	// Set up event receiver callback for control channel events
+	if (eventReceiver) {
+		eventReceiver.setEventCallback((event) => {
+			// Format payload - if it's a string, use it directly; otherwise JSON stringify
+			const payloadStr = typeof event.payload === "string" ? event.payload : JSON.stringify(event.payload, null, 2);
+			const messageText = `An event was received by this session:\n<event>\n${payloadStr}\n</event>`;
+
+			if (agent.state.isStreaming) {
+				// Agent is busy - queue the message
+				agent.queueMessage({
+					role: "user",
+					content: [{ type: "text", text: messageText }],
+					timestamp: Date.now(),
+				});
+			} else {
+				// Agent is idle - submit directly
+				agent.prompt(messageText).catch((error: any) => {
+					console.log(JSON.stringify({ type: "error", error: error.message }));
+				});
+			}
+		});
+	}
+
 	// Keep process alive
 	return new Promise(() => {});
 }
@@ -999,6 +1036,29 @@ export async function main(args: string[]) {
 			return;
 		} catch (error: any) {
 			console.error(chalk.red(`Error: ${error.message || "Failed to export session"}`));
+			process.exit(1);
+		}
+	}
+
+	// Handle --send-event flag: send event to a running session and exit
+	if (parsed.sendEvent) {
+		if (!parsed.session) {
+			console.error(chalk.red("Error: --send-event requires --session <id>"));
+			process.exit(1);
+		}
+		try {
+			// Try to parse as JSON, but fall back to raw string if it fails
+			let payload: unknown;
+			try {
+				payload = JSON.parse(parsed.sendEvent);
+			} catch {
+				// Not valid JSON - use the raw string as payload
+				payload = parsed.sendEvent;
+			}
+			sendEvent(parsed.session, payload);
+			return;
+		} catch (error: any) {
+			console.error(chalk.red(`Error: ${error.message || "Failed to send event"}`));
 			process.exit(1);
 		}
 	}
@@ -1246,8 +1306,32 @@ export async function main(args: string[]) {
 		initialThinking = parsed.thinking;
 	}
 
-	// Determine which tools to use
-	const selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
+	// Generate session ID and set up control channel for event communication
+	const controlSessionId = generateSessionId();
+	process.env[ENV_SESSION_ID] = controlSessionId;
+
+	// Create event receiver for the control channel
+	const eventReceiver = new EventReceiver(controlSessionId);
+	eventReceiver.start();
+
+	// Clean up control channel on exit
+	const cleanup = () => {
+		eventReceiver.stop();
+	};
+	process.on("exit", cleanup);
+	process.on("SIGINT", () => {
+		cleanup();
+		process.exit(0);
+	});
+	process.on("SIGTERM", () => {
+		cleanup();
+		process.exit(0);
+	});
+
+	// Determine which tools to use (including wait_for_event tool)
+	const waitForEventTool = createWaitForEventTool(eventReceiver);
+	const baseTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
+	const selectedTools = [...baseTools, waitForEventTool];
 
 	// Create agent (initialModel can be null in interactive mode)
 	const agent = new Agent({
@@ -1338,7 +1422,7 @@ export async function main(args: string[]) {
 	// Route to appropriate mode
 	if (mode === "rpc") {
 		// RPC mode - headless operation
-		await runRpcMode(agent, sessionManager, settingsManager);
+		await runRpcMode(agent, sessionManager, settingsManager, eventReceiver);
 	} else if (isInteractive) {
 		// Check for new version in the background (don't block startup)
 		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
@@ -1398,6 +1482,7 @@ export async function main(args: string[]) {
 			initialMessage,
 			initialAttachments,
 			fdPath,
+			eventReceiver,
 		);
 	} else {
 		// Non-interactive mode (--print flag or --mode flag)

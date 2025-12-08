@@ -21,6 +21,7 @@ import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
+import type { EventReceiver } from "../control-channel.js";
 import { exportSessionToHtml } from "../export-html.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
@@ -120,6 +121,9 @@ export class TuiRenderer {
 	// File-based slash commands
 	private fileCommands: FileSlashCommand[] = [];
 
+	// Event receiver for control channel events
+	private eventReceiver: EventReceiver | null = null;
+
 	constructor(
 		agent: Agent,
 		sessionManager: SessionManager,
@@ -128,6 +132,7 @@ export class TuiRenderer {
 		changelogMarkdown: string | null = null,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
+		eventReceiver: EventReceiver | null = null,
 	) {
 		this.agent = agent;
 		this.sessionManager = sessionManager;
@@ -135,6 +140,7 @@ export class TuiRenderer {
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
 		this.scopedModels = scopedModels;
+		this.eventReceiver = eventReceiver;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -562,6 +568,13 @@ export class TuiRenderer {
 		// Subscribe to agent events for UI updates and session saving
 		this.subscribeToAgent();
 
+		// Set up event receiver callback for control channel events
+		if (this.eventReceiver) {
+			this.eventReceiver.setEventCallback((event) => {
+				this.handleControlChannelEvent(event);
+			});
+		}
+
 		// Set up theme file watcher for live reload
 		onThemeChange(() => {
 			this.ui.invalidate();
@@ -573,6 +586,38 @@ export class TuiRenderer {
 		this.footer.watchBranch(() => {
 			this.ui.requestRender();
 		});
+	}
+
+	/**
+	 * Handle an event received from the control channel.
+	 * Formats it as a user message and either queues it or submits it.
+	 */
+	private handleControlChannelEvent(event: { id: string; timestamp: number; payload: unknown }): void {
+		// Format payload - if it's a string, use it directly; otherwise JSON stringify
+		const payloadStr = typeof event.payload === "string" ? event.payload : JSON.stringify(event.payload, null, 2);
+		const messageText = `An event was received by this session:\n<event>\n${payloadStr}\n</event>`;
+
+		if (this.agent.state.isStreaming) {
+			// Agent is busy - queue the message
+			this.queuedMessages.push(messageText);
+
+			// Queue in agent
+			this.agent.queueMessage({
+				role: "user",
+				content: [{ type: "text", text: messageText }],
+				timestamp: Date.now(),
+			});
+
+			// Update pending messages display
+			this.updatePendingMessagesDisplay();
+			this.ui.requestRender();
+		} else {
+			// Agent is idle - submit directly
+			// This will trigger the prompt flow
+			if (this.onInputCallback) {
+				this.onInputCallback(messageText);
+			}
+		}
 	}
 
 	private subscribeToAgent(): void {

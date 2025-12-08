@@ -4,6 +4,7 @@ export { findTool } from "./find.js";
 export { grepTool } from "./grep.js";
 export { lsTool } from "./ls.js";
 export { readTool } from "./read.js";
+export { createWaitForEventTool } from "./wait-for-event.js";
 export { writeTool } from "./write.js";
 
 import { bashTool } from "./bash.js";
@@ -18,6 +19,7 @@ import { writeTool } from "./write.js";
 export const codingTools = [readTool, bashTool, editTool, writeTool];
 
 // All available tools (including read-only exploration tools)
+// Note: wait_for_event is not included here as it needs to be created with an EventReceiver
 export const allTools = {
 	read: readTool,
 	bash: bashTool,

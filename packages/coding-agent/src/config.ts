@@ -130,3 +130,11 @@ export function getSessionsDir(): string {
 export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);
 }
+
+/** Get path to control channels directory */
+export function getControlChannelsDir(): string {
+	return join(getAgentDir(), "control-channels");
+}
+
+// Environment variable name for session ID (e.g., PI_CODING_AGENT_SESSION_ID)
+export const ENV_SESSION_ID = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_ID`;
