@@ -11,6 +11,22 @@ To resume work on this refactoring:
 3. Check the work packages below - find first unchecked item
 4. Read any files mentioned in that work package before making changes
 
+## Strategy: Keep Old Code for Reference
+
+We create new files alongside old ones instead of modifying in place:
+- `src/modes/print-mode.ts` (new) - old code stays in `main.ts`
+- `src/modes/rpc-mode.ts` (new) - old code stays in `main.ts`
+- `src/modes/interactive/interactive-mode.ts` (new) - old code stays in `tui/tui-renderer.ts`
+- `src/main-new.ts` (new) - old code stays in `main.ts`
+- `src/cli-new.ts` (new) - old code stays in `cli.ts`
+
+This allows:
+- Parallel comparison of old vs new behavior
+- Gradual migration and testing
+- Easy rollback if needed
+
+Final switchover: When everything works, rename files and delete old code.
+
 ---
 
 ## Goals
@@ -244,9 +260,9 @@ export class AgentSession {
 1. `npm run check` passes
 2. Class can be instantiated (will test via later integration)
 
-- [ ] Create `src/core/agent-session.ts` with basic structure
-- [ ] Create `src/core/index.ts` barrel export
-- [ ] Verify with `npm run check`
+- [x] Create `src/core/agent-session.ts` with basic structure
+- [x] Create `src/core/index.ts` barrel export
+- [x] Verify with `npm run check`
 
 ---
 
@@ -1313,16 +1329,18 @@ export { runRpcMode } from "./rpc-mode.js";
 
 ---
 
-### WP14: Update main.ts to use AgentSession and new modes
-> Refactor main.ts to use AgentSession and the new mode modules.
+### WP14: Create main-new.ts using AgentSession and new modes
+> Create a new main file that uses AgentSession and the new mode modules.
+> Old main.ts is kept for reference/comparison.
 
-**Files to modify:**
-- `src/main.ts`
+**Files to create:**
+- `src/main-new.ts` (copy from main.ts, then modify)
+- `src/cli-new.ts` (copy from cli.ts, point to main-new.ts)
 
-**Changes:**
-1. Remove `runSingleShotMode()` function (replaced by print-mode.ts)
-2. Remove `runRpcMode()` function (replaced by rpc-mode.ts)
-3. Remove `executeRpcBashCommand()` function (replaced by bash-executor.ts)
+**Changes to main-new.ts:**
+1. Remove `runSingleShotMode()` function (use print-mode.ts)
+2. Remove `runRpcMode()` function (use rpc-mode.ts)
+3. Remove `executeRpcBashCommand()` function (use bash-executor.ts)
 4. Create `AgentSession` instance after agent setup
 5. Pass `AgentSession` to mode functions
 
@@ -1348,36 +1366,56 @@ if (mode === "rpc") {
 }
 ```
 
+**cli-new.ts:**
+```typescript
+#!/usr/bin/env node
+import { main } from "./main-new.js";
+main(process.argv.slice(2));
+```
+
+**Testing the new implementation:**
+```bash
+# Run new implementation directly
+npx tsx src/cli-new.ts -p "hello"
+npx tsx src/cli-new.ts --mode json "hello"
+npx tsx src/cli-new.ts  # interactive mode
+```
+
 **Verification:**
 1. `npm run check` passes
-2. Manual test: `pi -p "hello"` works
-3. Manual test: `pi --mode json "hello"` works
-4. Manual test: `pi --mode rpc` works
+2. Manual test: `npx tsx src/cli-new.ts -p "hello"` works
+3. Manual test: `npx tsx src/cli-new.ts --mode json "hello"` works
+4. Manual test: `npx tsx src/cli-new.ts --mode rpc` works
 
-- [ ] Remove `runSingleShotMode()` from main.ts
-- [ ] Remove `runRpcMode()` from main.ts  
-- [ ] Remove `executeRpcBashCommand()` from main.ts
+- [ ] Copy main.ts to main-new.ts
+- [ ] Remove `runSingleShotMode()` from main-new.ts
+- [ ] Remove `runRpcMode()` from main-new.ts  
+- [ ] Remove `executeRpcBashCommand()` from main-new.ts
 - [ ] Import and use `runPrintMode` from modes
 - [ ] Import and use `runRpcMode` from modes
 - [ ] Create `AgentSession` in main()
 - [ ] Update mode routing to use new functions
+- [ ] Create cli-new.ts
 - [ ] Verify with `npm run check`
-- [ ] Manual test all three modes
+- [ ] Manual test all three modes via cli-new.ts
 
 ---
 
-### WP15: Refactor TuiRenderer to use AgentSession
-> Update TuiRenderer to use AgentSession instead of direct agent/sessionManager access.
+### WP15: Create InteractiveMode using AgentSession
+> Create a new interactive mode class that uses AgentSession.
+> Old tui-renderer.ts is kept for reference.
 
-**Files to modify:**
-- `src/tui/tui-renderer.ts`
+**Files to create:**
+- `src/modes/interactive/interactive-mode.ts` (based on tui-renderer.ts)
 
 **This is the largest change. Strategy:**
-1. Change constructor to accept `AgentSession` instead of separate agent/sessionManager/settingsManager
-2. Replace all `this.agent.*` calls with `this.session.agent.*` or appropriate AgentSession methods
-3. Replace all `this.sessionManager.*` calls with AgentSession methods
-4. Replace all `this.settingsManager.*` calls with AgentSession methods where applicable
-5. Remove duplicated logic that now lives in AgentSession
+1. Copy tui-renderer.ts to new location
+2. Rename class from `TuiRenderer` to `InteractiveMode`
+3. Change constructor to accept `AgentSession` instead of separate agent/sessionManager/settingsManager
+4. Replace all `this.agent.*` calls with `this.session.agent.*` or appropriate AgentSession methods
+5. Replace all `this.sessionManager.*` calls with AgentSession methods
+6. Replace all `this.settingsManager.*` calls with AgentSession methods where applicable
+7. Remove duplicated logic that now lives in AgentSession
 
 **Key replacements:**
 | Old | New |
@@ -1414,13 +1452,16 @@ constructor(
 
 **Verification:**
 1. `npm run check` passes
-2. Manual test: Full interactive mode works
+2. Manual test via cli-new.ts: Full interactive mode works
 3. Manual test: All slash commands work
 4. Manual test: All hotkeys work
 5. Manual test: Bash execution works
 6. Manual test: Model/thinking cycling works
 
-- [ ] Change TuiRenderer constructor to accept AgentSession
+- [ ] Create `src/modes/interactive/` directory
+- [ ] Copy tui-renderer.ts to interactive-mode.ts
+- [ ] Rename class to `InteractiveMode`
+- [ ] Change constructor to accept AgentSession
 - [ ] Update all agent access to go through session
 - [ ] Remove `subscribeToAgent()` method (use session.subscribe)
 - [ ] Remove `checkAutoCompaction()` method (handled by session)
@@ -1432,21 +1473,25 @@ constructor(
 - [ ] Update session switching to use session.switchSession()
 - [ ] Update branch logic to use session.branch()
 - [ ] Remove all direct sessionManager access
+- [ ] Update imports to point to `../../tui/` for components (keep old components in place for now)
+- [ ] Update modes/index.ts to export InteractiveMode
 - [ ] Verify with `npm run check`
-- [ ] Manual test interactive mode thoroughly
+- [ ] Manual test interactive mode via cli-new.ts
 
 ---
 
-### WP16: Update runInteractiveMode to use AgentSession
-> Update the runInteractiveMode function in main.ts to create and pass AgentSession.
+### WP16: Update main-new.ts runInteractiveMode to use InteractiveMode
+> Update runInteractiveMode in main-new.ts to use the new InteractiveMode class.
 
 **Files to modify:**
-- `src/main.ts`
+- `src/main-new.ts`
 
 **Changes:**
 ```typescript
+import { InteractiveMode } from "./modes/interactive/interactive-mode.js";
+
 async function runInteractiveMode(
-  session: AgentSession,  // Changed from individual params
+  session: AgentSession,
   version: string,
   changelogMarkdown: string | null,
   collapseChangelog: boolean,
@@ -1457,7 +1502,7 @@ async function runInteractiveMode(
   initialAttachments?: Attachment[],
   fdPath: string | null,
 ): Promise<void> {
-  const renderer = new TuiRenderer(
+  const mode = new InteractiveMode(
     session,
     version,
     changelogMarkdown,
@@ -1470,69 +1515,30 @@ async function runInteractiveMode(
 
 **Verification:**
 1. `npm run check` passes
-2. Manual test: Interactive mode works
+2. Manual test via cli-new.ts: Interactive mode works
 
-- [ ] Update `runInteractiveMode()` signature
-- [ ] Update TuiRenderer instantiation
+- [ ] Update `runInteractiveMode()` in main-new.ts
+- [ ] Update InteractiveMode instantiation
 - [ ] Verify with `npm run check`
 
 ---
 
-### WP17: Rename TuiRenderer to InteractiveMode
-> Rename the class and file to better reflect its purpose.
-
-**Files to rename/modify:**
-- `src/tui/tui-renderer.ts` → `src/modes/interactive/interactive-mode.ts`
-- Update all imports
-
-**Steps:**
-1. Create `src/modes/interactive/` directory
-2. Move and rename file
-3. Rename class from `TuiRenderer` to `InteractiveMode`
-4. Update imports in main.ts
-5. Update barrel export in modes/index.ts
-
-**Verification:**
-1. `npm run check` passes
-2. Manual test: Interactive mode works
-
-- [ ] Create `src/modes/interactive/` directory
-- [ ] Move `tui/tui-renderer.ts` to `modes/interactive/interactive-mode.ts`
-- [ ] Rename class to `InteractiveMode`
-- [ ] Update imports in main.ts
-- [ ] Update modes/index.ts barrel export
-- [ ] Verify with `npm run check`
-
----
-
-### WP18: Move remaining TUI components
+### WP17: (OPTIONAL) Move TUI components to modes/interactive/
 > Move TUI-specific components to the interactive mode directory.
+> This is optional cleanup - can be skipped if too disruptive.
 
-**Files to move:**
+**Note:** The old `src/tui/` directory is kept. We just create copies/moves as needed.
+For now, InteractiveMode can import from `../../tui/` to reuse existing components.
+
+**Files to potentially move (if doing this WP):**
 - `src/tui/assistant-message.ts` → `src/modes/interactive/components/`
 - `src/tui/bash-execution.ts` → `src/modes/interactive/components/`
-- `src/tui/compaction.ts` → `src/modes/interactive/components/`
-- `src/tui/custom-editor.ts` → `src/modes/interactive/components/`
-- `src/tui/dynamic-border.ts` → `src/modes/interactive/components/`
-- `src/tui/footer.ts` → `src/modes/interactive/components/`
-- `src/tui/model-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/oauth-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/queue-mode-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/session-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/theme-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/thinking-selector.ts` → `src/modes/interactive/selectors/`
-- `src/tui/tool-execution.ts` → `src/modes/interactive/components/`
-- `src/tui/user-message.ts` → `src/modes/interactive/components/`
-- `src/tui/user-message-selector.ts` → `src/modes/interactive/selectors/`
+- etc.
 
-**Note:** This is optional reorganization. Can be done later or skipped if too disruptive.
+**Skip this WP for now** - focus on getting the new architecture working first.
+The component organization can be cleaned up later.
 
-- [ ] Create directory structure under `src/modes/interactive/`
-- [ ] Move component files
-- [ ] Move selector files
-- [ ] Update all imports
-- [ ] Remove empty `src/tui/` directory
-- [ ] Verify with `npm run check`
+- [ ] SKIPPED (optional cleanup for later)
 
 ---
 
