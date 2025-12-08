@@ -25,7 +25,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { validateToolArguments } from "../utils/validation.js";
+
 import { transformMessages } from "./transorm-messages.js";
 
 /**
@@ -231,15 +231,6 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 							});
 						} else if (block.type === "toolCall") {
 							block.arguments = parseStreamingJson(block.partialJson);
-
-							// Validate tool arguments if tool definition is available
-							if (context.tools) {
-								const tool = context.tools.find((t) => t.name === block.name);
-								if (tool) {
-									block.arguments = validateToolArguments(tool, block);
-								}
-							}
-
 							delete (block as any).partialJson;
 							stream.push({
 								type: "toolcall_end",

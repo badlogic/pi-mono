@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed provider-level tool argument validation. Validation now happens in `agentLoop` via `executeToolCalls`, allowing models to retry on validation errors. For manual tool execution, use `validateToolCall(tools, toolCall)` or `validateToolArguments(tool, toolCall)`.
+
+### Added
+
+- Added `validateToolCall(tools, toolCall)` helper that finds the tool by name and validates arguments.
+
 ## [0.13.0] - 2025-12-06
 
 ### Breaking Changes
