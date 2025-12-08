@@ -38,7 +38,7 @@ import {
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
-import { getShellConfig, killProcessTree } from "../shell.js";
+import { getShellConfig, killProcessTree, sanitizeBinaryOutput } from "../shell.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { DEFAULT_MAX_BYTES, type TruncationResult, truncateTail } from "../tools/truncate.js";
@@ -2055,6 +2055,9 @@ export class TuiRenderer {
 				return `[${idx}] (w=${vw}) ${escaped}`;
 			}),
 			"",
+			"=== Agent messages (JSONL) ===",
+			...this.agent.state.messages.map((msg) => JSON.stringify(msg)),
+			"",
 		].join("\n");
 
 		fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
@@ -2139,10 +2142,10 @@ export class TuiRenderer {
 
 			this.bashProcess = child;
 
-			// Track output for truncation
-			const chunks: Buffer[] = [];
-			let chunksBytes = 0;
-			const maxChunksBytes = DEFAULT_MAX_BYTES * 2;
+			// Track sanitized output for truncation
+			const outputChunks: string[] = [];
+			let outputBytes = 0;
+			const maxOutputBytes = DEFAULT_MAX_BYTES * 2;
 
 			// Temp file for large output
 			let tempFilePath: string | undefined;
@@ -2152,30 +2155,32 @@ export class TuiRenderer {
 			const handleData = (data: Buffer) => {
 				totalBytes += data.length;
 
+				// Sanitize once at the source: strip ANSI, replace binary garbage, normalize newlines
+				const text = sanitizeBinaryOutput(stripAnsi(data.toString())).replace(/\r/g, "");
+
 				// Start writing to temp file if exceeds threshold
 				if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
 					const id = randomBytes(8).toString("hex");
 					tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
 					tempFileStream = createWriteStream(tempFilePath);
-					for (const chunk of chunks) {
+					for (const chunk of outputChunks) {
 						tempFileStream.write(chunk);
 					}
 				}
 
 				if (tempFileStream) {
-					tempFileStream.write(data);
+					tempFileStream.write(text);
 				}
 
-				// Keep rolling buffer
-				chunks.push(data);
-				chunksBytes += data.length;
-				while (chunksBytes > maxChunksBytes && chunks.length > 1) {
-					const removed = chunks.shift()!;
-					chunksBytes -= removed.length;
+				// Keep rolling buffer of sanitized text
+				outputChunks.push(text);
+				outputBytes += text.length;
+				while (outputBytes > maxOutputBytes && outputChunks.length > 1) {
+					const removed = outputChunks.shift()!;
+					outputBytes -= removed.length;
 				}
 
-				// Stream to component (strip ANSI)
-				const text = stripAnsi(data.toString()).replace(/\r/g, "");
+				// Stream to component
 				onChunk(text);
 			};
 
@@ -2189,9 +2194,8 @@ export class TuiRenderer {
 
 				this.bashProcess = null;
 
-				// Combine buffered chunks for truncation
-				const fullBuffer = Buffer.concat(chunks);
-				const fullOutput = stripAnsi(fullBuffer.toString("utf-8")).replace(/\r/g, "");
+				// Combine buffered chunks for truncation (already sanitized)
+				const fullOutput = outputChunks.join("");
 				const truncationResult = truncateTail(fullOutput);
 
 				// code === null means killed (cancelled)

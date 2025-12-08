@@ -65,6 +65,7 @@ export class BashExecutionComponent extends Container {
 
 	appendOutput(chunk: string): void {
 		// Strip ANSI codes and normalize line endings
+		// Note: binary data is already sanitized in tui-renderer.ts executeBashCommand
 		const clean = stripAnsi(chunk).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
 		// Append to output lines

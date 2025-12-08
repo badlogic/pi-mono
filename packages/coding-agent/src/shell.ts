@@ -88,6 +88,21 @@ export function getShellConfig(): { shell: string; args: string[] } {
 }
 
 /**
+ * Sanitize binary output for display/storage.
+ * Removes characters that crash string-width or cause display issues:
+ * - Control characters (except tab, newline, carriage return)
+ * - Lone surrogates
+ * - Unicode Format characters (crash string-width due to a bug)
+ */
+export function sanitizeBinaryOutput(str: string): string {
+	// Fast path: use regex to remove problematic characters
+	// - \p{Format}: Unicode format chars like \u0601 that crash string-width
+	// - \p{Surrogate}: Lone surrogates from invalid UTF-8
+	// - Control chars except \t \n \r
+	return str.replace(/[\p{Format}\p{Surrogate}]/gu, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
+
+/**
  * Kill a process and all its children (cross-platform)
  */
 export function killProcessTree(pid: number): void {

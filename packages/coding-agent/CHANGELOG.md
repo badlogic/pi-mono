@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `/debug` command now includes agent messages as JSONL in the output
+
+### Fixed
+
+- Fix crash when bash command outputs binary data (e.g., `curl` downloading a video file)
+
 ## [0.14.1] - 2025-12-08
 
 ### Fixed
