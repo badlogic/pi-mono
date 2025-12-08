@@ -79,41 +79,46 @@ This is the core abstraction shared by all modes. See full API design below.
 
 ```typescript
 class AgentSession {
-  // State access
+  // ─── Read-only State Access ───
   get state(): AgentState;
   get model(): Model<any> | null;
   get thinkingLevel(): ThinkingLevel;
   get isStreaming(): boolean;
   get messages(): AppMessage[];  // Includes custom types like BashExecutionMessage
+  get queueMode(): QueueMode;
 
-  // Event subscription (handles session persistence internally)
+  // ─── Event Subscription ───
+  // Handles session persistence internally (saves messages, checks auto-compaction)
   subscribe(listener: (event: AgentEvent) => void): () => void;
 
-  // Prompting
+  // ─── Prompting ───
   prompt(text: string, options?: PromptOptions): Promise<void>;
   queueMessage(text: string): Promise<void>;
   clearQueue(): string[];
   abort(): Promise<void>;
   reset(): Promise<void>;
 
-  // Model management
-  setModel(model: Model<any>): Promise<void>;
+  // ─── Model Management ───
+  setModel(model: Model<any>): Promise<void>;  // Validates API key, saves to session + settings
   cycleModel(): Promise<ModelCycleResult | null>;
   getAvailableModels(): Promise<Model<any>[]>;
 
-  // Thinking level
-  setThinkingLevel(level: ThinkingLevel): void;
+  // ─── Thinking Level ───
+  setThinkingLevel(level: ThinkingLevel): void;  // Saves to session + settings
   cycleThinkingLevel(): ThinkingLevel | null;
   supportsThinking(): boolean;
 
-  // Compaction
+  // ─── Queue Mode ───
+  setQueueMode(mode: QueueMode): void;  // Saves to settings
+
+  // ─── Compaction ───
   compact(customInstructions?: string): Promise<CompactionResult>;
   abortCompaction(): void;
-  checkAutoCompaction(): Promise<CompactionResult | null>;
-  setAutoCompactionEnabled(enabled: boolean): void;
+  checkAutoCompaction(): Promise<CompactionResult | null>;  // Called internally after assistant messages
+  setAutoCompactionEnabled(enabled: boolean): void;  // Saves to settings
   get autoCompactionEnabled(): boolean;
 
-  // Bash execution
+  // ─── Bash Execution ───
   executeBash(command: string, onChunk?: (chunk: string) => void): Promise<BashResult>;
   abortBash(): void;
   get isBashRunning(): boolean;
@@ -619,7 +624,25 @@ supportsThinking(): boolean {
 - [ ] Add `setThinkingLevel()` method
 - [ ] Add `cycleThinkingLevel()` method
 - [ ] Add `supportsThinking()` method
+- [ ] Add `setQueueMode()` method and `queueMode` getter (see below)
 - [ ] Verify with `npm run check`
+
+**Queue mode (add to same WP):**
+```typescript
+// Add to AgentSession class
+
+get queueMode(): QueueMode {
+  return this.agent.getQueueMode();
+}
+
+/**
+ * Set message queue mode. Saves to settings.
+ */
+setQueueMode(mode: QueueMode): void {
+  this.agent.setQueueMode(mode);
+  this.settingsManager.setQueueMode(mode);
+}
+```
 
 ---
 
