@@ -762,6 +762,27 @@ You can submit multiple messages while the agent is processing without waiting f
 
 Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settings.json`.
 
+### Bash Mode (`!`)
+
+Execute shell commands directly and add output to the LLM context by prefixing with `!`:
+
+```
+!ls -la
+!git status
+!cat package.json | jq '.dependencies'
+```
+
+**Features:**
+- **Streaming output**: Command output streams in real-time as it executes
+- **Multiline commands**: Write complex commands across multiple lines
+- **Cancellation**: Press **Escape** to cancel a running command
+- **Truncation**: Large outputs are truncated (2000 lines / 50KB) with full output saved to a temp file
+- **Preview mode**: Shows last 20 lines by default; press **Ctrl+O** to expand
+- **History**: Commands are added to editor history (navigate with Up/Down arrows)
+- **Visual feedback**: Editor border turns green in bash mode; cancelled commands show yellow warning
+
+Output is automatically added to the conversation context, allowing the LLM to see command results without manual copy-paste.
+
 ### Keyboard Shortcuts
 
 **Navigation:**

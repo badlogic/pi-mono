@@ -6,6 +6,7 @@ import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { BashExecutionMessage } from "../src/messages.js";
 import type { CompactionEntry } from "../src/session-manager.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -230,4 +231,199 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(compactionEntries.length).toBe(1);
 		expect(compactionEntries[0].summary).toBeDefined();
 	}, 120000);
+
+	test("should execute bash command and add to context", async () => {
+		// Spawn agent in RPC mode
+		agent = spawn(
+			"node",
+			["dist/cli.js", "--mode", "rpc", "--provider", "anthropic", "--model", "claude-sonnet-4-5"],
+			{
+				cwd: join(__dirname, ".."),
+				env: {
+					...process.env,
+					PI_CODING_AGENT_DIR: sessionDir,
+				},
+			},
+		);
+
+		const events: (
+			| AgentEvent
+			| { type: "bash_end"; message: BashExecutionMessage }
+			| { type: "error"; error: string }
+		)[] = [];
+
+		const rl = readline.createInterface({ input: agent.stdout!, terminal: false });
+
+		let stderr = "";
+		agent.stderr?.on("data", (data) => {
+			stderr += data.toString();
+		});
+
+		// Set up persistent event collector BEFORE sending any commands
+		// This is critical for fast commands like bash that complete before
+		// a per-call handler would be registered
+		rl.on("line", (line: string) => {
+			try {
+				const event = JSON.parse(line);
+				events.push(event);
+			} catch {
+				// Ignore non-JSON
+			}
+		});
+
+		// Helper to wait for a specific event type by polling collected events
+		const waitForEvent = (eventType: string, timeout = 60000) =>
+			new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(
+					() => reject(new Error(`Timeout waiting for ${eventType}. Stderr: ${stderr}`)),
+					timeout,
+				);
+				const check = () => {
+					if (events.some((e) => e.type === eventType)) {
+						clearTimeout(timer);
+						resolve();
+					} else {
+						setTimeout(check, 50);
+					}
+				};
+				check();
+			});
+
+		// Send a bash command
+		agent.stdin!.write(JSON.stringify({ type: "bash", command: "echo hello" }) + "\n");
+		await waitForEvent("bash_end");
+
+		// Verify bash_end event
+		const bashEvent = events.find((e) => e.type === "bash_end") as
+			| { type: "bash_end"; message: BashExecutionMessage }
+			| undefined;
+		expect(bashEvent).toBeDefined();
+		expect(bashEvent!.message.role).toBe("bashExecution");
+		expect(bashEvent!.message.command).toBe("echo hello");
+		expect(bashEvent!.message.output.trim()).toBe("hello");
+		expect(bashEvent!.message.exitCode).toBe(0);
+		expect(bashEvent!.message.cancelled).toBe(false);
+
+		// Clear events for next phase
+		events.length = 0;
+
+		// Session only initializes after user+assistant exchange, so send a prompt
+		agent.stdin!.write(JSON.stringify({ type: "prompt", message: "Say hi" }) + "\n");
+		await waitForEvent("agent_end");
+
+		// Wait for file writes
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		agent.kill("SIGTERM");
+
+		// Verify bash execution was saved to session file
+		const sessionsPath = join(sessionDir, "sessions");
+		const sessionDirs = readdirSync(sessionsPath);
+		const cwdSessionDir = join(sessionsPath, sessionDirs[0]);
+		const sessionFiles = readdirSync(cwdSessionDir).filter((f) => f.endsWith(".jsonl"));
+		const sessionContent = readFileSync(join(cwdSessionDir, sessionFiles[0]), "utf8");
+		const entries = sessionContent
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+
+		// Should have a bashExecution message
+		const bashMessages = entries.filter(
+			(e: { type: string; message?: { role: string } }) =>
+				e.type === "message" && e.message?.role === "bashExecution",
+		);
+		expect(bashMessages.length).toBe(1);
+		expect(bashMessages[0].message.command).toBe("echo hello");
+		expect(bashMessages[0].message.output.trim()).toBe("hello");
+	}, 90000);
+
+	test("should include bash output in LLM context", async () => {
+		// Spawn agent in RPC mode
+		agent = spawn(
+			"node",
+			["dist/cli.js", "--mode", "rpc", "--provider", "anthropic", "--model", "claude-sonnet-4-5"],
+			{
+				cwd: join(__dirname, ".."),
+				env: {
+					...process.env,
+					PI_CODING_AGENT_DIR: sessionDir,
+				},
+			},
+		);
+
+		const events: (
+			| AgentEvent
+			| { type: "bash_end"; message: BashExecutionMessage }
+			| { type: "error"; error: string }
+		)[] = [];
+
+		const rl = readline.createInterface({ input: agent.stdout!, terminal: false });
+
+		let stderr = "";
+		agent.stderr?.on("data", (data) => {
+			stderr += data.toString();
+		});
+
+		// Set up persistent event collector BEFORE sending any commands
+		rl.on("line", (line: string) => {
+			try {
+				const event = JSON.parse(line);
+				events.push(event);
+			} catch {
+				// Ignore non-JSON
+			}
+		});
+
+		// Helper to wait for a specific event type by polling collected events
+		const waitForEvent = (eventType: string, timeout = 60000) =>
+			new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(
+					() => reject(new Error(`Timeout waiting for ${eventType}. Stderr: ${stderr}`)),
+					timeout,
+				);
+				const check = () => {
+					if (events.some((e) => e.type === eventType)) {
+						clearTimeout(timer);
+						resolve();
+					} else {
+						setTimeout(check, 50);
+					}
+				};
+				check();
+			});
+
+		// Wait for agent to initialize (session manager, etc.)
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// First, run a bash command with a unique value
+		const uniqueValue = `test-${Date.now()}`;
+		agent.stdin!.write(JSON.stringify({ type: "bash", command: `echo ${uniqueValue}` }) + "\n");
+		await waitForEvent("bash_end");
+
+		// Clear events but keep collecting new ones
+		events.length = 0;
+
+		// Now ask the LLM what the output was - it should be in context
+		agent.stdin!.write(
+			JSON.stringify({
+				type: "prompt",
+				message: `What was the exact output of the echo command I just ran? Reply with just the value, nothing else.`,
+			}) + "\n",
+		);
+		await waitForEvent("agent_end");
+
+		// Find the assistant's response
+		const messageEndEvents = events.filter((e) => e.type === "message_end") as AgentEvent[];
+		const assistantMessage = messageEndEvents.find(
+			(e) => e.type === "message_end" && (e as any).message?.role === "assistant",
+		) as any;
+
+		expect(assistantMessage).toBeDefined();
+
+		// The assistant should mention the unique value from the bash output
+		const textContent = assistantMessage.message.content.find((c: any) => c.type === "text");
+		expect(textContent?.text).toContain(uniqueValue);
+
+		agent.kill("SIGTERM");
+	}, 90000);
 });

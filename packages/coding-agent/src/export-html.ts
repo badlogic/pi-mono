@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename } from "path";
 import { APP_NAME, VERSION } from "./config.js";
+import { type BashExecutionMessage, isBashExecutionMessage } from "./messages.js";
 import type { SessionManager } from "./session-manager.js";
 
 // ============================================================================
@@ -56,6 +57,8 @@ const COLORS = {
 	toolPendingBg: "rgb(40, 40, 50)",
 	toolSuccessBg: "rgb(40, 50, 40)",
 	toolErrorBg: "rgb(60, 40, 40)",
+	userBashBg: "rgb(50, 48, 35)", // Faint yellow/brown for user-executed bash
+	userBashErrorBg: "rgb(60, 45, 35)", // Slightly more orange for errors
 	bodyBg: "rgb(24, 24, 30)",
 	containerBg: "rgb(30, 30, 36)",
 	text: "rgb(229, 229, 231)",
@@ -92,6 +95,34 @@ function formatTimestamp(timestamp: number | string | undefined): string {
 	if (!timestamp) return "";
 	const date = new Date(typeof timestamp === "string" ? timestamp : timestamp);
 	return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatExpandableOutput(lines: string[], maxLines: number): string {
+	const displayLines = lines.slice(0, maxLines);
+	const remaining = lines.length - maxLines;
+
+	if (remaining > 0) {
+		let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+		out += '<div class="output-preview">';
+		for (const line of displayLines) {
+			out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+		}
+		out += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+		out += "</div>";
+		out += '<div class="output-full">';
+		for (const line of lines) {
+			out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+		}
+		out += "</div></div>";
+		return out;
+	}
+
+	let out = '<div class="tool-output">';
+	for (const line of displayLines) {
+		out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+	}
+	out += "</div>";
+	return out;
 }
 
 // ============================================================================
@@ -304,34 +335,6 @@ function formatToolExecution(
 		return textBlocks.map((c) => (c as { type: "text"; text: string }).text).join("\n");
 	};
 
-	const formatExpandableOutput = (lines: string[], maxLines: number): string => {
-		const displayLines = lines.slice(0, maxLines);
-		const remaining = lines.length - maxLines;
-
-		if (remaining > 0) {
-			let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
-			out += '<div class="output-preview">';
-			for (const line of displayLines) {
-				out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-			}
-			out += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
-			out += "</div>";
-			out += '<div class="output-full">';
-			for (const line of lines) {
-				out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-			}
-			out += "</div></div>";
-			return out;
-		}
-
-		let out = '<div class="tool-output">';
-		for (const line of displayLines) {
-			out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-		}
-		out += "</div>";
-		return out;
-	};
-
 	switch (toolName) {
 		case "bash": {
 			const command = (args?.command as string) || "";
@@ -426,6 +429,35 @@ function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultM
 	let html = "";
 	const timestamp = (message as { timestamp?: number }).timestamp;
 	const timestampHtml = timestamp ? `<div class="message-timestamp">${formatTimestamp(timestamp)}</div>` : "";
+
+	// Handle bash execution messages (user-executed via ! command)
+	if (isBashExecutionMessage(message)) {
+		const bashMsg = message as unknown as BashExecutionMessage;
+		const isError = bashMsg.cancelled || (bashMsg.exitCode !== 0 && bashMsg.exitCode !== null);
+		const bgColor = isError ? COLORS.userBashErrorBg : COLORS.userBashBg;
+
+		html += `<div class="tool-execution" style="background-color: ${bgColor}">`;
+		html += timestampHtml;
+		html += `<div class="tool-command">$ ${escapeHtml(bashMsg.command)}</div>`;
+
+		if (bashMsg.output) {
+			const lines = bashMsg.output.split("\n");
+			html += formatExpandableOutput(lines, 10);
+		}
+
+		if (bashMsg.cancelled) {
+			html += `<div class="bash-status" style="color: ${COLORS.yellow}">(cancelled)</div>`;
+		} else if (bashMsg.exitCode !== 0 && bashMsg.exitCode !== null) {
+			html += `<div class="bash-status" style="color: ${COLORS.red}">(exit ${bashMsg.exitCode})</div>`;
+		}
+
+		if (bashMsg.truncated && bashMsg.fullOutputPath) {
+			html += `<div class="bash-truncation" style="color: ${COLORS.yellow}">Output truncated. Full output: ${escapeHtml(bashMsg.fullOutputPath)}</div>`;
+		}
+
+		html += `</div>`;
+		return html;
+	}
 
 	if (message.role === "user") {
 		const userMsg = message as UserMessage;

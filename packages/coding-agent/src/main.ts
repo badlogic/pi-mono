@@ -2,9 +2,12 @@ import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@
 import type { Api, AssistantMessage, KnownProvider, Model } from "@mariozechner/pi-ai";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-import { existsSync, readFileSync, statSync } from "fs";
-import { homedir } from "os";
+import { spawn } from "child_process";
+import { randomBytes } from "crypto";
+import { createWriteStream, existsSync, readFileSync, statSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { extname, join, resolve } from "path";
+import stripAnsi from "strip-ansi";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import {
@@ -17,12 +20,15 @@ import {
 	VERSION,
 } from "./config.js";
 import { exportFromFile } from "./export-html.js";
+import { type BashExecutionMessage, messageTransformer } from "./messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
+import { getShellConfig } from "./shell.js";
 import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
 import { initTheme } from "./theme/theme.js";
 import { allTools, codingTools, type ToolName } from "./tools/index.js";
+import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
 import { ensureTool } from "./tools-manager.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
 import { TuiRenderer } from "./tui/tui-renderer.js";
@@ -856,6 +862,87 @@ async function runSingleShotMode(
 	}
 }
 
+/**
+ * Execute a bash command for RPC mode.
+ * Similar to tui-renderer's executeBashCommand but without streaming callbacks.
+ */
+async function executeRpcBashCommand(command: string): Promise<{
+	output: string;
+	exitCode: number | null;
+	truncationResult?: ReturnType<typeof truncateTail>;
+	fullOutputPath?: string;
+}> {
+	return new Promise((resolve, reject) => {
+		const { shell, args } = getShellConfig();
+		const child = spawn(shell, [...args, command], {
+			detached: true,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		const chunks: Buffer[] = [];
+		let chunksBytes = 0;
+		const maxChunksBytes = DEFAULT_MAX_BYTES * 2;
+
+		let tempFilePath: string | undefined;
+		let tempFileStream: ReturnType<typeof createWriteStream> | undefined;
+		let totalBytes = 0;
+
+		const handleData = (data: Buffer) => {
+			totalBytes += data.length;
+
+			// Start writing to temp file if exceeds threshold
+			if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+				const id = randomBytes(8).toString("hex");
+				tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+				tempFileStream = createWriteStream(tempFilePath);
+				for (const chunk of chunks) {
+					tempFileStream.write(chunk);
+				}
+			}
+
+			if (tempFileStream) {
+				tempFileStream.write(data);
+			}
+
+			// Keep rolling buffer
+			chunks.push(data);
+			chunksBytes += data.length;
+			while (chunksBytes > maxChunksBytes && chunks.length > 1) {
+				const removed = chunks.shift()!;
+				chunksBytes -= removed.length;
+			}
+		};
+
+		child.stdout?.on("data", handleData);
+		child.stderr?.on("data", handleData);
+
+		child.on("close", (code) => {
+			if (tempFileStream) {
+				tempFileStream.end();
+			}
+
+			// Combine buffered chunks
+			const fullBuffer = Buffer.concat(chunks);
+			const fullOutput = stripAnsi(fullBuffer.toString("utf-8")).replace(/\r/g, "");
+			const truncationResult = truncateTail(fullOutput);
+
+			resolve({
+				output: fullOutput,
+				exitCode: code,
+				truncationResult: truncationResult.truncated ? truncationResult : undefined,
+				fullOutputPath: tempFilePath,
+			});
+		});
+
+		child.on("error", (err) => {
+			if (tempFileStream) {
+				tempFileStream.end();
+			}
+			reject(err);
+		});
+	});
+}
+
 async function runRpcMode(
 	agent: Agent,
 	sessionManager: SessionManager,
@@ -985,6 +1072,37 @@ async function runRpcMode(
 					console.log(JSON.stringify(compactionEntry));
 				} catch (error: any) {
 					console.log(JSON.stringify({ type: "error", error: `Compaction failed: ${error.message}` }));
+				}
+			} else if (input.type === "bash" && input.command) {
+				// Execute bash command and add to context
+				try {
+					const result = await executeRpcBashCommand(input.command);
+
+					// Create bash execution message
+					const bashMessage: BashExecutionMessage = {
+						role: "bashExecution",
+						command: input.command,
+						output: result.truncationResult?.content || result.output,
+						exitCode: result.exitCode,
+						cancelled: false,
+						truncated: result.truncationResult?.truncated || false,
+						fullOutputPath: result.fullOutputPath,
+						timestamp: Date.now(),
+					};
+
+					// Add to agent state and save to session
+					agent.appendMessage(bashMessage);
+					sessionManager.saveMessage(bashMessage);
+
+					// Initialize session if needed (same logic as message_end handler)
+					if (sessionManager.shouldInitializeSession(agent.state.messages)) {
+						sessionManager.startSession(agent.state);
+					}
+
+					// Emit bash_end event with the message
+					console.log(JSON.stringify({ type: "bash_end", message: bashMessage }));
+				} catch (error: any) {
+					console.log(JSON.stringify({ type: "error", error: `Bash command failed: ${error.message}` }));
 				}
 			}
 		} catch (error: any) {
@@ -1273,6 +1391,7 @@ export async function main(args: string[]) {
 			thinkingLevel: initialThinking,
 			tools: selectedTools,
 		},
+		messageTransformer,
 		queueMode: settingsManager.getQueueMode(),
 		transport: new ProviderTransport({
 			// Dynamic API key lookup based on current model's provider

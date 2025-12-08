@@ -1,6 +1,10 @@
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
-import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { join } from "node:path";
+import type { Agent, AgentEvent, AgentState, AppMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -16,12 +20,14 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
+import stripAnsi from "strip-ansi";
 import { getChangelogPath, parseChangelog } from "../changelog.js";
 import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
+import { type BashExecutionMessage, isBashExecutionMessage } from "../messages.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
 import {
@@ -32,9 +38,12 @@ import {
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
+import { getShellConfig, killProcessTree } from "../shell.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
+import { DEFAULT_MAX_BYTES, type TruncationResult, truncateTail } from "../tools/truncate.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
+import { BashExecutionComponent } from "./bash-execution.js";
 import { CompactionComponent } from "./compaction.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -120,6 +129,15 @@ export class TuiRenderer {
 
 	// File-based slash commands
 	private fileCommands: FileSlashCommand[] = [];
+
+	// Track if editor is in bash mode (text starts with !)
+	private isBashMode = false;
+
+	// Track running bash command process for cancellation
+	private bashProcess: ReturnType<typeof spawn> | null = null;
+
+	// Track current bash execution component
+	private bashComponent: BashExecutionComponent | null = null;
 
 	constructor(
 		agent: Agent,
@@ -295,6 +313,9 @@ export class TuiRenderer {
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
 			"\n" +
+			theme.fg("dim", "!") +
+			theme.fg("muted", " to run bash") +
+			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
 		const header = new Text(logo + "\n" + instructions, 1, 0);
@@ -355,6 +376,17 @@ export class TuiRenderer {
 
 				// Abort
 				this.agent.abort();
+			} else if (this.bashProcess) {
+				// Kill running bash command
+				if (this.bashProcess.pid) {
+					killProcessTree(this.bashProcess.pid);
+				}
+				this.bashProcess = null;
+			} else if (this.isBashMode) {
+				// Cancel bash mode and clear editor
+				this.editor.setText("");
+				this.isBashMode = false;
+				this.updateEditorBorderColor();
 			} else if (!this.editor.getText().trim()) {
 				// Double-escape with empty editor triggers /branch
 				const now = Date.now();
@@ -385,6 +417,15 @@ export class TuiRenderer {
 
 		this.editor.onCtrlT = () => {
 			this.toggleThinkingBlockVisibility();
+		};
+
+		// Handle editor text changes for bash mode detection
+		this.editor.onChange = (text: string) => {
+			const wasBashMode = this.isBashMode;
+			this.isBashMode = text.trimStart().startsWith("!");
+			if (wasBashMode !== this.isBashMode) {
+				this.updateEditorBorderColor();
+			}
 		};
 
 		// Handle editor submission
@@ -505,6 +546,27 @@ export class TuiRenderer {
 				this.showSessionSelector();
 				this.editor.setText("");
 				return;
+			}
+
+			// Check for bash command (!<command>)
+			if (text.startsWith("!")) {
+				const command = text.slice(1).trim();
+				if (command) {
+					// Block if bash already running
+					if (this.bashProcess) {
+						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+						// Restore text since editor clears on submit
+						this.editor.setText(text);
+						return;
+					}
+					// Add to history for up/down arrow navigation
+					this.editor.addToHistory(text);
+					this.handleBashCommand(command);
+					// Reset bash mode since editor is now empty
+					this.isBashMode = false;
+					this.updateEditorBorderColor();
+					return;
+				}
 			}
 
 			// Check for file-based slash commands
@@ -808,7 +870,24 @@ export class TuiRenderer {
 		}
 	}
 
-	private addMessageToChat(message: Message): void {
+	private addMessageToChat(message: Message | AppMessage): void {
+		// Handle bash execution messages
+		if (isBashExecutionMessage(message)) {
+			const bashMsg = message as BashExecutionMessage;
+			const component = new BashExecutionComponent(bashMsg.command, this.ui);
+			if (bashMsg.output) {
+				component.appendOutput(bashMsg.output);
+			}
+			component.setComplete(
+				bashMsg.exitCode,
+				bashMsg.cancelled,
+				bashMsg.truncated ? ({ truncated: true } as TruncationResult) : undefined,
+				bashMsg.fullOutputPath,
+			);
+			this.chatContainer.addChild(component);
+			return;
+		}
+
 		if (message.role === "user") {
 			const userMsg = message;
 			// Extract text content from content blocks
@@ -849,6 +928,12 @@ export class TuiRenderer {
 		// Render messages
 		for (let i = 0; i < state.messages.length; i++) {
 			const message = state.messages[i];
+
+			// Handle bash execution messages
+			if (isBashExecutionMessage(message)) {
+				this.addMessageToChat(message);
+				continue;
+			}
 
 			if (message.role === "user") {
 				const userMsg = message;
@@ -950,6 +1035,12 @@ export class TuiRenderer {
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
 
 		for (const message of this.agent.state.messages) {
+			// Handle bash execution messages
+			if (isBashExecutionMessage(message)) {
+				this.addMessageToChat(message);
+				continue;
+			}
+
 			if (message.role === "user") {
 				const userMsg = message;
 				const textBlocks =
@@ -1016,8 +1107,12 @@ export class TuiRenderer {
 	}
 
 	private updateEditorBorderColor(): void {
-		const level = this.agent.state.thinkingLevel || "off";
-		this.editor.borderColor = theme.getThinkingBorderColor(level);
+		if (this.isBashMode) {
+			this.editor.borderColor = theme.getBashModeBorderColor();
+		} else {
+			const level = this.agent.state.thinkingLevel || "off";
+			this.editor.borderColor = theme.getThinkingBorderColor(level);
+		}
 		this.ui.requestRender();
 	}
 
@@ -1168,11 +1263,13 @@ export class TuiRenderer {
 	private toggleToolOutputExpansion(): void {
 		this.toolOutputExpanded = !this.toolOutputExpanded;
 
-		// Update all tool execution and compaction components
+		// Update all tool execution, compaction, and bash execution components
 		for (const child of this.chatContainer.children) {
 			if (child instanceof ToolExecutionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			} else if (child instanceof CompactionComponent) {
+				child.setExpanded(this.toolOutputExpanded);
+			} else if (child instanceof BashExecutionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}
@@ -1970,6 +2067,152 @@ export class TuiRenderer {
 		);
 
 		this.ui.requestRender();
+	}
+
+	private async handleBashCommand(command: string): Promise<void> {
+		// Create component and add to chat
+		this.bashComponent = new BashExecutionComponent(command, this.ui);
+		this.chatContainer.addChild(this.bashComponent);
+		this.ui.requestRender();
+
+		try {
+			const result = await this.executeBashCommand(command, (chunk) => {
+				if (this.bashComponent) {
+					this.bashComponent.appendOutput(chunk);
+					this.ui.requestRender();
+				}
+			});
+
+			if (this.bashComponent) {
+				this.bashComponent.setComplete(
+					result.exitCode,
+					result.cancelled,
+					result.truncationResult,
+					result.fullOutputPath,
+				);
+
+				// Create and save message (even if cancelled, for consistency with LLM aborts)
+				const bashMessage: BashExecutionMessage = {
+					role: "bashExecution",
+					command,
+					output: result.truncationResult?.content || this.bashComponent.getOutput(),
+					exitCode: result.exitCode,
+					cancelled: result.cancelled,
+					truncated: result.truncationResult?.truncated || false,
+					fullOutputPath: result.fullOutputPath,
+					timestamp: Date.now(),
+				};
+
+				// Add to agent state
+				this.agent.appendMessage(bashMessage);
+
+				// Save to session
+				this.sessionManager.saveMessage(bashMessage);
+			}
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			if (this.bashComponent) {
+				this.bashComponent.setComplete(null, false);
+			}
+			this.showError(`Bash command failed: ${errorMessage}`);
+		}
+
+		this.bashComponent = null;
+		this.ui.requestRender();
+	}
+
+	private executeBashCommand(
+		command: string,
+		onChunk: (chunk: string) => void,
+	): Promise<{
+		exitCode: number | null;
+		cancelled: boolean;
+		truncationResult?: TruncationResult;
+		fullOutputPath?: string;
+	}> {
+		return new Promise((resolve, reject) => {
+			const { shell, args } = getShellConfig();
+			const child = spawn(shell, [...args, command], {
+				detached: true,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+
+			this.bashProcess = child;
+
+			// Track output for truncation
+			const chunks: Buffer[] = [];
+			let chunksBytes = 0;
+			const maxChunksBytes = DEFAULT_MAX_BYTES * 2;
+
+			// Temp file for large output
+			let tempFilePath: string | undefined;
+			let tempFileStream: WriteStream | undefined;
+			let totalBytes = 0;
+
+			const handleData = (data: Buffer) => {
+				totalBytes += data.length;
+
+				// Start writing to temp file if exceeds threshold
+				if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+					const id = randomBytes(8).toString("hex");
+					tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+					tempFileStream = createWriteStream(tempFilePath);
+					for (const chunk of chunks) {
+						tempFileStream.write(chunk);
+					}
+				}
+
+				if (tempFileStream) {
+					tempFileStream.write(data);
+				}
+
+				// Keep rolling buffer
+				chunks.push(data);
+				chunksBytes += data.length;
+				while (chunksBytes > maxChunksBytes && chunks.length > 1) {
+					const removed = chunks.shift()!;
+					chunksBytes -= removed.length;
+				}
+
+				// Stream to component (strip ANSI)
+				const text = stripAnsi(data.toString()).replace(/\r/g, "");
+				onChunk(text);
+			};
+
+			child.stdout?.on("data", handleData);
+			child.stderr?.on("data", handleData);
+
+			child.on("close", (code) => {
+				if (tempFileStream) {
+					tempFileStream.end();
+				}
+
+				this.bashProcess = null;
+
+				// Combine buffered chunks for truncation
+				const fullBuffer = Buffer.concat(chunks);
+				const fullOutput = stripAnsi(fullBuffer.toString("utf-8")).replace(/\r/g, "");
+				const truncationResult = truncateTail(fullOutput);
+
+				// code === null means killed (cancelled)
+				const cancelled = code === null;
+
+				resolve({
+					exitCode: code,
+					cancelled,
+					truncationResult: truncationResult.truncated ? truncationResult : undefined,
+					fullOutputPath: tempFilePath,
+				});
+			});
+
+			child.on("error", (err) => {
+				if (tempFileStream) {
+					tempFileStream.end();
+				}
+				this.bashProcess = null;
+				reject(err);
+			});
+		});
 	}
 
 	private compactionAbortController: AbortController | null = null;

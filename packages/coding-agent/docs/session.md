@@ -40,7 +40,10 @@ A message in the conversation. The `message` field contains an `AppMessage` (see
 {"type":"message","timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"user","content":"Hello","timestamp":1733234567890}}
 {"type":"message","timestamp":"2024-12-03T14:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{...},"stopReason":"stop","timestamp":1733234567891}}
 {"type":"message","timestamp":"2024-12-03T14:00:03.000Z","message":{"role":"toolResult","toolCallId":"call_123","toolName":"bash","content":[{"type":"text","text":"output"}],"isError":false,"timestamp":1733234567900}}
+{"type":"message","timestamp":"2024-12-03T14:00:04.000Z","message":{"role":"bashExecution","command":"ls -la","output":"total 48\n...","exitCode":0,"cancelled":false,"truncated":false,"timestamp":1733234567950}}
 ```
+
+The `bashExecution` role is a custom message type for user-executed bash commands (via `!` in TUI or `bash` RPC command). See [rpc.md](./rpc.md#bashexecutionmessage) for the full schema.
 
 ### ModelChangeEntry
 
