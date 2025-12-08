@@ -13,11 +13,13 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type { Agent, AgentEvent, AgentState, AppMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
+import { getModelsPath } from "../config.js";
+import { getApiKeyForModel } from "../model-config.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
-import type { FileSlashCommand } from "../slash-commands.js";
+import { expandSlashCommand, type FileSlashCommand } from "../slash-commands.js";
 
 /** Listener function for agent events */
 export type AgentEventListener = (event: AgentEvent) => void;
@@ -36,6 +38,14 @@ export interface AgentSessionConfig {
 	fileCommands?: FileSlashCommand[];
 }
 
+/** Options for AgentSession.prompt() */
+export interface PromptOptions {
+	/** Whether to expand file-based slash commands (default: true) */
+	expandSlashCommands?: boolean;
+	/** Image/file attachments */
+	attachments?: Attachment[];
+}
+
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -51,6 +61,9 @@ export class AgentSession {
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentEventListener[] = [];
+
+	// Message queue state
+	private _queuedMessages: string[] = [];
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -193,5 +206,98 @@ export class AgentSession {
 	/** File-based slash commands */
 	get fileCommands(): ReadonlyArray<FileSlashCommand> {
 		return this._fileCommands;
+	}
+
+	// =========================================================================
+	// Prompting
+	// =========================================================================
+
+	/**
+	 * Send a prompt to the agent.
+	 * - Validates model and API key before sending
+	 * - Expands file-based slash commands by default
+	 * @throws Error if no model selected or no API key available
+	 */
+	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		const expandCommands = options?.expandSlashCommands ?? true;
+
+		// Validate model
+		if (!this.model) {
+			throw new Error(
+				"No model selected.\n\n" +
+					"Set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n" +
+					`or create ${getModelsPath()}\n\n` +
+					"Then use /model to select a model.",
+			);
+		}
+
+		// Validate API key
+		const apiKey = await getApiKeyForModel(this.model);
+		if (!apiKey) {
+			throw new Error(
+				`No API key found for ${this.model.provider}.\n\n` +
+					`Set the appropriate environment variable or update ${getModelsPath()}`,
+			);
+		}
+
+		// Expand slash commands if requested
+		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
+
+		await this.agent.prompt(expandedText, options?.attachments);
+	}
+
+	/**
+	 * Queue a message to be sent after the current response completes.
+	 * Use when agent is currently streaming.
+	 */
+	async queueMessage(text: string): Promise<void> {
+		this._queuedMessages.push(text);
+		await this.agent.queueMessage({
+			role: "user",
+			content: [{ type: "text", text }],
+			timestamp: Date.now(),
+		});
+	}
+
+	/**
+	 * Clear queued messages and return them.
+	 * Useful for restoring to editor when user aborts.
+	 */
+	clearQueue(): string[] {
+		const queued = [...this._queuedMessages];
+		this._queuedMessages = [];
+		this.agent.clearMessageQueue();
+		return queued;
+	}
+
+	/** Number of messages currently queued */
+	get queuedMessageCount(): number {
+		return this._queuedMessages.length;
+	}
+
+	/** Get queued messages (read-only) */
+	getQueuedMessages(): readonly string[] {
+		return this._queuedMessages;
+	}
+
+	/**
+	 * Abort current operation and wait for agent to become idle.
+	 */
+	async abort(): Promise<void> {
+		this.agent.abort();
+		await this.agent.waitForIdle();
+	}
+
+	/**
+	 * Reset agent and session to start fresh.
+	 * Clears all messages and starts a new session.
+	 */
+	async reset(): Promise<void> {
+		this.unsubscribeAll();
+		await this.abort();
+		this.agent.reset();
+		this.sessionManager.reset();
+		this._queuedMessages = [];
+		// Note: caller should re-subscribe after reset if needed
 	}
 }

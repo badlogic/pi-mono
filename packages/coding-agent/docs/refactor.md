@@ -448,12 +448,13 @@ async reset(): Promise<void> {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `prompt()` method with validation and slash command expansion
-- [ ] Add `queueMessage()` method
-- [ ] Add `clearQueue()` method  
-- [ ] Add `abort()` method
-- [ ] Add `reset()` method
-- [ ] Verify with `npm run check`
+- [x] Add `prompt()` method with validation and slash command expansion
+- [x] Add `queueMessage()` method
+- [x] Add `clearQueue()` method  
+- [x] Add `abort()` method
+- [x] Add `reset()` method
+- [x] Add `queuedMessageCount` getter and `getQueuedMessages()` method
+- [x] Verify with `npm run check`
 
 ---
 
