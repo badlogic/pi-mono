@@ -8,6 +8,7 @@
 import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
+import { messageTransformer } from "./messages.js";
 import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 // ============================================================================
@@ -184,11 +185,14 @@ export async function generateSummary(
 		? `${SUMMARIZATION_PROMPT}\n\nAdditional focus: ${customInstructions}`
 		: SUMMARIZATION_PROMPT;
 
+	// Transform custom messages (like bashExecution) to LLM-compatible messages
+	const transformedMessages = messageTransformer(currentMessages);
+
 	const summarizationMessages = [
-		...currentMessages,
+		...transformedMessages,
 		{
 			role: "user" as const,
-			content: prompt,
+			content: [{ type: "text" as const, text: prompt }],
 			timestamp: Date.now(),
 		},
 	];

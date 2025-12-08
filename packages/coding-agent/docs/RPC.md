@@ -54,6 +54,19 @@ Compact the conversation context to reduce token usage:
 
 The `customInstructions` field is optional and allows you to guide what the summary should focus on.
 
+#### Bash Message
+
+Execute a shell command and add output to the LLM context (without triggering a prompt):
+
+```json
+{
+  "type": "bash",
+  "command": "ls -la"
+}
+```
+
+On success, emits a `bash_end` event with the `BashExecutionMessage`. The command output is automatically added to the conversation context, allowing subsequent prompts to reference it.
+
 ## Output Protocol
 
 The agent emits JSON events to stdout, one per line. Events follow the `AgentEvent` type hierarchy.
@@ -72,6 +85,7 @@ The agent emits JSON events to stdout, one per line. Events follow the `AgentEve
 | `tool_execution_start` | Tool execution begins |
 | `tool_execution_end` | Tool execution completes |
 | `compaction` | Context was compacted (manual or auto) |
+| `bash_end` | User-initiated bash command completed |
 | `error` | An error occurred |
 
 ### Event Schemas
@@ -192,6 +206,28 @@ The `result` field contains either:
 - An `AgentToolResult` object with `content` and `details` fields
 - A string error message if `isError` is true
 
+#### bash_end
+
+Emitted when a user-initiated bash command (via `bash` input message) completes.
+
+```json
+{
+  "type": "bash_end",
+  "message": {
+    "role": "bashExecution",
+    "command": "ls -la",
+    "output": "total 48\ndrwxr-xr-x ...",
+    "exitCode": 0,
+    "cancelled": false,
+    "truncated": false,
+    "fullOutputPath": "/tmp/pi-bash-abc123.log",  // Only present if output was truncated
+    "timestamp": 1733234567890
+  }
+}
+```
+
+The `message` is a `BashExecutionMessage` that has been added to the conversation context. See [BashExecutionMessage](#bashexecutionmessage) for the full schema.
+
 #### error
 
 Emitted when an error occurs during input processing.
@@ -305,6 +341,33 @@ type AppMessage =
   | UserMessageWithAttachments
   | Message  // Includes ToolResultMessage
   | CustomMessages[keyof CustomMessages];
+```
+
+#### BashExecutionMessage
+
+Defined in [`packages/coding-agent/src/messages.ts`](../src/messages.ts)
+
+Custom message type for user-executed bash commands (via `!` in TUI or `bash` RPC command):
+
+```typescript
+interface BashExecutionMessage {
+  role: "bashExecution";
+  command: string;           // The command that was executed
+  output: string;            // Command output (truncated if large)
+  exitCode: number | null;   // Exit code, null if killed
+  cancelled: boolean;        // True if user cancelled with Escape
+  truncated: boolean;        // True if output was truncated
+  fullOutputPath?: string;   // Path to temp file with full output (if truncated)
+  timestamp: number;         // Unix timestamp in milliseconds
+}
+```
+
+When sent to the LLM, this message is transformed into a user message with the format:
+```
+Ran `<command>`
+\`\`\`
+<output>
+\`\`\`
 ```
 
 ### Content Types
@@ -456,7 +519,7 @@ function handleEvent(event: any) {
       args: event.args
     });
   }
-  
+
   if (event.type === "tool_execution_end") {
     const toolCall = pendingTools.get(event.toolCallId);
     if (toolCall) {
@@ -467,7 +530,7 @@ function handleEvent(event: any) {
         result: event.result,
         isError: event.isError
       };
-      
+
       // Format for display
       displayToolExecution(merged);
       pendingTools.delete(event.toolCallId);
@@ -497,16 +560,16 @@ function displayToolExecution(tool: {
   switch (tool.name) {
     case "bash":
       return `$ ${tool.args.command}\n${resultText}`;
-    
+
     case "read":
       return `📄 ${tool.args.path}\n${resultText.slice(0, 500)}...`;
-    
+
     case "write":
       return `✏️ Wrote ${tool.args.path}`;
-    
+
     case "edit":
       return `✏️ Edited ${tool.args.path}`;
-    
+
     default:
       return `🔧 ${tool.name}: ${resultText.slice(0, 200)}`;
   }
@@ -520,10 +583,10 @@ The `turn_end` event provides the assistant message and all tool results togethe
 ```typescript
 if (event.type === "turn_end") {
   const { message, toolResults } = event;
-  
+
   // Extract tool calls from assistant message
   const toolCalls = message.content.filter(c => c.type === "toolCall");
-  
+
   // Match each tool call with its result by toolCallId
   for (const call of toolCalls) {
     const result = toolResults.find(r => r.toolCallId === call.id);
@@ -586,14 +649,14 @@ const agent = spawn("pi", ["--mode", "rpc", "--no-session"]);
 // Parse output events
 readline.createInterface({ input: agent.stdout }).on("line", (line) => {
   const event = JSON.parse(line);
-  
+
   if (event.type === "message_update") {
     const { assistantMessageEvent } = event;
     if (assistantMessageEvent.type === "text_delta") {
       process.stdout.write(assistantMessageEvent.delta);
     }
   }
-  
+
   if (event.type === "tool_execution_start") {
     console.log(`\n[Tool: ${event.toolName}]`);
   }
