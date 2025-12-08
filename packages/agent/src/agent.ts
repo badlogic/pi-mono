@@ -1,4 +1,4 @@
-import type { ImageContent, Message, QueuedMessage, TextContent } from "@mariozechner/pi-ai";
+import type { ImageContent, Message, QueuedMessage, ReasoningEffort, TextContent } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentTransport } from "./transports/types.js";
 import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
@@ -209,7 +209,7 @@ export class Agent {
 		this._state.streamMessage = null;
 		this._state.error = undefined;
 
-		const reasoning =
+		const reasoning: ReasoningEffort | undefined =
 			this._state.thinkingLevel === "off"
 				? undefined
 				: this._state.thinkingLevel === "minimal"

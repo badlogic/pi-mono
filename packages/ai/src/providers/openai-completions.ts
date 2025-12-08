@@ -11,6 +11,7 @@ import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
+	Message,
 	Model,
 	OpenAICompat,
 	StopReason,
@@ -24,9 +25,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
 import { transformMessages } from "./transorm-messages.js";
-import type { Message } from "../types.js";
 
 /**
  * Check if conversation messages contain tool calls or tool results.
