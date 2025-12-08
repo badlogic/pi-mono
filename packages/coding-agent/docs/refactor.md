@@ -1461,24 +1461,24 @@ constructor(
 5. Manual test: Bash execution works
 6. Manual test: Model/thinking cycling works
 
-- [ ] Create `src/modes/interactive/` directory
-- [ ] Copy tui-renderer.ts to interactive-mode.ts
-- [ ] Rename class to `InteractiveMode`
-- [ ] Change constructor to accept AgentSession
-- [ ] Update all agent access to go through session
-- [ ] Remove `subscribeToAgent()` method (use session.subscribe)
-- [ ] Remove `checkAutoCompaction()` method (handled by session)
-- [ ] Update `cycleThinkingLevel()` to use session method
-- [ ] Update `cycleModel()` to use session method
-- [ ] Update bash execution to use session.executeBash()
-- [ ] Update compaction to use session.compact()
-- [ ] Update reset logic to use session.reset()
-- [ ] Update session switching to use session.switchSession()
-- [ ] Update branch logic to use session.branch()
-- [ ] Remove all direct sessionManager access
-- [ ] Update imports to point to `../../tui/` for components (keep old components in place for now)
-- [ ] Update modes/index.ts to export InteractiveMode
-- [ ] Verify with `npm run check`
+- [x] Create `src/modes/interactive/` directory
+- [x] Copy tui-renderer.ts to interactive-mode.ts
+- [x] Rename class to `InteractiveMode`
+- [x] Change constructor to accept AgentSession
+- [x] Update all agent access to go through session
+- [x] Remove `subscribeToAgent()` method (use session.subscribe)
+- [x] Remove `checkAutoCompaction()` method (handled by session)
+- [x] Update `cycleThinkingLevel()` to use session method
+- [x] Update `cycleModel()` to use session method
+- [x] Update bash execution to use session.executeBash()
+- [x] Update compaction to use session.compact()
+- [x] Update reset logic to use session.reset()
+- [x] Update session switching to use session.switchSession()
+- [x] Update branch logic to use session.branch()
+- [x] Remove all direct sessionManager access (use convenience getters for remaining access)
+- [x] Update imports to point to `../../tui/` for components (keep old components in place for now)
+- [x] Update modes/index.ts to export InteractiveMode
+- [x] Verify with `npm run check`
 - [ ] Manual test interactive mode via cli-new.ts
 
 ---
