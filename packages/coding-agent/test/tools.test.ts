@@ -43,7 +43,8 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-1", { path: testFile });
 
 			expect(getTextOutput(result)).toBe(content);
-			expect(getTextOutput(result)).not.toContain("more lines not shown");
+			// No truncation message since file fits within limits
+			expect(getTextOutput(result)).not.toContain("Use offset=");
 			expect(result.details).toBeUndefined();
 		});
 
@@ -64,23 +65,21 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 1");
 			expect(output).toContain("Line 2000");
 			expect(output).not.toContain("Line 2001");
-			expect(output).toContain("500 more lines not shown");
-			expect(output).toContain("Use offset=2001 to continue reading");
+			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue]");
 		});
 
-		it("should truncate long lines and show notice", async () => {
-			const testFile = join(testDir, "long-lines.txt");
-			const longLine = "a".repeat(3000);
-			const content = `Short line\n${longLine}\nAnother short line`;
-			writeFileSync(testFile, content);
+		it("should truncate when byte limit exceeded", async () => {
+			const testFile = join(testDir, "large-bytes.txt");
+			// Create file that exceeds 50KB byte limit but has fewer than 2000 lines
+			const lines = Array.from({ length: 500 }, (_, i) => `Line ${i + 1}: ${"x".repeat(200)}`);
+			writeFileSync(testFile, lines.join("\n"));
 
 			const result = await readTool.execute("test-call-4", { path: testFile });
 			const output = getTextOutput(result);
 
-			expect(output).toContain("Short line");
-			expect(output).toContain("Another short line");
-			expect(output).toContain("Some lines were truncated to 2000 characters");
-			expect(output.split("\n")[1].length).toBe(2000);
+			expect(output).toContain("Line 1:");
+			// Should show byte limit message
+			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\]/);
 		});
 
 		it("should handle offset parameter", async () => {
@@ -94,7 +93,8 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain("Line 50");
 			expect(output).toContain("Line 51");
 			expect(output).toContain("Line 100");
-			expect(output).not.toContain("more lines not shown");
+			// No truncation message since file fits within limits
+			expect(output).not.toContain("Use offset=");
 		});
 
 		it("should handle limit parameter", async () => {
@@ -108,8 +108,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 1");
 			expect(output).toContain("Line 10");
 			expect(output).not.toContain("Line 11");
-			expect(output).toContain("90 more lines not shown");
-			expect(output).toContain("Use offset=11 to continue reading");
+			expect(output).toContain("[90 more lines in file. Use offset=11 to continue]");
 		});
 
 		it("should handle offset + limit together", async () => {
@@ -128,8 +127,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 41");
 			expect(output).toContain("Line 60");
 			expect(output).not.toContain("Line 61");
-			expect(output).toContain("40 more lines not shown");
-			expect(output).toContain("Use offset=61 to continue reading");
+			expect(output).toContain("[40 more lines in file. Use offset=61 to continue]");
 		});
 
 		it("should show error when offset is beyond file length", async () => {
@@ -141,17 +139,19 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
-		it("should show both truncation notices when applicable", async () => {
-			const testFile = join(testDir, "both-truncations.txt");
-			const longLine = "b".repeat(3000);
-			const lines = Array.from({ length: 2500 }, (_, i) => (i === 500 ? longLine : `Line ${i + 1}`));
+		it("should include truncation details when truncated", async () => {
+			const testFile = join(testDir, "large-file.txt");
+			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
 			writeFileSync(testFile, lines.join("\n"));
 
 			const result = await readTool.execute("test-call-9", { path: testFile });
-			const output = getTextOutput(result);
 
-			expect(output).toContain("Some lines were truncated to 2000 characters");
-			expect(output).toContain("500 more lines not shown");
+			expect(result.details).toBeDefined();
+			expect(result.details?.truncation).toBeDefined();
+			expect(result.details?.truncation?.truncated).toBe(true);
+			expect(result.details?.truncation?.truncatedBy).toBe("lines");
+			expect(result.details?.truncation?.totalLines).toBe(2500);
+			expect(result.details?.truncation?.outputLines).toBe(2000);
 		});
 	});
 
@@ -276,7 +276,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("context.txt-1- before");
 			expect(output).toContain("context.txt:2: match one");
 			expect(output).toContain("context.txt-3- after");
-			expect(output).toContain("(truncated, limit of 1 matches reached)");
+			expect(output).toContain("[1 matches limit reached. Use limit=2 for more, or refine pattern]");
 			// Ensure second match is not present
 			expect(output).not.toContain("match two");
 		});

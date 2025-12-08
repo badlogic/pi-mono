@@ -23,7 +23,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { validateToolArguments } from "../utils/validation.js";
+
 import { transformMessages } from "./transorm-messages.js";
 
 export interface GoogleOptions extends StreamOptions {
@@ -56,6 +56,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				totalTokens: 0,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",
@@ -165,14 +166,6 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 							};
 
-							// Validate tool arguments if tool definition is available
-							if (context.tools) {
-								const tool = context.tools.find((t) => t.name === toolCall.name);
-								if (tool) {
-									toolCall.arguments = validateToolArguments(tool, toolCall);
-								}
-							}
-
 							output.content.push(toolCall);
 							stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 							stream.push({
@@ -200,6 +193,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 							(chunk.usageMetadata.candidatesTokenCount || 0) + (chunk.usageMetadata.thoughtsTokenCount || 0),
 						cacheRead: chunk.usageMetadata.cachedContentTokenCount || 0,
 						cacheWrite: 0,
+						totalTokens: chunk.usageMetadata.totalTokenCount || 0,
 						cost: {
 							input: 0,
 							output: 0,

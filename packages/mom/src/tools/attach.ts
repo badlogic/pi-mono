@@ -18,7 +18,8 @@ const attachSchema = Type.Object({
 export const attachTool: AgentTool<typeof attachSchema> = {
 	name: "attach",
 	label: "attach",
-	description: "Attach a file to your response. Use this to share files, images, or documents with the user.",
+	description:
+		"Attach a file to your response. Use this to share files, images, or documents with the user. Only files from /workspace/ can be attached.",
 	parameters: attachSchema,
 	execute: async (
 		_toolCallId: string,

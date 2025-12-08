@@ -127,13 +127,54 @@ function getRecentMessages(channelDir: string, turnCount: number): string {
 		for (const msg of turn) {
 			const date = (msg.date || "").substring(0, 19);
 			const user = msg.userName || msg.user || "";
-			const text = msg.text || "";
+			let text = msg.text || "";
+			// Truncate bot messages (tool results can be huge)
+			if (msg.isBot) {
+				text = truncateForContext(text, 50000, 2000, msg.ts);
+			}
 			const attachments = (msg.attachments || []).map((a) => a.local).join(",");
 			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
 		}
 	}
 
 	return formatted.join("\n");
+}
+
+/**
+ * Truncate text to maxChars or maxLines, whichever comes first.
+ * Adds a note with stats and instructions if truncation occurred.
+ */
+function truncateForContext(text: string, maxChars: number, maxLines: number, ts?: string): string {
+	const lines = text.split("\n");
+	const originalLines = lines.length;
+	const originalChars = text.length;
+	let truncated = false;
+	let result = text;
+
+	// Check line limit first
+	if (lines.length > maxLines) {
+		result = lines.slice(0, maxLines).join("\n");
+		truncated = true;
+	}
+
+	// Check char limit
+	if (result.length > maxChars) {
+		result = result.substring(0, maxChars);
+		truncated = true;
+	}
+
+	if (truncated) {
+		const remainingLines = originalLines - result.split("\n").length;
+		const remainingChars = originalChars - result.length;
+		result += `\n[... truncated ${remainingLines} more lines, ${remainingChars} more chars. `;
+		if (ts) {
+			result += `To get full content: jq -r 'select(.ts=="${ts}") | .text' log.jsonl > /tmp/msg.txt, then read /tmp/msg.txt in segments]`;
+		} else {
+			result += `Search log.jsonl for full content]`;
+		}
+	}
+
+	return result;
 }
 
 function getMemory(channelDir: string): string {
@@ -248,6 +289,15 @@ Update when you learn something important or when asked to remember something.
 
 ### Current Memory
 ${memory}
+
+## System Configuration Log
+Maintain ${workspacePath}/SYSTEM.md to log all environment modifications:
+- Installed packages (apk add, npm install, pip install)
+- Environment variables set
+- Config files modified (~/.gitconfig, cron jobs, etc.)
+- Skill dependencies installed
+
+Update this file whenever you modify the environment. On fresh container, read it first to restore your setup.
 
 ## Log Queries (CRITICAL: limit output to avoid context overflow)
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
@@ -536,7 +586,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							date: new Date().toISOString(),
 							ts: toSlackTs(),
 							user: "bot",
-							text: `[Tool Result] ${event.toolName}: ${event.isError ? "ERROR: " : ""}${truncate(resultStr, 1000)}`,
+							text: `[Tool Result] ${event.toolName}: ${event.isError ? "ERROR: " : ""}${resultStr}`,
 							attachments: [],
 							isBot: true,
 						});

@@ -242,6 +242,10 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Thinking level border: high"
 				},
+				"thinkingXhigh": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: xhigh (OpenAI codex-max only)"
+				},
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"

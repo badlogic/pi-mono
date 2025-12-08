@@ -194,8 +194,8 @@ const response = await complete(model, context);
 // Check for tool calls in the response
 for (const block of response.content) {
   if (block.type === 'toolCall') {
-    // Arguments are automatically validated against the TypeBox schema using AJV
-    // If validation fails, an error event is emitted
+    // Execute your tool with the arguments
+    // See "Validating Tool Arguments" section for validation
     const result = await executeWeatherApi(block.arguments);
 
     // Add tool result with text content
@@ -253,7 +253,7 @@ for await (const event of s) {
   }
 
   if (event.type === 'toolcall_end') {
-    // Here toolCall.arguments is complete and validated
+    // Here toolCall.arguments is complete (but not yet validated)
     const toolCall = event.toolCall;
     console.log(`Tool completed: ${toolCall.name}`, toolCall.arguments);
   }
@@ -267,8 +267,43 @@ for await (const event of s) {
 - Arrays may be incomplete
 - Nested objects may be partially populated
 - At minimum, `arguments` will be an empty object `{}`, never `undefined`
-- Full validation only occurs at `toolcall_end` when arguments are complete
 - The Google provider does not support function call streaming. Instead, you will receive a single `toolcall_delta` event with the full arguments.
+
+### Validating Tool Arguments
+
+When using `agentLoop`, tool arguments are automatically validated against your TypeBox schemas before execution. If validation fails, the error is returned to the model as a tool result, allowing it to retry.
+
+When implementing your own tool execution loop with `stream()` or `complete()`, use `validateToolCall` to validate arguments before passing them to your tools:
+
+```typescript
+import { stream, validateToolCall, Tool } from '@mariozechner/pi-ai';
+
+const tools: Tool[] = [weatherTool, calculatorTool];
+const s = stream(model, { messages, tools });
+
+for await (const event of s) {
+  if (event.type === 'toolcall_end') {
+    const toolCall = event.toolCall;
+
+    try {
+      // Validate arguments against the tool's schema (throws on invalid args)
+      const validatedArgs = validateToolCall(tools, toolCall);
+      const result = await executeMyTool(toolCall.name, validatedArgs);
+      // ... add tool result to context
+    } catch (error) {
+      // Validation failed - return error as tool result so model can retry
+      context.messages.push({
+        role: 'toolResult',
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        content: [{ type: 'text', text: error.message }],
+        isError: true,
+        timestamp: Date.now()
+      });
+    }
+  }
+}
+```
 
 ### Complete Event Reference
 
@@ -352,7 +387,7 @@ if (model.reasoning) {
 const response = await completeSimple(model, {
   messages: [{ role: 'user', content: 'Solve: 2x + 5 = 13' }]
 }, {
-  reasoning: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
+  reasoning: 'medium'  // 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' (xhigh maps to high on non-OpenAI providers)
 });
 
 // Access thinking and text blocks
@@ -576,6 +611,23 @@ const ollamaModel: Model<'openai-completions'> = {
   maxTokens: 32000
 };
 
+// Example: LiteLLM proxy with explicit compat settings
+const litellmModel: Model<'openai-completions'> = {
+  id: 'gpt-4o',
+  name: 'GPT-4o (via LiteLLM)',
+  api: 'openai-completions',
+  provider: 'litellm',
+  baseUrl: 'http://localhost:4000/v1',
+  reasoning: false,
+  input: ['text', 'image'],
+  cost: { input: 2.5, output: 10, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 128000,
+  maxTokens: 16384,
+  compat: {
+    supportsStore: false,  // LiteLLM doesn't support the store field
+  }
+};
+
 // Example: Custom endpoint with headers (bypassing Cloudflare bot detection)
 const proxyModel: Model<'anthropic-messages'> = {
   id: 'claude-sonnet-4',
@@ -599,6 +651,25 @@ const response = await stream(ollamaModel, context, {
   apiKey: 'dummy' // Ollama doesn't need a real key
 });
 ```
+
+### OpenAI Compatibility Settings
+
+The `openai-completions` API is implemented by many providers with minor differences. By default, the library auto-detects compatibility settings based on `baseUrl` for known providers (Cerebras, xAI, Mistral, Chutes, etc.). For custom proxies or unknown endpoints, you can override these settings via the `compat` field:
+
+```typescript
+interface OpenAICompat {
+  supportsStore?: boolean;           // Whether provider supports the `store` field (default: true)
+  supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
+  supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
+}
+```
+
+If `compat` is not set, the library falls back to URL-based detection. If `compat` is partially set, unspecified fields use the detected defaults. This is useful for:
+
+- **LiteLLM proxies**: May not support `store` field
+- **Custom inference servers**: May use non-standard field names
+- **Self-hosted endpoints**: May have different feature support
 
 ### Type Safety
 

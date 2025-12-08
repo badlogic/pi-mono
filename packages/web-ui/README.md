@@ -2,7 +2,7 @@
 
 Reusable web UI components for building AI chat interfaces powered by [@mariozechner/pi-ai](../ai).
 
-Built with [mini-lit](https://github.com/mariozechner/mini-lit) web components and Tailwind CSS v4.
+ Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and Tailwind CSS v4.
 
 ## Features
 

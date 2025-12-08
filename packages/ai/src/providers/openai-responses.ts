@@ -27,12 +27,12 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { validateToolArguments } from "../utils/validation.js";
+
 import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
-	reasoningEffort?: "minimal" | "low" | "medium" | "high";
+	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 }
 
@@ -59,6 +59,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
+				totalTokens: 0,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",
@@ -157,7 +158,10 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 				else if (event.type === "response.content_part.added") {
 					if (currentItem && currentItem.type === "message") {
 						currentItem.content = currentItem.content || [];
-						currentItem.content.push(event.part);
+						// Filter out ReasoningText, only accept output_text and refusal
+						if (event.part.type === "output_text" || event.part.type === "refusal") {
+							currentItem.content.push(event.part);
+						}
 					}
 				} else if (event.type === "response.output_text.delta") {
 					if (currentItem && currentItem.type === "message" && currentBlock && currentBlock.type === "text") {
@@ -238,14 +242,6 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							arguments: JSON.parse(item.arguments),
 						};
 
-						// Validate tool arguments if tool definition is available
-						if (context.tools) {
-							const tool = context.tools.find((t) => t.name === toolCall.name);
-							if (tool) {
-								toolCall.arguments = validateToolArguments(tool, toolCall);
-							}
-						}
-
 						stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 					}
 				}
@@ -260,6 +256,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 							output: response.usage.output_tokens || 0,
 							cacheRead: cachedTokens,
 							cacheWrite: 0,
+							totalTokens: response.usage.total_tokens || 0,
 							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 						};
 					}

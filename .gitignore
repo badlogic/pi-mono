@@ -13,6 +13,7 @@ packages/*/dist-firefox/
 
 # Editor files
 .vscode/
+.zed/
 .idea/
 *.swp
 *.swo

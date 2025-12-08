@@ -12,10 +12,13 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
-	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
+	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	hideThinkingBlock?: boolean;
+	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
+	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 }
 
 export class SettingsManager {
@@ -107,11 +110,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getDefaultThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high" | undefined {
+	getDefaultThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
 		return this.settings.defaultThinkingLevel;
 	}
 
-	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high"): void {
+	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
 		this.settings.defaultThinkingLevel = level;
 		this.save();
 	}
@@ -142,5 +145,32 @@ export class SettingsManager {
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
 		};
+	}
+
+	getHideThinkingBlock(): boolean {
+		return this.settings.hideThinkingBlock ?? false;
+	}
+
+	setHideThinkingBlock(hide: boolean): void {
+		this.settings.hideThinkingBlock = hide;
+		this.save();
+	}
+
+	getShellPath(): string | undefined {
+		return this.settings.shellPath;
+	}
+
+	setShellPath(path: string | undefined): void {
+		this.settings.shellPath = path;
+		this.save();
+	}
+
+	getCollapseChangelog(): boolean {
+		return this.settings.collapseChangelog ?? false;
+	}
+
+	setCollapseChangelog(collapse: boolean): void {
+		this.settings.collapseChangelog = collapse;
+		this.save();
 	}
 }

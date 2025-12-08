@@ -2,11 +2,12 @@
 
 A radically simple and opinionated coding agent with multi-model support (including mid-session switching), a simple yet powerful CLI for headless coding tasks, and many creature comforts you might be used to from other coding agents.
 
-Works on Linux, macOS, and Windows (barely tested, needs Git Bash running in the "modern" Windows Terminal).
+Works on Linux, macOS, and Windows (needs a bash shell, see [Windows Shell Configuration](#windows-shell-configuration)).
 
 ## Table of Contents
 
 - [Installation](#installation)
+- [Windows Shell Configuration](#windows-shell-configuration)
 - [Quick Start](#quick-start)
 - [API Keys](#api-keys)
 - [OAuth Authentication (Optional)](#oauth-authentication-optional)
@@ -80,6 +81,29 @@ npm run build:binary
 # Binary and supporting files are in dist/
 ./dist/pi
 ```
+
+## Windows Shell Configuration
+
+On Windows, pi requires a bash shell. The following locations are checked in order:
+
+1. **Custom shell path** from `~/.pi/agent/settings.json` (if configured)
+2. **Git Bash** in standard locations (`C:\Program Files\Git\bin\bash.exe`)
+3. **bash.exe on PATH** (Cygwin, MSYS2, WSL, etc.)
+
+For most users, installing [Git for Windows](https://git-scm.com/download/win) is sufficient.
+
+### Custom Shell Path
+
+If you use Cygwin, MSYS2, or have bash in a non-standard location, add the path to your settings:
+
+```json
+// ~/.pi/agent/settings.json
+{
+  "shellPath": "C:\\cygwin64\\bin\\bash.exe"
+}
+```
+
+Alternatively, ensure your bash is on the system PATH.
 
 ## Quick Start
 
@@ -291,6 +315,77 @@ You can add custom HTTP headers to bypass Cloudflare bot detection, add authenti
 - **Model-level `headers`**: Additional headers for specific models (merged with provider headers)
 - Model headers override provider headers when keys conflict
 
+### OpenAI Compatibility Settings
+
+The `openai-completions` API is implemented by many providers with minor differences (Ollama, vLLM, LiteLLM, llama.cpp, etc.). By default, compatibility settings are auto-detected from the `baseUrl`. For custom proxies or unknown endpoints, you can override these via the `compat` field on models:
+
+```json
+{
+  "providers": {
+    "litellm": {
+      "baseUrl": "http://localhost:4000/v1",
+      "apiKey": "LITELLM_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o (via LiteLLM)",
+          "reasoning": false,
+          "input": ["text", "image"],
+          "cost": {"input": 2.5, "output": 10, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 128000,
+          "maxTokens": 16384,
+          "compat": {
+            "supportsStore": false
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Available `compat` fields (all optional, auto-detected if not set):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `supportsStore` | boolean | auto | Whether provider supports the `store` field |
+| `supportsDeveloperRole` | boolean | auto | Whether provider supports `developer` role (vs `system`) |
+| `supportsReasoningEffort` | boolean | auto | Whether provider supports `reasoning_effort` parameter |
+| `maxTokensField` | string | auto | Use `"max_completion_tokens"` or `"max_tokens"` |
+
+If `compat` is partially set, unspecified fields use auto-detected values.
+
+### Authorization Header
+
+Some providers require an explicit `Authorization: Bearer <token>` header. Set `authHeader: true` to automatically add this header using the resolved `apiKey`:
+
+```json
+{
+  "providers": {
+    "qwen": {
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKey": "QWEN_API_KEY",
+      "authHeader": true,
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "qwen3-coder-plus",
+          "name": "Qwen3 Coder Plus",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 1000000,
+          "maxTokens": 65536
+        }
+      ]
+    }
+  }
+}
+```
+
+When `authHeader: true`, the resolved API key is added as `Authorization: Bearer <apiKey>` to the model headers. This is useful for providers that don't use the standard OpenAI authentication mechanism.
+
 ### Model Selection Priority
 
 When starting `pi`, models are selected in this order:
@@ -470,6 +565,16 @@ This allows you to explore alternative conversation paths without losing your cu
 
 ```
 /branch
+```
+
+### /resume
+
+Switch to a different session. Opens an interactive selector showing all available sessions. Select a session to load it and continue where you left off.
+
+This is equivalent to the `--resume` CLI flag but can be used mid-session.
+
+```
+/resume
 ```
 
 ### /login
@@ -661,6 +766,8 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 
 **Navigation:**
 - **Arrow keys**: Move cursor (Up/Down navigate visual lines, Left/Right move by character)
+- **Up Arrow** (empty editor): Browse previous prompts (history)
+- **Down Arrow** (browsing history): Browse newer prompts or return to empty editor
 - **Option+Left** / **Ctrl+Left**: Move word backwards
 - **Option+Right** / **Ctrl+Right**: Move word forwards
 - **Ctrl+A** / **Home**: Jump to start of line
@@ -684,6 +791,7 @@ Change queue mode with `/queue` command. Setting is saved in `~/.pi/agent/settin
 - **Shift+Tab**: Cycle thinking level (for reasoning-capable models)
 - **Ctrl+P**: Cycle models (use `--models` to scope)
 - **Ctrl+O**: Toggle tool output expansion (collapsed ↔ full output)
+- **Ctrl+T**: Toggle thinking block visibility (shows full content ↔ static "Thinking..." label)
 
 ## Project Context Files
 
@@ -925,6 +1033,13 @@ Custom system prompt. Can be:
 - File path: `--system-prompt ./my-prompt.txt`
 
 If the argument is a valid file path, the file contents will be used as the system prompt. Otherwise, the text is used directly. Project context files and datetime are automatically appended.
+
+**--append-system-prompt <text|file>**
+Append additional text or file contents to the system prompt. Can be:
+- Inline text: `--append-system-prompt "Also consider edge cases"`
+- File path: `--append-system-prompt ./extra-instructions.txt`
+
+If the argument is a valid file path, the file contents will be appended. Otherwise, the text is appended directly. This complements `--system-prompt` for layering custom instructions without replacing the base system prompt. Works in both custom and default system prompts.
 
 **--mode <mode>**
 Output mode for non-interactive usage (implies `--print`). Options:

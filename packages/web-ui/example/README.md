@@ -58,4 +58,4 @@ example/
 
 - [Pi Web UI Documentation](../README.md)
 - [Pi AI Documentation](../../ai/README.md)
-- [Mini Lit Documentation](https://github.com/mariozechner/mini-lit)
+- [Mini Lit Documentation](https://github.com/badlogic/mini-lit)

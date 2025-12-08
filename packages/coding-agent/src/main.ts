@@ -45,6 +45,7 @@ interface Args {
 	model?: string;
 	apiKey?: string;
 	systemPrompt?: string;
+	appendSystemPrompt?: string;
 	thinking?: ThinkingLevel;
 	continue?: boolean;
 	resume?: boolean;
@@ -88,6 +89,8 @@ function parseArgs(args: string[]): Args {
 			result.apiKey = args[++i];
 		} else if (arg === "--system-prompt" && i + 1 < args.length) {
 			result.systemPrompt = args[++i];
+		} else if (arg === "--append-system-prompt" && i + 1 < args.length) {
+			result.appendSystemPrompt = args[++i];
 		} else if (arg === "--no-session") {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
@@ -109,12 +112,19 @@ function parseArgs(args: string[]): Args {
 			result.tools = validTools;
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
-			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+			if (
+				level === "off" ||
+				level === "minimal" ||
+				level === "low" ||
+				level === "medium" ||
+				level === "high" ||
+				level === "xhigh"
+			) {
 				result.thinking = level;
 			} else {
 				console.error(
 					chalk.yellow(
-						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high`,
+						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high, xhigh`,
 					),
 				);
 			}
@@ -231,22 +241,23 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Options:")}
-  --provider <name>       Provider name (default: google)
-  --model <id>            Model ID (default: gemini-2.5-flash)
-  --api-key <key>         API key (defaults to env vars)
-  --system-prompt <text>  System prompt (default: coding assistant prompt)
-  --mode <mode>           Output mode: text (default), json, or rpc
-  --print, -p             Non-interactive mode: process prompt and exit
-  --continue, -c          Continue previous session
-  --resume, -r            Select a session to resume
-  --session <path>        Use specific session file
-  --no-session            Don't save session (ephemeral)
-  --models <patterns>     Comma-separated model patterns for quick cycling with Ctrl+P
-  --tools <tools>         Comma-separated list of tools to enable (default: read,bash,edit,write)
-                          Available: read, bash, edit, write, grep, find, ls
-  --thinking <level>      Set thinking level: off, minimal, low, medium, high
-  --export <file>         Export session file to HTML and exit
-  --help, -h              Show this help
+  --provider <name>              Provider name (default: google)
+  --model <id>                   Model ID (default: gemini-2.5-flash)
+  --api-key <key>                API key (defaults to env vars)
+  --system-prompt <text>         System prompt (default: coding assistant prompt)
+  --append-system-prompt <text>  Append text or file contents to the system prompt
+  --mode <mode>                  Output mode: text (default), json, or rpc
+  --print, -p                    Non-interactive mode: process prompt and exit
+  --continue, -c                 Continue previous session
+  --resume, -r                   Select a session to resume
+  --session <path>               Use specific session file
+  --no-session                   Don't save session (ephemeral)
+  --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
+  --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
+                                 Available: read, bash, edit, write, grep, find, ls
+  --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --export <file>                Export session file to HTML and exit
+  --help, -h                     Show this help
 
 ${chalk.bold("Examples:")}
   # Interactive mode
@@ -320,32 +331,47 @@ const toolDescriptions: Record<ToolName, string> = {
 	ls: "List directory contents",
 };
 
-function buildSystemPrompt(customPrompt?: string, selectedTools?: ToolName[]): string {
-	// Check if customPrompt is a file path that exists
-	if (customPrompt && existsSync(customPrompt)) {
+function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+	if (!input) {
+		return undefined;
+	}
+
+	if (existsSync(input)) {
 		try {
-			customPrompt = readFileSync(customPrompt, "utf-8");
+			return readFileSync(input, "utf-8");
 		} catch (error) {
-			console.error(chalk.yellow(`Warning: Could not read system prompt file ${customPrompt}: ${error}`));
-			// Fall through to use as literal string
+			console.error(chalk.yellow(`Warning: Could not read ${description} file ${input}: ${error}`));
+			return input;
 		}
 	}
 
-	if (customPrompt) {
-		// Use custom prompt as base, then add context/datetime
-		const now = new Date();
-		const dateTime = now.toLocaleString("en-US", {
-			weekday: "long",
-			year: "numeric",
-			month: "long",
-			day: "numeric",
-			hour: "2-digit",
-			minute: "2-digit",
-			second: "2-digit",
-			timeZoneName: "short",
-		});
+	return input;
+}
 
-		let prompt = customPrompt;
+function buildSystemPrompt(customPrompt?: string, selectedTools?: ToolName[], appendSystemPrompt?: string): string {
+	const resolvedCustomPrompt = resolvePromptInput(customPrompt, "system prompt");
+	const resolvedAppendPrompt = resolvePromptInput(appendSystemPrompt, "append system prompt");
+
+	const now = new Date();
+	const dateTime = now.toLocaleString("en-US", {
+		weekday: "long",
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		timeZoneName: "short",
+	});
+
+	const appendSection = resolvedAppendPrompt ? `\n\n${resolvedAppendPrompt}` : "";
+
+	if (resolvedCustomPrompt) {
+		let prompt = resolvedCustomPrompt;
+
+		if (appendSection) {
+			prompt += appendSection;
+		}
 
 		// Append project context files
 		const contextFiles = loadProjectContextFiles();
@@ -363,18 +389,6 @@ function buildSystemPrompt(customPrompt?: string, selectedTools?: ToolName[]): s
 
 		return prompt;
 	}
-
-	const now = new Date();
-	const dateTime = now.toLocaleString("en-US", {
-		weekday: "long",
-		year: "numeric",
-		month: "long",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		timeZoneName: "short",
-	});
 
 	// Get absolute path to README.md
 	const readmePath = getReadmePath();
@@ -452,6 +466,10 @@ ${guidelines}
 Documentation:
 - Your own documentation (including custom model setup and theme creation) is at: ${readmePath}
 - Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.`;
+
+	if (appendSection) {
+		prompt += appendSection;
+	}
 
 	// Append project context files
 	const contextFiles = loadProjectContextFiles();
@@ -582,7 +600,14 @@ async function resolveModelScope(
 
 		if (parts.length > 1) {
 			const level = parts[1];
-			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+			if (
+				level === "off" ||
+				level === "minimal" ||
+				level === "low" ||
+				level === "medium" ||
+				level === "high" ||
+				level === "xhigh"
+			) {
 				thinkingLevel = level;
 			} else {
 				console.warn(
@@ -705,8 +730,9 @@ async function runInteractiveMode(
 	settingsManager: SettingsManager,
 	version: string,
 	changelogMarkdown: string | null = null,
+	collapseChangelog = false,
 	modelFallbackMessage: string | null = null,
-	newVersion: string | null = null,
+	versionCheckPromise: Promise<string | null>,
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
 	initialMessages: string[] = [],
 	initialMessage?: string,
@@ -719,13 +745,20 @@ async function runInteractiveMode(
 		settingsManager,
 		version,
 		changelogMarkdown,
-		newVersion,
+		collapseChangelog,
 		scopedModels,
 		fdPath,
 	);
 
 	// Initialize TUI (subscribes to agent events internally)
 	await renderer.init();
+
+	// Handle version check result when it completes (don't block)
+	versionCheckPromise.then((newVersion) => {
+		if (newVersion) {
+			renderer.showNewVersionNotification(newVersion);
+		}
+	});
 
 	// Render any existing messages (from --continue mode)
 	renderer.renderInitialMessages(agent.state);
@@ -806,7 +839,15 @@ async function runSingleShotMode(
 	if (mode === "text") {
 		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
 		if (lastMessage.role === "assistant") {
-			for (const content of lastMessage.content) {
+			const assistantMsg = lastMessage as AssistantMessage;
+
+			// Check for error/aborted and output error message
+			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
+				process.exit(1);
+			}
+
+			for (const content of assistantMsg.content) {
 				if (content.type === "text") {
 					console.log(content.text);
 				}
@@ -1138,7 +1179,7 @@ export async function main(args: string[]) {
 		}
 	}
 
-	const systemPrompt = buildSystemPrompt(parsed.systemPrompt, parsed.tools);
+	const systemPrompt = buildSystemPrompt(parsed.systemPrompt, parsed.tools, parsed.appendSystemPrompt);
 
 	// Load previous messages if continuing or resuming
 	// This may update initialModel if restoring from session
@@ -1315,16 +1356,8 @@ export async function main(args: string[]) {
 		// RPC mode - headless operation
 		await runRpcMode(agent, sessionManager, settingsManager);
 	} else if (isInteractive) {
-		// Check for new version (don't block startup if it takes too long)
-		let newVersion: string | null = null;
-		try {
-			newVersion = await Promise.race([
-				checkForNewVersion(VERSION),
-				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)), // 1 second timeout
-			]);
-		} catch (e) {
-			// Ignore errors
-		}
+		// Check for new version in the background (don't block startup)
+		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
 
 		// Check if we should show changelog (only in interactive mode, only for new sessions)
 		let changelogMarkdown: string | null = null;
@@ -1368,14 +1401,16 @@ export async function main(args: string[]) {
 		const fdPath = await ensureTool("fd");
 
 		// Interactive mode - use TUI (may have initial messages from CLI args)
+		const collapseChangelog = settingsManager.getCollapseChangelog();
 		await runInteractiveMode(
 			agent,
 			sessionManager,
 			settingsManager,
 			VERSION,
 			changelogMarkdown,
+			collapseChangelog,
 			modelFallbackMessage,
-			newVersion,
+			versionCheckPromise,
 			scopedModels,
 			parsed.messages,
 			initialMessage,

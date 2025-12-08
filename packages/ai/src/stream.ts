@@ -122,6 +122,9 @@ function mapOptionsForApi<TApi extends Api>(
 		apiKey: apiKey || options?.apiKey,
 	};
 
+	// Helper to clamp xhigh to high for providers that don't support it
+	const clampReasoning = (effort: ReasoningEffort | undefined) => (effort === "xhigh" ? "high" : effort);
+
 	switch (model.api) {
 		case "anthropic-messages": {
 			if (!options?.reasoning) return base satisfies AnthropicOptions;
@@ -136,7 +139,7 @@ function mapOptionsForApi<TApi extends Api>(
 			return {
 				...base,
 				thinkingEnabled: true,
-				thinkingBudgetTokens: anthropicBudgets[options.reasoning],
+				thinkingBudgetTokens: anthropicBudgets[clampReasoning(options.reasoning)!],
 			} satisfies AnthropicOptions;
 		}
 
@@ -155,7 +158,10 @@ function mapOptionsForApi<TApi extends Api>(
 		case "google-generative-ai": {
 			if (!options?.reasoning) return base as any;
 
-			const googleBudget = getGoogleBudget(model as Model<"google-generative-ai">, options.reasoning);
+			const googleBudget = getGoogleBudget(
+				model as Model<"google-generative-ai">,
+				clampReasoning(options.reasoning)!,
+			);
 			return {
 				...base,
 				thinking: {
@@ -173,10 +179,12 @@ function mapOptionsForApi<TApi extends Api>(
 	}
 }
 
-function getGoogleBudget(model: Model<"google-generative-ai">, effort: ReasoningEffort): number {
+type ClampedReasoningEffort = Exclude<ReasoningEffort, "xhigh">;
+
+function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedReasoningEffort): number {
 	// See https://ai.google.dev/gemini-api/docs/thinking#set-budget
 	if (model.id.includes("2.5-pro")) {
-		const budgets = {
+		const budgets: Record<ClampedReasoningEffort, number> = {
 			minimal: 128,
 			low: 2048,
 			medium: 8192,
@@ -187,7 +195,7 @@ function getGoogleBudget(model: Model<"google-generative-ai">, effort: Reasoning
 
 	if (model.id.includes("2.5-flash")) {
 		// Covers 2.5-flash-lite as well
-		const budgets = {
+		const budgets: Record<ClampedReasoningEffort, number> = {
 			minimal: 128,
 			low: 2048,
 			medium: 8192,

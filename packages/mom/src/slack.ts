@@ -24,7 +24,7 @@ export interface SlackContext {
 	/** All known users in the workspace */
 	users: UserInfo[];
 	/** Send/update the main message (accumulates text). Set log=false to skip logging. */
-	respond(text: string, log?: boolean): Promise<void>;
+	respond(text: string, shouldLog?: boolean): Promise<void>;
 	/** Replace the entire message text (not append) */
 	replaceMessage(text: string): Promise<void>;
 	/** Post a message in the thread under the main message (for verbose details) */
@@ -352,40 +352,52 @@ export class MomBot {
 			store: this.store,
 			channels: this.getChannels(),
 			users: this.getUsers(),
-			respond: async (responseText: string, log = true) => {
+			respond: async (responseText: string, shouldLog = true) => {
 				// Queue updates to avoid race conditions
 				updatePromise = updatePromise.then(async () => {
-					if (isThinking) {
-						// First real response replaces "Thinking..."
-						accumulatedText = responseText;
-						isThinking = false;
-					} else {
-						// Subsequent responses get appended
-						accumulatedText += "\n" + responseText;
-					}
+					try {
+						if (isThinking) {
+							// First real response replaces "Thinking..."
+							accumulatedText = responseText;
+							isThinking = false;
+						} else {
+							// Subsequent responses get appended
+							accumulatedText += "\n" + responseText;
+						}
 
-					// Add working indicator if still working
-					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+						// Truncate accumulated text if too long (Slack limit is 40K, we use 35K for safety)
+						const MAX_MAIN_LENGTH = 35000;
+						const truncationNote = "\n\n_(message truncated, ask me to elaborate on specific parts)_";
+						if (accumulatedText.length > MAX_MAIN_LENGTH) {
+							accumulatedText =
+								accumulatedText.substring(0, MAX_MAIN_LENGTH - truncationNote.length) + truncationNote;
+						}
 
-					if (messageTs) {
-						// Update existing message
-						await this.webClient.chat.update({
-							channel: event.channel,
-							ts: messageTs,
-							text: displayText,
-						});
-					} else {
-						// Post initial message
-						const result = await this.webClient.chat.postMessage({
-							channel: event.channel,
-							text: displayText,
-						});
-						messageTs = result.ts as string;
-					}
+						// Add working indicator if still working
+						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
-					// Log the response if requested
-					if (log) {
-						await this.store.logBotResponse(event.channel, responseText, messageTs!);
+						if (messageTs) {
+							// Update existing message
+							await this.webClient.chat.update({
+								channel: event.channel,
+								ts: messageTs,
+								text: displayText,
+							});
+						} else {
+							// Post initial message
+							const result = await this.webClient.chat.postMessage({
+								channel: event.channel,
+								text: displayText,
+							});
+							messageTs = result.ts as string;
+						}
+
+						// Log the response if requested
+						if (shouldLog) {
+							await this.store.logBotResponse(event.channel, responseText, messageTs!);
+						}
+					} catch (err) {
+						log.logWarning("Slack respond error", err instanceof Error ? err.message : String(err));
 					}
 				});
 
@@ -394,18 +406,29 @@ export class MomBot {
 			respondInThread: async (threadText: string) => {
 				// Queue thread posts to maintain order
 				updatePromise = updatePromise.then(async () => {
-					if (!messageTs) {
-						// No main message yet, just skip
-						return;
+					try {
+						if (!messageTs) {
+							// No main message yet, just skip
+							return;
+						}
+						// Obfuscate usernames to avoid pinging people in thread details
+						let obfuscatedText = this.obfuscateUsernames(threadText);
+
+						// Truncate thread messages if too long (20K limit for safety)
+						const MAX_THREAD_LENGTH = 20000;
+						if (obfuscatedText.length > MAX_THREAD_LENGTH) {
+							obfuscatedText = obfuscatedText.substring(0, MAX_THREAD_LENGTH - 50) + "\n\n_(truncated)_";
+						}
+
+						// Post in thread under the main message
+						await this.webClient.chat.postMessage({
+							channel: event.channel,
+							thread_ts: messageTs,
+							text: obfuscatedText,
+						});
+					} catch (err) {
+						log.logWarning("Slack respondInThread error", err instanceof Error ? err.message : String(err));
 					}
-					// Obfuscate usernames to avoid pinging people in thread details
-					const obfuscatedText = this.obfuscateUsernames(threadText);
-					// Post in thread under the main message
-					await this.webClient.chat.postMessage({
-						channel: event.channel,
-						thread_ts: messageTs,
-						text: obfuscatedText,
-					});
 				});
 				await updatePromise;
 			},
@@ -434,40 +457,54 @@ export class MomBot {
 			},
 			replaceMessage: async (text: string) => {
 				updatePromise = updatePromise.then(async () => {
-					// Replace the accumulated text entirely
-					accumulatedText = text;
+					try {
+						// Replace the accumulated text entirely, with truncation
+						const MAX_MAIN_LENGTH = 35000;
+						const truncationNote = "\n\n_(message truncated, ask me to elaborate on specific parts)_";
+						if (text.length > MAX_MAIN_LENGTH) {
+							accumulatedText = text.substring(0, MAX_MAIN_LENGTH - truncationNote.length) + truncationNote;
+						} else {
+							accumulatedText = text;
+						}
 
-					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
-					if (messageTs) {
-						await this.webClient.chat.update({
-							channel: event.channel,
-							ts: messageTs,
-							text: displayText,
-						});
-					} else {
-						// Post initial message
-						const result = await this.webClient.chat.postMessage({
-							channel: event.channel,
-							text: displayText,
-						});
-						messageTs = result.ts as string;
+						if (messageTs) {
+							await this.webClient.chat.update({
+								channel: event.channel,
+								ts: messageTs,
+								text: displayText,
+							});
+						} else {
+							// Post initial message
+							const result = await this.webClient.chat.postMessage({
+								channel: event.channel,
+								text: displayText,
+							});
+							messageTs = result.ts as string;
+						}
+					} catch (err) {
+						log.logWarning("Slack replaceMessage error", err instanceof Error ? err.message : String(err));
 					}
 				});
 				await updatePromise;
 			},
 			setWorking: async (working: boolean) => {
 				updatePromise = updatePromise.then(async () => {
-					isWorking = working;
+					try {
+						isWorking = working;
 
-					// If we have a message, update it to add/remove indicator
-					if (messageTs) {
-						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-						await this.webClient.chat.update({
-							channel: event.channel,
-							ts: messageTs,
-							text: displayText,
-						});
+						// If we have a message, update it to add/remove indicator
+						if (messageTs) {
+							const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+							await this.webClient.chat.update({
+								channel: event.channel,
+								ts: messageTs,
+								text: displayText,
+							});
+						}
+					} catch (err) {
+						log.logWarning("Slack setWorking error", err instanceof Error ? err.message : String(err));
 					}
 				});
 				await updatePromise;

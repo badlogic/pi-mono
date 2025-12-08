@@ -32,7 +32,7 @@ import {
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
-import { getShellConfig } from "../shell-config.js";
+import { getShellConfig, killProcessTree } from "../shell.js";
 import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
 import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "./assistant-message.js";
@@ -43,6 +43,7 @@ import { FooterComponent } from "./footer.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
+import { SessionSelectorComponent } from "./session-selector.js";
 import { ThemeSelectorComponent } from "./theme-selector.js";
 import { ThinkingSelectorComponent } from "./thinking-selector.js";
 import { ToolExecutionComponent } from "./tool-execution.js";
@@ -69,8 +70,9 @@ export class TuiRenderer {
 	private loadingAnimation: Loader | null = null;
 
 	private lastSigintTime = 0;
+	private lastEscapeTime = 0;
 	private changelogMarkdown: string | null = null;
-	private newVersion: string | null = null;
+	private collapseChangelog = false;
 
 	// Message queueing
 	private queuedMessages: string[] = [];
@@ -96,6 +98,9 @@ export class TuiRenderer {
 	// User message selector (for branching)
 	private userMessageSelector: UserMessageSelectorComponent | null = null;
 
+	// Session selector (for resume)
+	private sessionSelector: SessionSelectorComponent | null = null;
+
 	// OAuth selector
 	private oauthSelector: any | null = null;
 
@@ -107,6 +112,9 @@ export class TuiRenderer {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+
+	// Thinking block visibility state
+	private hideThinkingBlock = false;
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
@@ -126,7 +134,7 @@ export class TuiRenderer {
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
-		newVersion: string | null = null,
+		collapseChangelog = false,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
 	) {
@@ -134,8 +142,8 @@ export class TuiRenderer {
 		this.sessionManager = sessionManager;
 		this.settingsManager = settingsManager;
 		this.version = version;
-		this.newVersion = newVersion;
 		this.changelogMarkdown = changelogMarkdown;
+		this.collapseChangelog = collapseChangelog;
 		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
@@ -218,6 +226,14 @@ export class TuiRenderer {
 			description: "Toggle automatic context compaction",
 		};
 
+		const resumeCommand: SlashCommand = {
+			name: "resume",
+			description: "Resume a different session",
+		};
+
+		// Load hide thinking block setting
+		this.hideThinkingBlock = settingsManager.getHideThinkingBlock();
+
 		// Load file-based slash commands
 		this.fileCommands = loadSlashCommands();
 
@@ -244,6 +260,7 @@ export class TuiRenderer {
 				clearCommand,
 				compactCommand,
 				autocompactCommand,
+				resumeCommand,
 				...fileSlashCommands,
 			],
 			process.cwd(),
@@ -279,6 +296,9 @@ export class TuiRenderer {
 			theme.fg("dim", "ctrl+o") +
 			theme.fg("muted", " to expand tools") +
 			"\n" +
+			theme.fg("dim", "ctrl+t") +
+			theme.fg("muted", " to toggle thinking") +
+			"\n" +
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
 			"\n" +
@@ -294,29 +314,21 @@ export class TuiRenderer {
 		this.ui.addChild(header);
 		this.ui.addChild(new Spacer(1));
 
-		// Add new version notification if available
-		if (this.newVersion) {
-			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-			this.ui.addChild(
-				new Text(
-					theme.bold(theme.fg("warning", "Update Available")) +
-						"\n" +
-						theme.fg("muted", `New version ${this.newVersion} is available. Run: `) +
-						theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
-					1,
-					0,
-				),
-			);
-			this.ui.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		}
-
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
 			this.ui.addChild(new DynamicBorder());
-			this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
-			this.ui.addChild(new Spacer(1));
+			if (this.collapseChangelog) {
+				// Show condensed version with hint to use /changelog
+				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+				const latestVersion = versionMatch ? versionMatch[1] : this.version;
+				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+				this.ui.addChild(new Text(condensedText, 1, 0));
+			} else {
+				this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+				this.ui.addChild(new Spacer(1));
+				this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
+				this.ui.addChild(new Spacer(1));
+			}
 			this.ui.addChild(new DynamicBorder());
 		}
 
@@ -364,6 +376,15 @@ export class TuiRenderer {
 				this.editor.setText("");
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
+			} else if (!this.editor.getText().trim()) {
+				// Double-escape with empty editor triggers /branch
+				const now = Date.now();
+				if (now - this.lastEscapeTime < 500) {
+					this.showUserMessageSelector();
+					this.lastEscapeTime = 0; // Reset to prevent triple-escape
+				} else {
+					this.lastEscapeTime = now;
+				}
 			}
 		};
 
@@ -381,6 +402,10 @@ export class TuiRenderer {
 
 		this.editor.onCtrlO = () => {
 			this.toggleToolOutputExpansion();
+		};
+
+		this.editor.onCtrlT = () => {
+			this.toggleThinkingBlockVisibility();
 		};
 
 		// Handle editor text changes for bash mode detection
@@ -505,6 +530,13 @@ export class TuiRenderer {
 				return;
 			}
 
+			// Check for /resume command
+			if (text === "/resume") {
+				this.showSessionSelector();
+				this.editor.setText("");
+				return;
+			}
+
 			// Check for bash command (!<command>)
 			if (text.startsWith("!")) {
 				const command = text.slice(1).trim();
@@ -559,6 +591,9 @@ export class TuiRenderer {
 				// Update pending messages display
 				this.updatePendingMessagesDisplay();
 
+				// Add to history for up/down arrow navigation
+				this.editor.addToHistory(text);
+
 				// Clear editor
 				this.editor.setText("");
 				this.ui.requestRender();
@@ -569,6 +604,9 @@ export class TuiRenderer {
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
+
+			// Add to history for up/down arrow navigation
+			this.editor.addToHistory(text);
 		};
 
 		// Start the UI
@@ -691,7 +729,7 @@ export class TuiRenderer {
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					// Create assistant component for streaming
-					this.streamingComponent = new AssistantMessageComponent();
+					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(event.message as AssistantMessage);
 					this.ui.requestRender();
@@ -831,7 +869,7 @@ export class TuiRenderer {
 			const assistantMsg = message;
 
 			// Add assistant message component
-			const assistantComponent = new AssistantMessageComponent(assistantMsg);
+			const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 			this.chatContainer.addChild(assistantComponent);
 		}
 		// Note: tool calls and results are now handled via tool_execution_start/end events
@@ -877,7 +915,7 @@ export class TuiRenderer {
 				}
 			} else if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 				this.chatContainer.addChild(assistantComponent);
 
 				// Create tool execution components for any tool calls
@@ -918,6 +956,22 @@ export class TuiRenderer {
 		}
 		// Clear pending tools after rendering initial messages
 		this.pendingTools.clear();
+
+		// Populate editor history with user messages from the session (oldest first so newest is at index 0)
+		for (const message of state.messages) {
+			if (message.role === "user") {
+				const textBlocks =
+					typeof message.content === "string"
+						? [{ type: "text", text: message.content }]
+						: message.content.filter((c) => c.type === "text");
+				const textContent = textBlocks.map((c) => c.text).join("");
+				// Skip compaction summary messages
+				if (textContent && !textContent.startsWith(SUMMARY_PREFIX)) {
+					this.editor.addToHistory(textContent);
+				}
+			}
+		}
+
 		this.ui.requestRender();
 	}
 
@@ -961,7 +1015,7 @@ export class TuiRenderer {
 				}
 			} else if (message.role === "assistant") {
 				const assistantMsg = message;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg);
+				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
 				this.chatContainer.addChild(assistantComponent);
 
 				for (const content of assistantMsg.content) {
@@ -1023,7 +1077,12 @@ export class TuiRenderer {
 			return;
 		}
 
-		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+		// xhigh is only available for codex-max models
+		const modelId = this.agent.state.model?.id || "";
+		const supportsXhigh = modelId.includes("codex-max");
+		const levels: ThinkingLevel[] = supportsXhigh
+			? ["off", "minimal", "low", "medium", "high", "xhigh"]
+			: ["off", "minimal", "low", "medium", "high"];
 		const currentLevel = this.agent.state.thinkingLevel || "off";
 		const currentIndex = levels.indexOf(currentLevel);
 		const nextIndex = (currentIndex + 1) % levels.length;
@@ -1168,6 +1227,28 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
+	private toggleThinkingBlockVisibility(): void {
+		this.hideThinkingBlock = !this.hideThinkingBlock;
+		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+
+		// Update all assistant message components and rebuild their content
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent) {
+				child.setHideThinkingBlock(this.hideThinkingBlock);
+			}
+		}
+
+		// Rebuild chat to apply visibility change
+		this.chatContainer.clear();
+		this.rebuildChatFromMessages();
+
+		// Show brief notification
+		const status = this.hideThinkingBlock ? "hidden" : "visible";
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking blocks: ${status}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	clearEditor(): void {
 		this.editor.setText("");
 		this.ui.requestRender();
@@ -1187,12 +1268,21 @@ export class TuiRenderer {
 		this.ui.requestRender();
 	}
 
-	private showSuccess(message: string, detail?: string): void {
+	showNewVersionNotification(newVersion: string): void {
+		// Show new version notification in the chat
 		this.chatContainer.addChild(new Spacer(1));
-		const text = detail
-			? `${theme.fg("success", message)}\n${theme.fg("muted", detail)}`
-			: theme.fg("success", message);
-		this.chatContainer.addChild(new Text(text, 1, 1));
+		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+		this.chatContainer.addChild(
+			new Text(
+				theme.bold(theme.fg("warning", "Update Available")) +
+					"\n" +
+					theme.fg("muted", `New version ${newVersion} is available. Run: `) +
+					theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
+				1,
+				0,
+			),
+		);
+		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
 	}
 
@@ -1486,6 +1576,95 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.userMessageSelector = null;
+		this.ui.setFocus(this.editor);
+	}
+
+	private showSessionSelector(): void {
+		// Create session selector
+		this.sessionSelector = new SessionSelectorComponent(
+			this.sessionManager,
+			async (sessionPath) => {
+				this.hideSessionSelector();
+				await this.handleResumeSession(sessionPath);
+			},
+			() => {
+				// Just hide the selector
+				this.hideSessionSelector();
+				this.ui.requestRender();
+			},
+		);
+
+		// Replace editor with selector
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.sessionSelector);
+		this.ui.setFocus(this.sessionSelector.getSessionList());
+		this.ui.requestRender();
+	}
+
+	private async handleResumeSession(sessionPath: string): Promise<void> {
+		// Unsubscribe first to prevent processing events during transition
+		this.unsubscribe?.();
+
+		// Abort and wait for completion
+		this.agent.abort();
+		await this.agent.waitForIdle();
+
+		// Stop loading animation
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+		this.statusContainer.clear();
+
+		// Clear UI state
+		this.queuedMessages = [];
+		this.pendingMessagesContainer.clear();
+		this.streamingComponent = null;
+		this.pendingTools.clear();
+
+		// Set the selected session as active
+		this.sessionManager.setSessionFile(sessionPath);
+
+		// Reload the session
+		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		this.agent.replaceMessages(loaded.messages);
+
+		// Restore model if saved in session
+		const savedModel = this.sessionManager.loadModel();
+		if (savedModel) {
+			const availableModels = (await getAvailableModels()).models;
+			const match = availableModels.find((m) => m.provider === savedModel.provider && m.id === savedModel.modelId);
+			if (match) {
+				this.agent.setModel(match);
+			}
+		}
+
+		// Restore thinking level if saved in session
+		const savedThinking = this.sessionManager.loadThinkingLevel();
+		if (savedThinking) {
+			this.agent.setThinkingLevel(savedThinking as ThinkingLevel);
+		}
+
+		// Resubscribe to agent
+		this.subscribeToAgent();
+
+		// Clear and re-render the chat
+		this.chatContainer.clear();
+		this.isFirstUserMessage = true;
+		this.renderInitialMessages(this.agent.state);
+
+		// Show confirmation message
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", "Resumed session"), 1, 0));
+
+		this.ui.requestRender();
+	}
+
+	private hideSessionSelector(): void {
+		// Replace selector with editor in the container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.sessionSelector = null;
 		this.ui.setFocus(this.editor);
 	}
 
@@ -2036,10 +2215,6 @@ export class TuiRenderer {
 
 			// Update footer with new state (fixes context % display)
 			this.footer.updateState(this.agent.state);
-
-			// Show success message
-			const successTitle = isAuto ? "✓ Context auto-compacted" : "✓ Context compacted";
-			this.showSuccess(successTitle, `Reduced from ${compactionEntry.tokensBefore.toLocaleString()} tokens`);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {
@@ -2106,35 +2281,6 @@ export class TuiRenderer {
 		if (this.isInitialized) {
 			this.ui.stop();
 			this.isInitialized = false;
-		}
-	}
-}
-
-/**
- * Kill a process and all its children (cross-platform)
- */
-function killProcessTree(pid: number): void {
-	if (process.platform === "win32") {
-		// Use taskkill on Windows to kill process tree
-		try {
-			spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
-				stdio: "ignore",
-				detached: true,
-			});
-		} catch {
-			// Ignore errors if taskkill fails
-		}
-	} else {
-		// Use SIGKILL on Unix/Linux/Mac
-		try {
-			process.kill(-pid, "SIGKILL");
-		} catch {
-			// Fallback to killing just the child if process group kill fails
-			try {
-				process.kill(pid, "SIGKILL");
-			} catch {
-				// Process already dead
-			}
 		}
 	}
 }
