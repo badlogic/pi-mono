@@ -387,7 +387,7 @@ if (model.reasoning) {
 const response = await completeSimple(model, {
   messages: [{ role: 'user', content: 'Solve: 2x + 5 = 13' }]
 }, {
-  reasoning: 'medium'  // 'minimal' | 'low' | 'medium' | 'high'
+  reasoning: 'medium'  // 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' (xhigh maps to high on non-OpenAI providers)
 });
 
 // Access thinking and text blocks

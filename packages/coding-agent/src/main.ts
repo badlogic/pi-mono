@@ -112,12 +112,19 @@ function parseArgs(args: string[]): Args {
 			result.tools = validTools;
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
-			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+			if (
+				level === "off" ||
+				level === "minimal" ||
+				level === "low" ||
+				level === "medium" ||
+				level === "high" ||
+				level === "xhigh"
+			) {
 				result.thinking = level;
 			} else {
 				console.error(
 					chalk.yellow(
-						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high`,
+						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high, xhigh`,
 					),
 				);
 			}
@@ -248,7 +255,7 @@ ${chalk.bold("Options:")}
   --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
-  --thinking <level>             Set thinking level: off, minimal, low, medium, high
+  --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --export <file>                Export session file to HTML and exit
   --help, -h                     Show this help
 
@@ -593,7 +600,14 @@ async function resolveModelScope(
 
 		if (parts.length > 1) {
 			const level = parts[1];
-			if (level === "off" || level === "minimal" || level === "low" || level === "medium" || level === "high") {
+			if (
+				level === "off" ||
+				level === "minimal" ||
+				level === "low" ||
+				level === "medium" ||
+				level === "high" ||
+				level === "xhigh"
+			) {
 				thinkingLevel = level;
 			} else {
 				console.warn(
@@ -716,6 +730,7 @@ async function runInteractiveMode(
 	settingsManager: SettingsManager,
 	version: string,
 	changelogMarkdown: string | null = null,
+	collapseChangelog = false,
 	modelFallbackMessage: string | null = null,
 	versionCheckPromise: Promise<string | null>,
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
@@ -730,6 +745,7 @@ async function runInteractiveMode(
 		settingsManager,
 		version,
 		changelogMarkdown,
+		collapseChangelog,
 		scopedModels,
 		fdPath,
 	);
@@ -1385,12 +1401,14 @@ export async function main(args: string[]) {
 		const fdPath = await ensureTool("fd");
 
 		// Interactive mode - use TUI (may have initial messages from CLI args)
+		const collapseChangelog = settingsManager.getCollapseChangelog();
 		await runInteractiveMode(
 			agent,
 			sessionManager,
 			settingsManager,
 			VERSION,
 			changelogMarkdown,
+			collapseChangelog,
 			modelFallbackMessage,
 			versionCheckPromise,
 			scopedModels,

@@ -66,12 +66,15 @@ const ThemeJsonSchema = Type.Object({
 		syntaxType: ColorValueSchema,
 		syntaxOperator: ColorValueSchema,
 		syntaxPunctuation: ColorValueSchema,
-		// Thinking Level Borders (5 colors)
+		// Thinking Level Borders (6 colors)
 		thinkingOff: ColorValueSchema,
 		thinkingMinimal: ColorValueSchema,
 		thinkingLow: ColorValueSchema,
 		thinkingMedium: ColorValueSchema,
 		thinkingHigh: ColorValueSchema,
+		thinkingXhigh: ColorValueSchema,
+		// Bash Mode (1 color)
+		bashMode: ColorValueSchema,
 	}),
 });
 
@@ -119,7 +122,9 @@ export type ThemeColor =
 	| "thinkingMinimal"
 	| "thinkingLow"
 	| "thinkingMedium"
-	| "thinkingHigh";
+	| "thinkingHigh"
+	| "thinkingXhigh"
+	| "bashMode";
 
 export type ThemeBg = "userMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 
@@ -295,7 +300,7 @@ export class Theme {
 		return this.mode;
 	}
 
-	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high"): (str: string) => string {
+	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): (str: string) => string {
 		// Map thinking levels to dedicated theme colors
 		switch (level) {
 			case "off":
@@ -308,9 +313,15 @@ export class Theme {
 				return (str: string) => this.fg("thinkingMedium", str);
 			case "high":
 				return (str: string) => this.fg("thinkingHigh", str);
+			case "xhigh":
+				return (str: string) => this.fg("thinkingXhigh", str);
 			default:
 				return (str: string) => this.fg("thinkingOff", str);
 		}
+	}
+
+	getBashModeBorderColor(): (str: string) => string {
+		return (str: string) => this.fg("bashMode", str);
 	}
 }
 
@@ -366,8 +377,31 @@ function loadThemeJson(name: string): ThemeJson {
 	}
 	if (!validateThemeJson.Check(json)) {
 		const errors = Array.from(validateThemeJson.Errors(json));
-		const errorMessages = errors.map((e) => `  - ${e.path}: ${e.message}`).join("\n");
-		throw new Error(`Invalid theme ${name}:\n${errorMessages}`);
+		const missingColors: string[] = [];
+		const otherErrors: string[] = [];
+
+		for (const e of errors) {
+			// Check for missing required color properties
+			const match = e.path.match(/^\/colors\/(\w+)$/);
+			if (match && e.message.includes("Required")) {
+				missingColors.push(match[1]);
+			} else {
+				otherErrors.push(`  - ${e.path}: ${e.message}`);
+			}
+		}
+
+		let errorMessage = `Invalid theme "${name}":\n`;
+		if (missingColors.length > 0) {
+			errorMessage += `\nMissing required color tokens:\n`;
+			errorMessage += missingColors.map((c) => `  - ${c}`).join("\n");
+			errorMessage += `\n\nPlease add these colors to your theme's "colors" object.`;
+			errorMessage += `\nSee the built-in themes (dark.json, light.json) for reference values.`;
+		}
+		if (otherErrors.length > 0) {
+			errorMessage += `\n\nOther errors:\n${otherErrors.join("\n")}`;
+		}
+
+		throw new Error(errorMessage);
 	}
 	return json as ThemeJson;
 }

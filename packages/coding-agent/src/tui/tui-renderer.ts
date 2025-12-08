@@ -71,6 +71,7 @@ export class TuiRenderer {
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | null = null;
+	private collapseChangelog = false;
 
 	// Message queueing
 	private queuedMessages: string[] = [];
@@ -126,6 +127,7 @@ export class TuiRenderer {
 		settingsManager: SettingsManager,
 		version: string,
 		changelogMarkdown: string | null = null,
+		collapseChangelog = false,
 		scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [],
 		fdPath: string | null = null,
 	) {
@@ -134,6 +136,7 @@ export class TuiRenderer {
 		this.settingsManager = settingsManager;
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
+		this.collapseChangelog = collapseChangelog;
 		this.scopedModels = scopedModels;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
@@ -304,10 +307,18 @@ export class TuiRenderer {
 		// Add changelog if provided
 		if (this.changelogMarkdown) {
 			this.ui.addChild(new DynamicBorder());
-			this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
-			this.ui.addChild(new Spacer(1));
+			if (this.collapseChangelog) {
+				// Show condensed version with hint to use /changelog
+				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+				const latestVersion = versionMatch ? versionMatch[1] : this.version;
+				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+				this.ui.addChild(new Text(condensedText, 1, 0));
+			} else {
+				this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+				this.ui.addChild(new Spacer(1));
+				this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
+				this.ui.addChild(new Spacer(1));
+			}
 			this.ui.addChild(new DynamicBorder());
 		}
 
@@ -1019,7 +1030,12 @@ export class TuiRenderer {
 			return;
 		}
 
-		const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+		// xhigh is only available for codex-max models
+		const modelId = this.agent.state.model?.id || "";
+		const supportsXhigh = modelId.includes("codex-max");
+		const levels: ThinkingLevel[] = supportsXhigh
+			? ["off", "minimal", "low", "medium", "high", "xhigh"]
+			: ["off", "minimal", "low", "medium", "high"];
 		const currentLevel = this.agent.state.thinkingLevel || "off";
 		const currentIndex = levels.indexOf(currentLevel);
 		const nextIndex = (currentIndex + 1) % levels.length;

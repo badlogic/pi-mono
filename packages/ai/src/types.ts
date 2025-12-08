@@ -29,7 +29,7 @@ export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 export type KnownProvider = "anthropic" | "google" | "openai" | "xai" | "groq" | "cerebras" | "openrouter" | "zai";
 export type Provider = KnownProvider | string;
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 // Base options all providers share
 export interface StreamOptions {

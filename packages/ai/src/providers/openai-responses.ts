@@ -32,7 +32,7 @@ import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
-	reasoningEffort?: "minimal" | "low" | "medium" | "high";
+	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 }
 
@@ -158,7 +158,10 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 				else if (event.type === "response.content_part.added") {
 					if (currentItem && currentItem.type === "message") {
 						currentItem.content = currentItem.content || [];
-						currentItem.content.push(event.part);
+						// Filter out ReasoningText, only accept output_text and refusal
+						if (event.part.type === "output_text" || event.part.type === "refusal") {
+							currentItem.content.push(event.part);
+						}
 					}
 				} else if (event.type === "response.output_text.delta") {
 					if (currentItem && currentItem.type === "message" && currentBlock && currentBlock.type === "text") {

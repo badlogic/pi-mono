@@ -29,7 +29,7 @@ import { transformMessages } from "./transorm-messages.js";
 
 export interface OpenAICompletionsOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
-	reasoningEffort?: "minimal" | "low" | "medium" | "high";
+	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (

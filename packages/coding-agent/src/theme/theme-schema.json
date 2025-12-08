@@ -221,6 +221,34 @@
 				"syntaxPunctuation": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Syntax highlighting: punctuation"
+				},
+				"thinkingOff": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: off"
+				},
+				"thinkingMinimal": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: minimal"
+				},
+				"thinkingLow": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: low"
+				},
+				"thinkingMedium": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: medium"
+				},
+				"thinkingHigh": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: high"
+				},
+				"thinkingXhigh": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: xhigh (OpenAI codex-max only)"
+				},
+				"bashMode": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Editor border color in bash mode"
 				}
 			},
 			"additionalProperties": false
