@@ -340,9 +340,10 @@ private unsubscribeAll(): void {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `subscribe()` method to AgentSession
-- [ ] Add `unsubscribeAll()` private method
-- [ ] Verify with `npm run check`
+- [x] Add `subscribe()` method to AgentSession
+- [x] Add `unsubscribeAll()` method
+- [x] Add `resubscribe()` method
+- [x] Verify with `npm run check`
 
 ---
 
