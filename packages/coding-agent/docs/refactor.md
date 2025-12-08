@@ -1308,8 +1308,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 1. `npm run check` passes
 2. Manual test: RPC mode still works (if you have a way to test it)
 
-- [ ] Create `src/modes/rpc-mode.ts`
-- [ ] Verify with `npm run check`
+- [x] Create `src/modes/rpc-mode.ts`
+- [x] Verify with `npm run check`
 
 ---
 
