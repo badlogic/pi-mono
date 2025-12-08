@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.1] - 2025-12-08
+
+### Fixed
+
+- Fix build errors with tsgo 7.0.0-dev.20251208.1 by properly importing `ReasoningEffort` type
+
 ## [0.14.0] - 2025-12-08
 
 ### Breaking Changes
