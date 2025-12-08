@@ -1,8 +1,8 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { Container, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
-import { fuzzyFilter } from "../fuzzy.js";
-import { getAvailableModels } from "../model-config.js";
-import type { SettingsManager } from "../settings-manager.js";
+import { getAvailableModels } from "../../../core/model-config.js";
+import type { SettingsManager } from "../../../core/settings-manager.js";
+import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

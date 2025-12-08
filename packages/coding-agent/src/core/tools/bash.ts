@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { getShellConfig, killProcessTree } from "../shell.js";
+import { getShellConfig, killProcessTree } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**

@@ -22,41 +22,41 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec, spawn } from "child_process";
 import stripAnsi from "strip-ansi";
-import { getChangelogPath, parseChangelog } from "../changelog.js";
-import { copyToClipboard } from "../clipboard.js";
-import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
-import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
-import { exportSessionToHtml } from "../export-html.js";
-import { type BashExecutionMessage, isBashExecutionMessage } from "../messages.js";
-import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
-import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
+import { calculateContextTokens, compact, shouldCompact } from "../core/compaction.js";
+import { exportSessionToHtml } from "../core/export-html.js";
+import { type BashExecutionMessage, isBashExecutionMessage } from "../core/messages.js";
+import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../core/model-config.js";
+import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../core/oauth/index.js";
 import {
 	getLatestCompactionEntry,
 	loadSessionFromEntries,
 	type SessionManager,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
-} from "../session-manager.js";
-import type { SettingsManager } from "../settings-manager.js";
-import { getShellConfig, killProcessTree, sanitizeBinaryOutput } from "../shell.js";
-import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../slash-commands.js";
-import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../theme/theme.js";
-import { DEFAULT_MAX_BYTES, type TruncationResult, truncateTail } from "../tools/truncate.js";
-import { AssistantMessageComponent } from "./assistant-message.js";
-import { BashExecutionComponent } from "./bash-execution.js";
-import { CompactionComponent } from "./compaction.js";
-import { CustomEditor } from "./custom-editor.js";
-import { DynamicBorder } from "./dynamic-border.js";
-import { FooterComponent } from "./footer.js";
-import { ModelSelectorComponent } from "./model-selector.js";
-import { OAuthSelectorComponent } from "./oauth-selector.js";
-import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
-import { SessionSelectorComponent } from "./session-selector.js";
-import { ThemeSelectorComponent } from "./theme-selector.js";
-import { ThinkingSelectorComponent } from "./thinking-selector.js";
-import { ToolExecutionComponent } from "./tool-execution.js";
-import { UserMessageComponent } from "./user-message.js";
-import { UserMessageSelectorComponent } from "./user-message-selector.js";
+} from "../core/session-manager.js";
+import type { SettingsManager } from "../core/settings-manager.js";
+import { expandSlashCommand, type FileSlashCommand, loadSlashCommands } from "../core/slash-commands.js";
+import { DEFAULT_MAX_BYTES, type TruncationResult, truncateTail } from "../core/tools/truncate.js";
+import { AssistantMessageComponent } from "../modes/interactive/components/assistant-message.js";
+import { BashExecutionComponent } from "../modes/interactive/components/bash-execution.js";
+import { CompactionComponent } from "../modes/interactive/components/compaction.js";
+import { CustomEditor } from "../modes/interactive/components/custom-editor.js";
+import { DynamicBorder } from "../modes/interactive/components/dynamic-border.js";
+import { FooterComponent } from "../modes/interactive/components/footer.js";
+import { ModelSelectorComponent } from "../modes/interactive/components/model-selector.js";
+import { OAuthSelectorComponent } from "../modes/interactive/components/oauth-selector.js";
+import { QueueModeSelectorComponent } from "../modes/interactive/components/queue-mode-selector.js";
+import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
+import { ThemeSelectorComponent } from "../modes/interactive/components/theme-selector.js";
+import { ThinkingSelectorComponent } from "../modes/interactive/components/thinking-selector.js";
+import { ToolExecutionComponent } from "../modes/interactive/components/tool-execution.js";
+import { UserMessageComponent } from "../modes/interactive/components/user-message.js";
+import { UserMessageSelectorComponent } from "../modes/interactive/components/user-message-selector.js";
+import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "../modes/interactive/theme/theme.js";
+import { getChangelogPath, parseChangelog } from "../utils/changelog.js";
+import { copyToClipboard } from "../utils/clipboard.js";
+import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../utils/config.js";
+import { getShellConfig, killProcessTree, sanitizeBinaryOutput } from "../utils/shell.js";
 
 /**
  * TUI renderer for the coding agent

@@ -6,8 +6,8 @@ import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { BashExecutionMessage } from "../src/messages.js";
-import type { CompactionEntry } from "../src/session-manager.js";
+import type { BashExecutionMessage } from "../src/core/messages.js";
+import type { CompactionEntry } from "../src/core/session-manager.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

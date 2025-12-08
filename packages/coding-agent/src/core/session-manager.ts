@@ -2,7 +2,7 @@ import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir } from "./config.js";
+import { getAgentDir } from "../utils/config.js";
 
 function uuidv4(): string {
 	const bytes = randomBytes(16);

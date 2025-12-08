@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { CONFIG_DIR_NAME, getCommandsDir } from "./config.js";
+import { CONFIG_DIR_NAME, getCommandsDir } from "../utils/config.js";
 
 /**
  * Represents a custom slash command loaded from a file

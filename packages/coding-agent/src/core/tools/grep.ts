@@ -5,7 +5,7 @@ import { spawn } from "child_process";
 import { readFileSync, type Stats, statSync } from "fs";
 import { homedir } from "os";
 import path from "path";
-import { ensureTool } from "../tools-manager.js";
+import { ensureTool } from "../../utils/tools-manager.js";
 import {
 	DEFAULT_MAX_BYTES,
 	formatSize,

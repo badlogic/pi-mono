@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fuzzyFilter, fuzzyMatch } from "../src/fuzzy.js";
+import { fuzzyFilter, fuzzyMatch } from "../src/utils/fuzzy.js";
 
 describe("fuzzyMatch", () => {
 	test("empty query matches everything with score 0", () => {

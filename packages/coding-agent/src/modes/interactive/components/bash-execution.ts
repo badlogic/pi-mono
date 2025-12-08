@@ -4,8 +4,13 @@
 
 import { Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	type TruncationResult,
+	truncateTail,
+} from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "../tools/truncate.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)

@@ -5,7 +5,7 @@ import { existsSync } from "fs";
 import { globSync } from "glob";
 import { homedir } from "os";
 import path from "path";
-import { ensureTool } from "../tools-manager.js";
+import { ensureTool } from "../../utils/tools-manager.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 /**

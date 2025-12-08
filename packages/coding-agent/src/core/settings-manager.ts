@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { getAgentDir } from "./config.js";
+import { getAgentDir } from "../utils/config.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true

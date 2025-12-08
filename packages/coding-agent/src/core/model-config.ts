@@ -2,7 +2,7 @@ import { type Api, getApiKey, getModels, getProviders, type KnownProvider, type 
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
-import { getModelsPath } from "./config.js";
+import { getModelsPath } from "../utils/config.js";
 import { getOAuthToken, type SupportedOAuthProvider } from "./oauth/index.js";
 import { loadOAuthCredentials } from "./oauth/storage.js";
 

@@ -5,7 +5,18 @@ import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { extname, join, resolve } from "path";
-import { getChangelogPath, getNewEntries, parseChangelog } from "./changelog.js";
+import { AgentSession } from "./core/agent-session.js";
+import { exportFromFile } from "./core/export-html.js";
+import { messageTransformer } from "./core/messages.js";
+import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
+import { SessionManager } from "./core/session-manager.js";
+import { SettingsManager } from "./core/settings-manager.js";
+import { loadSlashCommands } from "./core/slash-commands.js";
+import { allTools, codingTools, type ToolName } from "./core/tools/index.js";
+import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { SessionSelectorComponent } from "./modes/interactive/components/session-selector.js";
+import { initTheme } from "./modes/interactive/theme/theme.js";
+import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import {
 	APP_NAME,
 	CONFIG_DIR_NAME,
@@ -14,19 +25,8 @@ import {
 	getModelsPath,
 	getReadmePath,
 	VERSION,
-} from "./config.js";
-import { AgentSession } from "./core/agent-session.js";
-import { exportFromFile } from "./export-html.js";
-import { messageTransformer } from "./messages.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
-import { SessionManager } from "./session-manager.js";
-import { SettingsManager } from "./settings-manager.js";
-import { loadSlashCommands } from "./slash-commands.js";
-import { initTheme } from "./theme/theme.js";
-import { allTools, codingTools, type ToolName } from "./tools/index.js";
-import { ensureTool } from "./tools-manager.js";
-import { SessionSelectorComponent } from "./tui/session-selector.js";
+} from "./utils/config.js";
+import { ensureTool } from "./utils/tools-manager.js";
 
 const defaultModelPerProvider: Record<KnownProvider, string> = {
 	anthropic: "claude-sonnet-4-5",

@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
 import { join } from "path";
-import { isModelUsingOAuth } from "../model-config.js";
+import { isModelUsingOAuth } from "../../../core/model-config.js";
 import { theme } from "../theme/theme.js";
 
 /**

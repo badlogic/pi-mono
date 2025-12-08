@@ -12,7 +12,7 @@ import {
 	findCutPoint,
 	getLastAssistantUsage,
 	shouldCompact,
-} from "../src/compaction.js";
+} from "../src/core/compaction.js";
 import {
 	type CompactionEntry,
 	createSummaryMessage,
@@ -20,7 +20,7 @@ import {
 	parseSessionEntries,
 	type SessionEntry,
 	type SessionMessageEntry,
-} from "../src/session-manager.js";
+} from "../src/core/session-manager.js";
 
 // ============================================================================
 // Test fixtures

@@ -15,15 +15,15 @@
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
-import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
-import { getModelsPath } from "../config.js";
-import { exportSessionToHtml } from "../export-html.js";
-import type { BashExecutionMessage } from "../messages.js";
-import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
-import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
-import type { SettingsManager } from "../settings-manager.js";
-import { expandSlashCommand, type FileSlashCommand } from "../slash-commands.js";
+import { getModelsPath } from "../utils/config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
+import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import { exportSessionToHtml } from "./export-html.js";
+import type { BashExecutionMessage } from "./messages.js";
+import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
+import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
+import type { SettingsManager } from "./settings-manager.js";
+import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
 /** Listener function for agent events */
 export type AgentEventListener = (event: AgentEvent) => void;

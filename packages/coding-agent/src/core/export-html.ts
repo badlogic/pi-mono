@@ -3,7 +3,7 @@ import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename } from "path";
-import { APP_NAME, VERSION } from "./config.js";
+import { APP_NAME, VERSION } from "../utils/config.js";
 import { type BashExecutionMessage, isBashExecutionMessage } from "./messages.js";
 import type { SessionManager } from "./session-manager.js";
 

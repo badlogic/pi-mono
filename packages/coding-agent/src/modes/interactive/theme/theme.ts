@@ -4,7 +4,7 @@ import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-import { getCustomThemesDir, getThemesDir } from "../config.js";
+import { getCustomThemesDir, getThemesDir } from "../../../utils/config.js";
 
 // ============================================================================
 // Types & Schema

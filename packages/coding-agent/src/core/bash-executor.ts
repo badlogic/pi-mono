@@ -12,8 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChildProcess, spawn } from "child_process";
 import stripAnsi from "strip-ansi";
-import { getShellConfig, killProcessTree, sanitizeBinaryOutput } from "../shell.js";
-import { DEFAULT_MAX_BYTES, truncateTail } from "../tools/truncate.js";
+import { getShellConfig, killProcessTree, sanitizeBinaryOutput } from "../utils/shell.js";
+import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
 
 // ============================================================================
 // Types

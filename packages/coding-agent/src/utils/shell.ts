@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "child_process";
-import { SettingsManager } from "./settings-manager.js";
+import { SettingsManager } from "../core/settings-manager.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
 

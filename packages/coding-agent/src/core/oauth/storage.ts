@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { getAgentDir, getOAuthPath } from "../config.js";
+import { getAgentDir, getOAuthPath } from "../../utils/config.js";
 
 export interface OAuthCredentials {
 	type: "oauth";
