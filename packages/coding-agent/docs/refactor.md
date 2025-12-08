@@ -84,7 +84,7 @@ class AgentSession {
   get model(): Model<any> | null;
   get thinkingLevel(): ThinkingLevel;
   get isStreaming(): boolean;
-  get messages(): Message[];
+  get messages(): AppMessage[];  // Includes custom types like BashExecutionMessage
 
   // Event subscription (handles session persistence internally)
   subscribe(listener: (event: AgentEvent) => void): () => void;
@@ -195,8 +195,8 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 **Implementation - Phase 1 (structure + state access):**
 ```typescript
 // src/core/agent-session.ts
-import type { Agent, AgentEvent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model, Message } from "@mariozechner/pi-ai";
+import type { Agent, AgentEvent, AgentState, AppMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Model } from "@mariozechner/pi-ai";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 
@@ -229,7 +229,7 @@ export class AgentSession {
   get model(): Model<any> | null { return this.agent.state.model; }
   get thinkingLevel(): ThinkingLevel { return this.agent.state.thinkingLevel; }
   get isStreaming(): boolean { return this.agent.state.isStreaming; }
-  get messages(): Message[] { return this.agent.state.messages; }
+  get messages(): AppMessage[] { return this.agent.state.messages; }
   get sessionFile(): string { return this.sessionManager.getSessionFile(); }
   get sessionId(): string { return this.sessionManager.getSessionId(); }
 }
