@@ -8,3 +8,4 @@ export * from "./stream.js";
 export * from "./types.js";
 export * from "./utils/overflow.js";
 export * from "./utils/typebox-helpers.js";
+export * from "./utils/validation.js";

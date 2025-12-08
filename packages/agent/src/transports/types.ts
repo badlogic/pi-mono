@@ -9,7 +9,6 @@ export interface AgentRunConfig {
 	model: Model<any>;
 	reasoning?: "low" | "medium" | "high";
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
-	validateToolCallsAtProvider?: boolean;
 }
 
 /**
