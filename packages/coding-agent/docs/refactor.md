@@ -182,9 +182,9 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 2. Manual test: Run `pi` in interactive mode, execute `!ls -la`, verify output appears
 3. Manual test: Run `!sleep 10`, press Esc, verify cancellation works
 
-- [ ] Create `src/core/bash-executor.ts` with `executeBash()` function
-- [ ] Add proper TypeScript types and exports
-- [ ] Verify with `npm run check`
+- [x] Create `src/core/bash-executor.ts` with `executeBash()` function
+- [x] Add proper TypeScript types and exports
+- [x] Verify with `npm run check`
 
 ---
 
