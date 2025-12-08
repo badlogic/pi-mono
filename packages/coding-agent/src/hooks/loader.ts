@@ -1,19 +1,33 @@
-import * as fs from "fs/promises";
+import { createJiti } from "jiti";
 import * as os from "os";
 import * as path from "path";
-import type { HookConfig, HookModule } from "./types.js";
-import { KNOWN_HOOK_EVENTS } from "./types.js";
+import type { HookAPI, HookFactory } from "./types.js";
+
+/**
+ * Generic handler function type.
+ */
+type HandlerFn = (...args: unknown[]) => Promise<unknown>;
+
+/**
+ * Registered handlers for a loaded hook.
+ */
+export interface LoadedHook {
+	/** Original path from config */
+	path: string;
+	/** Resolved absolute path */
+	resolvedPath: string;
+	/** Map of event type to handler functions */
+	handlers: Map<string, HandlerFn[]>;
+}
 
 /**
  * Result of loading hooks.
  */
 export interface LoadHooksResult {
 	/** Successfully loaded hooks */
-	hooks: Map<string, HookModule>;
+	hooks: LoadedHook[];
 	/** Errors encountered during loading */
-	errors: Array<{ hookId: string; error: string }>;
-	/** Warnings (e.g., unknown event types) */
-	warnings: Array<{ hookId: string; warning: string }>;
+	errors: Array<{ path: string; error: string }>;
 }
 
 /**
@@ -32,110 +46,62 @@ function expandPath(p: string): string {
 /**
  * Resolve hook path.
  * - Absolute paths used as-is
- * - Relative paths resolved from ~/.pi/hooks/
- * - ~ expanded to home directory
+ * - Paths starting with ~ expanded to home directory
+ * - Relative paths resolved from cwd
  */
-function resolveHookPath(hookPath: string): string {
+function resolveHookPath(hookPath: string, cwd: string): string {
 	const expanded = expandPath(hookPath);
 
 	if (path.isAbsolute(expanded)) {
 		return expanded;
 	}
 
-	// Relative paths resolved from ~/.pi/hooks/
-	return path.join(os.homedir(), ".pi", "hooks", expanded);
+	// Relative paths resolved from cwd
+	return path.resolve(cwd, expanded);
 }
 
 /**
- * Validate that a module implements the HookModule interface.
+ * Create a HookAPI instance that collects handlers.
  */
-function validateHookModule(module: unknown, hookId: string): HookModule | null {
-	if (!module || typeof module !== "object") {
-		return null;
-	}
-
-	const hook = module as Record<string, unknown>;
-
-	// id is required (can be set from config if not in module)
-	if (typeof hook.id !== "string" && typeof hook.id !== "undefined") {
-		return null;
-	}
-
-	// Check that any defined handlers are functions
-	const handlerNames = [
-		"onAgentStart",
-		"onAgentEnd",
-		"onTurnStart",
-		"onTurnEnd",
-		"onMessageStart",
-		"onMessageUpdate",
-		"onMessageEnd",
-		"onToolExecutionStart",
-		"onToolExecutionEnd",
-		"onBranch",
-		"onCommand",
-		"onSessionLoad",
-		"onSessionSave",
-	];
-
-	for (const name of handlerNames) {
-		if (name in hook && typeof hook[name] !== "function") {
-			return null;
-		}
-	}
-
-	// Set id from config if not defined
-	if (!hook.id) {
-		hook.id = hookId;
-	}
-
-	return hook as unknown as HookModule;
+function createHookAPI(handlers: Map<string, HandlerFn[]>): HookAPI {
+	return {
+		on(event: string, handler: HandlerFn): void {
+			const list = handlers.get(event) ?? [];
+			list.push(handler);
+			handlers.set(event, list);
+		},
+	} as HookAPI;
 }
 
 /**
- * Validate event names in config and return warnings for unknown events.
+ * Load a single hook module using jiti.
  */
-function validateEventNames(config: HookConfig): string[] {
-	const warnings: string[] = [];
-	const knownEvents = new Set<string>(KNOWN_HOOK_EVENTS);
+async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
+	const resolvedPath = resolveHookPath(hookPath, cwd);
 
-	for (const event of config.events) {
-		if (!knownEvents.has(event)) {
-			warnings.push(`Unknown event type "${event}"`);
-		}
-	}
-
-	return warnings;
-}
-
-/**
- * Load a single hook module.
- */
-async function loadHook(config: HookConfig): Promise<{ hook: HookModule | null; error: string | null }> {
-	const resolvedPath = resolveHookPath(config.path);
-
-	// Check if file exists
 	try {
-		await fs.access(resolvedPath);
-	} catch {
-		return { hook: null, error: `Hook file not found: ${resolvedPath}` };
-	}
+		// Create jiti instance for TypeScript/ESM loading
+		const jiti = createJiti(import.meta.url);
 
-	// Dynamic import
-	try {
-		// Use file:// URL for Windows compatibility
-		const fileUrl = `file://${resolvedPath}`;
-		const module = await import(fileUrl);
+		// Import the module
+		const module = await jiti.import(resolvedPath, { default: true });
+		const factory = module as HookFactory;
 
-		// Handle both default export and module.exports
-		const hookModule = module.default ?? module;
-		const validated = validateHookModule(hookModule, config.id);
-
-		if (!validated) {
-			return { hook: null, error: "Invalid hook module: missing required interface" };
+		if (typeof factory !== "function") {
+			return { hook: null, error: "Hook must export a default function" };
 		}
 
-		return { hook: validated, error: null };
+		// Create handlers map and API
+		const handlers = new Map<string, HandlerFn[]>();
+		const api = createHookAPI(handlers);
+
+		// Call factory to register handlers
+		factory(api);
+
+		return {
+			hook: { path: hookPath, resolvedPath, handlers },
+			error: null,
+		};
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		return { hook: null, error: `Failed to load hook: ${message}` };
@@ -144,36 +110,25 @@ async function loadHook(config: HookConfig): Promise<{ hook: HookModule | null; 
 
 /**
  * Load all hooks from configuration.
- * Returns successfully loaded hooks, errors, and warnings.
+ * @param paths - Array of hook file paths
+ * @param cwd - Current working directory for resolving relative paths
  */
-export async function loadHooks(configs: HookConfig[]): Promise<LoadHooksResult> {
-	const hooks = new Map<string, HookModule>();
-	const errors: Array<{ hookId: string; error: string }> = [];
-	const warnings: Array<{ hookId: string; warning: string }> = [];
+export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooksResult> {
+	const hooks: LoadedHook[] = [];
+	const errors: Array<{ path: string; error: string }> = [];
 
-	for (const config of configs) {
-		// Validate event names (even for disabled hooks, to catch config errors)
-		const eventWarnings = validateEventNames(config);
-		for (const warning of eventWarnings) {
-			warnings.push({ hookId: config.id, warning });
-		}
-
-		// Skip disabled hooks for loading
-		if (!config.enabled) {
-			continue;
-		}
-
-		const { hook, error } = await loadHook(config);
+	for (const hookPath of paths) {
+		const { hook, error } = await loadHook(hookPath, cwd);
 
 		if (error) {
-			errors.push({ hookId: config.id, error });
+			errors.push({ path: hookPath, error });
 			continue;
 		}
 
 		if (hook) {
-			hooks.set(hook.id, hook);
+			hooks.push(hook);
 		}
 	}
 
-	return { hooks, errors, warnings };
+	return { hooks, errors };
 }

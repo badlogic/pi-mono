@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getAgentDir } from "./config.js";
-import type { HookConfig } from "./hooks/types.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -19,7 +18,8 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
-	hooks?: HookConfig[];
+	hooks?: string[]; // Array of hook file paths
+	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 }
 
 export class SettingsManager {
@@ -166,7 +166,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getHookConfigs(): HookConfig[] {
+	getHookPaths(): string[] {
 		return this.settings.hooks ?? [];
+	}
+
+	getHookTimeout(): number {
+		return this.settings.hookTimeout ?? 30000;
 	}
 }
