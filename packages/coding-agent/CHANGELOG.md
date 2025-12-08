@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.0] - 2025-12-08
 
 ### Breaking Changes
 
