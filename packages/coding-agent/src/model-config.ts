@@ -9,6 +9,14 @@ import { loadOAuthCredentials } from "./oauth/storage.js";
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
 
+// Schema for OpenAI compatibility settings
+const OpenAICompatSchema = Type.Object({
+	supportsStore: Type.Optional(Type.Boolean()),
+	supportsDeveloperRole: Type.Optional(Type.Boolean()),
+	supportsReasoningEffort: Type.Optional(Type.Boolean()),
+	maxTokensField: Type.Optional(Type.Union([Type.Literal("max_completion_tokens"), Type.Literal("max_tokens")])),
+});
+
 // Schema for custom model definition
 const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
@@ -32,6 +40,7 @@ const ModelDefinitionSchema = Type.Object({
 	contextWindow: Type.Number(),
 	maxTokens: Type.Number(),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+	compat: Type.Optional(OpenAICompatSchema),
 });
 
 const ProviderConfigSchema = Type.Object({
@@ -201,7 +210,8 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 				contextWindow: modelDef.contextWindow,
 				maxTokens: modelDef.maxTokens,
 				headers,
-			});
+				compat: modelDef.compat,
+			} as Model<Api>);
 		}
 	}
 

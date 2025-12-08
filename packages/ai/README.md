@@ -611,6 +611,23 @@ const ollamaModel: Model<'openai-completions'> = {
   maxTokens: 32000
 };
 
+// Example: LiteLLM proxy with explicit compat settings
+const litellmModel: Model<'openai-completions'> = {
+  id: 'gpt-4o',
+  name: 'GPT-4o (via LiteLLM)',
+  api: 'openai-completions',
+  provider: 'litellm',
+  baseUrl: 'http://localhost:4000/v1',
+  reasoning: false,
+  input: ['text', 'image'],
+  cost: { input: 2.5, output: 10, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 128000,
+  maxTokens: 16384,
+  compat: {
+    supportsStore: false,  // LiteLLM doesn't support the store field
+  }
+};
+
 // Example: Custom endpoint with headers (bypassing Cloudflare bot detection)
 const proxyModel: Model<'anthropic-messages'> = {
   id: 'claude-sonnet-4',
@@ -634,6 +651,25 @@ const response = await stream(ollamaModel, context, {
   apiKey: 'dummy' // Ollama doesn't need a real key
 });
 ```
+
+### OpenAI Compatibility Settings
+
+The `openai-completions` API is implemented by many providers with minor differences. By default, the library auto-detects compatibility settings based on `baseUrl` for known providers (Cerebras, xAI, Mistral, Chutes, etc.). For custom proxies or unknown endpoints, you can override these settings via the `compat` field:
+
+```typescript
+interface OpenAICompat {
+  supportsStore?: boolean;           // Whether provider supports the `store` field (default: true)
+  supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
+  supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
+}
+```
+
+If `compat` is not set, the library falls back to URL-based detection. If `compat` is partially set, unspecified fields use the detected defaults. This is useful for:
+
+- **LiteLLM proxies**: May not support `store` field
+- **Custom inference servers**: May use non-standard field names
+- **Self-hosted endpoints**: May have different feature support
 
 ### Type Safety
 

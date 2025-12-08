@@ -10,6 +10,8 @@
 
 - Added `validateToolCall(tools, toolCall)` helper that finds the tool by name and validates arguments.
 
+- **OpenAI compatibility overrides**: Added `compat` field to `Model` for `openai-completions` API, allowing explicit configuration of provider quirks (`supportsStore`, `supportsDeveloperRole`, `supportsReasoningEffort`, `maxTokensField`). Falls back to URL-based detection if not set. Useful for LiteLLM, custom proxies, and other non-standard endpoints. ([#133](https://github.com/badlogic/pi-mono/issues/133), thanks @fink-andreas for the initial idea and PR)
+
 ## [0.13.0] - 2025-12-06
 
 ### Breaking Changes

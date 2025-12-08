@@ -12,6 +12,7 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	OpenAICompat,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -267,7 +268,8 @@ function createClient(model: Model<"openai-completions">, apiKey?: string) {
 }
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
-	const messages = convertMessages(model, context);
+	const compat = getCompat(model);
+	const messages = convertMessages(model, context, compat);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
@@ -276,27 +278,20 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream_options: { include_usage: true },
 	};
 
-	// Cerebras/xAI/Mistral dont like the "store" field
-	if (
-		!model.baseUrl.includes("cerebras.ai") &&
-		!model.baseUrl.includes("api.x.ai") &&
-		!model.baseUrl.includes("mistral.ai") &&
-		!model.baseUrl.includes("chutes.ai")
-	) {
+	if (compat.supportsStore) {
 		params.store = false;
 	}
 
 	if (options?.maxTokens) {
-		// Mistral/Chutes uses max_tokens instead of max_completion_tokens
-		if (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
-			(params as any).max_tokens = options?.maxTokens;
+		if (compat.maxTokensField === "max_tokens") {
+			(params as any).max_tokens = options.maxTokens;
 		} else {
-			params.max_completion_tokens = options?.maxTokens;
+			params.max_completion_tokens = options.maxTokens;
 		}
 	}
 
 	if (options?.temperature !== undefined) {
-		params.temperature = options?.temperature;
+		params.temperature = options.temperature;
 	}
 
 	if (context.tools) {
@@ -307,27 +302,24 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.tool_choice = options.toolChoice;
 	}
 
-	// Grok models don't like reasoning_effort
-	if (options?.reasoningEffort && model.reasoning && !model.id.toLowerCase().includes("grok")) {
+	if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		params.reasoning_effort = options.reasoningEffort;
 	}
 
 	return params;
 }
 
-function convertMessages(model: Model<"openai-completions">, context: Context): ChatCompletionMessageParam[] {
+function convertMessages(
+	model: Model<"openai-completions">,
+	context: Context,
+	compat: Required<OpenAICompat>,
+): ChatCompletionMessageParam[] {
 	const params: ChatCompletionMessageParam[] = [];
 
 	const transformedMessages = transformMessages(context.messages, model);
 
 	if (context.systemPrompt) {
-		// Cerebras/xAi/Mistral/Chutes don't like the "developer" role
-		const useDeveloperRole =
-			model.reasoning &&
-			!model.baseUrl.includes("cerebras.ai") &&
-			!model.baseUrl.includes("api.x.ai") &&
-			!model.baseUrl.includes("mistral.ai") &&
-			!model.baseUrl.includes("chutes.ai");
+		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
 		const role = useDeveloperRole ? "developer" : "system";
 		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
 	}
@@ -481,4 +473,43 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
 		}
 	}
+}
+
+/**
+ * Detect compatibility settings from baseUrl for known providers.
+ * Returns a fully resolved OpenAICompat object with all fields set.
+ */
+function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
+	const isNonStandard =
+		baseUrl.includes("cerebras.ai") ||
+		baseUrl.includes("api.x.ai") ||
+		baseUrl.includes("mistral.ai") ||
+		baseUrl.includes("chutes.ai");
+
+	const useMaxTokens = baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
+
+	const isGrok = baseUrl.includes("api.x.ai");
+
+	return {
+		supportsStore: !isNonStandard,
+		supportsDeveloperRole: !isNonStandard,
+		supportsReasoningEffort: !isGrok,
+		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
+	};
+}
+
+/**
+ * Get resolved compatibility settings for a model.
+ * Uses explicit model.compat if provided, otherwise auto-detects from URL.
+ */
+function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
+	const detected = detectCompatFromUrl(model.baseUrl);
+	if (!model.compat) return detected;
+
+	return {
+		supportsStore: model.compat.supportsStore ?? detected.supportsStore,
+		supportsDeveloperRole: model.compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
+		supportsReasoningEffort: model.compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
+		maxTokensField: model.compat.maxTokensField ?? detected.maxTokensField,
+	};
 }

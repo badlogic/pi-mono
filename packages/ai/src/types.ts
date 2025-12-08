@@ -152,6 +152,21 @@ export type AssistantMessageEvent =
 	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
+/**
+ * Compatibility settings for openai-completions API.
+ * Use this to override URL-based auto-detection for custom providers.
+ */
+export interface OpenAICompat {
+	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
+	supportsStore?: boolean;
+	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
+	supportsDeveloperRole?: boolean;
+	/** Whether the provider supports `reasoning_effort`. Default: auto-detected from URL. */
+	supportsReasoningEffort?: boolean;
+	/** Which field to use for max tokens. Default: auto-detected from URL. */
+	maxTokensField?: "max_completion_tokens" | "max_tokens";
+}
+
 // Model interface for the unified model system
 export interface Model<TApi extends Api> {
 	id: string;
@@ -170,4 +185,6 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
+	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
+	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
 }

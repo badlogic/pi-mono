@@ -315,6 +315,47 @@ You can add custom HTTP headers to bypass Cloudflare bot detection, add authenti
 - **Model-level `headers`**: Additional headers for specific models (merged with provider headers)
 - Model headers override provider headers when keys conflict
 
+### OpenAI Compatibility Settings
+
+The `openai-completions` API is implemented by many providers with minor differences (Ollama, vLLM, LiteLLM, llama.cpp, etc.). By default, compatibility settings are auto-detected from the `baseUrl`. For custom proxies or unknown endpoints, you can override these via the `compat` field on models:
+
+```json
+{
+  "providers": {
+    "litellm": {
+      "baseUrl": "http://localhost:4000/v1",
+      "apiKey": "LITELLM_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o (via LiteLLM)",
+          "reasoning": false,
+          "input": ["text", "image"],
+          "cost": {"input": 2.5, "output": 10, "cacheRead": 0, "cacheWrite": 0},
+          "contextWindow": 128000,
+          "maxTokens": 16384,
+          "compat": {
+            "supportsStore": false
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Available `compat` fields (all optional, auto-detected if not set):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `supportsStore` | boolean | auto | Whether provider supports the `store` field |
+| `supportsDeveloperRole` | boolean | auto | Whether provider supports `developer` role (vs `system`) |
+| `supportsReasoningEffort` | boolean | auto | Whether provider supports `reasoning_effort` parameter |
+| `maxTokensField` | string | auto | Use `"max_completion_tokens"` or `"max_tokens"` |
+
+If `compat` is partially set, unspecified fields use auto-detected values.
+
 ### Authorization Header
 
 Some providers require an explicit `Authorization: Bearer <token>` header. Set `authHeader: true` to automatically add this header using the resolved `apiKey`:
