@@ -562,16 +562,15 @@ export class InteractiveMode {
 
 	private addMessageToChat(message: Message | AppMessage): void {
 		if (isBashExecutionMessage(message)) {
-			const bashMsg = message as BashExecutionMessage;
-			const component = new BashExecutionComponent(bashMsg.command, this.ui);
-			if (bashMsg.output) {
-				component.appendOutput(bashMsg.output);
+			const component = new BashExecutionComponent(message.command, this.ui);
+			if (message.output) {
+				component.appendOutput(message.output);
 			}
 			component.setComplete(
-				bashMsg.exitCode,
-				bashMsg.cancelled,
-				bashMsg.truncated ? ({ truncated: true } as TruncationResult) : undefined,
-				bashMsg.fullOutputPath,
+				message.exitCode,
+				message.cancelled,
+				message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
+				message.fullOutputPath,
 			);
 			this.chatContainer.addChild(component);
 			return;
