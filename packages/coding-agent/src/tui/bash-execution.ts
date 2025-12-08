@@ -6,6 +6,7 @@ import { Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui"
 import stripAnsi from "strip-ansi";
 import { theme } from "../theme/theme.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "../tools/truncate.js";
+import { DynamicBorder } from "./dynamic-border.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
 const PREVIEW_LINES = 20;
@@ -18,24 +19,28 @@ export class BashExecutionComponent extends Container {
 	private loader: Loader;
 	private truncationResult?: TruncationResult;
 	private fullOutputPath?: string;
-	private contentText: Text;
-	private statusText: Text | null = null;
 	private expanded = false;
+	private contentContainer: Container;
 
 	constructor(command: string, ui: TUI) {
 		super();
 		this.command = command;
 
+		const borderColor = (str: string) => theme.fg("bashMode", str);
+
 		// Add spacer
 		this.addChild(new Spacer(1));
 
+		// Top border
+		this.addChild(new DynamicBorder(borderColor));
+
+		// Content container (holds dynamic content between borders)
+		this.contentContainer = new Container();
+		this.addChild(this.contentContainer);
+
 		// Command header
 		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${command}`)), 1, 0);
-		this.addChild(header);
-
-		// Output area (will be updated)
-		this.contentText = new Text("", 1, 0);
-		this.addChild(this.contentText);
+		this.contentContainer.addChild(header);
 
 		// Loader
 		this.loader = new Loader(
@@ -44,7 +49,10 @@ export class BashExecutionComponent extends Container {
 			(text) => theme.fg("muted", text),
 			"Running... (esc to cancel)",
 		);
-		this.addChild(this.loader);
+		this.contentContainer.addChild(this.loader);
+
+		// Bottom border
+		this.addChild(new DynamicBorder(borderColor));
 	}
 
 	/**
@@ -83,9 +91,8 @@ export class BashExecutionComponent extends Container {
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
 
-		// Stop and remove loader
+		// Stop loader
 		this.loader.stop();
-		this.removeChild(this.loader);
 
 		this.updateDisplay();
 	}
@@ -106,19 +113,23 @@ export class BashExecutionComponent extends Container {
 		const displayLines = availableLines.slice(-maxDisplayLines); // Show last N lines (tail)
 		const hiddenLineCount = availableLines.length - displayLines.length;
 
-		let displayText = "";
+		// Rebuild content container
+		this.contentContainer.clear();
+
+		// Command header
+		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${this.command}`)), 1, 0);
+		this.contentContainer.addChild(header);
+
+		// Output
 		if (displayLines.length > 0) {
-			displayText = displayLines.map((line) => theme.fg("muted", line)).join("\n");
+			const displayText = displayLines.map((line) => theme.fg("muted", line)).join("\n");
+			this.contentContainer.addChild(new Text("\n" + displayText, 1, 0));
 		}
 
-		this.contentText.setText(displayText ? "\n" + displayText : "");
-
-		// Update/add status text if complete
-		if (this.status !== "running") {
-			if (this.statusText) {
-				this.removeChild(this.statusText);
-			}
-
+		// Loader or status
+		if (this.status === "running") {
+			this.contentContainer.addChild(this.loader);
+		} else {
 			const statusParts: string[] = [];
 
 			// Show how many lines are hidden (collapsed preview)
@@ -139,8 +150,7 @@ export class BashExecutionComponent extends Container {
 			}
 
 			if (statusParts.length > 0) {
-				this.statusText = new Text("\n" + statusParts.join("\n"), 1, 0);
-				this.addChild(this.statusText);
+				this.contentContainer.addChild(new Text("\n" + statusParts.join("\n"), 1, 0));
 			}
 		}
 	}
