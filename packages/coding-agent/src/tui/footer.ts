@@ -3,6 +3,7 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
 import { join } from "path";
+import { ENV_SESSION_ID } from "../config.js";
 import { isModelUsingOAuth } from "../model-config.js";
 import { theme } from "../theme/theme.js";
 
@@ -210,6 +211,12 @@ export class FooterComponent implements Component {
 			if (thinkingLevel !== "off") {
 				rightSide = `${modelName} • ${thinkingLevel}`;
 			}
+		}
+
+		// Add session ID if available
+		const sessionId = process.env[ENV_SESSION_ID];
+		if (sessionId) {
+			rightSide = `${rightSide} • ${sessionId}`;
 		}
 
 		let statsLeftWidth = visibleWidth(statsLeft);
