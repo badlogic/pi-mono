@@ -1216,8 +1216,8 @@ export async function runPrintMode(
 1. `npm run check` passes
 2. Manual test: `pi -p "echo hello"` still works
 
-- [ ] Create `src/modes/print-mode.ts`
-- [ ] Verify with `npm run check`
+- [x] Create `src/modes/print-mode.ts`
+- [x] Verify with `npm run check`
 
 ---
 
