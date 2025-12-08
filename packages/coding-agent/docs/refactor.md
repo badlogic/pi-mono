@@ -575,11 +575,11 @@ async getAvailableModels(): Promise<Model<any>[]> {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `ModelCycleResult` interface
-- [ ] Add `setModel()` method
-- [ ] Add `cycleModel()` method with scoped/available variants
-- [ ] Add `getAvailableModels()` method
-- [ ] Verify with `npm run check`
+- [x] Add `ModelCycleResult` interface
+- [x] Add `setModel()` method
+- [x] Add `cycleModel()` method with scoped/available variants
+- [x] Add `getAvailableModels()` method
+- [x] Verify with `npm run check`
 
 ---
 
@@ -639,11 +639,11 @@ supportsThinking(): boolean {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `setThinkingLevel()` method
-- [ ] Add `cycleThinkingLevel()` method
-- [ ] Add `supportsThinking()` method
-- [ ] Add `setQueueMode()` method and `queueMode` getter (see below)
-- [ ] Verify with `npm run check`
+- [x] Add `setThinkingLevel()` method
+- [x] Add `cycleThinkingLevel()` method
+- [x] Add `supportsThinking()` method
+- [x] Add `setQueueMode()` method and `queueMode` getter (see below)
+- [x] Verify with `npm run check`
 
 **Queue mode (add to same WP):**
 ```typescript

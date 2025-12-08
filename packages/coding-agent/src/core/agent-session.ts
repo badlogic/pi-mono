@@ -16,7 +16,7 @@
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
-import { getApiKeyForModel } from "../model-config.js";
+import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import type { SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "../slash-commands.js";
@@ -44,6 +44,14 @@ export interface PromptOptions {
 	expandSlashCommands?: boolean;
 	/** Image/file attachments */
 	attachments?: Attachment[];
+}
+
+/** Result from cycleModel() */
+export interface ModelCycleResult {
+	model: Model<any>;
+	thinkingLevel: ThinkingLevel;
+	/** Whether cycling through scoped models (--models flag) or all available */
+	isScoped: boolean;
 }
 
 // ============================================================================
@@ -299,5 +307,161 @@ export class AgentSession {
 		this.sessionManager.reset();
 		this._queuedMessages = [];
 		// Note: caller should re-subscribe after reset if needed
+	}
+
+	// =========================================================================
+	// Model Management
+	// =========================================================================
+
+	/**
+	 * Set model directly.
+	 * Validates API key, saves to session and settings.
+	 * @throws Error if no API key available for the model
+	 */
+	async setModel(model: Model<any>): Promise<void> {
+		const apiKey = await getApiKeyForModel(model);
+		if (!apiKey) {
+			throw new Error(`No API key for ${model.provider}/${model.id}`);
+		}
+
+		this.agent.setModel(model);
+		this.sessionManager.saveModelChange(model.provider, model.id);
+		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+	}
+
+	/**
+	 * Cycle to next model.
+	 * Uses scoped models (from --models flag) if available, otherwise all available models.
+	 * @returns The new model info, or null if only one model available
+	 */
+	async cycleModel(): Promise<ModelCycleResult | null> {
+		if (this._scopedModels.length > 0) {
+			return this._cycleScopedModel();
+		}
+		return this._cycleAvailableModel();
+	}
+
+	private async _cycleScopedModel(): Promise<ModelCycleResult | null> {
+		if (this._scopedModels.length <= 1) return null;
+
+		const currentModel = this.model;
+		let currentIndex = this._scopedModels.findIndex(
+			(sm) => sm.model.id === currentModel?.id && sm.model.provider === currentModel?.provider,
+		);
+
+		if (currentIndex === -1) currentIndex = 0;
+		const nextIndex = (currentIndex + 1) % this._scopedModels.length;
+		const next = this._scopedModels[nextIndex];
+
+		// Validate API key
+		const apiKey = await getApiKeyForModel(next.model);
+		if (!apiKey) {
+			throw new Error(`No API key for ${next.model.provider}/${next.model.id}`);
+		}
+
+		// Apply model
+		this.agent.setModel(next.model);
+		this.sessionManager.saveModelChange(next.model.provider, next.model.id);
+		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
+
+		// Apply thinking level (silently use "off" if not supported)
+		const effectiveThinking = next.model.reasoning ? next.thinkingLevel : "off";
+		this.agent.setThinkingLevel(effectiveThinking);
+		this.sessionManager.saveThinkingLevelChange(effectiveThinking);
+		this.settingsManager.setDefaultThinkingLevel(effectiveThinking);
+
+		return { model: next.model, thinkingLevel: effectiveThinking, isScoped: true };
+	}
+
+	private async _cycleAvailableModel(): Promise<ModelCycleResult | null> {
+		const { models: availableModels, error } = await getAvailableModels();
+		if (error) throw new Error(`Failed to load models: ${error}`);
+		if (availableModels.length <= 1) return null;
+
+		const currentModel = this.model;
+		let currentIndex = availableModels.findIndex(
+			(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
+		);
+
+		if (currentIndex === -1) currentIndex = 0;
+		const nextIndex = (currentIndex + 1) % availableModels.length;
+		const nextModel = availableModels[nextIndex];
+
+		const apiKey = await getApiKeyForModel(nextModel);
+		if (!apiKey) {
+			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
+		}
+
+		this.agent.setModel(nextModel);
+		this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
+		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
+
+		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
+	}
+
+	/**
+	 * Get all available models with valid API keys.
+	 */
+	async getAvailableModels(): Promise<Model<any>[]> {
+		const { models, error } = await getAvailableModels();
+		if (error) throw new Error(error);
+		return models;
+	}
+
+	// =========================================================================
+	// Thinking Level Management
+	// =========================================================================
+
+	/**
+	 * Set thinking level.
+	 * Silently uses "off" if model doesn't support thinking.
+	 * Saves to session and settings.
+	 */
+	setThinkingLevel(level: ThinkingLevel): void {
+		const effectiveLevel = this.supportsThinking() ? level : "off";
+		this.agent.setThinkingLevel(effectiveLevel);
+		this.sessionManager.saveThinkingLevelChange(effectiveLevel);
+		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+	}
+
+	/**
+	 * Cycle to next thinking level.
+	 * @returns New level, or null if model doesn't support thinking
+	 */
+	cycleThinkingLevel(): ThinkingLevel | null {
+		if (!this.supportsThinking()) return null;
+
+		const modelId = this.model?.id || "";
+		const supportsXhigh = modelId.includes("codex-max");
+		const levels: ThinkingLevel[] = supportsXhigh
+			? ["off", "minimal", "low", "medium", "high", "xhigh"]
+			: ["off", "minimal", "low", "medium", "high"];
+
+		const currentIndex = levels.indexOf(this.thinkingLevel);
+		const nextIndex = (currentIndex + 1) % levels.length;
+		const nextLevel = levels[nextIndex];
+
+		this.setThinkingLevel(nextLevel);
+		return nextLevel;
+	}
+
+	/**
+	 * Check if current model supports thinking/reasoning.
+	 */
+	supportsThinking(): boolean {
+		return !!this.model?.reasoning;
+	}
+
+	// =========================================================================
+	// Queue Mode Management
+	// =========================================================================
+
+	/**
+	 * Set message queue mode.
+	 * Saves to settings.
+	 */
+	setQueueMode(mode: "all" | "one-at-a-time"): void {
+		this.agent.setQueueMode(mode);
+		this.settingsManager.setQueueMode(mode);
 	}
 }
