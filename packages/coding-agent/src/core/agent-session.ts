@@ -14,10 +14,11 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { getModelsPath } from "../config.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
-import type { SessionManager } from "../session-manager.js";
+import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "../slash-commands.js";
 
@@ -54,6 +55,12 @@ export interface ModelCycleResult {
 	isScoped: boolean;
 }
 
+/** Result from compact() or checkAutoCompaction() */
+export interface CompactionResult {
+	tokensBefore: number;
+	summary: string;
+}
+
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -72,6 +79,9 @@ export class AgentSession {
 
 	// Message queue state
 	private _queuedMessages: string[] = [];
+
+	// Compaction state
+	private _compactionAbortController: AbortController | null = null;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -111,10 +121,9 @@ export class AgentSession {
 					}
 
 					// Check auto-compaction after assistant messages
-					// (will be implemented in WP7)
-					// if (event.message.role === "assistant") {
-					//   await this.checkAutoCompaction();
-					// }
+					if (event.message.role === "assistant") {
+						await this.checkAutoCompaction();
+					}
 				}
 			});
 		}
@@ -129,23 +138,23 @@ export class AgentSession {
 	}
 
 	/**
-	 * Unsubscribe from agent entirely and clear all listeners.
-	 * Used during reset/cleanup operations.
+	 * Temporarily disconnect from agent events.
+	 * User listeners are preserved and will receive events again after resubscribe().
+	 * Used internally during operations that need to pause event processing.
 	 */
-	unsubscribeAll(): void {
+	private _disconnectFromAgent(): void {
 		if (this._unsubscribeAgent) {
 			this._unsubscribeAgent();
 			this._unsubscribeAgent = undefined;
 		}
-		this._eventListeners = [];
 	}
 
 	/**
-	 * Re-subscribe to agent after unsubscribeAll.
-	 * Call this after operations that require temporary unsubscription.
+	 * Reconnect to agent events after _disconnectFromAgent().
+	 * Preserves all existing listeners.
 	 */
-	resubscribe(): void {
-		if (this._unsubscribeAgent) return; // Already subscribed
+	private _reconnectToAgent(): void {
+		if (this._unsubscribeAgent) return; // Already connected
 
 		this._unsubscribeAgent = this.agent.subscribe(async (event) => {
 			for (const l of this._eventListeners) {
@@ -158,8 +167,22 @@ export class AgentSession {
 				if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
 					this.sessionManager.startSession(this.agent.state);
 				}
+
+				// Check auto-compaction after assistant messages
+				if (event.message.role === "assistant") {
+					await this.checkAutoCompaction();
+				}
 			}
 		});
+	}
+
+	/**
+	 * Remove all listeners and disconnect from agent.
+	 * Call this when completely done with the session.
+	 */
+	dispose(): void {
+		this._disconnectFromAgent();
+		this._eventListeners = [];
 	}
 
 	// =========================================================================
@@ -299,14 +322,15 @@ export class AgentSession {
 	/**
 	 * Reset agent and session to start fresh.
 	 * Clears all messages and starts a new session.
+	 * Listeners are preserved and will continue receiving events.
 	 */
 	async reset(): Promise<void> {
-		this.unsubscribeAll();
+		this._disconnectFromAgent();
 		await this.abort();
 		this.agent.reset();
 		this.sessionManager.reset();
 		this._queuedMessages = [];
-		// Note: caller should re-subscribe after reset if needed
+		this._reconnectToAgent();
 	}
 
 	// =========================================================================
@@ -463,5 +487,133 @@ export class AgentSession {
 	setQueueMode(mode: "all" | "one-at-a-time"): void {
 		this.agent.setQueueMode(mode);
 		this.settingsManager.setQueueMode(mode);
+	}
+
+	// =========================================================================
+	// Compaction
+	// =========================================================================
+
+	/**
+	 * Manually compact the session context.
+	 * Aborts current agent operation first.
+	 * @param customInstructions Optional instructions for the compaction summary
+	 */
+	async compact(customInstructions?: string): Promise<CompactionResult> {
+		// Abort any running operation
+		this._disconnectFromAgent();
+		await this.abort();
+
+		// Create abort controller
+		this._compactionAbortController = new AbortController();
+
+		try {
+			if (!this.model) {
+				throw new Error("No model selected");
+			}
+
+			const apiKey = await getApiKeyForModel(this.model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${this.model.provider}`);
+			}
+
+			const entries = this.sessionManager.loadEntries();
+			const settings = this.settingsManager.getCompactionSettings();
+			const compactionEntry = await compact(
+				entries,
+				this.model,
+				settings,
+				apiKey,
+				this._compactionAbortController.signal,
+				customInstructions,
+			);
+
+			if (this._compactionAbortController.signal.aborted) {
+				throw new Error("Compaction cancelled");
+			}
+
+			// Save and reload
+			this.sessionManager.saveCompaction(compactionEntry);
+			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			this.agent.replaceMessages(loaded.messages);
+
+			return {
+				tokensBefore: compactionEntry.tokensBefore,
+				summary: compactionEntry.summary,
+			};
+		} finally {
+			this._compactionAbortController = null;
+			this._reconnectToAgent();
+		}
+	}
+
+	/**
+	 * Cancel in-progress compaction.
+	 */
+	abortCompaction(): void {
+		this._compactionAbortController?.abort();
+	}
+
+	/**
+	 * Check if auto-compaction should run, and run it if so.
+	 * Called internally after assistant messages.
+	 * @returns Result if compaction occurred, null otherwise
+	 */
+	async checkAutoCompaction(): Promise<CompactionResult | null> {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return null;
+
+		// Get last non-aborted assistant message
+		const messages = this.messages;
+		let lastAssistant: AssistantMessage | null = null;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				const assistantMsg = msg as AssistantMessage;
+				if (assistantMsg.stopReason !== "aborted") {
+					lastAssistant = assistantMsg;
+					break;
+				}
+			}
+		}
+		if (!lastAssistant) return null;
+
+		const contextTokens = calculateContextTokens(lastAssistant.usage);
+		const contextWindow = this.model?.contextWindow ?? 0;
+
+		if (!shouldCompact(contextTokens, contextWindow, settings)) return null;
+
+		// Perform auto-compaction (don't abort current operation for auto)
+		try {
+			if (!this.model) return null;
+
+			const apiKey = await getApiKeyForModel(this.model);
+			if (!apiKey) return null;
+
+			const entries = this.sessionManager.loadEntries();
+			const compactionEntry = await compact(entries, this.model, settings, apiKey);
+
+			this.sessionManager.saveCompaction(compactionEntry);
+			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			this.agent.replaceMessages(loaded.messages);
+
+			return {
+				tokensBefore: compactionEntry.tokensBefore,
+				summary: compactionEntry.summary,
+			};
+		} catch {
+			return null; // Silently fail auto-compaction
+		}
+	}
+
+	/**
+	 * Toggle auto-compaction setting.
+	 */
+	setAutoCompactionEnabled(enabled: boolean): void {
+		this.settingsManager.setCompactionEnabled(enabled);
+	}
+
+	/** Whether auto-compaction is enabled */
+	get autoCompactionEnabled(): boolean {
+		return this.settingsManager.getCompactionEnabled();
 	}
 }

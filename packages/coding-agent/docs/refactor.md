@@ -341,8 +341,9 @@ private unsubscribeAll(): void {
 1. `npm run check` passes
 
 - [x] Add `subscribe()` method to AgentSession
-- [x] Add `unsubscribeAll()` method
-- [x] Add `resubscribe()` method
+- [x] Add `_disconnectFromAgent()` private method (renamed from unsubscribeAll)
+- [x] Add `_reconnectToAgent()` private method (renamed from resubscribe)
+- [x] Add `dispose()` public method for full cleanup
 - [x] Verify with `npm run check`
 
 ---
@@ -808,12 +809,12 @@ get autoCompactionEnabled(): boolean {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `CompactionResult` interface
-- [ ] Add `compact()` method
-- [ ] Add `abortCompaction()` method
-- [ ] Add `checkAutoCompaction()` method
-- [ ] Add `setAutoCompactionEnabled()` and getter
-- [ ] Verify with `npm run check`
+- [x] Add `CompactionResult` interface
+- [x] Add `compact()` method
+- [x] Add `abortCompaction()` method
+- [x] Add `checkAutoCompaction()` method
+- [x] Add `setAutoCompactionEnabled()` and getter
+- [x] Verify with `npm run check`
 
 ---
 
