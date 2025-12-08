@@ -285,25 +285,28 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream_options: { include_usage: true },
 	};
 
-	// Cerebras/xAI/Mistral and LiteLLM proxies don't like the "store" field.
-	// Use DISABLE_OPENAI_EXTRA_PARAMS=1 to skip store for custom proxies.
-	const disableExtraParams = process.env.DISABLE_OPENAI_EXTRA_PARAMS === "1";
-	if (
-		!disableExtraParams &&
-		!model.baseUrl.includes("cerebras.ai") &&
-		!model.baseUrl.includes("api.x.ai") &&
-		!model.baseUrl.includes("mistral.ai") &&
-		!model.baseUrl.includes("chutes.ai")
-	) {
+	// Only send OpenAI-specific params (like "store") to actual OpenAI models.
+	// For custom models via proxies like LiteLLM, check providerType.
+	// Fall back to baseUrl detection for known providers.
+	const isOpenAIModel =
+		model.providerType === "openai" ||
+		(!model.providerType &&
+			!model.baseUrl.includes("cerebras.ai") &&
+			!model.baseUrl.includes("api.x.ai") &&
+			!model.baseUrl.includes("mistral.ai") &&
+			!model.baseUrl.includes("chutes.ai") &&
+			(model.baseUrl.includes("api.openai.com") || model.provider === "openai"));
+
+	if (isOpenAIModel) {
 		params.store = false;
 	}
 
 	if (options?.maxTokens) {
-		// Mistral/Chutes uses max_tokens instead of max_completion_tokens
-		if (model.baseUrl.includes("mistral.ai") || model.baseUrl.includes("chutes.ai")) {
-			(params as any).max_tokens = options?.maxTokens;
-		} else {
+		// Only OpenAI uses max_completion_tokens. Others (Mistral/Chutes/Anthropic via proxy) use max_tokens
+		if (isOpenAIModel) {
 			params.max_completion_tokens = options?.maxTokens;
+		} else {
+			(params as any).max_tokens = options?.maxTokens;
 		}
 	}
 

@@ -29,6 +29,9 @@ export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 export type KnownProvider = "anthropic" | "google" | "openai" | "xai" | "groq" | "cerebras" | "openrouter" | "zai";
 export type Provider = KnownProvider | string;
 
+// The actual provider serving a model (used for custom proxies like LiteLLM)
+export type ProviderType = "openai" | "anthropic" | "google";
+
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 // Base options all providers share
@@ -170,4 +173,5 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
+	providerType?: ProviderType; // Actual provider serving this model (for proxies like LiteLLM)
 }

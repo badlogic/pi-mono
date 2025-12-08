@@ -1,4 +1,12 @@
-import { type Api, getApiKey, getModels, getProviders, type KnownProvider, type Model } from "@mariozechner/pi-ai";
+import {
+	type Api,
+	getApiKey,
+	getModels,
+	getProviders,
+	type KnownProvider,
+	type Model,
+	type ProviderType,
+} from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
@@ -21,6 +29,7 @@ const ModelDefinitionSchema = Type.Object({
 			Type.Literal("google-generative-ai"),
 		]),
 	),
+	providerType: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("anthropic"), Type.Literal("google")])),
 	reasoning: Type.Boolean(),
 	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
 	cost: Type.Object({
@@ -201,6 +210,7 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 				contextWindow: modelDef.contextWindow,
 				maxTokens: modelDef.maxTokens,
 				headers,
+				providerType: modelDef.providerType as ProviderType | undefined,
 			});
 		}
 	}
