@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getAgentDir } from "./config.js";
+import type { HookConfig } from "./hooks/types.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -18,6 +19,7 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
+	hooks?: HookConfig[];
 }
 
 export class SettingsManager {
@@ -162,5 +164,9 @@ export class SettingsManager {
 	setShellPath(path: string | undefined): void {
 		this.settings.shellPath = path;
 		this.save();
+	}
+
+	getHookConfigs(): HookConfig[] {
+		return this.settings.hooks ?? [];
 	}
 }
