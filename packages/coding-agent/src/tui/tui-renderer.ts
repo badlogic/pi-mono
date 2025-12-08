@@ -22,12 +22,22 @@ import { copyToClipboard } from "../clipboard.js";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { APP_NAME, getDebugLogPath, getModelsPath, getOAuthPath } from "../config.js";
 import { exportSessionToHtml } from "../export-html.js";
+import {
+	createGitContext,
+	createStorageContext,
+	type HookContext,
+	HookRunner,
+	loadHooks,
+	type SelectorItem,
+} from "../hooks/index.js";
 import { getApiKeyForModel, getAvailableModels, invalidateOAuthCache } from "../model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../oauth/index.js";
 import {
 	getLatestCompactionEntry,
 	loadSessionFromEntries,
+	type SessionEntry,
 	type SessionManager,
+	type SessionMessageEntry,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
 } from "../session-manager.js";
@@ -39,6 +49,8 @@ import { CompactionComponent } from "./compaction.js";
 import { CustomEditor } from "./custom-editor.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { FooterComponent } from "./footer.js";
+import { HookInputComponent } from "./hook-input.js";
+import { HookSelectorComponent } from "./hook-selector.js";
 import { ModelSelectorComponent } from "./model-selector.js";
 import { OAuthSelectorComponent } from "./oauth-selector.js";
 import { QueueModeSelectorComponent } from "./queue-mode-selector.js";
@@ -116,6 +128,11 @@ export class TuiRenderer {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
+
+	// Hook system
+	private hookRunner: HookRunner | null = null;
+	private hookSelector: HookSelectorComponent | null = null;
+	private hookInput: HookInputComponent | null = null;
 
 	// File-based slash commands
 	private fileCommands: FileSlashCommand[] = [];
@@ -381,6 +398,15 @@ export class TuiRenderer {
 			text = text.trim();
 			if (!text) return;
 
+			// Emit command event for slash commands
+			if (text.startsWith("/") && this.hookRunner?.hasHandlers("command")) {
+				const parts = text.split(/\s+/);
+				const name = parts[0].slice(1); // Remove leading /
+				const args = parts.slice(1);
+				const ctx = this.createHookContext();
+				await this.hookRunner.emit({ type: "command", name, args }, ctx, createStorageContext);
+			}
+
 			// Check for /thinking command
 			if (text === "/thinking") {
 				// Show thinking level selector
@@ -560,7 +586,7 @@ export class TuiRenderer {
 		this.isInitialized = true;
 
 		// Subscribe to agent events for UI updates and session saving
-		this.subscribeToAgent();
+		await this.subscribeToAgent();
 
 		// Set up theme file watcher for live reload
 		onThemeChange(() => {
@@ -575,14 +601,33 @@ export class TuiRenderer {
 		});
 	}
 
-	private subscribeToAgent(): void {
+	private async subscribeToAgent(): Promise<void> {
+		// Initialize hooks first
+		await this.initHooks();
+
 		this.unsubscribe = this.agent.subscribe(async (event) => {
 			// Handle UI updates
 			await this.handleEvent(event, this.agent.state);
 
+			// Emit to hooks
+			if (this.hookRunner) {
+				const ctx = this.createHookContext();
+				await this.hookRunner.emit(event, ctx, createStorageContext);
+			}
+
 			// Save messages to session
 			if (event.type === "message_end") {
 				this.sessionManager.saveMessage(event.message);
+
+				// Emit session_save event
+				if (this.hookRunner?.hasHandlers("session_save")) {
+					const saveCtx = this.createHookContext();
+					await this.hookRunner.emit(
+						{ type: "session_save", sessionId: this.sessionManager.getSessionId() },
+						saveCtx,
+						createStorageContext,
+					);
+				}
 
 				// Check if we should initialize session now (after first user+assistant exchange)
 				if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
@@ -595,6 +640,169 @@ export class TuiRenderer {
 				}
 			}
 		});
+	}
+
+	/**
+	 * Initialize the hook system.
+	 */
+	private async initHooks(): Promise<void> {
+		const hookConfigs = this.settingsManager.getHookConfigs();
+		if (hookConfigs.length === 0) return;
+
+		const { hooks, errors, warnings } = await loadHooks(hookConfigs);
+
+		// Log any hook loading errors
+		for (const { hookId, error } of errors) {
+			console.error(`Failed to load hook "${hookId}": ${error}`);
+		}
+
+		// Log warnings (e.g., unknown event types)
+		for (const { hookId, warning } of warnings) {
+			console.warn(`Hook "${hookId}": ${warning}`);
+		}
+
+		if (hooks.size === 0) return;
+
+		this.hookRunner = new HookRunner(hooks, hookConfigs);
+
+		// Listen for hook errors and display them
+		this.hookRunner.onError((err) => {
+			this.showHookError(err.hookId, err.error);
+		});
+	}
+
+	/**
+	 * Show a hook error in the UI.
+	 */
+	private showHookError(hookId: string, error: string): void {
+		const errorText = new Text(theme.fg("error", `Hook "${hookId}" error: ${error}`), 1, 0);
+		this.chatContainer.addChild(errorText);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Create a hook context for the current state.
+	 * Note: storage and signal are set per-hook in runner.emit()
+	 */
+	private createHookContext(): Omit<HookContext, "storage" | "signal"> {
+		const cwd = process.cwd();
+		return {
+			session: {
+				id: this.sessionManager.getSessionId(),
+				messages: this.agent.state.messages,
+				cwd,
+				loadEntries: () => this.sessionManager.loadEntries(),
+			},
+			ui: {
+				selector: async (options) => this.showHookSelector(options),
+				confirm: async (options) => this.showHookConfirm(options),
+				input: async (options) => this.showHookInput(options),
+				notify: (options) => this.showHookNotify(options),
+			},
+			actions: {
+				branch: async (selectedIndex, entries) => {
+					this.executeBranch(selectedIndex, entries);
+				},
+			},
+			git: createGitContext(cwd),
+		};
+	}
+
+	/**
+	 * Show a selector for hooks.
+	 */
+	private showHookSelector<T extends string>(options: { title: string; items: SelectorItem<T>[] }): Promise<T | null> {
+		return new Promise((resolve) => {
+			this.hookSelector = new HookSelectorComponent(
+				options.title,
+				options.items,
+				(id) => {
+					this.hideHookSelector();
+					resolve(id as T);
+				},
+				() => {
+					this.hideHookSelector();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.hookSelector!);
+			this.ui.setFocus(this.hookSelector!);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the hook selector.
+	 */
+	private hideHookSelector(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.hookSelector = null;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a confirmation dialog for hooks.
+	 */
+	private async showHookConfirm(options: { title: string; message: string }): Promise<boolean> {
+		const result = await this.showHookSelector({
+			title: `${options.title}\n${options.message}`,
+			items: [
+				{ id: "yes", label: "Yes" },
+				{ id: "no", label: "No" },
+			],
+		});
+		return result === "yes";
+	}
+
+	/**
+	 * Show a text input for hooks.
+	 * For now, this uses a simple selector - could be enhanced later.
+	 */
+	private showHookInput(options: { title: string; placeholder?: string }): Promise<string | null> {
+		return new Promise((resolve) => {
+			this.hookInput = new HookInputComponent(
+				options.title,
+				options.placeholder,
+				(value) => {
+					this.hideHookInput();
+					resolve(value);
+				},
+				() => {
+					this.hideHookInput();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.hookInput);
+			this.ui.setFocus(this.hookInput);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the hook input.
+	 */
+	private hideHookInput(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.hookInput = null;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a notification for hooks.
+	 */
+	private showHookNotify(options: { message: string; type: "info" | "warning" | "error" }): void {
+		const color = options.type === "error" ? "error" : options.type === "warning" ? "warning" : "dim";
+		const text = new Text(theme.fg(color, options.message), 1, 0);
+		this.chatContainer.addChild(text);
+		this.ui.requestRender();
 	}
 
 	private async checkAutoCompaction(): Promise<void> {
@@ -1421,7 +1629,7 @@ export class TuiRenderer {
 		this.ui.setFocus(this.editor);
 	}
 
-	private showUserMessageSelector(): void {
+	private async showUserMessageSelector(): Promise<void> {
 		// Read from session file directly to see ALL historical user messages
 		// (including those before compaction events)
 		const entries = this.sessionManager.loadEntries();
@@ -1460,39 +1668,34 @@ export class TuiRenderer {
 		// Create user message selector
 		this.userMessageSelector = new UserMessageSelectorComponent(
 			userMessages,
-			(entryIndex) => {
-				// Get the selected user message text to put in the editor
+			async (entryIndex) => {
 				const selectedEntry = entries[entryIndex];
 				if (selectedEntry.type !== "message") return;
 				if (selectedEntry.message.role !== "user") return;
 
-				const selectedText = getUserMessageText(selectedEntry.message.content);
-
-				// Create a branched session by copying entries up to (but not including) the selected entry
-				const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
-
-				// Set the new session file as active
-				this.sessionManager.setSessionFile(newSessionFile);
-
-				// Reload the session
-				const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
-				this.agent.replaceMessages(loaded.messages);
-
-				// Clear and re-render the chat
-				this.chatContainer.clear();
-				this.isFirstUserMessage = true;
-				this.renderInitialMessages(this.agent.state);
-
-				// Show confirmation message
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
-
-				// Put the selected message in the editor
-				this.editor.setText(selectedText);
-
-				// Hide selector and show editor again
+				// Hide selector first
 				this.hideUserMessageSelector();
-				this.ui.requestRender();
+
+				// If hooks are registered for branch, emit the event with selected message
+				if (this.hookRunner?.hasHandlers("branch")) {
+					const ctx = this.createHookContext();
+					await this.hookRunner.emit(
+						{
+							type: "branch",
+							sessionId: this.sessionManager.getSessionId(),
+							selectedEntry: selectedEntry as SessionMessageEntry,
+							selectedIndex: entryIndex,
+							entries,
+						},
+						ctx,
+						createStorageContext,
+					);
+					// Hook handled it (or decided not to branch)
+					return;
+				}
+
+				// No hooks - execute default branch behavior
+				this.executeBranch(entryIndex, entries);
 			},
 			() => {
 				// Just hide the selector
@@ -1505,6 +1708,51 @@ export class TuiRenderer {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.userMessageSelector);
 		this.ui.setFocus(this.userMessageSelector.getMessageList());
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Execute the branch operation - creates new session and reloads.
+	 */
+	private executeBranch(entryIndex: number, entries: SessionEntry[]): void {
+		const selectedEntry = entries[entryIndex];
+		if (selectedEntry.type !== "message") return;
+
+		const getUserMessageText = (content: string | Array<{ type: string; text?: string }>): string => {
+			if (typeof content === "string") return content;
+			if (Array.isArray(content)) {
+				return content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("");
+			}
+			return "";
+		};
+
+		const selectedText = getUserMessageText(selectedEntry.message.content);
+
+		// Create a branched session by copying entries up to (but not including) the selected entry
+		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
+
+		// Set the new session file as active
+		this.sessionManager.setSessionFile(newSessionFile);
+
+		// Reload the session
+		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		this.agent.replaceMessages(loaded.messages);
+
+		// Clear and re-render the chat
+		this.chatContainer.clear();
+		this.isFirstUserMessage = true;
+		this.renderInitialMessages(this.agent.state);
+
+		// Show confirmation message
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
+
+		// Put the selected message in the editor
+		this.editor.setText(selectedText);
+
 		this.ui.requestRender();
 	}
 
@@ -1583,7 +1831,17 @@ export class TuiRenderer {
 		}
 
 		// Resubscribe to agent
-		this.subscribeToAgent();
+		await this.subscribeToAgent();
+
+		// Emit session_load event to hooks
+		if (this.hookRunner?.hasHandlers("session_load")) {
+			const ctx = this.createHookContext();
+			await this.hookRunner.emit(
+				{ type: "session_load", sessionId: this.sessionManager.getSessionId() },
+				ctx,
+				createStorageContext,
+			);
+		}
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
@@ -1905,7 +2163,7 @@ export class TuiRenderer {
 		this.sessionManager.reset();
 
 		// Resubscribe to agent
-		this.subscribeToAgent();
+		await this.subscribeToAgent();
 
 		// Clear UI state
 		this.chatContainer.clear();
@@ -2058,7 +2316,7 @@ export class TuiRenderer {
 		}
 
 		// Resubscribe to agent
-		this.subscribeToAgent();
+		await this.subscribeToAgent();
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
