@@ -19,15 +19,14 @@ import { AgentSession } from "./core/agent-session.js";
 import { exportFromFile } from "./export-html.js";
 import { messageTransformer } from "./messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
-import { expandSlashCommand, loadSlashCommands } from "./slash-commands.js";
+import { loadSlashCommands } from "./slash-commands.js";
 import { initTheme } from "./theme/theme.js";
 import { allTools, codingTools, type ToolName } from "./tools/index.js";
 import { ensureTool } from "./tools-manager.js";
 import { SessionSelectorComponent } from "./tui/session-selector.js";
-import { TuiRenderer } from "./tui/tui-renderer.js";
 
 const defaultModelPerProvider: Record<KnownProvider, string> = {
 	anthropic: "claude-sonnet-4-5",
@@ -727,83 +726,66 @@ async function selectSession(sessionManager: SessionManager): Promise<string | n
 }
 
 async function runInteractiveMode(
-	agent: Agent,
-	sessionManager: SessionManager,
-	settingsManager: SettingsManager,
+	session: AgentSession,
 	version: string,
 	changelogMarkdown: string | null = null,
-	collapseChangelog = false,
 	modelFallbackMessage: string | null = null,
 	versionCheckPromise: Promise<string | null>,
-	scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [],
 	initialMessages: string[] = [],
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
 ): Promise<void> {
-	const renderer = new TuiRenderer(
-		agent,
-		sessionManager,
-		settingsManager,
-		version,
-		changelogMarkdown,
-		collapseChangelog,
-		scopedModels,
-		fdPath,
-	);
+	const mode = new InteractiveMode(session, version, changelogMarkdown, fdPath);
 
 	// Initialize TUI (subscribes to agent events internally)
-	await renderer.init();
+	await mode.init();
 
 	// Handle version check result when it completes (don't block)
 	versionCheckPromise.then((newVersion) => {
 		if (newVersion) {
-			renderer.showNewVersionNotification(newVersion);
+			mode.showNewVersionNotification(newVersion);
 		}
 	});
 
 	// Render any existing messages (from --continue mode)
-	renderer.renderInitialMessages(agent.state);
+	mode.renderInitialMessages(session.state);
 
 	// Show model fallback warning at the end of the chat if applicable
 	if (modelFallbackMessage) {
-		renderer.showWarning(modelFallbackMessage);
+		mode.showWarning(modelFallbackMessage);
 	}
-
-	// Load file-based slash commands for expansion
-	const fileCommands = loadSlashCommands();
 
 	// Process initial message with attachments if provided (from @file args)
 	if (initialMessage) {
 		try {
-			await agent.prompt(expandSlashCommand(initialMessage, fileCommands), initialAttachments);
+			await session.prompt(initialMessage, { attachments: initialAttachments });
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			renderer.showError(errorMessage);
+			mode.showError(errorMessage);
 		}
 	}
 
 	// Process remaining initial messages if provided (from CLI args)
 	for (const message of initialMessages) {
 		try {
-			await agent.prompt(expandSlashCommand(message, fileCommands));
+			await session.prompt(message);
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			renderer.showError(errorMessage);
+			mode.showError(errorMessage);
 		}
 	}
 
 	// Interactive loop
 	while (true) {
-		const userInput = await renderer.getUserInput();
+		const userInput = await mode.getUserInput();
 
-		// Process the message - agent.prompt will add user message and trigger state updates
+		// Process the message
 		try {
-			await agent.prompt(userInput);
+			await session.prompt(userInput);
 		} catch (error: unknown) {
-			// Display error in the TUI by adding an error message to the chat
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			renderer.showError(errorMessage);
+			mode.showError(errorMessage);
 		}
 	}
 }
@@ -1164,7 +1146,7 @@ export async function main(args: string[]) {
 	}
 
 	// Create AgentSession for non-interactive modes
-	// (Interactive mode will create its own session when we refactor TuiRenderer)
+
 	const fileCommands = loadSlashCommands();
 
 	// Route to appropriate mode
@@ -1224,17 +1206,19 @@ export async function main(args: string[]) {
 		const fdPath = await ensureTool("fd");
 
 		// Interactive mode - use TUI (may have initial messages from CLI args)
-		const collapseChangelog = settingsManager.getCollapseChangelog();
-		await runInteractiveMode(
+		const session = new AgentSession({
 			agent,
 			sessionManager,
 			settingsManager,
+			scopedModels,
+			fileCommands,
+		});
+		await runInteractiveMode(
+			session,
 			VERSION,
 			changelogMarkdown,
-			collapseChangelog,
 			modelFallbackMessage,
 			versionCheckPromise,
-			scopedModels,
 			parsed.messages,
 			initialMessage,
 			initialAttachments,

@@ -1520,9 +1520,9 @@ async function runInteractiveMode(
 1. `npm run check` passes
 2. Manual test via cli-new.ts: Interactive mode works
 
-- [ ] Update `runInteractiveMode()` in main-new.ts
-- [ ] Update InteractiveMode instantiation
-- [ ] Verify with `npm run check`
+- [x] Update `runInteractiveMode()` in main-new.ts
+- [x] Update InteractiveMode instantiation
+- [x] Verify with `npm run check`
 
 ---
 
