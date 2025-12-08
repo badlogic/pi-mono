@@ -17,6 +17,7 @@ import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLev
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { getModelsPath } from "../config.js";
+import { exportSessionToHtml } from "../export-html.js";
 import type { BashExecutionMessage } from "../messages.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
@@ -61,6 +62,25 @@ export interface ModelCycleResult {
 export interface CompactionResult {
 	tokensBefore: number;
 	summary: string;
+}
+
+/** Session statistics for /session command */
+export interface SessionStats {
+	sessionFile: string;
+	sessionId: string;
+	userMessages: number;
+	assistantMessages: number;
+	toolCalls: number;
+	toolResults: number;
+	totalMessages: number;
+	tokens: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+	};
+	cost: number;
 }
 
 // ============================================================================
@@ -680,5 +700,186 @@ export class AgentSession {
 	/** Whether a bash command is currently running */
 	get isBashRunning(): boolean {
 		return this._bashAbortController !== null;
+	}
+
+	// =========================================================================
+	// Session Management
+	// =========================================================================
+
+	/**
+	 * Switch to a different session file.
+	 * Aborts current operation, loads messages, restores model/thinking.
+	 * Listeners are preserved and will continue receiving events.
+	 */
+	async switchSession(sessionPath: string): Promise<void> {
+		this._disconnectFromAgent();
+		await this.abort();
+		this._queuedMessages = [];
+
+		// Set new session
+		this.sessionManager.setSessionFile(sessionPath);
+
+		// Reload messages
+		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		this.agent.replaceMessages(loaded.messages);
+
+		// Restore model if saved
+		const savedModel = this.sessionManager.loadModel();
+		if (savedModel) {
+			const availableModels = (await getAvailableModels()).models;
+			const match = availableModels.find((m) => m.provider === savedModel.provider && m.id === savedModel.modelId);
+			if (match) {
+				this.agent.setModel(match);
+			}
+		}
+
+		// Restore thinking level if saved
+		const savedThinking = this.sessionManager.loadThinkingLevel();
+		if (savedThinking) {
+			this.agent.setThinkingLevel(savedThinking as ThinkingLevel);
+		}
+
+		this._reconnectToAgent();
+	}
+
+	/**
+	 * Create a branch from a specific entry index.
+	 * @param entryIndex Index into session entries to branch from
+	 * @returns The text of the selected user message (for editor pre-fill)
+	 */
+	branch(entryIndex: number): string {
+		const entries = this.sessionManager.loadEntries();
+		const selectedEntry = entries[entryIndex];
+
+		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
+			throw new Error("Invalid entry index for branching");
+		}
+
+		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
+
+		// Create branched session
+		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
+		this.sessionManager.setSessionFile(newSessionFile);
+
+		// Reload
+		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		this.agent.replaceMessages(loaded.messages);
+
+		return selectedText;
+	}
+
+	/**
+	 * Get all user messages from session for branch selector.
+	 */
+	getUserMessagesForBranching(): Array<{ entryIndex: number; text: string }> {
+		const entries = this.sessionManager.loadEntries();
+		const result: Array<{ entryIndex: number; text: string }> = [];
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+			if (entry.type !== "message") continue;
+			if (entry.message.role !== "user") continue;
+
+			const text = this._extractUserMessageText(entry.message.content);
+			if (text) {
+				result.push({ entryIndex: i, text });
+			}
+		}
+
+		return result;
+	}
+
+	private _extractUserMessageText(content: string | Array<{ type: string; text?: string }>): string {
+		if (typeof content === "string") return content;
+		if (Array.isArray(content)) {
+			return content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+		}
+		return "";
+	}
+
+	/**
+	 * Get session statistics.
+	 */
+	getSessionStats(): SessionStats {
+		const state = this.state;
+		const userMessages = state.messages.filter((m) => m.role === "user").length;
+		const assistantMessages = state.messages.filter((m) => m.role === "assistant").length;
+		const toolResults = state.messages.filter((m) => m.role === "toolResult").length;
+
+		let toolCalls = 0;
+		let totalInput = 0;
+		let totalOutput = 0;
+		let totalCacheRead = 0;
+		let totalCacheWrite = 0;
+		let totalCost = 0;
+
+		for (const message of state.messages) {
+			if (message.role === "assistant") {
+				const assistantMsg = message as AssistantMessage;
+				toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+				totalInput += assistantMsg.usage.input;
+				totalOutput += assistantMsg.usage.output;
+				totalCacheRead += assistantMsg.usage.cacheRead;
+				totalCacheWrite += assistantMsg.usage.cacheWrite;
+				totalCost += assistantMsg.usage.cost.total;
+			}
+		}
+
+		return {
+			sessionFile: this.sessionFile,
+			sessionId: this.sessionId,
+			userMessages,
+			assistantMessages,
+			toolCalls,
+			toolResults,
+			totalMessages: state.messages.length,
+			tokens: {
+				input: totalInput,
+				output: totalOutput,
+				cacheRead: totalCacheRead,
+				cacheWrite: totalCacheWrite,
+				total: totalInput + totalOutput + totalCacheRead + totalCacheWrite,
+			},
+			cost: totalCost,
+		};
+	}
+
+	/**
+	 * Export session to HTML.
+	 * @param outputPath Optional output path (defaults to session directory)
+	 * @returns Path to exported file
+	 */
+	exportToHtml(outputPath?: string): string {
+		return exportSessionToHtml(this.sessionManager, this.state, outputPath);
+	}
+
+	// =========================================================================
+	// Utilities
+	// =========================================================================
+
+	/**
+	 * Get text content of last assistant message.
+	 * Useful for /copy command.
+	 * @returns Text content, or null if no assistant message exists
+	 */
+	getLastAssistantText(): string | null {
+		const lastAssistant = this.messages
+			.slice()
+			.reverse()
+			.find((m) => m.role === "assistant");
+
+		if (!lastAssistant) return null;
+
+		let text = "";
+		for (const content of (lastAssistant as AssistantMessage).content) {
+			if (content.type === "text") {
+				text += content.text;
+			}
+		}
+
+		return text.trim() || null;
 	}
 }

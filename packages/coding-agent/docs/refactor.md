@@ -1075,13 +1075,13 @@ exportToHtml(outputPath?: string): string {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `SessionStats` interface
-- [ ] Add `switchSession()` method
-- [ ] Add `branch()` method
-- [ ] Add `getUserMessagesForBranching()` method
-- [ ] Add `getSessionStats()` method
-- [ ] Add `exportToHtml()` method
-- [ ] Verify with `npm run check`
+- [x] Add `SessionStats` interface
+- [x] Add `switchSession()` method
+- [x] Add `branch()` method
+- [x] Add `getUserMessagesForBranching()` method
+- [x] Add `getSessionStats()` method
+- [x] Add `exportToHtml()` method
+- [x] Verify with `npm run check`
 
 ---
 
@@ -1138,10 +1138,10 @@ getQueuedMessages(): readonly string[] {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add `getLastAssistantText()` method
-- [ ] Add `queuedMessageCount` getter
-- [ ] Add `getQueuedMessages()` method
-- [ ] Verify with `npm run check`
+- [x] Add `getLastAssistantText()` method
+- [x] Add `queuedMessageCount` getter (done in WP4)
+- [x] Add `getQueuedMessages()` method (done in WP4)
+- [x] Verify with `npm run check`
 
 ---
 
