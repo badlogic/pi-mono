@@ -888,8 +888,8 @@ get isBashRunning(): boolean {
 **Verification:**
 1. `npm run check` passes
 
-- [ ] Add bash execution methods using bash-executor module
-- [ ] Verify with `npm run check`
+- [x] Add bash execution methods using bash-executor module
+- [x] Verify with `npm run check`
 
 ---
 

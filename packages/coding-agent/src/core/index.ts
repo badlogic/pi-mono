@@ -2,5 +2,12 @@
  * Core modules shared between all run modes.
  */
 
-export { AgentSession, type AgentSessionConfig } from "./agent-session.js";
+export {
+	type AgentEventListener,
+	AgentSession,
+	type AgentSessionConfig,
+	type CompactionResult,
+	type ModelCycleResult,
+	type PromptOptions,
+} from "./agent-session.js";
 export { type BashExecutorOptions, type BashResult, executeBash } from "./bash-executor.js";

@@ -17,10 +17,12 @@ import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLev
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { calculateContextTokens, compact, shouldCompact } from "../compaction.js";
 import { getModelsPath } from "../config.js";
+import type { BashExecutionMessage } from "../messages.js";
 import { getApiKeyForModel, getAvailableModels } from "../model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "../session-manager.js";
 import type { SettingsManager } from "../settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "../slash-commands.js";
+import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 
 /** Listener function for agent events */
 export type AgentEventListener = (event: AgentEvent) => void;
@@ -82,6 +84,9 @@ export class AgentSession {
 
 	// Compaction state
 	private _compactionAbortController: AbortController | null = null;
+
+	// Bash execution state
+	private _bashAbortController: AbortController | null = null;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -615,5 +620,65 @@ export class AgentSession {
 	/** Whether auto-compaction is enabled */
 	get autoCompactionEnabled(): boolean {
 		return this.settingsManager.getCompactionEnabled();
+	}
+
+	// =========================================================================
+	// Bash Execution
+	// =========================================================================
+
+	/**
+	 * Execute a bash command.
+	 * Adds result to agent context and session.
+	 * @param command The bash command to execute
+	 * @param onChunk Optional streaming callback for output
+	 */
+	async executeBash(command: string, onChunk?: (chunk: string) => void): Promise<BashResult> {
+		this._bashAbortController = new AbortController();
+
+		try {
+			const result = await executeBashCommand(command, {
+				onChunk,
+				signal: this._bashAbortController.signal,
+			});
+
+			// Create and save message
+			const bashMessage: BashExecutionMessage = {
+				role: "bashExecution",
+				command,
+				output: result.output,
+				exitCode: result.exitCode,
+				cancelled: result.cancelled,
+				truncated: result.truncated,
+				fullOutputPath: result.fullOutputPath,
+				timestamp: Date.now(),
+			};
+
+			// Add to agent state
+			this.agent.appendMessage(bashMessage);
+
+			// Save to session
+			this.sessionManager.saveMessage(bashMessage);
+
+			// Initialize session if needed
+			if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
+				this.sessionManager.startSession(this.agent.state);
+			}
+
+			return result;
+		} finally {
+			this._bashAbortController = null;
+		}
+	}
+
+	/**
+	 * Cancel running bash command.
+	 */
+	abortBash(): void {
+		this._bashAbortController?.abort();
+	}
+
+	/** Whether a bash command is currently running */
+	get isBashRunning(): boolean {
+		return this._bashAbortController !== null;
 	}
 }
