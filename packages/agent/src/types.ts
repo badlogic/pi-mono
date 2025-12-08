@@ -85,7 +85,7 @@ export type AgentEvent =
 	| { type: "agent_start" }
 	| { type: "agent_end"; messages: AppMessage[] }
 	// Turn lifecycle - a turn is one assistant response + any tool calls/results
-	| { type: "turn_start" }
+	| { type: "turn_start"; timestamp: number }
 	| { type: "turn_end"; message: AppMessage; toolResults: AppMessage[] }
 	// Message lifecycle - emitted for user, assistant, and toolResult messages
 	| { type: "message_start"; message: AppMessage }

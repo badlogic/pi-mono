@@ -41,7 +41,7 @@ export type AgentEvent =
 	// Emitted when the agent starts. An agent can emit multiple turns
 	| { type: "agent_start" }
 	// Emitted when a turn starts. A turn can emit an optional user message (initial prompt), an assistant message (response) and multiple tool result messages
-	| { type: "turn_start" }
+	| { type: "turn_start"; timestamp: number }
 	// Emitted when a user, assistant or tool result message starts
 	| { type: "message_start"; message: Message }
 	// Emitted when an asssitant messages is updated due to streaming

@@ -26,7 +26,7 @@ export function agentLoop(
 		newMessages.push(prompt);
 
 		stream.push({ type: "agent_start" });
-		stream.push({ type: "turn_start" });
+		stream.push({ type: "turn_start", timestamp: Date.now() });
 		stream.push({ type: "message_start", message: prompt });
 		stream.push({ type: "message_end", message: prompt });
 
@@ -43,7 +43,7 @@ export function agentLoop(
 
 		while (hasMoreToolCalls || queuedMessages.length > 0) {
 			if (!firstTurn) {
-				stream.push({ type: "turn_start" });
+				stream.push({ type: "turn_start", timestamp: Date.now() });
 			} else {
 				firstTurn = false;
 			}
