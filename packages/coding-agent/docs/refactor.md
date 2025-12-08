@@ -1390,16 +1390,16 @@ npx tsx src/cli-new.ts  # interactive mode
 3. Manual test: `npx tsx src/cli-new.ts --mode json "hello"` works
 4. Manual test: `npx tsx src/cli-new.ts --mode rpc` works
 
-- [ ] Copy main.ts to main-new.ts
-- [ ] Remove `runSingleShotMode()` from main-new.ts
-- [ ] Remove `runRpcMode()` from main-new.ts  
-- [ ] Remove `executeRpcBashCommand()` from main-new.ts
-- [ ] Import and use `runPrintMode` from modes
-- [ ] Import and use `runRpcMode` from modes
-- [ ] Create `AgentSession` in main()
-- [ ] Update mode routing to use new functions
-- [ ] Create cli-new.ts
-- [ ] Verify with `npm run check`
+- [x] Copy main.ts to main-new.ts
+- [x] Remove `runSingleShotMode()` from main-new.ts
+- [x] Remove `runRpcMode()` from main-new.ts  
+- [x] Remove `executeRpcBashCommand()` from main-new.ts
+- [x] Import and use `runPrintMode` from modes
+- [x] Import and use `runRpcMode` from modes
+- [x] Create `AgentSession` in main()
+- [x] Update mode routing to use new functions
+- [x] Create cli-new.ts
+- [x] Verify with `npm run check`
 - [ ] Manual test all three modes via cli-new.ts
 
 ---
