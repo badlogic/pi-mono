@@ -1327,8 +1327,8 @@ export { runRpcMode } from "./rpc-mode.js";
 // InteractiveMode will be added later
 ```
 
-- [ ] Create `src/modes/index.ts`
-- [ ] Verify with `npm run check`
+- [x] Create `src/modes/index.ts`
+- [x] Verify with `npm run check`
 
 ---
 
