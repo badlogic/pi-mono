@@ -10,6 +10,7 @@ import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
+	type Component,
 	Container,
 	Input,
 	Loader,
@@ -71,15 +72,6 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Selector components
-	private thinkingSelector: ThinkingSelectorComponent | null = null;
-	private queueModeSelector: QueueModeSelectorComponent | null = null;
-	private themeSelector: ThemeSelectorComponent | null = null;
-	private modelSelector: ModelSelectorComponent | null = null;
-	private userMessageSelector: UserMessageSelectorComponent | null = null;
-	private sessionSelector: SessionSelectorComponent | null = null;
-	private oauthSelector: OAuthSelectorComponent | null = null;
 
 	// Track if this is the first user message (to skip spacer)
 	private isFirstUserMessage = true;
@@ -891,143 +883,128 @@ export class InteractiveMode {
 	// Selectors
 	// =========================================================================
 
-	private showThinkingSelector(): void {
-		this.thinkingSelector = new ThinkingSelectorComponent(
-			this.session.thinkingLevel,
-			(level) => {
-				this.session.setThinkingLevel(level);
-				this.updateEditorBorderColor();
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking level: ${level}`), 1, 0));
-				this.hideThinkingSelector();
-				this.ui.requestRender();
-			},
-			() => {
-				this.hideThinkingSelector();
-				this.ui.requestRender();
-			},
-		);
+	/**
+	 * Shows a selector component in place of the editor.
+	 * @param create Factory that receives a `done` callback and returns the component and focus target
+	 */
+	private showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
+		const done = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+		};
+		const { component, focus } = create(done);
 		this.editorContainer.clear();
-		this.editorContainer.addChild(this.thinkingSelector);
-		this.ui.setFocus(this.thinkingSelector.getSelectList());
+		this.editorContainer.addChild(component);
+		this.ui.setFocus(focus);
 		this.ui.requestRender();
 	}
 
-	private hideThinkingSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.thinkingSelector = null;
-		this.ui.setFocus(this.editor);
+	private showThinkingSelector(): void {
+		this.showSelector((done) => {
+			const selector = new ThinkingSelectorComponent(
+				this.session.thinkingLevel,
+				(level) => {
+					this.session.setThinkingLevel(level);
+					this.updateEditorBorderColor();
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking level: ${level}`), 1, 0));
+					done();
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
 	}
 
 	private showQueueModeSelector(): void {
-		this.queueModeSelector = new QueueModeSelectorComponent(
-			this.session.queueMode,
-			(mode) => {
-				this.session.setQueueMode(mode);
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", `Queue mode: ${mode}`), 1, 0));
-				this.hideQueueModeSelector();
-				this.ui.requestRender();
-			},
-			() => {
-				this.hideQueueModeSelector();
-				this.ui.requestRender();
-			},
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.queueModeSelector);
-		this.ui.setFocus(this.queueModeSelector.getSelectList());
-		this.ui.requestRender();
-	}
-
-	private hideQueueModeSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.queueModeSelector = null;
-		this.ui.setFocus(this.editor);
+		this.showSelector((done) => {
+			const selector = new QueueModeSelectorComponent(
+				this.session.queueMode,
+				(mode) => {
+					this.session.setQueueMode(mode);
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("dim", `Queue mode: ${mode}`), 1, 0));
+					done();
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
 	}
 
 	private showThemeSelector(): void {
 		const currentTheme = this.settingsManager.getTheme() || "dark";
-		this.themeSelector = new ThemeSelectorComponent(
-			currentTheme,
-			(themeName) => {
-				const result = setTheme(themeName);
-				this.settingsManager.setTheme(themeName);
-				this.ui.invalidate();
-				this.chatContainer.addChild(new Spacer(1));
-				if (result.success) {
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Theme: ${themeName}`), 1, 0));
-				} else {
-					this.chatContainer.addChild(
-						new Text(
-							theme.fg(
-								"error",
-								`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`,
-							),
-							1,
-							0,
-						),
-					);
-				}
-				this.hideThemeSelector();
-				this.ui.requestRender();
-			},
-			() => {
-				this.hideThemeSelector();
-				this.ui.requestRender();
-			},
-			(themeName) => {
-				const result = setTheme(themeName);
-				if (result.success) {
+		this.showSelector((done) => {
+			const selector = new ThemeSelectorComponent(
+				currentTheme,
+				(themeName) => {
+					const result = setTheme(themeName);
+					this.settingsManager.setTheme(themeName);
 					this.ui.invalidate();
+					this.chatContainer.addChild(new Spacer(1));
+					if (result.success) {
+						this.chatContainer.addChild(new Text(theme.fg("dim", `Theme: ${themeName}`), 1, 0));
+					} else {
+						this.chatContainer.addChild(
+							new Text(
+								theme.fg(
+									"error",
+									`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`,
+								),
+								1,
+								0,
+							),
+						);
+					}
+					done();
 					this.ui.requestRender();
-				}
-			},
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.themeSelector);
-		this.ui.setFocus(this.themeSelector.getSelectList());
-		this.ui.requestRender();
-	}
-
-	private hideThemeSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.themeSelector = null;
-		this.ui.setFocus(this.editor);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				(themeName) => {
+					const result = setTheme(themeName);
+					if (result.success) {
+						this.ui.invalidate();
+						this.ui.requestRender();
+					}
+				},
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
 	}
 
 	private showModelSelector(): void {
-		this.modelSelector = new ModelSelectorComponent(
-			this.ui,
-			this.session.model,
-			this.settingsManager,
-			(model) => {
-				this.agent.setModel(model);
-				this.sessionManager.saveModelChange(model.provider, model.id);
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", `Model: ${model.id}`), 1, 0));
-				this.hideModelSelector();
-				this.ui.requestRender();
-			},
-			() => {
-				this.hideModelSelector();
-				this.ui.requestRender();
-			},
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.modelSelector);
-		this.ui.setFocus(this.modelSelector);
-		this.ui.requestRender();
-	}
-
-	private hideModelSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.modelSelector = null;
-		this.ui.setFocus(this.editor);
+		this.showSelector((done) => {
+			const selector = new ModelSelectorComponent(
+				this.ui,
+				this.session.model,
+				this.settingsManager,
+				(model) => {
+					this.agent.setModel(model);
+					this.sessionManager.saveModelChange(model.provider, model.id);
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("dim", `Model: ${model.id}`), 1, 0));
+					done();
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
 	}
 
 	private showUserMessageSelector(): void {
@@ -1040,53 +1017,44 @@ export class InteractiveMode {
 			return;
 		}
 
-		this.userMessageSelector = new UserMessageSelectorComponent(
-			userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
-			(entryIndex) => {
-				const selectedText = this.session.branch(entryIndex);
-				this.chatContainer.clear();
-				this.isFirstUserMessage = true;
-				this.renderInitialMessages(this.session.state);
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
-				this.editor.setText(selectedText);
-				this.hideUserMessageSelector();
-				this.ui.requestRender();
-			},
-			() => {
-				this.hideUserMessageSelector();
-				this.ui.requestRender();
-			},
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.userMessageSelector);
-		this.ui.setFocus(this.userMessageSelector.getMessageList());
-		this.ui.requestRender();
-	}
-
-	private hideUserMessageSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.userMessageSelector = null;
-		this.ui.setFocus(this.editor);
+		this.showSelector((done) => {
+			const selector = new UserMessageSelectorComponent(
+				userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
+				(entryIndex) => {
+					const selectedText = this.session.branch(entryIndex);
+					this.chatContainer.clear();
+					this.isFirstUserMessage = true;
+					this.renderInitialMessages(this.session.state);
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
+					this.editor.setText(selectedText);
+					done();
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getMessageList() };
+		});
 	}
 
 	private showSessionSelector(): void {
-		this.sessionSelector = new SessionSelectorComponent(
-			this.sessionManager,
-			async (sessionPath) => {
-				this.hideSessionSelector();
-				await this.handleResumeSession(sessionPath);
-			},
-			() => {
-				this.hideSessionSelector();
-				this.ui.requestRender();
-			},
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.sessionSelector);
-		this.ui.setFocus(this.sessionSelector.getSessionList());
-		this.ui.requestRender();
+		this.showSelector((done) => {
+			const selector = new SessionSelectorComponent(
+				this.sessionManager,
+				async (sessionPath) => {
+					done();
+					await this.handleResumeSession(sessionPath);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getSessionList() };
+		});
 	}
 
 	private async handleResumeSession(sessionPath: string): Promise<void> {
@@ -1115,13 +1083,6 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private hideSessionSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.sessionSelector = null;
-		this.ui.setFocus(this.editor);
-	}
-
 	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
 		if (mode === "logout") {
 			const loggedInProviders = listOAuthProviders();
@@ -1135,95 +1096,90 @@ export class InteractiveMode {
 			}
 		}
 
-		this.oauthSelector = new OAuthSelectorComponent(
-			mode,
-			async (providerId: string) => {
-				this.hideOAuthSelector();
+		this.showSelector((done) => {
+			const selector = new OAuthSelectorComponent(
+				mode,
+				async (providerId: string) => {
+					done();
 
-				if (mode === "login") {
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
-					this.ui.requestRender();
+					if (mode === "login") {
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
+						this.ui.requestRender();
 
-					try {
-						await login(
-							providerId as SupportedOAuthProvider,
-							(url: string) => {
-								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
-								this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
-								this.chatContainer.addChild(new Spacer(1));
-								this.chatContainer.addChild(
-									new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
-								);
-								this.ui.requestRender();
-
-								const openCmd =
-									process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-								exec(`${openCmd} "${url}"`);
-							},
-							async () => {
-								return new Promise<string>((resolve) => {
-									const codeInput = new Input();
-									codeInput.onSubmit = () => {
-										const code = codeInput.getValue();
-										this.editorContainer.clear();
-										this.editorContainer.addChild(this.editor);
-										this.ui.setFocus(this.editor);
-										resolve(code);
-									};
-									this.editorContainer.clear();
-									this.editorContainer.addChild(codeInput);
-									this.ui.setFocus(codeInput);
+						try {
+							await login(
+								providerId as SupportedOAuthProvider,
+								(url: string) => {
+									this.chatContainer.addChild(new Spacer(1));
+									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
+									this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
+									this.chatContainer.addChild(new Spacer(1));
+									this.chatContainer.addChild(
+										new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
+									);
 									this.ui.requestRender();
-								});
-							},
-						);
 
-						invalidateOAuthCache();
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(
-							new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
-						);
-						this.chatContainer.addChild(new Text(theme.fg("dim", `Tokens saved to ${getOAuthPath()}`), 1, 0));
-						this.ui.requestRender();
-					} catch (error: unknown) {
-						this.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
+									const openCmd =
+										process.platform === "darwin"
+											? "open"
+											: process.platform === "win32"
+												? "start"
+												: "xdg-open";
+									exec(`${openCmd} "${url}"`);
+								},
+								async () => {
+									return new Promise<string>((resolve) => {
+										const codeInput = new Input();
+										codeInput.onSubmit = () => {
+											const code = codeInput.getValue();
+											this.editorContainer.clear();
+											this.editorContainer.addChild(this.editor);
+											this.ui.setFocus(this.editor);
+											resolve(code);
+										};
+										this.editorContainer.clear();
+										this.editorContainer.addChild(codeInput);
+										this.ui.setFocus(codeInput);
+										this.ui.requestRender();
+									});
+								},
+							);
+
+							invalidateOAuthCache();
+							this.chatContainer.addChild(new Spacer(1));
+							this.chatContainer.addChild(
+								new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
+							);
+							this.chatContainer.addChild(new Text(theme.fg("dim", `Tokens saved to ${getOAuthPath()}`), 1, 0));
+							this.ui.requestRender();
+						} catch (error: unknown) {
+							this.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
+						}
+					} else {
+						try {
+							await logout(providerId as SupportedOAuthProvider);
+							invalidateOAuthCache();
+							this.chatContainer.addChild(new Spacer(1));
+							this.chatContainer.addChild(
+								new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
+							);
+							this.chatContainer.addChild(
+								new Text(theme.fg("dim", `Credentials removed from ${getOAuthPath()}`), 1, 0),
+							);
+							this.ui.requestRender();
+						} catch (error: unknown) {
+							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
+						}
 					}
-				} else {
-					try {
-						await logout(providerId as SupportedOAuthProvider);
-						invalidateOAuthCache();
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(
-							new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
-						);
-						this.chatContainer.addChild(
-							new Text(theme.fg("dim", `Credentials removed from ${getOAuthPath()}`), 1, 0),
-						);
-						this.ui.requestRender();
-					} catch (error: unknown) {
-						this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
-					}
-				}
-			},
-			() => {
-				this.hideOAuthSelector();
-				this.ui.requestRender();
-			},
-		);
-
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.oauthSelector);
-		this.ui.setFocus(this.oauthSelector);
-		this.ui.requestRender();
-	}
-
-	private hideOAuthSelector(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.oauthSelector = null;
-		this.ui.setFocus(this.editor);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
 	}
 
 	// =========================================================================
