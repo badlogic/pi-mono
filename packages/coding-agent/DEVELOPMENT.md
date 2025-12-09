@@ -152,8 +152,17 @@ Handles user preferences:
 
 ### Running in Development
 
+Start the watch build in the monorepo root to continuously rebuild all packages:
+
 ```bash
-# From monorepo root
+# Terminal 1: Watch build (from monorepo root)
+npm run dev
+```
+
+Then run the CLI with tsx in a separate terminal:
+
+```bash
+# Terminal 2: Run CLI (from monorepo root)
 npx tsx packages/coding-agent/src/cli.ts
 
 # With arguments
@@ -163,6 +172,8 @@ npx tsx packages/coding-agent/src/cli.ts -p "Hello"
 # RPC mode
 npx tsx packages/coding-agent/src/cli.ts --mode rpc --no-session
 ```
+
+The watch build ensures changes to dependent packages (`pi-agent-core`, `pi-ai`, `pi-tui`) are automatically rebuilt.
 
 ### Type Checking
 
