@@ -1,665 +1,862 @@
-# RPC Mode Protocol
+# RPC Mode
 
-The coding agent supports an RPC (Remote Procedure Call) mode for programmatic integration. This document describes the protocol for communicating with the agent over stdin/stdout using JSON messages.
+RPC mode enables headless operation of the coding agent via a JSON protocol over stdin/stdout. This is useful for embedding the agent in other applications, IDEs, or custom UIs.
+
+**Note for Node.js/TypeScript users**: If you're building a Node.js application, consider using `AgentSession` directly from `@mariozechner/pi-coding-agent` instead of spawning a subprocess. See [`src/core/agent-session.ts`](../src/core/agent-session.ts) for the API. For a subprocess-based TypeScript client, see [`src/modes/rpc/rpc-client.ts`](../src/modes/rpc/rpc-client.ts).
 
 ## Starting RPC Mode
 
 ```bash
-pi --mode rpc [--no-session]
+pi --mode rpc [options]
 ```
 
-- `--mode rpc`: Enables RPC mode (JSON over stdin/stdout)
-- `--no-session`: Optional flag to disable session persistence
+Common options:
+- `--provider <name>`: Set the LLM provider (anthropic, openai, google, etc.)
+- `--model <id>`: Set the model ID
+- `--no-session`: Disable session persistence
+- `--session-dir <path>`: Custom session storage directory
 
-## Input Protocol
+## Protocol Overview
 
-Send JSON messages to stdin, one per line. Each message must be a complete JSON object followed by a newline.
+- **Commands**: JSON objects sent to stdin, one per line
+- **Responses**: JSON objects with `type: "response"` indicating command success/failure
+- **Events**: Agent events streamed to stdout as JSON lines
 
-### Input Message Types
+All commands support an optional `id` field for request/response correlation. If provided, the corresponding response will include the same `id`.
 
-#### Prompt Message
+## Commands
 
-Send a user prompt to the agent:
+### Prompting
+
+#### prompt
+
+Send a user prompt to the agent. Returns immediately; events stream asynchronously.
 
 ```json
+{"id": "req-1", "type": "prompt", "message": "Hello, world!"}
+```
+
+With attachments:
+```json
+{"type": "prompt", "message": "What's in this image?", "attachments": [...]}
+```
+
+Response:
+```json
+{"id": "req-1", "type": "response", "command": "prompt", "success": true}
+```
+
+The `attachments` field is optional. See [Attachments](#attachments) for the schema.
+
+#### queue_message
+
+Queue a message to be injected at the next agent turn. Queued messages are added to the conversation without triggering a new prompt. Useful for injecting context mid-conversation.
+
+```json
+{"type": "queue_message", "message": "Additional context"}
+```
+
+Response:
+```json
+{"type": "response", "command": "queue_message", "success": true}
+```
+
+See [set_queue_mode](#set_queue_mode) for controlling how queued messages are processed.
+
+#### abort
+
+Abort the current agent operation.
+
+```json
+{"type": "abort"}
+```
+
+Response:
+```json
+{"type": "response", "command": "abort", "success": true}
+```
+
+#### reset
+
+Clear context and start a fresh session.
+
+```json
+{"type": "reset"}
+```
+
+Response:
+```json
+{"type": "response", "command": "reset", "success": true}
+```
+
+### State
+
+#### get_state
+
+Get current session state.
+
+```json
+{"type": "get_state"}
+```
+
+Response:
+```json
 {
-  "type": "prompt",
-  "message": "Your prompt text here",
-  "attachments": []  // Optional array of Attachment objects
+  "type": "response",
+  "command": "get_state",
+  "success": true,
+  "data": {
+    "model": {...},
+    "thinkingLevel": "medium",
+    "isStreaming": false,
+    "queueMode": "all",
+    "sessionFile": "/path/to/session.jsonl",
+    "sessionId": "abc123",
+    "autoCompactionEnabled": true,
+    "messageCount": 5,
+    "queuedMessageCount": 0
+  }
 }
 ```
 
-The `attachments` field is optional and supports images and documents. See [Attachment](#attachment) for the schema.
+The `model` field is a full [Model](#model) object or `null`.
 
-#### Abort Message
+#### get_messages
 
-Abort the current agent operation:
+Get all messages in the conversation.
 
 ```json
+{"type": "get_messages"}
+```
+
+Response:
+```json
 {
-  "type": "abort"
+  "type": "response",
+  "command": "get_messages",
+  "success": true,
+  "data": {"messages": [...]}
 }
 ```
 
-#### Compact Message
+Messages are `AppMessage` objects (see [Message Types](#message-types)).
 
-Compact the conversation context to reduce token usage:
+### Model
+
+#### set_model
+
+Switch to a specific model.
 
 ```json
+{"type": "set_model", "provider": "anthropic", "modelId": "claude-sonnet-4-20250514"}
+```
+
+Response contains the full [Model](#model) object:
+```json
 {
-  "type": "compact",
-  "customInstructions": "Focus on code changes"  // Optional
+  "type": "response",
+  "command": "set_model",
+  "success": true,
+  "data": {...}
 }
 ```
 
-The `customInstructions` field is optional and allows you to guide what the summary should focus on.
+#### cycle_model
 
-#### Bash Message
-
-Execute a shell command and add output to the LLM context (without triggering a prompt):
+Cycle to the next available model. Returns `null` data if only one model available.
 
 ```json
+{"type": "cycle_model"}
+```
+
+Response:
+```json
 {
-  "type": "bash",
-  "command": "ls -la"
+  "type": "response",
+  "command": "cycle_model",
+  "success": true,
+  "data": {
+    "model": {...},
+    "thinkingLevel": "medium",
+    "isScoped": false
+  }
 }
 ```
 
-On success, emits a `bash_end` event with the `BashExecutionMessage`. The command output is automatically added to the conversation context, allowing subsequent prompts to reference it.
+The `model` field is a full [Model](#model) object.
 
-## Output Protocol
+#### get_available_models
 
-The agent emits JSON events to stdout, one per line. Events follow the `AgentEvent` type hierarchy.
+List all configured models.
 
-### Event Types Overview
+```json
+{"type": "get_available_models"}
+```
 
-| Event Type | Description |
-|------------|-------------|
-| `agent_start` | Agent begins processing a prompt |
-| `agent_end` | Agent completes all processing |
-| `turn_start` | A new turn begins (assistant response + tool calls) |
-| `turn_end` | A turn completes |
-| `message_start` | A message begins (user, assistant, or tool result) |
-| `message_update` | Streaming update for assistant messages |
-| `message_end` | A message completes |
-| `tool_execution_start` | Tool execution begins |
-| `tool_execution_end` | Tool execution completes |
-| `compaction` | Context was compacted (manual or auto) |
-| `bash_end` | User-initiated bash command completed |
-| `error` | An error occurred |
+Response contains an array of full [Model](#model) objects:
+```json
+{
+  "type": "response",
+  "command": "get_available_models",
+  "success": true,
+  "data": {
+    "models": [...]
+  }
+}
+```
 
-### Event Schemas
+### Thinking
 
-#### agent_start
+#### set_thinking_level
+
+Set the reasoning/thinking level for models that support it.
+
+```json
+{"type": "set_thinking_level", "level": "high"}
+```
+
+Levels: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`
+
+Note: `"xhigh"` is only supported by OpenAI codex-max models.
+
+Response:
+```json
+{"type": "response", "command": "set_thinking_level", "success": true}
+```
+
+#### cycle_thinking_level
+
+Cycle through available thinking levels. Returns `null` data if model doesn't support thinking.
+
+```json
+{"type": "cycle_thinking_level"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "cycle_thinking_level",
+  "success": true,
+  "data": {"level": "high"}
+}
+```
+
+### Queue Mode
+
+#### set_queue_mode
+
+Control how queued messages (from `queue_message`) are injected into the conversation.
+
+```json
+{"type": "set_queue_mode", "mode": "one-at-a-time"}
+```
+
+Modes:
+- `"all"`: Inject all queued messages at the next turn
+- `"one-at-a-time"`: Inject one queued message per turn (default)
+
+Response:
+```json
+{"type": "response", "command": "set_queue_mode", "success": true}
+```
+
+### Compaction
+
+#### compact
+
+Manually compact conversation context to reduce token usage.
+
+```json
+{"type": "compact"}
+```
+
+With custom instructions:
+```json
+{"type": "compact", "customInstructions": "Focus on code changes"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "compact",
+  "success": true,
+  "data": {
+    "tokensBefore": 150000,
+    "summary": "Summary of conversation..."
+  }
+}
+```
+
+#### set_auto_compaction
+
+Enable or disable automatic compaction when context is nearly full.
+
+```json
+{"type": "set_auto_compaction", "enabled": true}
+```
+
+Response:
+```json
+{"type": "response", "command": "set_auto_compaction", "success": true}
+```
+
+### Bash
+
+#### bash
+
+Execute a shell command and add output to conversation context.
+
+```json
+{"type": "bash", "command": "ls -la"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "bash",
+  "success": true,
+  "data": {
+    "output": "total 48\ndrwxr-xr-x ...",
+    "exitCode": 0,
+    "cancelled": false,
+    "truncated": false
+  }
+}
+```
+
+If output was truncated, includes `fullOutputPath`:
+```json
+{
+  "type": "response",
+  "command": "bash",
+  "success": true,
+  "data": {
+    "output": "truncated output...",
+    "exitCode": 0,
+    "cancelled": false,
+    "truncated": true,
+    "fullOutputPath": "/tmp/pi-bash-abc123.log"
+  }
+}
+```
+
+**How bash results reach the LLM:**
+
+The `bash` command executes immediately and returns a `BashResult`. Internally, a `BashExecutionMessage` is created and stored in the agent's message state. This message does NOT emit an event.
+
+When the next `prompt` command is sent, all messages (including `BashExecutionMessage`) are transformed before being sent to the LLM. The `BashExecutionMessage` is converted to a `UserMessage` with this format:
+
+```
+Ran `ls -la`
+\`\`\`
+total 48
+drwxr-xr-x ...
+\`\`\`
+```
+
+This means:
+1. Bash output is included in the LLM context on the **next prompt**, not immediately
+2. Multiple bash commands can be executed before a prompt; all outputs will be included
+3. No event is emitted for the `BashExecutionMessage` itself
+
+#### abort_bash
+
+Abort a running bash command.
+
+```json
+{"type": "abort_bash"}
+```
+
+Response:
+```json
+{"type": "response", "command": "abort_bash", "success": true}
+```
+
+### Session
+
+#### get_session_stats
+
+Get token usage and cost statistics.
+
+```json
+{"type": "get_session_stats"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_session_stats",
+  "success": true,
+  "data": {
+    "sessionFile": "/path/to/session.jsonl",
+    "sessionId": "abc123",
+    "userMessages": 5,
+    "assistantMessages": 5,
+    "toolCalls": 12,
+    "toolResults": 12,
+    "totalMessages": 22,
+    "tokens": {
+      "input": 50000,
+      "output": 10000,
+      "cacheRead": 40000,
+      "cacheWrite": 5000,
+      "total": 105000
+    },
+    "cost": 0.45
+  }
+}
+```
+
+#### export_html
+
+Export session to an HTML file.
+
+```json
+{"type": "export_html"}
+```
+
+With custom path:
+```json
+{"type": "export_html", "outputPath": "/tmp/session.html"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "export_html",
+  "success": true,
+  "data": {"path": "/tmp/session.html"}
+}
+```
+
+#### switch_session
+
+Load a different session file.
+
+```json
+{"type": "switch_session", "sessionPath": "/path/to/session.jsonl"}
+```
+
+Response:
+```json
+{"type": "response", "command": "switch_session", "success": true}
+```
+
+#### branch
+
+Create a new branch from a previous user message. Returns the text of the message being branched from.
+
+```json
+{"type": "branch", "entryIndex": 2}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "branch",
+  "success": true,
+  "data": {"text": "The original prompt text..."}
+}
+```
+
+#### get_branch_messages
+
+Get user messages available for branching.
+
+```json
+{"type": "get_branch_messages"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_branch_messages",
+  "success": true,
+  "data": {
+    "messages": [
+      {"entryIndex": 0, "text": "First prompt..."},
+      {"entryIndex": 2, "text": "Second prompt..."}
+    ]
+  }
+}
+```
+
+#### get_last_assistant_text
+
+Get the text content of the last assistant message.
+
+```json
+{"type": "get_last_assistant_text"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_last_assistant_text",
+  "success": true,
+  "data": {"text": "The assistant's response..."}
+}
+```
+
+Returns `{"text": null}` if no assistant messages exist.
+
+## Events
+
+Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
+
+### Event Types
+
+| Event | Description |
+|-------|-------------|
+| `agent_start` | Agent begins processing |
+| `agent_end` | Agent completes (includes all generated messages) |
+| `turn_start` | New turn begins |
+| `turn_end` | Turn completes (includes assistant message and tool results) |
+| `message_start` | Message begins |
+| `message_update` | Streaming update (text/thinking/toolcall deltas) |
+| `message_end` | Message completes |
+| `tool_execution_start` | Tool begins execution |
+| `tool_execution_end` | Tool completes |
+| `auto_compaction_start` | Auto-compaction begins |
+| `auto_compaction_end` | Auto-compaction completes |
+
+### agent_start
 
 Emitted when the agent begins processing a prompt.
 
 ```json
-{
-  "type": "agent_start"
-}
+{"type": "agent_start"}
 ```
 
-#### agent_end
+### agent_end
 
-Emitted when the agent completes all processing. Contains all messages generated during this prompt.
+Emitted when the agent completes. Contains all messages generated during this run.
 
 ```json
 {
   "type": "agent_end",
-  "messages": [...]  // Array of AppMessage objects
+  "messages": [...]
 }
 ```
 
-#### turn_start
+### turn_start / turn_end
 
-Emitted when a new turn begins. A turn consists of an optional user message, an assistant response, and any resulting tool calls/results.
+A turn consists of one assistant response plus any resulting tool calls and results.
 
 ```json
-{
-  "type": "turn_start"
-}
+{"type": "turn_start"}
 ```
-
-#### turn_end
-
-Emitted when a turn completes.
 
 ```json
 {
   "type": "turn_end",
-  "message": {...},      // AssistantMessage
-  "toolResults": [...]   // Array of ToolResultMessage objects
+  "message": {...},
+  "toolResults": [...]
 }
 ```
 
-#### message_start
+### message_start / message_end
 
-Emitted when a message begins. The message can be a user message, assistant message, or tool result.
+Emitted when a message begins and completes. The `message` field contains an `AppMessage`.
 
 ```json
-{
-  "type": "message_start",
-  "message": {...}  // AppMessage (UserMessage, AssistantMessage, or ToolResultMessage)
-}
+{"type": "message_start", "message": {...}}
+{"type": "message_end", "message": {...}}
 ```
 
-#### message_update
+### message_update (Streaming)
 
-Emitted during streaming of assistant messages. Contains both the partial message and the specific streaming event.
+Emitted during streaming of assistant messages. Contains both the partial message and a streaming delta event.
 
 ```json
 {
   "type": "message_update",
-  "message": {...},                // Partial AssistantMessage
-  "assistantMessageEvent": {...}   // AssistantMessageEvent with delta
+  "message": {...},
+  "assistantMessageEvent": {
+    "type": "text_delta",
+    "contentIndex": 0,
+    "delta": "Hello ",
+    "partial": {...}
+  }
 }
 ```
 
-The `assistantMessageEvent` contains streaming deltas:
+The `assistantMessageEvent` field contains one of these delta types:
 
-- `text_delta`: New text content `{ "type": "text_delta", "contentIndex": 0, "delta": "text chunk", "partial": {...} }`
-- `thinking_delta`: New thinking content `{ "type": "thinking_delta", "contentIndex": 0, "delta": "thinking chunk", "partial": {...} }`
-- `toolcall_delta`: Tool call argument streaming `{ "type": "toolcall_delta", "contentIndex": 0, "delta": "json chunk", "partial": {...} }`
+| Type | Description |
+|------|-------------|
+| `start` | Message generation started |
+| `text_start` | Text content block started |
+| `text_delta` | Text content chunk |
+| `text_end` | Text content block ended |
+| `thinking_start` | Thinking block started |
+| `thinking_delta` | Thinking content chunk |
+| `thinking_end` | Thinking block ended |
+| `toolcall_start` | Tool call started |
+| `toolcall_delta` | Tool call arguments chunk |
+| `toolcall_end` | Tool call ended (includes full `toolCall` object) |
+| `done` | Message complete (reason: `"stop"`, `"length"`, `"toolUse"`) |
+| `error` | Error occurred (reason: `"aborted"`, `"error"`) |
 
-See [AssistantMessageEvent](#assistantmessageevent) for all event types.
-
-#### message_end
-
-Emitted when a message is complete.
-
+Example streaming a text response:
 ```json
-{
-  "type": "message_end",
-  "message": {...}  // Complete AppMessage
-}
+{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_start","contentIndex":0,"partial":{...}}}
+{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hello","partial":{...}}}
+{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" world","partial":{...}}}
+{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"Hello world","partial":{...}}}
 ```
 
-#### tool_execution_start
+### tool_execution_start / tool_execution_end
 
-Emitted when a tool begins execution.
+Emitted when a tool begins and completes execution.
 
 ```json
 {
   "type": "tool_execution_start",
   "toolCallId": "call_abc123",
   "toolName": "bash",
-  "args": { "command": "ls -la" }
+  "args": {"command": "ls -la"}
 }
 ```
-
-#### tool_execution_end
-
-Emitted when a tool completes execution.
 
 ```json
 {
   "type": "tool_execution_end",
   "toolCallId": "call_abc123",
   "toolName": "bash",
-  "result": {...},   // AgentToolResult or error string
+  "result": {
+    "content": [{"type": "text", "text": "total 48\n..."}],
+    "details": {...}
+  },
   "isError": false
 }
 ```
 
-The `result` field contains either:
-- An `AgentToolResult` object with `content` and `details` fields
-- A string error message if `isError` is true
+Use `toolCallId` to correlate `tool_execution_start` with `tool_execution_end`.
 
-#### bash_end
+### auto_compaction_start / auto_compaction_end
 
-Emitted when a user-initiated bash command (via `bash` input message) completes.
+Emitted when automatic compaction runs (when context is nearly full).
+
+```json
+{"type": "auto_compaction_start"}
+```
 
 ```json
 {
-  "type": "bash_end",
-  "message": {
-    "role": "bashExecution",
-    "command": "ls -la",
-    "output": "total 48\ndrwxr-xr-x ...",
-    "exitCode": 0,
-    "cancelled": false,
-    "truncated": false,
-    "fullOutputPath": "/tmp/pi-bash-abc123.log",  // Only present if output was truncated
-    "timestamp": 1733234567890
+  "type": "auto_compaction_end",
+  "result": {
+    "tokensBefore": 150000,
+    "summary": "Summary of conversation..."
+  },
+  "aborted": false
+}
+```
+
+If compaction was aborted, `result` is `null` and `aborted` is `true`.
+
+## Error Handling
+
+Failed commands return a response with `success: false`:
+
+```json
+{
+  "type": "response",
+  "command": "set_model",
+  "success": false,
+  "error": "Model not found: invalid/model"
+}
+```
+
+Parse errors:
+
+```json
+{
+  "type": "response",
+  "command": "parse",
+  "success": false,
+  "error": "Failed to parse command: Unexpected token..."
+}
+```
+
+## Types
+
+Source files:
+- [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
+- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AppMessage`, `Attachment`, `AgentEvent`
+- [`src/core/messages.ts`](../src/core/messages.ts) - `BashExecutionMessage`
+- [`src/modes/rpc/rpc-types.ts`](../src/modes/rpc/rpc-types.ts) - RPC command/response types
+
+### Model
+
+```json
+{
+  "id": "claude-sonnet-4-20250514",
+  "name": "Claude Sonnet 4",
+  "api": "anthropic-messages",
+  "provider": "anthropic",
+  "baseUrl": "https://api.anthropic.com",
+  "reasoning": true,
+  "input": ["text", "image"],
+  "contextWindow": 200000,
+  "maxTokens": 16384,
+  "cost": {
+    "input": 3.0,
+    "output": 15.0,
+    "cacheRead": 0.3,
+    "cacheWrite": 3.75
   }
 }
 ```
 
-The `message` is a `BashExecutionMessage` that has been added to the conversation context. See [BashExecutionMessage](#bashexecutionmessage) for the full schema.
-
-#### error
-
-Emitted when an error occurs during input processing.
+### UserMessage
 
 ```json
 {
-  "type": "error",
-  "error": "Error message"
+  "role": "user",
+  "content": "Hello!",
+  "timestamp": 1733234567890,
+  "attachments": []
 }
 ```
 
-#### compaction
+The `content` field can be a string or an array of `TextContent`/`ImageContent` blocks.
 
-Emitted when context compaction completes, either from a manual `compact` command or auto-compaction.
+### AssistantMessage
 
 ```json
 {
-  "type": "compaction",
-  "summary": "Summary of the conversation...",
-  "tokensBefore": 150000,
-  "auto": true  // Only present for auto-compaction
+  "role": "assistant",
+  "content": [
+    {"type": "text", "text": "Hello! How can I help?"},
+    {"type": "thinking", "thinking": "User is greeting me..."},
+    {"type": "toolCall", "id": "call_123", "name": "bash", "arguments": {"command": "ls"}}
+  ],
+  "api": "anthropic-messages",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-20250514",
+  "usage": {
+    "input": 100,
+    "output": 50,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "cost": {"input": 0.0003, "output": 0.00075, "cacheRead": 0, "cacheWrite": 0, "total": 0.00105}
+  },
+  "stopReason": "stop",
+  "timestamp": 1733234567890
 }
 ```
 
-Fields:
-- `summary`: The generated summary that replaces the conversation history
-- `tokensBefore`: Token count before compaction
-- `auto`: Present and `true` only for automatic compaction (omitted for manual)
+Stop reasons: `"stop"`, `"length"`, `"toolUse"`, `"error"`, `"aborted"`
 
-Auto-compaction triggers when context usage exceeds `contextWindow - reserveTokens` (default 20k reserve).
+### ToolResultMessage
 
----
-
-## Type Definitions
-
-All types are defined in the following source files:
-
-- **Agent types**: [`packages/agent/src/types.ts`](../../agent/src/types.ts)
-- **AI types**: [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-- **Agent loop types**: [`packages/ai/src/agent/types.ts`](../../ai/src/agent/types.ts)
-
-### Message Types
-
-#### UserMessage
-
-Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-
-```typescript
-interface UserMessage {
-  role: "user";
-  content: string | (TextContent | ImageContent)[];
-  timestamp: number;  // Unix timestamp in milliseconds
+```json
+{
+  "role": "toolResult",
+  "toolCallId": "call_123",
+  "toolName": "bash",
+  "content": [{"type": "text", "text": "total 48\ndrwxr-xr-x ..."}],
+  "isError": false,
+  "timestamp": 1733234567890
 }
 ```
 
-#### UserMessageWithAttachments
+### BashExecutionMessage
 
-Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
+Created by the `bash` RPC command (not by LLM tool calls):
 
-Extends `UserMessage` with optional attachments for the agent layer:
-
-```typescript
-type UserMessageWithAttachments = UserMessage & {
-  attachments?: Attachment[];
-}
-```
-
-#### AssistantMessage
-
-Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-
-```typescript
-interface AssistantMessage {
-  role: "assistant";
-  content: (TextContent | ThinkingContent | ToolCall)[];
-  api: Api;
-  provider: Provider;
-  model: string;
-  usage: Usage;
-  stopReason: StopReason;
-  errorMessage?: string;
-  timestamp: number;  // Unix timestamp in milliseconds
-}
-```
-
-#### ToolResultMessage
-
-Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-
-```typescript
-interface ToolResultMessage<TDetails = any> {
-  role: "toolResult";
-  toolCallId: string;
-  toolName: string;
-  content: (TextContent | ImageContent)[];
-  details?: TDetails;
-  isError: boolean;
-  timestamp: number;  // Unix timestamp in milliseconds
-}
-```
-
-#### AppMessage
-
-Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
-
-Union type of all message types including custom app messages:
-
-```typescript
-type AppMessage =
-  | AssistantMessage
-  | UserMessageWithAttachments
-  | Message  // Includes ToolResultMessage
-  | CustomMessages[keyof CustomMessages];
-```
-
-#### BashExecutionMessage
-
-Defined in [`packages/coding-agent/src/messages.ts`](../src/messages.ts)
-
-Custom message type for user-executed bash commands (via `!` in TUI or `bash` RPC command):
-
-```typescript
-interface BashExecutionMessage {
-  role: "bashExecution";
-  command: string;           // The command that was executed
-  output: string;            // Command output (truncated if large)
-  exitCode: number | null;   // Exit code, null if killed
-  cancelled: boolean;        // True if user cancelled with Escape
-  truncated: boolean;        // True if output was truncated
-  fullOutputPath?: string;   // Path to temp file with full output (if truncated)
-  timestamp: number;         // Unix timestamp in milliseconds
-}
-```
-
-When sent to the LLM, this message is transformed into a user message with the format:
-```
-Ran `<command>`
-\`\`\`
-<output>
-\`\`\`
-```
-
-### Content Types
-
-#### TextContent
-
-```typescript
-interface TextContent {
-  type: "text";
-  text: string;
-  textSignature?: string;
-}
-```
-
-#### ThinkingContent
-
-```typescript
-interface ThinkingContent {
-  type: "thinking";
-  thinking: string;
-  thinkingSignature?: string;
-}
-```
-
-#### ImageContent
-
-```typescript
-interface ImageContent {
-  type: "image";
-  data: string;      // base64 encoded
-  mimeType: string;  // e.g., "image/jpeg", "image/png"
-}
-```
-
-#### ToolCall
-
-```typescript
-interface ToolCall {
-  type: "toolCall";
-  id: string;
-  name: string;
-  arguments: Record<string, any>;
-  thoughtSignature?: string;
+```json
+{
+  "role": "bashExecution",
+  "command": "ls -la",
+  "output": "total 48\ndrwxr-xr-x ...",
+  "exitCode": 0,
+  "cancelled": false,
+  "truncated": false,
+  "fullOutputPath": null,
+  "timestamp": 1733234567890
 }
 ```
 
 ### Attachment
 
-Defined in [`packages/agent/src/types.ts`](../../agent/src/types.ts)
-
-```typescript
-interface Attachment {
-  id: string;
-  type: "image" | "document";
-  fileName: string;
-  mimeType: string;
-  size: number;
-  content: string;        // base64 encoded (without data URL prefix)
-  extractedText?: string; // For documents
-  preview?: string;       // base64 image preview
-}
-```
-
-### Usage
-
-Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-
-```typescript
-interface Usage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
-}
-```
-
-### StopReason
-
-```typescript
-type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
-```
-
-### AssistantMessageEvent
-
-Defined in [`packages/ai/src/types.ts`](../../ai/src/types.ts)
-
-Streaming events for assistant message generation:
-
-```typescript
-type AssistantMessageEvent =
-  | { type: "start"; partial: AssistantMessage }
-  | { type: "text_start"; contentIndex: number; partial: AssistantMessage }
-  | { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
-  | { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
-  | { type: "thinking_start"; contentIndex: number; partial: AssistantMessage }
-  | { type: "thinking_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
-  | { type: "thinking_end"; contentIndex: number; content: string; partial: AssistantMessage }
-  | { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
-  | { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
-  | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
-  | { type: "done"; reason: "stop" | "length" | "toolUse"; message: AssistantMessage }
-  | { type: "error"; reason: "aborted" | "error"; error: AssistantMessage };
-```
-
-### AgentToolResult
-
-Defined in [`packages/ai/src/agent/types.ts`](../../ai/src/agent/types.ts)
-
-```typescript
-interface AgentToolResult<T> {
-  content: (TextContent | ImageContent)[];
-  details: T;
-}
-```
-
----
-
-## Correlating Tool Calls with Results
-
-When the assistant invokes tools, you'll receive separate events for the tool call (in the `AssistantMessage`) and the result (in a `ToolResultMessage`). To display them together, correlate them using the `toolCallId`.
-
-### Event Flow
-
-1. `message_end` with `AssistantMessage` containing `ToolCall` items in `content[]`
-2. `tool_execution_start` with `toolCallId`, `toolName`, and `args`
-3. `tool_execution_end` with `toolCallId`, `result`, and `isError`
-4. `message_end` with `ToolResultMessage` containing `toolCallId` and `content[]`
-
-### Correlation Strategy
-
-Track pending tool calls by `toolCallId`, then merge with results:
-
-```typescript
-// Track pending tool calls
-const pendingTools = new Map<string, { name: string; args: any }>();
-
-function handleEvent(event: any) {
-  if (event.type === "tool_execution_start") {
-    // Store tool call info
-    pendingTools.set(event.toolCallId, {
-      name: event.toolName,
-      args: event.args
-    });
-  }
-
-  if (event.type === "tool_execution_end") {
-    const toolCall = pendingTools.get(event.toolCallId);
-    if (toolCall) {
-      // Now you have both the call and result
-      const merged = {
-        name: toolCall.name,
-        args: toolCall.args,
-        result: event.result,
-        isError: event.isError
-      };
-
-      // Format for display
-      displayToolExecution(merged);
-      pendingTools.delete(event.toolCallId);
-    }
-  }
-}
-```
-
-### Display Formatting Example
-
-Format tool executions for a chat interface (e.g., WhatsApp):
-
-```typescript
-function displayToolExecution(tool: {
-  name: string;
-  args: any;
-  result: { content: Array<{ type: string; text?: string }> } | string;
-  isError: boolean;
-}): string {
-  const resultText = typeof tool.result === "string"
-    ? tool.result
-    : tool.result.content
-        .filter(c => c.type === "text")
-        .map(c => c.text)
-        .join("\n");
-
-  switch (tool.name) {
-    case "bash":
-      return `$ ${tool.args.command}\n${resultText}`;
-
-    case "read":
-      return `📄 ${tool.args.path}\n${resultText.slice(0, 500)}...`;
-
-    case "write":
-      return `✏️ Wrote ${tool.args.path}`;
-
-    case "edit":
-      return `✏️ Edited ${tool.args.path}`;
-
-    default:
-      return `🔧 ${tool.name}: ${resultText.slice(0, 200)}`;
-  }
-}
-```
-
-### Alternative: Using turn_end
-
-The `turn_end` event provides the assistant message and all tool results together:
-
-```typescript
-if (event.type === "turn_end") {
-  const { message, toolResults } = event;
-
-  // Extract tool calls from assistant message
-  const toolCalls = message.content.filter(c => c.type === "toolCall");
-
-  // Match each tool call with its result by toolCallId
-  for (const call of toolCalls) {
-    const result = toolResults.find(r => r.toolCallId === call.id);
-    if (result) {
-      // Display merged tool call + result
-    }
-  }
-}
-```
-
----
-
-## Example Session
-
-### Input
-
 ```json
-{"type": "prompt", "message": "List files in the current directory"}
+{
+  "id": "img1",
+  "type": "image",
+  "fileName": "photo.jpg",
+  "mimeType": "image/jpeg",
+  "size": 102400,
+  "content": "base64-encoded-data...",
+  "extractedText": null,
+  "preview": null
+}
 ```
 
-### Output Stream
+## Example: Basic Client (Python)
 
-```json
-{"type":"agent_start"}
-{"type":"turn_start"}
-{"type":"message_start","message":{"role":"user","content":"List files in the current directory","timestamp":1733234567890}}
-{"type":"message_end","message":{"role":"user","content":"List files in the current directory","timestamp":1733234567890}}
-{"type":"message_start","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1733234567891}}
-{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"I'll list","partial":{...}}}
-{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" the files","partial":{...}}}
-{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"toolcall_start","contentIndex":1,"partial":{...}}}
-{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_123","name":"bash","arguments":{"command":"ls -la"}},"partial":{...}}}
-{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"I'll list the files for you."},{"type":"toolCall","id":"call_123","name":"bash","arguments":{"command":"ls -la"}}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{...},"stopReason":"toolUse","timestamp":1733234567891}}
-{"type":"tool_execution_start","toolCallId":"call_123","toolName":"bash","args":{"command":"ls -la"}}
-{"type":"tool_execution_end","toolCallId":"call_123","toolName":"bash","result":{"content":[{"type":"text","text":"total 48\ndrwxr-xr-x  12 user  staff   384 Dec  3 14:00 .\n..."}],"details":undefined},"isError":false}
-{"type":"message_start","message":{"role":"toolResult","toolCallId":"call_123","toolName":"bash","content":[{"type":"text","text":"total 48\n..."}],"isError":false,"timestamp":1733234567900}}
-{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_123","toolName":"bash","content":[{"type":"text","text":"total 48\n..."}],"isError":false,"timestamp":1733234567900}}
-{"type":"turn_end","message":{...},"toolResults":[{...}]}
-{"type":"turn_start"}
-{"type":"message_start","message":{"role":"assistant","content":[],...}}
-{"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Here are the files","partial":{...}}}
-{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Here are the files in the current directory:\n..."}],...,"stopReason":"stop",...}}
-{"type":"turn_end","message":{...},"toolResults":[]}
-{"type":"agent_end","messages":[...]}
+```python
+import subprocess
+import json
+
+proc = subprocess.Popen(
+    ["pi", "--mode", "rpc", "--no-session"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    text=True
+)
+
+def send(cmd):
+    proc.stdin.write(json.dumps(cmd) + "\n")
+    proc.stdin.flush()
+
+def read_events():
+    for line in proc.stdout:
+        yield json.loads(line)
+
+# Send prompt
+send({"type": "prompt", "message": "Hello!"})
+
+# Process events
+for event in read_events():
+    if event.get("type") == "message_update":
+        delta = event.get("assistantMessageEvent", {})
+        if delta.get("type") == "text_delta":
+            print(delta["delta"], end="", flush=True)
+    
+    if event.get("type") == "agent_end":
+        print()
+        break
 ```
 
----
+## Example: Interactive Client (Node.js)
 
-## Example Client
+See [`test/rpc-example.ts`](../test/rpc-example.ts) for a complete interactive example, or [`src/modes/rpc/rpc-client.ts`](../src/modes/rpc/rpc-client.ts) for a typed client implementation.
 
-See [`test/rpc-example.ts`](../test/rpc-example.ts) for a complete example of an interactive RPC client.
+```javascript
+const { spawn } = require("child_process");
+const readline = require("readline");
 
-```typescript
-import { spawn } from "node:child_process";
-import * as readline from "readline";
-
-// Spawn agent in RPC mode
 const agent = spawn("pi", ["--mode", "rpc", "--no-session"]);
 
-// Parse output events
 readline.createInterface({ input: agent.stdout }).on("line", (line) => {
-  const event = JSON.parse(line);
-
-  if (event.type === "message_update") {
-    const { assistantMessageEvent } = event;
-    if (assistantMessageEvent.type === "text_delta") {
-      process.stdout.write(assistantMessageEvent.delta);
+    const event = JSON.parse(line);
+    
+    if (event.type === "message_update") {
+        const { assistantMessageEvent } = event;
+        if (assistantMessageEvent.type === "text_delta") {
+            process.stdout.write(assistantMessageEvent.delta);
+        }
     }
-  }
-
-  if (event.type === "tool_execution_start") {
-    console.log(`\n[Tool: ${event.toolName}]`);
-  }
 });
 
 // Send prompt
@@ -667,6 +864,6 @@ agent.stdin.write(JSON.stringify({ type: "prompt", message: "Hello" }) + "\n");
 
 // Abort on Ctrl+C
 process.on("SIGINT", () => {
-  agent.stdin.write(JSON.stringify({ type: "abort" }) + "\n");
+    agent.stdin.write(JSON.stringify({ type: "abort" }) + "\n");
 });
 ```

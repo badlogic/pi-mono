@@ -6,6 +6,7 @@
  */
 
 import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Model } from "@mariozechner/pi-ai";
 import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 
@@ -59,7 +60,7 @@ export type RpcCommand =
 // ============================================================================
 
 export interface RpcSessionState {
-	model: { provider: string; id: string; contextWindow: number } | null;
+	model: Model<any> | null;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	queueMode: "all" | "one-at-a-time";
@@ -91,21 +92,21 @@ export type RpcResponse =
 			type: "response";
 			command: "set_model";
 			success: true;
-			data: { provider: string; id: string };
+			data: Model<any>;
 	  }
 	| {
 			id?: string;
 			type: "response";
 			command: "cycle_model";
 			success: true;
-			data: { model: { provider: string; id: string }; thinkingLevel: ThinkingLevel; isScoped: boolean } | null;
+			data: { model: Model<any>; thinkingLevel: ThinkingLevel; isScoped: boolean } | null;
 	  }
 	| {
 			id?: string;
 			type: "response";
 			command: "get_available_models";
 			success: true;
-			data: { models: Array<{ provider: string; id: string; contextWindow: number; reasoning: boolean }> };
+			data: { models: Model<any>[] };
 	  }
 
 	// Thinking

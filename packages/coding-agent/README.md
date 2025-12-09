@@ -786,7 +786,19 @@ Execute shell commands directly and add output to the LLM context by prefixing w
 - **History**: Commands are added to editor history (navigate with Up/Down arrows)
 - **Visual feedback**: Editor border turns green in bash mode; cancelled commands show yellow warning
 
-Output is automatically added to the conversation context, allowing the LLM to see command results without manual copy-paste.
+**How bash output reaches the LLM:**
+
+When you execute a bash command, the output is stored as a `BashExecutionMessage` in the conversation state. This message is transformed and sent to the LLM as part of your **next prompt**. The LLM sees it as a user message formatted like:
+
+```
+Ran `ls -la`
+\`\`\`
+total 48
+drwxr-xr-x ...
+\`\`\`
+```
+
+This means you can run multiple bash commands before sending a prompt, and all outputs will be included in the context together.
 
 ### Keyboard Shortcuts
 

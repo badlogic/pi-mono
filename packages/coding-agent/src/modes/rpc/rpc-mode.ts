@@ -86,9 +86,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// =================================================================
 
 			case "get_state": {
-				const model = session.model;
 				const state: RpcSessionState = {
-					model: model ? { provider: model.provider, id: model.id, contextWindow: model.contextWindow } : null,
+					model: session.model,
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
 					queueMode: session.queueMode,
@@ -112,7 +111,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
 				}
 				await session.setModel(model);
-				return success(id, "set_model", { provider: model.provider, id: model.id });
+				return success(id, "set_model", model);
 			}
 
 			case "cycle_model": {
@@ -120,23 +119,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				if (!result) {
 					return success(id, "cycle_model", null);
 				}
-				return success(id, "cycle_model", {
-					model: { provider: result.model.provider, id: result.model.id },
-					thinkingLevel: result.thinkingLevel,
-					isScoped: result.isScoped,
-				});
+				return success(id, "cycle_model", result);
 			}
 
 			case "get_available_models": {
 				const models = await session.getAvailableModels();
-				return success(id, "get_available_models", {
-					models: models.map((m) => ({
-						provider: m.provider,
-						id: m.id,
-						contextWindow: m.contextWindow,
-						reasoning: !!m.reasoning,
-					})),
-				});
+				return success(id, "get_available_models", { models });
 			}
 
 			// =================================================================
