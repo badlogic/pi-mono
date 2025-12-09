@@ -552,6 +552,23 @@ export class InteractiveMode {
 		}
 	}
 
+	/** Extract text content from a user message */
+	private getUserMessageText(message: Message): string {
+		if (message.role !== "user") return "";
+		const textBlocks =
+			typeof message.content === "string"
+				? [{ type: "text", text: message.content }]
+				: message.content.filter((c: { type: string }) => c.type === "text");
+		return textBlocks.map((c) => (c as { text: string }).text).join("");
+	}
+
+	/** Show a status message in the chat */
+	private showStatus(message: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
+		this.ui.requestRender();
+	}
+
 	private addMessageToChat(message: Message | AppMessage): void {
 		if (isBashExecutionMessage(message)) {
 			const component = new BashExecutionComponent(message.command, this.ui);
@@ -569,11 +586,7 @@ export class InteractiveMode {
 		}
 
 		if (message.role === "user") {
-			const textBlocks =
-				typeof message.content === "string"
-					? [{ type: "text", text: message.content }]
-					: message.content.filter((c: { type: string }) => c.type === "text");
-			const textContent = textBlocks.map((c) => (c as { text: string }).text).join("");
+			const textContent = this.getUserMessageText(message);
 			if (textContent) {
 				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
 				this.chatContainer.addChild(userComponent);
@@ -585,25 +598,34 @@ export class InteractiveMode {
 		}
 	}
 
-	renderInitialMessages(state: AgentState): void {
+	/**
+	 * Render messages to chat. Used for initial load and rebuild after compaction.
+	 * @param messages Messages to render
+	 * @param options.updateFooter Update footer state
+	 * @param options.populateHistory Add user messages to editor history
+	 */
+	private renderMessages(
+		messages: readonly (Message | AppMessage)[],
+		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
+	): void {
 		this.isFirstUserMessage = true;
-		this.footer.updateState(state);
-		this.updateEditorBorderColor();
+		this.pendingTools.clear();
+
+		if (options.updateFooter) {
+			this.footer.updateState(this.session.state);
+			this.updateEditorBorderColor();
+		}
 
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
 
-		for (const message of state.messages) {
+		for (const message of messages) {
 			if (isBashExecutionMessage(message)) {
 				this.addMessageToChat(message);
 				continue;
 			}
 
 			if (message.role === "user") {
-				const textBlocks =
-					typeof message.content === "string"
-						? [{ type: "text", text: message.content }]
-						: message.content.filter((c: { type: string }) => c.type === "text");
-				const textContent = textBlocks.map((c) => (c as { text: string }).text).join("");
+				const textContent = this.getUserMessageText(message);
 				if (textContent) {
 					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
 						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
@@ -614,6 +636,9 @@ export class InteractiveMode {
 						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
 						this.chatContainer.addChild(userComponent);
 						this.isFirstUserMessage = false;
+						if (options.populateHistory) {
+							this.editor.addToHistory(textContent);
+						}
 					}
 				}
 			} else if (message.role === "assistant") {
@@ -650,22 +675,11 @@ export class InteractiveMode {
 			}
 		}
 		this.pendingTools.clear();
-
-		// Populate editor history
-		for (const message of state.messages) {
-			if (message.role === "user") {
-				const textBlocks =
-					typeof message.content === "string"
-						? [{ type: "text", text: message.content }]
-						: message.content.filter((c: { type: string }) => c.type === "text");
-				const textContent = textBlocks.map((c) => (c as { text: string }).text).join("");
-				if (textContent && !textContent.startsWith(SUMMARY_PREFIX)) {
-					this.editor.addToHistory(textContent);
-				}
-			}
-		}
-
 		this.ui.requestRender();
+	}
+
+	renderInitialMessages(state: AgentState): void {
+		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
 	}
 
 	async getUserInput(): Promise<string> {
@@ -678,62 +692,7 @@ export class InteractiveMode {
 	}
 
 	private rebuildChatFromMessages(): void {
-		this.isFirstUserMessage = true;
-		this.pendingTools.clear();
-
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
-
-		for (const message of this.session.messages) {
-			if (isBashExecutionMessage(message)) {
-				this.addMessageToChat(message);
-				continue;
-			}
-
-			if (message.role === "user") {
-				const textBlocks =
-					typeof message.content === "string"
-						? [{ type: "text", text: message.content }]
-						: message.content.filter((c: { type: string }) => c.type === "text");
-				const textContent = textBlocks.map((c) => (c as { text: string }).text).join("");
-				if (textContent) {
-					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
-						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
-						const component = new CompactionComponent(compactionEntry.tokensBefore, summary);
-						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
-					} else {
-						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-						this.chatContainer.addChild(userComponent);
-						this.isFirstUserMessage = false;
-					}
-				}
-			} else if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
-				this.chatContainer.addChild(assistantComponent);
-
-				for (const content of assistantMsg.content) {
-					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(content.name, content.arguments);
-						this.chatContainer.addChild(component);
-						this.pendingTools.set(content.id, component);
-					}
-				}
-			} else if (message.role === "toolResult") {
-				const component = this.pendingTools.get(message.toolCallId);
-				if (component) {
-					component.updateResult({
-						content: message.content,
-						details: message.details,
-						isError: message.isError,
-					});
-					this.pendingTools.delete(message.toolCallId);
-				}
-			}
-		}
-
-		this.pendingTools.clear();
-		this.ui.requestRender();
+		this.renderMessages(this.session.messages);
 	}
 
 	// =========================================================================
@@ -764,36 +723,28 @@ export class InteractiveMode {
 	private cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
 		if (newLevel === null) {
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", "Current model does not support thinking"), 1, 0));
+			this.showStatus("Current model does not support thinking");
 		} else {
 			this.updateEditorBorderColor();
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking level: ${newLevel}`), 1, 0));
+			this.showStatus(`Thinking level: ${newLevel}`);
 		}
-		this.ui.requestRender();
 	}
 
 	private async cycleModel(): Promise<void> {
 		try {
 			const result = await this.session.cycleModel();
 			if (result === null) {
-				this.chatContainer.addChild(new Spacer(1));
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
-				this.chatContainer.addChild(new Text(theme.fg("dim", msg), 1, 0));
+				this.showStatus(msg);
 			} else {
 				this.updateEditorBorderColor();
-				this.chatContainer.addChild(new Spacer(1));
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
-				this.chatContainer.addChild(
-					new Text(theme.fg("dim", `Switched to ${result.model.name || result.model.id}${thinkingStr}`), 1, 0),
-				);
+				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
 			}
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
-		this.ui.requestRender();
 	}
 
 	private toggleToolOutputExpansion(): void {
@@ -822,11 +773,7 @@ export class InteractiveMode {
 
 		this.chatContainer.clear();
 		this.rebuildChatFromMessages();
-
-		const status = this.hideThinkingBlock ? "hidden" : "visible";
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking blocks: ${status}`), 1, 0));
-		this.ui.requestRender();
+		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
 	// =========================================================================
@@ -907,10 +854,8 @@ export class InteractiveMode {
 				(level) => {
 					this.session.setThinkingLevel(level);
 					this.updateEditorBorderColor();
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Thinking level: ${level}`), 1, 0));
 					done();
-					this.ui.requestRender();
+					this.showStatus(`Thinking level: ${level}`);
 				},
 				() => {
 					done();
@@ -927,10 +872,8 @@ export class InteractiveMode {
 				this.session.queueMode,
 				(mode) => {
 					this.session.setQueueMode(mode);
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Queue mode: ${mode}`), 1, 0));
 					done();
-					this.ui.requestRender();
+					this.showStatus(`Queue mode: ${mode}`);
 				},
 				() => {
 					done();
@@ -950,23 +893,12 @@ export class InteractiveMode {
 					const result = setTheme(themeName);
 					this.settingsManager.setTheme(themeName);
 					this.ui.invalidate();
-					this.chatContainer.addChild(new Spacer(1));
-					if (result.success) {
-						this.chatContainer.addChild(new Text(theme.fg("dim", `Theme: ${themeName}`), 1, 0));
-					} else {
-						this.chatContainer.addChild(
-							new Text(
-								theme.fg(
-									"error",
-									`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`,
-								),
-								1,
-								0,
-							),
-						);
-					}
 					done();
-					this.ui.requestRender();
+					if (result.success) {
+						this.showStatus(`Theme: ${themeName}`);
+					} else {
+						this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
+					}
 				},
 				() => {
 					done();
@@ -993,10 +925,8 @@ export class InteractiveMode {
 				(model) => {
 					this.agent.setModel(model);
 					this.sessionManager.saveModelChange(model.provider, model.id);
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", `Model: ${model.id}`), 1, 0));
 					done();
-					this.ui.requestRender();
+					this.showStatus(`Model: ${model.id}`);
 				},
 				() => {
 					done();
@@ -1011,9 +941,7 @@ export class InteractiveMode {
 		const userMessages = this.session.getUserMessagesForBranching();
 
 		if (userMessages.length <= 1) {
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", "No messages to branch from"), 1, 0));
-			this.ui.requestRender();
+			this.showStatus("No messages to branch from");
 			return;
 		}
 
@@ -1025,11 +953,9 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.isFirstUserMessage = true;
 					this.renderInitialMessages(this.session.state);
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("dim", "Branched to new session"), 1, 0));
 					this.editor.setText(selectedText);
 					done();
-					this.ui.requestRender();
+					this.showStatus("Branched to new session");
 				},
 				() => {
 					done();
@@ -1077,21 +1003,14 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		this.isFirstUserMessage = true;
 		this.renderInitialMessages(this.session.state);
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", "Resumed session"), 1, 0));
-		this.ui.requestRender();
+		this.showStatus("Resumed session");
 	}
 
 	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
 		if (mode === "logout") {
 			const loggedInProviders = listOAuthProviders();
 			if (loggedInProviders.length === 0) {
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(
-					new Text(theme.fg("dim", "No OAuth providers logged in. Use /login first."), 1, 0),
-				);
-				this.ui.requestRender();
+				this.showStatus("No OAuth providers logged in. Use /login first.");
 				return;
 			}
 		}
@@ -1103,9 +1022,7 @@ export class InteractiveMode {
 					done();
 
 					if (mode === "login") {
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(new Text(theme.fg("dim", `Logging in to ${providerId}...`), 1, 0));
-						this.ui.requestRender();
+						this.showStatus(`Logging in to ${providerId}...`);
 
 						try {
 							await login(
@@ -1192,22 +1109,9 @@ export class InteractiveMode {
 
 		try {
 			const filePath = this.session.exportToHtml(outputPath);
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", `Session exported to: ${filePath}`), 1, 0));
-			this.ui.requestRender();
+			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(
-				new Text(
-					theme.fg(
-						"error",
-						`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`,
-					),
-					1,
-					0,
-				),
-			);
-			this.ui.requestRender();
+			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
 
@@ -1220,9 +1124,7 @@ export class InteractiveMode {
 
 		try {
 			copyToClipboard(text);
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", "Copied last agent message to clipboard"), 1, 0));
-			this.ui.requestRender();
+			this.showStatus("Copied last agent message to clipboard");
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
@@ -1387,10 +1289,7 @@ export class InteractiveMode {
 		const newState = !this.session.autoCompactionEnabled;
 		this.session.setAutoCompactionEnabled(newState);
 		this.footer.setAutoCompactEnabled(newState);
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", `Auto-compaction: ${newState ? "on" : "off"}`), 1, 0));
-		this.ui.requestRender();
+		this.showStatus(`Auto-compaction: ${newState ? "on" : "off"}`);
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
