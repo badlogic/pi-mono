@@ -6,7 +6,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { AgentEvent, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
@@ -324,6 +324,14 @@ export class RpcClient {
 	async getLastAssistantText(): Promise<string | null> {
 		const response = await this.send({ type: "get_last_assistant_text" });
 		return this.getData<{ text: string | null }>(response).text;
+	}
+
+	/**
+	 * Get all messages in the session.
+	 */
+	async getMessages(): Promise<AppMessage[]> {
+		const response = await this.send({ type: "get_messages" });
+		return this.getData<{ messages: AppMessage[] }>(response).messages;
 	}
 
 	// =========================================================================

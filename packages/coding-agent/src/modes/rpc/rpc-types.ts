@@ -5,7 +5,7 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 
@@ -49,7 +49,10 @@ export type RpcCommand =
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "branch"; entryIndex: number }
 	| { id?: string; type: "get_branch_messages" }
-	| { id?: string; type: "get_last_assistant_text" };
+	| { id?: string; type: "get_last_assistant_text" }
+
+	// Messages
+	| { id?: string; type: "get_messages" };
 
 // ============================================================================
 // RPC State
@@ -145,6 +148,9 @@ export type RpcResponse =
 			success: true;
 			data: { text: string | null };
 	  }
+
+	// Messages
+	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AppMessage[] } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

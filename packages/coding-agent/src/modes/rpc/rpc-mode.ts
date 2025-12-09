@@ -227,6 +227,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_last_assistant_text", { text });
 			}
 
+			// =================================================================
+			// Messages
+			// =================================================================
+
+			case "get_messages": {
+				return success(id, "get_messages", { messages: session.messages });
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
