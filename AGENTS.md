@@ -22,6 +22,8 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - NEVER commit unless user asks
 
 ## GitHub Issues
+When reading issues:
+- Always read all comments on the issue
 
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
