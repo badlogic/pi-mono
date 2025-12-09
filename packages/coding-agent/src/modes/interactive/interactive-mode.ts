@@ -91,6 +91,9 @@ export class InteractiveMode {
 	// Track current bash execution component
 	private bashComponent: BashExecutionComponent | null = null;
 
+	// Track pending bash components (shown in pending area, moved to chat on submit)
+	private pendingBashComponents: BashExecutionComponent[] = [];
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -411,6 +414,9 @@ export class InteractiveMode {
 			}
 
 			// Normal message submission
+			// First, move any pending bash components to chat
+			this.flushPendingBashComponents();
+
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -824,6 +830,15 @@ export class InteractiveMode {
 				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
 			}
 		}
+	}
+
+	/** Move pending bash components from pending area to chat */
+	private flushPendingBashComponents(): void {
+		for (const component of this.pendingBashComponents) {
+			this.pendingMessagesContainer.removeChild(component);
+			this.chatContainer.addChild(component);
+		}
+		this.pendingBashComponents = [];
 	}
 
 	// =========================================================================
@@ -1242,8 +1257,17 @@ export class InteractiveMode {
 	}
 
 	private async handleBashCommand(command: string): Promise<void> {
+		const isDeferred = this.session.isStreaming;
 		this.bashComponent = new BashExecutionComponent(command, this.ui);
-		this.chatContainer.addChild(this.bashComponent);
+
+		if (isDeferred) {
+			// Show in pending area when agent is streaming
+			this.pendingMessagesContainer.addChild(this.bashComponent);
+			this.pendingBashComponents.push(this.bashComponent);
+		} else {
+			// Show in chat immediately when agent is idle
+			this.chatContainer.addChild(this.bashComponent);
+		}
 		this.ui.requestRender();
 
 		try {

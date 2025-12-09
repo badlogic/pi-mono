@@ -142,11 +142,6 @@ export class AgentSession {
 				await this.checkAutoCompaction();
 			}
 		}
-
-		// Flush pending bash messages after agent turn completes
-		if (event.type === "agent_end") {
-			this._flushPendingBashMessages();
-		}
 	};
 
 	/**
@@ -266,6 +261,9 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		// Flush any pending bash messages before the new prompt
+		this._flushPendingBashMessages();
+
 		const expandCommands = options?.expandSlashCommands ?? true;
 
 		// Validate model
@@ -697,6 +695,11 @@ export class AgentSession {
 	/** Whether a bash command is currently running */
 	get isBashRunning(): boolean {
 		return this._bashAbortController !== null;
+	}
+
+	/** Whether there are pending bash messages waiting to be flushed */
+	get hasPendingBashMessages(): boolean {
+		return this._pendingBashMessages.length > 0;
 	}
 
 	/**
