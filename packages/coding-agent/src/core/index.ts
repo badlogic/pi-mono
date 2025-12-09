@@ -13,3 +13,13 @@ export {
 	type SessionStats,
 } from "./agent-session.js";
 export { type BashExecutorOptions, type BashResult, executeBash } from "./bash-executor.js";
+export {
+	type HookAPI,
+	type HookError,
+	type HookEvent,
+	type HookEventContext,
+	type HookFactory,
+	HookRunner,
+	type HookUIContext,
+	loadHooks,
+} from "./hooks/index.js";

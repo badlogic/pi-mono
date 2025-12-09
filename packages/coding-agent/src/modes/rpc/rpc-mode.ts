@@ -8,21 +8,24 @@
  * - Commands: JSON objects with `type` field, optional `id` for correlation
  * - Responses: JSON objects with `type: "response"`, `command`, `success`, and optional `data`/`error`
  * - Events: AgentSessionEvent objects streamed as they occur
+ * - Hook UI: Hook UI requests are emitted, client responds with hook_ui_response
  */
 
+import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
-import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
+import type { HookUIContext } from "../../core/hooks/index.js";
+import type { RpcCommand, RpcHookUIRequest, RpcHookUIResponse, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // Re-export types for consumers
-export type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
+export type { RpcCommand, RpcHookUIRequest, RpcHookUIResponse, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 /**
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
 export async function runRpcMode(session: AgentSession): Promise<never> {
-	const output = (obj: RpcResponse | object) => {
+	const output = (obj: RpcResponse | RpcHookUIRequest | object) => {
 		console.log(JSON.stringify(obj));
 	};
 
@@ -40,6 +43,89 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
 		return { id, type: "response", command, success: false, error: message };
 	};
+
+	// Pending hook UI requests waiting for response
+	const pendingHookRequests = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+
+	/**
+	 * Create a hook UI context that uses the RPC protocol.
+	 */
+	const createHookUIContext = (): HookUIContext => ({
+		async select(title: string, options: string[]): Promise<string | null> {
+			const id = crypto.randomUUID();
+			return new Promise((resolve, reject) => {
+				pendingHookRequests.set(id, {
+					resolve: (response: RpcHookUIResponse) => {
+						if ("cancelled" in response && response.cancelled) {
+							resolve(null);
+						} else if ("value" in response) {
+							resolve(response.value);
+						} else {
+							resolve(null);
+						}
+					},
+					reject,
+				});
+				output({ type: "hook_ui_request", id, method: "select", title, options } as RpcHookUIRequest);
+			});
+		},
+
+		async confirm(title: string, message: string): Promise<boolean> {
+			const id = crypto.randomUUID();
+			return new Promise((resolve, reject) => {
+				pendingHookRequests.set(id, {
+					resolve: (response: RpcHookUIResponse) => {
+						if ("cancelled" in response && response.cancelled) {
+							resolve(false);
+						} else if ("confirmed" in response) {
+							resolve(response.confirmed);
+						} else {
+							resolve(false);
+						}
+					},
+					reject,
+				});
+				output({ type: "hook_ui_request", id, method: "confirm", title, message } as RpcHookUIRequest);
+			});
+		},
+
+		async input(title: string, placeholder?: string): Promise<string | null> {
+			const id = crypto.randomUUID();
+			return new Promise((resolve, reject) => {
+				pendingHookRequests.set(id, {
+					resolve: (response: RpcHookUIResponse) => {
+						if ("cancelled" in response && response.cancelled) {
+							resolve(null);
+						} else if ("value" in response) {
+							resolve(response.value);
+						} else {
+							resolve(null);
+						}
+					},
+					reject,
+				});
+				output({ type: "hook_ui_request", id, method: "input", title, placeholder } as RpcHookUIRequest);
+			});
+		},
+
+		notify(message: string, type?: "info" | "warning" | "error"): void {
+			// Fire and forget - no response needed
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "notify",
+				message,
+				notifyType: type,
+			} as RpcHookUIRequest);
+		},
+	});
+
+	// Set up hooks with RPC-based UI context
+	const hookUIContext = createHookUIContext();
+	session.setHookUIContext(hookUIContext, (err) => {
+		output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
+	});
+	await session.initHooks();
 
 	// Output all agent events as JSON
 	session.subscribe((event) => {
@@ -202,8 +288,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "branch": {
-				const text = session.branch(command.entryIndex);
-				return success(id, "branch", { text });
+				const result = await session.branch(command.entryIndex);
+				return success(id, "branch", { text: result.selectedText, skipped: result.skipped });
 			}
 
 			case "get_branch_messages": {
@@ -240,7 +326,21 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 	rl.on("line", async (line: string) => {
 		try {
-			const command = JSON.parse(line) as RpcCommand;
+			const parsed = JSON.parse(line);
+
+			// Handle hook UI responses
+			if (parsed.type === "hook_ui_response") {
+				const response = parsed as RpcHookUIResponse;
+				const pending = pendingHookRequests.get(response.id);
+				if (pending) {
+					pendingHookRequests.delete(response.id);
+					pending.resolve(response);
+				}
+				return;
+			}
+
+			// Handle regular commands
+			const command = parsed as RpcCommand;
 			const response = await handleCommand(command);
 			output(response);
 		} catch (e: any) {

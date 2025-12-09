@@ -33,7 +33,8 @@
 		"@mariozechner/pi-tui": "^0.17.0",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",
-		"glob": "^11.0.3"
+		"glob": "^11.0.3",
+		"jiti": "^2.6.1"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",

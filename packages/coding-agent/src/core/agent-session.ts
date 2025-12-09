@@ -20,6 +20,15 @@ import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";
+import {
+	type BranchEventResult,
+	type HookError,
+	HookRunner,
+	type HookUIContext,
+	loadHooks,
+	type TurnEndEvent,
+	type TurnStartEvent,
+} from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
@@ -47,6 +56,10 @@ export interface AgentSessionConfig {
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 	/** File-based slash commands for expansion */
 	fileCommands?: FileSlashCommand[];
+	/** UI context for hooks. If not provided, hooks are disabled. */
+	hookUIContext?: HookUIContext;
+	/** Callback for hook errors */
+	onHookError?: (error: HookError) => void;
 }
 
 /** Options for AgentSession.prompt() */
@@ -117,12 +130,21 @@ export class AgentSession {
 	private _bashAbortController: AbortController | null = null;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
+	// Hook system
+	private _hookRunner: HookRunner | null = null;
+	private _hookUIContext?: HookUIContext;
+	private _onHookError?: (error: HookError) => void;
+	private _hooksInitialized = false;
+	private _turnIndex = 0;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];
+		this._hookUIContext = config.hookUIContext;
+		this._onHookError = config.onHookError;
 	}
 
 	// =========================================================================
@@ -141,6 +163,9 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		// Emit to hooks first
+		await this._emitHookEvent(event);
+
 		// Notify all listeners
 		this._emit(event);
 
@@ -167,13 +192,82 @@ export class AgentSession {
 		}
 	};
 
+	/** Emit hook events based on agent events */
+	private async _emitHookEvent(event: AgentEvent): Promise<void> {
+		if (!this._hookRunner) return;
+
+		if (event.type === "agent_start") {
+			this._turnIndex = 0;
+			await this._hookRunner.emit({ type: "agent_start" });
+		} else if (event.type === "agent_end") {
+			await this._hookRunner.emit({ type: "agent_end", messages: event.messages });
+		} else if (event.type === "turn_start") {
+			const hookEvent: TurnStartEvent = {
+				type: "turn_start",
+				turnIndex: this._turnIndex,
+				timestamp: Date.now(),
+			};
+			await this._hookRunner.emit(hookEvent);
+		} else if (event.type === "turn_end") {
+			const hookEvent: TurnEndEvent = {
+				type: "turn_end",
+				turnIndex: this._turnIndex,
+				message: event.message,
+				toolResults: event.toolResults,
+			};
+			await this._hookRunner.emit(hookEvent);
+			this._turnIndex++;
+		}
+	}
+
+	/**
+	 * Initialize hooks from settings.
+	 * Called automatically on first subscribe, but can be called manually earlier.
+	 * Returns any errors encountered during hook loading.
+	 */
+	async initHooks(): Promise<Array<{ path: string; error: string }>> {
+		if (this._hooksInitialized) return [];
+		this._hooksInitialized = true;
+
+		// Skip if no UI context (hooks disabled)
+		if (!this._hookUIContext) return [];
+
+		const hookPaths = this.settingsManager.getHookPaths();
+		if (hookPaths.length === 0) return [];
+
+		const cwd = process.cwd();
+		const { hooks, errors } = await loadHooks(hookPaths, cwd);
+
+		if (hooks.length > 0) {
+			const timeout = this.settingsManager.getHookTimeout();
+			this._hookRunner = new HookRunner(hooks, this._hookUIContext, cwd, timeout);
+
+			// Subscribe to hook errors
+			if (this._onHookError) {
+				this._hookRunner.onError(this._onHookError);
+			}
+		}
+
+		return errors;
+	}
+
 	/**
 	 * Subscribe to agent events.
 	 * Session persistence is handled internally (saves messages on message_end).
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
+	 *
+	 * Note: Call initHooks() before subscribe() if you want to handle hook loading errors.
+	 * Otherwise hooks are initialized automatically on first subscribe.
 	 */
 	subscribe(listener: AgentSessionEventListener): () => void {
 		this._eventListeners.push(listener);
+
+		// Initialize hooks if not done yet (fire and forget - errors go to callback)
+		if (!this._hooksInitialized && this._hookUIContext) {
+			this.initHooks().catch(() => {
+				// Errors are reported via onHookError callback
+			});
+		}
 
 		// Set up agent subscription if not already done
 		if (!this._unsubscribeAgent) {
@@ -858,10 +952,14 @@ export class AgentSession {
 
 	/**
 	 * Create a branch from a specific entry index.
+	 * Emits branch event to hooks, which can control the branch behavior.
+	 *
 	 * @param entryIndex Index into session entries to branch from
-	 * @returns The text of the selected user message (for editor pre-fill)
+	 * @returns Object with:
+	 *   - selectedText: The text of the selected user message (for editor pre-fill)
+	 *   - skipped: True if a hook requested to skip conversation restore
 	 */
-	branch(entryIndex: number): string {
+	async branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }> {
 		const entries = this.sessionManager.loadEntries();
 		const selectedEntry = entries[entryIndex];
 
@@ -871,6 +969,21 @@ export class AgentSession {
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
 
+		// Emit branch event to hooks
+		let hookResult: BranchEventResult | undefined;
+		if (this._hookRunner?.hasHandlers("branch")) {
+			hookResult = await this._hookRunner.emit({
+				type: "branch",
+				targetTurnIndex: entryIndex,
+				entries,
+			});
+		}
+
+		// If hook says skip conversation restore, don't branch
+		if (hookResult?.skipConversationRestore) {
+			return { selectedText, skipped: true };
+		}
+
 		// Create branched session
 		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
 		this.sessionManager.setSessionFile(newSessionFile);
@@ -879,7 +992,7 @@ export class AgentSession {
 		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
 		this.agent.replaceMessages(loaded.messages);
 
-		return selectedText;
+		return { selectedText, skipped: false };
 	}
 
 	/**
@@ -995,5 +1108,36 @@ export class AgentSession {
 		}
 
 		return text.trim() || null;
+	}
+
+	// =========================================================================
+	// Hook System
+	// =========================================================================
+
+	/**
+	 * Check if hooks have handlers for a specific event type.
+	 */
+	hasHookHandlers(eventType: string): boolean {
+		return this._hookRunner?.hasHandlers(eventType) ?? false;
+	}
+
+	/**
+	 * Get the hook runner (for advanced use cases).
+	 */
+	get hookRunner(): HookRunner | null {
+		return this._hookRunner;
+	}
+
+	/**
+	 * Set hook UI context after construction.
+	 * Useful when the UI context depends on components not available at construction time.
+	 * Must be called before initHooks() or subscribe().
+	 */
+	setHookUIContext(context: HookUIContext, onError?: (error: HookError) => void): void {
+		if (this._hooksInitialized) {
+			throw new Error("Cannot set hook UI context after hooks have been initialized");
+		}
+		this._hookUIContext = context;
+		this._onHookError = onError;
 	}
 }

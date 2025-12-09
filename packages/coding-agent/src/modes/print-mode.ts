@@ -9,6 +9,28 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import type { HookUIContext } from "../core/hooks/index.js";
+
+/**
+ * Create a no-op hook UI context for print mode.
+ * Hooks can still run but can't prompt the user interactively.
+ */
+function createNoOpHookUIContext(): HookUIContext {
+	return {
+		async select() {
+			return null;
+		},
+		async confirm() {
+			return false;
+		},
+		async input() {
+			return null;
+		},
+		notify() {
+			// Silent in print mode
+		},
+	};
+}
 
 /**
  * Run in print (single-shot) mode.
@@ -27,6 +49,12 @@ export async function runPrintMode(
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 ): Promise<void> {
+	// Initialize hooks with no-op UI context (hooks run but can't prompt)
+	session.setHookUIContext(createNoOpHookUIContext(), (err) => {
+		console.error(`Hook error (${err.hookPath}): ${err.error}`);
+	});
+	await session.initHooks();
+
 	if (mode === "json") {
 		// Output all events as JSON
 		session.subscribe((event) => {

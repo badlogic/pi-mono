@@ -158,6 +158,33 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: string; success: false; error: string };
 
 // ============================================================================
+// Hook UI Events (stdout)
+// ============================================================================
+
+/** Emitted when a hook needs user input */
+export type RpcHookUIRequest =
+	| { type: "hook_ui_request"; id: string; method: "select"; title: string; options: string[] }
+	| { type: "hook_ui_request"; id: string; method: "confirm"; title: string; message: string }
+	| { type: "hook_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
+	| {
+			type: "hook_ui_request";
+			id: string;
+			method: "notify";
+			message: string;
+			notifyType?: "info" | "warning" | "error";
+	  };
+
+// ============================================================================
+// Hook UI Commands (stdin)
+// ============================================================================
+
+/** Response to a hook UI request */
+export type RpcHookUIResponse =
+	| { type: "hook_ui_response"; id: string; value: string }
+	| { type: "hook_ui_response"; id: string; confirmed: boolean }
+	| { type: "hook_ui_response"; id: string; cancelled: true };
+
+// ============================================================================
 // Helper type for extracting command types
 // ============================================================================
 

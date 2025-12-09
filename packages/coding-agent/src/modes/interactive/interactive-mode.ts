@@ -25,6 +25,7 @@ import {
 import { exec } from "child_process";
 import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
@@ -38,6 +39,8 @@ import { CompactionComponent } from "./components/compaction.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
+import { HookInputComponent } from "./components/hook-input.js";
+import { HookSelectorComponent } from "./components/hook-selector.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { QueueModeSelectorComponent } from "./components/queue-mode-selector.js";
@@ -97,6 +100,10 @@ export class InteractiveMode {
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | null = null;
 	private autoCompactionEscapeHandler?: () => void;
+
+	// Hook UI state
+	private hookSelector: HookSelectorComponent | null = null;
+	private hookInput: HookInputComponent | null = null;
 
 	// Convenience accessors
 	private get agent() {
@@ -242,6 +249,9 @@ export class InteractiveMode {
 		this.ui.start();
 		this.isInitialized = true;
 
+		// Initialize hooks with TUI-based UI context
+		await this.initHooks();
+
 		// Subscribe to agent events
 		this.subscribeToAgent();
 
@@ -257,6 +267,144 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 	}
+
+	// =========================================================================
+	// Hook System
+	// =========================================================================
+
+	/**
+	 * Initialize the hook system with TUI-based UI context.
+	 */
+	private async initHooks(): Promise<void> {
+		// Create hook UI context
+		const hookUIContext = this.createHookUIContext();
+
+		// Set context on session
+		this.session.setHookUIContext(hookUIContext, (error) => {
+			this.showHookError(error.hookPath, error.error);
+		});
+
+		// Initialize hooks and report any loading errors
+		const loadErrors = await this.session.initHooks();
+		for (const { path, error } of loadErrors) {
+			this.showHookError(path, error);
+		}
+	}
+
+	/**
+	 * Create the UI context for hooks.
+	 */
+	private createHookUIContext(): HookUIContext {
+		return {
+			select: (title, options) => this.showHookSelector(title, options),
+			confirm: (title, message) => this.showHookConfirm(title, message),
+			input: (title, placeholder) => this.showHookInput(title, placeholder),
+			notify: (message, type) => this.showHookNotify(message, type),
+		};
+	}
+
+	/**
+	 * Show a selector for hooks.
+	 */
+	private showHookSelector(title: string, options: string[]): Promise<string | null> {
+		return new Promise((resolve) => {
+			this.hookSelector = new HookSelectorComponent(
+				title,
+				options,
+				(option) => {
+					this.hideHookSelector();
+					resolve(option);
+				},
+				() => {
+					this.hideHookSelector();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.hookSelector);
+			this.ui.setFocus(this.hookSelector);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the hook selector.
+	 */
+	private hideHookSelector(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.hookSelector = null;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a confirmation dialog for hooks.
+	 */
+	private async showHookConfirm(title: string, message: string): Promise<boolean> {
+		const result = await this.showHookSelector(`${title}\n${message}`, ["Yes", "No"]);
+		return result === "Yes";
+	}
+
+	/**
+	 * Show a text input for hooks.
+	 */
+	private showHookInput(title: string, placeholder?: string): Promise<string | null> {
+		return new Promise((resolve) => {
+			this.hookInput = new HookInputComponent(
+				title,
+				placeholder,
+				(value) => {
+					this.hideHookInput();
+					resolve(value);
+				},
+				() => {
+					this.hideHookInput();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.hookInput);
+			this.ui.setFocus(this.hookInput);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the hook input.
+	 */
+	private hideHookInput(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.hookInput = null;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a notification for hooks.
+	 */
+	private showHookNotify(message: string, type?: "info" | "warning" | "error"): void {
+		const color = type === "error" ? "error" : type === "warning" ? "warning" : "dim";
+		const text = new Text(theme.fg(color, `[Hook] ${message}`), 1, 0);
+		this.chatContainer.addChild(text);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a hook error in the UI.
+	 */
+	private showHookError(hookPath: string, error: string): void {
+		const errorText = new Text(theme.fg("error", `Hook "${hookPath}" error: ${error}`), 1, 0);
+		this.chatContainer.addChild(errorText);
+		this.ui.requestRender();
+	}
+
+	// =========================================================================
+	// Key Handlers
+	// =========================================================================
 
 	private setupKeyHandlers(): void {
 		this.editor.onEscape = () => {
@@ -1029,12 +1177,18 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new UserMessageSelectorComponent(
 				userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
-				(entryIndex) => {
-					const selectedText = this.session.branch(entryIndex);
+				async (entryIndex) => {
+					const result = await this.session.branch(entryIndex);
+					if (result.skipped) {
+						// Hook requested to skip conversation restore
+						done();
+						this.ui.requestRender();
+						return;
+					}
 					this.chatContainer.clear();
 					this.isFirstUserMessage = true;
 					this.renderInitialMessages(this.session.state);
-					this.editor.setText(selectedText);
+					this.editor.setText(result.selectedText);
 					done();
 					this.showStatus("Branched to new session");
 				},
