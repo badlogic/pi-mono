@@ -23,7 +23,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import type { AgentSession } from "../../core/agent-session.js";
-import { type BashExecutionMessage, isBashExecutionMessage } from "../../core/messages.js";
+import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
 import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../core/session-manager.js";
