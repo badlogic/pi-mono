@@ -238,7 +238,7 @@ export async function main(args: string[]) {
 	// Handle session restoration
 	let modelFallbackMessage: string | null = null;
 
-	if (parsed.continue || parsed.resume) {
+	if (parsed.continue || parsed.resume || parsed.session) {
 		const savedModel = sessionManager.loadModel();
 		if (savedModel) {
 			const result = await restoreModelFromSession(
@@ -309,8 +309,8 @@ export async function main(args: string[]) {
 		agent.setThinkingLevel("off");
 	}
 
-	// Load previous messages if continuing or resuming
-	if (parsed.continue || parsed.resume) {
+	// Load previous messages if continuing, resuming, or using --session
+	if (parsed.continue || parsed.resume || parsed.session) {
 		const messages = sessionManager.loadMessages();
 		if (messages.length > 0) {
 			agent.replaceMessages(messages);
