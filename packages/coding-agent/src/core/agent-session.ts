@@ -14,21 +14,13 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";
-import {
-	type BranchEventResult,
-	type HookError,
-	HookRunner,
-	type HookUIContext,
-	loadHooks,
-	type TurnEndEvent,
-	type TurnStartEvent,
-} from "./hooks/index.js";
+import type { BranchEventResult, HookRunner, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
@@ -56,10 +48,8 @@ export interface AgentSessionConfig {
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 	/** File-based slash commands for expansion */
 	fileCommands?: FileSlashCommand[];
-	/** UI context for hooks. If not provided, hooks are disabled. */
-	hookUIContext?: HookUIContext;
-	/** Callback for hook errors */
-	onHookError?: (error: HookError) => void;
+	/** Hook runner (created in main.ts with wrapped tools) */
+	hookRunner?: HookRunner | null;
 }
 
 /** Options for AgentSession.prompt() */
@@ -132,9 +122,6 @@ export class AgentSession {
 
 	// Hook system
 	private _hookRunner: HookRunner | null = null;
-	private _hookUIContext?: HookUIContext;
-	private _onHookError?: (error: HookError) => void;
-	private _hooksInitialized = false;
 	private _turnIndex = 0;
 
 	constructor(config: AgentSessionConfig) {
@@ -143,8 +130,7 @@ export class AgentSession {
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];
-		this._hookUIContext = config.hookUIContext;
-		this._onHookError = config.onHookError;
+		this._hookRunner = config.hookRunner ?? null;
 	}
 
 	// =========================================================================
@@ -163,6 +149,20 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		// When a user message starts, check if it's from the queue and remove it BEFORE emitting
+		// This ensures the UI sees the updated queue state
+		if (event.type === "message_start" && event.message.role === "user" && this._queuedMessages.length > 0) {
+			// Extract text content from the message
+			const messageText = this._getUserMessageText(event.message);
+			if (messageText && this._queuedMessages.includes(messageText)) {
+				// Remove the first occurrence of this message from the queue
+				const index = this._queuedMessages.indexOf(messageText);
+				if (index !== -1) {
+					this._queuedMessages.splice(index, 1);
+				}
+			}
+		}
+
 		// Emit to hooks first
 		await this._emitHookEvent(event);
 
@@ -191,6 +191,15 @@ export class AgentSession {
 			await this._handleAgentEndCompaction(msg);
 		}
 	};
+
+	/** Extract text content from a message */
+	private _getUserMessageText(message: Message): string {
+		if (message.role !== "user") return "";
+		const content = message.content;
+		if (typeof content === "string") return content;
+		const textBlocks = content.filter((c) => c.type === "text");
+		return textBlocks.map((c) => (c as TextContent).text).join("");
+	}
 
 	/** Emit hook events based on agent events */
 	private async _emitHookEvent(event: AgentEvent): Promise<void> {
@@ -221,53 +230,12 @@ export class AgentSession {
 	}
 
 	/**
-	 * Initialize hooks from settings.
-	 * Called automatically on first subscribe, but can be called manually earlier.
-	 * Returns any errors encountered during hook loading.
-	 */
-	async initHooks(): Promise<Array<{ path: string; error: string }>> {
-		if (this._hooksInitialized) return [];
-		this._hooksInitialized = true;
-
-		// Skip if no UI context (hooks disabled)
-		if (!this._hookUIContext) return [];
-
-		const hookPaths = this.settingsManager.getHookPaths();
-		if (hookPaths.length === 0) return [];
-
-		const cwd = process.cwd();
-		const { hooks, errors } = await loadHooks(hookPaths, cwd);
-
-		if (hooks.length > 0) {
-			const timeout = this.settingsManager.getHookTimeout();
-			this._hookRunner = new HookRunner(hooks, this._hookUIContext, cwd, timeout);
-
-			// Subscribe to hook errors
-			if (this._onHookError) {
-				this._hookRunner.onError(this._onHookError);
-			}
-		}
-
-		return errors;
-	}
-
-	/**
 	 * Subscribe to agent events.
 	 * Session persistence is handled internally (saves messages on message_end).
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
-	 *
-	 * Note: Call initHooks() before subscribe() if you want to handle hook loading errors.
-	 * Otherwise hooks are initialized automatically on first subscribe.
 	 */
 	subscribe(listener: AgentSessionEventListener): () => void {
 		this._eventListeners.push(listener);
-
-		// Initialize hooks if not done yet (fire and forget - errors go to callback)
-		if (!this._hooksInitialized && this._hookUIContext) {
-			this.initHooks().catch(() => {
-				// Errors are reported via onHookError callback
-			});
-		}
 
 		// Set up agent subscription if not already done
 		if (!this._unsubscribeAgent) {
@@ -972,11 +940,11 @@ export class AgentSession {
 		// Emit branch event to hooks
 		let hookResult: BranchEventResult | undefined;
 		if (this._hookRunner?.hasHandlers("branch")) {
-			hookResult = await this._hookRunner.emit({
+			hookResult = (await this._hookRunner.emit({
 				type: "branch",
 				targetTurnIndex: entryIndex,
 				entries,
-			});
+			})) as BranchEventResult | undefined;
 		}
 
 		// If hook says skip conversation restore, don't branch
@@ -1122,22 +1090,9 @@ export class AgentSession {
 	}
 
 	/**
-	 * Get the hook runner (for advanced use cases).
+	 * Get the hook runner (for setting UI context and error handlers).
 	 */
 	get hookRunner(): HookRunner | null {
 		return this._hookRunner;
-	}
-
-	/**
-	 * Set hook UI context after construction.
-	 * Useful when the UI context depends on components not available at construction time.
-	 * Must be called before initHooks() or subscribe().
-	 */
-	setHookUIContext(context: HookUIContext, onError?: (error: HookError) => void): void {
-		if (this._hooksInitialized) {
-			throw new Error("Cannot set hook UI context after hooks have been initialized");
-		}
-		this._hookUIContext = context;
-		this._onHookError = onError;
 	}
 }
