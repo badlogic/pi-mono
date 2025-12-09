@@ -84,7 +84,7 @@ export async function runRpcMode(session: AgentSession, settingsManager?: Settin
 			if (event.type === "agent_start") {
 				await hookRunner.emit({ type: "agent_start" });
 			} else if (event.type === "agent_end") {
-				await hookRunner.emit({ type: "agent_end", messages: session.messages });
+				await hookRunner.emit({ type: "agent_end", messages: event.messages });
 				turnIndex = 0; // Reset turn index on session end
 			} else if (event.type === "turn_start") {
 				const hookEvent: TurnStartEvent = {

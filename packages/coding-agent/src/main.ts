@@ -377,7 +377,7 @@ export async function main(args: string[]) {
 		);
 	} else {
 		// Non-interactive mode (--print flag or --mode flag)
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
+		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments, settingsManager);
 	}
 }
 

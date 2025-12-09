@@ -9,6 +9,8 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import { HookRunner, loadHooks, NoopUIAdapter, type TurnEndEvent, type TurnStartEvent } from "../core/hooks/index.js";
+import type { SettingsManager } from "../core/settings-manager.js";
 
 /**
  * Run in print (single-shot) mode.
@@ -26,13 +28,65 @@ export async function runPrintMode(
 	messages: string[],
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
+	settingsManager?: SettingsManager,
 ): Promise<void> {
-	if (mode === "json") {
-		// Output all events as JSON
-		session.subscribe((event) => {
-			console.log(JSON.stringify(event));
-		});
+	// Initialize hooks if settings manager provided
+	let hookRunner: HookRunner | null = null;
+	if (settingsManager) {
+		const hookPaths = settingsManager.getHookPaths();
+		if (hookPaths.length > 0) {
+			const cwd = process.cwd();
+			const { hooks, errors } = await loadHooks(hookPaths, cwd, "headless", false);
+
+			for (const { path, error } of errors) {
+				console.error(`Failed to load hook "${path}": ${error}`);
+			}
+
+			if (hooks.length > 0) {
+				const timeout = settingsManager.getHookTimeout();
+				hookRunner = new HookRunner(hooks, NoopUIAdapter, cwd, timeout);
+
+				hookRunner.onError((err) => {
+					console.error(`Hook "${err.hookPath}" error on ${err.event}: ${err.error}`);
+				});
+			}
+		}
 	}
+
+	// Track turn index for hooks
+	let turnIndex = 0;
+
+	// Subscribe to events (output JSON in json mode, emit to hooks in both modes)
+	session.subscribe(async (event) => {
+		if (mode === "json") {
+			console.log(JSON.stringify(event));
+		}
+
+		// Emit to hooks
+		if (hookRunner) {
+			if (event.type === "agent_start") {
+				await hookRunner.emit({ type: "agent_start" });
+			} else if (event.type === "agent_end") {
+				await hookRunner.emit({ type: "agent_end", messages: event.messages });
+			} else if (event.type === "turn_start") {
+				const hookEvent: TurnStartEvent = {
+					type: "turn_start",
+					turnIndex,
+					timestamp: Date.now(),
+				};
+				await hookRunner.emit(hookEvent);
+			} else if (event.type === "turn_end") {
+				const hookEvent: TurnEndEvent = {
+					type: "turn_end",
+					turnIndex,
+					message: event.message,
+					toolResults: event.toolResults,
+				};
+				await hookRunner.emit(hookEvent);
+				turnIndex++;
+			}
+		}
+	});
 
 	// Send initial message with attachments
 	if (initialMessage) {
