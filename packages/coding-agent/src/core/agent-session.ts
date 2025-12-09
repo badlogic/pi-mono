@@ -888,12 +888,25 @@ export class AgentSession {
 	 * Listeners are preserved and will continue receiving events.
 	 */
 	async switchSession(sessionPath: string): Promise<void> {
+		const previousSessionFile = this.sessionFile;
+
 		this._disconnectFromAgent();
 		await this.abort();
 		this._queuedMessages = [];
 
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
+
+		// Emit session_switch event
+		if (this._hookRunner) {
+			this._hookRunner.setSessionFile(sessionPath);
+			await this._hookRunner.emit({
+				type: "session_switch",
+				newSessionFile: sessionPath,
+				previousSessionFile,
+				reason: "switch",
+			});
+		}
 
 		// Reload messages
 		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
@@ -928,6 +941,7 @@ export class AgentSession {
 	 *   - skipped: True if a hook requested to skip conversation restore
 	 */
 	async branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }> {
+		const previousSessionFile = this.sessionFile;
 		const entries = this.sessionManager.loadEntries();
 		const selectedEntry = entries[entryIndex];
 
@@ -955,6 +969,17 @@ export class AgentSession {
 		// Create branched session
 		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
 		this.sessionManager.setSessionFile(newSessionFile);
+
+		// Emit session_switch event
+		if (this._hookRunner) {
+			this._hookRunner.setSessionFile(newSessionFile);
+			await this._hookRunner.emit({
+				type: "session_switch",
+				newSessionFile,
+				previousSessionFile,
+				reason: "branch",
+			});
+		}
 
 		// Reload
 		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());

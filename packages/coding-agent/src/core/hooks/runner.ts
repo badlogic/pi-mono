@@ -3,8 +3,18 @@
  */
 
 import { spawn } from "node:child_process";
-import type { LoadedHook } from "./loader.js";
-import type { BranchEventResult, ExecResult, HookError, HookEvent, HookEventContext, HookUIContext } from "./types.js";
+import type { LoadedHook, SendHandler } from "./loader.js";
+import type {
+	BranchEventResult,
+	ExecResult,
+	HookError,
+	HookEvent,
+	HookEventContext,
+	HookUIContext,
+	ToolCallEvent,
+	ToolCallEventResult,
+	ToolResultEventResult,
+} from "./types.js";
 
 /**
  * Default timeout for hook execution (30 seconds).
@@ -58,21 +68,66 @@ function createTimeout(ms: number): { promise: Promise<never>; clear: () => void
 	};
 }
 
+/** No-op UI context used when no UI is available */
+const noOpUIContext: HookUIContext = {
+	select: async () => null,
+	confirm: async () => false,
+	input: async () => null,
+	notify: () => {},
+};
+
 /**
  * HookRunner executes hooks and manages event emission.
  */
 export class HookRunner {
 	private hooks: LoadedHook[];
 	private uiContext: HookUIContext;
+	private hasUI: boolean;
 	private cwd: string;
+	private sessionFile: string | null;
 	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 
-	constructor(hooks: LoadedHook[], uiContext: HookUIContext, cwd: string, timeout: number = DEFAULT_TIMEOUT) {
+	constructor(hooks: LoadedHook[], cwd: string, timeout: number = DEFAULT_TIMEOUT) {
 		this.hooks = hooks;
-		this.uiContext = uiContext;
+		this.uiContext = noOpUIContext;
+		this.hasUI = false;
 		this.cwd = cwd;
+		this.sessionFile = null;
 		this.timeout = timeout;
+	}
+
+	/**
+	 * Set the UI context for hooks.
+	 * Call this when the mode initializes and UI is available.
+	 */
+	setUIContext(uiContext: HookUIContext, hasUI: boolean): void {
+		this.uiContext = uiContext;
+		this.hasUI = hasUI;
+	}
+
+	/**
+	 * Get the paths of all loaded hooks.
+	 */
+	getHookPaths(): string[] {
+		return this.hooks.map((h) => h.path);
+	}
+
+	/**
+	 * Set the session file path.
+	 */
+	setSessionFile(sessionFile: string | null): void {
+		this.sessionFile = sessionFile;
+	}
+
+	/**
+	 * Set the send handler for all hooks' pi.send().
+	 * Call this when the mode initializes.
+	 */
+	setSendHandler(handler: SendHandler): void {
+		for (const hook of this.hooks) {
+			hook.setSendHandler(handler);
+		}
 	}
 
 	/**
@@ -113,17 +168,19 @@ export class HookRunner {
 		return {
 			exec: (command: string, args: string[]) => exec(command, args, this.cwd),
 			ui: this.uiContext,
+			hasUI: this.hasUI,
 			cwd: this.cwd,
+			sessionFile: this.sessionFile,
 		};
 	}
 
 	/**
 	 * Emit an event to all hooks.
-	 * Returns the result from branch events (if any handler returns one).
+	 * Returns the result from branch/tool_result events (if any handler returns one).
 	 */
-	async emit(event: HookEvent): Promise<BranchEventResult | undefined> {
+	async emit(event: HookEvent): Promise<BranchEventResult | ToolResultEventResult | undefined> {
 		const ctx = this.createContext();
-		let result: BranchEventResult | undefined;
+		let result: BranchEventResult | ToolResultEventResult | undefined;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get(event.type);
@@ -132,14 +189,17 @@ export class HookRunner {
 			for (const handler of handlers) {
 				try {
 					const timeout = createTimeout(this.timeout);
-
 					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-
 					timeout.clear();
 
 					// For branch events, capture the result
 					if (event.type === "branch" && handlerResult) {
 						result = handlerResult as BranchEventResult;
+					}
+
+					// For tool_result events, capture the result
+					if (event.type === "tool_result" && handlerResult) {
+						result = handlerResult as ToolResultEventResult;
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -148,6 +208,36 @@ export class HookRunner {
 						event: event.type,
 						error: message,
 					});
+				}
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Emit a tool_call event to all hooks.
+	 * No timeout - user prompts can take as long as needed.
+	 * Errors are thrown (not swallowed) so caller can block on failure.
+	 */
+	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
+		const ctx = this.createContext();
+		let result: ToolCallEventResult | undefined;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("tool_call");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				// No timeout - let user take their time
+				const handlerResult = await handler(event, ctx);
+
+				if (handlerResult) {
+					result = handlerResult as ToolCallEventResult;
+					// If blocked, stop processing further hooks
+					if (result.block) {
+						return result;
+					}
 				}
 			}
 		}

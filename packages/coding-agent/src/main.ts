@@ -10,13 +10,14 @@ import { selectSession } from "./cli/session-picker.js";
 import { getModelsPath, VERSION } from "./config.js";
 import { AgentSession } from "./core/agent-session.js";
 import { exportFromFile } from "./core/export-html.js";
+import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hooks/index.js";
 import { messageTransformer } from "./core/messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
 import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { loadSlashCommands } from "./core/slash-commands.js";
-import { buildSystemPrompt, loadProjectContextFiles } from "./core/system-prompt.js";
+import { buildSystemPrompt } from "./core/system-prompt.js";
 import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";
@@ -270,7 +271,30 @@ export async function main(args: string[]) {
 	}
 
 	// Determine which tools to use
-	const selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
+	let selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
+
+	// Discover and load hooks from:
+	// 1. ~/.pi/agent/hooks/*.ts (global)
+	// 2. cwd/.pi/hooks/*.ts (project-local)
+	// 3. Explicit paths in settings.json
+	// 4. CLI --hook flags
+	let hookRunner: HookRunner | null = null;
+	const cwd = process.cwd();
+	const configuredHookPaths = [...settingsManager.getHookPaths(), ...(parsed.hooks ?? [])];
+	const { hooks, errors } = await discoverAndLoadHooks(configuredHookPaths, cwd);
+
+	// Report hook loading errors
+	for (const { path, error } of errors) {
+		console.error(chalk.red(`Failed to load hook "${path}": ${error}`));
+	}
+
+	if (hooks.length > 0) {
+		const timeout = settingsManager.getHookTimeout();
+		hookRunner = new HookRunner(hooks, cwd, timeout);
+
+		// Wrap tools with hook callbacks
+		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
+	}
 
 	// Create agent
 	const agent = new Agent({
@@ -317,17 +341,6 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Log loaded context files
-	if (shouldPrintMessages && !parsed.continue && !parsed.resume) {
-		const contextFiles = loadProjectContextFiles();
-		if (contextFiles.length > 0) {
-			console.log(chalk.dim("Loaded project context from:"));
-			for (const { path: filePath } of contextFiles) {
-				console.log(chalk.dim(`  - ${filePath}`));
-			}
-		}
-	}
-
 	// Load file commands for slash command expansion
 	const fileCommands = loadSlashCommands();
 
@@ -338,6 +351,7 @@ export async function main(args: string[]) {
 		settingsManager,
 		scopedModels,
 		fileCommands,
+		hookRunner,
 	});
 
 	// Route to appropriate mode

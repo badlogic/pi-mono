@@ -3,6 +3,9 @@
 		{
 			"name": "pi-mono",
 			"path": "."
+		},
+		{
+			"path": "../../.pi/hooks"
 		}
 	],
 	"settings": {}

@@ -121,11 +121,27 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	});
 
 	// Set up hooks with RPC-based UI context
-	const hookUIContext = createHookUIContext();
-	session.setHookUIContext(hookUIContext, (err) => {
-		output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
-	});
-	await session.initHooks();
+	const hookRunner = session.hookRunner;
+	if (hookRunner) {
+		hookRunner.setUIContext(createHookUIContext(), false);
+		hookRunner.setSessionFile(session.sessionFile);
+		hookRunner.onError((err) => {
+			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
+		});
+		// Set up send handler for pi.send()
+		hookRunner.setSendHandler((text, attachments) => {
+			// In RPC mode, just queue or prompt based on streaming state
+			if (session.isStreaming) {
+				session.queueMessage(text);
+			} else {
+				session.prompt(text, { attachments }).catch((e) => {
+					output(error(undefined, "hook_send", e.message));
+				});
+			}
+		});
+		// Emit session_start event
+		await hookRunner.emit({ type: "session_start" });
+	}
 
 	// Output all agent events as JSON
 	session.subscribe((event) => {

@@ -24,6 +24,7 @@ export interface Args {
 	session?: string;
 	models?: string[];
 	tools?: ToolName[];
+	hooks?: string[];
 	print?: boolean;
 	export?: string;
 	messages: string[];
@@ -100,6 +101,9 @@ export function parseArgs(args: string[]): Args {
 			result.print = true;
 		} else if (arg === "--export" && i + 1 < args.length) {
 			result.export = args[++i];
+		} else if (arg === "--hook" && i + 1 < args.length) {
+			result.hooks = result.hooks ?? [];
+			result.hooks.push(args[++i]);
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (!arg.startsWith("-")) {
@@ -132,6 +136,7 @@ ${chalk.bold("Options:")}
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --hook <path>                  Load a hook file (can be used multiple times)
   --export <file>                Export session file to HTML and exit
   --help, -h                     Show this help
 

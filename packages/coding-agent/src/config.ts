@@ -70,6 +70,11 @@ export function getReadmePath(): string {
 	return resolve(join(getPackageDir(), "README.md"));
 }
 
+/** Get path to docs directory */
+export function getDocsPath(): string {
+	return resolve(join(getPackageDir(), "docs"));
+}
+
 /** Get path to CHANGELOG.md */
 export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));

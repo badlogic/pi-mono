@@ -5,7 +5,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -30,6 +30,7 @@ import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
 import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../core/session-manager.js";
+import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -276,24 +277,43 @@ export class InteractiveMode {
 	 * Initialize the hook system with TUI-based UI context.
 	 */
 	private async initHooks(): Promise<void> {
-		const hookPaths = this.settingsManager.getHookPaths();
-		if (hookPaths.length === 0) {
-			return; // No hooks configured
+		// Show loaded project context files
+		const contextFiles = loadProjectContextFiles();
+		if (contextFiles.length > 0) {
+			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Create hook UI context
-		const hookUIContext = this.createHookUIContext();
+		const hookRunner = this.session.hookRunner;
+		if (!hookRunner) {
+			return; // No hooks loaded
+		}
 
-		// Set context on session
-		this.session.setHookUIContext(hookUIContext, (error) => {
+		// Set TUI-based UI context on the hook runner
+		hookRunner.setUIContext(this.createHookUIContext(), true);
+		hookRunner.setSessionFile(this.session.sessionFile);
+
+		// Subscribe to hook errors
+		hookRunner.onError((error) => {
 			this.showHookError(error.hookPath, error.error);
 		});
 
-		// Initialize hooks and report any loading errors
-		const loadErrors = await this.session.initHooks();
-		for (const { path, error } of loadErrors) {
-			this.showHookError(path, error);
+		// Set up send handler for pi.send()
+		hookRunner.setSendHandler((text, attachments) => {
+			this.handleHookSend(text, attachments);
+		});
+
+		// Show loaded hooks
+		const hookPaths = hookRunner.getHookPaths();
+		if (hookPaths.length > 0) {
+			const hookList = hookPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded hooks:\n") + hookList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
 		}
+
+		// Emit session_start event
+		await hookRunner.emit({ type: "session_start" });
 	}
 
 	/**
@@ -392,10 +412,13 @@ export class InteractiveMode {
 	 * Show a notification for hooks.
 	 */
 	private showHookNotify(message: string, type?: "info" | "warning" | "error"): void {
-		const color = type === "error" ? "error" : type === "warning" ? "warning" : "dim";
-		const text = new Text(theme.fg(color, `[Hook] ${message}`), 1, 0);
-		this.chatContainer.addChild(text);
-		this.ui.requestRender();
+		if (type === "error") {
+			this.showError(message);
+		} else if (type === "warning") {
+			this.showWarning(message);
+		} else {
+			this.showStatus(message);
+		}
 	}
 
 	/**
@@ -405,6 +428,23 @@ export class InteractiveMode {
 		const errorText = new Text(theme.fg("error", `Hook "${hookPath}" error: ${error}`), 1, 0);
 		this.chatContainer.addChild(errorText);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Handle pi.send() from hooks.
+	 * If streaming, queue the message. Otherwise, start a new agent loop.
+	 */
+	private handleHookSend(text: string, attachments?: Attachment[]): void {
+		if (this.session.isStreaming) {
+			// Queue the message for later (note: attachments are lost when queuing)
+			this.session.queueMessage(text);
+			this.updatePendingMessagesDisplay();
+		} else {
+			// Start a new agent loop immediately
+			this.session.prompt(text, { attachments }).catch((err) => {
+				this.showError(err instanceof Error ? err.message : String(err));
+			});
+		}
 	}
 
 	// =========================================================================

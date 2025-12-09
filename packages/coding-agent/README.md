@@ -26,6 +26,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Custom Models and Providers](#custom-models-and-providers)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
+  - [Hooks](#hooks)
   - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
@@ -461,6 +462,57 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 **Namespacing:** Subdirectories create prefixes. `.pi/commands/frontend/component.md` → `/component (project:frontend)`
 
+### Hooks
+
+Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. Use them to:
+
+- **Block dangerous commands** (permission gates for `rm -rf`, `sudo`, etc.)
+- **Checkpoint code state** (git stash at each turn, restore on `/branch`)
+- **Protect paths** (block writes to `.env`, `node_modules/`, etc.)
+- **Modify tool output** (filter or transform results before the LLM sees them)
+- **Inject messages from external sources** (file watchers, webhooks, CI systems)
+
+**Hook locations:**
+- Global: `~/.pi/agent/hooks/*.ts`
+- Project: `.pi/hooks/*.ts`
+- CLI: `--hook <path>` (for debugging)
+
+**Quick example** (permission gate):
+
+```typescript
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: HookAPI) {
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName === "bash" && /sudo/.test(event.input.command as string)) {
+      const ok = await ctx.ui.confirm("Allow sudo?", event.input.command as string);
+      if (!ok) return { block: true, reason: "Blocked by user" };
+    }
+    return undefined;
+  });
+}
+```
+
+**Sending messages from hooks:**
+
+Use `pi.send(text, attachments?)` to inject messages into the session. If the agent is streaming, the message is queued; otherwise a new agent loop starts immediately.
+
+```typescript
+import * as fs from "node:fs";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: HookAPI) {
+  pi.on("session_start", async () => {
+    fs.watch("/tmp/trigger.txt", () => {
+      const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
+      if (content) pi.send(content);
+    });
+  });
+}
+```
+
+See [Hooks Documentation](docs/hooks.md) for full API reference.
+
 ### Settings File
 
 `~/.pi/agent/settings.json` stores persistent preferences:
@@ -504,6 +556,7 @@ pi [options] [@files...] [messages...]
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
+| `--hook <path>` | Load a hook file (can be used multiple times) |
 | `--export <file> [output]` | Export session to HTML |
 | `--help`, `-h` | Show help |
 

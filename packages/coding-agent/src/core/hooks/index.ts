@@ -1,5 +1,6 @@
-export { type LoadedHook, type LoadHooksResult, loadHooks } from "./loader.js";
+export { discoverAndLoadHooks, type LoadedHook, type LoadHooksResult, loadHooks, type SendHandler } from "./loader.js";
 export { type HookErrorListener, HookRunner } from "./runner.js";
+export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -12,6 +13,12 @@ export type {
 	HookEventContext,
 	HookFactory,
 	HookUIContext,
+	SessionStartEvent,
+	SessionSwitchEvent,
+	ToolCallEvent,
+	ToolCallEventResult,
+	ToolResultEvent,
+	ToolResultEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./types.js";

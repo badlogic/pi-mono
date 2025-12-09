@@ -9,6 +9,12 @@ export type {
 	HookEventContext,
 	HookFactory,
 	HookUIContext,
+	SessionStartEvent,
+	SessionSwitchEvent,
+	ToolCallEvent,
+	ToolCallEventResult,
+	ToolResultEvent,
+	ToolResultEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./core/hooks/index.js";

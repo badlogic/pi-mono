@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir, getReadmePath } from "../config.js";
+import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */
@@ -148,8 +148,9 @@ export function buildSystemPrompt(
 		return prompt;
 	}
 
-	// Get absolute path to README.md
+	// Get absolute paths to documentation
 	const readmePath = getReadmePath();
+	const docsPath = getDocsPath();
 
 	// Build tools list based on selected tools
 	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);
@@ -223,7 +224,8 @@ ${guidelines}
 
 Documentation:
 - Your own documentation (including custom model setup and theme creation) is at: ${readmePath}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.`;
+- Additional documentation (hooks, themes, RPC, etc.) is in: ${docsPath}
+- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, create a custom theme, or write a hook.`;
 
 	if (appendSection) {
 		prompt += appendSection;
