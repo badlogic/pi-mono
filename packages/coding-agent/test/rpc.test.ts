@@ -172,7 +172,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		// Find assistant's response
 		const messageEndEvents = events.filter((e) => e.type === "message_end") as AgentEvent[];
 		const assistantMessage = messageEndEvents.find(
-			(e) => e.type === "message_end" && (e as any).message?.role === "assistant",
+			(e) => e.type === "message_end" && e.message?.role === "assistant",
 		) as any;
 
 		expect(assistantMessage).toBeDefined();

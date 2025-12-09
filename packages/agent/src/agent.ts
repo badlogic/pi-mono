@@ -255,25 +255,20 @@ export class Agent {
 				cfg,
 				this.abortController.signal,
 			)) {
-				// Pass through all events directly
-				this.emit(ev as AgentEvent);
-
-				// Update internal state as needed
+				// Update internal state BEFORE emitting events
+				// so handlers see consistent state
 				switch (ev.type) {
 					case "message_start": {
-						// Track streaming message
 						partial = ev.message;
 						this._state.streamMessage = ev.message;
 						break;
 					}
 					case "message_update": {
-						// Update streaming message
 						partial = ev.message;
 						this._state.streamMessage = ev.message;
 						break;
 					}
 					case "message_end": {
-						// Add completed message to state
 						partial = null;
 						this._state.streamMessage = null;
 						this.appendMessage(ev.message as AppMessage);
@@ -293,7 +288,6 @@ export class Agent {
 						break;
 					}
 					case "turn_end": {
-						// Capture error from turn_end event
 						if (ev.message.role === "assistant" && ev.message.errorMessage) {
 							this._state.error = ev.message.errorMessage;
 						}
@@ -304,6 +298,9 @@ export class Agent {
 						break;
 					}
 				}
+
+				// Emit after state is updated
+				this.emit(ev as AgentEvent);
 			}
 
 			// Handle any remaining partial message
