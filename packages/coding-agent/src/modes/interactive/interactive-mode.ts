@@ -23,6 +23,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
+import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession } from "../../core/agent-session.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
@@ -31,7 +32,6 @@ import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
-import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../utils/config.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { CompactionComponent } from "./components/compaction.js";

@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { selectSession } from "./cli/session-picker.js";
+import { getModelsPath, VERSION } from "./config.js";
 import { AgentSession } from "./core/agent-session.js";
 import { exportFromFile } from "./core/export-html.js";
 import { messageTransformer } from "./core/messages.js";
@@ -20,7 +21,6 @@ import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
-import { getModelsPath, VERSION } from "./utils/config.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
 /** Check npm registry for new version (non-blocking) */

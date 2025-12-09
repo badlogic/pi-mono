@@ -15,7 +15,7 @@
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
-import { getModelsPath } from "../utils/config.js";
+import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";

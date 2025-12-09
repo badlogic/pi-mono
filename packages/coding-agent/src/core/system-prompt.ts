@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir, getReadmePath } from "../utils/config.js";
+import { getAgentDir, getReadmePath } from "../config.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */

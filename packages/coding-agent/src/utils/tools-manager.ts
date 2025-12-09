@@ -5,7 +5,7 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
-import { APP_NAME, getToolsDir } from "./config.js";
+import { APP_NAME, getToolsDir } from "../config.js";
 
 const TOOLS_DIR = getToolsDir();
 
