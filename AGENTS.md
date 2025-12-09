@@ -110,11 +110,14 @@ packages/coding-agent/src/
 ├── modes/                    # Run mode implementations
 │   ├── index.ts              # Mode exports
 │   ├── print-mode.ts         # Non-interactive print mode
-│   ├── rpc-mode.ts           # RPC/JSON mode for programmatic use
-│   └── interactive/          # Interactive TUI mode
-│       ├── interactive-mode.ts   # InteractiveMode class
-│       ├── components/           # TUI components
-│       └── theme/                # Theme definitions
+│   ├── interactive/          # Interactive TUI mode
+│   │   ├── interactive-mode.ts   # InteractiveMode class
+│   │   ├── components/           # TUI components
+│   │   └── theme/                # Theme definitions
+│   └── rpc/                  # RPC/JSON mode for programmatic use
+│       ├── rpc-mode.ts           # RPC server (stdin/stdout JSON protocol)
+│       ├── rpc-types.ts          # RpcCommand, RpcResponse types
+│       └── rpc-client.ts         # RpcClient class for embedding
 
 └── utils/                    # Generic utilities
     ├── changelog.ts          # Changelog parsing
