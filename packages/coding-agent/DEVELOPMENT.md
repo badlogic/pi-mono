@@ -15,7 +15,7 @@ The coding-agent is structured into distinct layers:
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                       Mode Layer                            │
-│  modes/interactive/   modes/print-mode.ts   modes/rpc-mode.ts │
+│  modes/interactive/   modes/print-mode.ts   modes/rpc/     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -69,9 +69,12 @@ src/
 │       └── index.ts          # Tool exports, allTools, codingTools
 
 ├── modes/                    # Run mode implementations
-│   ├── index.ts              # Re-exports InteractiveMode, runPrintMode, runRpcMode
+│   ├── index.ts              # Re-exports InteractiveMode, runPrintMode, runRpcMode, RpcClient
 │   ├── print-mode.ts         # Non-interactive: process messages, print output, exit
-│   ├── rpc-mode.ts           # JSON-RPC mode for programmatic control
+│   ├── rpc/                  # RPC mode for programmatic control
+│   │   ├── rpc-mode.ts       # runRpcMode() - JSON stdin/stdout protocol
+│   │   ├── rpc-types.ts      # RpcCommand, RpcResponse, RpcSessionState types
+│   │   └── rpc-client.ts     # RpcClient class for spawning/controlling agent
 │   └── interactive/          # Interactive TUI mode
 │       ├── interactive-mode.ts   # InteractiveMode class
 │       ├── components/           # TUI components (editor, selectors, etc.)
@@ -119,6 +122,16 @@ Handles TUI rendering and user interaction:
 - Manages editor, selectors, key handlers
 - Delegates all business logic to AgentSession
 
+### RPC Mode (modes/rpc/)
+
+Headless operation via JSON protocol over stdin/stdout:
+
+- **rpc-mode.ts**: `runRpcMode()` function that listens for JSON commands on stdin and emits responses/events on stdout
+- **rpc-types.ts**: Typed protocol definitions (`RpcCommand`, `RpcResponse`, `RpcSessionState`)
+- **rpc-client.ts**: `RpcClient` class for spawning the agent as a subprocess and controlling it programmatically
+
+The RPC mode exposes the full AgentSession API via JSON commands. See [docs/RPC.md](docs/RPC.md) for protocol documentation.
+
 ### SessionManager (core/session-manager.ts)
 
 Handles session persistence:
@@ -146,6 +159,9 @@ npx tsx packages/coding-agent/src/cli.ts
 # With arguments
 npx tsx packages/coding-agent/src/cli.ts --help
 npx tsx packages/coding-agent/src/cli.ts -p "Hello"
+
+# RPC mode
+npx tsx packages/coding-agent/src/cli.ts --mode rpc --no-session
 ```
 
 ### Type Checking
@@ -180,6 +196,14 @@ npm run build:binary
 3. Add to `allTools` and optionally `codingTools`
 4. Add description to `toolDescriptions` in `core/system-prompt.ts`
 
+### Adding a New RPC Command
+
+1. Add command type to `RpcCommand` union in `rpc-types.ts`
+2. Add response type to `RpcResponse` union in `rpc-types.ts`
+3. Add handler case in `handleCommand()` switch in `rpc-mode.ts`
+4. Add client method in `RpcClient` class in `rpc-client.ts`
+5. Document in `docs/RPC.md`
+
 ### Adding a New Selector
 
 1. Create component in `modes/interactive/components/`
@@ -210,8 +234,14 @@ private showMySelector(): void {
 The package uses E2E tests only (no unit tests by design). Tests are in `test/`:
 
 ```bash
-# Run tests
+# Run all tests
 npm test
+
+# Run specific test pattern
+npm test -- --testNamePattern="RPC"
+
+# Run RPC example interactively
+npx tsx test/rpc-example.ts
 ```
 
 ## Code Style
