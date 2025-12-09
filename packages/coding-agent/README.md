@@ -206,7 +206,11 @@ You can add custom models and providers (like Ollama, vLLM, LM Studio, or any cu
           "input": ["text"],
           "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
           "contextWindow": 128000,
-          "maxTokens": 32000
+          "maxTokens": 32000,
+          "compat": {
+            "supportsDeveloperRole": false,
+            "supportsStore": false
+          }
         }
       ]
     },
