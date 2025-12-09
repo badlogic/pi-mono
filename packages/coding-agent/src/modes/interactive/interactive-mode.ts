@@ -276,6 +276,11 @@ export class InteractiveMode {
 	 * Initialize the hook system with TUI-based UI context.
 	 */
 	private async initHooks(): Promise<void> {
+		const hookPaths = this.settingsManager.getHookPaths();
+		if (hookPaths.length === 0) {
+			return; // No hooks configured
+		}
+
 		// Create hook UI context
 		const hookUIContext = this.createHookUIContext();
 
