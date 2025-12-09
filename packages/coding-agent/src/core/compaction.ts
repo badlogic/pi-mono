@@ -94,7 +94,11 @@ function findTurnBoundaries(entries: SessionEntry[], startIndex: number, endInde
 
 /**
  * Find the cut point in session entries that keeps approximately `keepRecentTokens`.
- * Returns the entry index of the first message to keep (a user message for turn integrity).
+ * Returns the entry index of the first entry to keep.
+ *
+ * The cut point targets a user message (turn boundary), but then scans backwards
+ * to include any preceding non-turn entries (bash executions, settings changes, etc.)
+ * that should logically be part of the kept context.
  *
  * Only considers entries between `startIndex` and `endIndex` (exclusive).
  */
@@ -148,6 +152,25 @@ export function findCutPoint(
 			}
 			break;
 		}
+	}
+
+	// Scan backwards from cutIndex to include any non-turn entries (bash, settings, etc.)
+	// that should logically be part of the kept context
+	while (cutIndex > startIndex) {
+		const prevEntry = entries[cutIndex - 1];
+		// Stop at compaction boundaries
+		if (prevEntry.type === "compaction") {
+			break;
+		}
+		if (prevEntry.type === "message") {
+			const role = prevEntry.message.role;
+			// Stop if we hit an assistant, user, or tool result (all part of previous turn)
+			if (role === "assistant" || role === "user" || role === "toolResult") {
+				break;
+			}
+		}
+		// Include this non-turn entry (bash, settings change, etc.)
+		cutIndex--;
 	}
 
 	return cutIndex;

@@ -135,6 +135,9 @@ export class AgentSession {
 		}
 	}
 
+	// Track last assistant message for auto-compaction check
+	private _lastAssistantMessage: AssistantMessage | null = null;
+
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
 		// Notify all listeners
@@ -149,10 +152,17 @@ export class AgentSession {
 				this.sessionManager.startSession(this.agent.state);
 			}
 
-			// Check auto-compaction after assistant messages
+			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
-				await this._runAutoCompaction();
+				this._lastAssistantMessage = event.message as AssistantMessage;
 			}
+		}
+
+		// Check auto-compaction after agent completes (after agent_end clears UI)
+		if (event.type === "agent_end" && this._lastAssistantMessage) {
+			const msg = this._lastAssistantMessage;
+			this._lastAssistantMessage = null;
+			this._runAutoCompaction(msg).catch(() => {});
 		}
 	};
 
@@ -584,26 +594,14 @@ export class AgentSession {
 	 * Internal: Run auto-compaction with events.
 	 * Called after assistant messages complete.
 	 */
-	private async _runAutoCompaction(): Promise<void> {
+	private async _runAutoCompaction(assistantMessage: AssistantMessage): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Get last non-aborted assistant message
-		const messages = this.messages;
-		let lastAssistant: AssistantMessage | null = null;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				const assistantMsg = msg as AssistantMessage;
-				if (assistantMsg.stopReason !== "aborted") {
-					lastAssistant = assistantMsg;
-					break;
-				}
-			}
-		}
-		if (!lastAssistant) return;
+		// Skip if message was aborted
+		if (assistantMessage.stopReason === "aborted") return;
 
-		const contextTokens = calculateContextTokens(lastAssistant.usage);
+		const contextTokens = calculateContextTokens(assistantMessage.usage);
 		const contextWindow = this.model?.contextWindow ?? 0;
 
 		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
@@ -624,6 +622,7 @@ export class AgentSession {
 				return;
 			}
 
+			// Load entries (sync file read) then yield to let UI render
 			const entries = this.sessionManager.loadEntries();
 			const compactionEntry = await compact(
 				entries,

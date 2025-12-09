@@ -597,7 +597,11 @@ export class InteractiveMode {
 					// Rebuild chat to show compacted state
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
-					this.showStatus(`Auto-compacted: ${event.result.tokensBefore.toLocaleString()} tokens`);
+					// Add compaction component (same as manual /compact)
+					const compactionComponent = new CompactionComponent(event.result.tokensBefore, event.result.summary);
+					compactionComponent.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(compactionComponent);
+					this.footer.updateState(this.session.state);
 				}
 				this.ui.requestRender();
 				break;
