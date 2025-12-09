@@ -191,7 +191,9 @@ export class SessionManager {
 	private sessionDir: string;
 	private enabled: boolean = true;
 	private sessionInitialized: boolean = false;
-	private pendingMessages: any[] = [];
+	private pendingEntries: SessionEntry[] = [];
+	// In-memory entries for --no-session mode (when enabled=false)
+	private inMemoryEntries: SessionEntry[] = [];
 
 	constructor(continueSession: boolean = false, customSessionPath?: string) {
 		this.sessionDir = this.getSessionDirectory();
@@ -202,6 +204,10 @@ export class SessionManager {
 			this.loadSessionId();
 			// Mark as initialized since we're loading an existing session
 			this.sessionInitialized = existsSync(this.sessionFile);
+			// Load entries into memory
+			if (this.sessionInitialized) {
+				this.inMemoryEntries = this.loadEntriesFromFile();
+			}
 		} else if (continueSession) {
 			const mostRecent = this.findMostRecentlyModifiedSession();
 			if (mostRecent) {
@@ -209,6 +215,8 @@ export class SessionManager {
 				this.loadSessionId();
 				// Mark as initialized since we're loading an existing session
 				this.sessionInitialized = true;
+				// Load entries into memory
+				this.inMemoryEntries = this.loadEntriesFromFile();
 			} else {
 				this.initNewSession();
 			}
@@ -241,9 +249,10 @@ export class SessionManager {
 		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
 	}
 
-	/** Reset to a fresh session. Clears pending messages and starts a new session file. */
+	/** Reset to a fresh session. Clears pending entries and starts a new session file. */
 	reset(): void {
-		this.pendingMessages = [];
+		this.pendingEntries = [];
+		this.inMemoryEntries = [];
 		this.sessionInitialized = false;
 		this.initNewSession();
 	}
@@ -284,7 +293,7 @@ export class SessionManager {
 	}
 
 	startSession(state: AgentState): void {
-		if (!this.enabled || this.sessionInitialized) return;
+		if (this.sessionInitialized) return;
 		this.sessionInitialized = true;
 
 		const entry: SessionHeader = {
@@ -296,17 +305,24 @@ export class SessionManager {
 			modelId: state.model.id,
 			thinkingLevel: state.thinkingLevel,
 		};
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
 
-		// Write any queued messages
-		for (const msg of this.pendingMessages) {
-			appendFileSync(this.sessionFile, JSON.stringify(msg) + "\n");
+		// Always track in memory
+		this.inMemoryEntries.push(entry);
+		for (const pending of this.pendingEntries) {
+			this.inMemoryEntries.push(pending);
 		}
-		this.pendingMessages = [];
+		this.pendingEntries = [];
+
+		// Write to file only if enabled
+		if (this.enabled) {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			for (const memEntry of this.inMemoryEntries.slice(1)) {
+				appendFileSync(this.sessionFile, JSON.stringify(memEntry) + "\n");
+			}
+		}
 	}
 
 	saveMessage(message: any): void {
-		if (!this.enabled) return;
 		const entry: SessionMessageEntry = {
 			type: "message",
 			timestamp: new Date().toISOString(),
@@ -314,14 +330,18 @@ export class SessionManager {
 		};
 
 		if (!this.sessionInitialized) {
-			this.pendingMessages.push(entry);
+			this.pendingEntries.push(entry);
 		} else {
-			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			// Always track in memory
+			this.inMemoryEntries.push(entry);
+			// Write to file only if enabled
+			if (this.enabled) {
+				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			}
 		}
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
-		if (!this.enabled) return;
 		const entry: ThinkingLevelChangeEntry = {
 			type: "thinking_level_change",
 			timestamp: new Date().toISOString(),
@@ -329,14 +349,18 @@ export class SessionManager {
 		};
 
 		if (!this.sessionInitialized) {
-			this.pendingMessages.push(entry);
+			this.pendingEntries.push(entry);
 		} else {
-			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			// Always track in memory
+			this.inMemoryEntries.push(entry);
+			// Write to file only if enabled
+			if (this.enabled) {
+				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			}
 		}
 	}
 
 	saveModelChange(provider: string, modelId: string): void {
-		if (!this.enabled) return;
 		const entry: ModelChangeEntry = {
 			type: "model_change",
 			timestamp: new Date().toISOString(),
@@ -345,15 +369,24 @@ export class SessionManager {
 		};
 
 		if (!this.sessionInitialized) {
-			this.pendingMessages.push(entry);
+			this.pendingEntries.push(entry);
 		} else {
-			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			// Always track in memory
+			this.inMemoryEntries.push(entry);
+			// Write to file only if enabled
+			if (this.enabled) {
+				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			}
 		}
 	}
 
 	saveCompaction(entry: CompactionEntry): void {
-		if (!this.enabled) return;
-		appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		// Always track in memory
+		this.inMemoryEntries.push(entry);
+		// Write to file only if enabled
+		if (this.enabled) {
+			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+		}
 	}
 
 	/**
@@ -394,9 +427,9 @@ export class SessionManager {
 	}
 
 	/**
-	 * Load all entries from the session file.
+	 * Load entries directly from the session file (internal helper).
 	 */
-	loadEntries(): SessionEntry[] {
+	private loadEntriesFromFile(): SessionEntry[] {
 		if (!existsSync(this.sessionFile)) return [];
 
 		const content = readFileSync(this.sessionFile, "utf8");
@@ -414,6 +447,21 @@ export class SessionManager {
 		}
 
 		return entries;
+	}
+
+	/**
+	 * Load all entries from the session file or in-memory store.
+	 * When file persistence is enabled, reads from file (source of truth for resumed sessions).
+	 * When disabled (--no-session), returns in-memory entries.
+	 */
+	loadEntries(): SessionEntry[] {
+		// If file persistence is enabled and file exists, read from file
+		if (this.enabled && existsSync(this.sessionFile)) {
+			return this.loadEntriesFromFile();
+		}
+
+		// Otherwise return in-memory entries (for --no-session mode)
+		return [...this.inMemoryEntries];
 	}
 
 	/**
@@ -523,6 +571,13 @@ export class SessionManager {
 		this.loadSessionId();
 		// Mark as initialized since we're loading an existing session
 		this.sessionInitialized = existsSync(path);
+		// Load entries into memory for consistency
+		if (this.sessionInitialized) {
+			this.inMemoryEntries = this.loadEntriesFromFile();
+		} else {
+			this.inMemoryEntries = [];
+		}
+		this.pendingEntries = [];
 	}
 
 	/**
