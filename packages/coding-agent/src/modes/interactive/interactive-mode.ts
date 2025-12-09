@@ -560,25 +560,27 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
-			case "auto_compaction_start":
+			case "auto_compaction_start": {
 				// Set up escape to abort auto-compaction
 				this.autoCompactionEscapeHandler = this.editor.onEscape;
 				this.editor.onEscape = () => {
 					this.session.abortCompaction();
 				};
-				// Show compacting indicator
+				// Show compacting indicator with reason
 				this.statusContainer.clear();
+				const reasonText = event.reason === "overflow" ? "Context overflow detected, " : "";
 				this.autoCompactionLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
-					"Auto-compacting... (esc to cancel)",
+					`${reasonText}Auto-compacting... (esc to cancel)`,
 				);
 				this.statusContainer.addChild(this.autoCompactionLoader);
 				this.ui.requestRender();
 				break;
+			}
 
-			case "auto_compaction_end":
+			case "auto_compaction_end": {
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {
 					this.editor.onEscape = this.autoCompactionEscapeHandler;
@@ -602,9 +604,14 @@ export class InteractiveMode {
 					compactionComponent.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
+
+					if (event.willRetry) {
+						this.showStatus("Compacted context, retrying...");
+					}
 				}
 				this.ui.requestRender();
 				break;
+			}
 		}
 	}
 

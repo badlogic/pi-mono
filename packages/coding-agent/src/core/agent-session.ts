@@ -14,10 +14,11 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model, ToolResultMessage } from "@mariozechner/pi-ai";
+import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import { calculateContextTokens, compact, estimateTokens, shouldCompact } from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
@@ -28,8 +29,8 @@ import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
 	| AgentEvent
-	| { type: "auto_compaction_start" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean };
+	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
+	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -111,6 +112,8 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | null = null;
 	private _autoCompactionAbortController: AbortController | null = null;
+	private _abortingForCompaction = false;
+	private _lastUserMessageText: string | null = null;
 
 	// Bash execution state
 	private _bashAbortController: AbortController | null = null;
@@ -145,11 +148,32 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			this.sessionManager.saveMessage(event.message);
+			// Skip saving aborted message if we're aborting for compaction
+			const isAbortedForCompaction =
+				this._abortingForCompaction &&
+				event.message.role === "assistant" &&
+				(event.message as AssistantMessage).stopReason === "aborted";
+
+			if (!isAbortedForCompaction) {
+				this.sessionManager.saveMessage(event.message);
+			}
 
 			// Initialize session after first user+assistant exchange
 			if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
 				this.sessionManager.startSession(this.agent.state);
+			}
+
+			// Track user message text for potential retry after overflow
+			if (event.message.role === "user") {
+				const content = (event.message as { content: unknown }).content;
+				if (typeof content === "string") {
+					this._lastUserMessageText = content;
+				} else if (Array.isArray(content)) {
+					this._lastUserMessageText = content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n");
+				}
 			}
 
 			// Track assistant message for auto-compaction (checked on agent_end)
@@ -158,11 +182,19 @@ export class AgentSession {
 			}
 		}
 
-		// Check auto-compaction after agent completes (after agent_end clears UI)
+		// Handle turn_end for proactive compaction check
+		if (event.type === "turn_end") {
+			await this._checkProactiveCompaction(
+				event.message as AssistantMessage,
+				event.toolResults as ToolResultMessage[],
+			);
+		}
+
+		// Check auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = null;
-			this._runAutoCompaction(msg).catch(() => {});
+			await this._handleAgentEndCompaction(msg);
 		}
 	};
 
@@ -591,38 +623,113 @@ export class AgentSession {
 	}
 
 	/**
-	 * Internal: Run auto-compaction with events.
-	 * Called after assistant messages complete.
+	 * Check for proactive compaction after turn_end (before next LLM call).
+	 * Estimates context size and aborts if threshold would be crossed.
 	 */
-	private async _runAutoCompaction(assistantMessage: AssistantMessage): Promise<void> {
+	private async _checkProactiveCompaction(
+		assistantMessage: AssistantMessage,
+		toolResults: ToolResultMessage[],
+	): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Skip if message was aborted
-		if (assistantMessage.stopReason === "aborted") return;
+		// Skip if message was aborted or errored
+		if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") return;
 
+		// Only check if there are tool calls (meaning another turn will happen)
+		const hasToolCalls = assistantMessage.content.some((c) => c.type === "toolCall");
+		if (!hasToolCalls) return;
+
+		// Estimate context size: last usage + tool results
 		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		const toolResultTokens = toolResults.reduce((sum, msg) => sum + estimateTokens(msg), 0);
+		const estimatedTotal = contextTokens + toolResultTokens;
+
 		const contextWindow = this.model?.contextWindow ?? 0;
 
-		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
+		if (!shouldCompact(estimatedTotal, contextWindow, settings)) return;
 
-		// Emit start event
-		this._emit({ type: "auto_compaction_start" });
+		// Threshold crossed - abort for compaction
+		this._abortingForCompaction = true;
+		this.agent.abort();
+	}
+
+	/**
+	 * Handle compaction after agent_end.
+	 * Checks for overflow (reactive) or threshold (proactive after abort).
+	 */
+	private async _handleAgentEndCompaction(assistantMessage: AssistantMessage): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+		const contextWindow = this.model?.contextWindow ?? 0;
+
+		// Check 1: Overflow detection (reactive recovery)
+		const isOverflow = isContextOverflow(assistantMessage, contextWindow);
+
+		// Check 2: Aborted for compaction (proactive)
+		const wasAbortedForCompaction = this._abortingForCompaction;
+		this._abortingForCompaction = false;
+
+		// Check 3: Threshold crossed but turn succeeded (maintenance compaction)
+		const contextTokens =
+			assistantMessage.stopReason === "error" ? 0 : calculateContextTokens(assistantMessage.usage);
+		const thresholdCrossed = settings.enabled && shouldCompact(contextTokens, contextWindow, settings);
+
+		// Determine which action to take
+		let reason: "overflow" | "threshold" | null = null;
+		let willRetry = false;
+
+		if (isOverflow) {
+			reason = "overflow";
+			willRetry = true;
+			// Remove the overflow error message from agent state
+			const messages = this.agent.state.messages;
+			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+				this.agent.replaceMessages(messages.slice(0, -1));
+			}
+		} else if (wasAbortedForCompaction) {
+			reason = "threshold";
+			willRetry = true;
+			// Remove the aborted message from agent state
+			const messages = this.agent.state.messages;
+			if (
+				messages.length > 0 &&
+				messages[messages.length - 1].role === "assistant" &&
+				(messages[messages.length - 1] as AssistantMessage).stopReason === "aborted"
+			) {
+				this.agent.replaceMessages(messages.slice(0, -1));
+			}
+		} else if (thresholdCrossed) {
+			reason = "threshold";
+			willRetry = false; // Turn succeeded, no retry needed
+		}
+
+		if (!reason) return;
+
+		// Run compaction
+		await this._runAutoCompaction(reason, willRetry);
+	}
+
+	/**
+	 * Internal: Run auto-compaction with events.
+	 */
+	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+
+		this._emit({ type: "auto_compaction_start", reason });
 		this._autoCompactionAbortController = new AbortController();
 
 		try {
 			if (!this.model) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;
 			}
 
 			const apiKey = await getApiKeyForModel(this.model);
 			if (!apiKey) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;
 			}
 
-			// Load entries (sync file read) then yield to let UI render
 			const entries = this.sessionManager.loadEntries();
 			const compactionEntry = await compact(
 				entries,
@@ -633,7 +740,7 @@ export class AgentSession {
 			);
 
 			if (this._autoCompactionAbortController.signal.aborted) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: true });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
 				return;
 			}
 
@@ -645,10 +752,24 @@ export class AgentSession {
 				tokensBefore: compactionEntry.tokensBefore,
 				summary: compactionEntry.summary,
 			};
-			this._emit({ type: "auto_compaction_end", result, aborted: false });
-		} catch {
-			// Silently fail auto-compaction but emit end event
-			this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
+
+			// Auto-retry if needed
+			if (willRetry && this._lastUserMessageText) {
+				// Small delay to let UI update
+				await new Promise((resolve) => setTimeout(resolve, 100));
+				await this.prompt(this._lastUserMessageText);
+			}
+		} catch (error) {
+			// Compaction failed - emit end event without retry
+			this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+
+			// If this was overflow recovery and compaction failed, we have a hard stop
+			if (reason === "overflow") {
+				throw new Error(
+					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,
+				);
+			}
 		} finally {
 			this._autoCompactionAbortController = null;
 		}

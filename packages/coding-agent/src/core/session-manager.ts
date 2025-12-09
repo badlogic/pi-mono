@@ -50,6 +50,8 @@ export interface CompactionEntry {
 	type: "compaction";
 	timestamp: string;
 	summary: string;
+	/** Summary of turn prefix when a turn was split (user message to first kept message) */
+	turnPrefixSummary?: string;
 	firstKeptEntryIndex: number; // Index into session entries where we start keeping
 	tokensBefore: number;
 }
@@ -178,9 +180,19 @@ export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 		}
 	}
 
-	// Build final messages: summary + kept messages
-	const summaryMessage = createSummaryMessage(compactionEvent.summary);
-	const messages = [summaryMessage, ...keptMessages];
+	// Build final messages: summaries + kept messages
+	const messages: AppMessage[] = [];
+
+	// Add history summary
+	messages.push(createSummaryMessage(compactionEvent.summary));
+
+	// Add turn prefix summary if present (when a turn was split)
+	if (compactionEvent.turnPrefixSummary) {
+		messages.push(createSummaryMessage(compactionEvent.turnPrefixSummary));
+	}
+
+	// Add kept messages
+	messages.push(...keptMessages);
 
 	return { messages, thinkingLevel, model };
 }
