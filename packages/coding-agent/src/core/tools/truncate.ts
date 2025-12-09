@@ -3,7 +3,7 @@
  *
  * Truncation is based on two independent limits - whichever is hit first wins:
  * - Line limit (default: 2000 lines)
- * - Byte limit (default: 30KB)
+ * - Byte limit (default: 50KB)
  *
  * Never returns partial lines (except bash tail truncation edge case).
  */
@@ -31,12 +31,16 @@ export interface TruncationResult {
 	lastLinePartial: boolean;
 	/** Whether the first line exceeded the byte limit (for head truncation) */
 	firstLineExceedsLimit: boolean;
+	/** The max lines limit that was applied */
+	maxLines: number;
+	/** The max bytes limit that was applied */
+	maxBytes: number;
 }
 
 export interface TruncationOptions {
 	/** Maximum number of lines (default: 2000) */
 	maxLines?: number;
-	/** Maximum number of bytes (default: 30KB) */
+	/** Maximum number of bytes (default: 50KB) */
 	maxBytes?: number;
 }
 
@@ -80,6 +84,8 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			outputBytes: totalBytes,
 			lastLinePartial: false,
 			firstLineExceedsLimit: false,
+			maxLines,
+			maxBytes,
 		};
 	}
 
@@ -96,6 +102,8 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			outputBytes: 0,
 			lastLinePartial: false,
 			firstLineExceedsLimit: true,
+			maxLines,
+			maxBytes,
 		};
 	}
 
@@ -135,6 +143,8 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 		outputBytes: finalOutputBytes,
 		lastLinePartial: false,
 		firstLineExceedsLimit: false,
+		maxLines,
+		maxBytes,
 	};
 }
 
@@ -164,6 +174,8 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 			outputBytes: totalBytes,
 			lastLinePartial: false,
 			firstLineExceedsLimit: false,
+			maxLines,
+			maxBytes,
 		};
 	}
 
@@ -212,6 +224,8 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 		outputBytes: finalOutputBytes,
 		lastLinePartial,
 		firstLineExceedsLimit: false,
+		maxLines,
+		maxBytes,
 	};
 }
 
