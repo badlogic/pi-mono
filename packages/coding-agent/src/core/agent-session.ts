@@ -25,8 +25,14 @@ import { loadSessionFromEntries, type SessionManager } from "./session-manager.j
 import type { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
-/** Listener function for agent events */
-export type AgentEventListener = (event: AgentEvent) => void;
+/** Session-specific events that extend the core AgentEvent */
+export type AgentSessionEvent =
+	| AgentEvent
+	| { type: "auto_compaction_start" }
+	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean };
+
+/** Listener function for agent session events */
+export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
 // ============================================================================
 // Types
@@ -97,13 +103,14 @@ export class AgentSession {
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
-	private _eventListeners: AgentEventListener[] = [];
+	private _eventListeners: AgentSessionEventListener[] = [];
 
 	// Message queue state
 	private _queuedMessages: string[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | null = null;
+	private _autoCompactionAbortController: AbortController | null = null;
 
 	// Bash execution state
 	private _bashAbortController: AbortController | null = null;
@@ -121,12 +128,17 @@ export class AgentSession {
 	// Event Subscription
 	// =========================================================================
 
-	/** Internal handler for agent events - shared by subscribe and reconnect */
-	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-		// Notify all listeners
+	/** Emit an event to all listeners */
+	private _emit(event: AgentSessionEvent): void {
 		for (const l of this._eventListeners) {
 			l(event);
 		}
+	}
+
+	/** Internal handler for agent events - shared by subscribe and reconnect */
+	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		// Notify all listeners
+		this._emit(event);
 
 		// Handle session persistence
 		if (event.type === "message_end") {
@@ -139,7 +151,7 @@ export class AgentSession {
 
 			// Check auto-compaction after assistant messages
 			if (event.message.role === "assistant") {
-				await this.checkAutoCompaction();
+				await this._runAutoCompaction();
 			}
 		}
 	};
@@ -149,7 +161,7 @@ export class AgentSession {
 	 * Session persistence is handled internally (saves messages on message_end).
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
 	 */
-	subscribe(listener: AgentEventListener): () => void {
+	subscribe(listener: AgentSessionEventListener): () => void {
 		this._eventListeners.push(listener);
 
 		// Set up agent subscription if not already done
@@ -561,20 +573,20 @@ export class AgentSession {
 	}
 
 	/**
-	 * Cancel in-progress compaction.
+	 * Cancel in-progress compaction (manual or auto).
 	 */
 	abortCompaction(): void {
 		this._compactionAbortController?.abort();
+		this._autoCompactionAbortController?.abort();
 	}
 
 	/**
-	 * Check if auto-compaction should run, and run it if so.
-	 * Called internally after assistant messages.
-	 * @returns Result if compaction occurred, null otherwise
+	 * Internal: Run auto-compaction with events.
+	 * Called after assistant messages complete.
 	 */
-	async checkAutoCompaction(): Promise<CompactionResult | null> {
+	private async _runAutoCompaction(): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
-		if (!settings.enabled) return null;
+		if (!settings.enabled) return;
 
 		// Get last non-aborted assistant message
 		const messages = this.messages;
@@ -589,33 +601,57 @@ export class AgentSession {
 				}
 			}
 		}
-		if (!lastAssistant) return null;
+		if (!lastAssistant) return;
 
 		const contextTokens = calculateContextTokens(lastAssistant.usage);
 		const contextWindow = this.model?.contextWindow ?? 0;
 
-		if (!shouldCompact(contextTokens, contextWindow, settings)) return null;
+		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
 
-		// Perform auto-compaction (don't abort current operation for auto)
+		// Emit start event
+		this._emit({ type: "auto_compaction_start" });
+		this._autoCompactionAbortController = new AbortController();
+
 		try {
-			if (!this.model) return null;
+			if (!this.model) {
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				return;
+			}
 
 			const apiKey = await getApiKeyForModel(this.model);
-			if (!apiKey) return null;
+			if (!apiKey) {
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				return;
+			}
 
 			const entries = this.sessionManager.loadEntries();
-			const compactionEntry = await compact(entries, this.model, settings, apiKey);
+			const compactionEntry = await compact(
+				entries,
+				this.model,
+				settings,
+				apiKey,
+				this._autoCompactionAbortController.signal,
+			);
+
+			if (this._autoCompactionAbortController.signal.aborted) {
+				this._emit({ type: "auto_compaction_end", result: null, aborted: true });
+				return;
+			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
 			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
 			this.agent.replaceMessages(loaded.messages);
 
-			return {
+			const result: CompactionResult = {
 				tokensBefore: compactionEntry.tokensBefore,
 				summary: compactionEntry.summary,
 			};
+			this._emit({ type: "auto_compaction_end", result, aborted: false });
 		} catch {
-			return null; // Silently fail auto-compaction
+			// Silently fail auto-compaction but emit end event
+			this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+		} finally {
+			this._autoCompactionAbortController = null;
 		}
 	}
 

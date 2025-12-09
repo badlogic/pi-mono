@@ -5,7 +5,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentEvent, AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -24,7 +24,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
-import type { AgentSession } from "../../core/agent-session.js";
+import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
@@ -93,6 +93,10 @@ export class InteractiveMode {
 
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
+
+	// Auto-compaction state
+	private autoCompactionLoader: Loader | null = null;
+	private autoCompactionEscapeHandler?: () => void;
 
 	// Convenience accessors
 	private get agent() {
@@ -430,7 +434,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private async handleEvent(event: AgentEvent, state: AgentState): Promise<void> {
+	private async handleEvent(event: AgentSessionEvent, state: AgentState): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}
@@ -553,6 +557,48 @@ export class InteractiveMode {
 					this.streamingComponent = null;
 				}
 				this.pendingTools.clear();
+				this.ui.requestRender();
+				break;
+
+			case "auto_compaction_start":
+				// Set up escape to abort auto-compaction
+				this.autoCompactionEscapeHandler = this.editor.onEscape;
+				this.editor.onEscape = () => {
+					this.session.abortCompaction();
+				};
+				// Show compacting indicator
+				this.statusContainer.clear();
+				this.autoCompactionLoader = new Loader(
+					this.ui,
+					(spinner) => theme.fg("accent", spinner),
+					(text) => theme.fg("muted", text),
+					"Auto-compacting... (esc to cancel)",
+				);
+				this.statusContainer.addChild(this.autoCompactionLoader);
+				this.ui.requestRender();
+				break;
+
+			case "auto_compaction_end":
+				// Restore escape handler
+				if (this.autoCompactionEscapeHandler) {
+					this.editor.onEscape = this.autoCompactionEscapeHandler;
+					this.autoCompactionEscapeHandler = undefined;
+				}
+				// Stop loader
+				if (this.autoCompactionLoader) {
+					this.autoCompactionLoader.stop();
+					this.autoCompactionLoader = null;
+					this.statusContainer.clear();
+				}
+				// Handle result
+				if (event.aborted) {
+					this.showStatus("Auto-compaction cancelled");
+				} else if (event.result) {
+					// Rebuild chat to show compacted state
+					this.chatContainer.clear();
+					this.rebuildChatFromMessages();
+					this.showStatus(`Auto-compacted: ${event.result.tokensBefore.toLocaleString()} tokens`);
+				}
 				this.ui.requestRender();
 				break;
 		}

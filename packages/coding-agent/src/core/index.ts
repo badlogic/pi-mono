@@ -3,9 +3,10 @@
  */
 
 export {
-	type AgentEventListener,
 	AgentSession,
 	type AgentSessionConfig,
+	type AgentSessionEvent,
+	type AgentSessionEventListener,
 	type CompactionResult,
 	type ModelCycleResult,
 	type PromptOptions,
