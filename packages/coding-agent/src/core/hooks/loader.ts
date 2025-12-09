@@ -1,7 +1,7 @@
 import { createJiti } from "jiti";
 import * as os from "os";
 import * as path from "path";
-import type { HookAPI, HookFactory } from "./types.js";
+import type { HookAPI, HookFactory, HookMode } from "./types.js";
 
 /**
  * Generic handler function type.
@@ -63,8 +63,10 @@ function resolveHookPath(hookPath: string, cwd: string): string {
 /**
  * Create a HookAPI instance that collects handlers.
  */
-function createHookAPI(handlers: Map<string, HandlerFn[]>): HookAPI {
+function createHookAPI(handlers: Map<string, HandlerFn[]>, mode: HookMode, hasUI: boolean): HookAPI {
 	return {
+		mode,
+		hasUI,
 		on(event: string, handler: HandlerFn): void {
 			const list = handlers.get(event) ?? [];
 			list.push(handler);
@@ -76,7 +78,12 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): HookAPI {
 /**
  * Load a single hook module using jiti.
  */
-async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
+async function loadHook(
+	hookPath: string,
+	cwd: string,
+	mode: HookMode,
+	hasUI: boolean,
+): Promise<{ hook: LoadedHook | null; error: string | null }> {
 	const resolvedPath = resolveHookPath(hookPath, cwd);
 
 	try {
@@ -91,9 +98,9 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 			return { hook: null, error: "Hook must export a default function" };
 		}
 
-		// Create handlers map and API
+		// Create handlers map and API with mode info
 		const handlers = new Map<string, HandlerFn[]>();
-		const api = createHookAPI(handlers);
+		const api = createHookAPI(handlers, mode, hasUI);
 
 		// Call factory to register handlers
 		factory(api);
@@ -112,13 +119,20 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
  * Load all hooks from configuration.
  * @param paths - Array of hook file paths
  * @param cwd - Current working directory for resolving relative paths
+ * @param mode - Hook mode (interactive, headless, rpc)
+ * @param hasUI - Whether UI is available
  */
-export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooksResult> {
+export async function loadHooks(
+	paths: string[],
+	cwd: string,
+	mode: HookMode = "interactive",
+	hasUI = true,
+): Promise<LoadHooksResult> {
 	const hooks: LoadedHook[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 
 	for (const hookPath of paths) {
-		const { hook, error } = await loadHook(hookPath, cwd);
+		const { hook, error } = await loadHook(hookPath, cwd, mode, hasUI);
 
 		if (error) {
 			errors.push({ path: hookPath, error });

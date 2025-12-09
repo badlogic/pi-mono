@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import type { LoadedHook } from "./loader.js";
-import type { BranchEventResult, ExecResult, HookError, HookEvent, HookEventContext, HookUIContext } from "./types.js";
+import type { BranchEventResult, ExecResult, HookError, HookEvent, HookEventContext, HookUIAdapter } from "./types.js";
 
 /**
  * Default timeout for hook execution (30 seconds).
@@ -72,11 +72,11 @@ export class HookRunner {
 	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 	private cwd: string;
-	private uiContext: HookUIContext;
+	private uiAdapter: HookUIAdapter;
 
-	constructor(hooks: LoadedHook[], uiContext: HookUIContext, cwd: string, timeout = DEFAULT_TIMEOUT) {
+	constructor(hooks: LoadedHook[], uiAdapter: HookUIAdapter, cwd: string, timeout = DEFAULT_TIMEOUT) {
 		this.hooks = hooks;
-		this.uiContext = uiContext;
+		this.uiAdapter = uiAdapter;
 		this.cwd = cwd;
 		this.timeout = timeout;
 	}
@@ -108,7 +108,7 @@ export class HookRunner {
 	private createContext(): HookEventContext {
 		return {
 			exec: (command: string, args: string[]) => exec(command, args, this.cwd),
-			ui: this.uiContext,
+			ui: this.uiAdapter,
 			cwd: this.cwd,
 		};
 	}

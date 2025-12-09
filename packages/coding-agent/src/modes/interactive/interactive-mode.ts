@@ -28,7 +28,7 @@ import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.j
 import {
 	type BranchEvent,
 	HookRunner,
-	type HookUIContext,
+	type HookUIAdapter,
 	loadHooks,
 	type TurnEndEvent,
 	type TurnStartEvent,
@@ -449,7 +449,7 @@ export class InteractiveMode {
 		if (hookPaths.length === 0) return;
 
 		const cwd = process.cwd();
-		const { hooks, errors } = await loadHooks(hookPaths, cwd);
+		const { hooks, errors } = await loadHooks(hookPaths, cwd, "interactive", true);
 
 		// Log any hook loading errors
 		for (const { path, error } of errors) {
@@ -458,11 +458,11 @@ export class InteractiveMode {
 
 		if (hooks.length === 0) return;
 
-		// Create UI context for hooks
-		const uiContext = this.createHookUIContext();
+		// Create UI adapter for hooks
+		const uiAdapter = this.createHookUIAdapter();
 		const timeout = this.settingsManager.getHookTimeout();
 
-		this.hookRunner = new HookRunner(hooks, uiContext, cwd, timeout);
+		this.hookRunner = new HookRunner(hooks, uiAdapter, cwd, timeout);
 
 		// Listen for hook errors and display them
 		this.hookRunner.onError((err) => {
@@ -1557,7 +1557,7 @@ export class InteractiveMode {
 	}
 
 	// Hook UI context methods
-	private createHookUIContext(): HookUIContext {
+	private createHookUIAdapter(): HookUIAdapter {
 		return {
 			select: (title, options) => this.showHookSelector(title, options),
 			confirm: (title, message) => this.showHookConfirm(title, message),

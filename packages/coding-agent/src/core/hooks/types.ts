@@ -2,6 +2,11 @@ import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { SessionEntry } from "../session-manager.js";
 
 /**
+ * Mode in which hooks are running.
+ */
+export type HookMode = "interactive" | "headless" | "rpc";
+
+/**
  * Result of executing a command via ctx.exec()
  */
 export interface ExecResult {
@@ -11,35 +16,58 @@ export interface ExecResult {
 }
 
 /**
- * UI context for hooks to request interactive UI from the harness.
- * Simplified API matching badlogic's design.
+ * UI adapter interface for hooks.
+ * Interactive mode provides TUI implementation.
+ * Headless mode uses NoopUIAdapter.
  */
-export interface HookUIContext {
+export interface HookUIAdapter {
 	/**
 	 * Show a selector and return the user's choice.
 	 * @param title - Title to display
 	 * @param options - Array of string options
-	 * @returns Selected option string, or null if cancelled
+	 * @returns Selected option string, or null if cancelled/unavailable
 	 */
 	select(title: string, options: string[]): Promise<string | null>;
 
 	/**
 	 * Show a confirmation dialog.
-	 * @returns true if confirmed, false if cancelled
+	 * @returns true if confirmed, false if cancelled/unavailable
 	 */
 	confirm(title: string, message: string): Promise<boolean>;
 
 	/**
 	 * Show a text input dialog.
-	 * @returns User input, or null if cancelled
+	 * @returns User input, or null if cancelled/unavailable
 	 */
 	input(title: string, placeholder?: string): Promise<string | null>;
 
 	/**
 	 * Show a notification to the user.
+	 * In headless mode, logs to console for errors/warnings.
 	 */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
 }
+
+/**
+ * No-op UI adapter for headless mode.
+ * Returns null for interactive methods (as if user cancelled).
+ * Logs errors and warnings to console.
+ */
+export const NoopUIAdapter: HookUIAdapter = {
+	select: async () => null,
+	confirm: async () => false,
+	input: async () => null,
+	notify: (message, type) => {
+		if (type === "error") console.error(`[hook] ${message}`);
+		else if (type === "warning") console.warn(`[hook] ${message}`);
+		// info is silent in headless mode
+	},
+};
+
+/**
+ * @deprecated Use HookUIAdapter instead
+ */
+export type HookUIContext = HookUIAdapter;
 
 /**
  * Context passed to hook event handlers.
@@ -120,8 +148,13 @@ export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Prom
 /**
  * HookAPI passed to hook factory functions.
  * Hooks use pi.on() to subscribe to events.
+ * Hooks can check pi.mode or pi.hasUI to conditionally register handlers.
  */
 export interface HookAPI {
+	/** Current mode: "interactive", "headless", or "rpc" */
+	readonly mode: HookMode;
+	/** Whether UI is available (true in interactive mode, false otherwise) */
+	readonly hasUI: boolean;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
 	on(event: "branch", handler: HookHandler<BranchEvent, BranchEventResult | undefined>): void;

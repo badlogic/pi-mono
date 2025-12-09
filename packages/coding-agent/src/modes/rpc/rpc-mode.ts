@@ -12,6 +12,14 @@
 
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
+import {
+	HookRunner,
+	loadHooks,
+	NoopUIAdapter,
+	type TurnEndEvent,
+	type TurnStartEvent,
+} from "../../core/hooks/index.js";
+import type { SettingsManager } from "../../core/settings-manager.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -21,7 +29,7 @@ export type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
-export async function runRpcMode(session: AgentSession): Promise<never> {
+export async function runRpcMode(session: AgentSession, settingsManager?: SettingsManager): Promise<never> {
 	const output = (obj: RpcResponse | object) => {
 		console.log(JSON.stringify(obj));
 	};
@@ -41,9 +49,61 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		return { id, type: "response", command, success: false, error: message };
 	};
 
-	// Output all agent events as JSON
-	session.subscribe((event) => {
+	// Initialize hooks if settings manager provided
+	let hookRunner: HookRunner | null = null;
+	if (settingsManager) {
+		const hookPaths = settingsManager.getHookPaths();
+		if (hookPaths.length > 0) {
+			const cwd = process.cwd();
+			const { hooks, errors } = await loadHooks(hookPaths, cwd, "rpc", false);
+
+			for (const { path, error: err } of errors) {
+				output({ type: "hook_error", path, error: err });
+			}
+
+			if (hooks.length > 0) {
+				const timeout = settingsManager.getHookTimeout();
+				hookRunner = new HookRunner(hooks, NoopUIAdapter, cwd, timeout);
+
+				hookRunner.onError((err) => {
+					output({ type: "hook_error", path: err.hookPath, event: err.event, error: err.error });
+				});
+			}
+		}
+	}
+
+	// Track turn index for hooks
+	let turnIndex = 0;
+
+	// Output all agent events as JSON and emit to hooks
+	session.subscribe(async (event) => {
 		output(event);
+
+		// Emit to hooks
+		if (hookRunner) {
+			if (event.type === "agent_start") {
+				await hookRunner.emit({ type: "agent_start" });
+			} else if (event.type === "agent_end") {
+				await hookRunner.emit({ type: "agent_end", messages: session.messages });
+				turnIndex = 0; // Reset turn index on session end
+			} else if (event.type === "turn_start") {
+				const hookEvent: TurnStartEvent = {
+					type: "turn_start",
+					turnIndex,
+					timestamp: Date.now(),
+				};
+				await hookRunner.emit(hookEvent);
+			} else if (event.type === "turn_end") {
+				const hookEvent: TurnEndEvent = {
+					type: "turn_end",
+					turnIndex,
+					message: event.message,
+					toolResults: event.toolResults,
+				};
+				await hookRunner.emit(hookEvent);
+				turnIndex++;
+			}
+		}
 	});
 
 	// Handle a single command

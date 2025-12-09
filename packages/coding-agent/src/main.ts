@@ -342,7 +342,7 @@ export async function main(args: string[]) {
 
 	// Route to appropriate mode
 	if (mode === "rpc") {
-		await runRpcMode(session);
+		await runRpcMode(session, settingsManager);
 	} else if (isInteractive) {
 		// Check for new version in the background
 		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
