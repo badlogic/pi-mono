@@ -1,560 +1,29 @@
+/**
+ * Main entry point for the coding agent
+ */
+
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
-import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-import { existsSync, readFileSync, statSync } from "fs";
-import { homedir } from "os";
-import { extname, join, resolve } from "path";
+import { type Args, parseArgs, printHelp } from "./cli/args.js";
+import { processFileArguments } from "./cli/file-processor.js";
+import { selectSession } from "./cli/session-picker.js";
 import { AgentSession } from "./core/agent-session.js";
 import { exportFromFile } from "./core/export-html.js";
 import { messageTransformer } from "./core/messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
+import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { loadSlashCommands } from "./core/slash-commands.js";
-import { allTools, codingTools, type ToolName } from "./core/tools/index.js";
+import { buildSystemPrompt, loadProjectContextFiles } from "./core/system-prompt.js";
+import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
-import { SessionSelectorComponent } from "./modes/interactive/components/session-selector.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
-import {
-	APP_NAME,
-	CONFIG_DIR_NAME,
-	ENV_AGENT_DIR,
-	getAgentDir,
-	getModelsPath,
-	getReadmePath,
-	VERSION,
-} from "./utils/config.js";
+import { getModelsPath, VERSION } from "./utils/config.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
-const defaultModelPerProvider: Record<KnownProvider, string> = {
-	anthropic: "claude-sonnet-4-5",
-	openai: "gpt-5.1-codex",
-	google: "gemini-2.5-pro",
-	openrouter: "openai/gpt-5.1-codex",
-	xai: "grok-4-fast-non-reasoning",
-	groq: "openai/gpt-oss-120b",
-	cerebras: "zai-glm-4.6",
-	zai: "glm-4.6",
-};
-
-type Mode = "text" | "json" | "rpc";
-
-interface Args {
-	provider?: string;
-	model?: string;
-	apiKey?: string;
-	systemPrompt?: string;
-	appendSystemPrompt?: string;
-	thinking?: ThinkingLevel;
-	continue?: boolean;
-	resume?: boolean;
-	help?: boolean;
-	mode?: Mode;
-	noSession?: boolean;
-	session?: string;
-	models?: string[];
-	tools?: ToolName[];
-	print?: boolean;
-	export?: string;
-	messages: string[];
-	fileArgs: string[];
-}
-
-function parseArgs(args: string[]): Args {
-	const result: Args = {
-		messages: [],
-		fileArgs: [],
-	};
-
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-
-		if (arg === "--help" || arg === "-h") {
-			result.help = true;
-		} else if (arg === "--mode" && i + 1 < args.length) {
-			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc") {
-				result.mode = mode;
-			}
-		} else if (arg === "--continue" || arg === "-c") {
-			result.continue = true;
-		} else if (arg === "--resume" || arg === "-r") {
-			result.resume = true;
-		} else if (arg === "--provider" && i + 1 < args.length) {
-			result.provider = args[++i];
-		} else if (arg === "--model" && i + 1 < args.length) {
-			result.model = args[++i];
-		} else if (arg === "--api-key" && i + 1 < args.length) {
-			result.apiKey = args[++i];
-		} else if (arg === "--system-prompt" && i + 1 < args.length) {
-			result.systemPrompt = args[++i];
-		} else if (arg === "--append-system-prompt" && i + 1 < args.length) {
-			result.appendSystemPrompt = args[++i];
-		} else if (arg === "--no-session") {
-			result.noSession = true;
-		} else if (arg === "--session" && i + 1 < args.length) {
-			result.session = args[++i];
-		} else if (arg === "--models" && i + 1 < args.length) {
-			result.models = args[++i].split(",").map((s) => s.trim());
-		} else if (arg === "--tools" && i + 1 < args.length) {
-			const toolNames = args[++i].split(",").map((s) => s.trim());
-			const validTools: ToolName[] = [];
-			for (const name of toolNames) {
-				if (name in allTools) {
-					validTools.push(name as ToolName);
-				} else {
-					console.error(
-						chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
-					);
-				}
-			}
-			result.tools = validTools;
-		} else if (arg === "--thinking" && i + 1 < args.length) {
-			const level = args[++i];
-			if (
-				level === "off" ||
-				level === "minimal" ||
-				level === "low" ||
-				level === "medium" ||
-				level === "high" ||
-				level === "xhigh"
-			) {
-				result.thinking = level;
-			} else {
-				console.error(
-					chalk.yellow(
-						`Warning: Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high, xhigh`,
-					),
-				);
-			}
-		} else if (arg === "--print" || arg === "-p") {
-			result.print = true;
-		} else if (arg === "--export" && i + 1 < args.length) {
-			result.export = args[++i];
-		} else if (arg.startsWith("@")) {
-			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
-		} else if (!arg.startsWith("-")) {
-			result.messages.push(arg);
-		}
-	}
-
-	return result;
-}
-
-/**
- * Map of file extensions to MIME types for common image formats
- */
-const IMAGE_MIME_TYPES: Record<string, string> = {
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png": "image/png",
-	".gif": "image/gif",
-	".webp": "image/webp",
-};
-
-/**
- * Check if a file is an image based on its extension
- */
-function isImageFile(filePath: string): string | null {
-	const ext = extname(filePath).toLowerCase();
-	return IMAGE_MIME_TYPES[ext] || null;
-}
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
-
-/**
- * Process @file arguments into text content and image attachments
- */
-function processFileArguments(fileArgs: string[]): { textContent: string; imageAttachments: Attachment[] } {
-	let textContent = "";
-	const imageAttachments: Attachment[] = [];
-
-	for (const fileArg of fileArgs) {
-		// Expand and resolve path
-		const expandedPath = expandPath(fileArg);
-		const absolutePath = resolve(expandedPath);
-
-		// Check if file exists
-		if (!existsSync(absolutePath)) {
-			console.error(chalk.red(`Error: File not found: ${absolutePath}`));
-			process.exit(1);
-		}
-
-		// Check if file is empty
-		const stats = statSync(absolutePath);
-		if (stats.size === 0) {
-			// Skip empty files
-			continue;
-		}
-
-		const mimeType = isImageFile(absolutePath);
-
-		if (mimeType) {
-			// Handle image file
-			const content = readFileSync(absolutePath);
-			const base64Content = content.toString("base64");
-
-			const attachment: Attachment = {
-				id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-				type: "image",
-				fileName: absolutePath.split("/").pop() || absolutePath,
-				mimeType,
-				size: stats.size,
-				content: base64Content,
-			};
-
-			imageAttachments.push(attachment);
-
-			// Add text reference to image
-			textContent += `<file name="${absolutePath}"></file>\n`;
-		} else {
-			// Handle text file
-			try {
-				const content = readFileSync(absolutePath, "utf-8");
-				textContent += `<file name="${absolutePath}">\n${content}\n</file>\n`;
-			} catch (error: any) {
-				console.error(chalk.red(`Error: Could not read file ${absolutePath}: ${error.message}`));
-				process.exit(1);
-			}
-		}
-	}
-
-	return { textContent, imageAttachments };
-}
-
-function printHelp() {
-	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
-
-${chalk.bold("Usage:")}
-  ${APP_NAME} [options] [@files...] [messages...]
-
-${chalk.bold("Options:")}
-  --provider <name>              Provider name (default: google)
-  --model <id>                   Model ID (default: gemini-2.5-flash)
-  --api-key <key>                API key (defaults to env vars)
-  --system-prompt <text>         System prompt (default: coding assistant prompt)
-  --append-system-prompt <text>  Append text or file contents to the system prompt
-  --mode <mode>                  Output mode: text (default), json, or rpc
-  --print, -p                    Non-interactive mode: process prompt and exit
-  --continue, -c                 Continue previous session
-  --resume, -r                   Select a session to resume
-  --session <path>               Use specific session file
-  --no-session                   Don't save session (ephemeral)
-  --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
-  --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
-                                 Available: read, bash, edit, write, grep, find, ls
-  --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
-  --export <file>                Export session file to HTML and exit
-  --help, -h                     Show this help
-
-${chalk.bold("Examples:")}
-  # Interactive mode
-  ${APP_NAME}
-
-  # Interactive mode with initial prompt
-  ${APP_NAME} "List all .ts files in src/"
-
-  # Include files in initial message
-  ${APP_NAME} @prompt.md @image.png "What color is the sky?"
-
-  # Non-interactive mode (process and exit)
-  ${APP_NAME} -p "List all .ts files in src/"
-
-  # Multiple messages (interactive)
-  ${APP_NAME} "Read package.json" "What dependencies do we have?"
-
-  # Continue previous session
-  ${APP_NAME} --continue "What did we discuss?"
-
-  # Use different model
-  ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"
-
-  # Limit model cycling to specific models
-  ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
-
-  # Cycle models with fixed thinking levels
-  ${APP_NAME} --models sonnet:high,haiku:low
-
-  # Start with a specific thinking level
-  ${APP_NAME} --thinking high "Solve this complex problem"
-
-  # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
-
-  # Export a session file to HTML
-  ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
-  ${APP_NAME} --export session.jsonl output.html
-
-${chalk.bold("Environment Variables:")}
-  ANTHROPIC_API_KEY       - Anthropic Claude API key
-  ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
-  OPENAI_API_KEY          - OpenAI GPT API key
-  GEMINI_API_KEY          - Google Gemini API key
-  GROQ_API_KEY            - Groq API key
-  CEREBRAS_API_KEY        - Cerebras API key
-  XAI_API_KEY             - xAI Grok API key
-  OPENROUTER_API_KEY      - OpenRouter API key
-  ZAI_API_KEY             - ZAI API key
-  ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
-
-${chalk.bold("Available Tools (default: read, bash, edit, write):")}
-  read   - Read file contents
-  bash   - Execute bash commands
-  edit   - Edit files with find/replace
-  write  - Write files (creates/overwrites)
-  grep   - Search file contents (read-only, off by default)
-  find   - Find files by glob pattern (read-only, off by default)
-  ls     - List directory contents (read-only, off by default)
-`);
-}
-
-// Tool descriptions for system prompt
-const toolDescriptions: Record<ToolName, string> = {
-	read: "Read file contents",
-	bash: "Execute bash commands (ls, grep, find, etc.)",
-	edit: "Make surgical edits to files (find exact text and replace)",
-	write: "Create or overwrite files",
-	grep: "Search file contents for patterns (respects .gitignore)",
-	find: "Find files by glob pattern (respects .gitignore)",
-	ls: "List directory contents",
-};
-
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
-	if (!input) {
-		return undefined;
-	}
-
-	if (existsSync(input)) {
-		try {
-			return readFileSync(input, "utf-8");
-		} catch (error) {
-			console.error(chalk.yellow(`Warning: Could not read ${description} file ${input}: ${error}`));
-			return input;
-		}
-	}
-
-	return input;
-}
-
-function buildSystemPrompt(customPrompt?: string, selectedTools?: ToolName[], appendSystemPrompt?: string): string {
-	const resolvedCustomPrompt = resolvePromptInput(customPrompt, "system prompt");
-	const resolvedAppendPrompt = resolvePromptInput(appendSystemPrompt, "append system prompt");
-
-	const now = new Date();
-	const dateTime = now.toLocaleString("en-US", {
-		weekday: "long",
-		year: "numeric",
-		month: "long",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		timeZoneName: "short",
-	});
-
-	const appendSection = resolvedAppendPrompt ? `\n\n${resolvedAppendPrompt}` : "";
-
-	if (resolvedCustomPrompt) {
-		let prompt = resolvedCustomPrompt;
-
-		if (appendSection) {
-			prompt += appendSection;
-		}
-
-		// Append project context files
-		const contextFiles = loadProjectContextFiles();
-		if (contextFiles.length > 0) {
-			prompt += "\n\n# Project Context\n\n";
-			prompt += "The following project context files have been loaded:\n\n";
-			for (const { path: filePath, content } of contextFiles) {
-				prompt += `## ${filePath}\n\n${content}\n\n`;
-			}
-		}
-
-		// Add date/time and working directory last
-		prompt += `\nCurrent date and time: ${dateTime}`;
-		prompt += `\nCurrent working directory: ${process.cwd()}`;
-
-		return prompt;
-	}
-
-	// Get absolute path to README.md
-	const readmePath = getReadmePath();
-
-	// Build tools list based on selected tools
-	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);
-	const toolsList = tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n");
-
-	// Build guidelines based on which tools are actually available
-	const guidelinesList: string[] = [];
-
-	const hasBash = tools.includes("bash");
-	const hasEdit = tools.includes("edit");
-	const hasWrite = tools.includes("write");
-	const hasGrep = tools.includes("grep");
-	const hasFind = tools.includes("find");
-	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
-
-	// Read-only mode notice (no bash, edit, or write)
-	if (!hasBash && !hasEdit && !hasWrite) {
-		guidelinesList.push("You are in READ-ONLY mode - you cannot modify files or execute arbitrary commands");
-	}
-
-	// Bash without edit/write = read-only bash mode
-	if (hasBash && !hasEdit && !hasWrite) {
-		guidelinesList.push(
-			"Use bash ONLY for read-only operations (git log, gh issue view, curl, etc.) - do NOT modify any files",
-		);
-	}
-
-	// File exploration guidelines
-	if (hasBash && !hasGrep && !hasFind && !hasLs) {
-		guidelinesList.push("Use bash for file operations like ls, grep, find");
-	} else if (hasBash && (hasGrep || hasFind || hasLs)) {
-		guidelinesList.push("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)");
-	}
-
-	// Read before edit guideline
-	if (hasRead && hasEdit) {
-		guidelinesList.push("Use read to examine files before editing");
-	}
-
-	// Edit guideline
-	if (hasEdit) {
-		guidelinesList.push("Use edit for precise changes (old text must match exactly)");
-	}
-
-	// Write guideline
-	if (hasWrite) {
-		guidelinesList.push("Use write only for new files or complete rewrites");
-	}
-
-	// Output guideline (only when actually writing/executing)
-	if (hasEdit || hasWrite) {
-		guidelinesList.push(
-			"When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did",
-		);
-	}
-
-	// Always include these
-	guidelinesList.push("Be concise in your responses");
-	guidelinesList.push("Show file paths clearly when working with files");
-
-	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
-
-	let prompt = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
-
-Available tools:
-${toolsList}
-
-Guidelines:
-${guidelines}
-
-Documentation:
-- Your own documentation (including custom model setup and theme creation) is at: ${readmePath}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.`;
-
-	if (appendSection) {
-		prompt += appendSection;
-	}
-
-	// Append project context files
-	const contextFiles = loadProjectContextFiles();
-	if (contextFiles.length > 0) {
-		prompt += "\n\n# Project Context\n\n";
-		prompt += "The following project context files have been loaded:\n\n";
-		for (const { path: filePath, content } of contextFiles) {
-			prompt += `## ${filePath}\n\n${content}\n\n`;
-		}
-	}
-
-	// Add date/time and working directory last
-	prompt += `\nCurrent date and time: ${dateTime}`;
-	prompt += `\nCurrent working directory: ${process.cwd()}`;
-
-	return prompt;
-}
-
-/**
- * Look for AGENTS.md or CLAUDE.md in a directory (prefers AGENTS.md)
- */
-function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
-	const candidates = ["AGENTS.md", "CLAUDE.md"];
-	for (const filename of candidates) {
-		const filePath = join(dir, filename);
-		if (existsSync(filePath)) {
-			try {
-				return {
-					path: filePath,
-					content: readFileSync(filePath, "utf-8"),
-				};
-			} catch (error) {
-				console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
-			}
-		}
-	}
-	return null;
-}
-
-/**
- * Load all project context files in order:
- * 1. Global: ~/{CONFIG_DIR_NAME}/agent/AGENTS.md or CLAUDE.md
- * 2. Parent directories (top-most first) down to cwd
- * Each returns {path, content} for separate messages
- */
-function loadProjectContextFiles(): Array<{ path: string; content: string }> {
-	const contextFiles: Array<{ path: string; content: string }> = [];
-
-	// 1. Load global context from ~/{CONFIG_DIR_NAME}/agent/
-	const globalContextDir = getAgentDir();
-	const globalContext = loadContextFileFromDir(globalContextDir);
-	if (globalContext) {
-		contextFiles.push(globalContext);
-	}
-
-	// 2. Walk up from cwd to root, collecting all context files
-	const cwd = process.cwd();
-	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
-
-	let currentDir = cwd;
-	const root = resolve("/");
-
-	while (true) {
-		const contextFile = loadContextFileFromDir(currentDir);
-		if (contextFile) {
-			// Add to beginning so we get top-most parent first
-			ancestorContextFiles.unshift(contextFile);
-		}
-
-		// Stop if we've reached root
-		if (currentDir === root) break;
-
-		// Move up one directory
-		const parentDir = resolve(currentDir, "..");
-		if (parentDir === currentDir) break; // Safety check
-		currentDir = parentDir;
-	}
-
-	// Add ancestor files in order (top-most → cwd)
-	contextFiles.push(...ancestorContextFiles);
-
-	return contextFiles;
-}
-
+/** Check npm registry for new version (non-blocking) */
 async function checkForNewVersion(currentVersion: string): Promise<string | null> {
 	try {
 		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
@@ -568,170 +37,20 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 		}
 
 		return null;
-	} catch (error) {
+	} catch {
 		// Silently fail - don't disrupt the user experience
 		return null;
 	}
 }
 
-/**
- * Resolve model patterns to actual Model objects with optional thinking levels
- * Format: "pattern:level" where :level is optional
- * For each pattern, finds all matching models and picks the best version:
- * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
- * 2. If no alias, pick the latest dated version
- */
-async function resolveModelScope(
-	patterns: string[],
-): Promise<Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }>> {
-	const { models: availableModels, error } = await getAvailableModels();
-
-	if (error) {
-		console.warn(chalk.yellow(`Warning: Error loading models: ${error}`));
-		return [];
-	}
-
-	const scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [];
-
-	for (const pattern of patterns) {
-		// Parse pattern:level format
-		const parts = pattern.split(":");
-		const modelPattern = parts[0];
-		let thinkingLevel: ThinkingLevel = "off";
-
-		if (parts.length > 1) {
-			const level = parts[1];
-			if (
-				level === "off" ||
-				level === "minimal" ||
-				level === "low" ||
-				level === "medium" ||
-				level === "high" ||
-				level === "xhigh"
-			) {
-				thinkingLevel = level;
-			} else {
-				console.warn(
-					chalk.yellow(`Warning: Invalid thinking level "${level}" in pattern "${pattern}". Using "off" instead.`),
-				);
-			}
-		}
-
-		// Check for provider/modelId format (provider is everything before the first /)
-		const slashIndex = modelPattern.indexOf("/");
-		if (slashIndex !== -1) {
-			const provider = modelPattern.substring(0, slashIndex);
-			const modelId = modelPattern.substring(slashIndex + 1);
-			const providerMatch = availableModels.find(
-				(m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
-			);
-			if (providerMatch) {
-				if (
-					!scopedModels.find(
-						(sm) => sm.model.id === providerMatch.id && sm.model.provider === providerMatch.provider,
-					)
-				) {
-					scopedModels.push({ model: providerMatch, thinkingLevel });
-				}
-				continue;
-			}
-			// No exact provider/model match - fall through to other matching
-		}
-
-		// Check for exact ID match (case-insensitive)
-		const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
-		if (exactMatch) {
-			// Exact match found - use it directly
-			if (!scopedModels.find((sm) => sm.model.id === exactMatch.id && sm.model.provider === exactMatch.provider)) {
-				scopedModels.push({ model: exactMatch, thinkingLevel });
-			}
-			continue;
-		}
-
-		// No exact match - fall back to partial matching
-		const matches = availableModels.filter(
-			(m) =>
-				m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-				m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
-		);
-
-		if (matches.length === 0) {
-			console.warn(chalk.yellow(`Warning: No models match pattern "${modelPattern}"`));
-			continue;
-		}
-
-		// Helper to check if a model ID looks like an alias (no date suffix)
-		// Dates are typically in format: -20241022 or -20250929
-		const isAlias = (id: string): boolean => {
-			// Check if ID ends with -latest
-			if (id.endsWith("-latest")) return true;
-
-			// Check if ID ends with a date pattern (-YYYYMMDD)
-			const datePattern = /-\d{8}$/;
-			return !datePattern.test(id);
-		};
-
-		// Separate into aliases and dated versions
-		const aliases = matches.filter((m) => isAlias(m.id));
-		const datedVersions = matches.filter((m) => !isAlias(m.id));
-
-		let bestMatch: Model<Api>;
-
-		if (aliases.length > 0) {
-			// Prefer alias - if multiple aliases, pick the one that sorts highest
-			aliases.sort((a, b) => b.id.localeCompare(a.id));
-			bestMatch = aliases[0];
-		} else {
-			// No alias found, pick latest dated version
-			datedVersions.sort((a, b) => b.id.localeCompare(a.id));
-			bestMatch = datedVersions[0];
-		}
-
-		// Avoid duplicates
-		if (!scopedModels.find((sm) => sm.model.id === bestMatch.id && sm.model.provider === bestMatch.provider)) {
-			scopedModels.push({ model: bestMatch, thinkingLevel });
-		}
-	}
-
-	return scopedModels;
-}
-
-async function selectSession(sessionManager: SessionManager): Promise<string | null> {
-	return new Promise((resolve) => {
-		const ui = new TUI(new ProcessTerminal());
-		let resolved = false;
-
-		const selector = new SessionSelectorComponent(
-			sessionManager,
-			(path: string) => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					resolve(path);
-				}
-			},
-			() => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					resolve(null);
-				}
-			},
-		);
-
-		ui.addChild(selector);
-		ui.setFocus(selector.getSessionList());
-		ui.start();
-	});
-}
-
+/** Run interactive mode with TUI */
 async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
-	changelogMarkdown: string | null = null,
-	modelFallbackMessage: string | null = null,
+	changelogMarkdown: string | null,
+	modelFallbackMessage: string | null,
 	versionCheckPromise: Promise<string | null>,
-	initialMessages: string[] = [],
+	initialMessages: string[],
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
@@ -790,6 +109,32 @@ async function runInteractiveMode(
 	}
 }
 
+/** Prepare initial message from @file arguments */
+function prepareInitialMessage(parsed: Args): {
+	initialMessage?: string;
+	initialAttachments?: Attachment[];
+} {
+	if (parsed.fileArgs.length === 0) {
+		return {};
+	}
+
+	const { textContent, imageAttachments } = processFileArguments(parsed.fileArgs);
+
+	// Combine file content with first plain text message (if any)
+	let initialMessage: string;
+	if (parsed.messages.length > 0) {
+		initialMessage = textContent + parsed.messages[0];
+		parsed.messages.shift(); // Remove first message as it's been combined
+	} else {
+		initialMessage = textContent;
+	}
+
+	return {
+		initialMessage,
+		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+	};
+}
+
 export async function main(args: string[]) {
 	const parsed = parseArgs(args);
 
@@ -801,13 +146,13 @@ export async function main(args: string[]) {
 	// Handle --export flag: convert session file to HTML and exit
 	if (parsed.export) {
 		try {
-			// Use first message as output path if provided
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
 			const result = exportFromFile(parsed.export, outputPath);
 			console.log(`Exported to: ${result}`);
 			return;
-		} catch (error: any) {
-			console.error(chalk.red(`Error: ${error.message || "Failed to export session"}`));
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Failed to export session";
+			console.error(chalk.red(`Error: ${message}`));
 			process.exit(1);
 		}
 	}
@@ -818,23 +163,8 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	// Process @file arguments if any
-	let initialMessage: string | undefined;
-	let initialAttachments: Attachment[] | undefined;
-
-	if (parsed.fileArgs.length > 0) {
-		const { textContent, imageAttachments } = processFileArguments(parsed.fileArgs);
-
-		// Combine file content with first plain text message (if any)
-		if (parsed.messages.length > 0) {
-			initialMessage = textContent + parsed.messages[0];
-			parsed.messages.shift(); // Remove first message as it's been combined
-		} else {
-			initialMessage = textContent;
-		}
-
-		initialAttachments = imageAttachments.length > 0 ? imageAttachments : undefined;
-	}
+	// Process @file arguments
+	const { initialMessage, initialAttachments } = prepareInitialMessage(parsed);
 
 	// Initialize theme (before any TUI rendering)
 	const settingsManager = new SettingsManager();
@@ -844,7 +174,6 @@ export async function main(args: string[]) {
 	// Setup session manager
 	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
 
-	// Disable session saving if --no-session flag is set
 	if (parsed.noSession) {
 		sessionManager.disable();
 	}
@@ -856,103 +185,34 @@ export async function main(args: string[]) {
 			console.log(chalk.dim("No session selected"));
 			return;
 		}
-		// Set the selected session as the active session
 		sessionManager.setSessionFile(selectedSession);
 	}
 
-	// Resolve model scope early if provided (needed for initial model selection)
-	let scopedModels: Array<{ model: Model<Api>; thinkingLevel: ThinkingLevel }> = [];
+	// Resolve model scope early if provided
+	let scopedModels: ScopedModel[] = [];
 	if (parsed.models && parsed.models.length > 0) {
 		scopedModels = await resolveModelScope(parsed.models);
 	}
 
-	// Determine initial model using priority system:
-	// 1. CLI args (--provider and --model)
-	// 2. First model from --models scope
-	// 3. Restored from session (if --continue or --resume)
-	// 4. Saved default from settings.json
-	// 5. First available model with valid API key
-	// 6. null (allowed in interactive mode)
-	let initialModel: Model<Api> | null = null;
-	let initialThinking: ThinkingLevel = "off";
-
-	if (parsed.provider && parsed.model) {
-		// 1. CLI args take priority
-		const { model, error } = findModel(parsed.provider, parsed.model);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-		if (!model) {
-			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
-			process.exit(1);
-		}
-		initialModel = model;
-	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		// 2. Use first model from --models scope (skip if continuing/resuming session)
-		initialModel = scopedModels[0].model;
-		initialThinking = scopedModels[0].thinkingLevel;
-	} else if (parsed.continue || parsed.resume) {
-		// 3. Restore from session (will be handled below after loading session)
-		// Leave initialModel as null for now
-	}
-
-	if (!initialModel) {
-		// 3. Try saved default from settings
-		const defaultProvider = settingsManager.getDefaultProvider();
-		const defaultModel = settingsManager.getDefaultModel();
-		if (defaultProvider && defaultModel) {
-			const { model, error } = findModel(defaultProvider, defaultModel);
-			if (error) {
-				console.error(chalk.red(error));
-				process.exit(1);
-			}
-			initialModel = model;
-
-			// Also load saved thinking level if we're using saved model
-			const savedThinking = settingsManager.getDefaultThinkingLevel();
-			if (savedThinking) {
-				initialThinking = savedThinking;
-			}
-		}
-	}
-
-	if (!initialModel) {
-		// 4. Try first available model with valid API key
-		// Prefer default model for each provider if available
-		const { models: availableModels, error } = await getAvailableModels();
-
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-
-		if (availableModels.length > 0) {
-			// Try to find a default model from known providers
-			for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
-				const defaultModelId = defaultModelPerProvider[provider];
-				const match = availableModels.find((m) => m.provider === provider && m.id === defaultModelId);
-				if (match) {
-					initialModel = match;
-					break;
-				}
-			}
-
-			// If no default found, use first available
-			if (!initialModel) {
-				initialModel = availableModels[0];
-			}
-		}
-	}
-
-	// Determine mode early to know if we should print messages and fail early
-	// Interactive mode: no --print flag and no --mode flag
-	// Having initial messages doesn't make it non-interactive anymore
+	// Determine mode and output behavior
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
-	// Only print informational messages in interactive mode
-	// Non-interactive modes (-p, --mode json, --mode rpc) should be silent except for output
 	const shouldPrintMessages = isInteractive;
+
+	// Find initial model
+	let initialModel = await findInitialModelForSession(parsed, scopedModels, settingsManager);
+	let initialThinking: ThinkingLevel = "off";
+
+	// Get thinking level from scoped models if applicable
+	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		initialThinking = scopedModels[0].thinkingLevel;
+	} else {
+		// Try saved thinking level
+		const savedThinking = settingsManager.getDefaultThinkingLevel();
+		if (savedThinking) {
+			initialThinking = savedThinking;
+		}
+	}
 
 	// Non-interactive mode: fail early if no model available
 	if (!isInteractive && !initialModel) {
@@ -972,80 +232,34 @@ export async function main(args: string[]) {
 		}
 	}
 
+	// Build system prompt
 	const systemPrompt = buildSystemPrompt(parsed.systemPrompt, parsed.tools, parsed.appendSystemPrompt);
 
-	// Load previous messages if continuing or resuming
-	// This may update initialModel if restoring from session
+	// Handle session restoration
+	let modelFallbackMessage: string | null = null;
+
 	if (parsed.continue || parsed.resume) {
-		// Load and restore model (overrides initialModel if found and has API key)
 		const savedModel = sessionManager.loadModel();
 		if (savedModel) {
-			const { model: restoredModel, error } = findModel(savedModel.provider, savedModel.modelId);
+			const result = await restoreModelFromSession(
+				savedModel.provider,
+				savedModel.modelId,
+				initialModel,
+				shouldPrintMessages,
+			);
 
-			if (error) {
-				console.error(chalk.red(error));
-				process.exit(1);
+			if (result.model) {
+				initialModel = result.model;
 			}
+			modelFallbackMessage = result.fallbackMessage;
+		}
 
-			// Check if restored model exists and has a valid API key
-			const hasApiKey = restoredModel ? !!(await getApiKeyForModel(restoredModel)) : false;
-
-			if (restoredModel && hasApiKey) {
-				initialModel = restoredModel;
-				if (shouldPrintMessages) {
-					console.log(chalk.dim(`Restored model: ${savedModel.provider}/${savedModel.modelId}`));
-				}
-			} else {
-				// Model not found or no API key - fall back to default selection
-				const reason = !restoredModel ? "model no longer exists" : "no API key available";
-
-				if (shouldPrintMessages) {
-					console.error(
-						chalk.yellow(
-							`Warning: Could not restore model ${savedModel.provider}/${savedModel.modelId} (${reason}).`,
-						),
-					);
-				}
-
-				// Ensure we have a valid model - use the same fallback logic
-				if (!initialModel) {
-					const { models: availableModels, error: availableError } = await getAvailableModels();
-					if (availableError) {
-						console.error(chalk.red(availableError));
-						process.exit(1);
-					}
-					if (availableModels.length > 0) {
-						// Try to find a default model from known providers
-						for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
-							const defaultModelId = defaultModelPerProvider[provider];
-							const match = availableModels.find((m) => m.provider === provider && m.id === defaultModelId);
-							if (match) {
-								initialModel = match;
-								break;
-							}
-						}
-
-						// If no default found, use first available
-						if (!initialModel) {
-							initialModel = availableModels[0];
-						}
-
-						if (initialModel && shouldPrintMessages) {
-							console.log(chalk.dim(`Falling back to: ${initialModel.provider}/${initialModel.id}`));
-						}
-					} else {
-						// No models available at all
-						if (shouldPrintMessages) {
-							console.error(chalk.red("\nNo models available."));
-							console.error(chalk.yellow("Set an API key environment variable:"));
-							console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
-							console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
-						}
-						process.exit(1);
-					}
-				} else if (shouldPrintMessages) {
-					console.log(chalk.dim(`Falling back to: ${initialModel.provider}/${initialModel.id}`));
-				}
+		// Load and restore thinking level
+		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
+		if (thinkingLevel) {
+			initialThinking = thinkingLevel;
+			if (shouldPrintMessages) {
+				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
 			}
 		}
 	}
@@ -1058,30 +272,27 @@ export async function main(args: string[]) {
 	// Determine which tools to use
 	const selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
 
-	// Create agent (initialModel can be null in interactive mode)
+	// Create agent
 	const agent = new Agent({
 		initialState: {
 			systemPrompt,
-			model: initialModel as any, // Can be null
+			model: initialModel as any, // Can be null in interactive mode
 			thinkingLevel: initialThinking,
 			tools: selectedTools,
 		},
 		messageTransformer,
 		queueMode: settingsManager.getQueueMode(),
 		transport: new ProviderTransport({
-			// Dynamic API key lookup based on current model's provider
 			getApiKey: async () => {
 				const currentModel = agent.state.model;
 				if (!currentModel) {
 					throw new Error("No model selected");
 				}
 
-				// Try CLI override first
 				if (parsed.apiKey) {
 					return parsed.apiKey;
 				}
 
-				// Use model-specific key lookup
 				const key = await getApiKeyForModel(currentModel);
 				if (!key) {
 					throw new Error(
@@ -1093,13 +304,10 @@ export async function main(args: string[]) {
 		}),
 	});
 
-	// If initial thinking was requested but model doesn't support it, silently reset to off
+	// If initial thinking was requested but model doesn't support it, reset to off
 	if (initialThinking !== "off" && initialModel && !initialModel.reasoning) {
 		agent.setThinkingLevel("off");
 	}
-
-	// Track if we had to fall back from saved model (to show in chat later)
-	let modelFallbackMessage: string | null = null;
 
 	// Load previous messages if continuing or resuming
 	if (parsed.continue || parsed.resume) {
@@ -1107,34 +315,9 @@ export async function main(args: string[]) {
 		if (messages.length > 0) {
 			agent.replaceMessages(messages);
 		}
-
-		// Load and restore thinking level
-		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
-		if (thinkingLevel) {
-			agent.setThinkingLevel(thinkingLevel);
-			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
-			}
-		}
-
-		// Check if we had to fall back from saved model
-		const savedModel = sessionManager.loadModel();
-		if (savedModel && initialModel) {
-			const savedMatches = initialModel.provider === savedModel.provider && initialModel.id === savedModel.modelId;
-			if (!savedMatches) {
-				const { model: restoredModel, error } = findModel(savedModel.provider, savedModel.modelId);
-				if (error) {
-					// Config error - already shown above, just use generic message
-					modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId}. Using ${initialModel.provider}/${initialModel.id}.`;
-				} else {
-					const reason = !restoredModel ? "model no longer exists" : "no API key available";
-					modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId} (${reason}). Using ${initialModel.provider}/${initialModel.id}.`;
-				}
-			}
-		}
 	}
 
-	// Log loaded context files (they're already in the system prompt)
+	// Log loaded context files
 	if (shouldPrintMessages && !parsed.continue && !parsed.resume) {
 		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
@@ -1145,51 +328,27 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Create AgentSession for non-interactive modes
-
+	// Load file commands for slash command expansion
 	const fileCommands = loadSlashCommands();
+
+	// Create session
+	const session = new AgentSession({
+		agent,
+		sessionManager,
+		settingsManager,
+		scopedModels,
+		fileCommands,
+	});
 
 	// Route to appropriate mode
 	if (mode === "rpc") {
-		// RPC mode - headless operation
-		const session = new AgentSession({
-			agent,
-			sessionManager,
-			settingsManager,
-			scopedModels,
-			fileCommands,
-		});
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		// Check for new version in the background (don't block startup)
+		// Check for new version in the background
 		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
 
-		// Check if we should show changelog (only in interactive mode, only for new sessions)
-		let changelogMarkdown: string | null = null;
-		if (!parsed.continue && !parsed.resume) {
-			const lastVersion = settingsManager.getLastChangelogVersion();
-
-			// Check if we need to show changelog
-			if (!lastVersion) {
-				// First run - show all entries
-				const changelogPath = getChangelogPath();
-				const entries = parseChangelog(changelogPath);
-				if (entries.length > 0) {
-					changelogMarkdown = entries.map((e) => e.content).join("\n\n");
-					settingsManager.setLastChangelogVersion(VERSION);
-				}
-			} else {
-				// Parse current and last versions
-				const changelogPath = getChangelogPath();
-				const entries = parseChangelog(changelogPath);
-				const newEntries = getNewEntries(entries, lastVersion);
-
-				if (newEntries.length > 0) {
-					changelogMarkdown = newEntries.map((e) => e.content).join("\n\n");
-					settingsManager.setLastChangelogVersion(VERSION);
-				}
-			}
-		}
+		// Check if we should show changelog
+		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
 
 		// Show model scope if provided
 		if (scopedModels.length > 0) {
@@ -1205,14 +364,6 @@ export async function main(args: string[]) {
 		// Ensure fd tool is available for file autocomplete
 		const fdPath = await ensureTool("fd");
 
-		// Interactive mode - use TUI (may have initial messages from CLI args)
-		const session = new AgentSession({
-			agent,
-			sessionManager,
-			settingsManager,
-			scopedModels,
-			fileCommands,
-		});
 		await runInteractiveMode(
 			session,
 			VERSION,
@@ -1226,13 +377,84 @@ export async function main(args: string[]) {
 		);
 	} else {
 		// Non-interactive mode (--print flag or --mode flag)
-		const session = new AgentSession({
-			agent,
-			sessionManager,
-			settingsManager,
-			scopedModels,
-			fileCommands,
-		});
 		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
 	}
+}
+
+/** Find initial model based on CLI args, scoped models, settings, or available models */
+async function findInitialModelForSession(parsed: Args, scopedModels: ScopedModel[], settingsManager: SettingsManager) {
+	// 1. CLI args take priority
+	if (parsed.provider && parsed.model) {
+		const { model, error } = findModel(parsed.provider, parsed.model);
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
+		}
+		if (!model) {
+			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
+			process.exit(1);
+		}
+		return model;
+	}
+
+	// 2. Use first model from scoped models (skip if continuing/resuming)
+	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		return scopedModels[0].model;
+	}
+
+	// 3. Try saved default from settings
+	const defaultProvider = settingsManager.getDefaultProvider();
+	const defaultModelId = settingsManager.getDefaultModel();
+	if (defaultProvider && defaultModelId) {
+		const { model, error } = findModel(defaultProvider, defaultModelId);
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
+		}
+		if (model) {
+			return model;
+		}
+	}
+
+	// 4. Try first available model with valid API key
+	const { models: availableModels, error } = await getAvailableModels();
+
+	if (error) {
+		console.error(chalk.red(error));
+		process.exit(1);
+	}
+
+	if (availableModels.length > 0) {
+		return availableModels[0];
+	}
+
+	return null;
+}
+
+/** Get changelog markdown to display (only for new sessions with updates) */
+function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | null {
+	if (parsed.continue || parsed.resume) {
+		return null;
+	}
+
+	const lastVersion = settingsManager.getLastChangelogVersion();
+	const changelogPath = getChangelogPath();
+	const entries = parseChangelog(changelogPath);
+
+	if (!lastVersion) {
+		// First run - show all entries
+		if (entries.length > 0) {
+			settingsManager.setLastChangelogVersion(VERSION);
+			return entries.map((e) => e.content).join("\n\n");
+		}
+	} else {
+		// Check for new entries since last version
+		const newEntries = getNewEntries(entries, lastVersion);
+		if (newEntries.length > 0) {
+			settingsManager.setLastChangelogVersion(VERSION);
+			return newEntries.map((e) => e.content).join("\n\n");
+		}
+	}
+
+	return null;
 }
