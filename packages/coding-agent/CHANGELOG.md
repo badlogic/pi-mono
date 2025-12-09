@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.0] - 2025-12-09
+
+### Changed
+
+- **Major code refactoring**: Restructured codebase for better maintainability and separation of concerns. Moved files into organized directories (`core/`, `modes/`, `utils/`, `cli/`). Extracted `AgentSession` class as central session management abstraction. Split `main.ts` and `tui-renderer.ts` into focused modules. See `DEVELOPMENT.md` for the new code map. ([#153](https://github.com/badlogic/pi-mono/issues/153))
+
 ## [0.14.2] - 2025-12-08
 
 ### Added
