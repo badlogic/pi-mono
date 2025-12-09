@@ -267,7 +267,11 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 **Manual:** `/compact` or `/compact Focus on the API changes`
 
-**Automatic:** Enable with `/autocompact`. Triggers when context exceeds threshold.
+**Automatic:** Enable with `/autocompact`. When enabled, triggers in two cases:
+- **Overflow recovery**: LLM returns context overflow error. Compacts and auto-retries.
+- **Threshold maintenance**: Context exceeds `contextWindow - reserveTokens` after a successful turn. Compacts without retry.
+
+When disabled, neither case triggers automatic compaction (use `/compact` manually if needed).
 
 **How it works:**
 1. Cut point calculated to keep ~20k tokens of recent messages

@@ -2,6 +2,7 @@ import {
 	type AgentContext,
 	type AgentLoopConfig,
 	agentLoop,
+	agentLoopContinue,
 	type Message,
 	type UserMessage,
 } from "@mariozechner/pi-ai";
@@ -33,18 +34,15 @@ export class ProviderTransport implements AgentTransport {
 		this.options = options;
 	}
 
-	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
-		// Get API key
+	private async getModelAndKey(cfg: AgentRunConfig) {
 		let apiKey: string | undefined;
 		if (this.options.getApiKey) {
 			apiKey = await this.options.getApiKey(cfg.model.provider);
 		}
-
 		if (!apiKey) {
 			throw new Error(`No API key found for provider: ${cfg.model.provider}`);
 		}
 
-		// Clone model and modify baseUrl if CORS proxy is enabled
 		let model = cfg.model;
 		if (this.options.corsProxyUrl && cfg.model.baseUrl) {
 			model = {
@@ -53,22 +51,42 @@ export class ProviderTransport implements AgentTransport {
 			};
 		}
 
-		// Messages are already LLM-compatible (filtered by Agent)
-		const context: AgentContext = {
+		return { model, apiKey };
+	}
+
+	private buildContext(messages: Message[], cfg: AgentRunConfig): AgentContext {
+		return {
 			systemPrompt: cfg.systemPrompt,
 			messages,
 			tools: cfg.tools,
 		};
+	}
 
-		const pc: AgentLoopConfig = {
+	private buildLoopConfig(model: typeof cfg.model, apiKey: string, cfg: AgentRunConfig): AgentLoopConfig {
+		return {
 			model,
 			reasoning: cfg.reasoning,
 			apiKey,
 			getQueuedMessages: cfg.getQueuedMessages,
 		};
+	}
 
-		// Yield events from agentLoop
+	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+		const { model, apiKey } = await this.getModelAndKey(cfg);
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(model, apiKey, cfg);
+
 		for await (const ev of agentLoop(userMessage as unknown as UserMessage, context, pc, signal)) {
+			yield ev;
+		}
+	}
+
+	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
+		const { model, apiKey } = await this.getModelAndKey(cfg);
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(model, apiKey, cfg);
+
+		for await (const ev of agentLoopContinue(context, pc, signal)) {
 			yield ev;
 		}
 	}

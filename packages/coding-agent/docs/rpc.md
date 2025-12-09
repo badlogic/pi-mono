@@ -109,6 +109,7 @@ Response:
     "model": {...},
     "thinkingLevel": "medium",
     "isStreaming": false,
+    "isCompacting": false,
     "queueMode": "all",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",

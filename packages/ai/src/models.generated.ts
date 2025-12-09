@@ -3275,13 +3275,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.19999999999999998,
-				output: 0.7999999999999999,
+				input: 0.15,
+				output: 0.75,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 163840,
-			maxTokens: 163840,
+			contextWindow: 8192,
+			maxTokens: 7168,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-4o-audio-preview": {
 			id: "openai/gpt-4o-audio-preview",
@@ -4516,8 +4516,8 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
-				input: 0.049999999999999996,
-				output: 0.22,
+				input: 0.04,
+				output: 0.15,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},

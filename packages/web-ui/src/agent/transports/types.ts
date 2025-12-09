@@ -13,10 +13,14 @@ export interface AgentRunConfig {
 // We re-export the Message type above; consumers should use the upstream AgentEvent type.
 
 export interface AgentTransport {
+	/** Run with a new user message */
 	run(
 		messages: Message[],
 		userMessage: Message,
 		config: AgentRunConfig,
 		signal?: AbortSignal,
-	): AsyncIterable<AgentEvent>; // passthrough of AgentEvent from upstream
+	): AsyncIterable<AgentEvent>;
+
+	/** Continue from current context (no new user message) */
+	continue(messages: Message[], config: AgentRunConfig, signal?: AbortSignal): AsyncIterable<AgentEvent>;
 }

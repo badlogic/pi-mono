@@ -41,11 +41,12 @@ export function calculateContextTokens(usage: Usage): number {
 
 /**
  * Get usage from an assistant message if available.
+ * Skips aborted and error messages as they don't have valid usage data.
  */
 function getAssistantUsage(msg: AppMessage): Usage | null {
 	if (msg.role === "assistant" && "usage" in msg) {
 		const assistantMsg = msg as AssistantMessage;
-		if (assistantMsg.stopReason !== "aborted" && assistantMsg.usage) {
+		if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
 			return assistantMsg.usage;
 		}
 	}
@@ -81,36 +82,59 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 /**
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
- * Accepts any message type (AppMessage, ToolResultMessage, etc.)
  */
-export function estimateTokens(message: {
-	role: string;
-	content?: unknown;
-	command?: string;
-	output?: string;
-}): number {
+export function estimateTokens(message: AppMessage): number {
 	let chars = 0;
 
-	// Handle custom message types that don't have standard content
+	// Handle bashExecution messages
 	if (message.role === "bashExecution") {
-		chars = (message.command?.length || 0) + (message.output?.length || 0);
+		const bash = message as unknown as { command: string; output: string };
+		chars = bash.command.length + bash.output.length;
 		return Math.ceil(chars / 4);
 	}
 
-	// Standard messages with content
-	const content = message.content;
-	if (typeof content === "string") {
-		chars = content.length;
-	} else if (Array.isArray(content)) {
-		for (const block of content) {
+	// Handle user messages
+	if (message.role === "user") {
+		const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+		if (typeof content === "string") {
+			chars = content.length;
+		} else if (Array.isArray(content)) {
+			for (const block of content) {
+				if (block.type === "text" && block.text) {
+					chars += block.text.length;
+				}
+			}
+		}
+		return Math.ceil(chars / 4);
+	}
+
+	// Handle assistant messages
+	if (message.role === "assistant") {
+		const assistant = message as AssistantMessage;
+		for (const block of assistant.content) {
 			if (block.type === "text") {
 				chars += block.text.length;
 			} else if (block.type === "thinking") {
 				chars += block.thinking.length;
+			} else if (block.type === "toolCall") {
+				chars += block.name.length + JSON.stringify(block.arguments).length;
 			}
 		}
+		return Math.ceil(chars / 4);
 	}
-	return Math.ceil(chars / 4);
+
+	// Handle tool results
+	if (message.role === "toolResult") {
+		const toolResult = message as { content: Array<{ type: string; text?: string }> };
+		for (const block of toolResult.content) {
+			if (block.type === "text" && block.text) {
+				chars += block.text.length;
+			}
+		}
+		return Math.ceil(chars / 4);
+	}
+
+	return 0;
 }
 
 /**
@@ -166,6 +190,9 @@ export interface CutPointResult {
 /**
  * Find the cut point in session entries that keeps approximately `keepRecentTokens`.
  *
+ * Algorithm: Walk backwards from newest, accumulating estimated message sizes.
+ * Stop when we've accumulated >= keepRecentTokens. Cut at that point.
+ *
  * Can cut at user OR assistant messages (never tool results). When cutting at an
  * assistant message with tool calls, its tool results come after and will be kept.
  *
@@ -188,46 +215,23 @@ export function findCutPoint(
 		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
 	}
 
-	// Collect assistant usages walking backwards from endIndex
-	const assistantUsages: Array<{ index: number; tokens: number }> = [];
-	for (let i = endIndex - 1; i >= startIndex; i--) {
-		const entry = entries[i];
-		if (entry.type === "message") {
-			const usage = getAssistantUsage(entry.message);
-			if (usage) {
-				assistantUsages.push({
-					index: i,
-					tokens: calculateContextTokens(usage),
-				});
-			}
-		}
-	}
-
-	if (assistantUsages.length === 0) {
-		// No usage info, keep from last cut point
-		const lastCutPoint = cutPoints[cutPoints.length - 1];
-		const entry = entries[lastCutPoint];
-		const isUser = entry.type === "message" && entry.message.role === "user";
-		return {
-			firstKeptEntryIndex: lastCutPoint,
-			turnStartIndex: isUser ? -1 : findTurnStartIndex(entries, lastCutPoint, startIndex),
-			isSplitTurn: !isUser,
-		};
-	}
-
-	// Walk through and find where cumulative token difference exceeds keepRecentTokens
-	const newestTokens = assistantUsages[0].tokens;
+	// Walk backwards from newest, accumulating estimated message sizes
+	let accumulatedTokens = 0;
 	let cutIndex = startIndex; // Default: keep everything in range
 
-	for (let i = 1; i < assistantUsages.length; i++) {
-		const tokenDiff = newestTokens - assistantUsages[i].tokens;
-		if (tokenDiff >= keepRecentTokens) {
-			// Find the valid cut point at or after the assistant we want to keep
-			const lastKeptAssistantIndex = assistantUsages[i - 1].index;
+	for (let i = endIndex - 1; i >= startIndex; i--) {
+		const entry = entries[i];
+		if (entry.type !== "message") continue;
 
-			// Find closest valid cut point at or before lastKeptAssistantIndex
-			for (let c = cutPoints.length - 1; c >= 0; c--) {
-				if (cutPoints[c] <= lastKeptAssistantIndex) {
+		// Estimate this message's size
+		const messageTokens = estimateTokens(entry.message);
+		accumulatedTokens += messageTokens;
+
+		// Check if we've exceeded the budget
+		if (accumulatedTokens >= keepRecentTokens) {
+			// Find the closest valid cut point at or after this entry
+			for (let c = 0; c < cutPoints.length; c++) {
+				if (cutPoints[c] >= i) {
 					cutIndex = cutPoints[c];
 					break;
 				}
@@ -404,9 +408,8 @@ export async function compact(
 		}
 	}
 
-	// Generate summaries (can be parallel if both needed)
+	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
-	let turnPrefixSummary: string | undefined;
 
 	if (cutResult.isSplitTurn && turnPrefixMessages.length > 0) {
 		// Generate both summaries in parallel
@@ -416,8 +419,8 @@ export async function compact(
 				: Promise.resolve("No prior history."),
 			generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, signal),
 		]);
-		summary = historyResult;
-		turnPrefixSummary = turnPrefixResult;
+		// Merge into single summary
+		summary = historyResult + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixResult;
 	} else {
 		// Just generate history summary
 		summary = await generateSummary(
@@ -434,7 +437,6 @@ export async function compact(
 		type: "compaction",
 		timestamp: new Date().toISOString(),
 		summary,
-		turnPrefixSummary,
 		firstKeptEntryIndex: cutResult.firstKeptEntryIndex,
 		tokensBefore,
 	};

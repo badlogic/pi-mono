@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Simplified compaction flow**: Removed proactive compaction (aborting mid-turn when threshold approached). Compaction now triggers in two cases only: (1) overflow error from LLM, which compacts and auto-retries, or (2) threshold crossed after a successful turn, which compacts without retry.
+
+- **Compaction retry uses `Agent.continue()`**: Auto-retry after overflow now uses the new `continue()` API instead of re-sending the user message, preserving exact context state.
+
+- **Merged turn prefix summary**: When a turn is split during compaction, the turn prefix summary is now merged into the main history summary instead of being stored separately.
+
+### Added
+
+- **`isCompacting` property on AgentSession**: Check if auto-compaction is currently running.
+
+- **Session compaction indicator**: When resuming a compacted session, displays "Session compacted N times" status message.
+
+### Fixed
+
+- **Block input during compaction**: User input is now blocked while auto-compaction is running to prevent race conditions.
+
+- **Skip error messages in usage calculation**: Context size estimation now skips both aborted and error messages, as neither have valid usage data.
+
 ## [0.16.0] - 2025-12-09
 
 ### Breaking Changes

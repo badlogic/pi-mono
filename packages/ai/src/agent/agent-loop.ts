@@ -4,7 +4,10 @@ import { EventStream } from "../utils/event-stream.js";
 import { validateToolArguments } from "../utils/validation.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult, QueuedMessage } from "./types.js";
 
-// Main prompt function - returns a stream of events
+/**
+ * Start an agent loop with a new user message.
+ * The prompt is added to the context and events are emitted for it.
+ */
 export function agentLoop(
 	prompt: UserMessage,
 	context: AgentContext,
@@ -12,90 +15,135 @@ export function agentLoop(
 	signal?: AbortSignal,
 	streamFn?: typeof streamSimple,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
-	const stream = new EventStream<AgentEvent, AgentContext["messages"]>(
-		(event: AgentEvent) => event.type === "agent_end",
-		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
-	);
+	const stream = createAgentStream();
 
-	// Run the prompt async
 	(async () => {
-		// Track new messages generated during this prompt
-		const newMessages: AgentContext["messages"] = [];
-		// Create user message for the prompt
-		const messages = [...context.messages, prompt];
-		newMessages.push(prompt);
+		const newMessages: AgentContext["messages"] = [prompt];
+		const currentContext: AgentContext = {
+			...context,
+			messages: [...context.messages, prompt],
+		};
 
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
 		stream.push({ type: "message_start", message: prompt });
 		stream.push({ type: "message_end", message: prompt });
 
-		// Update context with new messages
-		const currentContext: AgentContext = {
-			...context,
-			messages,
-		};
-
-		// Keep looping while we have tool calls or queued messages
-		let hasMoreToolCalls = true;
-		let firstTurn = true;
-		let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
-
-		while (hasMoreToolCalls || queuedMessages.length > 0) {
-			if (!firstTurn) {
-				stream.push({ type: "turn_start" });
-			} else {
-				firstTurn = false;
-			}
-
-			// Process queued messages first (inject before next assistant response)
-			if (queuedMessages.length > 0) {
-				for (const { original, llm } of queuedMessages) {
-					stream.push({ type: "message_start", message: original });
-					stream.push({ type: "message_end", message: original });
-					if (llm) {
-						currentContext.messages.push(llm);
-						newMessages.push(llm);
-					}
-				}
-				queuedMessages = [];
-			}
-
-			// console.log("agent-loop: ", [...currentContext.messages]);
-
-			// Stream assistant response
-			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
-			newMessages.push(message);
-
-			if (message.stopReason === "error" || message.stopReason === "aborted") {
-				// Stop the loop on error or abort
-				stream.push({ type: "turn_end", message, toolResults: [] });
-				stream.push({ type: "agent_end", messages: newMessages });
-				stream.end(newMessages);
-				return;
-			}
-
-			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
-			hasMoreToolCalls = toolCalls.length > 0;
-
-			const toolResults: ToolResultMessage[] = [];
-			if (hasMoreToolCalls) {
-				// Execute tool calls
-				toolResults.push(...(await executeToolCalls(currentContext.tools, message, signal, stream)));
-				currentContext.messages.push(...toolResults);
-				newMessages.push(...toolResults);
-			}
-			stream.push({ type: "turn_end", message, toolResults: toolResults });
-
-			// Get queued messages after turn completes
-			queuedMessages = (await config.getQueuedMessages?.()) || [];
-		}
-		stream.push({ type: "agent_end", messages: newMessages });
-		stream.end(newMessages);
+		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
 	})();
 
 	return stream;
+}
+
+/**
+ * Continue an agent loop from the current context without adding a new message.
+ * Used for retry after overflow - context already has user message or tool results.
+ * Throws if the last message is not a user message or tool result.
+ */
+export function agentLoopContinue(
+	context: AgentContext,
+	config: AgentLoopConfig,
+	signal?: AbortSignal,
+	streamFn?: typeof streamSimple,
+): EventStream<AgentEvent, AgentContext["messages"]> {
+	// Validate that we can continue from this context
+	const lastMessage = context.messages[context.messages.length - 1];
+	if (!lastMessage) {
+		throw new Error("Cannot continue: no messages in context");
+	}
+	if (lastMessage.role !== "user" && lastMessage.role !== "toolResult") {
+		throw new Error(`Cannot continue from message role: ${lastMessage.role}. Expected 'user' or 'toolResult'.`);
+	}
+
+	const stream = createAgentStream();
+
+	(async () => {
+		const newMessages: AgentContext["messages"] = [];
+		const currentContext: AgentContext = { ...context };
+
+		stream.push({ type: "agent_start" });
+		stream.push({ type: "turn_start" });
+		// No user message events - we're continuing from existing context
+
+		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+	})();
+
+	return stream;
+}
+
+function createAgentStream(): EventStream<AgentEvent, AgentContext["messages"]> {
+	return new EventStream<AgentEvent, AgentContext["messages"]>(
+		(event: AgentEvent) => event.type === "agent_end",
+		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
+	);
+}
+
+/**
+ * Shared loop logic for both agentLoop and agentLoopContinue.
+ */
+async function runLoop(
+	currentContext: AgentContext,
+	newMessages: AgentContext["messages"],
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
+	stream: EventStream<AgentEvent, AgentContext["messages"]>,
+	streamFn?: typeof streamSimple,
+): Promise<void> {
+	let hasMoreToolCalls = true;
+	let firstTurn = true;
+	let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
+
+	while (hasMoreToolCalls || queuedMessages.length > 0) {
+		if (!firstTurn) {
+			stream.push({ type: "turn_start" });
+		} else {
+			firstTurn = false;
+		}
+
+		// Process queued messages first (inject before next assistant response)
+		if (queuedMessages.length > 0) {
+			for (const { original, llm } of queuedMessages) {
+				stream.push({ type: "message_start", message: original });
+				stream.push({ type: "message_end", message: original });
+				if (llm) {
+					currentContext.messages.push(llm);
+					newMessages.push(llm);
+				}
+			}
+			queuedMessages = [];
+		}
+
+		// Stream assistant response
+		const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+		newMessages.push(message);
+
+		if (message.stopReason === "error" || message.stopReason === "aborted") {
+			// Stop the loop on error or abort
+			stream.push({ type: "turn_end", message, toolResults: [] });
+			stream.push({ type: "agent_end", messages: newMessages });
+			stream.end(newMessages);
+			return;
+		}
+
+		// Check for tool calls
+		const toolCalls = message.content.filter((c) => c.type === "toolCall");
+		hasMoreToolCalls = toolCalls.length > 0;
+
+		const toolResults: ToolResultMessage[] = [];
+		if (hasMoreToolCalls) {
+			// Execute tool calls
+			toolResults.push(...(await executeToolCalls(currentContext.tools, message, signal, stream)));
+			currentContext.messages.push(...toolResults);
+			newMessages.push(...toolResults);
+		}
+		stream.push({ type: "turn_end", message, toolResults: toolResults });
+
+		// Get queued messages after turn completes
+		queuedMessages = (await config.getQueuedMessages?.()) || [];
+	}
+
+	stream.push({ type: "agent_end", messages: newMessages });
+	stream.end(newMessages);
 }
 
 // Helper functions

@@ -90,6 +90,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
+					isCompacting: session.isCompacting,
 					queueMode: session.queueMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,

@@ -1,7 +1,25 @@
-import type { Model } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { calculateTool, getModel } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
 import { Agent, ProviderTransport } from "../src/index.js";
+
+function createTransport() {
+	return new ProviderTransport({
+		getApiKey: async (provider) => {
+			const envVarMap: Record<string, string> = {
+				google: "GEMINI_API_KEY",
+				openai: "OPENAI_API_KEY",
+				anthropic: "ANTHROPIC_API_KEY",
+				xai: "XAI_API_KEY",
+				groq: "GROQ_API_KEY",
+				cerebras: "CEREBRAS_API_KEY",
+				zai: "ZAI_API_KEY",
+			};
+			const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
+			return process.env[envVar];
+		},
+	});
+}
 
 async function basicPrompt(model: Model<any>) {
 	const agent = new Agent({
@@ -11,22 +29,7 @@ async function basicPrompt(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: new ProviderTransport({
-			getApiKey: async (provider) => {
-				// Map provider names to env var names
-				const envVarMap: Record<string, string> = {
-					google: "GEMINI_API_KEY",
-					openai: "OPENAI_API_KEY",
-					anthropic: "ANTHROPIC_API_KEY",
-					xai: "XAI_API_KEY",
-					groq: "GROQ_API_KEY",
-					cerebras: "CEREBRAS_API_KEY",
-					zai: "ZAI_API_KEY",
-				};
-				const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-				return process.env[envVar];
-			},
-		}),
+		transport: createTransport(),
 	});
 
 	await agent.prompt("What is 2+2? Answer with just the number.");
@@ -54,22 +57,7 @@ async function toolExecution(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [calculateTool],
 		},
-		transport: new ProviderTransport({
-			getApiKey: async (provider) => {
-				// Map provider names to env var names
-				const envVarMap: Record<string, string> = {
-					google: "GEMINI_API_KEY",
-					openai: "OPENAI_API_KEY",
-					anthropic: "ANTHROPIC_API_KEY",
-					xai: "XAI_API_KEY",
-					groq: "GROQ_API_KEY",
-					cerebras: "CEREBRAS_API_KEY",
-					zai: "ZAI_API_KEY",
-				};
-				const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-				return process.env[envVar];
-			},
-		}),
+		transport: createTransport(),
 	});
 
 	await agent.prompt("Calculate 123 * 456 using the calculator tool.");
@@ -111,22 +99,7 @@ async function abortExecution(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [calculateTool],
 		},
-		transport: new ProviderTransport({
-			getApiKey: async (provider) => {
-				// Map provider names to env var names
-				const envVarMap: Record<string, string> = {
-					google: "GEMINI_API_KEY",
-					openai: "OPENAI_API_KEY",
-					anthropic: "ANTHROPIC_API_KEY",
-					xai: "XAI_API_KEY",
-					groq: "GROQ_API_KEY",
-					cerebras: "CEREBRAS_API_KEY",
-					zai: "ZAI_API_KEY",
-				};
-				const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-				return process.env[envVar];
-			},
-		}),
+		transport: createTransport(),
 	});
 
 	const promptPromise = agent.prompt("Calculate 100 * 200, then 300 * 400, then sum the results.");
@@ -156,22 +129,7 @@ async function stateUpdates(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: new ProviderTransport({
-			getApiKey: async (provider) => {
-				// Map provider names to env var names
-				const envVarMap: Record<string, string> = {
-					google: "GEMINI_API_KEY",
-					openai: "OPENAI_API_KEY",
-					anthropic: "ANTHROPIC_API_KEY",
-					xai: "XAI_API_KEY",
-					groq: "GROQ_API_KEY",
-					cerebras: "CEREBRAS_API_KEY",
-					zai: "ZAI_API_KEY",
-				};
-				const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-				return process.env[envVar];
-			},
-		}),
+		transport: createTransport(),
 	});
 
 	const events: Array<string> = [];
@@ -204,22 +162,7 @@ async function multiTurnConversation(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: new ProviderTransport({
-			getApiKey: async (provider) => {
-				// Map provider names to env var names
-				const envVarMap: Record<string, string> = {
-					google: "GEMINI_API_KEY",
-					openai: "OPENAI_API_KEY",
-					anthropic: "ANTHROPIC_API_KEY",
-					xai: "XAI_API_KEY",
-					groq: "GROQ_API_KEY",
-					cerebras: "CEREBRAS_API_KEY",
-					zai: "ZAI_API_KEY",
-				};
-				const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-				return process.env[envVar];
-			},
-		}),
+		transport: createTransport(),
 	});
 
 	await agent.prompt("My name is Alice.");
@@ -284,8 +227,8 @@ describe("Agent E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (claude-3-5-haiku-20241022)", () => {
-		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (claude-haiku-4-5)", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
 
 		it("should handle basic text prompt", async () => {
 			await basicPrompt(model);
@@ -401,6 +344,167 @@ describe("Agent E2E Tests", () => {
 
 		it("should maintain context across multiple turns", async () => {
 			await multiTurnConversation(model);
+		});
+	});
+});
+
+describe("Agent.continue()", () => {
+	describe("validation", () => {
+		it("should throw when no messages in context", async () => {
+			const agent = new Agent({
+				initialState: {
+					systemPrompt: "Test",
+					model: getModel("anthropic", "claude-haiku-4-5"),
+				},
+				transport: createTransport(),
+			});
+
+			await expect(agent.continue()).rejects.toThrow("No messages to continue from");
+		});
+
+		it("should throw when last message is assistant", async () => {
+			const agent = new Agent({
+				initialState: {
+					systemPrompt: "Test",
+					model: getModel("anthropic", "claude-haiku-4-5"),
+				},
+				transport: createTransport(),
+			});
+
+			const assistantMessage: AssistantMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: "Hello" }],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-haiku-4-5",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			};
+			agent.replaceMessages([assistantMessage]);
+
+			await expect(agent.continue()).rejects.toThrow("Cannot continue from message role: assistant");
+		});
+	});
+
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from user message", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+
+		it("should continue and get response when last message is user", async () => {
+			const agent = new Agent({
+				initialState: {
+					systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
+					model,
+					thinkingLevel: "off",
+					tools: [],
+				},
+				transport: createTransport(),
+			});
+
+			// Manually add a user message without calling prompt()
+			const userMessage: UserMessage = {
+				role: "user",
+				content: [{ type: "text", text: "Say exactly: HELLO WORLD" }],
+				timestamp: Date.now(),
+			};
+			agent.replaceMessages([userMessage]);
+
+			// Continue from the user message
+			await agent.continue();
+
+			expect(agent.state.isStreaming).toBe(false);
+			expect(agent.state.messages.length).toBe(2);
+			expect(agent.state.messages[0].role).toBe("user");
+			expect(agent.state.messages[1].role).toBe("assistant");
+
+			const assistantMsg = agent.state.messages[1] as AssistantMessage;
+			const textContent = assistantMsg.content.find((c) => c.type === "text");
+			expect(textContent).toBeDefined();
+			if (textContent?.type === "text") {
+				expect(textContent.text.toUpperCase()).toContain("HELLO WORLD");
+			}
+		});
+	});
+
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from tool result", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+
+		it("should continue and process tool results", async () => {
+			const agent = new Agent({
+				initialState: {
+					systemPrompt:
+						"You are a helpful assistant. After getting a calculation result, state the answer clearly.",
+					model,
+					thinkingLevel: "off",
+					tools: [calculateTool],
+				},
+				transport: createTransport(),
+			});
+
+			// Set up a conversation state as if tool was just executed
+			const userMessage: UserMessage = {
+				role: "user",
+				content: [{ type: "text", text: "What is 5 + 3?" }],
+				timestamp: Date.now(),
+			};
+
+			const assistantMessage: AssistantMessage = {
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Let me calculate that." },
+					{ type: "toolCall", id: "calc-1", name: "calculate", arguments: { expression: "5 + 3" } },
+				],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-haiku-4-5",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+			};
+
+			const toolResult: ToolResultMessage = {
+				role: "toolResult",
+				toolCallId: "calc-1",
+				toolName: "calculate",
+				content: [{ type: "text", text: "5 + 3 = 8" }],
+				isError: false,
+				timestamp: Date.now(),
+			};
+
+			agent.replaceMessages([userMessage, assistantMessage, toolResult]);
+
+			// Continue from the tool result
+			await agent.continue();
+
+			expect(agent.state.isStreaming).toBe(false);
+			// Should have added an assistant response
+			expect(agent.state.messages.length).toBeGreaterThanOrEqual(4);
+
+			const lastMessage = agent.state.messages[agent.state.messages.length - 1];
+			expect(lastMessage.role).toBe("assistant");
+
+			if (lastMessage.role === "assistant") {
+				const textContent = lastMessage.content
+					.filter((c) => c.type === "text")
+					.map((c) => (c as { type: "text"; text: string }).text)
+					.join(" ");
+				// Should mention 8 in the response
+				expect(textContent).toMatch(/8/);
+			}
 		});
 	});
 });

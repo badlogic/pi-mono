@@ -14,11 +14,11 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, estimateTokens, shouldCompact } from "./compaction.js";
+import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
@@ -112,8 +112,6 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | null = null;
 	private _autoCompactionAbortController: AbortController | null = null;
-	private _abortingForCompaction = false;
-	private _lastUserMessageText: string | null = null;
 
 	// Bash execution state
 	private _bashAbortController: AbortController | null = null;
@@ -148,46 +146,17 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			// Skip saving aborted message if we're aborting for compaction
-			const isAbortedForCompaction =
-				this._abortingForCompaction &&
-				event.message.role === "assistant" &&
-				(event.message as AssistantMessage).stopReason === "aborted";
-
-			if (!isAbortedForCompaction) {
-				this.sessionManager.saveMessage(event.message);
-			}
+			this.sessionManager.saveMessage(event.message);
 
 			// Initialize session after first user+assistant exchange
 			if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
 				this.sessionManager.startSession(this.agent.state);
 			}
 
-			// Track user message text for potential retry after overflow
-			if (event.message.role === "user") {
-				const content = (event.message as { content: unknown }).content;
-				if (typeof content === "string") {
-					this._lastUserMessageText = content;
-				} else if (Array.isArray(content)) {
-					this._lastUserMessageText = content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("\n");
-				}
-			}
-
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
-				this._lastAssistantMessage = event.message as AssistantMessage;
+				this._lastAssistantMessage = event.message;
 			}
-		}
-
-		// Handle turn_end for proactive compaction check
-		if (event.type === "turn_end") {
-			await this._checkProactiveCompaction(
-				event.message as AssistantMessage,
-				event.toolResults as ToolResultMessage[],
-			);
 		}
 
 		// Check auto-compaction after agent completes
@@ -272,6 +241,11 @@ export class AgentSession {
 	/** Whether agent is currently streaming a response */
 	get isStreaming(): boolean {
 		return this.agent.state.isStreaming;
+	}
+
+	/** Whether auto-compaction is currently running */
+	get isCompacting(): boolean {
+		return this._autoCompactionAbortController !== null || this._compactionAbortController !== null;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -623,90 +597,40 @@ export class AgentSession {
 	}
 
 	/**
-	 * Check for proactive compaction after turn_end (before next LLM call).
-	 * Estimates context size and aborts if threshold would be crossed.
-	 */
-	private async _checkProactiveCompaction(
-		assistantMessage: AssistantMessage,
-		toolResults: ToolResultMessage[],
-	): Promise<void> {
-		const settings = this.settingsManager.getCompactionSettings();
-		if (!settings.enabled) return;
-
-		// Skip if message was aborted or errored
-		if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") return;
-
-		// Only check if there are tool calls (meaning another turn will happen)
-		const hasToolCalls = assistantMessage.content.some((c) => c.type === "toolCall");
-		if (!hasToolCalls) return;
-
-		// Estimate context size: last usage + tool results
-		const contextTokens = calculateContextTokens(assistantMessage.usage);
-		const toolResultTokens = toolResults.reduce((sum, msg) => sum + estimateTokens(msg), 0);
-		const estimatedTotal = contextTokens + toolResultTokens;
-
-		const contextWindow = this.model?.contextWindow ?? 0;
-
-		if (!shouldCompact(estimatedTotal, contextWindow, settings)) return;
-
-		// Threshold crossed - abort for compaction
-		this._abortingForCompaction = true;
-		this.agent.abort();
-	}
-
-	/**
 	 * Handle compaction after agent_end.
-	 * Checks for overflow (reactive) or threshold (proactive after abort).
+	 * Two cases:
+	 * 1. Overflow: LLM returned context overflow error, remove error message from agent state, compact, auto-retry
+	 * 2. Threshold: Turn succeeded but context over threshold, compact, NO auto-retry (user continues manually)
 	 */
 	private async _handleAgentEndCompaction(assistantMessage: AssistantMessage): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
+
+		// Skip if message was aborted (user cancelled)
+		if (assistantMessage.stopReason === "aborted") return;
+
 		const contextWindow = this.model?.contextWindow ?? 0;
 
-		// Check 1: Overflow detection (reactive recovery)
-		const isOverflow = isContextOverflow(assistantMessage, contextWindow);
-
-		// Check 2: Aborted for compaction (proactive)
-		const wasAbortedForCompaction = this._abortingForCompaction;
-		this._abortingForCompaction = false;
-
-		// Check 3: Threshold crossed but turn succeeded (maintenance compaction)
-		const contextTokens =
-			assistantMessage.stopReason === "error" ? 0 : calculateContextTokens(assistantMessage.usage);
-		const thresholdCrossed = settings.enabled && shouldCompact(contextTokens, contextWindow, settings);
-
-		// Determine which action to take
-		let reason: "overflow" | "threshold" | null = null;
-		let willRetry = false;
-
-		if (isOverflow) {
-			reason = "overflow";
-			willRetry = true;
-			// Remove the overflow error message from agent state
+		// Case 1: Overflow - LLM returned context overflow error
+		if (isContextOverflow(assistantMessage, contextWindow)) {
+			// Remove the error message from agent state (it IS saved to session for history,
+			// but we don't want it in context for the retry)
 			const messages = this.agent.state.messages;
 			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
 				this.agent.replaceMessages(messages.slice(0, -1));
 			}
-		} else if (wasAbortedForCompaction) {
-			reason = "threshold";
-			willRetry = true;
-			// Remove the aborted message from agent state
-			const messages = this.agent.state.messages;
-			if (
-				messages.length > 0 &&
-				messages[messages.length - 1].role === "assistant" &&
-				(messages[messages.length - 1] as AssistantMessage).stopReason === "aborted"
-			) {
-				this.agent.replaceMessages(messages.slice(0, -1));
-			}
-		} else if (thresholdCrossed) {
-			reason = "threshold";
-			willRetry = false; // Turn succeeded, no retry needed
+			await this._runAutoCompaction("overflow", true);
+			return;
 		}
 
-		if (!reason) return;
+		// Case 2: Threshold - turn succeeded but context is getting large
+		// Skip if this was an error (non-overflow errors don't have usage data)
+		if (assistantMessage.stopReason === "error") return;
 
-		// Run compaction
-		await this._runAutoCompaction(reason, willRetry);
+		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		if (shouldCompact(contextTokens, contextWindow, settings)) {
+			await this._runAutoCompaction("threshold", false);
+		}
 	}
 
 	/**
@@ -754,11 +678,22 @@ export class AgentSession {
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 
-			// Auto-retry if needed
-			if (willRetry && this._lastUserMessageText) {
-				// Small delay to let UI update
-				await new Promise((resolve) => setTimeout(resolve, 100));
-				await this.prompt(this._lastUserMessageText);
+			// Auto-retry if needed - use continue() since user message is already in context
+			if (willRetry) {
+				// Remove trailing error message from agent state (it's kept in session file for history)
+				// This is needed because continue() requires last message to be user or toolResult
+				const messages = this.agent.state.messages;
+				const lastMsg = messages[messages.length - 1];
+				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
+					this.agent.replaceMessages(messages.slice(0, -1));
+				}
+
+				// Use setTimeout to break out of the event handler chain
+				setTimeout(() => {
+					this.agent.continue().catch(() => {
+						// Retry failed - silently ignore, user can manually retry
+					});
+				}, 100);
 			}
 		} catch (error) {
 			// Compaction failed - emit end event without retry

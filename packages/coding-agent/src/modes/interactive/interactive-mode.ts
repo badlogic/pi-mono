@@ -407,6 +407,11 @@ export class InteractiveMode {
 				}
 			}
 
+			// Block input during compaction (will retry automatically)
+			if (this.session.isCompacting) {
+				return;
+			}
+
 			// Queue message if agent is streaming
 			if (this.session.isStreaming) {
 				await this.session.queueMessage(text);
@@ -604,10 +609,6 @@ export class InteractiveMode {
 					compactionComponent.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
-
-					if (event.willRetry) {
-						this.showStatus("Compacted context, retrying...");
-					}
 				}
 				this.ui.requestRender();
 				break;
@@ -743,6 +744,14 @@ export class InteractiveMode {
 
 	renderInitialMessages(state: AgentState): void {
 		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
+
+		// Show compaction info if session was compacted
+		const entries = this.sessionManager.loadEntries();
+		const compactionCount = entries.filter((e) => e.type === "compaction").length;
+		if (compactionCount > 0) {
+			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
+			this.showStatus(`Session compacted ${times}`);
+		}
 	}
 
 	async getUserInput(): Promise<string> {
