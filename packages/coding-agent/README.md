@@ -27,6 +27,7 @@ Works on Linux, macOS, and Windows (needs a bash shell, see [Windows Shell Confi
 - [To-Dos](#to-dos)
 - [Planning](#planning)
 - [Background Bash](#background-bash)
+- [Development](#development)
 - [License](#license)
 - [See Also](#see-also)
 
@@ -1414,6 +1415,10 @@ The debug log includes:
 - Terminal width at time of capture
 - Total number of rendered lines
 - Each line with its index, visible width, and JSON-escaped content showing all ANSI codes
+
+## Development
+
+For architecture details, code organization, and contribution guidelines, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## License
 
