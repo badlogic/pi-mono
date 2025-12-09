@@ -12,6 +12,16 @@
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./hooks": {
+			"types": "./dist/core/hooks/index.d.ts",
+			"import": "./dist/core/hooks/index.js"
+		}
+	},
 	"files": [
 		"dist",
 		"CHANGELOG.md"
@@ -33,7 +43,8 @@
 		"@mariozechner/pi-tui": "^0.16.0",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",
-		"glob": "^11.0.3"
+		"glob": "^11.0.3",
+		"jiti": "^2.6.1"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",

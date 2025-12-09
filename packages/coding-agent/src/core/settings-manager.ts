@@ -19,6 +19,8 @@ export interface Settings {
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
+	hooks?: string[]; // Array of hook file paths (TypeScript/JavaScript)
+	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 }
 
 export class SettingsManager {
@@ -172,5 +174,13 @@ export class SettingsManager {
 	setCollapseChangelog(collapse: boolean): void {
 		this.settings.collapseChangelog = collapse;
 		this.save();
+	}
+
+	getHookPaths(): string[] {
+		return this.settings.hooks ?? [];
+	}
+
+	getHookTimeout(): number {
+		return this.settings.hookTimeout ?? 30000;
 	}
 }

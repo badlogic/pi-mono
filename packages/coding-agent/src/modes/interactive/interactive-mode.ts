@@ -25,6 +25,14 @@ import {
 import { exec } from "child_process";
 import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import {
+	type BranchEvent,
+	HookRunner,
+	type HookUIContext,
+	loadHooks,
+	type TurnEndEvent,
+	type TurnStartEvent,
+} from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
@@ -38,6 +46,8 @@ import { CompactionComponent } from "./components/compaction.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
+import { HookInputComponent } from "./components/hook-input.js";
+import { HookSelectorComponent } from "./components/hook-selector.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { QueueModeSelectorComponent } from "./components/queue-mode-selector.js";
@@ -97,6 +107,9 @@ export class InteractiveMode {
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | null = null;
 	private autoCompactionEscapeHandler?: () => void;
+
+	// Hook system
+	private hookRunner: HookRunner | null = null;
 
 	// Convenience accessors
 	private get agent() {
@@ -241,6 +254,9 @@ export class InteractiveMode {
 		// Start the UI
 		this.ui.start();
 		this.isInitialized = true;
+
+		// Initialize hooks before subscribing to agent events
+		await this.initHooks();
 
 		// Subscribe to agent events
 		this.subscribeToAgent();
@@ -428,9 +444,71 @@ export class InteractiveMode {
 		};
 	}
 
+	private async initHooks(): Promise<void> {
+		const hookPaths = this.settingsManager.getHookPaths();
+		if (hookPaths.length === 0) return;
+
+		const cwd = process.cwd();
+		const { hooks, errors } = await loadHooks(hookPaths, cwd);
+
+		// Log any hook loading errors
+		for (const { path, error } of errors) {
+			console.error(`Failed to load hook "${path}": ${error}`);
+		}
+
+		if (hooks.length === 0) return;
+
+		// Create UI context for hooks
+		const uiContext = this.createHookUIContext();
+		const timeout = this.settingsManager.getHookTimeout();
+
+		this.hookRunner = new HookRunner(hooks, uiContext, cwd, timeout);
+
+		// Listen for hook errors and display them
+		this.hookRunner.onError((err) => {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("error", `Hook "${err.hookPath}": ${err.error}`), 1, 0));
+			this.ui.requestRender();
+		});
+	}
+
 	private subscribeToAgent(): void {
+		// Unsubscribe from previous subscription if any
+		if (this.unsubscribe) {
+			this.unsubscribe();
+		}
+
+		// Track turn index for hooks (resets when this method is called)
+		let turnIndex = 0;
+
 		this.unsubscribe = this.session.subscribe(async (event) => {
+			// Handle UI updates first
 			await this.handleEvent(event, this.session.state);
+
+			// Emit to hooks
+			if (this.hookRunner) {
+				if (event.type === "agent_start") {
+					await this.hookRunner.emit({ type: "agent_start" });
+				} else if (event.type === "agent_end") {
+					await this.hookRunner.emit({ type: "agent_end", messages: event.messages });
+				} else if (event.type === "turn_start") {
+					const hookEvent: TurnStartEvent = {
+						type: "turn_start",
+						turnIndex,
+						timestamp: Date.now(),
+					};
+					await this.hookRunner.emit(hookEvent);
+				} else if (event.type === "turn_end") {
+					const hookEvent: TurnEndEvent = {
+						type: "turn_end",
+						turnIndex,
+						message: event.message,
+						toolResults: event.toolResults,
+					};
+					await this.hookRunner.emit(hookEvent);
+					turnIndex++;
+				}
+			}
 		});
 	}
 
@@ -1013,13 +1091,66 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new UserMessageSelectorComponent(
 				userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
-				(entryIndex) => {
+				async (entryIndex) => {
+					// Hide selector first
+					done();
+
+					// If hooks are registered for branch, emit the event
+					if (this.hookRunner?.hasHandlers("branch")) {
+						// Get entries for hook event
+						const entries = this.sessionManager.loadEntries();
+
+						// Track if hook errors during emit
+						let hookErrored = false;
+						const errorUnsub = this.hookRunner.onError(() => {
+							hookErrored = true;
+						});
+
+						try {
+							// Calculate turn index from entry index
+							// turnIndex = count of user messages up to and including selected entry (0-based)
+							let targetTurnIndex = -1;
+							for (let i = 0; i <= entryIndex; i++) {
+								const entry = entries[i];
+								if (entry && entry.type === "message" && entry.message.role === "user") {
+									targetTurnIndex++;
+								}
+							}
+
+							const branchEvent: BranchEvent = {
+								type: "branch",
+								targetTurnIndex,
+								entries,
+							};
+							const result = await this.hookRunner.emit(branchEvent);
+
+							// If hook errored, abort - let user retry
+							if (hookErrored) {
+								this.showError("Branch hook failed - operation aborted");
+								this.ui.requestRender();
+								return;
+							}
+
+							// If hook says skip conversation restore, don't branch
+							if (result?.skipConversationRestore) {
+								this.ui.requestRender();
+								return;
+							}
+						} finally {
+							errorUnsub();
+						}
+					}
+
+					// Execute branch
 					const selectedText = this.session.branch(entryIndex);
+
+					// Re-subscribe to reset turnIndex for hooks
+					this.subscribeToAgent();
+
 					this.chatContainer.clear();
 					this.isFirstUserMessage = true;
 					this.renderInitialMessages(this.session.state);
 					this.editor.setText(selectedText);
-					done();
 					this.showStatus("Branched to new session");
 				},
 				() => {
@@ -1063,6 +1194,9 @@ export class InteractiveMode {
 
 		// Switch session via AgentSession
 		await this.session.switchSession(sessionPath);
+
+		// Re-subscribe to reset turnIndex for hooks
+		this.subscribeToAgent();
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
@@ -1260,6 +1394,9 @@ export class InteractiveMode {
 		// Reset via session
 		await this.session.reset();
 
+		// Re-subscribe to reset turnIndex for hooks
+		this.subscribeToAgent();
+
 		// Clear UI state
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
@@ -1417,6 +1554,86 @@ export class InteractiveMode {
 			this.statusContainer.clear();
 			this.editor.onEscape = originalOnEscape;
 		}
+	}
+
+	// Hook UI context methods
+	private createHookUIContext(): HookUIContext {
+		return {
+			select: (title, options) => this.showHookSelector(title, options),
+			confirm: (title, message) => this.showHookConfirm(title, message),
+			input: (title, placeholder) => this.showHookInput(title, placeholder),
+			notify: (message, type) => this.showHookNotify(message, type),
+		};
+	}
+
+	private showHookSelector(title: string, options: string[]): Promise<string | null> {
+		return new Promise((resolve) => {
+			const hide = () => {
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.ui.setFocus(this.editor);
+				this.ui.requestRender();
+			};
+
+			const selector = new HookSelectorComponent(
+				title,
+				options,
+				(option) => {
+					hide();
+					resolve(option);
+				},
+				() => {
+					hide();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(selector);
+			this.ui.setFocus(selector);
+			this.ui.requestRender();
+		});
+	}
+
+	private async showHookConfirm(title: string, message: string): Promise<boolean> {
+		const result = await this.showHookSelector(`${title}\n${message}`, ["Yes", "No"]);
+		return result === "Yes";
+	}
+
+	private showHookInput(title: string, placeholder?: string): Promise<string | null> {
+		return new Promise((resolve) => {
+			const hide = () => {
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.ui.setFocus(this.editor);
+				this.ui.requestRender();
+			};
+
+			const input = new HookInputComponent(
+				title,
+				placeholder,
+				(value) => {
+					hide();
+					resolve(value);
+				},
+				() => {
+					hide();
+					resolve(null);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(input);
+			this.ui.setFocus(input);
+			this.ui.requestRender();
+		});
+	}
+
+	private showHookNotify(message: string, type?: "info" | "warning" | "error"): void {
+		const color = type === "error" ? "error" : type === "warning" ? "warning" : "accent";
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg(color, message), 1, 0));
+		this.ui.requestRender();
 	}
 
 	stop(): void {
