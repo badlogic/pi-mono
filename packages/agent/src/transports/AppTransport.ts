@@ -11,7 +11,7 @@ import type {
 	ToolCall,
 	UserMessage,
 } from "@mariozechner/pi-ai";
-import { agentLoop } from "@mariozechner/pi-ai";
+import { agentLoop, agentLoopContinue } from "@mariozechner/pi-ai";
 import { AssistantMessageEventStream } from "@mariozechner/pi-ai/dist/utils/event-stream.js";
 import { parseStreamingJson } from "@mariozechner/pi-ai/dist/utils/json-parse.js";
 import type { ProxyAssistantMessageEvent } from "./proxy-types.js";
@@ -335,14 +335,8 @@ export class AppTransport implements AgentTransport {
 		this.options = options;
 	}
 
-	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
-		const authToken = await this.options.getAuthToken();
-		if (!authToken) {
-			throw new Error("Auth token is required for AppTransport");
-		}
-
-		// Use proxy - no local API key needed
-		const streamFn = <TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions) => {
+	private async getStreamFn(authToken: string) {
+		return <TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions) => {
 			return streamSimpleProxy(
 				model,
 				context,
@@ -353,23 +347,50 @@ export class AppTransport implements AgentTransport {
 				this.options.proxyUrl,
 			);
 		};
+	}
 
-		// Messages are already LLM-compatible (filtered by Agent)
-		const context: AgentContext = {
+	private buildContext(messages: Message[], cfg: AgentRunConfig): AgentContext {
+		return {
 			systemPrompt: cfg.systemPrompt,
 			messages,
 			tools: cfg.tools,
 		};
+	}
 
-		const pc: AgentLoopConfig = {
+	private buildLoopConfig(cfg: AgentRunConfig): AgentLoopConfig {
+		return {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
 			getQueuedMessages: cfg.getQueuedMessages,
 		};
+	}
 
-		// Yield events from the upstream agentLoop iterator
-		// Pass streamFn as the 5th parameter to use proxy
+	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+		const authToken = await this.options.getAuthToken();
+		if (!authToken) {
+			throw new Error("Auth token is required for AppTransport");
+		}
+
+		const streamFn = await this.getStreamFn(authToken);
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(cfg);
+
 		for await (const ev of agentLoop(userMessage as unknown as UserMessage, context, pc, signal, streamFn as any)) {
+			yield ev;
+		}
+	}
+
+	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
+		const authToken = await this.options.getAuthToken();
+		if (!authToken) {
+			throw new Error("Auth token is required for AppTransport");
+		}
+
+		const streamFn = await this.getStreamFn(authToken);
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(cfg);
+
+		for await (const ev of agentLoopContinue(context, pc, signal, streamFn as any)) {
 			yield ev;
 		}
 	}

@@ -11,7 +11,7 @@ import type {
 	ToolCall,
 	UserMessage,
 } from "@mariozechner/pi-ai";
-import { agentLoop } from "@mariozechner/pi-ai";
+import { agentLoop, agentLoopContinue } from "@mariozechner/pi-ai";
 import { AssistantMessageEventStream } from "@mariozechner/pi-ai/dist/utils/event-stream.js";
 import { parseStreamingJson } from "@mariozechner/pi-ai/dist/utils/json-parse.js";
 import { clearAuthToken, getAuthToken } from "../../utils/auth-token.js";
@@ -315,50 +315,56 @@ function streamSimpleProxy(
 	return stream;
 }
 
-// Proxy transport executes the turn using a remote proxy server
 /**
  * Transport that uses an app server with user authentication tokens.
  * The server manages user accounts and proxies requests to LLM providers.
  */
 export class AppTransport implements AgentTransport {
-	// Hardcoded proxy URL for now - will be made configurable later
 	private readonly proxyUrl = "https://genai.mariozechner.at";
 
-	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+	private async getStreamFn() {
 		const authToken = await getAuthToken();
 		if (!authToken) {
 			throw new Error(i18n("Auth token is required for proxy transport"));
 		}
 
-		// Use proxy - no local API key needed
-		const streamFn = <TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions) => {
-			return streamSimpleProxy(
-				model,
-				context,
-				{
-					...options,
-					authToken,
-				},
-				this.proxyUrl,
-			);
+		return <TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions) => {
+			return streamSimpleProxy(model, context, { ...options, authToken }, this.proxyUrl);
 		};
+	}
 
-		// Messages are already LLM-compatible (filtered by Agent)
-		const context: AgentContext = {
+	private buildContext(messages: Message[], cfg: AgentRunConfig): AgentContext {
+		return {
 			systemPrompt: cfg.systemPrompt,
 			messages,
 			tools: cfg.tools,
 		};
+	}
 
-		const pc: AgentLoopConfig = {
+	private buildLoopConfig(cfg: AgentRunConfig): AgentLoopConfig {
+		return {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
 			getQueuedMessages: cfg.getQueuedMessages,
 		};
+	}
 
-		// Yield events from the upstream agentLoop iterator
-		// Pass streamFn as the 5th parameter to use proxy
+	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
+		const streamFn = await this.getStreamFn();
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(cfg);
+
 		for await (const ev of agentLoop(userMessage as unknown as UserMessage, context, pc, signal, streamFn as any)) {
+			yield ev;
+		}
+	}
+
+	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
+		const streamFn = await this.getStreamFn();
+		const context = this.buildContext(messages, cfg);
+		const pc = this.buildLoopConfig(cfg);
+
+		for await (const ev of agentLoopContinue(context, pc, signal, streamFn as any)) {
 			yield ev;
 		}
 	}

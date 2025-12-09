@@ -41,11 +41,12 @@ export function calculateContextTokens(usage: Usage): number {
 
 /**
  * Get usage from an assistant message if available.
+ * Skips aborted and error messages as they don't have valid usage data.
  */
 function getAssistantUsage(msg: AppMessage): Usage | null {
 	if (msg.role === "assistant" && "usage" in msg) {
 		const assistantMsg = msg as AssistantMessage;
-		if (assistantMsg.stopReason !== "aborted" && assistantMsg.usage) {
+		if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
 			return assistantMsg.usage;
 		}
 	}
@@ -79,26 +80,126 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // ============================================================================
 
 /**
- * Find indices of message entries that are user messages (turn boundaries).
+ * Estimate token count for a message using chars/4 heuristic.
+ * This is conservative (overestimates tokens).
  */
-function findTurnBoundaries(entries: SessionEntry[], startIndex: number, endIndex: number): number[] {
-	const boundaries: number[] = [];
+export function estimateTokens(message: AppMessage): number {
+	let chars = 0;
+
+	// Handle bashExecution messages
+	if (message.role === "bashExecution") {
+		const bash = message as unknown as { command: string; output: string };
+		chars = bash.command.length + bash.output.length;
+		return Math.ceil(chars / 4);
+	}
+
+	// Handle user messages
+	if (message.role === "user") {
+		const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+		if (typeof content === "string") {
+			chars = content.length;
+		} else if (Array.isArray(content)) {
+			for (const block of content) {
+				if (block.type === "text" && block.text) {
+					chars += block.text.length;
+				}
+			}
+		}
+		return Math.ceil(chars / 4);
+	}
+
+	// Handle assistant messages
+	if (message.role === "assistant") {
+		const assistant = message as AssistantMessage;
+		for (const block of assistant.content) {
+			if (block.type === "text") {
+				chars += block.text.length;
+			} else if (block.type === "thinking") {
+				chars += block.thinking.length;
+			} else if (block.type === "toolCall") {
+				chars += block.name.length + JSON.stringify(block.arguments).length;
+			}
+		}
+		return Math.ceil(chars / 4);
+	}
+
+	// Handle tool results
+	if (message.role === "toolResult") {
+		const toolResult = message as { content: Array<{ type: string; text?: string }> };
+		for (const block of toolResult.content) {
+			if (block.type === "text" && block.text) {
+				chars += block.text.length;
+			}
+		}
+		return Math.ceil(chars / 4);
+	}
+
+	return 0;
+}
+
+/**
+ * Find valid cut points: indices of user, assistant, or bashExecution messages.
+ * Never cut at tool results (they must follow their tool call).
+ * When we cut at an assistant message with tool calls, its tool results follow it
+ * and will be kept.
+ * BashExecutionMessage is treated like a user message (user-initiated context).
+ */
+function findValidCutPoints(entries: SessionEntry[], startIndex: number, endIndex: number): number[] {
+	const cutPoints: number[] = [];
 	for (let i = startIndex; i < endIndex; i++) {
 		const entry = entries[i];
-		if (entry.type === "message" && entry.message.role === "user") {
-			boundaries.push(i);
+		if (entry.type === "message") {
+			const role = entry.message.role;
+			// user, assistant, and bashExecution are valid cut points
+			// toolResult must stay with its preceding tool call
+			if (role === "user" || role === "assistant" || role === "bashExecution") {
+				cutPoints.push(i);
+			}
 		}
 	}
-	return boundaries;
+	return cutPoints;
+}
+
+/**
+ * Find the user message (or bashExecution) that starts the turn containing the given entry index.
+ * Returns -1 if no turn start found before the index.
+ * BashExecutionMessage is treated like a user message for turn boundaries.
+ */
+export function findTurnStartIndex(entries: SessionEntry[], entryIndex: number, startIndex: number): number {
+	for (let i = entryIndex; i >= startIndex; i--) {
+		const entry = entries[i];
+		if (entry.type === "message") {
+			const role = entry.message.role;
+			if (role === "user" || role === "bashExecution") {
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+export interface CutPointResult {
+	/** Index of first entry to keep */
+	firstKeptEntryIndex: number;
+	/** Index of user message that starts the turn being split, or -1 if not splitting */
+	turnStartIndex: number;
+	/** Whether this cut splits a turn (cut point is not a user message) */
+	isSplitTurn: boolean;
 }
 
 /**
  * Find the cut point in session entries that keeps approximately `keepRecentTokens`.
- * Returns the entry index of the first entry to keep.
  *
- * The cut point targets a user message (turn boundary), but then scans backwards
- * to include any preceding non-turn entries (bash executions, settings changes, etc.)
- * that should logically be part of the kept context.
+ * Algorithm: Walk backwards from newest, accumulating estimated message sizes.
+ * Stop when we've accumulated >= keepRecentTokens. Cut at that point.
+ *
+ * Can cut at user OR assistant messages (never tool results). When cutting at an
+ * assistant message with tool calls, its tool results come after and will be kept.
+ *
+ * Returns CutPointResult with:
+ * - firstKeptEntryIndex: the entry index to start keeping from
+ * - turnStartIndex: if cutting mid-turn, the user message that started that turn
+ * - isSplitTurn: whether we're cutting in the middle of a turn
  *
  * Only considers entries between `startIndex` and `endIndex` (exclusive).
  */
@@ -107,46 +208,31 @@ export function findCutPoint(
 	startIndex: number,
 	endIndex: number,
 	keepRecentTokens: number,
-): number {
-	const boundaries = findTurnBoundaries(entries, startIndex, endIndex);
+): CutPointResult {
+	const cutPoints = findValidCutPoints(entries, startIndex, endIndex);
 
-	if (boundaries.length === 0) {
-		return startIndex; // No user messages, keep everything in range
+	if (cutPoints.length === 0) {
+		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
 	}
 
-	// Collect assistant usages walking backwards from endIndex
-	const assistantUsages: Array<{ index: number; tokens: number }> = [];
-	for (let i = endIndex - 1; i >= startIndex; i--) {
-		const entry = entries[i];
-		if (entry.type === "message") {
-			const usage = getAssistantUsage(entry.message);
-			if (usage) {
-				assistantUsages.push({
-					index: i,
-					tokens: calculateContextTokens(usage),
-				});
-			}
-		}
-	}
-
-	if (assistantUsages.length === 0) {
-		// No usage info, keep last turn only
-		return boundaries[boundaries.length - 1];
-	}
-
-	// Walk through and find where cumulative token difference exceeds keepRecentTokens
-	const newestTokens = assistantUsages[0].tokens;
+	// Walk backwards from newest, accumulating estimated message sizes
+	let accumulatedTokens = 0;
 	let cutIndex = startIndex; // Default: keep everything in range
 
-	for (let i = 1; i < assistantUsages.length; i++) {
-		const tokenDiff = newestTokens - assistantUsages[i].tokens;
-		if (tokenDiff >= keepRecentTokens) {
-			// Find the turn boundary at or before the assistant we want to keep
-			const lastKeptAssistantIndex = assistantUsages[i - 1].index;
+	for (let i = endIndex - 1; i >= startIndex; i--) {
+		const entry = entries[i];
+		if (entry.type !== "message") continue;
 
-			for (let b = boundaries.length - 1; b >= 0; b--) {
-				if (boundaries[b] <= lastKeptAssistantIndex) {
-					cutIndex = boundaries[b];
+		// Estimate this message's size
+		const messageTokens = estimateTokens(entry.message);
+		accumulatedTokens += messageTokens;
+
+		// Check if we've exceeded the budget
+		if (accumulatedTokens >= keepRecentTokens) {
+			// Find the closest valid cut point at or after this entry
+			for (let c = 0; c < cutPoints.length; c++) {
+				if (cutPoints[c] >= i) {
+					cutIndex = cutPoints[c];
 					break;
 				}
 			}
@@ -154,8 +240,7 @@ export function findCutPoint(
 		}
 	}
 
-	// Scan backwards from cutIndex to include any non-turn entries (bash, settings, etc.)
-	// that should logically be part of the kept context
+	// Scan backwards from cutIndex to include any non-message entries (bash, settings, etc.)
 	while (cutIndex > startIndex) {
 		const prevEntry = entries[cutIndex - 1];
 		// Stop at compaction boundaries
@@ -163,17 +248,23 @@ export function findCutPoint(
 			break;
 		}
 		if (prevEntry.type === "message") {
-			const role = prevEntry.message.role;
-			// Stop if we hit an assistant, user, or tool result (all part of previous turn)
-			if (role === "assistant" || role === "user" || role === "toolResult") {
-				break;
-			}
+			// Stop if we hit any message
+			break;
 		}
-		// Include this non-turn entry (bash, settings change, etc.)
+		// Include this non-message entry (bash, settings change, etc.)
 		cutIndex--;
 	}
 
-	return cutIndex;
+	// Determine if this is a split turn
+	const cutEntry = entries[cutIndex];
+	const isUserMessage = cutEntry.type === "message" && cutEntry.message.role === "user";
+	const turnStartIndex = isUserMessage ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);
+
+	return {
+		firstKeptEntryIndex: cutIndex,
+		turnStartIndex,
+		isSplitTurn: !isUserMessage && turnStartIndex !== -1,
+	};
 }
 
 // ============================================================================
@@ -234,6 +325,16 @@ export async function generateSummary(
 // Main compaction function
 // ============================================================================
 
+const TURN_PREFIX_SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION for a split turn. 
+This is the PREFIX of a turn that was too large to keep in full. The SUFFIX (recent work) is being kept.
+
+Create a handoff summary that captures:
+- What the user originally asked for in this turn
+- Key decisions and progress made early in this turn
+- Important context needed to understand the kept suffix
+
+Be concise. Focus on information needed to understand the retained recent work.`;
+
 /**
  * Calculate compaction and generate summary.
  * Returns the CompactionEntry to append to the session file.
@@ -274,43 +375,99 @@ export async function compact(
 	const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
 
 	// Find cut point (entry index) within the valid range
-	const firstKeptEntryIndex = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+	const cutResult = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
-	// Extract messages to summarize (before the cut point)
-	const messagesToSummarize: AppMessage[] = [];
-	for (let i = boundaryStart; i < firstKeptEntryIndex; i++) {
+	// Extract messages for history summary (before the turn that contains the cut point)
+	const historyEnd = cutResult.isSplitTurn ? cutResult.turnStartIndex : cutResult.firstKeptEntryIndex;
+	const historyMessages: AppMessage[] = [];
+	for (let i = boundaryStart; i < historyEnd; i++) {
 		const entry = entries[i];
 		if (entry.type === "message") {
-			messagesToSummarize.push(entry.message);
+			historyMessages.push(entry.message);
 		}
 	}
 
-	// Also include the previous summary if there was a compaction
+	// Include previous summary if there was a compaction
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
-		// Prepend the previous summary as context
-		messagesToSummarize.unshift({
+		historyMessages.unshift({
 			role: "user",
 			content: `Previous session summary:\n${prevCompaction.summary}`,
 			timestamp: Date.now(),
 		});
 	}
 
-	// Generate summary from messages before the cut point
-	const summary = await generateSummary(
-		messagesToSummarize,
-		model,
-		settings.reserveTokens,
-		apiKey,
-		signal,
-		customInstructions,
-	);
+	// Extract messages for turn prefix summary (if splitting a turn)
+	const turnPrefixMessages: AppMessage[] = [];
+	if (cutResult.isSplitTurn) {
+		for (let i = cutResult.turnStartIndex; i < cutResult.firstKeptEntryIndex; i++) {
+			const entry = entries[i];
+			if (entry.type === "message") {
+				turnPrefixMessages.push(entry.message);
+			}
+		}
+	}
+
+	// Generate summaries (can be parallel if both needed) and merge into one
+	let summary: string;
+
+	if (cutResult.isSplitTurn && turnPrefixMessages.length > 0) {
+		// Generate both summaries in parallel
+		const [historyResult, turnPrefixResult] = await Promise.all([
+			historyMessages.length > 0
+				? generateSummary(historyMessages, model, settings.reserveTokens, apiKey, signal, customInstructions)
+				: Promise.resolve("No prior history."),
+			generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, signal),
+		]);
+		// Merge into single summary
+		summary = historyResult + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixResult;
+	} else {
+		// Just generate history summary
+		summary = await generateSummary(
+			historyMessages,
+			model,
+			settings.reserveTokens,
+			apiKey,
+			signal,
+			customInstructions,
+		);
+	}
 
 	return {
 		type: "compaction",
 		timestamp: new Date().toISOString(),
 		summary,
-		firstKeptEntryIndex,
+		firstKeptEntryIndex: cutResult.firstKeptEntryIndex,
 		tokensBefore,
 	};
+}
+
+/**
+ * Generate a summary for a turn prefix (when splitting a turn).
+ */
+async function generateTurnPrefixSummary(
+	messages: AppMessage[],
+	model: Model<any>,
+	reserveTokens: number,
+	apiKey: string,
+	signal?: AbortSignal,
+): Promise<string> {
+	const maxTokens = Math.floor(0.5 * reserveTokens); // Smaller budget for turn prefix
+
+	const transformedMessages = messageTransformer(messages);
+	const summarizationMessages = [
+		...transformedMessages,
+		{
+			role: "user" as const,
+			content: [{ type: "text" as const, text: TURN_PREFIX_SUMMARIZATION_PROMPT }],
+			timestamp: Date.now(),
+		},
+	];
+
+	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
+
+	return response.content
+		.filter((c): c is { type: "text"; text: string } => c.type === "text")
+		.map((c) => c.text)
+		.join("\n");
 }

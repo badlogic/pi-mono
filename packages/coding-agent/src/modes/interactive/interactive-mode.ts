@@ -423,6 +423,11 @@ export class InteractiveMode {
 				}
 			}
 
+			// Block input during compaction (will retry automatically)
+			if (this.session.isCompacting) {
+				return;
+			}
+
 			// Queue message if agent is streaming
 			if (this.session.isStreaming) {
 				await this.session.queueMessage(text);
@@ -638,25 +643,27 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
-			case "auto_compaction_start":
+			case "auto_compaction_start": {
 				// Set up escape to abort auto-compaction
 				this.autoCompactionEscapeHandler = this.editor.onEscape;
 				this.editor.onEscape = () => {
 					this.session.abortCompaction();
 				};
-				// Show compacting indicator
+				// Show compacting indicator with reason
 				this.statusContainer.clear();
+				const reasonText = event.reason === "overflow" ? "Context overflow detected, " : "";
 				this.autoCompactionLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
-					"Auto-compacting... (esc to cancel)",
+					`${reasonText}Auto-compacting... (esc to cancel)`,
 				);
 				this.statusContainer.addChild(this.autoCompactionLoader);
 				this.ui.requestRender();
 				break;
+			}
 
-			case "auto_compaction_end":
+			case "auto_compaction_end": {
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {
 					this.editor.onEscape = this.autoCompactionEscapeHandler;
@@ -683,6 +690,7 @@ export class InteractiveMode {
 				}
 				this.ui.requestRender();
 				break;
+			}
 		}
 	}
 
@@ -814,6 +822,14 @@ export class InteractiveMode {
 
 	renderInitialMessages(state: AgentState): void {
 		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
+
+		// Show compaction info if session was compacted
+		const entries = this.sessionManager.loadEntries();
+		const compactionCount = entries.filter((e) => e.type === "compaction").length;
+		if (compactionCount > 0) {
+			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
+			this.showStatus(`Session compacted ${times}`);
+		}
 	}
 
 	async getUserInput(): Promise<string> {

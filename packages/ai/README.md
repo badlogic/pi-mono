@@ -898,6 +898,34 @@ const messages = await stream.result();
 context.messages.push(...messages);
 ```
 
+### Continuing from Existing Context
+
+Use `agentLoopContinue` to resume an agent loop without adding a new user message. This is useful for:
+- Retrying after context overflow (after compaction reduces context size)
+- Resuming from tool results that were added manually to the context
+
+```typescript
+import { agentLoopContinue, AgentContext } from '@mariozechner/pi-ai';
+
+// Context already has messages - last must be 'user' or 'toolResult'
+const context: AgentContext = {
+  systemPrompt: 'You are helpful.',
+  messages: [userMessage, assistantMessage, toolResult],
+  tools: [myTool]
+};
+
+// Continue processing from the tool result
+const stream = agentLoopContinue(context, { model });
+
+for await (const event of stream) {
+  // Same events as agentLoop, but no user message events emitted
+}
+
+const newMessages = await stream.result();
+```
+
+**Validation**: Throws if context has no messages or if the last message is an assistant message.
+
 ### Defining Tools with TypeBox
 
 Tools use TypeBox schemas for runtime validation and type inference:

@@ -63,6 +63,7 @@ export interface RpcSessionState {
 	model: Model<any> | null;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
+	isCompacting: boolean;
 	queueMode: "all" | "one-at-a-time";
 	sessionFile: string;
 	sessionId: string;

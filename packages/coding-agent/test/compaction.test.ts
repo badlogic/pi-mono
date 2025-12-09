@@ -164,16 +164,18 @@ describe("findCutPoint", () => {
 
 		// 20 entries, last assistant has 10000 tokens
 		// keepRecentTokens = 2500: keep entries where diff < 2500
-		const cutPoint = findCutPoint(entries, 0, entries.length, 2500);
+		const result = findCutPoint(entries, 0, entries.length, 2500);
 
-		// Should cut at a user message entry
-		expect(entries[cutPoint].type).toBe("message");
-		expect((entries[cutPoint] as SessionMessageEntry).message.role).toBe("user");
+		// Should cut at a valid cut point (user or assistant message)
+		expect(entries[result.firstKeptEntryIndex].type).toBe("message");
+		const role = (entries[result.firstKeptEntryIndex] as SessionMessageEntry).message.role;
+		expect(role === "user" || role === "assistant").toBe(true);
 	});
 
-	it("should return startIndex if no user messages in range", () => {
+	it("should return startIndex if no valid cut points in range", () => {
 		const entries: SessionEntry[] = [createMessageEntry(createAssistantMessage("a"))];
-		expect(findCutPoint(entries, 0, entries.length, 1000)).toBe(0);
+		const result = findCutPoint(entries, 0, entries.length, 1000);
+		expect(result.firstKeptEntryIndex).toBe(0);
 	});
 
 	it("should keep everything if all messages fit within budget", () => {
@@ -184,8 +186,30 @@ describe("findCutPoint", () => {
 			createMessageEntry(createAssistantMessage("b", createMockUsage(0, 50, 1000, 0))),
 		];
 
-		const cutPoint = findCutPoint(entries, 0, entries.length, 50000);
-		expect(cutPoint).toBe(0);
+		const result = findCutPoint(entries, 0, entries.length, 50000);
+		expect(result.firstKeptEntryIndex).toBe(0);
+	});
+
+	it("should indicate split turn when cutting at assistant message", () => {
+		// Create a scenario where we cut at an assistant message mid-turn
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage("Turn 1")),
+			createMessageEntry(createAssistantMessage("A1", createMockUsage(0, 100, 1000, 0))),
+			createMessageEntry(createUserMessage("Turn 2")), // index 2
+			createMessageEntry(createAssistantMessage("A2-1", createMockUsage(0, 100, 5000, 0))), // index 3
+			createMessageEntry(createAssistantMessage("A2-2", createMockUsage(0, 100, 8000, 0))), // index 4
+			createMessageEntry(createAssistantMessage("A2-3", createMockUsage(0, 100, 10000, 0))), // index 5
+		];
+
+		// With keepRecentTokens = 3000, should cut somewhere in Turn 2
+		const result = findCutPoint(entries, 0, entries.length, 3000);
+
+		// If cut at assistant message (not user), should indicate split turn
+		const cutEntry = entries[result.firstKeptEntryIndex] as SessionMessageEntry;
+		if (cutEntry.message.role === "assistant") {
+			expect(result.isSplitTurn).toBe(true);
+			expect(result.turnStartIndex).toBe(2); // Turn 2 starts at index 2
+		}
 	});
 });
 
@@ -348,11 +372,12 @@ describe("Large session fixture", () => {
 
 	it("should find cut point in large session", () => {
 		const entries = loadLargeSessionEntries();
-		const cutPoint = findCutPoint(entries, 0, entries.length, DEFAULT_COMPACTION_SETTINGS.keepRecentTokens);
+		const result = findCutPoint(entries, 0, entries.length, DEFAULT_COMPACTION_SETTINGS.keepRecentTokens);
 
-		// Cut point should be at a message entry with user role
-		expect(entries[cutPoint].type).toBe("message");
-		expect((entries[cutPoint] as SessionMessageEntry).message.role).toBe("user");
+		// Cut point should be at a message entry (user or assistant)
+		expect(entries[result.firstKeptEntryIndex].type).toBe("message");
+		const role = (entries[result.firstKeptEntryIndex] as SessionMessageEntry).message.role;
+		expect(role === "user" || role === "assistant").toBe(true);
 	});
 
 	it("should load session correctly", () => {

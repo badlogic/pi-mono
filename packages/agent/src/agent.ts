@@ -176,11 +176,6 @@ export class Agent {
 			throw new Error("No model configured");
 		}
 
-		// Set up running prompt tracking
-		this.runningPrompt = new Promise<void>((resolve) => {
-			this.resolveRunningPrompt = resolve;
-		});
-
 		// Build user message with attachments
 		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
 		if (attachments?.length) {
@@ -204,6 +199,62 @@ export class Agent {
 			timestamp: Date.now(),
 		};
 
+		await this._runAgentLoop(userMessage);
+	}
+
+	/**
+	 * Continue from the current context without adding a new user message.
+	 * Used for retry after overflow recovery when context already has user message or tool results.
+	 */
+	async continue() {
+		const messages = this._state.messages;
+		if (messages.length === 0) {
+			throw new Error("No messages to continue from");
+		}
+
+		const lastMessage = messages[messages.length - 1];
+		if (lastMessage.role !== "user" && lastMessage.role !== "toolResult") {
+			throw new Error(`Cannot continue from message role: ${lastMessage.role}`);
+		}
+
+		await this._runAgentLoopContinue();
+	}
+
+	/**
+	 * Internal: Run the agent loop with a new user message.
+	 */
+	private async _runAgentLoop(userMessage: AppMessage) {
+		const { llmMessages, cfg } = await this._prepareRun();
+
+		const events = this.transport.run(llmMessages, userMessage as Message, cfg, this.abortController!.signal);
+
+		await this._processEvents(events);
+	}
+
+	/**
+	 * Internal: Continue the agent loop from current context.
+	 */
+	private async _runAgentLoopContinue() {
+		const { llmMessages, cfg } = await this._prepareRun();
+
+		const events = this.transport.continue(llmMessages, cfg, this.abortController!.signal);
+
+		await this._processEvents(events);
+	}
+
+	/**
+	 * Prepare for running the agent loop.
+	 */
+	private async _prepareRun() {
+		const model = this._state.model;
+		if (!model) {
+			throw new Error("No model configured");
+		}
+
+		this.runningPrompt = new Promise<void>((resolve) => {
+			this.resolveRunningPrompt = resolve;
+		});
+
 		this.abortController = new AbortController();
 		this._state.isStreaming = true;
 		this._state.streamMessage = null;
@@ -222,9 +273,7 @@ export class Agent {
 			model,
 			reasoning,
 			getQueuedMessages: async <T>() => {
-				// Return queued messages based on queue mode
 				if (this.queueMode === "one-at-a-time") {
-					// Return only first message
 					if (this.messageQueue.length > 0) {
 						const first = this.messageQueue[0];
 						this.messageQueue = this.messageQueue.slice(1);
@@ -232,7 +281,6 @@ export class Agent {
 					}
 					return [];
 				} else {
-					// Return all queued messages at once
 					const queued = this.messageQueue.slice();
 					this.messageQueue = [];
 					return queued as QueuedMessage<T>[];
@@ -240,32 +288,30 @@ export class Agent {
 			},
 		};
 
-		// Track all messages generated in this prompt
+		const llmMessages = await this.messageTransformer(this._state.messages);
+
+		return { llmMessages, cfg, model };
+	}
+
+	/**
+	 * Process events from the transport.
+	 */
+	private async _processEvents(events: AsyncIterable<AgentEvent>) {
+		const model = this._state.model!;
 		const generatedMessages: AppMessage[] = [];
+		let partial: AppMessage | null = null;
 
 		try {
-			let partial: Message | null = null;
-
-			// Transform app messages to LLM-compatible messages (initial set)
-			const llmMessages = await this.messageTransformer(this._state.messages);
-
-			for await (const ev of this.transport.run(
-				llmMessages,
-				userMessage as Message,
-				cfg,
-				this.abortController.signal,
-			)) {
-				// Update internal state BEFORE emitting events
-				// so handlers see consistent state
+			for await (const ev of events) {
 				switch (ev.type) {
 					case "message_start": {
-						partial = ev.message;
-						this._state.streamMessage = ev.message;
+						partial = ev.message as AppMessage;
+						this._state.streamMessage = ev.message as Message;
 						break;
 					}
 					case "message_update": {
-						partial = ev.message;
-						this._state.streamMessage = ev.message;
+						partial = ev.message as AppMessage;
+						this._state.streamMessage = ev.message as Message;
 						break;
 					}
 					case "message_end": {
@@ -299,7 +345,6 @@ export class Agent {
 					}
 				}
 
-				// Emit after state is updated
 				this.emit(ev as AgentEvent);
 			}
 

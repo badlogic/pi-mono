@@ -15,6 +15,7 @@
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
@@ -28,8 +29,8 @@ import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
 	| AgentEvent
-	| { type: "auto_compaction_start" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean };
+	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
+	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -154,15 +155,15 @@ export class AgentSession {
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
-				this._lastAssistantMessage = event.message as AssistantMessage;
+				this._lastAssistantMessage = event.message;
 			}
 		}
 
-		// Check auto-compaction after agent completes (after agent_end clears UI)
+		// Check auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = null;
-			this._runAutoCompaction(msg).catch(() => {});
+			await this._handleAgentEndCompaction(msg);
 		}
 	};
 
@@ -240,6 +241,11 @@ export class AgentSession {
 	/** Whether agent is currently streaming a response */
 	get isStreaming(): boolean {
 		return this.agent.state.isStreaming;
+	}
+
+	/** Whether auto-compaction is currently running */
+	get isCompacting(): boolean {
+		return this._autoCompactionAbortController !== null || this._compactionAbortController !== null;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -591,38 +597,63 @@ export class AgentSession {
 	}
 
 	/**
-	 * Internal: Run auto-compaction with events.
-	 * Called after assistant messages complete.
+	 * Handle compaction after agent_end.
+	 * Two cases:
+	 * 1. Overflow: LLM returned context overflow error, remove error message from agent state, compact, auto-retry
+	 * 2. Threshold: Turn succeeded but context over threshold, compact, NO auto-retry (user continues manually)
 	 */
-	private async _runAutoCompaction(assistantMessage: AssistantMessage): Promise<void> {
+	private async _handleAgentEndCompaction(assistantMessage: AssistantMessage): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Skip if message was aborted
+		// Skip if message was aborted (user cancelled)
 		if (assistantMessage.stopReason === "aborted") return;
 
-		const contextTokens = calculateContextTokens(assistantMessage.usage);
 		const contextWindow = this.model?.contextWindow ?? 0;
 
-		if (!shouldCompact(contextTokens, contextWindow, settings)) return;
+		// Case 1: Overflow - LLM returned context overflow error
+		if (isContextOverflow(assistantMessage, contextWindow)) {
+			// Remove the error message from agent state (it IS saved to session for history,
+			// but we don't want it in context for the retry)
+			const messages = this.agent.state.messages;
+			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+				this.agent.replaceMessages(messages.slice(0, -1));
+			}
+			await this._runAutoCompaction("overflow", true);
+			return;
+		}
 
-		// Emit start event
-		this._emit({ type: "auto_compaction_start" });
+		// Case 2: Threshold - turn succeeded but context is getting large
+		// Skip if this was an error (non-overflow errors don't have usage data)
+		if (assistantMessage.stopReason === "error") return;
+
+		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		if (shouldCompact(contextTokens, contextWindow, settings)) {
+			await this._runAutoCompaction("threshold", false);
+		}
+	}
+
+	/**
+	 * Internal: Run auto-compaction with events.
+	 */
+	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+
+		this._emit({ type: "auto_compaction_start", reason });
 		this._autoCompactionAbortController = new AbortController();
 
 		try {
 			if (!this.model) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;
 			}
 
 			const apiKey = await getApiKeyForModel(this.model);
 			if (!apiKey) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;
 			}
 
-			// Load entries (sync file read) then yield to let UI render
 			const entries = this.sessionManager.loadEntries();
 			const compactionEntry = await compact(
 				entries,
@@ -633,7 +664,7 @@ export class AgentSession {
 			);
 
 			if (this._autoCompactionAbortController.signal.aborted) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: true });
+				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
 				return;
 			}
 
@@ -645,10 +676,35 @@ export class AgentSession {
 				tokensBefore: compactionEntry.tokensBefore,
 				summary: compactionEntry.summary,
 			};
-			this._emit({ type: "auto_compaction_end", result, aborted: false });
-		} catch {
-			// Silently fail auto-compaction but emit end event
-			this._emit({ type: "auto_compaction_end", result: null, aborted: false });
+			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
+
+			// Auto-retry if needed - use continue() since user message is already in context
+			if (willRetry) {
+				// Remove trailing error message from agent state (it's kept in session file for history)
+				// This is needed because continue() requires last message to be user or toolResult
+				const messages = this.agent.state.messages;
+				const lastMsg = messages[messages.length - 1];
+				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
+					this.agent.replaceMessages(messages.slice(0, -1));
+				}
+
+				// Use setTimeout to break out of the event handler chain
+				setTimeout(() => {
+					this.agent.continue().catch(() => {
+						// Retry failed - silently ignore, user can manually retry
+					});
+				}, 100);
+			}
+		} catch (error) {
+			// Compaction failed - emit end event without retry
+			this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+
+			// If this was overflow recovery and compaction failed, we have a hard stop
+			if (reason === "overflow") {
+				throw new Error(
+					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,
+				);
+			}
 		} finally {
 			this._autoCompactionAbortController = null;
 		}

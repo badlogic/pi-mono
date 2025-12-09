@@ -26,10 +26,12 @@ export class BashExecutionComponent extends Container {
 	private fullOutputPath?: string;
 	private expanded = false;
 	private contentContainer: Container;
+	private ui: TUI;
 
 	constructor(command: string, ui: TUI) {
 		super();
 		this.command = command;
+		this.ui = ui;
 
 		const borderColor = (str: string) => theme.fg("bashMode", str);
 
@@ -115,9 +117,8 @@ export class BashExecutionComponent extends Container {
 		const availableLines = contextTruncation.content ? contextTruncation.content.split("\n") : [];
 
 		// Apply preview truncation based on expanded state
-		const maxDisplayLines = this.expanded ? availableLines.length : PREVIEW_LINES;
-		const displayLines = availableLines.slice(-maxDisplayLines); // Show last N lines (tail)
-		const hiddenLineCount = availableLines.length - displayLines.length;
+		const previewLogicalLines = availableLines.slice(-PREVIEW_LINES);
+		const hiddenLineCount = availableLines.length - previewLogicalLines.length;
 
 		// Rebuild content container
 		this.contentContainer.clear();
@@ -127,9 +128,22 @@ export class BashExecutionComponent extends Container {
 		this.contentContainer.addChild(header);
 
 		// Output
-		if (displayLines.length > 0) {
-			const displayText = displayLines.map((line) => theme.fg("muted", line)).join("\n");
-			this.contentContainer.addChild(new Text("\n" + displayText, 1, 0));
+		if (availableLines.length > 0) {
+			if (this.expanded) {
+				// Show all lines
+				const displayText = availableLines.map((line) => theme.fg("muted", line)).join("\n");
+				this.contentContainer.addChild(new Text("\n" + displayText, 1, 0));
+			} else {
+				// Render preview lines, then cap at PREVIEW_LINES visual lines
+				const tempText = new Text(
+					"\n" + previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n"),
+					1,
+					0,
+				);
+				const visualLines = tempText.render(this.ui.terminal.columns);
+				const truncatedVisualLines = visualLines.slice(-PREVIEW_LINES);
+				this.contentContainer.addChild({ render: () => truncatedVisualLines, invalidate: () => {} });
+			}
 		}
 
 		// Loader or status

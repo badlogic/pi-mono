@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2025-12-09
+
+### Added
+
+- **`agentLoopContinue` function**: Continue an agent loop from existing context without adding a new user message. Validates that the last message is `user` or `toolResult`. Useful for retry after context overflow or resuming from manually-added tool results.
+
 ### Breaking Changes
 
 - Removed provider-level tool argument validation. Validation now happens in `agentLoop` via `executeToolCalls`, allowing models to retry on validation errors. For manual tool execution, use `validateToolCall(tools, toolCall)` or `validateToolArguments(tool, toolCall)`.

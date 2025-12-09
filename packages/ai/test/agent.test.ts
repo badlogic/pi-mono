@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { agentLoop } from "../src/agent/agent-loop.js";
+import { agentLoop, agentLoopContinue } from "../src/agent/agent-loop.js";
 import { calculateTool } from "../src/agent/tools/calculate.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig } from "../src/agent/types.js";
 import { getModel } from "../src/models.js";
-import type { Api, Message, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import type {
+	Api,
+	AssistantMessage,
+	Message,
+	Model,
+	OptionsForApi,
+	ToolResultMessage,
+	UserMessage,
+} from "../src/types.js";
 
 async function calculateTest<TApi extends Api>(model: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Create the agent context with the calculator tool
@@ -282,7 +290,7 @@ describe("Agent Calculator Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider Agent", () => {
-		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+		const model = getModel("anthropic", "claude-haiku-4-5");
 
 		it("should calculate multiple expressions and sum the results", async () => {
 			const result = await calculateTest(model);
@@ -348,6 +356,178 @@ describe("Agent Calculator Tests", () => {
 		it("should handle abort during tool execution", async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+		}, 30000);
+	});
+});
+
+describe("agentLoopContinue", () => {
+	describe("validation", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const baseContext: AgentContext = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [],
+			tools: [],
+		};
+		const config: AgentLoopConfig = { model };
+
+		it("should throw when context has no messages", () => {
+			expect(() => agentLoopContinue(baseContext, config)).toThrow("Cannot continue: no messages in context");
+		});
+
+		it("should throw when last message is an assistant message", () => {
+			const assistantMessage: AssistantMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: "Hello" }],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-haiku-4-5",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			};
+			const context: AgentContext = {
+				...baseContext,
+				messages: [assistantMessage],
+			};
+			expect(() => agentLoopContinue(context, config)).toThrow(
+				"Cannot continue from message role: assistant. Expected 'user' or 'toolResult'.",
+			);
+		});
+
+		// Note: "should not throw" tests for valid inputs are covered by the E2E tests below
+		// which actually consume the stream and verify the output
+	});
+
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from user message", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+
+		it("should continue and get assistant response when last message is user", async () => {
+			const userMessage: UserMessage = {
+				role: "user",
+				content: [{ type: "text", text: "Say exactly: HELLO WORLD" }],
+				timestamp: Date.now(),
+			};
+
+			const context: AgentContext = {
+				systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
+				messages: [userMessage],
+				tools: [],
+			};
+
+			const config: AgentLoopConfig = { model };
+
+			const events: AgentEvent[] = [];
+			const stream = agentLoopContinue(context, config);
+
+			for await (const event of stream) {
+				events.push(event);
+			}
+
+			const messages = await stream.result();
+
+			// Should have gotten an assistant response
+			expect(messages.length).toBe(1);
+			expect(messages[0].role).toBe("assistant");
+
+			// Verify event sequence - no user message events since we're continuing
+			const eventTypes = events.map((e) => e.type);
+			expect(eventTypes).toContain("agent_start");
+			expect(eventTypes).toContain("turn_start");
+			expect(eventTypes).toContain("message_start");
+			expect(eventTypes).toContain("message_end");
+			expect(eventTypes).toContain("turn_end");
+			expect(eventTypes).toContain("agent_end");
+
+			// Should NOT have user message events (that's the difference from agentLoop)
+			const messageEndEvents = events.filter((e) => e.type === "message_end");
+			expect(messageEndEvents.length).toBe(1); // Only assistant message
+			expect((messageEndEvents[0] as any).message.role).toBe("assistant");
+		}, 30000);
+	});
+
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from tool result", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+
+		it("should continue processing after tool results", async () => {
+			// Simulate a conversation where:
+			// 1. User asked to calculate something
+			// 2. Assistant made a tool call
+			// 3. Tool result is ready
+			// 4. We continue from here
+
+			const userMessage: UserMessage = {
+				role: "user",
+				content: [{ type: "text", text: "What is 5 + 3? Use the calculator." }],
+				timestamp: Date.now(),
+			};
+
+			const assistantMessage: AssistantMessage = {
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Let me calculate that for you." },
+					{ type: "toolCall", id: "calc-1", name: "calculate", arguments: { expression: "5 + 3" } },
+				],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-haiku-4-5",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+			};
+
+			const toolResult: ToolResultMessage = {
+				role: "toolResult",
+				toolCallId: "calc-1",
+				toolName: "calculate",
+				content: [{ type: "text", text: "5 + 3 = 8" }],
+				isError: false,
+				timestamp: Date.now(),
+			};
+
+			const context: AgentContext = {
+				systemPrompt: "You are a helpful assistant. After getting a calculation result, state the answer clearly.",
+				messages: [userMessage, assistantMessage, toolResult],
+				tools: [calculateTool],
+			};
+
+			const config: AgentLoopConfig = { model };
+
+			const events: AgentEvent[] = [];
+			const stream = agentLoopContinue(context, config);
+
+			for await (const event of stream) {
+				events.push(event);
+			}
+
+			const messages = await stream.result();
+
+			// Should have gotten an assistant response
+			expect(messages.length).toBeGreaterThanOrEqual(1);
+			const lastMessage = messages[messages.length - 1];
+			expect(lastMessage.role).toBe("assistant");
+
+			// The assistant should mention the result (8)
+			if (lastMessage.role === "assistant") {
+				const textContent = lastMessage.content
+					.filter((c) => c.type === "text")
+					.map((c) => (c as any).text)
+					.join(" ");
+				expect(textContent).toMatch(/8/);
+			}
 		}, 30000);
 	});
 });

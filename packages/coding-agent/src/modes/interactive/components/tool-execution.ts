@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
 
 /**
@@ -140,7 +141,9 @@ export class ToolExecutionComponent extends Container {
 						if (truncation.truncatedBy === "lines") {
 							warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
 						} else {
-							warnings.push(`Truncated: ${truncation.outputLines} lines shown (30KB limit)`);
+							warnings.push(
+								`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+							);
 						}
 					}
 					text += "\n" + theme.fg("warning", `[${warnings.join(". ")}]`);
@@ -178,16 +181,26 @@ export class ToolExecutionComponent extends Container {
 				const truncation = this.result.details?.truncation;
 				if (truncation?.truncated) {
 					if (truncation.firstLineExceedsLimit) {
-						text += "\n" + theme.fg("warning", `[First line exceeds 30KB limit]`);
+						text +=
+							"\n" +
+							theme.fg(
+								"warning",
+								`[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`,
+							);
 					} else if (truncation.truncatedBy === "lines") {
 						text +=
 							"\n" +
 							theme.fg(
 								"warning",
-								`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines]`,
+								`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`,
 							);
 					} else {
-						text += "\n" + theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (30KB limit)]`);
+						text +=
+							"\n" +
+							theme.fg(
+								"warning",
+								`[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`,
+							);
 					}
 				}
 			}
@@ -277,7 +290,7 @@ export class ToolExecutionComponent extends Container {
 						warnings.push(`${entryLimit} entries limit`);
 					}
 					if (truncation?.truncated) {
-						warnings.push("30KB limit");
+						warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 					}
 					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
 				}
@@ -319,7 +332,7 @@ export class ToolExecutionComponent extends Container {
 						warnings.push(`${resultLimit} results limit`);
 					}
 					if (truncation?.truncated) {
-						warnings.push("30KB limit");
+						warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 					}
 					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
 				}
@@ -366,7 +379,7 @@ export class ToolExecutionComponent extends Container {
 						warnings.push(`${matchLimit} matches limit`);
 					}
 					if (truncation?.truncated) {
-						warnings.push("30KB limit");
+						warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 					}
 					if (linesTruncated) {
 						warnings.push("some lines truncated");

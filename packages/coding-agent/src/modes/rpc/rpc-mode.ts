@@ -150,6 +150,7 @@ export async function runRpcMode(session: AgentSession, settingsManager?: Settin
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
+					isCompacting: session.isCompacting,
 					queueMode: session.queueMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
