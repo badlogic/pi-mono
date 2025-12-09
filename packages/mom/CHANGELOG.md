@@ -18,6 +18,9 @@
 
 ### Added
 
+- Port truncation logic from coding-agent: bash and read tools now use consistent 2000 lines OR 50KB limits with actionable notices
+- Remove redundant context history truncation (tools already provide truncation with actionable hints)
+
 - Message backfill on startup (#103)
   - Fetches missed messages from Slack using `conversations.history` API when mom restarts
   - Backfills up to 3 pages (3000 messages) per channel since last logged timestamp

@@ -127,54 +127,13 @@ function getRecentMessages(channelDir: string, turnCount: number): string {
 		for (const msg of turn) {
 			const date = (msg.date || "").substring(0, 19);
 			const user = msg.userName || msg.user || "";
-			let text = msg.text || "";
-			// Truncate bot messages (tool results can be huge)
-			if (msg.isBot) {
-				text = truncateForContext(text, 50000, 2000, msg.ts);
-			}
+			const text = msg.text || "";
 			const attachments = (msg.attachments || []).map((a) => a.local).join(",");
 			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
 		}
 	}
 
 	return formatted.join("\n");
-}
-
-/**
- * Truncate text to maxChars or maxLines, whichever comes first.
- * Adds a note with stats and instructions if truncation occurred.
- */
-function truncateForContext(text: string, maxChars: number, maxLines: number, ts?: string): string {
-	const lines = text.split("\n");
-	const originalLines = lines.length;
-	const originalChars = text.length;
-	let truncated = false;
-	let result = text;
-
-	// Check line limit first
-	if (lines.length > maxLines) {
-		result = lines.slice(0, maxLines).join("\n");
-		truncated = true;
-	}
-
-	// Check char limit
-	if (result.length > maxChars) {
-		result = result.substring(0, maxChars);
-		truncated = true;
-	}
-
-	if (truncated) {
-		const remainingLines = originalLines - result.split("\n").length;
-		const remainingChars = originalChars - result.length;
-		result += `\n[... truncated ${remainingLines} more lines, ${remainingChars} more chars. `;
-		if (ts) {
-			result += `To get full content: jq -r 'select(.ts=="${ts}") | .text' log.jsonl > /tmp/msg.txt, then read /tmp/msg.txt in segments]`;
-		} else {
-			result += `Search log.jsonl for full content]`;
-		}
-	}
-
-	return result;
 }
 
 function getMemory(channelDir: string): string {
