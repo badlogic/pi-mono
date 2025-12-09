@@ -242,6 +242,11 @@ export class TuiRenderer {
 			description: "Resume a different session",
 		};
 
+		const exitCommand: SlashCommand = {
+			name: "exit (quit)",
+			description: "Exit the REPL",
+		};
+
 		// Load hide thinking block setting
 		this.hideThinkingBlock = settingsManager.getHideThinkingBlock();
 
@@ -272,6 +277,7 @@ export class TuiRenderer {
 				compactCommand,
 				autocompactCommand,
 				resumeCommand,
+				exitCommand,
 				...fileSlashCommands,
 			],
 			process.cwd(),
@@ -545,6 +551,24 @@ export class TuiRenderer {
 			if (text === "/resume") {
 				this.showSessionSelector();
 				this.editor.setText("");
+				return;
+			}
+
+			// Check for /exit or /quit command
+			if (text.startsWith("/exit") || text.startsWith("/quit")) {
+				// Display command in chat area
+				const userComponent = new UserMessageComponent(text, this.isFirstUserMessage);
+				this.chatContainer.addChild(userComponent);
+				this.isFirstUserMessage = false;
+
+				// Clear input
+				this.editor.setText("");
+
+				// Give UI time to render, then exit
+				setTimeout(() => {
+					this.ui.stop();
+					process.exit(0);
+				}, 100);
 				return;
 			}
 
