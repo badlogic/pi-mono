@@ -32,7 +32,7 @@ You can also add explicit hook paths in `~/.pi/agent/settings.json`:
 A hook is a TypeScript file that exports a default function. The function receives a `HookAPI` object used to subscribe to events.
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session_start", async (event, ctx) => {
@@ -298,7 +298,7 @@ If the agent is currently streaming, the message is queued. Otherwise, a new age
 
 ```typescript
 import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session_start", async (event, ctx) => {
@@ -328,7 +328,7 @@ To trigger: `echo "Run the tests" > /tmp/agent-trigger.txt`
 
 ```typescript
 import * as http from "node:http";
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session_start", async (event, ctx) => {
@@ -358,7 +358,7 @@ To trigger: `curl -X POST http://localhost:3333 -d "CI build failed"`
 ### Shitty Permission Gate
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   const dangerousPatterns = [
@@ -394,7 +394,7 @@ export default function (pi: HookAPI) {
 Stash code state at each turn so `/branch` can restore it.
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   const checkpoints = new Map<number, string>();
@@ -434,7 +434,7 @@ export default function (pi: HookAPI) {
 ### Block Writes to Certain Paths
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   const protectedPaths = [".env", ".git/", "node_modules/"];

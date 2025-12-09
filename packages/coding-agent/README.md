@@ -480,7 +480,7 @@ Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecyc
 **Quick example** (permission gate):
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("tool_call", async (event, ctx) => {
@@ -499,7 +499,7 @@ Use `pi.send(text, attachments?)` to inject messages into the session. If the ag
 
 ```typescript
 import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session_start", async () => {

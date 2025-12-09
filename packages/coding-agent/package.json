@@ -12,6 +12,16 @@
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./hooks": {
+			"types": "./dist/core/hooks/index.d.ts",
+			"import": "./dist/core/hooks/index.js"
+		}
+	},
 	"files": [
 		"dist",
 		"docs",
