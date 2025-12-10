@@ -6,6 +6,10 @@
 
 - **Mistral provider**: Added support for Mistral AI models. Set `MISTRAL_API_KEY` environment variable to use.
 
+### Fixed
+
+- Fixed print mode (`-p`) not exiting after output when custom themes are present (theme watcher now properly stops in print mode)
+
 ## [0.18.0] - 2025-12-10
 
 ### Added

@@ -4,9 +4,13 @@
 
 ### Added
 
-- **Mistral provider**: Added support for Mistral AI models via the OpenAI-compatible API. Includes automatic handling of Mistral-specific requirements (tool call ID format, message ordering constraints). Set `MISTRAL_API_KEY` environment variable to use.
+- **Mistral provider**: Added support for Mistral AI models via the OpenAI-compatible API. Includes automatic handling of Mistral-specific requirements (tool call ID format). Set `MISTRAL_API_KEY` environment variable to use.
 
 ### Fixed
+
+- Fixed Mistral 400 errors after aborted assistant messages by skipping empty assistant messages (no content, no tool calls)
+
+- Removed synthetic assistant bridge message after tool results for Mistral (no longer required as of Dec 2024)
 
 - Fixed bug where `ANTHROPIC_API_KEY` environment variable was deleted globally after first OAuth token usage, causing subsequent prompts to fail
 
