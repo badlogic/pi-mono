@@ -8,11 +8,11 @@
 
 ### Fixed
 
-- Fixed Mistral 400 errors after aborted assistant messages by skipping empty assistant messages (no content, no tool calls)
+- Fixed Mistral 400 errors after aborted assistant messages by skipping empty assistant messages (no content, no tool calls) ([#165](https://github.com/badlogic/pi-mono/issues/165))
 
-- Removed synthetic assistant bridge message after tool results for Mistral (no longer required as of Dec 2024)
+- Removed synthetic assistant bridge message after tool results for Mistral (no longer required as of Dec 2025) ([#165](https://github.com/badlogic/pi-mono/issues/165))
 
-- Fixed bug where `ANTHROPIC_API_KEY` environment variable was deleted globally after first OAuth token usage, causing subsequent prompts to fail
+- Fixed bug where `ANTHROPIC_API_KEY` environment variable was deleted globally after first OAuth token usage, causing subsequent prompts to fail ([#164](https://github.com/badlogic/pi-mono/pull/164))
 
 ## [0.17.0] - 2025-12-09
 

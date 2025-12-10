@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- Fixed print mode (`-p`) not exiting after output when custom themes are present (theme watcher now properly stops in print mode)
+- Fixed print mode (`-p`) not exiting after output when custom themes are present (theme watcher now properly stops in print mode) ([#161](https://github.com/badlogic/pi-mono/issues/161))
 
 ## [0.18.0] - 2025-12-10
 
