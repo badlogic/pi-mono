@@ -947,6 +947,7 @@ export class AgentSession {
 	/**
 	 * Schedule background summarization after a delay.
 	 * Debounces to avoid wasteful API calls during rapid interactions.
+	 * Only runs when context usage is approaching compaction threshold.
 	 */
 	private _maybeStartBackgroundSummary(assistantMessage: AssistantMessage): void {
 		const settings = this.settingsManager.getCompactionSettings();
@@ -957,8 +958,16 @@ export class AgentSession {
 		// Skip if session persistence disabled (--no-session)
 		if (!this.sessionManager.isEnabled()) return;
 
-		// Skip if message was aborted or error
+		// Skip if message was aborted or error (no usage data)
 		if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") return;
+
+		// Skip if context usage is below 50% of compaction threshold
+		// This avoids wasteful API calls early in sessions
+		const contextWindow = this.model?.contextWindow ?? 0;
+		if (contextWindow === 0) return; // No model or unknown context window
+		const compactionThreshold = contextWindow - settings.reserveTokens;
+		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		if (contextTokens < compactionThreshold * 0.5) return;
 
 		// Cancel any pending timeout (debounce)
 		if (this._backgroundSummaryTimeout) {
