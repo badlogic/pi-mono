@@ -350,7 +350,18 @@ function formatToolExecution(
 
 		case "read": {
 			const path = shortenPath((args?.file_path as string) || (args?.path as string) || "");
-			html = `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${escapeHtml(path || "...")}</span></div>`;
+			const offset = args?.offset as number | undefined;
+			const limit = args?.limit as number | undefined;
+
+			// Build path display with offset/limit suffix (in yellow color if offset/limit used)
+			let pathHtml = escapeHtml(path || "...");
+			if (offset !== undefined || limit !== undefined) {
+				const startLine = offset ?? 1;
+				const endLine = limit !== undefined ? startLine + limit - 1 : "";
+				pathHtml += `<span class="line-numbers" style="color: ${COLORS.yellow}">:${startLine}${endLine ? `-${endLine}` : ""}</span>`;
+			}
+
+			html = `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${pathHtml}</span></div>`;
 			if (result) {
 				const output = getTextOutput();
 				if (output) {

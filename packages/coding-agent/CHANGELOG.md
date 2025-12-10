@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **HTML export line numbers**: Read tool calls in HTML exports now display line number ranges (e.g., `file.txt:10-20`) when offset/limit parameters are used, matching the TUI display format. Line numbers appear in yellow color for better visibility. ([#166](https://github.com/badlogic/pi-mono/issues/166))
+
 ## [0.18.1] - 2025-12-10
 
 ### Added
