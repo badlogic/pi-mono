@@ -369,15 +369,6 @@ function convertMessages(
 	let lastRole: string | null = null;
 
 	for (const msg of transformedMessages) {
-		// Some providers (e.g. Mistral) don't allow user messages directly after tool results
-		// Insert a synthetic assistant message to bridge the gap
-		if (compat.requiresAssistantAfterToolResult && lastRole === "toolResult" && msg.role === "user") {
-			params.push({
-				role: "assistant",
-				content: "I have processed the tool results.",
-			});
-		}
-
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				params.push({
@@ -455,7 +446,16 @@ function convertMessages(
 					},
 				}));
 			}
-			if (assistantMsg.content === null && !assistantMsg.tool_calls) {
+			// Skip assistant messages that have no content and no tool calls.
+			// Mistral explicitly requires "either content or tool_calls, but not none".
+			// Other providers also don't accept empty assistant messages.
+			// This handles aborted assistant responses that got no content.
+			const content = assistantMsg.content;
+			const hasContent =
+				content !== null &&
+				content !== undefined &&
+				(typeof content === "string" ? content.length > 0 : content.length > 0);
+			if (!hasContent && !assistantMsg.tool_calls) {
 				continue;
 			}
 			params.push(assistantMsg);
@@ -570,7 +570,7 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 		supportsReasoningEffort: !isGrok,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
-		requiresAssistantAfterToolResult: isMistral,
+		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
 	};
