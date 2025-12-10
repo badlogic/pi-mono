@@ -22,7 +22,7 @@ export default function (pi: HookAPI) {
 				const content = fs.readFileSync(filePath);
 				const stats = fs.statSync(filePath);
 
-				pi.send(`Use \`say\` to describe the image. Make it concise and hilarious`, [
+				pi.send(`Use \`sag\` (no say!) to describe the image. Make it concise and hilarious`, [
 					{
 						id: crypto.randomUUID(),
 						type: "image",
