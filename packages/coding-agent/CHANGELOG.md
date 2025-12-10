@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Made auto-compacting instant**: Background summarization runs after every successful turn, pre-computing a summary cache. When compaction is triggered, it uses the cached summary for instant compaction (no LLM call required). Inspired by the recent Claude Code CLI changes in 2.0.64.
+
+- **Background summary indicator**: Footer shows `⟳` while background summarization is running.
+
+- **`backgroundSummary` setting**: New setting under `compaction` to enable/disable background summarization (default: true). Configure in `~/.pi/agent/settings.json`.
+
+- **`isBackgroundSummarizing` property on AgentSession**: Check if background summarization is currently running.
+
+### Changed
+
+- **Summary cache storage**: Pre-computed summaries are stored in `.summary.json` files alongside session `.jsonl` files. These are disposable optimization caches that don't pollute session history.
+
 ## [0.18.0] - 2025-12-10
 
 ### Added

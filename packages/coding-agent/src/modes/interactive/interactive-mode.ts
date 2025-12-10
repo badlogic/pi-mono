@@ -806,6 +806,20 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 			}
+
+			case "background_summary_start": {
+				this.footer.setBackgroundSummarizing(true);
+				this.ui.requestRender();
+				break;
+			}
+
+			case "background_summary_end": {
+				this.footer.setBackgroundSummarizing(false);
+				// Only log errors for unexpected failures, not aborts
+				// Background work is best-effort, don't show errors to user
+				this.ui.requestRender();
+				break;
+			}
 		}
 	}
 

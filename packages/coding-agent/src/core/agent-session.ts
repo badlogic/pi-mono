@@ -18,20 +18,39 @@ import type { AssistantMessage, Message, Model, TextContent } from "@mariozechne
 import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import {
+	calculateContextTokens,
+	compact,
+	findCutPoint,
+	findLatestCompactionIndex,
+	generateSummary,
+	getLastAssistantUsage,
+	shouldCompact,
+} from "./compaction.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { BranchEventResult, HookRunner, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
+import { type CompactionEntry, loadSessionFromEntries, type SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
+import {
+	createCompactionFromCache,
+	deleteSummaryCache,
+	isCacheSufficient,
+	isCacheValid,
+	loadSummaryCache,
+	type SummaryCache,
+	saveSummaryCache,
+} from "./summary-cache.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean };
+	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean }
+	| { type: "background_summary_start" }
+	| { type: "background_summary_end"; success: boolean; error?: string };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -120,6 +139,9 @@ export class AgentSession {
 	private _bashAbortController: AbortController | null = null;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
+	// Background summarization state
+	private _backgroundSummaryAbortController: AbortController | null = null;
+
 	// Hook system
 	private _hookRunner: HookRunner | null = null;
 	private _turnIndex = 0;
@@ -188,7 +210,12 @@ export class AgentSession {
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = null;
+
+			// Handle compaction if needed (existing)
 			await this._handleAgentEndCompaction(msg);
+
+			// Start background summary (NEW)
+			this._maybeStartBackgroundSummary(msg);
 		}
 	};
 
@@ -308,6 +335,11 @@ export class AgentSession {
 	/** Whether auto-compaction is currently running */
 	get isCompacting(): boolean {
 		return this._autoCompactionAbortController !== null || this._compactionAbortController !== null;
+	}
+
+	/** Whether background summarization is currently running */
+	get isBackgroundSummarizing(): boolean {
+		return this._backgroundSummaryAbortController !== null;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -431,8 +463,9 @@ export class AgentSession {
 	async reset(): Promise<void> {
 		this._disconnectFromAgent();
 		await this.abort();
+		this.abortBackgroundSummary();
 		this.agent.reset();
-		this.sessionManager.reset();
+		this.sessionManager.reset(); // This now also deletes cache
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 	}
@@ -606,6 +639,7 @@ export class AgentSession {
 		// Abort any running operation
 		this._disconnectFromAgent();
 		await this.abort();
+		this.abortBackgroundSummary();
 
 		// Create abort controller
 		this._compactionAbortController = new AbortController();
@@ -622,21 +656,68 @@ export class AgentSession {
 
 			const entries = this.sessionManager.loadEntries();
 			const settings = this.settingsManager.getCompactionSettings();
-			const compactionEntry = await compact(
-				entries,
-				this.model,
-				settings,
-				apiKey,
-				this._compactionAbortController.signal,
-				customInstructions,
-			);
+
+			let compactionEntry: CompactionEntry;
+
+			// Try cached summary first (only if no custom instructions)
+			if (!customInstructions && this.sessionManager.isEnabled()) {
+				const cache = loadSummaryCache(this.sessionManager.getSessionFile());
+
+				if (cache && isCacheValid(cache, entries)) {
+					// Calculate what current cut point would be
+					const prevCompactionIndex = findLatestCompactionIndex(entries);
+					const cutResult = findCutPoint(
+						entries,
+						prevCompactionIndex + 1,
+						entries.length,
+						settings.keepRecentTokens,
+					);
+
+					if (isCacheSufficient(cache, cutResult.firstKeptEntryIndex)) {
+						// INSTANT: Use cached summary
+						const lastUsage = getLastAssistantUsage(entries);
+						const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
+						compactionEntry = createCompactionFromCache(cache, tokensBefore);
+					} else {
+						// Cache exists but doesn't cover enough - fall back to LLM
+						compactionEntry = await compact(
+							entries,
+							this.model,
+							settings,
+							apiKey,
+							this._compactionAbortController.signal,
+						);
+					}
+				} else {
+					// No cache or invalid - fall back to LLM
+					compactionEntry = await compact(
+						entries,
+						this.model,
+						settings,
+						apiKey,
+						this._compactionAbortController.signal,
+					);
+				}
+			} else {
+				// Custom instructions or no-session mode - always use LLM
+				compactionEntry = await compact(
+					entries,
+					this.model,
+					settings,
+					apiKey,
+					this._compactionAbortController.signal,
+					customInstructions,
+				);
+			}
 
 			if (this._compactionAbortController.signal.aborted) {
 				throw new Error("Compaction cancelled");
 			}
 
-			// Save and reload
+			// Save compaction and invalidate cache
 			this.sessionManager.saveCompaction(compactionEntry);
+			deleteSummaryCache(this.sessionManager.getSessionFile());
+
 			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
 			this.agent.replaceMessages(loaded.messages);
 
@@ -656,6 +737,13 @@ export class AgentSession {
 	abortCompaction(): void {
 		this._compactionAbortController?.abort();
 		this._autoCompactionAbortController?.abort();
+	}
+
+	/**
+	 * Abort background summarization if running.
+	 */
+	abortBackgroundSummary(): void {
+		this._backgroundSummaryAbortController?.abort();
 	}
 
 	/**
@@ -701,6 +789,9 @@ export class AgentSession {
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 
+		// Abort background summary if running (we're about to compact anyway)
+		this.abortBackgroundSummary();
+
 		this._emit({ type: "auto_compaction_start", reason });
 		this._autoCompactionAbortController = new AbortController();
 
@@ -717,13 +808,53 @@ export class AgentSession {
 			}
 
 			const entries = this.sessionManager.loadEntries();
-			const compactionEntry = await compact(
-				entries,
-				this.model,
-				settings,
-				apiKey,
-				this._autoCompactionAbortController.signal,
-			);
+			let compactionEntry: CompactionEntry;
+
+			// Try cached summary first
+			if (this.sessionManager.isEnabled()) {
+				const cache = loadSummaryCache(this.sessionManager.getSessionFile());
+
+				if (cache && isCacheValid(cache, entries)) {
+					const prevCompactionIndex = findLatestCompactionIndex(entries);
+					const cutResult = findCutPoint(
+						entries,
+						prevCompactionIndex + 1,
+						entries.length,
+						settings.keepRecentTokens,
+					);
+
+					if (isCacheSufficient(cache, cutResult.firstKeptEntryIndex)) {
+						// INSTANT: Use cached summary
+						const lastUsage = getLastAssistantUsage(entries);
+						const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
+						compactionEntry = createCompactionFromCache(cache, tokensBefore);
+					} else {
+						compactionEntry = await compact(
+							entries,
+							this.model,
+							settings,
+							apiKey,
+							this._autoCompactionAbortController.signal,
+						);
+					}
+				} else {
+					compactionEntry = await compact(
+						entries,
+						this.model,
+						settings,
+						apiKey,
+						this._autoCompactionAbortController.signal,
+					);
+				}
+			} else {
+				compactionEntry = await compact(
+					entries,
+					this.model,
+					settings,
+					apiKey,
+					this._autoCompactionAbortController.signal,
+				);
+			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
 				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
@@ -731,6 +862,8 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
+			deleteSummaryCache(this.sessionManager.getSessionFile());
+
 			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
 			this.agent.replaceMessages(loaded.messages);
 
@@ -782,6 +915,161 @@ export class AgentSession {
 	/** Whether auto-compaction is enabled */
 	get autoCompactionEnabled(): boolean {
 		return this.settingsManager.getCompactionEnabled();
+	}
+
+	// =========================================================================
+	// Background Summarization
+	// =========================================================================
+
+	/**
+	 * Start background summarization if conditions are met.
+	 * Non-blocking - fires and forgets.
+	 */
+	private _maybeStartBackgroundSummary(assistantMessage: AssistantMessage): void {
+		const settings = this.settingsManager.getCompactionSettings();
+
+		// Skip if background summary disabled
+		if (!settings.backgroundSummary) return;
+
+		// Skip if session persistence disabled (--no-session)
+		if (!this.sessionManager.isEnabled()) return;
+
+		// Skip if already running
+		if (this._backgroundSummaryAbortController) return;
+
+		// Skip if message was aborted or error
+		if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") return;
+
+		// Fire and forget
+		this._runBackgroundSummary().catch(() => {
+			// Silently ignore - background work is best-effort
+		});
+	}
+
+	/**
+	 * Run background summarization.
+	 */
+	private async _runBackgroundSummary(): Promise<void> {
+		this._emit({ type: "background_summary_start" });
+		this._backgroundSummaryAbortController = new AbortController();
+
+		try {
+			if (!this.model) {
+				this._emit({ type: "background_summary_end", success: false, error: "No model" });
+				return;
+			}
+
+			const apiKey = await getApiKeyForModel(this.model);
+			if (!apiKey) {
+				this._emit({ type: "background_summary_end", success: false, error: "No API key" });
+				return;
+			}
+
+			const entries = this.sessionManager.loadEntries();
+			const settings = this.settingsManager.getCompactionSettings();
+
+			// Find previous compaction boundary
+			const prevCompactionIndex = findLatestCompactionIndex(entries);
+			const boundaryStart = prevCompactionIndex + 1;
+			const boundaryEnd = entries.length;
+
+			// Find cut point
+			const cutResult = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+
+			// Nothing to summarize if cut point is at boundary start
+			if (cutResult.firstKeptEntryIndex <= boundaryStart) {
+				this._emit({ type: "background_summary_end", success: true });
+				return;
+			}
+
+			// Extract messages to summarize
+			const historyEnd = cutResult.isSplitTurn ? cutResult.turnStartIndex : cutResult.firstKeptEntryIndex;
+			const messagesToSummarize: AppMessage[] = [];
+
+			for (let i = boundaryStart; i < historyEnd; i++) {
+				const entry = entries[i];
+				if (entry.type === "message") {
+					messagesToSummarize.push(entry.message);
+				}
+			}
+
+			// Include previous compaction summary if exists
+			if (prevCompactionIndex >= 0) {
+				const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
+				messagesToSummarize.unshift({
+					role: "user",
+					content: `Previous session summary:\n${prevCompaction.summary}`,
+					timestamp: Date.now(),
+				});
+			}
+
+			if (messagesToSummarize.length === 0) {
+				this._emit({ type: "background_summary_end", success: true });
+				return;
+			}
+
+			// Extract turn prefix messages if splitting a turn
+			const turnPrefixMessages: AppMessage[] = [];
+			if (cutResult.isSplitTurn && cutResult.turnStartIndex !== -1) {
+				for (let i = cutResult.turnStartIndex; i < cutResult.firstKeptEntryIndex; i++) {
+					const entry = entries[i];
+					if (entry.type === "message") {
+						turnPrefixMessages.push(entry.message);
+					}
+				}
+			}
+
+			// Generate summary (parallel if split turn, like compact() does)
+			let finalSummary: string;
+			if (turnPrefixMessages.length > 0) {
+				const [historySummary, turnPrefixSummary] = await Promise.all([
+					generateSummary(
+						messagesToSummarize,
+						this.model,
+						settings.reserveTokens,
+						apiKey,
+						this._backgroundSummaryAbortController.signal,
+					),
+					generateSummary(
+						turnPrefixMessages,
+						this.model,
+						Math.floor(settings.reserveTokens * 0.5),
+						apiKey,
+						this._backgroundSummaryAbortController.signal,
+					),
+				]);
+				finalSummary = historySummary + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixSummary;
+			} else {
+				finalSummary = await generateSummary(
+					messagesToSummarize,
+					this.model,
+					settings.reserveTokens,
+					apiKey,
+					this._backgroundSummaryAbortController.signal,
+				);
+			}
+
+			if (this._backgroundSummaryAbortController.signal.aborted) {
+				this._emit({ type: "background_summary_end", success: false, error: "Aborted" });
+				return;
+			}
+
+			// Save cache
+			const cache: SummaryCache = {
+				version: 1,
+				firstKeptEntryIndex: cutResult.firstKeptEntryIndex,
+				generatedAt: new Date().toISOString(),
+				summary: finalSummary,
+			};
+			saveSummaryCache(this.sessionManager.getSessionFile(), cache);
+
+			this._emit({ type: "background_summary_end", success: true });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			this._emit({ type: "background_summary_end", success: false, error: message });
+		} finally {
+			this._backgroundSummaryAbortController = null;
+		}
 	}
 
 	// =========================================================================
@@ -892,6 +1180,7 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
+		this.abortBackgroundSummary();
 		this._queuedMessages = [];
 
 		// Set new session
@@ -941,6 +1230,7 @@ export class AgentSession {
 	 *   - skipped: True if a hook requested to skip conversation restore
 	 */
 	async branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }> {
+		this.abortBackgroundSummary(); // Cache is NOT copied - new branch builds its own
 		const previousSessionFile = this.sessionFile;
 		const entries = this.sessionManager.loadEntries();
 		const selectedEntry = entries[entryIndex];

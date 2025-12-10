@@ -28,6 +28,22 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 };
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Find the index of the latest compaction entry, or -1 if none.
+ */
+export function findLatestCompactionIndex(entries: SessionEntry[]): number {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		if (entries[i].type === "compaction") {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// ============================================================================
 // Token calculation
 // ============================================================================
 
@@ -360,13 +376,7 @@ export async function compact(
 	}
 
 	// Find previous compaction boundary
-	let prevCompactionIndex = -1;
-	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i].type === "compaction") {
-			prevCompactionIndex = i;
-			break;
-		}
-	}
+	const prevCompactionIndex = findLatestCompactionIndex(entries);
 	const boundaryStart = prevCompactionIndex + 1;
 	const boundaryEnd = entries.length;
 

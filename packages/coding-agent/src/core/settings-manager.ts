@@ -6,6 +6,7 @@ export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	backgroundSummary?: boolean; // default: true
 }
 
 export interface Settings {
@@ -141,11 +142,29 @@ export class SettingsManager {
 		return this.settings.compaction?.keepRecentTokens ?? 20000;
 	}
 
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+	getBackgroundSummaryEnabled(): boolean {
+		return this.settings.compaction?.backgroundSummary ?? true;
+	}
+
+	setBackgroundSummaryEnabled(enabled: boolean): void {
+		if (!this.settings.compaction) {
+			this.settings.compaction = {};
+		}
+		this.settings.compaction.backgroundSummary = enabled;
+		this.save();
+	}
+
+	getCompactionSettings(): {
+		enabled: boolean;
+		reserveTokens: number;
+		keepRecentTokens: number;
+		backgroundSummary: boolean;
+	} {
 		return {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			backgroundSummary: this.getBackgroundSummaryEnabled(),
 		};
 	}
 

@@ -15,6 +15,7 @@ export class FooterComponent implements Component {
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
+	private backgroundSummarizing: boolean = false;
 
 	constructor(state: AgentState) {
 		this.state = state;
@@ -22,6 +23,10 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	setBackgroundSummarizing(active: boolean): void {
+		this.backgroundSummarizing = active;
 	}
 
 	/**
@@ -183,6 +188,11 @@ export class FooterComponent implements Component {
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);
+		}
+
+		// Show background summarization indicator
+		if (this.backgroundSummarizing) {
+			statsParts.push(theme.fg("dim", "⟳"));
 		}
 
 		// Colorize context percentage based on usage
