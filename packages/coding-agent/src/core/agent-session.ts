@@ -145,6 +145,7 @@ export class AgentSession {
 
 	// Background summarization state
 	private _backgroundSummaryAbortController: AbortController | null = null;
+	private _backgroundSummaryTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Hook system
 	private _hookRunner: HookRunner | null = null;
@@ -387,6 +388,9 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		// Abort any pending/running background summary - it will be stale after this turn
+		this.abortBackgroundSummary();
+
 		// Flush any pending bash messages before the new prompt
 		this._flushPendingBashMessages();
 
@@ -750,9 +754,13 @@ export class AgentSession {
 	}
 
 	/**
-	 * Abort background summarization if running.
+	 * Abort background summarization if pending or running.
 	 */
 	abortBackgroundSummary(): void {
+		if (this._backgroundSummaryTimeout) {
+			clearTimeout(this._backgroundSummaryTimeout);
+			this._backgroundSummaryTimeout = null;
+		}
 		this._backgroundSummaryAbortController?.abort();
 	}
 
@@ -937,8 +945,8 @@ export class AgentSession {
 	// =========================================================================
 
 	/**
-	 * Start background summarization if conditions are met.
-	 * Non-blocking - fires and forgets.
+	 * Schedule background summarization after a delay.
+	 * Debounces to avoid wasteful API calls during rapid interactions.
 	 */
 	private _maybeStartBackgroundSummary(assistantMessage: AssistantMessage): void {
 		const settings = this.settingsManager.getCompactionSettings();
@@ -949,16 +957,24 @@ export class AgentSession {
 		// Skip if session persistence disabled (--no-session)
 		if (!this.sessionManager.isEnabled()) return;
 
-		// Skip if already running
-		if (this._backgroundSummaryAbortController) return;
-
 		// Skip if message was aborted or error
 		if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") return;
 
-		// Fire and forget
-		this._runBackgroundSummary().catch(() => {
-			// Silently ignore - background work is best-effort
-		});
+		// Cancel any pending timeout (debounce)
+		if (this._backgroundSummaryTimeout) {
+			clearTimeout(this._backgroundSummaryTimeout);
+			this._backgroundSummaryTimeout = null;
+		}
+
+		// Schedule after 3 second delay
+		this._backgroundSummaryTimeout = setTimeout(() => {
+			this._backgroundSummaryTimeout = null;
+			// Skip if already running (edge case)
+			if (this._backgroundSummaryAbortController) return;
+			this._runBackgroundSummary().catch(() => {
+				// Silently ignore - background work is best-effort
+			});
+		}, 3000);
 	}
 
 	/**
