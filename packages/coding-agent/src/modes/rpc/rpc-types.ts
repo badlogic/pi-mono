@@ -40,6 +40,10 @@ export type RpcCommand =
 	| { id?: string; type: "compact"; customInstructions?: string }
 	| { id?: string; type: "set_auto_compaction"; enabled: boolean }
 
+	// Retry
+	| { id?: string; type: "set_auto_retry"; enabled: boolean }
+	| { id?: string; type: "abort_retry" }
+
 	// Bash
 	| { id?: string; type: "bash"; command: string }
 	| { id?: string; type: "abort_bash" }
@@ -126,6 +130,10 @@ export type RpcResponse =
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
 	| { id?: string; type: "response"; command: "set_auto_compaction"; success: true }
+
+	// Retry
+	| { id?: string; type: "response"; command: "set_auto_retry"; success: true }
+	| { id?: string; type: "response"; command: "abort_retry"; success: true }
 
 	// Bash
 	| { id?: string; type: "response"; command: "bash"; success: true; data: BashResult }

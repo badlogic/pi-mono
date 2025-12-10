@@ -303,6 +303,34 @@ Response:
 {"type": "response", "command": "set_auto_compaction", "success": true}
 ```
 
+### Retry
+
+#### set_auto_retry
+
+Enable or disable automatic retry on transient errors (overloaded, rate limit, 5xx).
+
+```json
+{"type": "set_auto_retry", "enabled": true}
+```
+
+Response:
+```json
+{"type": "response", "command": "set_auto_retry", "success": true}
+```
+
+#### abort_retry
+
+Abort an in-progress retry (cancel the delay and stop retrying).
+
+```json
+{"type": "abort_retry"}
+```
+
+Response:
+```json
+{"type": "response", "command": "abort_retry", "success": true}
+```
+
 ### Bash
 
 #### bash
@@ -528,6 +556,8 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `tool_execution_end` | Tool completes |
 | `auto_compaction_start` | Auto-compaction begins |
 | `auto_compaction_end` | Auto-compaction completes |
+| `auto_retry_start` | Auto-retry begins (after transient error) |
+| `auto_retry_end` | Auto-retry completes (success or final failure) |
 
 ### agent_start
 
@@ -663,6 +693,38 @@ Emitted when automatic compaction runs (when context is nearly full).
 ```
 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
+
+### auto_retry_start / auto_retry_end
+
+Emitted when automatic retry is triggered after a transient error (overloaded, rate limit, 5xx).
+
+```json
+{
+  "type": "auto_retry_start",
+  "attempt": 1,
+  "maxAttempts": 3,
+  "delayMs": 2000,
+  "errorMessage": "529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"
+}
+```
+
+```json
+{
+  "type": "auto_retry_end",
+  "success": true,
+  "attempt": 2
+}
+```
+
+On final failure (max retries exceeded):
+```json
+{
+  "type": "auto_retry_end",
+  "success": false,
+  "attempt": 3,
+  "finalError": "529 overloaded_error: Overloaded"
+}
+```
 
 ## Error Handling
 

@@ -31,7 +31,9 @@ import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean };
+	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean }
+	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -116,6 +118,12 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | null = null;
 	private _autoCompactionAbortController: AbortController | null = null;
 
+	// Retry state
+	private _retryAbortController: AbortController | null = null;
+	private _retryAttempt = 0;
+	private _retryPromise: Promise<void> | null = null;
+	private _retryResolve: (() => void) | null = null;
+
 	// Bash execution state
 	private _bashAbortController: AbortController | null = null;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
@@ -184,13 +192,39 @@ export class AgentSession {
 			}
 		}
 
-		// Check auto-compaction after agent completes
+		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = null;
+
+			// Check for retryable errors first (overloaded, rate limit, server errors)
+			if (this._isRetryableError(msg)) {
+				const didRetry = await this._handleRetryableError(msg);
+				if (didRetry) return; // Retry was initiated, don't proceed to compaction
+			} else if (this._retryAttempt > 0) {
+				// Previous retry succeeded - emit success event and reset counter
+				this._emit({
+					type: "auto_retry_end",
+					success: true,
+					attempt: this._retryAttempt,
+				});
+				this._retryAttempt = 0;
+				// Resolve the retry promise so waitForRetry() completes
+				this._resolveRetry();
+			}
+
 			await this._handleAgentEndCompaction(msg);
 		}
 	};
+
+	/** Resolve the pending retry promise */
+	private _resolveRetry(): void {
+		if (this._retryResolve) {
+			this._retryResolve();
+			this._retryResolve = null;
+			this._retryPromise = null;
+		}
+	}
 
 	/** Extract text content from a message */
 	private _getUserMessageText(message: Message): string {
@@ -379,6 +413,7 @@ export class AgentSession {
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
 		await this.agent.prompt(expandedText, options?.attachments);
+		await this.waitForRetry();
 	}
 
 	/**
@@ -419,6 +454,7 @@ export class AgentSession {
 	 * Abort current operation and wait for agent to become idle.
 	 */
 	async abort(): Promise<void> {
+		this.abortRetry();
 		this.agent.abort();
 		await this.agent.waitForIdle();
 	}
@@ -782,6 +818,159 @@ export class AgentSession {
 	/** Whether auto-compaction is enabled */
 	get autoCompactionEnabled(): boolean {
 		return this.settingsManager.getCompactionEnabled();
+	}
+
+	// =========================================================================
+	// Auto-Retry
+	// =========================================================================
+
+	/**
+	 * Check if an error is retryable (overloaded, rate limit, server errors).
+	 * Context overflow errors are NOT retryable (handled by compaction instead).
+	 */
+	private _isRetryableError(message: AssistantMessage): boolean {
+		if (message.stopReason !== "error" || !message.errorMessage) return false;
+
+		// Context overflow is handled by compaction, not retry
+		const contextWindow = this.model?.contextWindow ?? 0;
+		if (isContextOverflow(message, contextWindow)) return false;
+
+		const err = message.errorMessage;
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error/i.test(
+			err,
+		);
+	}
+
+	/**
+	 * Handle retryable errors with exponential backoff.
+	 * @returns true if retry was initiated, false if max retries exceeded or disabled
+	 */
+	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
+		const settings = this.settingsManager.getRetrySettings();
+		if (!settings.enabled) return false;
+
+		this._retryAttempt++;
+
+		// Create retry promise on first attempt so waitForRetry() can await it
+		if (this._retryAttempt === 1 && !this._retryPromise) {
+			this._retryPromise = new Promise((resolve) => {
+				this._retryResolve = resolve;
+			});
+		}
+
+		if (this._retryAttempt > settings.maxRetries) {
+			// Max retries exceeded, emit final failure and reset
+			this._emit({
+				type: "auto_retry_end",
+				success: false,
+				attempt: this._retryAttempt - 1,
+				finalError: message.errorMessage,
+			});
+			this._retryAttempt = 0;
+			this._resolveRetry(); // Resolve so waitForRetry() completes
+			return false;
+		}
+
+		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+
+		this._emit({
+			type: "auto_retry_start",
+			attempt: this._retryAttempt,
+			maxAttempts: settings.maxRetries,
+			delayMs,
+			errorMessage: message.errorMessage || "Unknown error",
+		});
+
+		// Remove error message from agent state (keep in session for history)
+		const messages = this.agent.state.messages;
+		if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+			this.agent.replaceMessages(messages.slice(0, -1));
+		}
+
+		// Wait with exponential backoff (abortable)
+		this._retryAbortController = new AbortController();
+		try {
+			await this._sleep(delayMs, this._retryAbortController.signal);
+		} catch {
+			// Aborted during sleep - emit end event so UI can clean up
+			const attempt = this._retryAttempt;
+			this._retryAttempt = 0;
+			this._retryAbortController = null;
+			this._emit({
+				type: "auto_retry_end",
+				success: false,
+				attempt,
+				finalError: "Retry cancelled",
+			});
+			this._resolveRetry();
+			return false;
+		}
+		this._retryAbortController = null;
+
+		// Retry via continue() - use setTimeout to break out of event handler chain
+		setTimeout(() => {
+			this.agent.continue().catch(() => {
+				// Retry failed - will be caught by next agent_end
+			});
+		}, 0);
+
+		return true;
+	}
+
+	/**
+	 * Sleep helper that respects abort signal.
+	 */
+	private _sleep(ms: number, signal?: AbortSignal): Promise<void> {
+		return new Promise((resolve, reject) => {
+			if (signal?.aborted) {
+				reject(new Error("Aborted"));
+				return;
+			}
+
+			const timeout = setTimeout(resolve, ms);
+
+			signal?.addEventListener("abort", () => {
+				clearTimeout(timeout);
+				reject(new Error("Aborted"));
+			});
+		});
+	}
+
+	/**
+	 * Cancel in-progress retry.
+	 */
+	abortRetry(): void {
+		this._retryAbortController?.abort();
+		this._retryAttempt = 0;
+		this._resolveRetry();
+	}
+
+	/**
+	 * Wait for any in-progress retry to complete.
+	 * Returns immediately if no retry is in progress.
+	 */
+	private async waitForRetry(): Promise<void> {
+		if (this._retryPromise) {
+			await this._retryPromise;
+		}
+	}
+
+	/** Whether auto-retry is currently in progress */
+	get isRetrying(): boolean {
+		return this._retryPromise !== null;
+	}
+
+	/** Whether auto-retry is enabled */
+	get autoRetryEnabled(): boolean {
+		return this.settingsManager.getRetryEnabled();
+	}
+
+	/**
+	 * Toggle auto-retry setting.
+	 */
+	setAutoRetryEnabled(enabled: boolean): void {
+		this.settingsManager.setRetryEnabled(enabled);
 	}
 
 	// =========================================================================

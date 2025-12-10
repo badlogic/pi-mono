@@ -8,6 +8,12 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export interface RetrySettings {
+	enabled?: boolean; // default: true
+	maxRetries?: number; // default: 3
+	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -16,6 +22,7 @@ export interface Settings {
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
@@ -146,6 +153,26 @@ export class SettingsManager {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+		};
+	}
+
+	getRetryEnabled(): boolean {
+		return this.settings.retry?.enabled ?? true;
+	}
+
+	setRetryEnabled(enabled: boolean): void {
+		if (!this.settings.retry) {
+			this.settings.retry = {};
+		}
+		this.settings.retry.enabled = enabled;
+		this.save();
+	}
+
+	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number } {
+		return {
+			enabled: this.getRetryEnabled(),
+			maxRetries: this.settings.retry?.maxRetries ?? 3,
+			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
 		};
 	}
 

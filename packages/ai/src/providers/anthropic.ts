@@ -295,6 +295,7 @@ function createClient(
 			baseURL: model.baseUrl,
 			defaultHeaders,
 			dangerouslyAllowBrowser: true,
+			maxRetries: 0, // Disable SDK retries, handled by coding-agent
 		});
 
 		return { client, isOAuthToken: true };
@@ -311,6 +312,7 @@ function createClient(
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
 			defaultHeaders,
+			maxRetries: 0, // Disable SDK retries, handled by coding-agent
 		});
 
 		return { client, isOAuthToken: false };

@@ -271,6 +271,20 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			// =================================================================
+			// Retry
+			// =================================================================
+
+			case "set_auto_retry": {
+				session.setAutoRetryEnabled(command.enabled);
+				return success(id, "set_auto_retry");
+			}
+
+			case "abort_retry": {
+				session.abortRetry();
+				return success(id, "abort_retry");
+			}
+
+			// =================================================================
 			// Bash
 			// =================================================================
 

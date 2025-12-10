@@ -524,12 +524,22 @@ See [Hooks Documentation](docs/hooks.md) for full API reference.
   "shellPath": "C:\\path\\to\\bash.exe",
   "queueMode": "one-at-a-time",
   "compaction": {
-    "enabled": false,
+    "enabled": true,
     "reserveTokens": 16384,
     "keepRecentTokens": 20000
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
   }
 }
 ```
+
+**Retry settings:**
+- `enabled`: Auto-retry on transient errors (overloaded, rate limit, 5xx). Default: `true`
+- `maxRetries`: Maximum retry attempts. Default: `3`
+- `baseDelayMs`: Base delay for exponential backoff (2s, 4s, 8s). Default: `2000`
 
 ---
 

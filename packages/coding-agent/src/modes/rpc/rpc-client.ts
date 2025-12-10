@@ -265,6 +265,20 @@ export class RpcClient {
 	}
 
 	/**
+	 * Set auto-retry enabled/disabled.
+	 */
+	async setAutoRetry(enabled: boolean): Promise<void> {
+		await this.send({ type: "set_auto_retry", enabled });
+	}
+
+	/**
+	 * Abort in-progress retry.
+	 */
+	async abortRetry(): Promise<void> {
+		await this.send({ type: "abort_retry" });
+	}
+
+	/**
 	 * Execute a bash command.
 	 */
 	async bash(command: string): Promise<BashResult> {

@@ -102,6 +102,10 @@ export class InteractiveMode {
 	private autoCompactionLoader: Loader | null = null;
 	private autoCompactionEscapeHandler?: () => void;
 
+	// Auto-retry state
+	private retryLoader: Loader | null = null;
+	private retryEscapeHandler?: () => void;
+
 	// Hook UI state
 	private hookSelector: HookSelectorComponent | null = null;
 	private hookInput: HookInputComponent | null = null;
@@ -802,6 +806,46 @@ export class InteractiveMode {
 					compactionComponent.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
+				}
+				this.ui.requestRender();
+				break;
+			}
+
+			case "auto_retry_start": {
+				// Set up escape to abort retry
+				this.retryEscapeHandler = this.editor.onEscape;
+				this.editor.onEscape = () => {
+					this.session.abortRetry();
+				};
+				// Show retry indicator
+				this.statusContainer.clear();
+				const delaySeconds = Math.round(event.delayMs / 1000);
+				this.retryLoader = new Loader(
+					this.ui,
+					(spinner) => theme.fg("warning", spinner),
+					(text) => theme.fg("muted", text),
+					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (esc to cancel)`,
+				);
+				this.statusContainer.addChild(this.retryLoader);
+				this.ui.requestRender();
+				break;
+			}
+
+			case "auto_retry_end": {
+				// Restore escape handler
+				if (this.retryEscapeHandler) {
+					this.editor.onEscape = this.retryEscapeHandler;
+					this.retryEscapeHandler = undefined;
+				}
+				// Stop loader
+				if (this.retryLoader) {
+					this.retryLoader.stop();
+					this.retryLoader = null;
+					this.statusContainer.clear();
+				}
+				// Show error only on final failure (success shows normal response)
+				if (!event.success) {
+					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
 				this.ui.requestRender();
 				break;
