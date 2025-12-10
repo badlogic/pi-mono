@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.18.2] - 2025-12-10
+
 ### Changed
 
 - **Anthropic SDK retries disabled**: Set `maxRetries: 0` on Anthropic client to allow application-level retry handling. The SDK's built-in retries were interfering with coding-agent's retry logic. ([#157](https://github.com/badlogic/pi-mono/issues/157))
