@@ -1164,7 +1164,7 @@ export class InteractiveMode {
 			const selector = new ThemeSelectorComponent(
 				currentTheme,
 				(themeName) => {
-					const result = setTheme(themeName);
+					const result = setTheme(themeName, true);
 					this.settingsManager.setTheme(themeName);
 					this.ui.invalidate();
 					done();
@@ -1179,7 +1179,7 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				},
 				(themeName) => {
-					const result = setTheme(themeName);
+					const result = setTheme(themeName, true);
 					if (result.success) {
 						this.ui.invalidate();
 						this.ui.requestRender();

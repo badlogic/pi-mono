@@ -455,12 +455,14 @@ let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
 
-export function initTheme(themeName?: string): void {
+export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
 	try {
 		theme = loadTheme(name);
-		startThemeWatcher();
+		if (enableWatcher) {
+			startThemeWatcher();
+		}
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
@@ -469,11 +471,13 @@ export function initTheme(themeName?: string): void {
 	}
 }
 
-export function setTheme(name: string): { success: boolean; error?: string } {
+export function setTheme(name: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
 	currentThemeName = name;
 	try {
 		theme = loadTheme(name);
-		startThemeWatcher();
+		if (enableWatcher) {
+			startThemeWatcher();
+		}
 		return { success: true };
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme

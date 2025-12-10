@@ -167,10 +167,13 @@ export async function main(args: string[]) {
 	// Process @file arguments
 	const { initialMessage, initialAttachments } = prepareInitialMessage(parsed);
 
+	// Determine if we're in interactive mode (needed for theme watcher)
+	const isInteractive = !parsed.print && parsed.mode === undefined;
+
 	// Initialize theme (before any TUI rendering)
 	const settingsManager = new SettingsManager();
 	const themeName = settingsManager.getTheme();
-	initTheme(themeName);
+	initTheme(themeName, isInteractive);
 
 	// Setup session manager
 	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
@@ -196,7 +199,6 @@ export async function main(args: string[]) {
 	}
 
 	// Determine mode and output behavior
-	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	const shouldPrintMessages = isInteractive;
 
