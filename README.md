@@ -25,6 +25,8 @@ npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ```
 
+> **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
+
 ### CI
 
 GitHub Actions runs on push to `main` and on pull requests. The workflow runs `npm run check` and `npm run test` for each package in parallel.
