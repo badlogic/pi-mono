@@ -19,6 +19,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	groq: "openai/gpt-oss-120b",
 	cerebras: "zai-glm-4.6",
 	zai: "glm-4.6",
+	mistral: "devstral-medium-latest",
 };
 
 export interface ScopedModel {

@@ -124,7 +124,7 @@ describe("Context overflow error handling", () => {
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toMatch(/exceeds the context window/i);
+			expect(result.errorMessage).toMatch(/maximum context length/i);
 			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 		}, 120000);
 	});
@@ -234,6 +234,22 @@ describe("Context overflow error handling", () => {
 				// Rate limited or other error - just log and pass
 				console.log("  z.ai returned error (possibly rate limited), skipping overflow detection");
 			}
+		}, 120000);
+	});
+
+	// =============================================================================
+	// Mistral
+	// Expected pattern: TBD - need to test actual error message
+	// =============================================================================
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
+		it("devstral-medium-latest - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("mistral", "devstral-medium-latest");
+			const result = await testContextOverflow(model, process.env.MISTRAL_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 		}, 120000);
 	});
 

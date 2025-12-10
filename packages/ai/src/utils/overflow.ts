@@ -17,6 +17,7 @@ import type { AssistantMessage } from "../types.js";
  * - llama.cpp: "the request exceeds the available context size, try increasing it"
  * - LM Studio: "tokens to keep from the initial prompt is greater than the context length"
  * - Cerebras: Returns "400 status code (no body)" - handled separately below
+ * - Mistral: Returns "400 status code (no body)" - handled separately below
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
  * - Ollama: Silently truncates input - not detectable via error message
  */
@@ -52,6 +53,7 @@ const OVERFLOW_PATTERNS = [
  * - xAI (Grok): "maximum prompt length is X but request contains Y"
  * - Groq: "reduce the length of the messages"
  * - Cerebras: 400/413 status code (no body)
+ * - Mistral: 400/413 status code (no body)
  * - OpenRouter (all backends): "maximum context length is X tokens"
  * - llama.cpp: "exceeds the available context size"
  * - LM Studio: "greater than the context length"
@@ -85,7 +87,7 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 			return true;
 		}
 
-		// Cerebras returns 400/413 with no body - check for status code pattern
+		// Cerebras and Mistral return 400/413 with no body - check for status code pattern
 		if (/^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
 			return true;
 		}

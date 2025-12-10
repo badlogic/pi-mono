@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Mistral provider**: Added support for Mistral AI models. Set `MISTRAL_API_KEY` environment variable to use.
+
 ## [0.18.0] - 2025-12-10
 
 ### Added

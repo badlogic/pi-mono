@@ -6,6 +6,7 @@ import type {
 	ChatCompletionContentPartImage,
 	ChatCompletionContentPartText,
 	ChatCompletionMessageParam,
+	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
 import { calculateCost } from "../models.js";
 import type {
@@ -26,6 +27,25 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transorm-messages.js";
+
+/**
+ * Normalize tool call ID for Mistral.
+ * Mistral requires tool IDs to be exactly 9 alphanumeric characters (a-z, A-Z, 0-9).
+ */
+function normalizeMistralToolId(id: string, isMistral: boolean): string {
+	if (!isMistral) return id;
+	// Remove non-alphanumeric characters
+	let normalized = id.replace(/[^a-zA-Z0-9]/g, "");
+	// Mistral requires exactly 9 characters
+	if (normalized.length < 9) {
+		// Pad with deterministic characters based on original ID to ensure matching
+		const padding = "ABCDEFGHI";
+		normalized = normalized + padding.slice(0, 9 - normalized.length);
+	} else if (normalized.length > 9) {
+		normalized = normalized.slice(0, 9);
+	}
+	return normalized;
+}
 
 /**
  * Check if conversation messages contain tool calls or tool results.
@@ -346,7 +366,18 @@ function convertMessages(
 		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
 	}
 
+	let lastRole: string | null = null;
+
 	for (const msg of transformedMessages) {
+		// Some providers (e.g. Mistral) don't allow user messages directly after tool results
+		// Insert a synthetic assistant message to bridge the gap
+		if (compat.requiresAssistantAfterToolResult && lastRole === "toolResult" && msg.role === "user") {
+			params.push({
+				role: "assistant",
+				content: "I have processed the tool results.",
+			});
+		}
+
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				params.push({
@@ -379,9 +410,10 @@ function convertMessages(
 				});
 			}
 		} else if (msg.role === "assistant") {
+			// Some providers (e.g. Mistral) don't accept null content, use empty string instead
 			const assistantMsg: ChatCompletionAssistantMessageParam = {
 				role: "assistant",
-				content: null,
+				content: compat.requiresAssistantAfterToolResult ? "" : null,
 			};
 
 			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
@@ -391,20 +423,31 @@ function convertMessages(
 				});
 			}
 
-			// Handle thinking blocks for llama.cpp server + gpt-oss
+			// Handle thinking blocks
 			const thinkingBlocks = msg.content.filter((b) => b.type === "thinking") as ThinkingContent[];
 			if (thinkingBlocks.length > 0) {
-				// Use the signature from the first thinking block if available
-				const signature = thinkingBlocks[0].thinkingSignature;
-				if (signature && signature.length > 0) {
-					(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("\n");
+				if (compat.requiresThinkingAsText) {
+					// Convert thinking blocks to text with <thinking> delimiters
+					const thinkingText = thinkingBlocks.map((b) => `<thinking>\n${b.thinking}\n</thinking>`).join("\n");
+					const textContent = assistantMsg.content as Array<{ type: "text"; text: string }> | null;
+					if (textContent) {
+						textContent.unshift({ type: "text", text: thinkingText });
+					} else {
+						assistantMsg.content = [{ type: "text", text: thinkingText }];
+					}
+				} else {
+					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
+					const signature = thinkingBlocks[0].thinkingSignature;
+					if (signature && signature.length > 0) {
+						(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("\n");
+					}
 				}
 			}
 
 			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
 				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: tc.id,
+					id: normalizeMistralToolId(tc.id, compat.requiresMistralToolIds),
 					type: "function" as const,
 					function: {
 						name: tc.name,
@@ -426,11 +469,16 @@ function convertMessages(
 
 			// Always send tool result with text (or placeholder if only images)
 			const hasText = textResult.length > 0;
-			params.push({
+			// Some providers (e.g. Mistral) require the 'name' field in tool results
+			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
 				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
-				tool_call_id: msg.toolCallId,
-			});
+				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
+			};
+			if (compat.requiresToolResultName && msg.toolName) {
+				(toolResultMsg as any).name = msg.toolName;
+			}
+			params.push(toolResultMsg);
 
 			// If there are images and model supports them, send a follow-up user message with images
 			if (hasImages && model.input.includes("image")) {
@@ -462,6 +510,8 @@ function convertMessages(
 				});
 			}
 		}
+
+		lastRole = msg.role;
 	}
 
 	return params;
@@ -512,11 +562,17 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 
 	const isGrok = baseUrl.includes("api.x.ai");
 
+	const isMistral = baseUrl.includes("mistral.ai");
+
 	return {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
+		requiresToolResultName: isMistral,
+		requiresAssistantAfterToolResult: isMistral,
+		requiresThinkingAsText: isMistral,
+		requiresMistralToolIds: isMistral,
 	};
 }
 
@@ -533,5 +589,10 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
 		supportsDeveloperRole: model.compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
 		supportsReasoningEffort: model.compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
 		maxTokensField: model.compat.maxTokensField ?? detected.maxTokensField,
+		requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
+		requiresAssistantAfterToolResult:
+			model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
+		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
+		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
 	};
 }

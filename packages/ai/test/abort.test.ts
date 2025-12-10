@@ -105,4 +105,16 @@ describe("AI Providers Abort Tests", () => {
 			await testImmediateAbort(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		});
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Abort", () => {
+		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should abort mid-stream", async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", async () => {
+			await testImmediateAbort(llm);
+		});
+	});
 });

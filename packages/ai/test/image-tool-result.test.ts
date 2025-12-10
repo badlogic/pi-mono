@@ -261,4 +261,16 @@ describe("Tool Results with Images", () => {
 			await handleToolWithTextAndImageResult(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b)", () => {
+		const llm = getModel("mistral", "pixtral-12b");
+
+		it("should handle tool result with only image", async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
 });

@@ -289,4 +289,24 @@ describe("AI Providers Empty Message Tests", () => {
 			await testEmptyAssistantMessage(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Empty Messages", () => {
+		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should handle empty content array", async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
 });

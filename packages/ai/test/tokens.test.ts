@@ -77,4 +77,12 @@ describe("Token Statistics on Abort", () => {
 			await testTokensOnAbort(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		}, 10000);
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
+		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should include token stats when aborted mid-stream", async () => {
+			await testTokensOnAbort(llm);
+		}, 10000);
+	});
 });

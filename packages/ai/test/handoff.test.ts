@@ -273,18 +273,48 @@ async function testProviderHandoff<TApi extends Api>(
 	sourceContext: (typeof providerContexts)[keyof typeof providerContexts],
 ): Promise<boolean> {
 	// Build conversation context
+	let assistantMessage: AssistantMessage = sourceContext.message;
+	let toolResult: ToolResultMessage | undefined | null = sourceContext.toolResult;
+
+	// If target is Mistral, convert tool call IDs to Mistral format
+	if (targetModel.provider === "mistral" && assistantMessage.content.some((c) => c.type === "toolCall")) {
+		// Clone the message to avoid mutating the original
+		assistantMessage = {
+			...assistantMessage,
+			content: assistantMessage.content.map((content) => {
+				if (content.type === "toolCall") {
+					// Generate a Mistral-style tool call ID (uppercase letters and numbers)
+					const mistralId = "T7TcP5RVB"; // Using the format we know works
+					return {
+						...content,
+						id: mistralId,
+					};
+				}
+				return content;
+			}),
+		} as AssistantMessage;
+
+		// Also update the tool result if present
+		if (toolResult) {
+			toolResult = {
+				...toolResult,
+				toolCallId: "T7TcP5RVB", // Match the tool call ID
+			};
+		}
+	}
+
 	const messages: Message[] = [
 		{
 			role: "user",
 			content: "Please do some calculations, tell me about capitals, and check the weather.",
 			timestamp: Date.now(),
 		},
-		sourceContext.message,
+		assistantMessage,
 	];
 
 	// Add tool result if present
-	if (sourceContext.toolResult) {
-		messages.push(sourceContext.toolResult);
+	if (toolResult) {
+		messages.push(toolResult);
 	}
 
 	// Ask follow-up question
@@ -505,5 +535,34 @@ describe("Cross-Provider Handoff Tests", () => {
 			// All non-skipped handoffs should succeed
 			expect(successCount).toBe(totalTests);
 		});
+	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Handoff", () => {
+		const model = getModel("mistral", "devstral-medium-latest");
+
+		it("should handle contexts from all providers", async () => {
+			console.log("\nTesting Mistral with pre-built contexts:\n");
+
+			const contextTests = [
+				{ label: "Anthropic-style", context: providerContexts.anthropic, sourceModel: "claude-3-5-haiku-20241022" },
+				{ label: "Google-style", context: providerContexts.google, sourceModel: "gemini-2.5-flash" },
+				{ label: "OpenAI-Completions", context: providerContexts.openaiCompletions, sourceModel: "gpt-4o-mini" },
+				{ label: "OpenAI-Responses", context: providerContexts.openaiResponses, sourceModel: "gpt-5-mini" },
+				{ label: "Aborted", context: providerContexts.aborted, sourceModel: null },
+			];
+
+			let successCount = 0;
+			const totalTests = contextTests.length;
+
+			for (const { label, context, sourceModel } of contextTests) {
+				const success = await testProviderHandoff(model, label, context);
+				if (success) successCount++;
+			}
+
+			console.log(`\nMistral success rate: ${successCount}/${totalTests}\n`);
+
+			// All handoffs should succeed
+			expect(successCount).toBe(totalTests);
+		}, 60000);
 	});
 });

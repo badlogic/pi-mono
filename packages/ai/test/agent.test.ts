@@ -358,6 +358,20 @@ describe("Agent Calculator Tests", () => {
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
 		}, 30000);
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Agent", () => {
+		const model = getModel("mistral", "devstral-medium-latest");
+
+		it("should calculate multiple expressions and sum the results", async () => {
+			const result = await calculateTest(model);
+			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+		}, 30000);
+
+		it("should handle abort during tool execution", async () => {
+			const result = await abortTest(model);
+			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+		}, 30000);
+	});
 });
 
 describe("agentLoopContinue", () => {

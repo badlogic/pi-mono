@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Mistral provider**: Added support for Mistral AI models via the OpenAI-compatible API. Includes automatic handling of Mistral-specific requirements (tool call ID format, message ordering constraints). Set `MISTRAL_API_KEY` environment variable to use.
+
 ### Fixed
 
 - Fixed bug where `ANTHROPIC_API_KEY` environment variable was deleted globally after first OAuth token usage, causing subsequent prompts to fail

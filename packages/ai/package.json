@@ -22,6 +22,7 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "0.71.2",
 		"@google/genai": "1.31.0",
+		"@mistralai/mistralai": "1.10.0",
 		"@sinclair/typebox": "^0.34.41",
 		"ajv": "^8.17.1",
 		"ajv-formats": "^3.0.1",

@@ -389,4 +389,20 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			await testUnpairedHighSurrogate(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Unicode Handling", () => {
+		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should handle emoji in tool results", async () => {
+			await testEmojiInToolResults(llm);
+		});
+
+		it("should handle real-world LinkedIn comment data with emoji", async () => {
+			await testRealWorldLinkedInData(llm);
+		});
+
+		it("should handle unpaired high surrogate (0xD83D) in tool results", async () => {
+			await testUnpairedHighSurrogate(llm);
+		});
+	});
 });

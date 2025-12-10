@@ -9,6 +9,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenAI**
 - **Anthropic**
 - **Google**
+- **Mistral**
 - **Groq**
 - **Cerebras**
 - **xAI**
@@ -564,7 +565,7 @@ A **provider** offers models through a specific API. For example:
 - **Anthropic** models use the `anthropic-messages` API
 - **Google** models use the `google-generative-ai` API
 - **OpenAI** models use the `openai-responses` API
-- **xAI, Cerebras, Groq, etc.** models use the `openai-completions` API (OpenAI-compatible)
+- **Mistral, xAI, Cerebras, Groq, etc.** models use the `openai-completions` API (OpenAI-compatible)
 
 ### Querying Providers and Models
 
@@ -1036,6 +1037,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=...
+MISTRAL_API_KEY=...
 GROQ_API_KEY=gsk_...
 CEREBRAS_API_KEY=csk-...
 XAI_API_KEY=xai-...

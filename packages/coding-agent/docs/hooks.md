@@ -11,6 +11,14 @@ Hooks are automatically discovered from two locations:
 
 All `.ts` files in these directories are loaded automatically. Project hooks let you define project-specific behavior (similar to `.pi/AGENTS.md`).
 
+You can also load a specific hook file directly using the `--hook` flag:
+
+```bash
+pi --hook ./my-hook.ts
+```
+
+This is useful for testing hooks without placing them in the standard directories.
+
 ### Additional Configuration
 
 You can also add explicit hook paths in `~/.pi/agent/settings.json`:
