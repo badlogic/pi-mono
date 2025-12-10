@@ -20,7 +20,7 @@ import { loadSlashCommands } from "./core/slash-commands.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
 import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
-import { initTheme } from "./modes/interactive/theme/theme.js";
+import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
@@ -394,6 +394,9 @@ export async function main(args: string[]) {
 	} else {
 		// Non-interactive mode (--print flag or --mode flag)
 		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
+		// Clean up and exit (file watchers keep process alive)
+		stopThemeWatcher();
+		process.exit(0);
 	}
 }
 
