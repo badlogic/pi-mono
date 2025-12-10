@@ -73,7 +73,7 @@ jobs:
             cp README.md binaries/$platform/
             cp CHANGELOG.md binaries/$platform/
             mkdir -p binaries/$platform/theme
-            cp dist/theme/*.json binaries/$platform/theme/
+            cp dist/modes/interactive/theme/*.json binaries/$platform/theme/
           done
 
           # Create archives
