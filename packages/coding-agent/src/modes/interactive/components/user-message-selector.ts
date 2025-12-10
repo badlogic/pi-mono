@@ -136,8 +136,8 @@ export class UserMessageSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
-		// Auto-cancel if no messages or only one message
-		if (messages.length <= 1) {
+		// Auto-cancel if no messages
+		if (messages.length === 0) {
 			setTimeout(() => onCancel(), 100);
 		}
 	}

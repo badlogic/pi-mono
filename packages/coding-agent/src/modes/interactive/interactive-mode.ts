@@ -1214,7 +1214,7 @@ export class InteractiveMode {
 	private showUserMessageSelector(): void {
 		const userMessages = this.session.getUserMessagesForBranching();
 
-		if (userMessages.length <= 1) {
+		if (userMessages.length === 0) {
 			this.showStatus("No messages to branch from");
 			return;
 		}

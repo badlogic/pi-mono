@@ -122,8 +122,8 @@ Fired when session changes (`/branch` or session switch).
 
 ```typescript
 pi.on("session_switch", async (event, ctx) => {
-  // event.newSessionFile: string
-  // event.previousSessionFile: string
+  // event.newSessionFile: string | null (null in --no-session mode)
+  // event.previousSessionFile: string | null (null in --no-session mode)
   // event.reason: "branch" | "switch"
 });
 ```

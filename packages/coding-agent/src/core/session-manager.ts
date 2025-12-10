@@ -231,6 +231,11 @@ export class SessionManager {
 		this.enabled = false;
 	}
 
+	/** Check if session persistence is enabled */
+	isEnabled(): boolean {
+		return this.enabled;
+	}
+
 	private getSessionDirectory(): string {
 		const cwd = process.cwd();
 		// Replace all path separators and colons (for Windows drive letters) with dashes
@@ -637,32 +642,43 @@ export class SessionManager {
 	/**
 	 * Create a branched session from session entries up to (but not including) a specific entry index.
 	 * This preserves compaction events and all entry types.
-	 * Returns the new session file path.
+	 * Returns the new session file path, or null if in --no-session mode (in-memory only).
 	 */
-	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string {
+	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string | null {
 		const newSessionId = uuidv4();
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
 
-		// Copy all entries up to (but not including) the branch point
+		// Build new entries list (up to but not including branch point)
+		const newEntries: SessionEntry[] = [];
 		for (let i = 0; i < branchBeforeIndex; i++) {
 			const entry = entries[i];
 
 			if (entry.type === "session") {
 				// Rewrite session header with new ID and branchedFrom
-				const newHeader: SessionHeader = {
+				newEntries.push({
 					...entry,
 					id: newSessionId,
 					timestamp: new Date().toISOString(),
-					branchedFrom: this.sessionFile,
-				};
-				appendFileSync(newSessionFile, JSON.stringify(newHeader) + "\n");
+					branchedFrom: this.enabled ? this.sessionFile : undefined,
+				});
 			} else {
 				// Copy other entries as-is
-				appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+				newEntries.push(entry);
 			}
 		}
 
-		return newSessionFile;
+		if (this.enabled) {
+			// Write to file
+			for (const entry of newEntries) {
+				appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+			}
+			return newSessionFile;
+		} else {
+			// In-memory mode: replace inMemoryEntries, no file created
+			this.inMemoryEntries = newEntries;
+			this.sessionId = newSessionId;
+			return null;
+		}
 	}
 }

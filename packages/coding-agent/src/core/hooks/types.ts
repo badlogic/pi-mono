@@ -86,10 +86,10 @@ export interface SessionStartEvent {
  */
 export interface SessionSwitchEvent {
 	type: "session_switch";
-	/** New session file path */
-	newSessionFile: string;
-	/** Previous session file path */
-	previousSessionFile: string;
+	/** New session file path, or null in --no-session mode */
+	newSessionFile: string | null;
+	/** Previous session file path, or null in --no-session mode */
+	previousSessionFile: string | null;
 	/** Reason for the switch */
 	reason: "branch" | "switch";
 }

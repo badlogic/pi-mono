@@ -69,6 +69,87 @@ describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Debug", () => {
 describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Debug", () => {
 	const model = getModel("mistral", "devstral-medium-latest");
 
+	it("two subsequent user messages", async () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Hello", timestamp: Date.now() },
+				{ role: "user", content: "How are you?", timestamp: Date.now() },
+			],
+		};
+		const response = await complete(model, context);
+		console.log("Response:", response.stopReason, response.errorMessage);
+		expect(response.stopReason).not.toBe("error");
+	});
+
+	it("aborted assistant then user message", async () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Hello", timestamp: Date.now() },
+				{
+					role: "assistant",
+					api: "openai-completions",
+					content: [],
+					provider: "mistral",
+					model: "devstral-medium-latest",
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "aborted",
+					timestamp: Date.now(),
+					errorMessage: "Request was aborted.",
+				},
+				{ role: "user", content: "How are you?", timestamp: Date.now() },
+			],
+		};
+		const response = await complete(model, context);
+		console.log("Response:", response.stopReason, response.errorMessage);
+		expect(response.stopReason).not.toBe("error");
+	});
+
+	it("three consecutive user messages (simulating aborted assistant skipped)", async () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Hello", timestamp: Date.now() },
+				{ role: "user", content: "Ran some command", timestamp: Date.now() },
+				{ role: "user", content: "How are you?", timestamp: Date.now() },
+			],
+		};
+		const response = await complete(model, context);
+		console.log("Response:", response.stopReason, response.errorMessage);
+		expect(response.stopReason).not.toBe("error");
+	});
+
+	it("reproduce 502 from session fixture", async () => {
+		const fs = await import("fs");
+		const path = await import("path");
+		const fixtureData = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures/mistral.json"), "utf-8"));
+		// Filter out bashExecution and convert to user message like messageTransformer does
+		const messages = fixtureData.map((m: any) => {
+			if (m.role === "bashExecution") {
+				let text = `Ran \`${m.command}\`\n`;
+				if (m.output) {
+					text += "```\n" + m.output + "\n```";
+				} else {
+					text += "(no output)";
+				}
+				return { role: "user", content: [{ type: "text", text }], timestamp: m.timestamp };
+			}
+			return m;
+		});
+		const context: Context = {
+			messages,
+			tools: [weatherTool],
+		};
+		const response = await complete(model, context);
+		console.log("Response:", response.stopReason, response.errorMessage);
+		expect(response.stopReason).not.toBe("error");
+	});
+
 	it("5d. two tool calls + results, no follow-up user", async () => {
 		const context: Context = {
 			messages: [

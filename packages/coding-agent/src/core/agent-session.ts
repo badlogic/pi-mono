@@ -76,7 +76,7 @@ export interface CompactionResult {
 
 /** Session statistics for /session command */
 export interface SessionStats {
-	sessionFile: string;
+	sessionFile: string | null;
 	sessionId: string;
 	userMessages: number;
 	assistantMessages: number;
@@ -320,9 +320,9 @@ export class AgentSession {
 		return this.agent.getQueueMode();
 	}
 
-	/** Current session file path */
-	get sessionFile(): string {
-		return this.sessionManager.getSessionFile();
+	/** Current session file path, or null if sessions are disabled */
+	get sessionFile(): string | null {
+		return this.sessionManager.isEnabled() ? this.sessionManager.getSessionFile() : null;
 	}
 
 	/** Current session ID */
@@ -966,11 +966,15 @@ export class AgentSession {
 			return { selectedText, skipped: true };
 		}
 
-		// Create branched session
+		// Create branched session (returns null in --no-session mode)
 		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
-		this.sessionManager.setSessionFile(newSessionFile);
 
-		// Emit session_switch event
+		// Update session file if we have one (file-based mode)
+		if (newSessionFile !== null) {
+			this.sessionManager.setSessionFile(newSessionFile);
+		}
+
+		// Emit session_switch event (in --no-session mode, both files are null)
 		if (this._hookRunner) {
 			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
@@ -981,7 +985,7 @@ export class AgentSession {
 			});
 		}
 
-		// Reload
+		// Reload messages from entries (works for both file and in-memory mode)
 		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
 		this.agent.replaceMessages(loaded.messages);
 

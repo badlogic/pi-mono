@@ -65,7 +65,7 @@ export interface RpcSessionState {
 	isStreaming: boolean;
 	isCompacting: boolean;
 	queueMode: "all" | "one-at-a-time";
-	sessionFile: string;
+	sessionFile: string | null;
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
