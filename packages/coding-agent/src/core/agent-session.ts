@@ -91,6 +91,10 @@ export interface ModelCycleResult {
 export interface CompactionResult {
 	tokensBefore: number;
 	summary: string;
+	/** Duration of the compaction in milliseconds */
+	durationMs: number;
+	/** Whether the compaction used a cached summary (instant) or called the LLM (reactive) */
+	usedCache: boolean;
 }
 
 /** Session statistics for /session command */
@@ -636,6 +640,8 @@ export class AgentSession {
 	 * @param customInstructions Optional instructions for the compaction summary
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
+		const startTime = Date.now();
+
 		// Abort any running operation
 		this._disconnectFromAgent();
 		await this.abort();
@@ -658,6 +664,7 @@ export class AgentSession {
 			const settings = this.settingsManager.getCompactionSettings();
 
 			let compactionEntry: CompactionEntry;
+			let usedCache = false;
 
 			// Try cached summary first (only if no custom instructions)
 			if (!customInstructions && this.sessionManager.isEnabled()) {
@@ -678,6 +685,7 @@ export class AgentSession {
 						const lastUsage = getLastAssistantUsage(entries);
 						const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
 						compactionEntry = createCompactionFromCache(cache, tokensBefore);
+						usedCache = true;
 					} else {
 						// Cache exists but doesn't cover enough - fall back to LLM
 						compactionEntry = await compact(
@@ -724,6 +732,8 @@ export class AgentSession {
 			return {
 				tokensBefore: compactionEntry.tokensBefore,
 				summary: compactionEntry.summary,
+				durationMs: Date.now() - startTime,
+				usedCache,
 			};
 		} finally {
 			this._compactionAbortController = null;
@@ -787,6 +797,7 @@ export class AgentSession {
 	 * Internal: Run auto-compaction with events.
 	 */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
+		const startTime = Date.now();
 		const settings = this.settingsManager.getCompactionSettings();
 
 		// Abort background summary if running (we're about to compact anyway)
@@ -809,6 +820,7 @@ export class AgentSession {
 
 			const entries = this.sessionManager.loadEntries();
 			let compactionEntry: CompactionEntry;
+			let usedCache = false;
 
 			// Try cached summary first
 			if (this.sessionManager.isEnabled()) {
@@ -828,6 +840,7 @@ export class AgentSession {
 						const lastUsage = getLastAssistantUsage(entries);
 						const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
 						compactionEntry = createCompactionFromCache(cache, tokensBefore);
+						usedCache = true;
 					} else {
 						compactionEntry = await compact(
 							entries,
@@ -870,6 +883,8 @@ export class AgentSession {
 			const result: CompactionResult = {
 				tokensBefore: compactionEntry.tokensBefore,
 				summary: compactionEntry.summary,
+				durationMs: Date.now() - startTime,
+				usedCache,
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 

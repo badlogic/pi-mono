@@ -798,7 +798,12 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
 					// Add compaction component (same as manual /compact)
-					const compactionComponent = new CompactionComponent(event.result.tokensBefore, event.result.summary);
+					const compactionComponent = new CompactionComponent(
+						event.result.tokensBefore,
+						event.result.summary,
+						event.result.durationMs,
+						event.result.usedCache,
+					);
 					compactionComponent.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
@@ -1629,7 +1634,12 @@ export class InteractiveMode {
 			this.rebuildChatFromMessages();
 
 			// Add compaction component
-			const compactionComponent = new CompactionComponent(result.tokensBefore, result.summary);
+			const compactionComponent = new CompactionComponent(
+				result.tokensBefore,
+				result.summary,
+				result.durationMs,
+				result.usedCache,
+			);
 			compactionComponent.setExpanded(this.toolOutputExpanded);
 			this.chatContainer.addChild(compactionComponent);
 

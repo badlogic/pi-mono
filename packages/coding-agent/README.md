@@ -287,10 +287,15 @@ When disabled, neither case triggers automatic compaction (use `/compact` manual
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "backgroundSummary": true
   }
 }
 ```
+
+**Background Summary (Instant Compaction):**
+
+When `backgroundSummary` is enabled (default), the agent pre-computes a summary in the background after each turn. When compaction triggers, it uses this cached summary instantly (~1s) instead of calling the LLM (~20-30s). The footer shows `⟳` while background summarization runs. Set `backgroundSummary: false` to disable this and always use reactive (on-demand) summarization.
 
 > **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
 
@@ -525,7 +530,8 @@ See [Hooks Documentation](docs/hooks.md) for full API reference.
   "compaction": {
     "enabled": false,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "backgroundSummary": true
   }
 }
 ```
