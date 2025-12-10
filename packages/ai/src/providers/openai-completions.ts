@@ -369,6 +369,15 @@ function convertMessages(
 	let lastRole: string | null = null;
 
 	for (const msg of transformedMessages) {
+		// Some providers (e.g. Mistral/Devstral) don't allow user messages directly after tool results
+		// Insert a synthetic assistant message to bridge the gap
+		if (compat.requiresAssistantAfterToolResult && lastRole === "toolResult" && msg.role === "user") {
+			params.push({
+				role: "assistant",
+				content: "I have processed the tool results.",
+			});
+		}
+
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				params.push({
