@@ -289,11 +289,6 @@ function createClient(
 			...(model.headers || {}),
 		};
 
-		// Clear the env var if we're in Node.js to prevent SDK from using it
-		if (typeof process !== "undefined" && process.env) {
-			delete process.env.ANTHROPIC_API_KEY;
-		}
-
 		const client = new Anthropic({
 			apiKey: null,
 			authToken: apiKey,
