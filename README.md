@@ -106,6 +106,13 @@ Complete release process:
    npm run publish        # Publish all packages to npm
    ```
 
+   **NPM Token Setup**: Publishing requires a granular access token with "Bypass 2FA on publish" enabled.
+   - Go to https://www.npmjs.com/settings/badlogic/tokens/
+   - Create a new "Granular Access Token"
+   - Select "Bypass 2FA on publish"
+   - Tokens expire after 90 days, so regenerate when needed
+   - Set the token: `npm config set //registry.npmjs.org/:_authToken=YOUR_TOKEN`
+
 6. **Add new [Unreleased] section** (for next development cycle):
    ```bash
    # Add a new [Unreleased] section at the top of CHANGELOG.md
