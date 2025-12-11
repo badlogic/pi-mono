@@ -617,9 +617,24 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				}
 			}
 
-			// Log usage summary
+			// Log usage summary with context info
 			if (runState.totalUsage.cost.total > 0) {
-				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage);
+				// Get last non-aborted assistant message for context calculation
+				const messages = session.messages;
+				const lastAssistantMessage = messages
+					.slice()
+					.reverse()
+					.find((m) => m.role === "assistant" && (m as any).stopReason !== "aborted") as any;
+
+				const contextTokens = lastAssistantMessage
+					? lastAssistantMessage.usage.input +
+						lastAssistantMessage.usage.output +
+						lastAssistantMessage.usage.cacheRead +
+						lastAssistantMessage.usage.cacheWrite
+					: 0;
+				const contextWindow = model.contextWindow || 200000;
+
+				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
 				runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
 				await queueChain;
 			}

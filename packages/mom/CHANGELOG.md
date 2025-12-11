@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Complete rewrite of message handling architecture
+  - `log.jsonl` is now the source of truth for all channel messages
+  - `context.jsonl` stores LLM context (messages sent to Claude)
+  - Sync mechanism ensures context.jsonl stays in sync with log.jsonl at run start
+  - Session header written immediately on new session creation (not lazily)
+
+- Backfill improvements
+  - Only backfills channels that already have a `log.jsonl` file
+  - Strips @mentions from backfilled messages (consistent with live messages)
+  - Uses largest timestamp in log for efficient incremental backfill
+  - Fetches DM channels in addition to public/private channels
+
+- Message handling improvements
+  - Channel chatter (messages without @mention) logged but doesn't trigger processing
+  - Messages sent while mom is busy are logged and synced on next run
+  - Pre-startup messages (replayed by Slack on reconnect) logged but not auto-processed
+  - Stop command executes immediately (not queued), can interrupt running tasks
+  - Channel @mentions no longer double-logged (was firing both app_mention and message events)
+
+- Usage summary now includes context window usage
+  - Shows current context tokens vs model's context window
+  - Example: `Context: 4.2k / 200k (2.1%)`
+
 ### Fixed
 
 - Slack API errors (msg_too_long) no longer crash the process
@@ -13,20 +38,12 @@
 - Private channel messages not being logged
   - Added `message.groups` to required bot events in README
   - Added `groups:history` and `groups:read` to required scopes in README
-  - `app_mention` handler now logs messages directly instead of relying on `message` event
-  - Added deduplication in `ChannelStore.logMessage()` to prevent double-logging
+
+- Stop command now updates "Stopping..." to "Stopped" instead of posting two messages
 
 ### Added
 
 - Port truncation logic from coding-agent: bash and read tools now use consistent 2000 lines OR 50KB limits with actionable notices
-- Remove redundant context history truncation (tools already provide truncation with actionable hints)
-
-- Message backfill on startup (#103)
-  - Fetches missed messages from Slack using `conversations.history` API when mom restarts
-  - Backfills up to 3 pages (3000 messages) per channel since last logged timestamp
-  - Includes mom's own responses and user messages (excludes other bots)
-  - Downloads attachments from backfilled messages
-  - Logs progress: channel count, per-channel message counts, total with duration
 
 ## [0.10.2] - 2025-11-27
 

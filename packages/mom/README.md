@@ -145,24 +145,27 @@ You provide mom with a **data directory** (e.g., `./data`) as her workspace. Whi
 ```
 ./data/                         # Your host directory
   ├── MEMORY.md                 # Global memory (shared across channels)
+  ├── settings.json             # Global settings (compaction, retry, etc.)
   ├── skills/                   # Global custom CLI tools mom creates
   ├── C123ABC/                  # Each Slack channel gets a directory
   │   ├── MEMORY.md             # Channel-specific memory
-  │   ├── log.jsonl             # Full conversation history
+  │   ├── log.jsonl             # Full message history (source of truth)
+  │   ├── context.jsonl         # LLM context (synced from log.jsonl)
   │   ├── attachments/          # Files users shared
   │   ├── scratch/              # Mom's working directory
   │   └── skills/               # Channel-specific CLI tools
-  └── C456DEF/                  # Another channel
+  └── D456DEF/                  # DM channels also get directories
       └── ...
 ```
 
 **What's stored here:**
-- Conversation logs and Slack attachments. These are automatically stored by mom
-- Memory files. Context mom remembers across sessions
+- `log.jsonl`: All channel messages (user messages, bot responses). Source of truth.
+- `context.jsonl`: Messages sent to Claude. Synced from log.jsonl at each run start.
+- Memory files: Context mom remembers across sessions
 - Custom tools/scripts mom creates (aka "skills")
 - Working files, cloned repos, generated output
 
-This is also where mom efficiently greps channel log files for conversation history, giving her essentially infinite context.
+Mom efficiently greps `log.jsonl` for conversation history, giving her essentially infinite context beyond what's in `context.jsonl`.
 
 ### Memory
 
@@ -230,33 +233,41 @@ Mom will read the `SKILL.md` file before using a skill, and reuse stored credent
 
 Update mom anytime with `npm install -g @mariozechner/pi-mom`. This only updates the Node.js app on your host. Anything mom installed inside the Docker container remains unchanged.
 
-## Message History (log.jsonl)
+## Message History
 
-Each channel's `log.jsonl` contains the full conversation history. Every message, tool call, and result. Format: one JSON object per line with ISO 8601 timestamps:
+Mom uses two files per channel to manage messages:
+
+### log.jsonl (Source of Truth)
+
+All channel messages are stored here. This includes user messages, channel chatter (messages without @mention), and bot responses. Format: one JSON object per line with ISO 8601 timestamps:
 
 ```typescript
 interface LoggedMessage {
   date: string;        // ISO 8601 (e.g., "2025-11-26T10:44:00.000Z")
-  ts: string;          // Slack timestamp or epoch ms
+  ts: string;          // Slack timestamp (seconds.microseconds)
   user: string;        // User ID or "bot"
   userName?: string;   // Handle (e.g., "mario")
   displayName?: string; // Display name (e.g., "Mario Zechner")
-  text: string;        // Message text
-  attachments: Array<{
-    original: string;  // Original filename
-    local: string;     // Path relative to data dir
-  }>;
+  text: string;        // Message text (@mentions stripped)
+  attachments: string[]; // Filenames of attachments
   isBot: boolean;
 }
 ```
 
 **Example:**
 ```json
-{"date":"2025-11-26T10:44:00.123Z","ts":"1732619040.123456","user":"U123ABC","userName":"mario","text":"@mom hello","attachments":[],"isBot":false}
+{"date":"2025-11-26T10:44:00.123Z","ts":"1732619040.123456","user":"U123ABC","userName":"mario","text":"hello","attachments":[],"isBot":false}
 {"date":"2025-11-26T10:44:05.456Z","ts":"1732619045456","user":"bot","text":"Hi! How can I help?","attachments":[],"isBot":true}
 ```
 
-Mom knows how to query these logs efficiently (see [her system prompt](src/agent.ts)) to avoid context overflow when searching conversation history.
+### context.jsonl (LLM Context)
+
+Messages sent to Claude are stored here. This is synced from `log.jsonl` at the start of each run to ensure:
+- Backfilled messages (from Slack API on startup) are included
+- Channel chatter between @mentions is included
+- Messages sent while mom was busy are included
+
+Mom knows how to query `log.jsonl` efficiently (see [her system prompt](src/agent.ts)) for older history beyond what's in context.
 
 ## Security Considerations
 
@@ -339,9 +350,10 @@ mom --sandbox=docker:mom-exec ./data-exec
 
 ### Code Structure
 
-- `src/main.ts`: Entry point, CLI arg parsing, message routing
-- `src/agent.ts`: Agent runner, event handling, tool execution
-- `src/slack.ts`: Slack integration, context management, message posting
+- `src/main.ts`: Entry point, CLI arg parsing, handler setup, SlackContext adapter
+- `src/agent.ts`: Agent runner, event handling, tool execution, session management
+- `src/slack.ts`: Slack integration (Socket Mode), backfill, message logging
+- `src/context.ts`: Session manager (context.jsonl), log-to-context sync
 - `src/store.ts`: Channel data persistence, attachment downloads
 - `src/log.ts`: Centralized logging (console output)
 - `src/sandbox.ts`: Docker/host sandbox execution
