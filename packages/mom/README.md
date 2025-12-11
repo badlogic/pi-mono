@@ -42,8 +42,12 @@ npm install @mariozechner/pi-mom
    - `message.channels`
    - `message.groups`
    - `message.im`
-6. Install the app to your workspace. Get the **Bot User OAuth Token**. This is `MOM_SLACK_BOT_TOKEN`
-7. Add mom to any channels where you want her to operate (she'll only see messages in channels she's added to)
+6. **Enable Direct Messages** (App Home):
+   - Go to **App Home** in the left sidebar
+   - Under **Show Tabs**, enable the **Messages Tab**
+   - Check **Allow users to send Slash commands and messages from the messages tab**
+7. Install the app to your workspace. Get the **Bot User OAuth Token**. This is `MOM_SLACK_BOT_TOKEN`
+8. Add mom to any channels where you want her to operate (she'll only see messages in channels she's added to)
 
 ## Quick Start
 
