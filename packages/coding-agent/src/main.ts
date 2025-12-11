@@ -139,6 +139,11 @@ function prepareInitialMessage(parsed: Args): {
 export async function main(args: string[]) {
 	const parsed = parseArgs(args);
 
+	if (parsed.version) {
+		console.log(VERSION);
+		return;
+	}
+
 	if (parsed.help) {
 		printHelp();
 		return;
