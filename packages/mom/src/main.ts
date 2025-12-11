@@ -100,7 +100,7 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 			userName: user?.userName,
 			channel: event.channel,
 			ts: event.ts,
-			attachments: [],
+			attachments: (event.attachments || []).map((a) => ({ local: a.local })),
 		},
 		channelName: slack.getChannel(event.channel)?.name,
 		store: state.store,
@@ -243,10 +243,14 @@ const handler: MomHandler = {
 
 log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
 
+// Shared store for attachment downloads (also used per-channel in getState)
+const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! });
+
 const bot = new SlackBotClass(handler, {
 	appToken: MOM_SLACK_APP_TOKEN,
 	botToken: MOM_SLACK_BOT_TOKEN,
 	workingDir,
+	store: sharedStore,
 });
 
 bot.start();

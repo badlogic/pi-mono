@@ -576,9 +576,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Format: "[username]: message" so LLM knows who's talking
 			let userMessage = `[${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
-			// Add attachment paths if any
+			// Add attachment paths if any (convert to absolute paths in execution environment)
 			if (ctx.message.attachments && ctx.message.attachments.length > 0) {
-				const attachmentPaths = ctx.message.attachments.map((a) => a.local).join("\n");
+				const attachmentPaths = ctx.message.attachments.map((a) => `${workspacePath}/${a.local}`).join("\n");
 				userMessage += `\n\nAttachments:\n${attachmentPaths}`;
 			}
 

@@ -3,6 +3,7 @@ import { WebClient } from "@slack/web-api";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { basename, join } from "path";
 import * as log from "./log.js";
+import type { Attachment, ChannelStore } from "./store.js";
 
 // ============================================================================
 // Types
@@ -14,7 +15,9 @@ export interface SlackEvent {
 	ts: string;
 	user: string;
 	text: string;
-	files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
+	files?: Array<{ name?: string; url_private_download?: string; url_private?: string }>;
+	/** Processed attachments with local paths (populated after logUserMessage) */
+	attachments?: Attachment[];
 }
 
 export interface SlackUser {
@@ -118,6 +121,7 @@ export class SlackBot {
 	private webClient: WebClient;
 	private handler: MomHandler;
 	private workingDir: string;
+	private store: ChannelStore;
 	private botUserId: string | null = null;
 	private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
@@ -125,9 +129,13 @@ export class SlackBot {
 	private channels = new Map<string, SlackChannel>();
 	private queues = new Map<string, ChannelQueue>();
 
-	constructor(handler: MomHandler, config: { appToken: string; botToken: string; workingDir: string }) {
+	constructor(
+		handler: MomHandler,
+		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+	) {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
+		this.store = config.store;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
 	}
@@ -258,7 +266,8 @@ export class SlackBot {
 			};
 
 			// SYNC: Log to log.jsonl (ALWAYS, even for old messages)
-			this.logUserMessage(slackEvent);
+			// Also downloads attachments in background and stores local paths
+			slackEvent.attachments = this.logUserMessage(slackEvent);
 
 			// Only trigger processing for messages AFTER startup (not replayed old messages)
 			if (this.startupTs && e.ts < this.startupTs) {
@@ -336,7 +345,8 @@ export class SlackBot {
 			};
 
 			// SYNC: Log to log.jsonl (ALL messages - channel chatter and DMs)
-			this.logUserMessage(slackEvent);
+			// Also downloads attachments in background and stores local paths
+			slackEvent.attachments = this.logUserMessage(slackEvent);
 
 			// Only trigger processing for messages AFTER startup (not replayed old messages)
 			if (this.startupTs && e.ts < this.startupTs) {
@@ -371,9 +381,12 @@ export class SlackBot {
 
 	/**
 	 * Log a user message to log.jsonl (SYNC)
+	 * Downloads attachments in background via store
 	 */
-	private logUserMessage(event: SlackEvent): void {
+	private logUserMessage(event: SlackEvent): Attachment[] {
 		const user = this.users.get(event.user);
+		// Process attachments - queues downloads in background
+		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
 		this.logToFile(event.channel, {
 			date: new Date(parseFloat(event.ts) * 1000).toISOString(),
 			ts: event.ts,
@@ -381,9 +394,10 @@ export class SlackBot {
 			userName: user?.userName,
 			displayName: user?.displayName,
 			text: event.text,
-			attachments: event.files?.map((f) => f.name) || [],
+			attachments,
 			isBot: false,
 		});
+		return attachments;
 	}
 
 	// ==========================================================================
@@ -464,6 +478,8 @@ export class SlackBot {
 			const user = this.users.get(msg.user!);
 			// Strip @mentions from text (same as live messages)
 			const text = (msg.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim();
+			// Process attachments - queues downloads in background
+			const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts!) : [];
 
 			this.logToFile(channelId, {
 				date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
@@ -472,7 +488,7 @@ export class SlackBot {
 				userName: isMomMessage ? undefined : user?.userName,
 				displayName: isMomMessage ? undefined : user?.displayName,
 				text,
-				attachments: msg.files?.map((f) => f.name) || [],
+				attachments,
 				isBot: isMomMessage,
 			});
 		}
