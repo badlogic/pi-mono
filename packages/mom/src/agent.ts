@@ -1,15 +1,17 @@
 import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
+import { AgentSession, messageTransformer } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
+import { MomSessionManager, MomSettingsManager } from "./context.js";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
 import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
-// Hardcoded model for now
+// Hardcoded model for now - TODO: make configurable (issue #63)
 const model = getModel("anthropic", "claude-sonnet-4-5");
 
 /**
@@ -22,15 +24,13 @@ let tsCounter = 0;
 function toSlackTs(): string {
 	const now = Date.now();
 	if (now === lastTsMs) {
-		// Same millisecond - increment counter for sub-ms ordering
 		tsCounter++;
 	} else {
-		// New millisecond - reset counter
 		lastTsMs = now;
 		tsCounter = 0;
 	}
 	const seconds = Math.floor(now / 1000);
-	const micros = (now % 1000) * 1000 + tsCounter; // ms to micros + counter
+	const micros = (now % 1000) * 1000 + tsCounter;
 	return `${seconds}.${micros.toString().padStart(6, "0")}`;
 }
 
@@ -45,95 +45,6 @@ function getAnthropicApiKey(): string {
 		throw new Error("ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY must be set");
 	}
 	return key;
-}
-
-interface LogMessage {
-	date?: string;
-	ts?: string;
-	user?: string;
-	userName?: string;
-	text?: string;
-	attachments?: Array<{ local: string }>;
-	isBot?: boolean;
-}
-
-function getRecentMessages(channelDir: string, turnCount: number): string {
-	const logPath = join(channelDir, "log.jsonl");
-	if (!existsSync(logPath)) {
-		return "(no message history yet)";
-	}
-
-	const content = readFileSync(logPath, "utf-8");
-	const lines = content.trim().split("\n").filter(Boolean);
-
-	if (lines.length === 0) {
-		return "(no message history yet)";
-	}
-
-	// Parse all messages and sort by Slack timestamp
-	// (attachment downloads can cause out-of-order logging)
-	const messages: LogMessage[] = [];
-	for (const line of lines) {
-		try {
-			messages.push(JSON.parse(line));
-		} catch {}
-	}
-	messages.sort((a, b) => {
-		const tsA = parseFloat(a.ts || "0");
-		const tsB = parseFloat(b.ts || "0");
-		return tsA - tsB;
-	});
-
-	// Group into "turns" - a turn is either:
-	// - A single user message (isBot: false)
-	// - A sequence of consecutive bot messages (isBot: true) coalesced into one turn
-	// We walk backwards to get the last N turns
-	const turns: LogMessage[][] = [];
-	let currentTurn: LogMessage[] = [];
-	let lastWasBot: boolean | null = null;
-
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
-		const isBot = msg.isBot === true;
-
-		if (lastWasBot === null) {
-			// First message
-			currentTurn.unshift(msg);
-			lastWasBot = isBot;
-		} else if (isBot && lastWasBot) {
-			// Consecutive bot messages - same turn
-			currentTurn.unshift(msg);
-		} else {
-			// Transition - save current turn and start new one
-			turns.unshift(currentTurn);
-			currentTurn = [msg];
-			lastWasBot = isBot;
-
-			// Stop if we have enough turns
-			if (turns.length >= turnCount) {
-				break;
-			}
-		}
-	}
-
-	// Don't forget the last turn we were building
-	if (currentTurn.length > 0 && turns.length < turnCount) {
-		turns.unshift(currentTurn);
-	}
-
-	// Flatten turns back to messages and format as TSV
-	const formatted: string[] = [];
-	for (const turn of turns) {
-		for (const msg of turn) {
-			const date = (msg.date || "").substring(0, 19);
-			const user = msg.userName || msg.user || "";
-			const text = msg.text || "";
-			const attachments = (msg.attachments || []).map((a) => a.local).join(",");
-			formatted.push(`${date}\t${user}\t${text}\t${attachments}`);
-		}
-	}
-
-	return formatted.join("\n");
 }
 
 function getMemory(channelDir: string): string {
@@ -203,8 +114,9 @@ function buildSystemPrompt(
 	return `You are mom, a Slack bot assistant. Be concise. No emojis.
 
 ## Context
-- For current date/time, call date via the Bash tool.
-- You receive the last 50 conversation turns. If you need older context, search log.jsonl.
+- For current date/time, use: date
+- You have access to previous conversation context including tool results from prior turns.
+- For older history beyond your context, search log.jsonl (contains user messages and your final responses, but not tool results).
 
 ## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
@@ -226,7 +138,7 @@ ${workspacePath}/
 ├── skills/                      # Global CLI tools you create
 └── ${channelId}/                # This channel
     ├── MEMORY.md                # Channel-specific memory
-    ├── log.jsonl                # Full message history
+    ├── log.jsonl                # Message history (no tool results)
     ├── attachments/             # User-shared files
     ├── scratch/                 # Your working directory
     └── skills/                  # Channel-specific tools
@@ -255,30 +167,20 @@ Maintain ${workspacePath}/SYSTEM.md to log all environment modifications:
 
 Update this file whenever you modify the environment. On fresh container, read it first to restore your setup.
 
-## Log Queries (CRITICAL: limit output to avoid context overflow)
+## Log Queries (for older history)
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
-The log contains user messages AND your tool calls/results. Filter appropriately.
+The log contains user messages and your final responses (not tool calls/results).
 ${isDocker ? "Install jq: apk add jq" : ""}
 
-**Conversation only (excludes tool calls/results) - use for summaries:**
 \`\`\`bash
-# Recent conversation (no [Tool] or [Tool Result] lines)
-grep -v '"text":"\\[Tool' log.jsonl | tail -30 | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
+# Recent messages
+tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
 
-# Yesterday's conversation
-grep '"date":"2025-11-26' log.jsonl | grep -v '"text":"\\[Tool' | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
+# Search for specific topic
+grep -i "topic" log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
 
-# Specific user's messages
-grep '"userName":"mario"' log.jsonl | grep -v '"text":"\\[Tool' | tail -20 | jq -c '{date: .date[0:19], text}'
-\`\`\`
-
-**Full details (includes tool calls) - use when you need technical context:**
-\`\`\`bash
-# Raw recent entries
-tail -20 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
-
-# Count all messages
-wc -l log.jsonl
+# Messages from specific user
+grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], text}'
 \`\`\`
 
 ## Tools
@@ -298,12 +200,10 @@ function truncate(text: string, maxLen: number): string {
 }
 
 function extractToolResultText(result: unknown): string {
-	// If it's already a string, return it
 	if (typeof result === "string") {
 		return result;
 	}
 
-	// If it's an object with content array (tool result format)
 	if (
 		result &&
 		typeof result === "object" &&
@@ -322,7 +222,6 @@ function extractToolResultText(result: unknown): string {
 		}
 	}
 
-	// Fallback to JSON
 	return JSON.stringify(result);
 }
 
@@ -330,10 +229,8 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 	const lines: string[] = [];
 
 	for (const [key, value] of Object.entries(args)) {
-		// Skip the label - it's already shown
 		if (key === "label") continue;
 
-		// For read tool, format path with offset/limit
 		if (key === "path" && typeof value === "string") {
 			const offset = args.offset as number | undefined;
 			const limit = args.limit as number | undefined;
@@ -345,10 +242,8 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 			continue;
 		}
 
-		// Skip offset/limit since we already handled them
 		if (key === "offset" || key === "limit") continue;
 
-		// For other values, format them
 		if (typeof value === "string") {
 			lines.push(value);
 		} else {
@@ -359,8 +254,11 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 	return lines.join("\n");
 }
 
+// Cache for AgentSession per channel
+const channelSessions = new Map<string, AgentSession>();
+
 export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
-	let agent: Agent | null = null;
+	let currentSession: AgentSession | null = null;
 	const executor = createExecutor(sandboxConfig);
 
 	return {
@@ -370,7 +268,6 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			const channelId = ctx.message.channel;
 			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
-			const recentMessages = getRecentMessages(channelDir, 50);
 
 			const memory = getMemory(channelDir);
 			const systemPrompt = buildSystemPrompt(
@@ -383,13 +280,10 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			);
 
 			// Debug: log context sizes
-			log.logInfo(
-				`Context sizes - system: ${systemPrompt.length} chars, messages: ${recentMessages.length} chars, memory: ${memory.length} chars`,
-			);
+			log.logInfo(`Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`);
 			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
 
 			// Set up file upload function for the attach tool
-			// For Docker, we need to translate paths back to host
 			setUploadFunction(async (filePath: string, title?: string) => {
 				const hostPath = translateToHostPath(filePath, channelDir, workspacePath, channelId);
 				await ctx.uploadFile(hostPath, title);
@@ -398,18 +292,49 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			// Create tools with executor
 			const tools = createMomTools(executor);
 
-			// Create ephemeral agent
-			agent = new Agent({
-				initialState: {
-					systemPrompt,
-					model,
-					thinkingLevel: "off",
-					tools,
-				},
-				transport: new ProviderTransport({
-					getApiKey: async () => getAnthropicApiKey(),
-				}),
-			});
+			// Get or create AgentSession for this channel
+			let session = channelSessions.get(channelId);
+
+			if (!session) {
+				// Create session manager and settings manager
+				const sessionManager = new MomSessionManager(channelDir);
+				const settingsManager = new MomSettingsManager(join(channelDir, ".."));
+
+				// Create agent with proper message transformer for compaction
+				const agent = new Agent({
+					initialState: {
+						systemPrompt,
+						model,
+						thinkingLevel: "off",
+						tools,
+					},
+					messageTransformer,
+					transport: new ProviderTransport({
+						getApiKey: async () => getAnthropicApiKey(),
+					}),
+				});
+
+				// Load existing messages from session
+				const loadedSession = sessionManager.loadSession();
+				if (loadedSession.messages.length > 0) {
+					agent.replaceMessages(loadedSession.messages);
+					log.logInfo(`Loaded ${loadedSession.messages.length} messages from context.jsonl`);
+				}
+
+				// Create AgentSession wrapper
+				session = new AgentSession({
+					agent,
+					sessionManager: sessionManager as any, // Type compatibility
+					settingsManager: settingsManager as any, // Type compatibility
+				});
+
+				channelSessions.set(channelId, session);
+			} else {
+				// Update system prompt for existing session (memory may have changed)
+				session.agent.setSystemPrompt(systemPrompt);
+			}
+
+			currentSession = session;
 
 			// Create logging context
 			const logCtx = {
@@ -439,7 +364,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			// Track stop reason
 			let stopReason = "stop";
 
-			// Slack message limit is 40,000 characters - split into multiple messages if needed
+			// Slack message limit is 40,000 characters
 			const SLACK_MAX_LENGTH = 40000;
 			const splitForSlack = (text: string): string[] => {
 				if (text.length <= SLACK_MAX_LENGTH) return [text];
@@ -457,7 +382,6 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			};
 
 			// Promise queue to ensure ctx.respond/respondInThread calls execute in order
-			// Handles errors gracefully by posting to thread instead of crashing
 			const queue = {
 				chain: Promise.resolve(),
 				enqueue(fn: () => Promise<void>, errorContext: string): void {
@@ -467,21 +391,19 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						} catch (err) {
 							const errMsg = err instanceof Error ? err.message : String(err);
 							log.logWarning(`Slack API error (${errorContext})`, errMsg);
-							// Try to post error to thread, but don't crash if that fails too
 							try {
 								await ctx.respondInThread(`_Error: ${errMsg}_`);
 							} catch {
-								// Ignore - we tried our best
+								// Ignore
 							}
 						}
 					});
 				},
-				// Enqueue a message that may need splitting
-				enqueueMessage(text: string, target: "main" | "thread", errorContext: string, log = true): void {
+				enqueueMessage(text: string, target: "main" | "thread", errorContext: string, doLog = true): void {
 					const parts = splitForSlack(text);
 					for (const part of parts) {
 						this.enqueue(
-							() => (target === "main" ? ctx.respond(part, log) : ctx.respondInThread(part)),
+							() => (target === "main" ? ctx.respond(part, doLog) : ctx.respondInThread(part)),
 							errorContext,
 						);
 					}
@@ -491,208 +413,209 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				},
 			};
 
-			// Subscribe to events
-			agent.subscribe(async (event: AgentEvent) => {
-				switch (event.type) {
-					case "tool_execution_start": {
-						const args = event.args as { label?: string };
-						const label = args.label || event.toolName;
+			// Subscribe to session events
+			const unsubscribe = session.subscribe(async (event) => {
+				// Handle core agent events
+				if (event.type === "tool_execution_start") {
+					const agentEvent = event as AgentEvent & { type: "tool_execution_start" };
+					const args = agentEvent.args as { label?: string };
+					const label = args.label || agentEvent.toolName;
 
-						// Store args to pair with result later
-						pendingTools.set(event.toolCallId, {
-							toolName: event.toolName,
-							args: event.args,
-							startTime: Date.now(),
-						});
+					pendingTools.set(agentEvent.toolCallId, {
+						toolName: agentEvent.toolName,
+						args: agentEvent.args,
+						startTime: Date.now(),
+					});
 
-						// Log to console
-						log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
+					log.logToolStart(logCtx, agentEvent.toolName, label, agentEvent.args as Record<string, unknown>);
 
-						// Log to jsonl
-						await store.logMessage(ctx.message.channel, {
-							date: new Date().toISOString(),
-							ts: toSlackTs(),
-							user: "bot",
-							text: `[Tool] ${event.toolName}: ${JSON.stringify(event.args)}`,
-							attachments: [],
-							isBot: true,
-						});
+					// NOTE: Tool results are NOT logged to log.jsonl anymore
+					// They are stored in context.jsonl via AgentSession
 
-						// Show label in main message only
-						queue.enqueue(() => ctx.respond(`_→ ${label}_`, false), "tool label");
-						break;
+					queue.enqueue(() => ctx.respond(`_→ ${label}_`, false), "tool label");
+				} else if (event.type === "tool_execution_end") {
+					const agentEvent = event as AgentEvent & { type: "tool_execution_end" };
+					const resultStr = extractToolResultText(agentEvent.result);
+					const pending = pendingTools.get(agentEvent.toolCallId);
+					pendingTools.delete(agentEvent.toolCallId);
+
+					const durationMs = pending ? Date.now() - pending.startTime : 0;
+
+					if (agentEvent.isError) {
+						log.logToolError(logCtx, agentEvent.toolName, durationMs, resultStr);
+					} else {
+						log.logToolSuccess(logCtx, agentEvent.toolName, durationMs, resultStr);
 					}
 
-					case "tool_execution_end": {
-						const resultStr = extractToolResultText(event.result);
-						const pending = pendingTools.get(event.toolCallId);
-						pendingTools.delete(event.toolCallId);
+					// Post args + result to thread (for debugging)
+					const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
+					const argsFormatted = pending
+						? formatToolArgsForSlack(agentEvent.toolName, pending.args as Record<string, unknown>)
+						: "(args not found)";
+					const duration = (durationMs / 1000).toFixed(1);
+					let threadMessage = `*${agentEvent.isError ? "✗" : "✓"} ${agentEvent.toolName}*`;
+					if (label) {
+						threadMessage += `: ${label}`;
+					}
+					threadMessage += ` (${duration}s)\n`;
 
-						const durationMs = pending ? Date.now() - pending.startTime : 0;
-
-						// Log to console
-						if (event.isError) {
-							log.logToolError(logCtx, event.toolName, durationMs, resultStr);
-						} else {
-							log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
-						}
-
-						// Log to jsonl
-						await store.logMessage(ctx.message.channel, {
-							date: new Date().toISOString(),
-							ts: toSlackTs(),
-							user: "bot",
-							text: `[Tool Result] ${event.toolName}: ${event.isError ? "ERROR: " : ""}${resultStr}`,
-							attachments: [],
-							isBot: true,
-						});
-
-						// Post args + result together in thread
-						const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
-						const argsFormatted = pending
-							? formatToolArgsForSlack(event.toolName, pending.args as Record<string, unknown>)
-							: "(args not found)";
-						const duration = (durationMs / 1000).toFixed(1);
-						let threadMessage = `*${event.isError ? "✗" : "✓"} ${event.toolName}*`;
-						if (label) {
-							threadMessage += `: ${label}`;
-						}
-						threadMessage += ` (${duration}s)\n`;
-
-						if (argsFormatted) {
-							threadMessage += "```\n" + argsFormatted + "\n```\n";
-						}
-
-						threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
-
-						queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
-
-						// Show brief error in main message if failed
-						if (event.isError) {
-							queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`, false), "tool error");
-						}
-						break;
+					if (argsFormatted) {
+						threadMessage += "```\n" + argsFormatted + "\n```\n";
 					}
 
-					case "message_update": {
-						// No longer stream to console - just track that we're streaming
-						break;
+					threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
+
+					queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
+
+					if (agentEvent.isError) {
+						queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`, false), "tool error");
 					}
+				} else if (event.type === "message_start") {
+					const agentEvent = event as AgentEvent & { type: "message_start" };
+					if (agentEvent.message.role === "assistant") {
+						log.logResponseStart(logCtx);
+					}
+				} else if (event.type === "message_end") {
+					const agentEvent = event as AgentEvent & { type: "message_end" };
+					if (agentEvent.message.role === "assistant") {
+						const assistantMsg = agentEvent.message as any;
 
-					case "message_start":
-						if (event.message.role === "assistant") {
-							log.logResponseStart(logCtx);
+						if (assistantMsg.stopReason) {
+							stopReason = assistantMsg.stopReason;
 						}
-						break;
 
-					case "message_end":
-						if (event.message.role === "assistant") {
-							const assistantMsg = event.message as any; // AssistantMessage type
+						if (assistantMsg.usage) {
+							totalUsage.input += assistantMsg.usage.input;
+							totalUsage.output += assistantMsg.usage.output;
+							totalUsage.cacheRead += assistantMsg.usage.cacheRead;
+							totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
+							totalUsage.cost.input += assistantMsg.usage.cost.input;
+							totalUsage.cost.output += assistantMsg.usage.cost.output;
+							totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
+							totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
+							totalUsage.cost.total += assistantMsg.usage.cost.total;
+						}
 
-							// Track stop reason
-							if (assistantMsg.stopReason) {
-								stopReason = assistantMsg.stopReason;
-							}
-
-							// Accumulate usage
-							if (assistantMsg.usage) {
-								totalUsage.input += assistantMsg.usage.input;
-								totalUsage.output += assistantMsg.usage.output;
-								totalUsage.cacheRead += assistantMsg.usage.cacheRead;
-								totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
-								totalUsage.cost.input += assistantMsg.usage.cost.input;
-								totalUsage.cost.output += assistantMsg.usage.cost.output;
-								totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
-								totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
-								totalUsage.cost.total += assistantMsg.usage.cost.total;
-							}
-
-							// Extract thinking and text from assistant message
-							const content = event.message.content;
-							const thinkingParts: string[] = [];
-							const textParts: string[] = [];
-							for (const part of content) {
-								if (part.type === "thinking") {
-									thinkingParts.push(part.thinking);
-								} else if (part.type === "text") {
-									textParts.push(part.text);
-								}
-							}
-
-							const text = textParts.join("\n");
-
-							// Post thinking to main message and thread
-							for (const thinking of thinkingParts) {
-								log.logThinking(logCtx, thinking);
-								queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
-								queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
-							}
-
-							// Post text to main message and thread
-							if (text.trim()) {
-								log.logResponse(logCtx, text);
-								queue.enqueueMessage(text, "main", "response main");
-								queue.enqueueMessage(text, "thread", "response thread", false);
+						const content = agentEvent.message.content;
+						const thinkingParts: string[] = [];
+						const textParts: string[] = [];
+						for (const part of content) {
+							if (part.type === "thinking") {
+								thinkingParts.push((part as any).thinking);
+							} else if (part.type === "text") {
+								textParts.push((part as any).text);
 							}
 						}
-						break;
+
+						const text = textParts.join("\n");
+
+						for (const thinking of thinkingParts) {
+							log.logThinking(logCtx, thinking);
+							queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
+							queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
+						}
+
+						if (text.trim()) {
+							log.logResponse(logCtx, text);
+							queue.enqueueMessage(text, "main", "response main");
+							queue.enqueueMessage(text, "thread", "response thread", false);
+						}
+					}
+				} else if (event.type === "auto_compaction_start") {
+					log.logInfo(`Auto-compaction started (reason: ${(event as any).reason})`);
+					queue.enqueue(() => ctx.respond("_Compacting context..._", false), "compaction start");
+				} else if (event.type === "auto_compaction_end") {
+					const compEvent = event as any;
+					if (compEvent.result) {
+						log.logInfo(`Auto-compaction complete: ${compEvent.result.tokensBefore} tokens compacted`);
+					} else if (compEvent.aborted) {
+						log.logInfo("Auto-compaction aborted");
+					}
+				} else if (event.type === "auto_retry_start") {
+					const retryEvent = event as any;
+					log.logWarning(`Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})`, retryEvent.errorMessage);
+					queue.enqueue(
+						() => ctx.respond(`_Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})..._`, false),
+						"retry",
+					);
 				}
 			});
 
-			// Run the agent with user's message
-			// Prepend recent messages to the user prompt (not system prompt) for better caching
-			// The current message is already the last entry in recentMessages
-			const userPrompt =
-				`Conversation history (last 50 turns). Respond to the last message.\n` +
-				`Format: date TAB user TAB text TAB attachments\n\n` +
-				recentMessages;
-			// Debug: write full context to file
-			const toolDefs = tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
-			const debugPrompt =
-				`=== SYSTEM PROMPT (${systemPrompt.length} chars) ===\n\n${systemPrompt}\n\n` +
-				`=== TOOL DEFINITIONS (${JSON.stringify(toolDefs).length} chars) ===\n\n${JSON.stringify(toolDefs, null, 2)}\n\n` +
-				`=== USER PROMPT (${userPrompt.length} chars) ===\n\n${userPrompt}`;
-			await writeFile(join(channelDir, "last_prompt.txt"), debugPrompt, "utf-8");
+			try {
+				// Build user message from Slack context
+				const userMessage = ctx.message.text;
 
-			await agent.prompt(userPrompt);
+				// Debug: write context to file
+				const debugPrompt =
+					`=== SYSTEM PROMPT (${systemPrompt.length} chars) ===\n\n${systemPrompt}\n\n` +
+					`=== USER MESSAGE ===\n\n${userMessage}\n\n` +
+					`=== EXISTING CONTEXT ===\n\n${session.messages.length} messages in context`;
+				await writeFile(join(channelDir, "last_prompt.txt"), debugPrompt, "utf-8");
 
-			// Wait for all queued respond calls to complete
-			await queue.flush();
+				// Log user message to log.jsonl (human-readable history)
+				await store.logMessage(ctx.message.channel, {
+					date: new Date().toISOString(),
+					ts: toSlackTs(),
+					user: ctx.message.user,
+					userName: ctx.message.userName,
+					text: userMessage,
+					attachments: ctx.message.attachments || [],
+					isBot: false,
+				});
 
-			// Get final assistant message text from agent state and replace main message
-			const messages = agent.state.messages;
-			const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
-			const finalText =
-				lastAssistant?.content
-					.filter((c): c is { type: "text"; text: string } => c.type === "text")
-					.map((c) => c.text)
-					.join("\n") || "";
-			if (finalText.trim()) {
-				try {
-					// For the main message, truncate if too long (full text is in thread)
-					const mainText =
-						finalText.length > SLACK_MAX_LENGTH
-							? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
-							: finalText;
-					await ctx.replaceMessage(mainText);
-				} catch (err) {
-					const errMsg = err instanceof Error ? err.message : String(err);
-					log.logWarning("Failed to replace message with final text", errMsg);
-				}
-			}
+				// Send prompt to agent session
+				await session.prompt(userMessage);
 
-			// Log usage summary if there was any usage
-			if (totalUsage.cost.total > 0) {
-				const summary = log.logUsageSummary(logCtx, totalUsage);
-				queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
+				// Wait for all queued Slack messages
 				await queue.flush();
-			}
 
-			return { stopReason };
+				// Get final assistant text and update main message
+				const messages = session.messages;
+				const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
+				const finalText =
+					lastAssistant?.content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n") || "";
+
+				if (finalText.trim()) {
+					// Log final response to log.jsonl (human-readable history)
+					await store.logMessage(ctx.message.channel, {
+						date: new Date().toISOString(),
+						ts: toSlackTs(),
+						user: "bot",
+						text: finalText,
+						attachments: [],
+						isBot: true,
+					});
+
+					try {
+						const mainText =
+							finalText.length > SLACK_MAX_LENGTH
+								? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+								: finalText;
+						await ctx.replaceMessage(mainText);
+					} catch (err) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log.logWarning("Failed to replace message with final text", errMsg);
+					}
+				}
+
+				// Log usage summary
+				if (totalUsage.cost.total > 0) {
+					const summary = log.logUsageSummary(logCtx, totalUsage);
+					queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
+					await queue.flush();
+				}
+
+				return { stopReason };
+			} finally {
+				unsubscribe();
+			}
 		},
 
 		abort(): void {
-			agent?.abort();
+			currentSession?.abort();
 		},
 	};
 }
@@ -707,16 +630,13 @@ function translateToHostPath(
 	channelId: string,
 ): string {
 	if (workspacePath === "/workspace") {
-		// Docker mode - translate /workspace/channelId/... to host path
 		const prefix = `/workspace/${channelId}/`;
 		if (containerPath.startsWith(prefix)) {
 			return join(channelDir, containerPath.slice(prefix.length));
 		}
-		// Maybe it's just /workspace/...
 		if (containerPath.startsWith("/workspace/")) {
 			return join(channelDir, "..", containerPath.slice("/workspace/".length));
 		}
 	}
-	// Host mode or already a host path
 	return containerPath;
 }
