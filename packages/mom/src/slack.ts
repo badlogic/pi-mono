@@ -1,53 +1,34 @@
 import { SocketModeClient } from "@slack/socket-mode";
-import { type ConversationsHistoryResponse, WebClient } from "@slack/web-api";
-import { readFileSync } from "fs";
-import { basename } from "path";
+import { WebClient } from "@slack/web-api";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { basename, join } from "path";
 import * as log from "./log.js";
-import { type Attachment, ChannelStore } from "./store.js";
 
-export interface SlackMessage {
-	text: string; // message content (mentions stripped)
-	rawText: string; // original text with mentions
-	user: string; // user ID
-	userName?: string; // user handle
-	channel: string; // channel ID
-	ts: string; // timestamp (for threading)
-	attachments: Attachment[]; // file attachments
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface SlackEvent {
+	type: "mention" | "dm";
+	channel: string;
+	ts: string;
+	user: string;
+	text: string;
+	files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 }
 
-export interface SlackContext {
-	message: SlackMessage;
-	channelName?: string; // channel name for logging (e.g., #dev-team)
-	store: ChannelStore;
-	/** All channels the bot is a member of */
-	channels: ChannelInfo[];
-	/** All known users in the workspace */
-	users: UserInfo[];
-	/** Send/update the main message (accumulates text). Set log=false to skip logging. */
-	respond(text: string, shouldLog?: boolean): Promise<void>;
-	/** Replace the entire message text (not append) */
-	replaceMessage(text: string): Promise<void>;
-	/** Post a message in the thread under the main message (for verbose details) */
-	respondInThread(text: string): Promise<void>;
-	/** Show/hide typing indicator */
-	setTyping(isTyping: boolean): Promise<void>;
-	/** Upload a file to the channel */
-	uploadFile(filePath: string, title?: string): Promise<void>;
-	/** Set working state (adds/removes working indicator emoji) */
-	setWorking(working: boolean): Promise<void>;
+export interface SlackUser {
+	id: string;
+	userName: string;
+	displayName: string;
 }
 
-export interface MomHandler {
-	onChannelMention(ctx: SlackContext): Promise<void>;
-	onDirectMessage(ctx: SlackContext): Promise<void>;
+export interface SlackChannel {
+	id: string;
+	name: string;
 }
 
-export interface MomBotConfig {
-	appToken: string;
-	botToken: string;
-	workingDir: string; // directory for channel data and attachments
-}
-
+// Types used by agent.ts
 export interface ChannelInfo {
 	id: string;
 	name: string;
@@ -59,159 +40,201 @@ export interface UserInfo {
 	displayName: string;
 }
 
-export class MomBot {
+export interface SlackContext {
+	message: {
+		text: string;
+		rawText: string;
+		user: string;
+		userName?: string;
+		channel: string;
+		ts: string;
+		attachments: Array<{ local: string }>;
+	};
+	channelName?: string;
+	channels: ChannelInfo[];
+	users: UserInfo[];
+	respond: (text: string, shouldLog?: boolean) => Promise<void>;
+	replaceMessage: (text: string) => Promise<void>;
+	respondInThread: (text: string) => Promise<void>;
+	setTyping: (isTyping: boolean) => Promise<void>;
+	uploadFile: (filePath: string, title?: string) => Promise<void>;
+	setWorking: (working: boolean) => Promise<void>;
+}
+
+export interface MomHandler {
+	/**
+	 * Check if channel is currently running (SYNC)
+	 */
+	isRunning(channelId: string): boolean;
+
+	/**
+	 * Handle an event that triggers mom (ASYNC)
+	 * Called only when isRunning() returned false
+	 */
+	handleEvent(event: SlackEvent, slack: SlackBot): Promise<void>;
+
+	/**
+	 * Handle stop command (ASYNC)
+	 * Called when user says "stop" while mom is running
+	 */
+	handleStop(channelId: string, slack: SlackBot): Promise<void>;
+}
+
+// ============================================================================
+// Per-channel queue for sequential processing
+// ============================================================================
+
+type QueuedWork = () => Promise<void>;
+
+class ChannelQueue {
+	private queue: QueuedWork[] = [];
+	private processing = false;
+
+	enqueue(work: QueuedWork): void {
+		this.queue.push(work);
+		this.processNext();
+	}
+
+	private async processNext(): Promise<void> {
+		if (this.processing || this.queue.length === 0) return;
+		this.processing = true;
+		const work = this.queue.shift()!;
+		try {
+			await work();
+		} catch (err) {
+			log.logWarning("Queue error", err instanceof Error ? err.message : String(err));
+		}
+		this.processing = false;
+		this.processNext();
+	}
+}
+
+// ============================================================================
+// SlackBot
+// ============================================================================
+
+export class SlackBot {
 	private socketClient: SocketModeClient;
 	private webClient: WebClient;
 	private handler: MomHandler;
+	private workingDir: string;
 	private botUserId: string | null = null;
-	public readonly store: ChannelStore;
-	private userCache: Map<string, { userName: string; displayName: string }> = new Map();
-	private channelCache: Map<string, string> = new Map(); // id -> name
+	private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
-	constructor(handler: MomHandler, config: MomBotConfig) {
+	private users = new Map<string, SlackUser>();
+	private channels = new Map<string, SlackChannel>();
+	private queues = new Map<string, ChannelQueue>();
+
+	constructor(handler: MomHandler, config: { appToken: string; botToken: string; workingDir: string }) {
 		this.handler = handler;
+		this.workingDir = config.workingDir;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
-		this.store = new ChannelStore({
-			workingDir: config.workingDir,
-			botToken: config.botToken,
-		});
+	}
+
+	// ==========================================================================
+	// Public API
+	// ==========================================================================
+
+	async start(): Promise<void> {
+		const auth = await this.webClient.auth.test();
+		this.botUserId = auth.user_id as string;
+
+		await Promise.all([this.fetchUsers(), this.fetchChannels()]);
+		log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
+
+		await this.backfillAllChannels();
 
 		this.setupEventHandlers();
+		await this.socketClient.start();
+
+		// Record startup time - messages older than this are just logged, not processed
+		this.startupTs = (Date.now() / 1000).toFixed(6);
+
+		log.logConnected();
 	}
 
-	/**
-	 * Fetch all channels the bot is a member of
-	 */
-	private async fetchChannels(): Promise<void> {
-		try {
-			let cursor: string | undefined;
-			do {
-				const result = await this.webClient.conversations.list({
-					types: "public_channel,private_channel",
-					exclude_archived: true,
-					limit: 200,
-					cursor,
-				});
-
-				const channels = result.channels as Array<{ id?: string; name?: string; is_member?: boolean }> | undefined;
-				if (channels) {
-					for (const channel of channels) {
-						if (channel.id && channel.name && channel.is_member) {
-							this.channelCache.set(channel.id, channel.name);
-						}
-					}
-				}
-
-				cursor = result.response_metadata?.next_cursor;
-			} while (cursor);
-		} catch (error) {
-			log.logWarning("Failed to fetch channels", String(error));
-		}
+	getUser(userId: string): SlackUser | undefined {
+		return this.users.get(userId);
 	}
 
-	/**
-	 * Fetch all workspace users
-	 */
-	private async fetchUsers(): Promise<void> {
-		try {
-			let cursor: string | undefined;
-			do {
-				const result = await this.webClient.users.list({
-					limit: 200,
-					cursor,
-				});
-
-				const members = result.members as
-					| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
-					| undefined;
-				if (members) {
-					for (const user of members) {
-						if (user.id && user.name && !user.deleted) {
-							this.userCache.set(user.id, {
-								userName: user.name,
-								displayName: user.real_name || user.name,
-							});
-						}
-					}
-				}
-
-				cursor = result.response_metadata?.next_cursor;
-			} while (cursor);
-		} catch (error) {
-			log.logWarning("Failed to fetch users", String(error));
-		}
+	getChannel(channelId: string): SlackChannel | undefined {
+		return this.channels.get(channelId);
 	}
 
-	/**
-	 * Get all known channels (id -> name)
-	 */
-	getChannels(): ChannelInfo[] {
-		return Array.from(this.channelCache.entries()).map(([id, name]) => ({ id, name }));
+	getAllUsers(): SlackUser[] {
+		return Array.from(this.users.values());
 	}
 
-	/**
-	 * Get all known users
-	 */
-	getUsers(): UserInfo[] {
-		return Array.from(this.userCache.entries()).map(([id, { userName, displayName }]) => ({
-			id,
-			userName,
-			displayName,
-		}));
+	getAllChannels(): SlackChannel[] {
+		return Array.from(this.channels.values());
 	}
 
-	/**
-	 * Obfuscate usernames and user IDs in text to prevent pinging people
-	 * e.g., "nate" -> "n_a_t_e", "@mario" -> "@m_a_r_i_o", "<@U123>" -> "<@U_1_2_3>"
-	 */
-	private obfuscateUsernames(text: string): string {
-		let result = text;
+	async postMessage(channel: string, text: string): Promise<string> {
+		const result = await this.webClient.chat.postMessage({ channel, text });
+		return result.ts as string;
+	}
 
-		// Obfuscate user IDs like <@U16LAL8LS>
-		result = result.replace(/<@([A-Z0-9]+)>/gi, (_match, id) => {
-			return `<@${id.split("").join("_")}>`;
+	async updateMessage(channel: string, ts: string, text: string): Promise<void> {
+		await this.webClient.chat.update({ channel, ts, text });
+	}
+
+	async postInThread(channel: string, threadTs: string, text: string): Promise<void> {
+		await this.webClient.chat.postMessage({ channel, thread_ts: threadTs, text });
+	}
+
+	async uploadFile(channel: string, filePath: string, title?: string): Promise<void> {
+		const fileName = title || basename(filePath);
+		const fileContent = readFileSync(filePath);
+		await this.webClient.files.uploadV2({
+			channel_id: channel,
+			file: fileContent,
+			filename: fileName,
+			title: fileName,
 		});
-
-		// Obfuscate usernames
-		for (const { userName } of this.userCache.values()) {
-			// Escape special regex characters in username
-			const escaped = userName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			// Match @username, <@username>, or bare username (case insensitive, word boundary)
-			const pattern = new RegExp(`(<@|@)?(\\b${escaped}\\b)`, "gi");
-			result = result.replace(pattern, (_match, prefix, name) => {
-				const obfuscated = name.split("").join("_");
-				return (prefix || "") + obfuscated;
-			});
-		}
-		return result;
 	}
 
-	private async getUserInfo(userId: string): Promise<{ userName: string; displayName: string }> {
-		if (this.userCache.has(userId)) {
-			return this.userCache.get(userId)!;
-		}
+	/**
+	 * Log a message to log.jsonl (SYNC)
+	 * This is the ONLY place messages are written to log.jsonl
+	 */
+	logToFile(channel: string, entry: object): void {
+		const dir = join(this.workingDir, channel);
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		appendFileSync(join(dir, "log.jsonl"), JSON.stringify(entry) + "\n");
+	}
 
-		try {
-			const result = await this.webClient.users.info({ user: userId });
-			const user = result.user as { name?: string; real_name?: string };
-			const info = {
-				userName: user?.name || userId,
-				displayName: user?.real_name || user?.name || userId,
-			};
-			this.userCache.set(userId, info);
-			return info;
-		} catch {
-			return { userName: userId, displayName: userId };
+	/**
+	 * Log a bot response to log.jsonl
+	 */
+	logBotResponse(channel: string, text: string, ts: string): void {
+		this.logToFile(channel, {
+			date: new Date().toISOString(),
+			ts,
+			user: "bot",
+			text,
+			attachments: [],
+			isBot: true,
+		});
+	}
+
+	// ==========================================================================
+	// Private - Event Handlers
+	// ==========================================================================
+
+	private getQueue(channelId: string): ChannelQueue {
+		let queue = this.queues.get(channelId);
+		if (!queue) {
+			queue = new ChannelQueue();
+			this.queues.set(channelId, queue);
 		}
+		return queue;
 	}
 
 	private setupEventHandlers(): void {
-		// Handle @mentions in channels
-		this.socketClient.on("app_mention", async ({ event, ack }) => {
-			await ack();
-
-			const slackEvent = event as {
+		// Channel @mentions
+		this.socketClient.on("app_mention", ({ event, ack }) => {
+			const e = event as {
 				text: string;
 				channel: string;
 				user: string;
@@ -219,24 +242,57 @@ export class MomBot {
 				files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 			};
 
-			// Log the mention message (message event may not fire for all channel types)
-			await this.logMessage({
-				text: slackEvent.text,
-				channel: slackEvent.channel,
-				user: slackEvent.user,
-				ts: slackEvent.ts,
-				files: slackEvent.files,
-			});
+			// Skip DMs (handled by message event)
+			if (e.channel.startsWith("D")) {
+				ack();
+				return;
+			}
 
-			const ctx = await this.createContext(slackEvent);
-			await this.handler.onChannelMention(ctx);
+			const slackEvent: SlackEvent = {
+				type: "mention",
+				channel: e.channel,
+				ts: e.ts,
+				user: e.user,
+				text: e.text.replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				files: e.files,
+			};
+
+			// SYNC: Log to log.jsonl (ALWAYS, even for old messages)
+			this.logUserMessage(slackEvent);
+
+			// Only trigger processing for messages AFTER startup (not replayed old messages)
+			if (this.startupTs && e.ts < this.startupTs) {
+				log.logInfo(
+					`[${e.channel}] Logged old message (pre-startup), not triggering: ${slackEvent.text.substring(0, 30)}`,
+				);
+				ack();
+				return;
+			}
+
+			// Check for stop command - execute immediately, don't queue!
+			if (slackEvent.text.toLowerCase().trim() === "stop") {
+				if (this.handler.isRunning(e.channel)) {
+					this.handler.handleStop(e.channel, this); // Don't await, don't queue
+				} else {
+					this.postMessage(e.channel, "_Nothing running_");
+				}
+				ack();
+				return;
+			}
+
+			// SYNC: Check if busy
+			if (this.handler.isRunning(e.channel)) {
+				this.postMessage(e.channel, "_Already working. Say `@mom stop` to cancel._");
+			} else {
+				this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
+			}
+
+			ack();
 		});
 
-		// Handle all messages (for logging) and DMs (for triggering handler)
-		this.socketClient.on("message", async ({ event, ack }) => {
-			await ack();
-
-			const slackEvent = event as {
+		// All messages (for logging) + DMs (for triggering)
+		this.socketClient.on("message", ({ event, ack }) => {
+			const e = event as {
 				text?: string;
 				channel: string;
 				user?: string;
@@ -247,280 +303,126 @@ export class MomBot {
 				files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 			};
 
-			// Ignore bot messages
-			if (slackEvent.bot_id) return;
-			// Ignore message edits, etc. (but allow file_share)
-			if (slackEvent.subtype !== undefined && slackEvent.subtype !== "file_share") return;
-			// Ignore if no user
-			if (!slackEvent.user) return;
-			// Ignore messages from the bot itself
-			if (slackEvent.user === this.botUserId) return;
-			// Ignore if no text AND no files
-			if (!slackEvent.text && (!slackEvent.files || slackEvent.files.length === 0)) return;
-
-			// Log ALL messages (channel and DM)
-			await this.logMessage({
-				text: slackEvent.text || "",
-				channel: slackEvent.channel,
-				user: slackEvent.user,
-				ts: slackEvent.ts,
-				files: slackEvent.files,
-			});
-
-			// Only trigger handler for DMs (channel mentions are handled by app_mention event)
-			if (slackEvent.channel_type === "im") {
-				const ctx = await this.createContext({
-					text: slackEvent.text || "",
-					channel: slackEvent.channel,
-					user: slackEvent.user,
-					ts: slackEvent.ts,
-					files: slackEvent.files,
-				});
-				await this.handler.onDirectMessage(ctx);
+			// Skip bot messages, edits, etc.
+			if (e.bot_id || !e.user || e.user === this.botUserId) {
+				ack();
+				return;
 			}
+			if (e.subtype !== undefined && e.subtype !== "file_share") {
+				ack();
+				return;
+			}
+			if (!e.text && (!e.files || e.files.length === 0)) {
+				ack();
+				return;
+			}
+
+			const isDM = e.channel_type === "im";
+			const isBotMention = e.text?.includes(`<@${this.botUserId}>`);
+
+			// Skip channel @mentions - already handled by app_mention event
+			if (!isDM && isBotMention) {
+				ack();
+				return;
+			}
+
+			const slackEvent: SlackEvent = {
+				type: isDM ? "dm" : "mention",
+				channel: e.channel,
+				ts: e.ts,
+				user: e.user,
+				text: (e.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				files: e.files,
+			};
+
+			// SYNC: Log to log.jsonl (ALL messages - channel chatter and DMs)
+			this.logUserMessage(slackEvent);
+
+			// Only trigger processing for messages AFTER startup (not replayed old messages)
+			if (this.startupTs && e.ts < this.startupTs) {
+				log.logInfo(`[${e.channel}] Skipping old message (pre-startup): ${slackEvent.text.substring(0, 30)}`);
+				ack();
+				return;
+			}
+
+			// Only trigger handler for DMs
+			if (isDM) {
+				// Check for stop command - execute immediately, don't queue!
+				if (slackEvent.text.toLowerCase().trim() === "stop") {
+					if (this.handler.isRunning(e.channel)) {
+						this.handler.handleStop(e.channel, this); // Don't await, don't queue
+					} else {
+						this.postMessage(e.channel, "_Nothing running_");
+					}
+					ack();
+					return;
+				}
+
+				if (this.handler.isRunning(e.channel)) {
+					this.postMessage(e.channel, "_Already working. Say `stop` to cancel._");
+				} else {
+					this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
+				}
+			}
+
+			ack();
 		});
 	}
 
-	private async logMessage(event: {
-		text: string;
-		channel: string;
-		user: string;
-		ts: string;
-		files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-	}): Promise<void> {
-		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
-		const { userName, displayName } = await this.getUserInfo(event.user);
-
-		await this.store.logMessage(event.channel, {
+	/**
+	 * Log a user message to log.jsonl (SYNC)
+	 */
+	private logUserMessage(event: SlackEvent): void {
+		const user = this.users.get(event.user);
+		this.logToFile(event.channel, {
 			date: new Date(parseFloat(event.ts) * 1000).toISOString(),
 			ts: event.ts,
 			user: event.user,
-			userName,
-			displayName,
+			userName: user?.userName,
+			displayName: user?.displayName,
 			text: event.text,
-			attachments,
+			attachments: event.files?.map((f) => f.name) || [],
 			isBot: false,
 		});
 	}
 
-	private async createContext(event: {
-		text: string;
-		channel: string;
-		user: string;
-		ts: string;
-		files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-	}): Promise<SlackContext> {
-		const rawText = event.text;
-		const text = rawText.replace(/<@[A-Z0-9]+>/gi, "").trim();
+	// ==========================================================================
+	// Private - Backfill
+	// ==========================================================================
 
-		// Get user info for logging
-		const { userName } = await this.getUserInfo(event.user);
+	private getExistingTimestamps(channelId: string): Set<string> {
+		const logPath = join(this.workingDir, channelId, "log.jsonl");
+		const timestamps = new Set<string>();
+		if (!existsSync(logPath)) return timestamps;
 
-		// Get channel name for logging (best effort)
-		let channelName: string | undefined;
-		try {
-			if (event.channel.startsWith("C")) {
-				const result = await this.webClient.conversations.info({ channel: event.channel });
-				channelName = result.channel?.name ? `#${result.channel.name}` : undefined;
-			}
-		} catch {
-			// Ignore errors - we'll just use the channel ID
+		const content = readFileSync(logPath, "utf-8");
+		const lines = content.trim().split("\n").filter(Boolean);
+		for (const line of lines) {
+			try {
+				const entry = JSON.parse(line);
+				if (entry.ts) timestamps.add(entry.ts);
+			} catch {}
 		}
-
-		// Process attachments (for context, already logged by message handler)
-		const attachments = event.files ? this.store.processAttachments(event.channel, event.files, event.ts) : [];
-
-		// Track the single message for this run
-		let messageTs: string | null = null;
-		let accumulatedText = "";
-		let isThinking = true; // Track if we're still in "thinking" state
-		let isWorking = true; // Track if still processing
-		const workingIndicator = " ...";
-		let updatePromise: Promise<void> = Promise.resolve();
-
-		return {
-			message: {
-				text,
-				rawText,
-				user: event.user,
-				userName,
-				channel: event.channel,
-				ts: event.ts,
-				attachments,
-			},
-			channelName,
-			store: this.store,
-			channels: this.getChannels(),
-			users: this.getUsers(),
-			respond: async (responseText: string, shouldLog = true) => {
-				// Queue updates to avoid race conditions
-				updatePromise = updatePromise.then(async () => {
-					try {
-						if (isThinking) {
-							// First real response replaces "Thinking..."
-							accumulatedText = responseText;
-							isThinking = false;
-						} else {
-							// Subsequent responses get appended
-							accumulatedText += "\n" + responseText;
-						}
-
-						// Truncate accumulated text if too long (Slack limit is 40K, we use 35K for safety)
-						const MAX_MAIN_LENGTH = 35000;
-						const truncationNote = "\n\n_(message truncated, ask me to elaborate on specific parts)_";
-						if (accumulatedText.length > MAX_MAIN_LENGTH) {
-							accumulatedText =
-								accumulatedText.substring(0, MAX_MAIN_LENGTH - truncationNote.length) + truncationNote;
-						}
-
-						// Add working indicator if still working
-						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-
-						if (messageTs) {
-							// Update existing message
-							await this.webClient.chat.update({
-								channel: event.channel,
-								ts: messageTs,
-								text: displayText,
-							});
-						} else {
-							// Post initial message
-							const result = await this.webClient.chat.postMessage({
-								channel: event.channel,
-								text: displayText,
-							});
-							messageTs = result.ts as string;
-						}
-
-						// Log the response if requested
-						if (shouldLog) {
-							await this.store.logBotResponse(event.channel, responseText, messageTs!);
-						}
-					} catch (err) {
-						log.logWarning("Slack respond error", err instanceof Error ? err.message : String(err));
-					}
-				});
-
-				await updatePromise;
-			},
-			respondInThread: async (threadText: string) => {
-				// Queue thread posts to maintain order
-				updatePromise = updatePromise.then(async () => {
-					try {
-						if (!messageTs) {
-							// No main message yet, just skip
-							return;
-						}
-						// Obfuscate usernames to avoid pinging people in thread details
-						let obfuscatedText = this.obfuscateUsernames(threadText);
-
-						// Truncate thread messages if too long (20K limit for safety)
-						const MAX_THREAD_LENGTH = 20000;
-						if (obfuscatedText.length > MAX_THREAD_LENGTH) {
-							obfuscatedText = obfuscatedText.substring(0, MAX_THREAD_LENGTH - 50) + "\n\n_(truncated)_";
-						}
-
-						// Post in thread under the main message
-						await this.webClient.chat.postMessage({
-							channel: event.channel,
-							thread_ts: messageTs,
-							text: obfuscatedText,
-						});
-					} catch (err) {
-						log.logWarning("Slack respondInThread error", err instanceof Error ? err.message : String(err));
-					}
-				});
-				await updatePromise;
-			},
-			setTyping: async (isTyping: boolean) => {
-				if (isTyping && !messageTs) {
-					// Post initial "thinking" message (... auto-appended by working indicator)
-					accumulatedText = "_Thinking_";
-					const result = await this.webClient.chat.postMessage({
-						channel: event.channel,
-						text: accumulatedText,
-					});
-					messageTs = result.ts as string;
-				}
-				// We don't delete/clear anymore - message persists and gets updated
-			},
-			uploadFile: async (filePath: string, title?: string) => {
-				const fileName = title || basename(filePath);
-				const fileContent = readFileSync(filePath);
-
-				await this.webClient.files.uploadV2({
-					channel_id: event.channel,
-					file: fileContent,
-					filename: fileName,
-					title: fileName,
-				});
-			},
-			replaceMessage: async (text: string) => {
-				updatePromise = updatePromise.then(async () => {
-					try {
-						// Replace the accumulated text entirely, with truncation
-						const MAX_MAIN_LENGTH = 35000;
-						const truncationNote = "\n\n_(message truncated, ask me to elaborate on specific parts)_";
-						if (text.length > MAX_MAIN_LENGTH) {
-							accumulatedText = text.substring(0, MAX_MAIN_LENGTH - truncationNote.length) + truncationNote;
-						} else {
-							accumulatedText = text;
-						}
-
-						const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-
-						if (messageTs) {
-							await this.webClient.chat.update({
-								channel: event.channel,
-								ts: messageTs,
-								text: displayText,
-							});
-						} else {
-							// Post initial message
-							const result = await this.webClient.chat.postMessage({
-								channel: event.channel,
-								text: displayText,
-							});
-							messageTs = result.ts as string;
-						}
-					} catch (err) {
-						log.logWarning("Slack replaceMessage error", err instanceof Error ? err.message : String(err));
-					}
-				});
-				await updatePromise;
-			},
-			setWorking: async (working: boolean) => {
-				updatePromise = updatePromise.then(async () => {
-					try {
-						isWorking = working;
-
-						// If we have a message, update it to add/remove indicator
-						if (messageTs) {
-							const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-							await this.webClient.chat.update({
-								channel: event.channel,
-								ts: messageTs,
-								text: displayText,
-							});
-						}
-					} catch (err) {
-						log.logWarning("Slack setWorking error", err instanceof Error ? err.message : String(err));
-					}
-				});
-				await updatePromise;
-			},
-		};
+		return timestamps;
 	}
 
-	/**
-	 * Backfill missed messages for a single channel
-	 * Returns the number of messages backfilled
-	 */
 	private async backfillChannel(channelId: string): Promise<number> {
-		const lastTs = this.store.getLastTimestamp(channelId);
+		const existingTs = this.getExistingTimestamps(channelId);
 
-		// Collect messages from up to 3 pages
-		type Message = NonNullable<ConversationsHistoryResponse["messages"]>[number];
+		// Find the biggest ts in log.jsonl
+		let latestTs: string | undefined;
+		for (const ts of existingTs) {
+			if (!latestTs || parseFloat(ts) > parseFloat(latestTs)) latestTs = ts;
+		}
+
+		type Message = {
+			user?: string;
+			bot_id?: string;
+			text?: string;
+			ts?: string;
+			subtype?: string;
+			files?: Array<{ name: string }>;
+		};
 		const allMessages: Message[] = [];
 
 		let cursor: string | undefined;
@@ -530,88 +432,76 @@ export class MomBot {
 		do {
 			const result = await this.webClient.conversations.history({
 				channel: channelId,
-				oldest: lastTs ?? undefined,
+				oldest: latestTs, // Only fetch messages newer than what we have
 				inclusive: false,
 				limit: 1000,
 				cursor,
 			});
-
 			if (result.messages) {
-				allMessages.push(...result.messages);
+				allMessages.push(...(result.messages as Message[]));
 			}
-
 			cursor = result.response_metadata?.next_cursor;
 			pageCount++;
 		} while (cursor && pageCount < maxPages);
 
-		// Filter messages: include mom's messages, exclude other bots
+		// Filter: include mom's messages, exclude other bots, skip already logged
 		const relevantMessages = allMessages.filter((msg) => {
-			// Always include mom's own messages
+			if (!msg.ts || existingTs.has(msg.ts)) return false; // Skip duplicates
 			if (msg.user === this.botUserId) return true;
-			// Exclude other bot messages
 			if (msg.bot_id) return false;
-			// Standard filters for user messages
 			if (msg.subtype !== undefined && msg.subtype !== "file_share") return false;
 			if (!msg.user) return false;
 			if (!msg.text && (!msg.files || msg.files.length === 0)) return false;
 			return true;
 		});
 
-		// Reverse to chronological order (API returns newest first)
+		// Reverse to chronological order
 		relevantMessages.reverse();
 
-		// Log each message
+		// Log each message to log.jsonl
 		for (const msg of relevantMessages) {
 			const isMomMessage = msg.user === this.botUserId;
-			const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts!) : [];
+			const user = this.users.get(msg.user!);
+			// Strip @mentions from text (same as live messages)
+			const text = (msg.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim();
 
-			if (isMomMessage) {
-				// Log mom's message as bot response
-				await this.store.logMessage(channelId, {
-					date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
-					ts: msg.ts!,
-					user: "bot",
-					text: msg.text || "",
-					attachments,
-					isBot: true,
-				});
-			} else {
-				// Log user message
-				const { userName, displayName } = await this.getUserInfo(msg.user!);
-				await this.store.logMessage(channelId, {
-					date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
-					ts: msg.ts!,
-					user: msg.user!,
-					userName,
-					displayName,
-					text: msg.text || "",
-					attachments,
-					isBot: false,
-				});
-			}
+			this.logToFile(channelId, {
+				date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
+				ts: msg.ts!,
+				user: isMomMessage ? "bot" : msg.user!,
+				userName: isMomMessage ? undefined : user?.userName,
+				displayName: isMomMessage ? undefined : user?.displayName,
+				text,
+				attachments: msg.files?.map((f) => f.name) || [],
+				isBot: isMomMessage,
+			});
 		}
 
 		return relevantMessages.length;
 	}
 
-	/**
-	 * Backfill missed messages for all channels
-	 */
 	private async backfillAllChannels(): Promise<void> {
 		const startTime = Date.now();
-		log.logBackfillStart(this.channelCache.size);
+
+		// Only backfill channels that already have a log.jsonl (mom has interacted with them before)
+		const channelsToBackfill: Array<[string, SlackChannel]> = [];
+		for (const [channelId, channel] of this.channels) {
+			const logPath = join(this.workingDir, channelId, "log.jsonl");
+			if (existsSync(logPath)) {
+				channelsToBackfill.push([channelId, channel]);
+			}
+		}
+
+		log.logBackfillStart(channelsToBackfill.length);
 
 		let totalMessages = 0;
-
-		for (const [channelId, channelName] of this.channelCache) {
+		for (const [channelId, channel] of channelsToBackfill) {
 			try {
 				const count = await this.backfillChannel(channelId);
-				if (count > 0) {
-					log.logBackfillChannel(channelName, count);
-				}
+				if (count > 0) log.logBackfillChannel(channel.name, count);
 				totalMessages += count;
 			} catch (error) {
-				log.logWarning(`Failed to backfill channel #${channelName}`, String(error));
+				log.logWarning(`Failed to backfill #${channel.name}`, String(error));
 			}
 		}
 
@@ -619,23 +509,69 @@ export class MomBot {
 		log.logBackfillComplete(totalMessages, durationMs);
 	}
 
-	async start(): Promise<void> {
-		const auth = await this.webClient.auth.test();
-		this.botUserId = auth.user_id as string;
+	// ==========================================================================
+	// Private - Fetch Users/Channels
+	// ==========================================================================
 
-		// Fetch channels and users in parallel
-		await Promise.all([this.fetchChannels(), this.fetchUsers()]);
-		log.logInfo(`Loaded ${this.channelCache.size} channels, ${this.userCache.size} users`);
-
-		// Backfill any messages missed while offline
-		await this.backfillAllChannels();
-
-		await this.socketClient.start();
-		log.logConnected();
+	private async fetchUsers(): Promise<void> {
+		let cursor: string | undefined;
+		do {
+			const result = await this.webClient.users.list({ limit: 200, cursor });
+			const members = result.members as
+				| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+				| undefined;
+			if (members) {
+				for (const u of members) {
+					if (u.id && u.name && !u.deleted) {
+						this.users.set(u.id, { id: u.id, userName: u.name, displayName: u.real_name || u.name });
+					}
+				}
+			}
+			cursor = result.response_metadata?.next_cursor;
+		} while (cursor);
 	}
 
-	async stop(): Promise<void> {
-		await this.socketClient.disconnect();
-		log.logDisconnected();
+	private async fetchChannels(): Promise<void> {
+		// Fetch public/private channels
+		let cursor: string | undefined;
+		do {
+			const result = await this.webClient.conversations.list({
+				types: "public_channel,private_channel",
+				exclude_archived: true,
+				limit: 200,
+				cursor,
+			});
+			const channels = result.channels as Array<{ id?: string; name?: string; is_member?: boolean }> | undefined;
+			if (channels) {
+				for (const c of channels) {
+					if (c.id && c.name && c.is_member) {
+						this.channels.set(c.id, { id: c.id, name: c.name });
+					}
+				}
+			}
+			cursor = result.response_metadata?.next_cursor;
+		} while (cursor);
+
+		// Also fetch DM channels (IMs)
+		cursor = undefined;
+		do {
+			const result = await this.webClient.conversations.list({
+				types: "im",
+				limit: 200,
+				cursor,
+			});
+			const ims = result.channels as Array<{ id?: string; user?: string }> | undefined;
+			if (ims) {
+				for (const im of ims) {
+					if (im.id) {
+						// Use user's name as channel name for DMs
+						const user = im.user ? this.users.get(im.user) : undefined;
+						const name = user ? `DM:${user.userName}` : `DM:${im.id}`;
+						this.channels.set(im.id, { id: im.id, name });
+					}
+				}
+			}
+			cursor = result.response_metadata?.next_cursor;
+		} while (cursor);
 	}
 }

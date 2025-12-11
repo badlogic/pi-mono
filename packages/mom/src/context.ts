@@ -52,7 +52,7 @@ export class MomSessionManager {
 	private inMemoryEntries: SessionEntry[] = [];
 	private pendingEntries: SessionEntry[] = [];
 
-	constructor(channelDir: string) {
+	constructor(channelDir: string, initialModel?: { provider: string; id: string; thinkingLevel?: string }) {
 		this.channelDir = channelDir;
 		this.contextFile = join(channelDir, "context.jsonl");
 		this.logFile = join(channelDir, "log.jsonl");
@@ -68,9 +68,31 @@ export class MomSessionManager {
 			this.sessionId = this.extractSessionId() || uuidv4();
 			this.sessionInitialized = this.inMemoryEntries.length > 0;
 		} else {
+			// New session - write header immediately
 			this.sessionId = uuidv4();
+			if (initialModel) {
+				this.writeSessionHeader(initialModel);
+			}
 		}
 		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
+	}
+
+	/** Write session header to file (called on new session creation) */
+	private writeSessionHeader(model: { provider: string; id: string; thinkingLevel?: string }): void {
+		this.sessionInitialized = true;
+
+		const entry: SessionHeader = {
+			type: "session",
+			id: this.sessionId,
+			timestamp: new Date().toISOString(),
+			cwd: this.channelDir,
+			provider: model.provider,
+			modelId: model.id,
+			thinkingLevel: model.thinkingLevel || "off",
+		};
+
+		this.inMemoryEntries.push(entry);
+		appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
 	}
 
 	/**
@@ -84,18 +106,48 @@ export class MomSessionManager {
 	 *
 	 * Channel chatter is formatted as "[username]: message" to distinguish from direct @mentions.
 	 *
-	 * Called automatically on construction and should be called before each agent run.
+	 * Called before each agent run.
 	 *
-	 * @param excludeTimestamp Optional timestamp to exclude (for the current @mention being processed)
+	 * @param excludeSlackTs Slack timestamp of current message (will be added via prompt(), not sync)
 	 */
-	syncFromLog(excludeTimestamp?: string): void {
+	syncFromLog(excludeSlackTs?: string): void {
 		if (!existsSync(this.logFile)) return;
 
-		// Get timestamps of messages already in context
-		const contextTimestamps = new Set<string>();
+		// Build set of Slack timestamps already in context
+		// We store slackTs in the message content or can extract from formatted messages
+		// For messages synced from log, we use the log's date as the entry timestamp
+		// For messages added via prompt(), they have different timestamps
+		// So we need to match by content OR by stored slackTs
+		const contextSlackTimestamps = new Set<string>();
+		const contextMessageTexts = new Set<string>();
+
 		for (const entry of this.inMemoryEntries) {
 			if (entry.type === "message") {
-				contextTimestamps.add(entry.timestamp);
+				const msgEntry = entry as SessionMessageEntry;
+				// Store the entry timestamp (which is the log date for synced messages)
+				contextSlackTimestamps.add(entry.timestamp);
+
+				// Also store message text to catch duplicates added via prompt()
+				// AppMessage has different shapes, check for content property
+				const msg = msgEntry.message as { role: string; content?: unknown };
+				if (msg.role === "user" && msg.content !== undefined) {
+					const content = msg.content;
+					if (typeof content === "string") {
+						contextMessageTexts.add(content);
+					} else if (Array.isArray(content)) {
+						for (const part of content) {
+							if (
+								typeof part === "object" &&
+								part !== null &&
+								"type" in part &&
+								part.type === "text" &&
+								"text" in part
+							) {
+								contextMessageTexts.add((part as { type: "text"; text: string }).text);
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -112,34 +164,39 @@ export class MomSessionManager {
 			isBot?: boolean;
 		}
 
-		const newMessages: Array<{ timestamp: string; message: AppMessage }> = [];
+		const newMessages: Array<{ timestamp: string; slackTs: string; message: AppMessage }> = [];
 
 		for (const line of logLines) {
 			try {
 				const logMsg: LogMessage = JSON.parse(line);
 
-				// Use date for context timestamp (consistent key)
-				const ts = logMsg.date || logMsg.ts;
-				if (!ts) continue;
-
-				// Skip if already in context
-				if (contextTimestamps.has(ts)) continue;
+				const slackTs = logMsg.ts;
+				const date = logMsg.date;
+				if (!slackTs || !date) continue;
 
 				// Skip the current message being processed (will be added via prompt())
-				// Compare against Slack ts since that's what ctx.message.ts provides
-				if (excludeTimestamp && logMsg.ts === excludeTimestamp) continue;
+				if (excludeSlackTs && slackTs === excludeSlackTs) continue;
 
 				// Skip bot messages - added through agent flow
 				if (logMsg.isBot) continue;
 
-				const msgTime = new Date(ts).getTime() || Date.now();
+				// Skip if this date is already in context (was synced before)
+				if (contextSlackTimestamps.has(date)) continue;
+
+				// Build the message text as it would appear in context
+				const messageText = `[${logMsg.userName || logMsg.user || "unknown"}]: ${logMsg.text || ""}`;
+
+				// Skip if this exact message text is already in context (added via prompt())
+				if (contextMessageTexts.has(messageText)) continue;
+
+				const msgTime = new Date(date).getTime() || Date.now();
 				const userMessage: AppMessage = {
 					role: "user",
-					content: `[${logMsg.userName || logMsg.user || "unknown"}]: ${logMsg.text || ""}`,
+					content: messageText,
 					timestamp: msgTime,
 				};
 
-				newMessages.push({ timestamp: ts, message: userMessage });
+				newMessages.push({ timestamp: date, slackTs, message: userMessage });
 			} catch {
 				// Skip malformed lines
 			}
@@ -153,15 +210,13 @@ export class MomSessionManager {
 		for (const { timestamp, message } of newMessages) {
 			const entry: SessionMessageEntry = {
 				type: "message",
-				timestamp,
+				timestamp, // Use log date as entry timestamp for consistent deduplication
 				message,
 			};
 
 			this.inMemoryEntries.push(entry);
 			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
 		}
-
-		// Sync complete - newMessages.length messages added
 	}
 
 	private extractSessionId(): string | null {
@@ -482,4 +537,119 @@ export class MomSettingsManager {
 	getHookTimeout(): number {
 		return 30000;
 	}
+}
+
+// ============================================================================
+// Sync log.jsonl to context.jsonl
+// ============================================================================
+
+/**
+ * Sync user messages from log.jsonl to context.jsonl.
+ *
+ * This ensures that messages logged while mom wasn't running (channel chatter,
+ * backfilled messages, messages while busy) are added to the LLM context.
+ *
+ * @param channelDir - Path to channel directory
+ * @param excludeAfterTs - Don't sync messages with ts >= this value (they'll be handled by agent)
+ * @returns Number of messages synced
+ */
+export function syncLogToContext(channelDir: string, excludeAfterTs?: string): number {
+	const logFile = join(channelDir, "log.jsonl");
+	const contextFile = join(channelDir, "context.jsonl");
+
+	if (!existsSync(logFile)) return 0;
+
+	// Read all user messages from log.jsonl
+	const logContent = readFileSync(logFile, "utf-8");
+	const logLines = logContent.trim().split("\n").filter(Boolean);
+
+	interface LogEntry {
+		ts: string;
+		user: string;
+		userName?: string;
+		text: string;
+		isBot: boolean;
+	}
+
+	const logMessages: LogEntry[] = [];
+	for (const line of logLines) {
+		try {
+			const entry = JSON.parse(line) as LogEntry;
+			// Only sync user messages (not bot responses)
+			if (!entry.isBot && entry.ts && entry.text) {
+				// Skip if >= excludeAfterTs
+				if (excludeAfterTs && entry.ts >= excludeAfterTs) continue;
+				logMessages.push(entry);
+			}
+		} catch {}
+	}
+
+	if (logMessages.length === 0) return 0;
+
+	// Read existing timestamps from context.jsonl
+	const existingTs = new Set<string>();
+	if (existsSync(contextFile)) {
+		const contextContent = readFileSync(contextFile, "utf-8");
+		const contextLines = contextContent.trim().split("\n").filter(Boolean);
+		for (const line of contextLines) {
+			try {
+				const entry = JSON.parse(line);
+				if (entry.type === "message" && entry.message?.role === "user" && entry.message?.timestamp) {
+					// Extract ts from timestamp (ms -> slack ts format for comparison)
+					// We store the original slack ts in a way we can recover
+					// Actually, let's just check by content match since ts formats differ
+				}
+			} catch {}
+		}
+	}
+
+	// For deduplication, we need to track what's already in context
+	// Read context and extract user message content
+	const existingMessages = new Set<string>();
+	if (existsSync(contextFile)) {
+		const contextContent = readFileSync(contextFile, "utf-8");
+		const contextLines = contextContent.trim().split("\n").filter(Boolean);
+		for (const line of contextLines) {
+			try {
+				const entry = JSON.parse(line);
+				if (entry.type === "message" && entry.message?.role === "user") {
+					const content =
+						typeof entry.message.content === "string" ? entry.message.content : entry.message.content?.[0]?.text;
+					if (content) existingMessages.add(content);
+				}
+			} catch {}
+		}
+	}
+
+	// Add missing messages to context.jsonl
+	let syncedCount = 0;
+	for (const msg of logMessages) {
+		const userName = msg.userName || msg.user;
+		const content = `[${userName}]: ${msg.text}`;
+
+		// Skip if already in context
+		if (existingMessages.has(content)) continue;
+
+		const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
+		const entry = {
+			type: "message",
+			timestamp: new Date(timestamp).toISOString(),
+			message: {
+				role: "user",
+				content,
+				timestamp,
+			},
+		};
+
+		// Ensure directory exists
+		if (!existsSync(channelDir)) {
+			mkdirSync(channelDir, { recursive: true });
+		}
+
+		appendFileSync(contextFile, JSON.stringify(entry) + "\n");
+		existingMessages.add(content); // Track to avoid duplicates within this sync
+		syncedCount++;
+	}
+
+	return syncedCount;
 }

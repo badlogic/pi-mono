@@ -2,7 +2,7 @@ import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agen
 import { getModel } from "@mariozechner/pi-ai";
 import { AgentSession, messageTransformer } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "fs";
-import { mkdir } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { MomSessionManager, MomSettingsManager } from "./context.js";
 import * as log from "./log.js";
@@ -34,8 +34,15 @@ function toSlackTs(): string {
 	return `${seconds}.${micros.toString().padStart(6, "0")}`;
 }
 
+export interface PendingMessage {
+	userName: string;
+	text: string;
+	attachments: { local: string }[];
+	timestamp: number;
+}
+
 export interface AgentRunner {
-	run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<{ stopReason: string }>;
+	run(ctx: SlackContext, store: ChannelStore, pendingMessages?: PendingMessage[]): Promise<{ stopReason: string }>;
 	abort(): void;
 }
 
@@ -254,21 +261,250 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 	return lines.join("\n");
 }
 
-// Cache for AgentSession and SessionManager per channel
-const channelSessions = new Map<string, { session: AgentSession; sessionManager: MomSessionManager }>();
+// Cache runners per channel
+const channelRunners = new Map<string, AgentRunner>();
 
-export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
-	let currentSession: AgentSession | null = null;
+/**
+ * Get or create an AgentRunner for a channel.
+ * Runners are cached - one per channel, persistent across messages.
+ */
+export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+	const existing = channelRunners.get(channelId);
+	if (existing) return existing;
+
+	const runner = createRunner(sandboxConfig, channelId, channelDir);
+	channelRunners.set(channelId, runner);
+	return runner;
+}
+
+/**
+ * Create a new AgentRunner for a channel.
+ * Sets up the session and subscribes to events once.
+ */
+function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
+	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
+
+	// Create tools
+	const tools = createMomTools(executor);
+
+	// Initial system prompt (will be updated each run with fresh memory/channels/users)
+	const memory = getMemory(channelDir);
+	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], []);
+
+	// Create session manager and settings manager
+	// Pass model info so new sessions get a header written immediately
+	const sessionManager = new MomSessionManager(channelDir, {
+		provider: model.provider,
+		id: model.id,
+		thinkingLevel: "off",
+	});
+	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
+
+	// Create agent
+	const agent = new Agent({
+		initialState: {
+			systemPrompt,
+			model,
+			thinkingLevel: "off",
+			tools,
+		},
+		messageTransformer,
+		transport: new ProviderTransport({
+			getApiKey: async () => getAnthropicApiKey(),
+		}),
+	});
+
+	// Load existing messages
+	const loadedSession = sessionManager.loadSession();
+	if (loadedSession.messages.length > 0) {
+		agent.replaceMessages(loadedSession.messages);
+		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
+	}
+
+	// Create AgentSession wrapper
+	const session = new AgentSession({
+		agent,
+		sessionManager: sessionManager as any,
+		settingsManager: settingsManager as any,
+	});
+
+	// Mutable per-run state - event handler references this
+	const runState = {
+		ctx: null as SlackContext | null,
+		logCtx: null as { channelId: string; userName?: string; channelName?: string } | null,
+		queue: null as {
+			enqueue(fn: () => Promise<void>, errorContext: string): void;
+			enqueueMessage(text: string, target: "main" | "thread", errorContext: string, doLog?: boolean): void;
+		} | null,
+		pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
+		totalUsage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+	};
+
+	// Subscribe to events ONCE
+	session.subscribe(async (event) => {
+		// Skip if no active run
+		if (!runState.ctx || !runState.logCtx || !runState.queue) return;
+
+		const { ctx, logCtx, queue, pendingTools } = runState;
+
+		if (event.type === "tool_execution_start") {
+			const agentEvent = event as AgentEvent & { type: "tool_execution_start" };
+			const args = agentEvent.args as { label?: string };
+			const label = args.label || agentEvent.toolName;
+
+			pendingTools.set(agentEvent.toolCallId, {
+				toolName: agentEvent.toolName,
+				args: agentEvent.args,
+				startTime: Date.now(),
+			});
+
+			log.logToolStart(logCtx, agentEvent.toolName, label, agentEvent.args as Record<string, unknown>);
+			queue.enqueue(() => ctx.respond(`_→ ${label}_`, false), "tool label");
+		} else if (event.type === "tool_execution_end") {
+			const agentEvent = event as AgentEvent & { type: "tool_execution_end" };
+			const resultStr = extractToolResultText(agentEvent.result);
+			const pending = pendingTools.get(agentEvent.toolCallId);
+			pendingTools.delete(agentEvent.toolCallId);
+
+			const durationMs = pending ? Date.now() - pending.startTime : 0;
+
+			if (agentEvent.isError) {
+				log.logToolError(logCtx, agentEvent.toolName, durationMs, resultStr);
+			} else {
+				log.logToolSuccess(logCtx, agentEvent.toolName, durationMs, resultStr);
+			}
+
+			// Post args + result to thread
+			const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
+			const argsFormatted = pending
+				? formatToolArgsForSlack(agentEvent.toolName, pending.args as Record<string, unknown>)
+				: "(args not found)";
+			const duration = (durationMs / 1000).toFixed(1);
+			let threadMessage = `*${agentEvent.isError ? "✗" : "✓"} ${agentEvent.toolName}*`;
+			if (label) threadMessage += `: ${label}`;
+			threadMessage += ` (${duration}s)\n`;
+			if (argsFormatted) threadMessage += "```\n" + argsFormatted + "\n```\n";
+			threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
+
+			queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
+
+			if (agentEvent.isError) {
+				queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`, false), "tool error");
+			}
+		} else if (event.type === "message_start") {
+			const agentEvent = event as AgentEvent & { type: "message_start" };
+			if (agentEvent.message.role === "assistant") {
+				log.logResponseStart(logCtx);
+			}
+		} else if (event.type === "message_end") {
+			const agentEvent = event as AgentEvent & { type: "message_end" };
+			if (agentEvent.message.role === "assistant") {
+				const assistantMsg = agentEvent.message as any;
+
+				if (assistantMsg.stopReason) {
+					runState.stopReason = assistantMsg.stopReason;
+				}
+
+				if (assistantMsg.usage) {
+					runState.totalUsage.input += assistantMsg.usage.input;
+					runState.totalUsage.output += assistantMsg.usage.output;
+					runState.totalUsage.cacheRead += assistantMsg.usage.cacheRead;
+					runState.totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
+					runState.totalUsage.cost.input += assistantMsg.usage.cost.input;
+					runState.totalUsage.cost.output += assistantMsg.usage.cost.output;
+					runState.totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
+					runState.totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
+					runState.totalUsage.cost.total += assistantMsg.usage.cost.total;
+				}
+
+				const content = agentEvent.message.content;
+				const thinkingParts: string[] = [];
+				const textParts: string[] = [];
+				for (const part of content) {
+					if (part.type === "thinking") {
+						thinkingParts.push((part as any).thinking);
+					} else if (part.type === "text") {
+						textParts.push((part as any).text);
+					}
+				}
+
+				const text = textParts.join("\n");
+
+				for (const thinking of thinkingParts) {
+					log.logThinking(logCtx, thinking);
+					queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
+					queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
+				}
+
+				if (text.trim()) {
+					log.logResponse(logCtx, text);
+					queue.enqueueMessage(text, "main", "response main");
+					queue.enqueueMessage(text, "thread", "response thread", false);
+				}
+			}
+		} else if (event.type === "auto_compaction_start") {
+			log.logInfo(`Auto-compaction started (reason: ${(event as any).reason})`);
+			queue.enqueue(() => ctx.respond("_Compacting context..._", false), "compaction start");
+		} else if (event.type === "auto_compaction_end") {
+			const compEvent = event as any;
+			if (compEvent.result) {
+				log.logInfo(`Auto-compaction complete: ${compEvent.result.tokensBefore} tokens compacted`);
+			} else if (compEvent.aborted) {
+				log.logInfo("Auto-compaction aborted");
+			}
+		} else if (event.type === "auto_retry_start") {
+			const retryEvent = event as any;
+			log.logWarning(`Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})`, retryEvent.errorMessage);
+			queue.enqueue(
+				() => ctx.respond(`_Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})..._`, false),
+				"retry",
+			);
+		}
+	});
+
+	// Slack message limit
+	const SLACK_MAX_LENGTH = 40000;
+	const splitForSlack = (text: string): string[] => {
+		if (text.length <= SLACK_MAX_LENGTH) return [text];
+		const parts: string[] = [];
+		let remaining = text;
+		let partNum = 1;
+		while (remaining.length > 0) {
+			const chunk = remaining.substring(0, SLACK_MAX_LENGTH - 50);
+			remaining = remaining.substring(SLACK_MAX_LENGTH - 50);
+			const suffix = remaining.length > 0 ? `\n_(continued ${partNum}...)_` : "";
+			parts.push(chunk + suffix);
+			partNum++;
+		}
+		return parts;
+	};
 
 	return {
-		async run(ctx: SlackContext, channelDir: string, _store: ChannelStore): Promise<{ stopReason: string }> {
+		async run(
+			ctx: SlackContext,
+			_store: ChannelStore,
+			_pendingMessages?: PendingMessage[],
+		): Promise<{ stopReason: string }> {
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
-			const channelId = ctx.message.channel;
-			const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
+			// Reload messages from context.jsonl
+			// This picks up any messages synced from log.jsonl before this run
+			const reloadedSession = sessionManager.loadSession();
+			if (reloadedSession.messages.length > 0) {
+				agent.replaceMessages(reloadedSession.messages);
+				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);
+			}
 
+			// Update system prompt with fresh memory and channel/user info
 			const memory = getMemory(channelDir);
 			const systemPrompt = buildSystemPrompt(
 				workspacePath,
@@ -278,123 +514,36 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				ctx.channels,
 				ctx.users,
 			);
+			session.agent.setSystemPrompt(systemPrompt);
 
-			// Debug: log context sizes
-			log.logInfo(`Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`);
-			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
-
-			// Set up file upload function for the attach tool
+			// Set up file upload function
 			setUploadFunction(async (filePath: string, title?: string) => {
 				const hostPath = translateToHostPath(filePath, channelDir, workspacePath, channelId);
 				await ctx.uploadFile(hostPath, title);
 			});
 
-			// Create tools with executor
-			const tools = createMomTools(executor);
-
-			// Get or create AgentSession for this channel
-			const cached = channelSessions.get(channelId);
-			let session: AgentSession;
-			let sessionManager: MomSessionManager;
-
-			if (!cached) {
-				// Create session manager and settings manager
-				sessionManager = new MomSessionManager(channelDir);
-				const settingsManager = new MomSettingsManager(join(channelDir, ".."));
-
-				// Create agent with proper message transformer for compaction
-				const agent = new Agent({
-					initialState: {
-						systemPrompt,
-						model,
-						thinkingLevel: "off",
-						tools,
-					},
-					messageTransformer,
-					transport: new ProviderTransport({
-						getApiKey: async () => getAnthropicApiKey(),
-					}),
-				});
-
-				// Load existing messages from session
-				const loadedSession = sessionManager.loadSession();
-				if (loadedSession.messages.length > 0) {
-					agent.replaceMessages(loadedSession.messages);
-					log.logInfo(`Loaded ${loadedSession.messages.length} messages from context.jsonl`);
-				}
-
-				// Create AgentSession wrapper
-				session = new AgentSession({
-					agent,
-					sessionManager: sessionManager as any, // Type compatibility
-					settingsManager: settingsManager as any, // Type compatibility
-				});
-
-				channelSessions.set(channelId, { session, sessionManager });
-			} else {
-				session = cached.session;
-				sessionManager = cached.sessionManager;
-
-				// Update system prompt for existing session (memory may have changed)
-				session.agent.setSystemPrompt(systemPrompt);
-			}
-
-			// Sync messages from log.jsonl to context.jsonl
-			// Exclude the current message - it will be added via prompt()
-			sessionManager.syncFromLog(ctx.message.ts);
-
-			currentSession = session;
-
-			// Create logging context
-			const logCtx = {
+			// Reset per-run state
+			runState.ctx = ctx;
+			runState.logCtx = {
 				channelId: ctx.message.channel,
 				userName: ctx.message.userName,
 				channelName: ctx.channelName,
 			};
-
-			// Track pending tool calls to pair args with results and timing
-			const pendingTools = new Map<string, { toolName: string; args: unknown; startTime: number }>();
-
-			// Track usage across all assistant messages in this run
-			const totalUsage = {
+			runState.pendingTools.clear();
+			runState.totalUsage = {
 				input: 0,
 				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
-				cost: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					total: 0,
-				},
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
+			runState.stopReason = "stop";
 
-			// Track stop reason
-			let stopReason = "stop";
-
-			// Slack message limit is 40,000 characters
-			const SLACK_MAX_LENGTH = 40000;
-			const splitForSlack = (text: string): string[] => {
-				if (text.length <= SLACK_MAX_LENGTH) return [text];
-				const parts: string[] = [];
-				let remaining = text;
-				let partNum = 1;
-				while (remaining.length > 0) {
-					const chunk = remaining.substring(0, SLACK_MAX_LENGTH - 50);
-					remaining = remaining.substring(SLACK_MAX_LENGTH - 50);
-					const suffix = remaining.length > 0 ? `\n_(continued ${partNum}...)_` : "";
-					parts.push(chunk + suffix);
-					partNum++;
-				}
-				return parts;
-			};
-
-			// Promise queue to ensure ctx.respond/respondInThread calls execute in order
-			const queue = {
-				chain: Promise.resolve(),
+			// Create queue for this run
+			let queueChain = Promise.resolve();
+			runState.queue = {
 				enqueue(fn: () => Promise<void>, errorContext: string): void {
-					this.chain = this.chain.then(async () => {
+					queueChain = queueChain.then(async () => {
 						try {
 							await fn();
 						} catch (err) {
@@ -417,188 +566,74 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						);
 					}
 				},
-				flush(): Promise<void> {
-					return this.chain;
-				},
 			};
 
-			// Subscribe to session events
-			const unsubscribe = session.subscribe(async (event) => {
-				// Handle agent events
-				if (event.type === "tool_execution_start") {
-					const agentEvent = event as AgentEvent & { type: "tool_execution_start" };
-					const args = agentEvent.args as { label?: string };
-					const label = args.label || agentEvent.toolName;
+			// Log context info
+			log.logInfo(`Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`);
+			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
 
-					pendingTools.set(agentEvent.toolCallId, {
-						toolName: agentEvent.toolName,
-						args: agentEvent.args,
-						startTime: Date.now(),
-					});
+			// Build user message with username prefix
+			// Format: "[username]: message" so LLM knows who's talking
+			let userMessage = `[${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
-					log.logToolStart(logCtx, agentEvent.toolName, label, agentEvent.args as Record<string, unknown>);
-
-					// NOTE: Tool results are NOT logged to log.jsonl anymore
-					// They are stored in context.jsonl via AgentSession
-
-					queue.enqueue(() => ctx.respond(`_→ ${label}_`, false), "tool label");
-				} else if (event.type === "tool_execution_end") {
-					const agentEvent = event as AgentEvent & { type: "tool_execution_end" };
-					const resultStr = extractToolResultText(agentEvent.result);
-					const pending = pendingTools.get(agentEvent.toolCallId);
-					pendingTools.delete(agentEvent.toolCallId);
-
-					const durationMs = pending ? Date.now() - pending.startTime : 0;
-
-					if (agentEvent.isError) {
-						log.logToolError(logCtx, agentEvent.toolName, durationMs, resultStr);
-					} else {
-						log.logToolSuccess(logCtx, agentEvent.toolName, durationMs, resultStr);
-					}
-
-					// Post args + result to thread (for debugging)
-					const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
-					const argsFormatted = pending
-						? formatToolArgsForSlack(agentEvent.toolName, pending.args as Record<string, unknown>)
-						: "(args not found)";
-					const duration = (durationMs / 1000).toFixed(1);
-					let threadMessage = `*${agentEvent.isError ? "✗" : "✓"} ${agentEvent.toolName}*`;
-					if (label) {
-						threadMessage += `: ${label}`;
-					}
-					threadMessage += ` (${duration}s)\n`;
-
-					if (argsFormatted) {
-						threadMessage += "```\n" + argsFormatted + "\n```\n";
-					}
-
-					threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
-
-					queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
-
-					if (agentEvent.isError) {
-						queue.enqueue(() => ctx.respond(`_Error: ${truncate(resultStr, 200)}_`, false), "tool error");
-					}
-				} else if (event.type === "message_start") {
-					const agentEvent = event as AgentEvent & { type: "message_start" };
-					if (agentEvent.message.role === "assistant") {
-						log.logResponseStart(logCtx);
-					}
-				} else if (event.type === "message_end") {
-					const agentEvent = event as AgentEvent & { type: "message_end" };
-					if (agentEvent.message.role === "assistant") {
-						const assistantMsg = agentEvent.message as any;
-
-						if (assistantMsg.stopReason) {
-							stopReason = assistantMsg.stopReason;
-						}
-
-						if (assistantMsg.usage) {
-							totalUsage.input += assistantMsg.usage.input;
-							totalUsage.output += assistantMsg.usage.output;
-							totalUsage.cacheRead += assistantMsg.usage.cacheRead;
-							totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
-							totalUsage.cost.input += assistantMsg.usage.cost.input;
-							totalUsage.cost.output += assistantMsg.usage.cost.output;
-							totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
-							totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
-							totalUsage.cost.total += assistantMsg.usage.cost.total;
-						}
-
-						const content = agentEvent.message.content;
-						const thinkingParts: string[] = [];
-						const textParts: string[] = [];
-						for (const part of content) {
-							if (part.type === "thinking") {
-								thinkingParts.push((part as any).thinking);
-							} else if (part.type === "text") {
-								textParts.push((part as any).text);
-							}
-						}
-
-						const text = textParts.join("\n");
-
-						for (const thinking of thinkingParts) {
-							log.logThinking(logCtx, thinking);
-							queue.enqueueMessage(`_${thinking}_`, "main", "thinking main");
-							queue.enqueueMessage(`_${thinking}_`, "thread", "thinking thread", false);
-						}
-
-						if (text.trim()) {
-							log.logResponse(logCtx, text);
-							queue.enqueueMessage(text, "main", "response main");
-							queue.enqueueMessage(text, "thread", "response thread", false);
-						}
-					}
-				} else if (event.type === "auto_compaction_start") {
-					log.logInfo(`Auto-compaction started (reason: ${(event as any).reason})`);
-					queue.enqueue(() => ctx.respond("_Compacting context..._", false), "compaction start");
-				} else if (event.type === "auto_compaction_end") {
-					const compEvent = event as any;
-					if (compEvent.result) {
-						log.logInfo(`Auto-compaction complete: ${compEvent.result.tokensBefore} tokens compacted`);
-					} else if (compEvent.aborted) {
-						log.logInfo("Auto-compaction aborted");
-					}
-				} else if (event.type === "auto_retry_start") {
-					const retryEvent = event as any;
-					log.logWarning(`Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})`, retryEvent.errorMessage);
-					queue.enqueue(
-						() => ctx.respond(`_Retrying (${retryEvent.attempt}/${retryEvent.maxAttempts})..._`, false),
-						"retry",
-					);
-				}
-			});
-
-			try {
-				// Build user message from Slack context
-				// Note: User message is already logged to log.jsonl by Slack event handler
-				const userMessage = ctx.message.text;
-
-				// Send prompt to agent session
-				await session.prompt(userMessage);
-
-				// Wait for all queued Slack messages
-				await queue.flush();
-
-				// Get final assistant text and update main message
-				const messages = session.messages;
-				const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
-				const finalText =
-					lastAssistant?.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("\n") || "";
-
-				if (finalText.trim()) {
-					// Note: Bot response is logged via ctx.respond() in the event handler
-					try {
-						const mainText =
-							finalText.length > SLACK_MAX_LENGTH
-								? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
-								: finalText;
-						await ctx.replaceMessage(mainText);
-					} catch (err) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log.logWarning("Failed to replace message with final text", errMsg);
-					}
-				}
-
-				// Log usage summary
-				if (totalUsage.cost.total > 0) {
-					const summary = log.logUsageSummary(logCtx, totalUsage);
-					queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
-					await queue.flush();
-				}
-
-				return { stopReason };
-			} finally {
-				unsubscribe();
+			// Add attachment paths if any
+			if (ctx.message.attachments && ctx.message.attachments.length > 0) {
+				const attachmentPaths = ctx.message.attachments.map((a) => a.local).join("\n");
+				userMessage += `\n\nAttachments:\n${attachmentPaths}`;
 			}
+
+			// Debug: write context to last_prompt.jsonl
+			const debugContext = {
+				systemPrompt,
+				messages: session.messages,
+				newUserMessage: userMessage,
+			};
+			await writeFile(join(channelDir, "last_prompt.jsonl"), JSON.stringify(debugContext, null, 2));
+
+			await session.prompt(userMessage);
+
+			// Wait for queued messages
+			await queueChain;
+
+			// Final message update
+			const messages = session.messages;
+			const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
+			const finalText =
+				lastAssistant?.content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("\n") || "";
+
+			if (finalText.trim()) {
+				try {
+					const mainText =
+						finalText.length > SLACK_MAX_LENGTH
+							? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+							: finalText;
+					await ctx.replaceMessage(mainText);
+				} catch (err) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log.logWarning("Failed to replace message with final text", errMsg);
+				}
+			}
+
+			// Log usage summary
+			if (runState.totalUsage.cost.total > 0) {
+				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage);
+				runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
+				await queueChain;
+			}
+
+			// Clear run state
+			runState.ctx = null;
+			runState.logCtx = null;
+			runState.queue = null;
+
+			return { stopReason: runState.stopReason };
 		},
 
 		abort(): void {
-			currentSession?.abort();
+			session.abort();
 		},
 	};
 }
