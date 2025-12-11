@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.18.4] - 2025-12-11
+
+### Fixed
+
+- Attachment downloads now work correctly
+  - SlackBot now receives store for processing file downloads
+  - Files are downloaded in background and stored in `<channel>/attachments/`
+  - Attachment paths passed to agent as absolute paths in execution environment
+  - Backfill also downloads attachments from historical messages
+
 ## [0.18.3] - 2025-12-11
 
 ### Changed
