@@ -19,6 +19,7 @@ export interface Args {
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
+	version?: boolean;
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
@@ -48,6 +49,8 @@ export function parseArgs(args: string[]): Args {
 
 		if (arg === "--help" || arg === "-h") {
 			result.help = true;
+		} else if (arg === "--version" || arg === "-v") {
+			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
 			if (mode === "text" || mode === "json" || mode === "rpc") {
@@ -139,6 +142,7 @@ ${chalk.bold("Options:")}
   --hook <path>                  Load a hook file (can be used multiple times)
   --export <file>                Export session file to HTML and exit
   --help, -h                     Show this help
+  --version, -v                  Show version number
 
 ${chalk.bold("Examples:")}
   # Interactive mode
