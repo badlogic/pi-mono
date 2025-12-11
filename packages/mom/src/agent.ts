@@ -337,10 +337,11 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 				// Update system prompt for existing session (memory may have changed)
 				session.agent.setSystemPrompt(systemPrompt);
-
-				// Sync any new messages from log.jsonl (e.g., messages that arrived while processing)
-				sessionManager.syncFromLog();
 			}
+
+			// Sync messages from log.jsonl to context.jsonl
+			// Exclude the current message - it will be added via prompt()
+			sessionManager.syncFromLog(ctx.message.ts);
 
 			currentSession = session;
 
@@ -551,18 +552,8 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			try {
 				// Build user message from Slack context
+				// Note: User message is already logged to log.jsonl by Slack event handler
 				const userMessage = ctx.message.text;
-
-				// Log user message to log.jsonl (human-readable history)
-				await store.logMessage(ctx.message.channel, {
-					date: new Date().toISOString(),
-					ts: toSlackTs(),
-					user: ctx.message.user,
-					userName: ctx.message.userName,
-					text: userMessage,
-					attachments: ctx.message.attachments || [],
-					isBot: false,
-				});
 
 				// Send prompt to agent session
 				await session.prompt(userMessage);

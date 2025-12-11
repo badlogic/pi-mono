@@ -70,9 +70,7 @@ export class MomSessionManager {
 		} else {
 			this.sessionId = uuidv4();
 		}
-
-		// Sync missing messages from log.jsonl to context.jsonl
-		this.syncFromLog();
+		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
 	}
 
 	/**
@@ -87,8 +85,10 @@ export class MomSessionManager {
 	 * Channel chatter is formatted as "[username]: message" to distinguish from direct @mentions.
 	 *
 	 * Called automatically on construction and should be called before each agent run.
+	 *
+	 * @param excludeTimestamp Optional timestamp to exclude (for the current @mention being processed)
 	 */
-	syncFromLog(): void {
+	syncFromLog(excludeTimestamp?: string): void {
 		if (!existsSync(this.logFile)) return;
 
 		// Get timestamps of messages already in context
@@ -118,11 +118,16 @@ export class MomSessionManager {
 			try {
 				const logMsg: LogMessage = JSON.parse(line);
 
+				// Use date for context timestamp (consistent key)
 				const ts = logMsg.date || logMsg.ts;
 				if (!ts) continue;
 
 				// Skip if already in context
 				if (contextTimestamps.has(ts)) continue;
+
+				// Skip the current message being processed (will be added via prompt())
+				// Compare against Slack ts since that's what ctx.message.ts provides
+				if (excludeTimestamp && logMsg.ts === excludeTimestamp) continue;
 
 				// Skip bot messages - added through agent flow
 				if (logMsg.isBot) continue;
