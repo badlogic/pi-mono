@@ -2,7 +2,7 @@ import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agen
 import { getModel } from "@mariozechner/pi-ai";
 import { AgentSession, messageTransformer } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { join } from "path";
 import { MomSessionManager, MomSettingsManager } from "./context.js";
 import * as log from "./log.js";
@@ -552,13 +552,6 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			try {
 				// Build user message from Slack context
 				const userMessage = ctx.message.text;
-
-				// Debug: write context to file
-				const debugPrompt =
-					`=== SYSTEM PROMPT (${systemPrompt.length} chars) ===\n\n${systemPrompt}\n\n` +
-					`=== USER MESSAGE ===\n\n${userMessage}\n\n` +
-					`=== EXISTING CONTEXT ===\n\n${session.messages.length} messages in context`;
-				await writeFile(join(channelDir, "last_prompt.txt"), debugPrompt, "utf-8");
 
 				// Log user message to log.jsonl (human-readable history)
 				await store.logMessage(ctx.message.channel, {
