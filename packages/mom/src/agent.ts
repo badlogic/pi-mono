@@ -262,7 +262,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 
 	return {
-		async run(ctx: SlackContext, channelDir: string, store: ChannelStore): Promise<{ stopReason: string }> {
+		async run(ctx: SlackContext, channelDir: string, _store: ChannelStore): Promise<{ stopReason: string }> {
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
@@ -424,7 +424,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 
 			// Subscribe to session events
 			const unsubscribe = session.subscribe(async (event) => {
-				// Handle core agent events
+				// Handle agent events
 				if (event.type === "tool_execution_start") {
 					const agentEvent = event as AgentEvent & { type: "tool_execution_start" };
 					const args = agentEvent.args as { label?: string };
@@ -571,16 +571,7 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						.join("\n") || "";
 
 				if (finalText.trim()) {
-					// Log final response to log.jsonl (human-readable history)
-					await store.logMessage(ctx.message.channel, {
-						date: new Date().toISOString(),
-						ts: toSlackTs(),
-						user: "bot",
-						text: finalText,
-						attachments: [],
-						isBot: true,
-					});
-
+					// Note: Bot response is logged via ctx.respond() in the event handler
 					try {
 						const mainText =
 							finalText.length > SLACK_MAX_LENGTH

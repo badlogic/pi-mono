@@ -161,7 +161,7 @@ export class MomSessionManager {
 			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
 		}
 
-		console.log(`[mom] Synced ${newMessages.length} messages from log.jsonl to context.jsonl`);
+		// Sync complete - newMessages.length messages added
 	}
 
 	private extractSessionId(): string | null {
