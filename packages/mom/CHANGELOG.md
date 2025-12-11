@@ -4,11 +4,14 @@
 
 ### Changed
 
-- Complete rewrite of message handling architecture
-  - `log.jsonl` is now the source of truth for all channel messages
-  - `context.jsonl` stores LLM context (messages sent to Claude)
+- Complete rewrite of message handling architecture (#115)
+  - Now uses `AgentSession` from coding-agent for session management
+  - Brings auto-compaction, overflow handling, and proper prompt caching
+  - `log.jsonl` is the source of truth for all channel messages
+  - `context.jsonl` stores LLM context (messages sent to Claude, same format as coding-agent)
   - Sync mechanism ensures context.jsonl stays in sync with log.jsonl at run start
   - Session header written immediately on new session creation (not lazily)
+  - Tool results preserved in context.jsonl for multi-turn continuity
 
 - Backfill improvements
   - Only backfills channels that already have a `log.jsonl` file
