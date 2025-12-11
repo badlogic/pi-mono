@@ -23,6 +23,7 @@
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
 		"@mariozechner/pi-agent-core": "^0.18.2",
 		"@mariozechner/pi-ai": "^0.18.2",
+		"@mariozechner/pi-coding-agent": "^0.18.2",
 		"@sinclair/typebox": "^0.34.0",
 		"@slack/socket-mode": "^2.0.0",
 		"@slack/web-api": "^7.0.0",

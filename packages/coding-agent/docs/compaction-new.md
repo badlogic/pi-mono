@@ -336,14 +336,14 @@ ${summaries.map((s, i) => `--- Slice ${i + 1} ---\n${s}`).join('\n\n')}
 
 ## Test Harness
 
-A CLI test tool is available at `test/compaction-strategies.ts` to compare strategies:
+A CLI test tool is available at [compaction-strategies.ts](./compaction-strategies.ts) to compare strategies:
 
 ```bash
-npx tsx test/compaction-strategies.ts before-compaction
-npx tsx test/compaction-strategies.ts large-session
+npx tsx docs/compaction-strategies.ts before-compaction
+npx tsx docs/compaction-strategies.ts large-session
 ```
 
-This outputs results to `test/compaction-results/[fixture]-[strategy].md` and a comparison file.
+This outputs results to `compaction-results/[fixture]-[strategy].md` (in repo root) and a comparison file.
 
 ### Implemented Strategies
 
