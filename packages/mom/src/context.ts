@@ -46,6 +46,7 @@ function uuidv4(): string {
 export class MomSessionManager {
 	private sessionId: string;
 	private contextFile: string;
+	private logFile: string;
 	private channelDir: string;
 	private sessionInitialized: boolean = false;
 	private inMemoryEntries: SessionEntry[] = [];
@@ -54,6 +55,7 @@ export class MomSessionManager {
 	constructor(channelDir: string) {
 		this.channelDir = channelDir;
 		this.contextFile = join(channelDir, "context.jsonl");
+		this.logFile = join(channelDir, "log.jsonl");
 
 		// Ensure channel directory exists
 		if (!existsSync(channelDir)) {
@@ -68,6 +70,93 @@ export class MomSessionManager {
 		} else {
 			this.sessionId = uuidv4();
 		}
+
+		// Sync missing messages from log.jsonl to context.jsonl
+		this.syncFromLog();
+	}
+
+	/**
+	 * Sync user messages from log.jsonl that aren't in context.jsonl.
+	 *
+	 * log.jsonl and context.jsonl must have the same user messages.
+	 * This handles:
+	 * - Backfilled messages (mom was offline)
+	 * - Messages that arrived while mom was processing a previous turn
+	 * - Channel chatter between @mentions
+	 *
+	 * Channel chatter is formatted as "[username]: message" to distinguish from direct @mentions.
+	 *
+	 * Called automatically on construction and should be called before each agent run.
+	 */
+	syncFromLog(): void {
+		if (!existsSync(this.logFile)) return;
+
+		// Get timestamps of messages already in context
+		const contextTimestamps = new Set<string>();
+		for (const entry of this.inMemoryEntries) {
+			if (entry.type === "message") {
+				contextTimestamps.add(entry.timestamp);
+			}
+		}
+
+		// Read log.jsonl and find user messages not in context
+		const logContent = readFileSync(this.logFile, "utf-8");
+		const logLines = logContent.trim().split("\n").filter(Boolean);
+
+		interface LogMessage {
+			date?: string;
+			ts?: string;
+			user?: string;
+			userName?: string;
+			text?: string;
+			isBot?: boolean;
+		}
+
+		const newMessages: Array<{ timestamp: string; message: AppMessage }> = [];
+
+		for (const line of logLines) {
+			try {
+				const logMsg: LogMessage = JSON.parse(line);
+
+				const ts = logMsg.date || logMsg.ts;
+				if (!ts) continue;
+
+				// Skip if already in context
+				if (contextTimestamps.has(ts)) continue;
+
+				// Skip bot messages - added through agent flow
+				if (logMsg.isBot) continue;
+
+				const msgTime = new Date(ts).getTime() || Date.now();
+				const userMessage: AppMessage = {
+					role: "user",
+					content: `[${logMsg.userName || logMsg.user || "unknown"}]: ${logMsg.text || ""}`,
+					timestamp: msgTime,
+				};
+
+				newMessages.push({ timestamp: ts, message: userMessage });
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		if (newMessages.length === 0) return;
+
+		// Sort by timestamp and add to context
+		newMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+		for (const { timestamp, message } of newMessages) {
+			const entry: SessionMessageEntry = {
+				type: "message",
+				timestamp,
+				message,
+			};
+
+			this.inMemoryEntries.push(entry);
+			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+		}
+
+		console.log(`[mom] Synced ${newMessages.length} messages from log.jsonl to context.jsonl`);
 	}
 
 	private extractSessionId(): string | null {

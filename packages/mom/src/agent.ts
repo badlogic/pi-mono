@@ -254,8 +254,8 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 	return lines.join("\n");
 }
 
-// Cache for AgentSession per channel
-const channelSessions = new Map<string, AgentSession>();
+// Cache for AgentSession and SessionManager per channel
+const channelSessions = new Map<string, { session: AgentSession; sessionManager: MomSessionManager }>();
 
 export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 	let currentSession: AgentSession | null = null;
@@ -293,11 +293,13 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 			const tools = createMomTools(executor);
 
 			// Get or create AgentSession for this channel
-			let session = channelSessions.get(channelId);
+			const cached = channelSessions.get(channelId);
+			let session: AgentSession;
+			let sessionManager: MomSessionManager;
 
-			if (!session) {
+			if (!cached) {
 				// Create session manager and settings manager
-				const sessionManager = new MomSessionManager(channelDir);
+				sessionManager = new MomSessionManager(channelDir);
 				const settingsManager = new MomSettingsManager(join(channelDir, ".."));
 
 				// Create agent with proper message transformer for compaction
@@ -328,10 +330,16 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 					settingsManager: settingsManager as any, // Type compatibility
 				});
 
-				channelSessions.set(channelId, session);
+				channelSessions.set(channelId, { session, sessionManager });
 			} else {
+				session = cached.session;
+				sessionManager = cached.sessionManager;
+
 				// Update system prompt for existing session (memory may have changed)
 				session.agent.setSystemPrompt(systemPrompt);
+
+				// Sync any new messages from log.jsonl (e.g., messages that arrived while processing)
+				sessionManager.syncFromLog();
 			}
 
 			currentSession = session;
