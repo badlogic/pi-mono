@@ -25,3 +25,4 @@ coverage/
 .nyc_output/
 .pi_config/
 tui-debug.log
+compaction-results/

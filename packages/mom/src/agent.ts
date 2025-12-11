@@ -200,13 +200,10 @@ function buildSystemPrompt(
 - Bash working directory: ${process.cwd()}
 - Be careful with system modifications`;
 
-	const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-	const currentDateTime = new Date().toISOString(); // Full ISO 8601
-
 	return `You are mom, a Slack bot assistant. Be concise. No emojis.
 
 ## Context
-- Date: ${currentDate} (${currentDateTime})
+- For current date/time, call date via the Bash tool.
 - You receive the last 50 conversation turns. If you need older context, search log.jsonl.
 
 ## Slack Formatting (mrkdwn, NOT Markdown)
@@ -287,7 +284,7 @@ wc -l log.jsonl
 ## Tools
 - bash: Run shell commands (primary tool). Install packages as needed.
 - read: Read files
-- write: Create/overwrite files  
+- write: Create/overwrite files
 - edit: Surgical file edits
 - attach: Share files to Slack
 
