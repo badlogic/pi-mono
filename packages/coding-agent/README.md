@@ -570,6 +570,7 @@ pi [options] [@files...] [messages...]
 | `--hook <path>` | Load a hook file (can be used multiple times) |
 | `--export <file> [output]` | Export session to HTML |
 | `--help`, `-h` | Show help |
+| `--version`, `-v` | Show version |
 
 ### File Arguments
 

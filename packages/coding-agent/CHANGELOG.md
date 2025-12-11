@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Version flag**: Added `--version` / `-v` flag to display the current version and exit. ([#170](https://github.com/badlogic/pi-mono/pull/170))
+
 ## [0.18.2] - 2025-12-11
 
 ### Added
