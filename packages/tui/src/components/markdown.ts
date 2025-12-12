@@ -267,7 +267,9 @@ export class Markdown implements Component {
 					lines.push("  " + this.theme.codeBlock(codeLine));
 				}
 				lines.push(this.theme.codeBlockBorder("```"));
-				lines.push(""); // Add spacing after code blocks
+				if (nextTokenType !== "space") {
+					lines.push(""); // Add spacing after code blocks (unless space token follows)
+				}
 				break;
 			}
 

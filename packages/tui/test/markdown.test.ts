@@ -253,6 +253,38 @@ describe("Markdown component", () => {
 		});
 	});
 
+	describe("Spacing after code blocks", () => {
+		it("should have only one blank line between code block and following paragraph", () => {
+			const markdown = new Markdown(
+				`hello world
+
+\`\`\`js
+const hello = "world";
+\`\`\`
+
+again, hello world`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			const closingBackticksIndex = plainLines.indexOf("```");
+			assert.ok(closingBackticksIndex !== -1, "Should have closing backticks");
+
+			const afterBackticks = plainLines.slice(closingBackticksIndex + 1);
+			const emptyLineCount = afterBackticks.findIndex((line) => line !== "");
+
+			assert.strictEqual(
+				emptyLineCount,
+				1,
+				`Expected 1 empty line after code block, but found ${emptyLineCount}. Lines after backticks: ${JSON.stringify(afterBackticks.slice(0, 5))}`,
+			);
+		});
+	});
+
 	describe("HTML-like tags in text", () => {
 		it("should render content with HTML-like tags as text", () => {
 			// When the model emits something like <thinking>content</thinking> in regular text,
