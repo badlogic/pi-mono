@@ -690,11 +690,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 						.map((c) => c.text)
 						.join("\n") || "";
 
-				// Check for [SILENT] marker - delete message instead of posting
+				// Check for [SILENT] marker - delete message and thread instead of posting
 				if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
 					try {
 						await ctx.deleteMessage();
-						log.logInfo("Silent response - deleted status message");
+						log.logInfo("Silent response - deleted message and thread");
 					} catch (err) {
 						const errMsg = err instanceof Error ? err.message : String(err);
 						log.logWarning("Failed to delete message for silent response", errMsg);

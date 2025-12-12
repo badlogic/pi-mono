@@ -116,6 +116,7 @@ function getState(channelId: string): ChannelState {
 
 function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelState, isEvent?: boolean) {
 	let messageTs: string | null = null;
+	const threadMessageTs: string[] = [];
 	let accumulatedText = "";
 	let isWorking = true;
 	const workingIndicator = " ...";
@@ -175,7 +176,8 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 		respondInThread: async (text: string) => {
 			updatePromise = updatePromise.then(async () => {
 				if (messageTs) {
-					await slack.postInThread(event.channel, messageTs, text);
+					const ts = await slack.postInThread(event.channel, messageTs, text);
+					threadMessageTs.push(ts);
 				}
 			});
 			await updatePromise;
@@ -210,6 +212,16 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 
 		deleteMessage: async () => {
 			updatePromise = updatePromise.then(async () => {
+				// Delete thread messages first (in reverse order)
+				for (let i = threadMessageTs.length - 1; i >= 0; i--) {
+					try {
+						await slack.deleteMessage(event.channel, threadMessageTs[i]);
+					} catch {
+						// Ignore errors deleting thread messages
+					}
+				}
+				threadMessageTs.length = 0;
+				// Then delete main message
 				if (messageTs) {
 					await slack.deleteMessage(event.channel, messageTs);
 					messageTs = null;
