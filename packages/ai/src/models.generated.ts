@@ -2773,7 +2773,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
-			maxTokens: 65536,
+			maxTokens: 163840,
 		} satisfies Model<"openai-completions">,
 		"prime-intellect/intellect-3": {
 			id: "prime-intellect/intellect-3",
@@ -3260,13 +3260,13 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
-				input: 0.14,
-				output: 1,
+				input: 0.15,
+				output: 0.6,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 131072,
-			maxTokens: 131072,
+			contextWindow: 262144,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-5-pro": {
 			id: "openai/gpt-5-pro",

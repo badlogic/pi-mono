@@ -28,6 +28,7 @@ export interface Args {
 	hooks?: string[];
 	print?: boolean;
 	export?: string;
+	noSkills?: boolean;
 	messages: string[];
 	fileArgs: string[];
 }
@@ -107,6 +108,8 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--hook" && i + 1 < args.length) {
 			result.hooks = result.hooks ?? [];
 			result.hooks.push(args[++i]);
+		} else if (arg === "--no-skills") {
+			result.noSkills = true;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (!arg.startsWith("-")) {
@@ -140,6 +143,7 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --hook <path>                  Load a hook file (can be used multiple times)
+  --no-skills                    Disable skills discovery and loading
   --export <file>                Export session file to HTML and exit
   --help, -h                     Show this help
   --version, -v                  Show version number
