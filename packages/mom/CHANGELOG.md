@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.6] - 2025-12-12
+
+### Fixed
+
+- Duplicate message in context when message has attachments (sync from log didn't strip attachment section before comparing)
+- Use `<slack_attachments>` delimiter for attachments in messages (easier to parse/strip)
 
 ## [0.18.5] - 2025-12-12
 

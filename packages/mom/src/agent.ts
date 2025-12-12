@@ -588,7 +588,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Add attachment paths if any (convert to absolute paths in execution environment)
 			if (ctx.message.attachments && ctx.message.attachments.length > 0) {
 				const attachmentPaths = ctx.message.attachments.map((a) => `${workspacePath}/${a.local}`).join("\n");
-				userMessage += `\n\nAttachments:\n${attachmentPaths}`;
+				userMessage += `\n\n<slack_attachments>\n${attachmentPaths}\n</slack_attachments>`;
 			}
 
 			// Debug: write context to last_prompt.jsonl

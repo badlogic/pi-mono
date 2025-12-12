@@ -604,7 +604,7 @@ export function syncLogToContext(channelDir: string, excludeAfterTs?: string): n
 	}
 
 	// For deduplication, we need to track what's already in context
-	// Read context and extract user message content
+	// Read context and extract user message content (strip attachments section for comparison)
 	const existingMessages = new Set<string>();
 	if (existsSync(contextFile)) {
 		const contextContent = readFileSync(contextFile, "utf-8");
@@ -613,9 +613,16 @@ export function syncLogToContext(channelDir: string, excludeAfterTs?: string): n
 			try {
 				const entry = JSON.parse(line);
 				if (entry.type === "message" && entry.message?.role === "user") {
-					const content =
+					let content =
 						typeof entry.message.content === "string" ? entry.message.content : entry.message.content?.[0]?.text;
-					if (content) existingMessages.add(content);
+					// Strip attachments section for comparison (live messages have it, log messages don't)
+					if (content) {
+						const attachmentsIdx = content.indexOf("\n\n<slack_attachments>\n");
+						if (attachmentsIdx !== -1) {
+							content = content.substring(0, attachmentsIdx);
+						}
+						existingMessages.add(content);
+					}
 				}
 			} catch {}
 		}
