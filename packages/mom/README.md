@@ -216,6 +216,14 @@ Mom can schedule events that wake her up at specific times or when external thin
 
 **Silent completion:** For periodic events that check for activity (inbox, notifications), mom may find nothing to report. She can respond with just `[SILENT]` to delete the status message and post nothing to Slack. This prevents channel spam from periodic checks.
 
+**Timezones:**
+- One-shot `at` timestamps must include timezone offset (e.g., `+01:00`, `-05:00`)
+- Periodic events use IANA timezone names (e.g., `Europe/Vienna`, `America/New_York`)
+- The harness runs in the host's timezone. Mom is told this timezone in her system prompt
+
+**Creating events yourself:**
+You can write event files directly to `data/events/` on the host machine. This lets external systems (cron jobs, webhooks, CI pipelines) wake mom up without going through Slack. Just write a JSON file and mom will be triggered.
+
 **Limits:**
 - Maximum 5 events can be queued per channel
 - Use unique filenames (e.g., `reminder-$(date +%s).json`) to avoid overwrites
