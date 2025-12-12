@@ -241,7 +241,13 @@ export async function main(args: string[]) {
 	}
 
 	// Build system prompt
-	const systemPrompt = buildSystemPrompt(parsed.systemPrompt, parsed.tools, parsed.appendSystemPrompt);
+	const skillsEnabled = !parsed.noSkills && settingsManager.getSkillsEnabled();
+	const systemPrompt = buildSystemPrompt({
+		customPrompt: parsed.systemPrompt,
+		selectedTools: parsed.tools,
+		appendSystemPrompt: parsed.appendSystemPrompt,
+		skillsEnabled,
+	});
 
 	// Handle session restoration
 	let modelFallbackMessage: string | null = null;

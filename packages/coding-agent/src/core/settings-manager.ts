@@ -14,6 +14,10 @@ export interface RetrySettings {
 	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
 }
 
+export interface SkillsSettings {
+	enabled?: boolean; // default: true
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -28,6 +32,7 @@ export interface Settings {
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	hooks?: string[]; // Array of hook file paths
 	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
+	skills?: SkillsSettings;
 }
 
 export class SettingsManager {
@@ -218,6 +223,18 @@ export class SettingsManager {
 
 	setHookTimeout(timeout: number): void {
 		this.settings.hookTimeout = timeout;
+		this.save();
+	}
+
+	getSkillsEnabled(): boolean {
+		return this.settings.skills?.enabled ?? true;
+	}
+
+	setSkillsEnabled(enabled: boolean): void {
+		if (!this.settings.skills) {
+			this.settings.skills = {};
+		}
+		this.settings.skills.enabled = enabled;
 		this.save();
 	}
 }
