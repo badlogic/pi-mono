@@ -470,13 +470,15 @@ Usage: `/component Button "onClick handler" "disabled support"`
 Skills are instruction files loaded on-demand when tasks match their descriptions. Compatible with Claude Code and Codex CLI skill formats.
 
 **Skill locations:**
-- Pi user: `~/.pi/agent/skills/**/*.md` (recursive)
-- Pi project: `.pi/skills/**/*.md` (recursive)
+- Pi user: `~/.pi/agent/skills/**/SKILL.md` (recursive, colon-separated names)
+- Pi project: `.pi/skills/**/SKILL.md` (recursive, colon-separated names)
 - Claude Code user: `~/.claude/skills/*/SKILL.md` (one level)
 - Claude Code project: `.claude/skills/*/SKILL.md` (one level)
 - Codex CLI: `~/.codex/skills/**/SKILL.md` (recursive)
 
 Later locations win on name collisions (Pi skills override Claude/Codex).
+
+Pi skills in subdirectories use colon-separated names: `~/.pi/agent/skills/db/migrate/SKILL.md` → `db:migrate`
 
 **Format:**
 
@@ -494,8 +496,8 @@ Helper scripts: {baseDir}/scripts/
 ```
 
 - `description`: Required. Shown in system prompt for agent to decide when to load.
-- `name`: Optional. Overrides filename/directory name.
-- `{baseDir}`: Replaced with skill's directory path.
+- `name`: Optional. Overrides directory name.
+- `{baseDir}`: Placeholder for the skill's directory. Agent substitutes it when following instructions.
 
 **How it works:**
 
@@ -504,8 +506,8 @@ Skills are listed in the system prompt with descriptions:
 ```
 <available_skills>
 - pdf-extract: Extract text and tables from PDF files
-  File: ~/.pi/agent/skills/pdf-extract.md
-  Base directory: ~/.pi/agent/skills
+  File: ~/.pi/agent/skills/pdf-extract/SKILL.md
+  Base directory: ~/.pi/agent/skills/pdf-extract
 </available_skills>
 ```
 

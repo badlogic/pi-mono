@@ -1,12 +1,6 @@
 # Changelog
 
-## [0.19.1] - 2025-12-12
-
-### Fixed
-
-- Documentation: Added skills system documentation to README (setup, usage, CLI flags, settings)
-
-## [Unreleased]
+## [0.20.0] - 2025-12-13
 
 ### Breaking Changes
 
@@ -15,6 +9,12 @@
 ### Added
 
 - Display loaded skills on startup in interactive mode
+
+## [0.19.1] - 2025-12-12
+
+### Fixed
+
+- Documentation: Added skills system documentation to README (setup, usage, CLI flags, settings)
 
 ## [0.19.0] - 2025-12-12
 
