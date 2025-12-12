@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.7] - 2025-12-12
+
+### Added
+
+- Timestamp prefix on user messages (`[YYYY-MM-DD HH:MM:SS]`) so mom knows current date/time
+
+### Fixed
+
+- Sync deduplication now strips timestamp prefix before comparing
 
 ## [0.18.6] - 2025-12-12
 

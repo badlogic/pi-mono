@@ -581,9 +581,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			log.logInfo(`Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`);
 			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
 
-			// Build user message with username prefix
-			// Format: "[username]: message" so LLM knows who's talking
-			let userMessage = `[${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
+			// Build user message with timestamp and username prefix
+			// Format: "[YYYY-MM-DD HH:MM:SS] [username]: message" so LLM knows when and who
+			const now = new Date();
+			const timestamp = now.toISOString().slice(0, 19).replace("T", " ");
+			let userMessage = `[${timestamp}] [${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
 			// Add attachment paths if any (convert to absolute paths in execution environment)
 			if (ctx.message.attachments && ctx.message.attachments.length > 0) {
