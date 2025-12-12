@@ -4,12 +4,13 @@ Skills are instruction files that the agent loads on-demand for specific tasks.
 
 ## Skill Locations
 
-Skills are discovered from these locations (later overrides earlier on name collision):
+Skills are discovered from these locations (in order of priority, later wins on name collision):
 
-1. `~/.claude/skills/*/SKILL.md` (Claude Code user skills)
-2. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project skills)
-3. `~/.pi/agent/skills/*.md` (Pi user skills)
-4. `<cwd>/.pi/skills/*.md` (Pi project skills)
+1. `~/.codex/skills/**/SKILL.md` (Codex CLI user skills, recursive)
+2. `~/.claude/skills/*/SKILL.md` (Claude Code user skills)
+3. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project skills)
+4. `~/.pi/agent/skills/**/*.md` (Pi user skills, recursive)
+5. `<cwd>/.pi/skills/**/*.md` (Pi project skills, recursive)
 
 Skill names and descriptions are listed in the system prompt. When a task matches a skill's description, the agent uses the `read` tool to load it.
 
@@ -53,6 +54,10 @@ Pi skills in subdirectories use colon-separated names:
 ## Claude Code Compatibility
 
 Pi reads Claude Code skills from `~/.claude/skills/*/SKILL.md`. The `allowed-tools` and `model` frontmatter fields are ignored since Pi cannot enforce them.
+
+## Codex CLI Compatibility
+
+Pi reads Codex CLI skills from `~/.codex/skills/`. Unlike Claude Code skills (one level deep), Codex skills are scanned recursively, matching Codex CLI's behavior. Hidden files/directories (starting with `.`) and symlinks are skipped.
 
 ## Disabling Skills
 

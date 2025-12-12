@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME } from "../config.js";
 
 export interface SkillFrontmatter {
@@ -8,7 +8,7 @@ export interface SkillFrontmatter {
 	description: string;
 }
 
-export type SkillSource = "user" | "project" | "claude-user" | "claude-project";
+export type SkillSource = "user" | "project" | "claude-user" | "claude-project" | "codex-user";
 
 export interface Skill {
 	name: string;
@@ -18,7 +18,7 @@ export interface Skill {
 	source: SkillSource;
 }
 
-type SkillFormat = "pi" | "claude";
+type SkillFormat = "pi" | "claude" | "codex";
 
 function stripQuotes(value: string): string {
 	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
@@ -71,6 +71,14 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 		const entries = readdirSync(dir, { withFileTypes: true });
 
 		for (const entry of entries) {
+			if (entry.name.startsWith(".")) {
+				continue;
+			}
+
+			if (entry.isSymbolicLink()) {
+				continue;
+			}
+
 			const fullPath = join(dir, entry.name);
 
 			if (format === "pi") {
@@ -98,7 +106,7 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 						});
 					} catch {}
 				}
-			} else {
+			} else if (format === "claude") {
 				if (!entry.isDirectory()) {
 					continue;
 				}
@@ -128,6 +136,30 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 						source,
 					});
 				} catch {}
+			} else if (format === "codex") {
+				if (entry.isDirectory()) {
+					skills.push(...loadSkillsFromDir(fullPath, source, format));
+				} else if (entry.isFile() && entry.name === "SKILL.md") {
+					try {
+						const rawContent = readFileSync(fullPath, "utf-8");
+						const { frontmatter } = parseFrontmatter(rawContent);
+
+						if (!frontmatter.description) {
+							continue;
+						}
+
+						const skillDir = dirname(fullPath);
+						const name = frontmatter.name || basename(skillDir);
+
+						skills.push({
+							name,
+							description: frontmatter.description,
+							filePath: fullPath,
+							baseDir: skillDir,
+							source,
+						});
+					} catch {}
+				}
 			}
 		}
 	} catch {}
@@ -137,6 +169,11 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 
 export function loadSkills(): Skill[] {
 	const skillMap = new Map<string, Skill>();
+
+	const codexUserDir = join(homedir(), ".codex", "skills");
+	for (const skill of loadSkillsFromDir(codexUserDir, "codex-user", "codex")) {
+		skillMap.set(skill.name, skill);
+	}
 
 	const claudeUserDir = join(homedir(), ".claude", "skills");
 	for (const skill of loadSkillsFromDir(claudeUserDir, "claude-user", "claude")) {
