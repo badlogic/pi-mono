@@ -181,6 +181,48 @@ Mom automatically reads these files before responding. You can ask her to update
 
 Memory files typically contain things like brief descriptions of available custom CLI tools and where to find them, email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
 
+### Events (Scheduled Wake-ups)
+
+Mom can schedule events that wake her up at specific times or when external things happen. Events are JSON files in `data/events/`. The harness watches this directory and triggers mom when events are due.
+
+**Three event types:**
+
+| Type | When it triggers | Use case |
+|------|------------------|----------|
+| **Immediate** | As soon as file is created | Webhooks, external signals, programs mom writes |
+| **One-shot** | At a specific date/time, once | Reminders, scheduled tasks |
+| **Periodic** | On a cron schedule, repeatedly | Daily summaries, inbox checks, recurring tasks |
+
+**Examples:**
+
+```json
+// Immediate - triggers instantly
+{"type": "immediate", "channelId": "C123ABC", "text": "New GitHub issue opened"}
+
+// One-shot - triggers at specified time, then deleted
+{"type": "one-shot", "channelId": "C123ABC", "text": "Remind Mario about dentist", "at": "2025-12-15T09:00:00+01:00"}
+
+// Periodic - triggers on cron schedule, persists until deleted
+{"type": "periodic", "channelId": "C123ABC", "text": "Check inbox", "schedule": "0 9 * * 1-5", "timezone": "Europe/Vienna"}
+```
+
+**How it works:**
+
+1. Mom (or a program she writes) creates a JSON file in `data/events/`
+2. The harness detects the file and schedules it
+3. When due, mom receives a message: `[EVENT:filename:type:schedule] text`
+4. Immediate and one-shot events are auto-deleted after triggering
+5. Periodic events persist until explicitly deleted
+
+**Silent completion:** For periodic events that check for activity (inbox, notifications), mom may find nothing to report. She can respond with just `[SILENT]` to delete the status message and post nothing to Slack. This prevents channel spam from periodic checks.
+
+**Limits:**
+- Maximum 5 events can be queued per channel
+- Use unique filenames (e.g., `reminder-$(date +%s).json`) to avoid overwrites
+- Periodic events should debounce (e.g., check inbox every 15 minutes, not per-email)
+
+**Example workflow:** Ask mom to "remind me about the dentist tomorrow at 9am" and she'll create a one-shot event. Ask her to "check my inbox every morning at 9" and she'll create a periodic event with cron schedule `0 9 * * *`.
+
 ### Custom CLI Tools ("Skills")
 
 Mom can write custom CLI tools to help with recurring tasks, access specific systems like email, calendars, web search, CRM/CMS platforms, issue trackers, Notion, project management tools, or process data (generate charts, Excel sheets, reports, etc.). You can attach files and ask her to process them with a skill, or let her pick the right tool for the task. These "skills" are stored in:
