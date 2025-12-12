@@ -617,8 +617,8 @@ export function syncLogToContext(channelDir: string, excludeAfterTs?: string): n
 						typeof entry.message.content === "string" ? entry.message.content : entry.message.content?.[0]?.text;
 					if (content) {
 						// Strip timestamp prefix for comparison (live messages have it, log messages don't)
-						// Format: [YYYY-MM-DD HH:MM:SS] [username]: text
-						content = content.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] /, "");
+						// Format: [YYYY-MM-DD HH:MM:SS+HH:MM] [username]: text
+						content = content.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}\] /, "");
 						// Strip attachments section for comparison (live messages have it, log messages don't)
 						const attachmentsIdx = content.indexOf("\n\n<slack_attachments>\n");
 						if (attachmentsIdx !== -1) {

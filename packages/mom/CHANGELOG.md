@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.8] - 2025-12-12
+
+### Changed
+
+- Timestamp prefix now includes timezone offset (`[YYYY-MM-DD HH:MM:SS+HH:MM]`)
 
 ## [0.18.7] - 2025-12-12
 

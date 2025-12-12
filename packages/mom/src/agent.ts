@@ -582,9 +582,14 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			log.logInfo(`Channels: ${ctx.channels.length}, Users: ${ctx.users.length}`);
 
 			// Build user message with timestamp and username prefix
-			// Format: "[YYYY-MM-DD HH:MM:SS] [username]: message" so LLM knows when and who
+			// Format: "[YYYY-MM-DD HH:MM:SS+HH:MM] [username]: message" so LLM knows when and who
 			const now = new Date();
-			const timestamp = now.toISOString().slice(0, 19).replace("T", " ");
+			const pad = (n: number) => n.toString().padStart(2, "0");
+			const offset = -now.getTimezoneOffset();
+			const offsetSign = offset >= 0 ? "+" : "-";
+			const offsetHours = pad(Math.floor(Math.abs(offset) / 60));
+			const offsetMins = pad(Math.abs(offset) % 60);
+			const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offsetSign}${offsetHours}:${offsetMins}`;
 			let userMessage = `[${timestamp}] [${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
 			// Add attachment paths if any (convert to absolute paths in execution environment)
