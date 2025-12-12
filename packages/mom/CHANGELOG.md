@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.2] - 2025-12-12
+
 ### Added
 
 - Events system: schedule wake-ups via JSON files in `workspace/events/`
