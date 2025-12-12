@@ -72,9 +72,10 @@ export interface MomHandler {
 
 	/**
 	 * Handle an event that triggers mom (ASYNC)
-	 * Called only when isRunning() returned false
+	 * Called only when isRunning() returned false for user messages.
+	 * Events always queue and pass isEvent=true.
 	 */
-	handleEvent(event: SlackEvent, slack: SlackBot): Promise<void>;
+	handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void>;
 
 	/**
 	 * Handle stop command (ASYNC)
@@ -96,6 +97,10 @@ class ChannelQueue {
 	enqueue(work: QueuedWork): void {
 		this.queue.push(work);
 		this.processNext();
+	}
+
+	size(): number {
+		return this.queue.length;
 	}
 
 	private async processNext(): Promise<void> {
@@ -224,6 +229,25 @@ export class SlackBot {
 			attachments: [],
 			isBot: true,
 		});
+	}
+
+	// ==========================================================================
+	// Events Integration
+	// ==========================================================================
+
+	/**
+	 * Enqueue an event for processing. Always queues (no "already working" rejection).
+	 * Returns true if enqueued, false if queue is full (max 5).
+	 */
+	enqueueEvent(event: SlackEvent): boolean {
+		const queue = this.getQueue(event.channel);
+		if (queue.size() >= 5) {
+			log.logWarning(`Event queue full for ${event.channel}, discarding: ${event.text.substring(0, 50)}`);
+			return false;
+		}
+		log.logInfo(`Enqueueing event for ${event.channel}: ${event.text.substring(0, 50)}`);
+		queue.enqueue(() => this.handler.handleEvent(event, this, true));
+		return true;
 	}
 
 	// ==========================================================================

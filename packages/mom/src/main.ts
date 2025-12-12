@@ -4,6 +4,7 @@ import { join, resolve } from "path";
 import { type AgentRunner, getOrCreateRunner } from "./agent.js";
 import { syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
+import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { type MomHandler, type SlackBot, SlackBot as SlackBotClass, type SlackEvent } from "./slack.js";
@@ -113,7 +114,7 @@ function getState(channelId: string): ChannelState {
 // Create SlackContext adapter
 // ============================================================================
 
-function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelState) {
+function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelState, isEvent?: boolean) {
 	let messageTs: string | null = null;
 	let accumulatedText = "";
 	let isWorking = true;
@@ -121,6 +122,9 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 	let updatePromise = Promise.resolve();
 
 	const user = slack.getUser(event.user);
+
+	// Extract event filename for status message
+	const eventFilename = isEvent ? event.text.match(/^\[EVENT:([^:]+):/)?.[1] : undefined;
 
 	return {
 		message: {
@@ -179,8 +183,13 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 
 		setTyping: async (isTyping: boolean) => {
 			if (isTyping && !messageTs) {
-				accumulatedText = "_Thinking_";
-				messageTs = await slack.postMessage(event.channel, accumulatedText + workingIndicator);
+				updatePromise = updatePromise.then(async () => {
+					if (!messageTs) {
+						accumulatedText = eventFilename ? `_Starting event: ${eventFilename}_` : "_Thinking_";
+						messageTs = await slack.postMessage(event.channel, accumulatedText + workingIndicator);
+					}
+				});
+				await updatePromise;
 			}
 		},
 
@@ -223,7 +232,7 @@ const handler: MomHandler = {
 		}
 	},
 
-	async handleEvent(event: SlackEvent, slack: SlackBot): Promise<void> {
+	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
 		const state = getState(event.channel);
 		const channelDir = join(workingDir, event.channel);
 
@@ -243,7 +252,7 @@ const handler: MomHandler = {
 			}
 
 			// Create context adapter
-			const ctx = createSlackContext(event, slack, state);
+			const ctx = createSlackContext(event, slack, state, isEvent);
 
 			// Run the agent
 			await ctx.setTyping(true);
@@ -281,6 +290,23 @@ const bot = new SlackBotClass(handler, {
 	botToken: MOM_SLACK_BOT_TOKEN,
 	workingDir,
 	store: sharedStore,
+});
+
+// Start events watcher
+const eventsWatcher = createEventsWatcher(workingDir, bot);
+eventsWatcher.start();
+
+// Handle shutdown
+process.on("SIGINT", () => {
+	log.logInfo("Shutting down...");
+	eventsWatcher.stop();
+	process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+	log.logInfo("Shutting down...");
+	eventsWatcher.stop();
+	process.exit(0);
 });
 
 bot.start();

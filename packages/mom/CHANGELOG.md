@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Events system: schedule wake-ups via JSON files in `workspace/events/`
+  - Immediate events: trigger when file is created (for webhooks, external signals)
+  - One-shot events: trigger at specific time (for reminders)
+  - Periodic events: trigger on cron schedule (for recurring tasks)
+- `SlackBot.enqueueEvent()` for queueing events (max 5 per channel)
+- Events documentation in `docs/events.md`
+- System prompt section explaining events to mom
+
 ## [0.18.8] - 2025-12-12
 
 ### Changed

@@ -160,6 +160,63 @@ Store in \`${workspacePath}/skills/<name>/\` or \`${channelPath}/skills/<name>/\
 Each skill needs a \`SKILL.md\` documenting usage. Read it before using a skill.
 List skills in global memory so you remember them.
 
+## Events
+You can schedule events that wake you up at specific times or when external things happen. Events are JSON files in \`${workspacePath}/events/\`.
+
+### Event Types
+
+**Immediate** - Triggers as soon as harness sees the file. Use in scripts/webhooks to signal external events.
+\`\`\`json
+{"type": "immediate", "channelId": "${channelId}", "text": "New GitHub issue opened"}
+\`\`\`
+
+**One-shot** - Triggers once at a specific time. Use for reminders.
+\`\`\`json
+{"type": "one-shot", "channelId": "${channelId}", "text": "Remind Mario about dentist", "at": "2025-12-15T09:00:00+01:00"}
+\`\`\`
+
+**Periodic** - Triggers on a cron schedule. Use for recurring tasks.
+\`\`\`json
+{"type": "periodic", "channelId": "${channelId}", "text": "Check inbox and summarize", "schedule": "0 9 * * 1-5", "timezone": "${Intl.DateTimeFormat().resolvedOptions().timeZone}"}
+\`\`\`
+
+### Cron Format
+\`minute hour day-of-month month day-of-week\`
+- \`0 9 * * *\` = daily at 9:00
+- \`0 9 * * 1-5\` = weekdays at 9:00
+- \`30 14 * * 1\` = Mondays at 14:30
+- \`0 0 1 * *\` = first of each month at midnight
+
+### Timezones
+All \`at\` timestamps must include offset (e.g., \`+01:00\`). Periodic events use IANA timezone names. The harness runs in ${Intl.DateTimeFormat().resolvedOptions().timeZone}. When users mention times without timezone, assume ${Intl.DateTimeFormat().resolvedOptions().timeZone}.
+
+### Creating Events
+Use unique filenames to avoid overwriting existing events. Include a timestamp or random suffix:
+\`\`\`bash
+cat > ${workspacePath}/events/dentist-reminder-$(date +%s).json << 'EOF'
+{"type": "one-shot", "channelId": "${channelId}", "text": "Dentist tomorrow", "at": "2025-12-14T09:00:00+01:00"}
+EOF
+\`\`\`
+Or check if file exists first before creating.
+
+### Managing Events
+- List: \`ls ${workspacePath}/events/\`
+- View: \`cat ${workspacePath}/events/foo.json\`
+- Delete/cancel: \`rm ${workspacePath}/events/foo.json\`
+
+### When Events Trigger
+You receive a message like:
+\`\`\`
+[EVENT:dentist-reminder.json:one-shot:2025-12-14T09:00:00+01:00] Dentist tomorrow
+\`\`\`
+Immediate and one-shot events auto-delete after triggering. Periodic events persist until you delete them.
+
+### Debouncing
+When writing programs that create immediate events (email watchers, webhook handlers, etc.), always debounce. If 50 emails arrive in a minute, don't create 50 immediate events. Instead collect events over a window and create ONE immediate event summarizing what happened, or just signal "new activity, check inbox" rather than per-item events. Or simpler: use a periodic event to check for new items every N minutes instead of immediate events.
+
+### Limits
+Maximum 5 events can be queued. Don't create excessive immediate or periodic events.
+
 ## Memory
 Write to MEMORY.md files to persist context across conversations.
 - Global (${workspacePath}/MEMORY.md): skills, preferences, project info
