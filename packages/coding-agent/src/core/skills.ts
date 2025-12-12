@@ -18,7 +18,7 @@ export interface Skill {
 	source: SkillSource;
 }
 
-type SkillFormat = "pi" | "claude" | "codex";
+type SkillFormat = "recursive" | "claude";
 
 function stripQuotes(value: string): string {
 	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
@@ -60,7 +60,13 @@ function parseFrontmatter(content: string): { frontmatter: SkillFrontmatter; bod
 	return { frontmatter, body };
 }
 
-function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat, subdir: string = ""): Skill[] {
+function loadSkillsFromDir(
+	dir: string,
+	source: SkillSource,
+	format: SkillFormat,
+	useColonPath: boolean = false,
+	subdir: string = "",
+): Skill[] {
 	const skills: Skill[] = [];
 
 	if (!existsSync(dir)) {
@@ -81,11 +87,12 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 
 			const fullPath = join(dir, entry.name);
 
-			if (format === "pi") {
+			if (format === "recursive") {
+				// Recursive format: scan directories, look for SKILL.md files
 				if (entry.isDirectory()) {
 					const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
-					skills.push(...loadSkillsFromDir(fullPath, source, format, newSubdir));
-				} else if (entry.isFile() && entry.name.endsWith(".md")) {
+					skills.push(...loadSkillsFromDir(fullPath, source, format, useColonPath, newSubdir));
+				} else if (entry.isFile() && entry.name === "SKILL.md") {
 					try {
 						const rawContent = readFileSync(fullPath, "utf-8");
 						const { frontmatter } = parseFrontmatter(rawContent);
@@ -94,19 +101,22 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 							continue;
 						}
 
-						const nameFromFile = entry.name.slice(0, -3);
-						const name = frontmatter.name || (subdir ? `${subdir}:${nameFromFile}` : nameFromFile);
+						const skillDir = dirname(fullPath);
+						// useColonPath: db:migrate (pi), otherwise just: migrate (codex)
+						const nameFromPath = useColonPath ? subdir || basename(skillDir) : basename(skillDir);
+						const name = frontmatter.name || nameFromPath;
 
 						skills.push({
 							name,
 							description: frontmatter.description,
 							filePath: fullPath,
-							baseDir: dirname(fullPath),
+							baseDir: skillDir,
 							source,
 						});
 					} catch {}
 				}
 			} else if (format === "claude") {
+				// Claude format: only one level deep, each directory must contain SKILL.md
 				if (!entry.isDirectory()) {
 					continue;
 				}
@@ -136,30 +146,6 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 						source,
 					});
 				} catch {}
-			} else if (format === "codex") {
-				if (entry.isDirectory()) {
-					skills.push(...loadSkillsFromDir(fullPath, source, format));
-				} else if (entry.isFile() && entry.name === "SKILL.md") {
-					try {
-						const rawContent = readFileSync(fullPath, "utf-8");
-						const { frontmatter } = parseFrontmatter(rawContent);
-
-						if (!frontmatter.description) {
-							continue;
-						}
-
-						const skillDir = dirname(fullPath);
-						const name = frontmatter.name || basename(skillDir);
-
-						skills.push({
-							name,
-							description: frontmatter.description,
-							filePath: fullPath,
-							baseDir: skillDir,
-							source,
-						});
-					} catch {}
-				}
 			}
 		}
 	} catch {}
@@ -170,28 +156,31 @@ function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat
 export function loadSkills(): Skill[] {
 	const skillMap = new Map<string, Skill>();
 
+	// Codex: recursive, simple directory name
 	const codexUserDir = join(homedir(), ".codex", "skills");
-	for (const skill of loadSkillsFromDir(codexUserDir, "codex-user", "codex")) {
+	for (const skill of loadSkillsFromDir(codexUserDir, "codex-user", "recursive", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
+	// Claude: single level only
 	const claudeUserDir = join(homedir(), ".claude", "skills");
-	for (const skill of loadSkillsFromDir(claudeUserDir, "claude-user", "claude")) {
+	for (const skill of loadSkillsFromDir(claudeUserDir, "claude-user", "claude", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const claudeProjectDir = resolve(process.cwd(), ".claude", "skills");
-	for (const skill of loadSkillsFromDir(claudeProjectDir, "claude-project", "claude")) {
+	for (const skill of loadSkillsFromDir(claudeProjectDir, "claude-project", "claude", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
+	// Pi: recursive, colon-separated path names
 	const globalSkillsDir = join(homedir(), CONFIG_DIR_NAME, "agent", "skills");
-	for (const skill of loadSkillsFromDir(globalSkillsDir, "user", "pi")) {
+	for (const skill of loadSkillsFromDir(globalSkillsDir, "user", "recursive", true)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const projectSkillsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "skills");
-	for (const skill of loadSkillsFromDir(projectSkillsDir, "project", "pi")) {
+	for (const skill of loadSkillsFromDir(projectSkillsDir, "project", "recursive", true)) {
 		skillMap.set(skill.name, skill);
 	}
 

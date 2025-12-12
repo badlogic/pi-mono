@@ -8,21 +8,13 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Pi skills now use `SKILL.md` convention**: Pi skills must now be named `SKILL.md` inside a directory, matching Codex CLI format. Previously any `*.md` file was treated as a skill. Migrate by renaming `~/.pi/agent/skills/foo.md` to `~/.pi/agent/skills/foo/SKILL.md`.
+
 ### Added
 
 - Display loaded skills on startup in interactive mode
-
-### Fixed
-
-### Changed
-
-
-### Added
-
-### Fixed
-
-### Changed
-
 
 ## [0.19.0] - 2025-12-12
 

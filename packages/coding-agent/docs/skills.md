@@ -9,8 +9,8 @@ Skills are discovered from these locations (in order of priority, later wins on 
 1. `~/.codex/skills/**/SKILL.md` (Codex CLI user skills, recursive)
 2. `~/.claude/skills/*/SKILL.md` (Claude Code user skills)
 3. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project skills)
-4. `~/.pi/agent/skills/**/*.md` (Pi user skills, recursive)
-5. `<cwd>/.pi/skills/**/*.md` (Pi project skills, recursive)
+4. `~/.pi/agent/skills/**/SKILL.md` (Pi user skills, recursive)
+5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project skills, recursive)
 
 Skill names and descriptions are listed in the system prompt. When a task matches a skill's description, the agent uses the `read` tool to load it.
 
@@ -43,13 +43,13 @@ The parser only supports single-line `key: value` syntax. Multiline YAML blocks 
 
 ### Variables
 
-`{baseDir}` is replaced with the directory containing the skill file. Use it to reference bundled scripts or resources.
+Use `{baseDir}` as a placeholder for the skill's directory. The agent is told each skill's base directory and will substitute it when following the instructions.
 
-### Subdirectories (Pi Skills)
+### Subdirectories
 
-Pi skills in subdirectories use colon-separated names:
-- `~/.pi/agent/skills/db/migrate.md` → `db:migrate`
-- `<cwd>/.pi/skills/aws/s3/upload.md` → `aws:s3:upload`
+Pi and Codex skills in subdirectories use colon-separated names:
+- `~/.pi/agent/skills/db/migrate/SKILL.md` → `db:migrate`
+- `<cwd>/.pi/skills/aws/s3/upload/SKILL.md` → `aws:s3:upload`
 
 ## Claude Code Compatibility
 
