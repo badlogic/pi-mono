@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.18.8] - 2025-12-12
 
 ### Changed
