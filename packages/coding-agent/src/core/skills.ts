@@ -1,8 +1,24 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
-import { CONFIG_DIR_NAME } from "../../config.js";
-import type { Skill, SkillFrontmatter, SkillSource } from "./types.js";
+import { CONFIG_DIR_NAME } from "../config.js";
+
+export interface SkillFrontmatter {
+	name?: string;
+	description: string;
+}
+
+export type SkillSource = "user" | "project" | "claude-user" | "claude-project";
+
+export interface Skill {
+	name: string;
+	description: string;
+	filePath: string;
+	baseDir: string;
+	source: SkillSource;
+}
+
+type SkillFormat = "pi" | "claude";
 
 function stripQuotes(value: string): string {
 	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
@@ -44,7 +60,7 @@ function parseFrontmatter(content: string): { frontmatter: SkillFrontmatter; bod
 	return { frontmatter, body };
 }
 
-function loadPiSkillsFromDir(dir: string, source: SkillSource, subdir: string = ""): Skill[] {
+function loadSkillsFromDir(dir: string, source: SkillSource, format: SkillFormat, subdir: string = ""): Skill[] {
 	const skills: Skill[] = [];
 
 	if (!existsSync(dir)) {
@@ -57,26 +73,58 @@ function loadPiSkillsFromDir(dir: string, source: SkillSource, subdir: string = 
 		for (const entry of entries) {
 			const fullPath = join(dir, entry.name);
 
-			if (entry.isDirectory()) {
-				const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
-				skills.push(...loadPiSkillsFromDir(fullPath, source, newSubdir));
-			} else if (entry.isFile() && entry.name.endsWith(".md")) {
+			if (format === "pi") {
+				if (entry.isDirectory()) {
+					const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
+					skills.push(...loadSkillsFromDir(fullPath, source, format, newSubdir));
+				} else if (entry.isFile() && entry.name.endsWith(".md")) {
+					try {
+						const rawContent = readFileSync(fullPath, "utf-8");
+						const { frontmatter } = parseFrontmatter(rawContent);
+
+						if (!frontmatter.description) {
+							continue;
+						}
+
+						const nameFromFile = entry.name.slice(0, -3);
+						const name = frontmatter.name || (subdir ? `${subdir}:${nameFromFile}` : nameFromFile);
+
+						skills.push({
+							name,
+							description: frontmatter.description,
+							filePath: fullPath,
+							baseDir: dirname(fullPath),
+							source,
+						});
+					} catch {}
+				}
+			} else {
+				if (!entry.isDirectory()) {
+					continue;
+				}
+
+				const skillDir = fullPath;
+				const skillFile = join(skillDir, "SKILL.md");
+
+				if (!existsSync(skillFile)) {
+					continue;
+				}
+
 				try {
-					const rawContent = readFileSync(fullPath, "utf-8");
+					const rawContent = readFileSync(skillFile, "utf-8");
 					const { frontmatter } = parseFrontmatter(rawContent);
 
 					if (!frontmatter.description) {
 						continue;
 					}
 
-					const nameFromFile = entry.name.slice(0, -3);
-					const name = frontmatter.name || (subdir ? `${subdir}:${nameFromFile}` : nameFromFile);
+					const name = frontmatter.name || entry.name;
 
 					skills.push({
 						name,
 						description: frontmatter.description,
-						filePath: fullPath,
-						baseDir: dirname(fullPath),
+						filePath: skillFile,
+						baseDir: skillDir,
 						source,
 					});
 				} catch {}
@@ -87,72 +135,26 @@ function loadPiSkillsFromDir(dir: string, source: SkillSource, subdir: string = 
 	return skills;
 }
 
-function loadClaudeSkillsFromDir(dir: string, source: SkillSource): Skill[] {
-	const skills: Skill[] = [];
-
-	if (!existsSync(dir)) {
-		return skills;
-	}
-
-	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
-
-		for (const entry of entries) {
-			if (!entry.isDirectory()) {
-				continue;
-			}
-
-			const skillDir = join(dir, entry.name);
-			const skillFile = join(skillDir, "SKILL.md");
-
-			if (!existsSync(skillFile)) {
-				continue;
-			}
-
-			try {
-				const rawContent = readFileSync(skillFile, "utf-8");
-				const { frontmatter } = parseFrontmatter(rawContent);
-
-				if (!frontmatter.description) {
-					continue;
-				}
-
-				const name = frontmatter.name || entry.name;
-
-				skills.push({
-					name,
-					description: frontmatter.description,
-					filePath: skillFile,
-					baseDir: skillDir,
-					source,
-				});
-			} catch {}
-		}
-	} catch {}
-
-	return skills;
-}
-
 export function loadSkills(): Skill[] {
 	const skillMap = new Map<string, Skill>();
 
 	const claudeUserDir = join(homedir(), ".claude", "skills");
-	for (const skill of loadClaudeSkillsFromDir(claudeUserDir, "claude-user")) {
+	for (const skill of loadSkillsFromDir(claudeUserDir, "claude-user", "claude")) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const claudeProjectDir = resolve(process.cwd(), ".claude", "skills");
-	for (const skill of loadClaudeSkillsFromDir(claudeProjectDir, "claude-project")) {
+	for (const skill of loadSkillsFromDir(claudeProjectDir, "claude-project", "claude")) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const globalSkillsDir = join(homedir(), CONFIG_DIR_NAME, "agent", "skills");
-	for (const skill of loadPiSkillsFromDir(globalSkillsDir, "user")) {
+	for (const skill of loadSkillsFromDir(globalSkillsDir, "user", "pi")) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const projectSkillsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "skills");
-	for (const skill of loadPiSkillsFromDir(projectSkillsDir, "project")) {
+	for (const skill of loadSkillsFromDir(projectSkillsDir, "project", "pi")) {
 		skillMap.set(skill.name, skill);
 	}
 

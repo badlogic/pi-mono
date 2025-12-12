@@ -6,7 +6,7 @@ import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
-import { loadSkills, type Skill } from "./skills/index.js";
+import { loadSkills, type Skill } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */
@@ -108,7 +108,7 @@ function buildSkillsSection(skills: Skill[]): string {
 	}
 
 	const lines = [
-		"\n\n# Available Skills\n",
+		"\n\n<available_skills>",
 		"The following skills provide specialized instructions for specific tasks.",
 		"Use the read tool to load a skill's file when the task matches its description.",
 		"Skills may contain {baseDir} placeholders - replace them with the skill's base directory path.\n",
@@ -119,6 +119,8 @@ function buildSkillsSection(skills: Skill[]): string {
 		lines.push(`  File: ${skill.filePath}`);
 		lines.push(`  Base directory: ${skill.baseDir}`);
 	}
+
+	lines.push("</available_skills>");
 
 	return lines.join("\n");
 }

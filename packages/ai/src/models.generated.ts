@@ -2008,7 +2008,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"glm-4.5v": {
 			id: "glm-4.5v",
-			name: "GLM 4.5V",
+			name: "GLM-4.5V",
 			api: "anthropic-messages",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/anthropic",
@@ -2773,7 +2773,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
-			maxTokens: 65536,
+			maxTokens: 163840,
 		} satisfies Model<"openai-completions">,
 		"prime-intellect/intellect-3": {
 			id: "prime-intellect/intellect-3",
@@ -3260,13 +3260,13 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
-				input: 0.14,
-				output: 1,
+				input: 0.15,
+				output: 0.6,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 131072,
-			maxTokens: 131072,
+			contextWindow: 262144,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-5-pro": {
 			id: "openai/gpt-5-pro",
@@ -4314,13 +4314,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.38,
-				output: 1.53,
+				input: 0.22,
+				output: 1.7999999999999998,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 262144,
+			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
 		"google/gemini-2.5-flash-lite": {
 			id: "google/gemini-2.5-flash-lite",
