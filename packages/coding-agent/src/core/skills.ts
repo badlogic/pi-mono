@@ -8,14 +8,12 @@ export interface SkillFrontmatter {
 	description: string;
 }
 
-export type SkillSource = "user" | "project" | "claude-user" | "claude-project" | "codex-user";
-
 export interface Skill {
 	name: string;
 	description: string;
 	filePath: string;
 	baseDir: string;
-	source: SkillSource;
+	source: string;
 }
 
 type SkillFormat = "recursive" | "claude";
@@ -60,9 +58,27 @@ function parseFrontmatter(content: string): { frontmatter: SkillFrontmatter; bod
 	return { frontmatter, body };
 }
 
-function loadSkillsFromDir(
+export interface LoadSkillsFromDirOptions {
+	/** Directory to scan for skills */
+	dir: string;
+	/** Source identifier for these skills */
+	source: string;
+	/** Use colon-separated path names (e.g., db:migrate) instead of simple directory name */
+	useColonPath?: boolean;
+}
+
+/**
+ * Load skills from a directory recursively.
+ * Skills are directories containing a SKILL.md file with frontmatter including a description.
+ */
+export function loadSkillsFromDir(options: LoadSkillsFromDirOptions, subdir: string = ""): Skill[] {
+	const { dir, source, useColonPath = false } = options;
+	return loadSkillsFromDirInternal(dir, source, "recursive", useColonPath, subdir);
+}
+
+function loadSkillsFromDirInternal(
 	dir: string,
-	source: SkillSource,
+	source: string,
 	format: SkillFormat,
 	useColonPath: boolean = false,
 	subdir: string = "",
@@ -91,7 +107,7 @@ function loadSkillsFromDir(
 				// Recursive format: scan directories, look for SKILL.md files
 				if (entry.isDirectory()) {
 					const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
-					skills.push(...loadSkillsFromDir(fullPath, source, format, useColonPath, newSubdir));
+					skills.push(...loadSkillsFromDirInternal(fullPath, source, format, useColonPath, newSubdir));
 				} else if (entry.isFile() && entry.name === "SKILL.md") {
 					try {
 						const rawContent = readFileSync(fullPath, "utf-8");
@@ -153,34 +169,60 @@ function loadSkillsFromDir(
 	return skills;
 }
 
+/**
+ * Format skills for inclusion in a system prompt.
+ */
+export function formatSkillsForPrompt(skills: Skill[]): string {
+	if (skills.length === 0) {
+		return "";
+	}
+
+	const lines = [
+		"\n\n<available_skills>",
+		"The following skills provide specialized instructions for specific tasks.",
+		"Use the read tool to load a skill's file when the task matches its description.",
+		"Skills may contain {baseDir} placeholders - replace them with the skill's base directory path.\n",
+	];
+
+	for (const skill of skills) {
+		lines.push(`- ${skill.name}: ${skill.description}`);
+		lines.push(`  File: ${skill.filePath}`);
+		lines.push(`  Base directory: ${skill.baseDir}`);
+	}
+
+	lines.push("</available_skills>");
+
+	return lines.join("\n");
+}
+
 export function loadSkills(): Skill[] {
 	const skillMap = new Map<string, Skill>();
 
 	// Codex: recursive, simple directory name
 	const codexUserDir = join(homedir(), ".codex", "skills");
-	for (const skill of loadSkillsFromDir(codexUserDir, "codex-user", "recursive", false)) {
+	for (const skill of loadSkillsFromDirInternal(codexUserDir, "codex-user", "recursive", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	// Claude: single level only
 	const claudeUserDir = join(homedir(), ".claude", "skills");
-	for (const skill of loadSkillsFromDir(claudeUserDir, "claude-user", "claude", false)) {
+	for (const skill of loadSkillsFromDirInternal(claudeUserDir, "claude-user", "claude", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const claudeProjectDir = resolve(process.cwd(), ".claude", "skills");
-	for (const skill of loadSkillsFromDir(claudeProjectDir, "claude-project", "claude", false)) {
+	for (const skill of loadSkillsFromDirInternal(claudeProjectDir, "claude-project", "claude", false)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	// Pi: recursive, colon-separated path names
 	const globalSkillsDir = join(homedir(), CONFIG_DIR_NAME, "agent", "skills");
-	for (const skill of loadSkillsFromDir(globalSkillsDir, "user", "recursive", true)) {
+	for (const skill of loadSkillsFromDirInternal(globalSkillsDir, "user", "recursive", true)) {
 		skillMap.set(skill.name, skill);
 	}
 
 	const projectSkillsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "skills");
-	for (const skill of loadSkillsFromDir(projectSkillsDir, "project", "recursive", true)) {
+	for (const skill of loadSkillsFromDirInternal(projectSkillsDir, "project", "recursive", true)) {
 		skillMap.set(skill.name, skill);
 	}
 

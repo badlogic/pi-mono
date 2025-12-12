@@ -1,6 +1,12 @@
 import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
-import { AgentSession, messageTransformer } from "@mariozechner/pi-coding-agent";
+import {
+	AgentSession,
+	formatSkillsForPrompt,
+	loadSkillsFromDir,
+	messageTransformer,
+	type Skill,
+} from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
@@ -94,6 +100,28 @@ function getMemory(channelDir: string): string {
 	return parts.join("\n\n");
 }
 
+function loadMomSkills(channelDir: string): Skill[] {
+	const skillMap = new Map<string, Skill>();
+
+	// channelDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
+	// workspace is the parent directory
+	const hostWorkspacePath = join(channelDir, "..");
+
+	// Load workspace-level skills (global)
+	const workspaceSkillsDir = join(hostWorkspacePath, "skills");
+	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })) {
+		skillMap.set(skill.name, skill);
+	}
+
+	// Load channel-specific skills (override workspace skills on collision)
+	const channelSkillsDir = join(channelDir, "skills");
+	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" })) {
+		skillMap.set(skill.name, skill);
+	}
+
+	return Array.from(skillMap.values());
+}
+
 function buildSystemPrompt(
 	workspacePath: string,
 	channelId: string,
@@ -101,6 +129,7 @@ function buildSystemPrompt(
 	sandboxConfig: SandboxConfig,
 	channels: ChannelInfo[],
 	users: UserInfo[],
+	skills: Skill[],
 ): string {
 	const channelPath = `${workspacePath}/${channelId}`;
 	const isDocker = sandboxConfig.type === "docker";
@@ -156,9 +185,27 @@ ${workspacePath}/
 
 ## Skills (Custom CLI Tools)
 You can create reusable CLI tools for recurring tasks (email, APIs, data processing, etc.).
-Store in \`${workspacePath}/skills/<name>/\` or \`${channelPath}/skills/<name>/\`.
-Each skill needs a \`SKILL.md\` documenting usage. Read it before using a skill.
-List skills in global memory so you remember them.
+
+### Creating Skills
+Store in \`${workspacePath}/skills/<name>/\` (global) or \`${channelPath}/skills/<name>/\` (channel-specific).
+Each skill directory needs a \`SKILL.md\` with YAML frontmatter:
+
+\`\`\`markdown
+---
+name: skill-name
+description: Short description of what this skill does
+---
+
+# Skill Name
+
+Usage instructions, examples, etc.
+Scripts are in: {baseDir}/
+\`\`\`
+
+\`name\` and \`description\` are required. Use \`{baseDir}\` as placeholder for the skill's directory path.
+
+### Available Skills
+${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
 
 ## Events
 You can schedule events that wake you up at specific times or when external things happen. Events are JSON files in \`${workspacePath}/events/\`.
@@ -352,9 +399,10 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Create tools
 	const tools = createMomTools(executor);
 
-	// Initial system prompt (will be updated each run with fresh memory/channels/users)
+	// Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
 	const memory = getMemory(channelDir);
-	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], []);
+	const skills = loadMomSkills(channelDir);
+	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
 
 	// Create session manager and settings manager
 	// Pass model info so new sessions get a header written immediately
@@ -572,8 +620,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);
 			}
 
-			// Update system prompt with fresh memory and channel/user info
+			// Update system prompt with fresh memory, channel/user info, and skills
 			const memory = getMemory(channelDir);
+			const skills = loadMomSkills(channelDir);
 			const systemPrompt = buildSystemPrompt(
 				workspacePath,
 				channelId,
@@ -581,6 +630,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				sandboxConfig,
 				ctx.channels,
 				ctx.users,
+				skills,
 			);
 			session.agent.setSystemPrompt(systemPrompt);
 

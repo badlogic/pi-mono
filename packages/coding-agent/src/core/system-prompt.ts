@@ -6,7 +6,7 @@ import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
-import { loadSkills, type Skill } from "./skills.js";
+import { formatSkillsForPrompt, loadSkills } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */
@@ -102,29 +102,6 @@ export function loadProjectContextFiles(): Array<{ path: string; content: string
 	return contextFiles;
 }
 
-function buildSkillsSection(skills: Skill[]): string {
-	if (skills.length === 0) {
-		return "";
-	}
-
-	const lines = [
-		"\n\n<available_skills>",
-		"The following skills provide specialized instructions for specific tasks.",
-		"Use the read tool to load a skill's file when the task matches its description.",
-		"Skills may contain {baseDir} placeholders - replace them with the skill's base directory path.\n",
-	];
-
-	for (const skill of skills) {
-		lines.push(`- ${skill.name}: ${skill.description}`);
-		lines.push(`  File: ${skill.filePath}`);
-		lines.push(`  Base directory: ${skill.baseDir}`);
-	}
-
-	lines.push("</available_skills>");
-
-	return lines.join("\n");
-}
-
 export interface BuildSystemPromptOptions {
 	customPrompt?: string;
 	selectedTools?: ToolName[];
@@ -173,7 +150,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
 		if (skillsEnabled && customPromptHasRead) {
 			const skills = loadSkills();
-			prompt += buildSkillsSection(skills);
+			prompt += formatSkillsForPrompt(skills);
 		}
 
 		// Add date/time and working directory last
@@ -279,7 +256,7 @@ Documentation:
 	// Append skills section (only if read tool is available)
 	if (skillsEnabled && hasRead) {
 		const skills = loadSkills();
-		prompt += buildSkillsSection(skills);
+		prompt += formatSkillsForPrompt(skills);
 	}
 
 	// Add date/time and working directory last

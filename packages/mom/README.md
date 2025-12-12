@@ -237,11 +237,50 @@ Mom can write custom CLI tools to help with recurring tasks, access specific sys
 - `data/skills/`: Global tools available everywhere
 - `data/<channel>/skills/`: Channel-specific tools
 
-Each skill includes:
-- The tool implementation (Node.js script, Bash script, etc.)
-- `SKILL.md`: Documentation on how to use the skill
-- Configuration files for API keys/credentials
-- Entry in global memory's skills table
+**Skills are auto-discovered.** Each skill directory must contain a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+description: Read, search, and send Gmail via IMAP/SMTP
+name: gmail
+---
+
+# Gmail Skill
+
+## Setup
+Run `node gmail.js setup` and enter your Gmail app password.
+
+## Usage
+\`\`\`bash
+node {baseDir}/gmail.js search --unread --limit 10
+node {baseDir}/gmail.js read 12345
+node {baseDir}/gmail.js send --to "user@example.com" --subject "Hello" --body "Message"
+\`\`\`
+```
+
+**Frontmatter fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `description` | Yes | Short description shown in mom's system prompt |
+| `name` | No | Override skill name (defaults to directory name) |
+
+**Variables:**
+
+Use `{baseDir}` as a placeholder for the skill's directory path. Mom substitutes the actual path when reading the skill.
+
+**How it works:**
+
+Mom sees available skills listed in her system prompt with their descriptions. When a task matches a skill, she reads the full `SKILL.md` to get usage instructions.
+
+**Skill directory structure:**
+```
+data/skills/gmail/
+├── SKILL.md           # Required: frontmatter + instructions
+├── gmail.js           # Tool implementation
+├── config.json        # Credentials (created on first use)
+└── package.json       # Dependencies (if Node.js)
+```
 
 You develop skills together with mom. Tell her what you need and she'll create the tools accordingly. Knowing how to program and how to steer coding agents helps with this task. Ask a friendly neighborhood programmer if you get stuck. Most tools take 5-10 minutes to create. You can even put them in a git repo for versioning and reuse across different mom instances.
 
@@ -267,21 +306,7 @@ node fetch-content.js https://example.com/article
 ```
 Mom creates a Node.js tool that fetches URLs and extracts readable content as markdown. No API key needed. Works for articles, docs, Wikipedia.
 
-You can ask mom to document each skill in global memory. Here's what that looks like:
-
-```markdown
-## Skills
-
-| Skill | Path | Description |
-|-------|------|-------------|
-| gmail | /workspace/skills/gmail/ | Read, search, send, archive Gmail via IMAP/SMTP |
-| transcribe | /workspace/skills/transcribe/ | Transcribe audio to text via Groq Whisper API |
-| fetch-content | /workspace/skills/fetch-content/ | Fetch URLs and extract content as markdown |
-
-To use a skill, read its SKILL.md first.
-```
-
-Mom will read the `SKILL.md` file before using a skill, and reuse stored credentials automatically.
+Mom automatically discovers skills and lists them in her system prompt. She reads the `SKILL.md` before using a skill and reuses stored credentials automatically.
 
 ### Updating Mom
 

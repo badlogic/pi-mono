@@ -37,7 +37,6 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:proxy, pkg:tui, pkg:web-ui
-- Browser tools (~/agent-tools/browser-tools/README.md): browser automation for frontend testing, web searches, fetching documentation
 - TUI interaction: use tmux
 
 ## Style

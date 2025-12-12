@@ -65,6 +65,15 @@ export {
 	type Settings,
 	SettingsManager,
 } from "./core/settings-manager.js";
+// Skills
+export {
+	formatSkillsForPrompt,
+	type LoadSkillsFromDirOptions,
+	loadSkills,
+	loadSkillsFromDir,
+	type Skill,
+	type SkillFrontmatter,
+} from "./core/skills.js";
 
 // Tools
 export { bashTool, codingTools, editTool, readTool, writeTool } from "./core/tools/index.js";
