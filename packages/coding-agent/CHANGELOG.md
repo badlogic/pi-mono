@@ -10,6 +10,8 @@
 
 ### Added
 
+- Display loaded skills on startup in interactive mode
+
 ### Fixed
 
 ### Changed

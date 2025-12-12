@@ -30,6 +30,7 @@ import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
 import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../core/session-manager.js";
+import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
@@ -286,6 +287,14 @@ export class InteractiveMode {
 		if (contextFiles.length > 0) {
 			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Show loaded skills
+		const skills = loadSkills();
+		if (skills.length > 0) {
+			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
