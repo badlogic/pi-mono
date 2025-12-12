@@ -26,7 +26,8 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Custom Models and Providers](#custom-models-and-providers)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
-  - [Hooks](#hooks)
+  - [Skills](#skills)
+  - [Hooks](#hooks)(#hooks)
   - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
@@ -463,6 +464,68 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 **Namespacing:** Subdirectories create prefixes. `.pi/commands/frontend/component.md` → `/component (project:frontend)`
 
+
+### Skills
+
+Skills are instruction files loaded on-demand when tasks match their descriptions. Compatible with Claude Code and Codex CLI skill formats.
+
+**Skill locations:**
+- Pi user: `~/.pi/agent/skills/**/*.md` (recursive)
+- Pi project: `.pi/skills/**/*.md` (recursive)
+- Claude Code user: `~/.claude/skills/*/SKILL.md` (one level)
+- Claude Code project: `.claude/skills/*/SKILL.md` (one level)
+- Codex CLI: `~/.codex/skills/**/SKILL.md` (recursive)
+
+Later locations win on name collisions (Pi skills override Claude/Codex).
+
+**Format:**
+
+```markdown
+---
+description: Extract text and tables from PDF files
+---
+
+# PDF Processing
+
+Use `pdftotext` for plain text extraction.
+For tables, use `tabula-py`.
+
+Helper scripts: {baseDir}/scripts/
+```
+
+- `description`: Required. Shown in system prompt for agent to decide when to load.
+- `name`: Optional. Overrides filename/directory name.
+- `{baseDir}`: Replaced with skill's directory path.
+
+**How it works:**
+
+Skills are listed in the system prompt with descriptions:
+
+```
+<available_skills>
+- pdf-extract: Extract text and tables from PDF files
+  File: ~/.pi/agent/skills/pdf-extract.md
+  Base directory: ~/.pi/agent/skills
+</available_skills>
+```
+
+Agent uses `read` tool to load full instructions when needed.
+
+**Disable skills:**
+
+CLI: `pi --no-skills`
+
+Settings (`~/.pi/agent/settings.json`):
+```json
+{
+  "skills": {
+    "enabled": false
+  }
+}
+```
+
+See [docs/skills.md](docs/skills.md) for details.
+
 ### Hooks
 
 Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. Use them to:
@@ -528,6 +591,9 @@ See [Hooks Documentation](docs/hooks.md) for full API reference.
     "reserveTokens": 16384,
     "keepRecentTokens": 20000
   },
+  "skills": {
+    "enabled": true
+  },
   "retry": {
     "enabled": true,
     "maxRetries": 3,
@@ -568,6 +634,7 @@ pi [options] [@files...] [messages...]
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--hook <path>` | Load a hook file (can be used multiple times) |
+| `--no-skills` | Disable skills discovery and loading |
 | `--export <file> [output]` | Export session to HTML |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |
