@@ -42,7 +42,11 @@ export interface PendingMessage {
 }
 
 export interface AgentRunner {
-	run(ctx: SlackContext, store: ChannelStore, pendingMessages?: PendingMessage[]): Promise<{ stopReason: string }>;
+	run(
+		ctx: SlackContext,
+		store: ChannelStore,
+		pendingMessages?: PendingMessage[],
+	): Promise<{ stopReason: string; errorMessage?: string }>;
 	abort(): void;
 }
 
@@ -346,6 +350,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
 		stopReason: "stop",
+		errorMessage: undefined as string | undefined,
 	};
 
 	// Subscribe to events ONCE
@@ -411,6 +416,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 				if (assistantMsg.stopReason) {
 					runState.stopReason = assistantMsg.stopReason;
+				}
+				if (assistantMsg.errorMessage) {
+					runState.errorMessage = assistantMsg.errorMessage;
 				}
 
 				if (assistantMsg.usage) {
@@ -492,7 +500,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			ctx: SlackContext,
 			_store: ChannelStore,
 			_pendingMessages?: PendingMessage[],
-		): Promise<{ stopReason: string }> {
+		): Promise<{ stopReason: string; errorMessage?: string }> {
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
@@ -538,6 +546,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			};
 			runState.stopReason = "stop";
+			runState.errorMessage = undefined;
 
 			// Create queue for this run
 			let queueChain = Promise.resolve();
@@ -595,25 +604,36 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Wait for queued messages
 			await queueChain;
 
-			// Final message update
-			const messages = session.messages;
-			const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
-			const finalText =
-				lastAssistant?.content
-					.filter((c): c is { type: "text"; text: string } => c.type === "text")
-					.map((c) => c.text)
-					.join("\n") || "";
-
-			if (finalText.trim()) {
+			// Handle error case - update main message and post error to thread
+			if (runState.stopReason === "error" && runState.errorMessage) {
 				try {
-					const mainText =
-						finalText.length > SLACK_MAX_LENGTH
-							? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
-							: finalText;
-					await ctx.replaceMessage(mainText);
+					await ctx.replaceMessage("_Sorry, something went wrong_");
+					await ctx.respondInThread(`_Error: ${runState.errorMessage}_`);
 				} catch (err) {
 					const errMsg = err instanceof Error ? err.message : String(err);
-					log.logWarning("Failed to replace message with final text", errMsg);
+					log.logWarning("Failed to post error message", errMsg);
+				}
+			} else {
+				// Final message update
+				const messages = session.messages;
+				const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
+				const finalText =
+					lastAssistant?.content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n") || "";
+
+				if (finalText.trim()) {
+					try {
+						const mainText =
+							finalText.length > SLACK_MAX_LENGTH
+								? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+								: finalText;
+						await ctx.replaceMessage(mainText);
+					} catch (err) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log.logWarning("Failed to replace message with final text", errMsg);
+					}
 				}
 			}
 
@@ -644,7 +664,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			runState.logCtx = null;
 			runState.queue = null;
 
-			return { stopReason: runState.stopReason };
+			return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
 		},
 
 		abort(): void {

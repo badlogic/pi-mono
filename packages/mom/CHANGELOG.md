@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.5] - 2025-12-12
+
+### Added
+
+- `--download <channel-id>` flag to download a channel's full history including thread replies as plain text
+
+### Fixed
+
+- Error handling: when agent returns `stopReason: "error"`, main message is updated to "Sorry, something went wrong" and error details are posted to the thread
 
 ## [0.18.4] - 2025-12-11
 

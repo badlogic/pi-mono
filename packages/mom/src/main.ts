@@ -3,6 +3,7 @@
 import { join, resolve } from "path";
 import { type AgentRunner, getOrCreateRunner } from "./agent.js";
 import { syncLogToContext } from "./context.js";
+import { downloadChannel } from "./download.js";
 import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { type MomHandler, type SlackBot, SlackBot as SlackBotClass, type SlackEvent } from "./slack.js";
@@ -17,10 +18,17 @@ const MOM_SLACK_BOT_TOKEN = process.env.MOM_SLACK_BOT_TOKEN;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_OAUTH_TOKEN = process.env.ANTHROPIC_OAUTH_TOKEN;
 
-function parseArgs(): { workingDir: string; sandbox: SandboxConfig } {
+interface ParsedArgs {
+	workingDir?: string;
+	sandbox: SandboxConfig;
+	downloadChannel?: string;
+}
+
+function parseArgs(): ParsedArgs {
 	const args = process.argv.slice(2);
 	let sandbox: SandboxConfig = { type: "host" };
 	let workingDir: string | undefined;
+	let downloadChannelId: string | undefined;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -28,20 +36,42 @@ function parseArgs(): { workingDir: string; sandbox: SandboxConfig } {
 			sandbox = parseSandboxArg(arg.slice("--sandbox=".length));
 		} else if (arg === "--sandbox") {
 			sandbox = parseSandboxArg(args[++i] || "");
+		} else if (arg.startsWith("--download=")) {
+			downloadChannelId = arg.slice("--download=".length);
+		} else if (arg === "--download") {
+			downloadChannelId = args[++i];
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
 		}
 	}
 
-	if (!workingDir) {
-		console.error("Usage: mom [--sandbox=host|docker:<name>] <working-directory>");
-		process.exit(1);
-	}
-
-	return { workingDir: resolve(workingDir), sandbox };
+	return {
+		workingDir: workingDir ? resolve(workingDir) : undefined,
+		sandbox,
+		downloadChannel: downloadChannelId,
+	};
 }
 
-const { workingDir, sandbox } = parseArgs();
+const parsedArgs = parseArgs();
+
+// Handle --download mode
+if (parsedArgs.downloadChannel) {
+	if (!MOM_SLACK_BOT_TOKEN) {
+		console.error("Missing env: MOM_SLACK_BOT_TOKEN");
+		process.exit(1);
+	}
+	await downloadChannel(parsedArgs.downloadChannel, MOM_SLACK_BOT_TOKEN);
+	process.exit(0);
+}
+
+// Normal bot mode - require working dir
+if (!parsedArgs.workingDir) {
+	console.error("Usage: mom [--sandbox=host|docker:<name>] <working-directory>");
+	console.error("       mom --download <channel-id>");
+	process.exit(1);
+}
+
+const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
 	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN, ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
