@@ -62,6 +62,7 @@ export interface SlackContext {
 	setTyping: (isTyping: boolean) => Promise<void>;
 	uploadFile: (filePath: string, title?: string) => Promise<void>;
 	setWorking: (working: boolean) => Promise<void>;
+	deleteMessage: () => Promise<void>;
 }
 
 export interface MomHandler {
@@ -190,6 +191,10 @@ export class SlackBot {
 
 	async updateMessage(channel: string, ts: string, text: string): Promise<void> {
 		await this.webClient.chat.update({ channel, ts, text });
+	}
+
+	async deleteMessage(channel: string, ts: string): Promise<void> {
+		await this.webClient.chat.delete({ channel, ts });
 	}
 
 	async postInThread(channel: string, threadTs: string, text: string): Promise<void> {

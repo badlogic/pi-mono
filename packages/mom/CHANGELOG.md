@@ -9,6 +9,7 @@
   - One-shot events: trigger at specific time (for reminders)
   - Periodic events: trigger on cron schedule (for recurring tasks)
 - `SlackBot.enqueueEvent()` for queueing events (max 5 per channel)
+- `[SILENT]` response marker: deletes status message, posts nothing to Slack (for periodic events with nothing to report)
 - Events documentation in `docs/events.md`
 - System prompt section explaining events to mom
 

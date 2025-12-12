@@ -130,8 +130,15 @@ When an event is dequeued and executes:
    - For one-shot: `[EVENT:dentist.json:one-shot:2025-12-15T09:00:00+01:00] Remind Mario`
    - For periodic: `[EVENT:daily-inbox.json:periodic:0 9 * * 1-5] Check inbox`
 3. After execution:
+   - If response is `[SILENT]`: delete status message, post nothing to Slack
    - Immediate and one-shot: delete the event file
    - Periodic: keep the file, event will trigger again on schedule
+
+## Silent Completion
+
+For periodic events that check for activity (inbox, notifications, etc.), mom may find nothing to report. To avoid spamming the channel, mom can respond with just `[SILENT]`. This deletes the "Starting event..." status message and posts nothing to Slack.
+
+Example: A periodic event checks for new emails every 15 minutes. If there are no new emails, mom responds `[SILENT]`. If there are new emails, mom posts a summary.
 
 ## File Naming
 

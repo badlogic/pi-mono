@@ -207,6 +207,16 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 			});
 			await updatePromise;
 		},
+
+		deleteMessage: async () => {
+			updatePromise = updatePromise.then(async () => {
+				if (messageTs) {
+					await slack.deleteMessage(event.channel, messageTs);
+					messageTs = null;
+				}
+			});
+			await updatePromise;
+		},
 	};
 }
 

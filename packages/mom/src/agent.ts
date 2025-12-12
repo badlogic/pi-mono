@@ -211,6 +211,9 @@ You receive a message like:
 \`\`\`
 Immediate and one-shot events auto-delete after triggering. Periodic events persist until you delete them.
 
+### Silent Completion
+For periodic events where there's nothing to report, respond with just \`[SILENT]\` (no other text). This deletes the status message and posts nothing to Slack. Use this to avoid spamming the channel when periodic checks find nothing actionable.
+
 ### Debouncing
 When writing programs that create immediate events (email watchers, webhook handlers, etc.), always debounce. If 50 emails arrive in a minute, don't create 50 immediate events. Instead collect events over a window and create ONE immediate event summarizing what happened, or just signal "new activity, check inbox" rather than per-item events. Or simpler: use a periodic event to check for new items every N minutes instead of immediate events.
 
@@ -687,7 +690,16 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 						.map((c) => c.text)
 						.join("\n") || "";
 
-				if (finalText.trim()) {
+				// Check for [SILENT] marker - delete message instead of posting
+				if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
+					try {
+						await ctx.deleteMessage();
+						log.logInfo("Silent response - deleted status message");
+					} catch (err) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log.logWarning("Failed to delete message for silent response", errMsg);
+					}
+				} else if (finalText.trim()) {
 					try {
 						const mainText =
 							finalText.length > SLACK_MAX_LENGTH
