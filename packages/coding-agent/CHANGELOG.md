@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.19.1] - 2025-12-12
+
+### Fixed
+
+- Documentation: Added skills system documentation to README (setup, usage, CLI flags, settings)
+
 ## [Unreleased]
 
 ### Added
