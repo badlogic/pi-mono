@@ -30,6 +30,10 @@ function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
 }
 
+export interface ToolExecutionOptions {
+	showImages?: boolean; // default: true (only used if terminal supports images)
+}
+
 /**
  * Component that renders a tool call with its result (updateable)
  */
@@ -39,16 +43,18 @@ export class ToolExecutionComponent extends Container {
 	private toolName: string;
 	private args: any;
 	private expanded = false;
+	private showImages: boolean;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
 		details?: any;
 	};
 
-	constructor(toolName: string, args: any) {
+	constructor(toolName: string, args: any, options: ToolExecutionOptions = {}) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
+		this.showImages = options.showImages ?? true;
 		this.addChild(new Spacer(1));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.addChild(this.contentText);
@@ -94,7 +100,8 @@ export class ToolExecutionComponent extends Container {
 			const caps = getCapabilities();
 
 			for (const img of imageBlocks) {
-				if (caps.images && img.data && img.mimeType) {
+				// Show inline image only if terminal supports it AND user setting allows it
+				if (caps.images && this.showImages && img.data && img.mimeType) {
 					const imageComponent = new Image(
 						img.data,
 						img.mimeType,
@@ -124,7 +131,8 @@ export class ToolExecutionComponent extends Container {
 			.join("\n");
 
 		const caps = getCapabilities();
-		if (imageBlocks.length > 0 && !caps.images) {
+		// Show text fallback if terminal doesn't support images OR if user disabled inline images
+		if (imageBlocks.length > 0 && (!caps.images || !this.showImages)) {
 			const imageIndicators = imageBlocks
 				.map((img: any) => {
 					const dims = img.data ? (getImageDimensions(img.data, img.mimeType) ?? undefined) : undefined;
