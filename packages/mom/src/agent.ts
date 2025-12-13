@@ -100,22 +100,36 @@ function getMemory(channelDir: string): string {
 	return parts.join("\n\n");
 }
 
-function loadMomSkills(channelDir: string): Skill[] {
+function loadMomSkills(channelDir: string, workspacePath: string): Skill[] {
 	const skillMap = new Map<string, Skill>();
 
 	// channelDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
-	// workspace is the parent directory
+	// hostWorkspacePath is the parent directory on host
+	// workspacePath is the container path (e.g., /workspace)
 	const hostWorkspacePath = join(channelDir, "..");
+
+	// Helper to translate host paths to container paths
+	const translatePath = (hostPath: string): string => {
+		if (hostPath.startsWith(hostWorkspacePath)) {
+			return workspacePath + hostPath.slice(hostWorkspacePath.length);
+		}
+		return hostPath;
+	};
 
 	// Load workspace-level skills (global)
 	const workspaceSkillsDir = join(hostWorkspacePath, "skills");
 	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })) {
+		// Translate paths to container paths for system prompt
+		skill.filePath = translatePath(skill.filePath);
+		skill.baseDir = translatePath(skill.baseDir);
 		skillMap.set(skill.name, skill);
 	}
 
 	// Load channel-specific skills (override workspace skills on collision)
 	const channelSkillsDir = join(channelDir, "skills");
 	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" })) {
+		skill.filePath = translatePath(skill.filePath);
+		skill.baseDir = translatePath(skill.baseDir);
 		skillMap.set(skill.name, skill);
 	}
 
@@ -401,7 +415,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 	// Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
 	const memory = getMemory(channelDir);
-	const skills = loadMomSkills(channelDir);
+	const skills = loadMomSkills(channelDir, workspacePath);
 	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
 
 	// Create session manager and settings manager
@@ -622,7 +636,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 			// Update system prompt with fresh memory, channel/user info, and skills
 			const memory = getMemory(channelDir);
-			const skills = loadMomSkills(channelDir);
+			const skills = loadMomSkills(channelDir, workspacePath);
 			const systemPrompt = buildSystemPrompt(
 				workspacePath,
 				channelId,
