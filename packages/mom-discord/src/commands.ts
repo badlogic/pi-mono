@@ -13,7 +13,7 @@ import {
 } from "discord.js";
 import { existsSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import * as log from "./log.js";
 
 export interface CommandHandler {
@@ -163,8 +163,8 @@ export function readMemory(memoryPath: string): string {
  */
 export async function writeMemory(memoryPath: string, content: string): Promise<void> {
 	// Ensure directory exists
-	const dir = memoryPath.substring(0, memoryPath.lastIndexOf("/"));
-	const { mkdirSync, existsSync } = await import("fs");
+	const dir = dirname(memoryPath);
+	const { mkdirSync } = await import("fs");
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}

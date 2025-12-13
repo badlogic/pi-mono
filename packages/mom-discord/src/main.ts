@@ -203,10 +203,30 @@ setupCommandHandlers(
 			// Create context from interaction
 			const ctx = await bot.createContextFromInteraction(interaction, messageText);
 
+			// Log the slash command message to store so agent can see it
+			await ctx.store.logMessage(
+				channelId,
+				{
+					date: new Date().toISOString(),
+					ts: interaction.id,
+					user: interaction.user.id,
+					userName: interaction.user.username,
+					text: messageText,
+					attachments: [],
+					isBot: false,
+				},
+				interaction.guildId || undefined,
+			);
+
 			const runner = createAgentRunner(sandbox);
 			activeRuns.set(channelId, { runner, context: ctx });
 
+			await ctx.setTyping(true);
+			await ctx.setWorking(true);
+
 			const result = await runner.run(ctx, channelDir, ctx.store);
+
+			await ctx.setWorking(false);
 
 			if (result.stopReason === "error") {
 				log.logAgentError(logCtx, "Agent stopped with error");
