@@ -408,26 +408,29 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			// Build parts array with functionResponse and/or images
 			const parts: Part[] = [];
 
-			// Extract text and binary content
+			// Track original content before filtering by model capability
+			const originalImages = msg.content.filter((c): c is ImageContent => c.type === "image");
+			const originalDocuments = msg.content.filter((c): c is DocumentContent => c.type === "document");
+
+			// Extract text and binary content (filtered by model capability)
 			const textResult = msg.content
 				.filter((c): c is TextContent => c.type === "text")
 				.map((c) => c.text)
 				.join("\n");
-			const imageBlocks = model.input.includes("image")
-				? msg.content.filter((c): c is ImageContent => c.type === "image")
-				: [];
-			const documentBlocks = model.input.includes("document")
-				? msg.content.filter((c): c is DocumentContent => c.type === "document")
-				: [];
+			const imageBlocks = model.input.includes("image") ? originalImages : [];
+			const documentBlocks = model.input.includes("document") ? originalDocuments : [];
 
 			// Always add functionResponse with text result (or placeholder if only binary)
 			const hasText = textResult.length > 0;
-			const hasImages = imageBlocks.length > 0;
-			const hasDocuments = documentBlocks.length > 0;
+			// Use original content to determine if attachments existed (for placeholder)
+			const hadImages = originalImages.length > 0;
+			const hadDocuments = originalDocuments.length > 0;
+			// supportsNativeDocuments reflects whether this model can actually receive documents
+			const supportsNativeDocuments = model.input.includes("document");
 			const placeholder = getAttachmentPlaceholder({
-				hasImages,
-				hasDocuments,
-				supportsNativeDocuments: true,
+				hasImages: hadImages,
+				hasDocuments: hadDocuments,
+				supportsNativeDocuments,
 			});
 
 			parts.push({

@@ -16,26 +16,21 @@ export function attachmentsToContentBlocks(attachments: Attachment[]): Attachmen
 			continue;
 		}
 
-		if (attachment.type === "document") {
-			if (attachment.extractedText) {
-				blocks.push({
-					type: "text",
-					text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-					isDocument: true,
-				});
-			} else {
-				blocks.push({
-					type: "document",
-					data: attachment.content,
-					mimeType: attachment.mimeType,
-					fileName: attachment.fileName,
-				});
-			}
-			continue;
+		// attachment.type === "document"
+		if (attachment.extractedText) {
+			blocks.push({
+				type: "text",
+				text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
+				isDocument: true,
+			});
+		} else {
+			blocks.push({
+				type: "document",
+				data: attachment.content,
+				mimeType: attachment.mimeType,
+				fileName: attachment.fileName,
+			});
 		}
-
-		// Unknown attachment type - log a warning
-		console.warn(`Unknown attachment type "${(attachment as { type: string }).type}" ignored`);
 	}
 
 	return blocks;

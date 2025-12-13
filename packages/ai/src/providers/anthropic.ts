@@ -55,14 +55,30 @@ function convertContentBlocks(content: (TextContent | ImageContent | DocumentCon
 	  > {
 	// If only text blocks, return as concatenated string for simplicity
 	const hasImages = content.some((c) => c.type === "image");
+	const hasDocuments = content.some((c) => c.type === "document");
 	const hasPdfDocuments = content.some((c) => c.type === "document" && c.mimeType === "application/pdf");
-	if (!hasImages && !hasPdfDocuments) {
+	if (!hasImages && !hasDocuments) {
 		return sanitizeSurrogates(
 			content
 				.filter((c): c is TextContent => c.type === "text")
 				.map((c) => c.text)
 				.join("\n"),
 		);
+	}
+
+	// If we have non-PDF documents but no images/PDFs, add placeholder for dropped docs
+	if (!hasImages && !hasPdfDocuments && hasDocuments) {
+		const textContent = content
+			.filter((c): c is TextContent => c.type === "text")
+			.map((c) => c.text)
+			.join("\n");
+		const nonPdfDocs = content.filter(
+			(c): c is DocumentContent => c.type === "document" && c.mimeType !== "application/pdf",
+		);
+		const docPlaceholders = nonPdfDocs
+			.map((doc) => `[Unsupported document type dropped: ${doc.mimeType}]`)
+			.join("\n");
+		return sanitizeSurrogates(textContent + (textContent && docPlaceholders ? "\n" : "") + docPlaceholders);
 	}
 
 	// If we have binary content, convert to content block array
