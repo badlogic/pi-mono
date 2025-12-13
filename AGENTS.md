@@ -51,6 +51,13 @@ When closing issues via commit:
 - Each version section is immutable once released
 - When releasing: rename `[Unreleased]` to the new version, then add a fresh empty `[Unreleased]` section
 
+### Attribution format
+- **Internal changes (from issues)**: Reference issue only
+  - Example: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
+- **External contributions (PRs from others)**: Reference PR and credit the contributor
+  - Example: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
+- If a PR addresses an issue, reference both: `([#123](...issues/123), [#456](...pull/456) by [@user](...))` or just the PR if the issue context is clear from the description
+
 ## Releasing
 
 1. **Bump version** (all packages use lockstep versioning):
