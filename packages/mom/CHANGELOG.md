@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.20.2] - 2025-12-13
+
+### Fixed
+
+- **Skill paths now use container paths**: Skill file paths in system prompt are translated to container paths (e.g., `/workspace/skills/...`) so mom can read them from inside Docker.
 
 ## [0.20.1] - 2025-12-13
 
