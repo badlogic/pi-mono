@@ -27,6 +27,7 @@ export {
 	encodeITerm2,
 	encodeKitty,
 	getCapabilities,
+	getCellDimensions,
 	getGifDimensions,
 	getImageDimensions,
 	getJpegDimensions,
@@ -38,6 +39,7 @@ export {
 	imageFallback,
 	renderImage,
 	resetCapabilitiesCache,
+	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.js";
 export { type Component, Container, TUI } from "./tui.js";

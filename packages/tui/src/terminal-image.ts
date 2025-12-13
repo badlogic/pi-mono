@@ -24,6 +24,17 @@ export interface ImageRenderOptions {
 
 let cachedCapabilities: TerminalCapabilities | null = null;
 
+// Default cell dimensions - updated by TUI when terminal responds to query
+let cellDimensions: CellDimensions = { widthPx: 9, heightPx: 18 };
+
+export function getCellDimensions(): CellDimensions {
+	return cellDimensions;
+}
+
+export function setCellDimensions(dims: CellDimensions): void {
+	cellDimensions = dims;
+}
+
 export function detectCapabilities(): TerminalCapabilities {
 	const termProgram = process.env.TERM_PROGRAM?.toLowerCase() || "";
 	const term = process.env.TERM?.toLowerCase() || "";
@@ -307,11 +318,10 @@ export function renderImage(
 	}
 
 	const maxWidth = options.maxWidthCells ?? 80;
-	const cellDims: CellDimensions = { widthPx: 9, heightPx: 18 };
-	const rows = calculateImageRows(imageDimensions, maxWidth, cellDims);
+	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		const sequence = encodeKitty(base64Data, { columns: maxWidth });
+		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows });
 		return { sequence, rows };
 	}
 

@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Terminal } from "./terminal.js";
-import { getCapabilities } from "./terminal-image.js";
+import { getCapabilities, setCellDimensions } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
 
 /**
@@ -80,6 +80,8 @@ export class TUI extends Container {
 	private focusedComponent: Component | null = null;
 	private renderRequested = false;
 	private cursorRow = 0; // Track where cursor is (0-indexed, relative to our first line)
+	private inputBuffer = ""; // Buffer for parsing terminal responses
+	private cellSizeQueryPending = false;
 
 	constructor(terminal: Terminal) {
 		super();
@@ -96,7 +98,15 @@ export class TUI extends Container {
 			() => this.requestRender(),
 		);
 		this.terminal.hideCursor();
+		this.queryCellSize();
 		this.requestRender();
+	}
+
+	private queryCellSize(): void {
+		// Query terminal for cell size in pixels: CSI 16 t
+		// Response format: CSI 6 ; height ; width t
+		this.cellSizeQueryPending = true;
+		this.terminal.write("\x1b[16t");
 	}
 
 	stop(): void {
@@ -114,12 +124,66 @@ export class TUI extends Container {
 	}
 
 	private handleInput(data: string): void {
+		// If we're waiting for cell size response, buffer input and parse
+		if (this.cellSizeQueryPending) {
+			this.inputBuffer += data;
+			const filtered = this.parseCellSizeResponse();
+			if (filtered.length === 0) return;
+			data = filtered;
+		}
+
 		// Pass input to focused component (including Ctrl+C)
 		// The focused component can decide how to handle Ctrl+C
 		if (this.focusedComponent?.handleInput) {
 			this.focusedComponent.handleInput(data);
 			this.requestRender();
 		}
+	}
+
+	private parseCellSizeResponse(): string {
+		// Response format: ESC [ 6 ; height ; width t
+		// Match the response pattern
+		const responsePattern = /\x1b\[6;(\d+);(\d+)t/;
+		const match = this.inputBuffer.match(responsePattern);
+
+		if (match) {
+			const heightPx = parseInt(match[1], 10);
+			const widthPx = parseInt(match[2], 10);
+
+			if (heightPx > 0 && widthPx > 0) {
+				setCellDimensions({ widthPx, heightPx });
+				// Invalidate all components so images re-render with correct dimensions
+				this.invalidate();
+				this.requestRender();
+			}
+
+			// Remove the response from buffer
+			this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
+			this.cellSizeQueryPending = false;
+		}
+
+		// Check if we have a partial response starting (wait for more data)
+		// ESC [ 6 ; ... could be incomplete
+		const partialPattern = /\x1b\[6;[\d;]*$/;
+		if (partialPattern.test(this.inputBuffer)) {
+			return ""; // Wait for more data
+		}
+
+		// Check for any ESC that might be start of response
+		const escIndex = this.inputBuffer.lastIndexOf("\x1b");
+		if (escIndex !== -1 && escIndex > this.inputBuffer.length - 10) {
+			// Might be incomplete escape sequence, wait a bit
+			// But return any data before it
+			const before = this.inputBuffer.substring(0, escIndex);
+			this.inputBuffer = this.inputBuffer.substring(escIndex);
+			return before;
+		}
+
+		// No response found, return buffered data as user input
+		const result = this.inputBuffer;
+		this.inputBuffer = "";
+		this.cellSizeQueryPending = false; // Give up waiting
+		return result;
 	}
 
 	private containsImage(line: string): boolean {
@@ -187,12 +251,20 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Check if we have images - they require special handling to avoid duplication
-		const hasImagesInPrevious = this.previousLines.some((line) => this.containsImage(line));
-		const hasImagesInNew = newLines.some((line) => this.containsImage(line));
+		// Check if image lines changed - they require special handling to avoid duplication
+		// Only force full re-render if image content actually changed, not just because images exist
+		const imageLineChanged = (() => {
+			for (let i = firstChanged; i < Math.max(newLines.length, this.previousLines.length); i++) {
+				const prevLine = this.previousLines[i] || "";
+				const newLine = newLines[i] || "";
+				if (this.containsImage(prevLine) || this.containsImage(newLine)) {
+					if (prevLine !== newLine) return true;
+				}
+			}
+			return false;
+		})();
 
-		// If images are present and content changed, force full re-render
-		if (hasImagesInPrevious || hasImagesInNew) {
+		if (imageLineChanged) {
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
 			// For Kitty protocol, delete all images before re-render
 			if (getCapabilities().images === "kitty") {
