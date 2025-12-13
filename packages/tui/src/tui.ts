@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Terminal } from "./terminal.js";
+import { getCapabilities } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
 
 /**
@@ -121,6 +122,10 @@ export class TUI extends Container {
 		}
 	}
 
+	private containsImage(line: string): boolean {
+		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
+	}
+
 	private doRender(): void {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
@@ -182,6 +187,30 @@ export class TUI extends Container {
 			return;
 		}
 
+		// Check if we have images - they require special handling to avoid duplication
+		const hasImagesInPrevious = this.previousLines.some((line) => this.containsImage(line));
+		const hasImagesInNew = newLines.some((line) => this.containsImage(line));
+
+		// If images are present and content changed, force full re-render
+		if (hasImagesInPrevious || hasImagesInNew) {
+			let buffer = "\x1b[?2026h"; // Begin synchronized output
+			// For Kitty protocol, delete all images before re-render
+			if (getCapabilities().images === "kitty") {
+				buffer += "\x1b_Ga=d\x1b\\";
+			}
+			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) buffer += "\r\n";
+				buffer += newLines[i];
+			}
+			buffer += "\x1b[?2026l"; // End synchronized output
+			this.terminal.write(buffer);
+			this.cursorRow = newLines.length - 1;
+			this.previousLines = newLines;
+			this.previousWidth = width;
+			return;
+		}
+
 		// Check if firstChanged is outside the viewport
 		// cursorRow is the line where cursor is (0-indexed)
 		// Viewport shows lines from (cursorRow - height + 1) to cursorRow
@@ -222,23 +251,25 @@ export class TUI extends Container {
 		for (let i = firstChanged; i < newLines.length; i++) {
 			if (i > firstChanged) buffer += "\r\n";
 			buffer += "\x1b[2K"; // Clear current line
-			if (visibleWidth(newLines[i]) > width) {
+			const line = newLines[i];
+			const isImageLine = this.containsImage(line);
+			if (!isImageLine && visibleWidth(line) > width) {
 				// Log all lines to crash file for debugging
 				const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
 				const crashData = [
 					`Crash at ${new Date().toISOString()}`,
 					`Terminal width: ${width}`,
-					`Line ${i} visible width: ${visibleWidth(newLines[i])}`,
+					`Line ${i} visible width: ${visibleWidth(line)}`,
 					"",
 					"=== All rendered lines ===",
-					...newLines.map((line, idx) => `[${idx}] (w=${visibleWidth(line)}) ${line}`),
+					...newLines.map((l, idx) => `[${idx}] (w=${visibleWidth(l)}) ${l}`),
 					"",
 				].join("\n");
 				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
 				fs.writeFileSync(crashLogPath, crashData);
 				throw new Error(`Rendered line ${i} exceeds terminal width. Debug log written to ${crashLogPath}`);
 			}
-			buffer += newLines[i];
+			buffer += line;
 		}
 
 		// If we had more lines before, clear them and move cursor back
