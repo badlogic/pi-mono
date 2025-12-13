@@ -115,7 +115,10 @@ function convertContentBlocks(content: (TextContent | ImageContent | DocumentCon
 		};
 	});
 
-	// If only binary content (no text), add placeholder text block
+	// If only binary content (no text), add placeholder text block.
+	// Note: We use hasPdfDocuments here, not hasDocuments, because non-PDF documents
+	// are converted to text blocks above (line 104-106), so if we reach this point
+	// with hasText=false, there are no non-PDF docs - only images and/or PDFs.
 	const hasText = blocks.some((b) => b.type === "text");
 	if (!hasText) {
 		const placeholder = getAttachmentPlaceholder({
