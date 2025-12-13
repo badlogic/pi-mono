@@ -18,6 +18,10 @@ export interface SkillsSettings {
 	enabled?: boolean; // default: true
 }
 
+export interface TerminalSettings {
+	showImages?: boolean; // default: true (only relevant if terminal supports images)
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -33,6 +37,7 @@ export interface Settings {
 	hooks?: string[]; // Array of hook file paths
 	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 	skills?: SkillsSettings;
+	terminal?: TerminalSettings;
 }
 
 export class SettingsManager {
@@ -235,6 +240,18 @@ export class SettingsManager {
 			this.settings.skills = {};
 		}
 		this.settings.skills.enabled = enabled;
+		this.save();
+	}
+
+	getShowImages(): boolean {
+		return this.settings.terminal?.showImages ?? true;
+	}
+
+	setShowImages(show: boolean): void {
+		if (!this.settings.terminal) {
+			this.settings.terminal = {};
+		}
+		this.settings.terminal.showImages = show;
 		this.save();
 	}
 }

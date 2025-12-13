@@ -1,5 +1,13 @@
 import * as os from "node:os";
-import { Container, Spacer, Text } from "@mariozechner/pi-tui";
+import {
+	Container,
+	getCapabilities,
+	getImageDimensions,
+	Image,
+	imageFallback,
+	Spacer,
+	Text,
+} from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
@@ -22,26 +30,32 @@ function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
 }
 
+export interface ToolExecutionOptions {
+	showImages?: boolean; // default: true (only used if terminal supports images)
+}
+
 /**
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
 	private contentText: Text;
+	private imageComponents: Image[] = [];
 	private toolName: string;
 	private args: any;
 	private expanded = false;
+	private showImages: boolean;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
 		details?: any;
 	};
 
-	constructor(toolName: string, args: any) {
+	constructor(toolName: string, args: any, options: ToolExecutionOptions = {}) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
+		this.showImages = options.showImages ?? true;
 		this.addChild(new Spacer(1));
-		// Content with colored background and padding
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.addChild(this.contentText);
 		this.updateDisplay();
@@ -66,6 +80,11 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	setShowImages(show: boolean): void {
+		this.showImages = show;
+		this.updateDisplay();
+	}
+
 	private updateDisplay(): void {
 		const bgFn = this.result
 			? this.result.isError
@@ -75,32 +94,56 @@ export class ToolExecutionComponent extends Container {
 
 		this.contentText.setCustomBgFn(bgFn);
 		this.contentText.setText(this.formatToolExecution());
+
+		for (const img of this.imageComponents) {
+			this.removeChild(img);
+		}
+		this.imageComponents = [];
+
+		if (this.result) {
+			const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+			const caps = getCapabilities();
+
+			for (const img of imageBlocks) {
+				// Show inline image only if terminal supports it AND user setting allows it
+				if (caps.images && this.showImages && img.data && img.mimeType) {
+					const imageComponent = new Image(
+						img.data,
+						img.mimeType,
+						{ fallbackColor: (s: string) => theme.fg("toolOutput", s) },
+						{ maxWidthCells: 60 },
+					);
+					this.imageComponents.push(imageComponent);
+					this.addChild(imageComponent);
+				}
+			}
+		}
 	}
 
 	private getTextOutput(): string {
 		if (!this.result) return "";
 
-		// Extract text from content blocks
 		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
 		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
 
-		// Strip ANSI codes and carriage returns from raw output
-		// (bash may emit colors/formatting, and Windows may include \r)
 		let output = textBlocks
 			.map((c: any) => {
 				let text = stripAnsi(c.text || "").replace(/\r/g, "");
-				// stripAnsi misses some escape sequences like standalone ESC \ (String Terminator)
-				// and leaves orphaned fragments from malformed sequences (e.g. TUI output captured to file)
-				// Clean up: remove ESC + any following char, and control chars except newline/tab
 				text = text.replace(/\x1b./g, "");
 				text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
 				return text;
 			})
 			.join("\n");
 
-		// Add indicator for images
-		if (imageBlocks.length > 0) {
-			const imageIndicators = imageBlocks.map((img: any) => `[Image: ${img.mimeType}]`).join("\n");
+		const caps = getCapabilities();
+		// Show text fallback if terminal doesn't support images OR if user disabled inline images
+		if (imageBlocks.length > 0 && (!caps.images || !this.showImages)) {
+			const imageIndicators = imageBlocks
+				.map((img: any) => {
+					const dims = img.data ? (getImageDimensions(img.data, img.mimeType) ?? undefined) : undefined;
+					return imageFallback(img.mimeType, dims);
+				})
+				.join("\n");
 			output = output ? `${output}\n${imageIndicators}` : imageIndicators;
 		}
 
