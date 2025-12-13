@@ -136,6 +136,20 @@ const bot = new MomDiscordBot(
 		async onDirectMessage(ctx) {
 			await handleMessage(ctx, "dm");
 		},
+
+		async onStopButton(channelId) {
+			const active = activeRuns.get(channelId);
+			if (active) {
+				const logCtx = {
+					channelId,
+					userName: active.context.message.userName,
+					channelName: active.context.channelName,
+					guildName: active.context.guildName,
+				};
+				log.logStopRequest(logCtx);
+				active.runner.abort();
+			}
+		},
 	},
 	{
 		botToken: DISCORD_BOT_TOKEN,

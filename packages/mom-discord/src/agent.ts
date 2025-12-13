@@ -512,26 +512,24 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 							ctx.message.guild,
 						);
 
-						// Post detailed result as follow-up
+						// Post detailed result as embed
 						const label = pending?.args ? (pending.args as { label?: string }).label : undefined;
 						const argsFormatted = pending
 							? formatToolArgsForDiscord(event.toolName, pending.args as Record<string, unknown>)
-							: "(args not found)";
+							: "";
 						const duration = (durationMs / 1000).toFixed(1);
 
-						let followUpMessage = `**${event.isError ? "✗" : "✓"} ${event.toolName}**`;
-						if (label) {
-							followUpMessage += `: ${label}`;
-						}
-						followUpMessage += ` (${duration}s)\n`;
-
-						if (argsFormatted) {
-							followUpMessage += "```\n" + argsFormatted + "\n```\n";
-						}
-
-						followUpMessage += "**Result:**\n```\n" + truncate(resultStr, 1500) + "\n```";
-
-						queue.enqueueMessage(followUpMessage, "followup", "tool result followup", false);
+						queue.enqueue(
+							() => ctx.respondToolEmbed({
+								toolName: event.toolName,
+								label,
+								args: argsFormatted,
+								result: resultStr,
+								isError: event.isError,
+								durationSecs: duration,
+							}),
+							"tool result embed",
+						);
 
 						if (event.isError) {
 							queue.enqueue(() => ctx.respond(`*Error: ${truncate(resultStr, 200)}*`, false), "tool error");
@@ -609,9 +607,23 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 				`=== USER PROMPT (${userPrompt.length} chars) ===\n\n${userPrompt}`;
 			await writeFile(join(channelDir, "last_prompt.txt"), debugPrompt, "utf-8");
 
+			// Add stop button while processing
+			try {
+				await ctx.addStopButton();
+			} catch {
+				// Ignore if button fails
+			}
+
 			await agent.prompt(userPrompt);
 
 			await queue.flush();
+
+			// Remove stop button when done
+			try {
+				await ctx.removeStopButton();
+			} catch {
+				// Ignore if button removal fails
+			}
 
 			const messages = agent.state.messages;
 			const lastAssistant = messages.filter((m) => m.role === "assistant").pop();

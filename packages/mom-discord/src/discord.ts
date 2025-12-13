@@ -8,7 +8,12 @@ import {
 	AttachmentBuilder,
 	ChannelType,
 	type Guild,
-	type GuildMember,
+	EmbedBuilder,
+	ActionRowBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	type ButtonInteraction,
+	ComponentType,
 } from "discord.js";
 import { readFileSync } from "fs";
 import { basename } from "path";
@@ -27,6 +32,15 @@ export interface DiscordMessage {
 	attachments: Attachment[];
 }
 
+export interface ToolResultEmbed {
+	toolName: string;
+	label?: string;
+	args?: string;
+	result: string;
+	isError: boolean;
+	durationSecs: string;
+}
+
 export interface DiscordContext {
 	message: DiscordMessage;
 	channelName?: string;
@@ -40,17 +54,24 @@ export interface DiscordContext {
 	replaceMessage(text: string): Promise<void>;
 	/** Post a follow-up message (for verbose details) */
 	respondFollowUp(text: string): Promise<void>;
+	/** Post a tool result as an embed */
+	respondToolEmbed(embed: ToolResultEmbed): Promise<void>;
 	/** Show typing indicator */
 	setTyping(isTyping: boolean): Promise<void>;
 	/** Upload a file to the channel */
 	uploadFile(filePath: string, title?: string): Promise<void>;
 	/** Set working state (adds/removes working indicator) */
 	setWorking(working: boolean): Promise<void>;
+	/** Add a stop button to the current message */
+	addStopButton(): Promise<void>;
+	/** Remove the stop button from the current message */
+	removeStopButton(): Promise<void>;
 }
 
 export interface MomDiscordHandler {
 	onMention(ctx: DiscordContext): Promise<void>;
 	onDirectMessage(ctx: DiscordContext): Promise<void>;
+	onStopButton?(channelId: string): Promise<void>;
 }
 
 export interface MomDiscordConfig {
@@ -200,6 +221,20 @@ export class MomDiscordBot {
 		this.client.on("guildCreate", async (guild: Guild) => {
 			log.logInfo(`Joined guild: ${guild.name}`);
 			await this.fetchGuildData(guild);
+		});
+
+		// Handle button interactions
+		this.client.on("interactionCreate", async (interaction) => {
+			if (!interaction.isButton()) return;
+
+			if (interaction.customId.startsWith("mom-stop-")) {
+				const channelId = interaction.customId.replace("mom-stop-", "");
+				await interaction.deferUpdate();
+
+				if (this.handler.onStopButton) {
+					await this.handler.onStopButton(channelId);
+				}
+			}
 		});
 	}
 
@@ -365,6 +400,55 @@ export class MomDiscordBot {
 					const parts = splitMessage(displayText);
 					await responseMessage.edit(parts[0]);
 				}
+			},
+
+			respondToolEmbed: async (embedData: ToolResultEmbed) => {
+				const embed = new EmbedBuilder()
+					.setTitle(`${embedData.isError ? "✗" : "✓"} ${embedData.toolName}${embedData.label ? `: ${embedData.label}` : ""}`)
+					.setColor(embedData.isError ? 0xff0000 : 0x00ff00)
+					.setFooter({ text: `Duration: ${embedData.durationSecs}s` });
+
+				if (embedData.args) {
+					// Truncate args to fit Discord embed field limit (1024 chars)
+					const truncatedArgs = embedData.args.length > 1000
+						? embedData.args.substring(0, 997) + "..."
+						: embedData.args;
+					embed.addFields({ name: "Arguments", value: "```\n" + truncatedArgs + "\n```", inline: false });
+				}
+
+				// Truncate result to fit Discord embed description limit (4096 chars)
+				const truncatedResult = embedData.result.length > 3900
+					? embedData.result.substring(0, 3897) + "..."
+					: embedData.result;
+				embed.setDescription("```\n" + truncatedResult + "\n```");
+
+				await channel.send({ embeds: [embed] });
+			},
+
+			addStopButton: async () => {
+				if (!responseMessage) return;
+
+				const stopButton = new ButtonBuilder()
+					.setCustomId(`mom-stop-${message.channel.id}`)
+					.setLabel("Stop")
+					.setStyle(ButtonStyle.Danger)
+					.setEmoji("⏹️");
+
+				const row = new ActionRowBuilder<ButtonBuilder>().addComponents(stopButton);
+
+				await responseMessage.edit({
+					content: responseMessage.content,
+					components: [row],
+				});
+			},
+
+			removeStopButton: async () => {
+				if (!responseMessage) return;
+
+				await responseMessage.edit({
+					content: responseMessage.content,
+					components: [],
+				});
 			},
 		};
 	}
