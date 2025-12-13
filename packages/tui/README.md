@@ -209,8 +209,6 @@ tui.addChild(image);
 
 Supported formats: PNG, JPEG, GIF, WebP. Dimensions are parsed from the image headers automatically.
 
-Set `PI_NO_IMAGES=1` to disable inline rendering and always use the text fallback.
-
 ## Autocomplete
 
 ### CombinedAutocompleteProvider

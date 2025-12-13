@@ -165,6 +165,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/compact [instructions]` | Manually compact conversation context |
 | `/autocompact` | Toggle automatic context compaction |
 | `/theme` | Select color theme |
+| `/show-images` | Toggle inline image display (supported terminals only) |
 
 ### Editor Features
 
@@ -236,13 +237,17 @@ Run multiple commands before prompting; all outputs are included together.
 
 ### Image Support
 
-Include image paths in your message:
+**Attaching images:** Include image paths in your message:
 
 ```
 You: What's in this screenshot? /path/to/image.png
 ```
 
-Supported: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
+Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
+
+**Inline rendering:** On terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images, images in tool output are rendered inline. On unsupported terminals, a text placeholder is shown instead.
+
+Toggle inline images with `/show-images` or set `terminal.showImages: false` in settings.
 
 ---
 
@@ -600,6 +605,9 @@ See [Hooks Documentation](docs/hooks.md) for full API reference.
     "enabled": true,
     "maxRetries": 3,
     "baseDelayMs": 2000
+  },
+  "terminal": {
+    "showImages": true
   }
 }
 ```
@@ -608,6 +616,9 @@ See [Hooks Documentation](docs/hooks.md) for full API reference.
 - `enabled`: Auto-retry on transient errors (overloaded, rate limit, 5xx). Default: `true`
 - `maxRetries`: Maximum retry attempts. Default: `3`
 - `baseDelayMs`: Base delay for exponential backoff (2s, 4s, 8s). Default: `2000`
+
+**Terminal settings:**
+- `showImages`: Render images inline in supported terminals. Default: `true`
 
 ---
 
