@@ -1,6 +1,6 @@
 # mom (Master Of Mischief)
 
-A Slack bot powered by Claude that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
+A Slack bot powered by an LLM that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
 
 ## Features
 
@@ -176,7 +176,7 @@ You provide mom with a **data directory** (e.g., `./data`) as her workspace. Whi
 
 **What's stored here:**
 - `log.jsonl`: All channel messages (user messages, bot responses). Source of truth.
-- `context.jsonl`: Messages sent to Claude. Synced from log.jsonl at each run start.
+- `context.jsonl`: Messages sent to the LLM. Synced from log.jsonl at each run start.
 - Memory files: Context mom remembers across sessions
 - Custom tools/scripts mom creates (aka "skills")
 - Working files, cloned repos, generated output
@@ -341,7 +341,7 @@ Mom uses two files per channel:
 - Used for syncing to context and searching older history
 
 **context.jsonl** (LLM context):
-- What's sent to Claude's API (includes tool results)
+- What's sent to the LLM (includes tool results)
 - Contains full history plus compaction events
 - Auto-synced from `log.jsonl` before each @mention (picks up backfilled messages, channel chatter)
 - When exceeds token limit (default 100k): keeps recent messages, summarizes older ones into checkpoint
