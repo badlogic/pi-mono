@@ -6,6 +6,8 @@
 
 - **Gemini 3 Pro thinking levels**: Thinking level configuration now works correctly for Gemini 3 Pro models. Previously all levels mapped to -1 (minimal thinking). Now LOW/MEDIUM/HIGH properly control test-time computation. ([#176](https://github.com/badlogic/pi-mono/pull/176) by [@markusylisiurunen](https://github.com/markusylisiurunen))
 
+- **`reasoning: "none"` support**: Added `"none"` as a reasoning effort option for all reasoning-capable models. Explicitly disables thinking/reasoning even when the model supports it. For Anthropic, sets `thinkingEnabled: false`; for Google, sets thinking budget to 0.
+
 ## [0.18.2] - 2025-12-11
 
 ### Changed

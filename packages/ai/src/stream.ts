@@ -137,11 +137,19 @@ function mapOptionsForApi<TApi extends Api>(
 				medium: 8192,
 				high: 16384,
 			};
+			const clamped = clampReasoning(options.reasoning)!;
+
+			if (clamped === "none") {
+				return {
+					...base,
+					thinkingEnabled: false,
+				};
+			}
 
 			return {
 				...base,
 				thinkingEnabled: true,
-				thinkingBudgetTokens: anthropicBudgets[clampReasoning(options.reasoning)!],
+				thinkingBudgetTokens: anthropicBudgets[clamped],
 			} satisfies AnthropicOptions;
 		}
 
@@ -202,6 +210,7 @@ function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
 function getGoogleThinkingLevel(effort: ClampedReasoningEffort): ThinkingLevel {
 	// Gemini 3 Pro only supports LOW/HIGH (for now)
 	switch (effort) {
+		case "none":
 		case "minimal":
 		case "low":
 			return ThinkingLevel.LOW;
@@ -215,6 +224,7 @@ function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedRe
 	// See https://ai.google.dev/gemini-api/docs/thinking#set-budget
 	if (model.id.includes("2.5-pro")) {
 		const budgets: Record<ClampedReasoningEffort, number> = {
+			none: 0,
 			minimal: 128,
 			low: 2048,
 			medium: 8192,
@@ -226,6 +236,7 @@ function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedRe
 	if (model.id.includes("2.5-flash")) {
 		// Covers 2.5-flash-lite as well
 		const budgets: Record<ClampedReasoningEffort, number> = {
+			none: 0,
 			minimal: 128,
 			low: 2048,
 			medium: 8192,

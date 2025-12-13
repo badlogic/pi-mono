@@ -38,7 +38,7 @@ export type KnownProvider =
 	| "mistral";
 export type Provider = KnownProvider | string;
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 // Base options all providers share
 export interface StreamOptions {

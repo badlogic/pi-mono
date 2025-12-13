@@ -388,7 +388,7 @@ if (model.reasoning) {
 const response = await completeSimple(model, {
   messages: [{ role: 'user', content: 'Solve: 2x + 5 = 13' }]
 }, {
-  reasoning: 'medium'  // 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' (xhigh maps to high on non-OpenAI providers)
+  reasoning: 'medium'  // 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' (xhigh maps to high on non-OpenAI providers)
 });
 
 // Access thinking and text blocks
@@ -399,6 +399,13 @@ for (const block of response.content) {
     console.log('Response:', block.text);
   }
 }
+
+// Disable reasoning for models that support it
+const response = await completeSimple(model, {
+  messages: [{ role: 'user', content: 'Quick answer: what is 2+2?' }]
+}, {
+  reasoning: 'none'  // Completely disables thinking
+});
 ```
 
 ### Provider-Specific Options (stream/complete)
