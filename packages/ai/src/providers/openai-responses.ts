@@ -382,19 +382,26 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					content: [{ type: "input_text", text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
-				const content: ResponseInputContent[] = msg.content.map((item): ResponseInputContent => {
+				const content: ResponseInputContent[] = msg.content.flatMap((item): ResponseInputContent[] => {
 					if (item.type === "text") {
-						return {
-							type: "input_text",
-							text: sanitizeSurrogates(item.text),
-						} satisfies ResponseInputText;
-					} else {
-						return {
-							type: "input_image",
-							detail: "auto",
-							image_url: `data:${item.mimeType};base64,${item.data}`,
-						} satisfies ResponseInputImage;
+						return [
+							{
+								type: "input_text",
+								text: sanitizeSurrogates(item.text),
+							} satisfies ResponseInputText,
+						];
 					}
+					if (item.type === "image") {
+						return [
+							{
+								type: "input_image",
+								detail: "auto",
+								image_url: `data:${item.mimeType};base64,${item.data}`,
+							} satisfies ResponseInputImage,
+						];
+					}
+					// OpenAI doesn't support native documents (e.g., PDF) in Responses API input.
+					return [];
 				});
 				const filteredContent = !model.input.includes("image")
 					? content.filter((c) => c.type !== "input_image")
@@ -441,17 +448,26 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 		} else if (msg.role === "toolResult") {
 			// Extract text and image content
 			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
 				.join("\n");
 			const hasImages = msg.content.some((c) => c.type === "image");
+			const hasDocuments = msg.content.some((c) => c.type === "document");
 
 			// Always send function_call_output with text (or placeholder if only images)
 			const hasText = textResult.length > 0;
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+				output: sanitizeSurrogates(
+					hasText
+						? textResult
+						: hasImages && !hasDocuments
+							? "(see attached image)"
+							: hasDocuments
+								? "(see attached document)"
+								: "",
+				),
 			});
 
 			// If there are images and model supports them, send a follow-up user message with images
@@ -470,7 +486,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 						contentParts.push({
 							type: "input_image",
 							detail: "auto",
-							image_url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+							image_url: `data:${block.mimeType};base64,${block.data}`,
 						} satisfies ResponseInputImage);
 					}
 				}

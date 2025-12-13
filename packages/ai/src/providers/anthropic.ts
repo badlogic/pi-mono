@@ -10,6 +10,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	DocumentContent,
 	ImageContent,
 	Message,
 	Model,
@@ -31,7 +32,7 @@ import { transformMessages } from "./transorm-messages.js";
 /**
  * Convert content blocks to Anthropic API format
  */
-function convertContentBlocks(content: (TextContent | ImageContent)[]):
+function convertContentBlocks(content: (TextContent | ImageContent | DocumentContent)[]):
 	| string
 	| Array<
 			| { type: "text"; text: string }
@@ -43,14 +44,28 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 						data: string;
 					};
 			  }
+			| {
+					type: "document";
+					source: {
+						type: "base64";
+						media_type: "application/pdf";
+						data: string;
+					};
+			  }
 	  > {
 	// If only text blocks, return as concatenated string for simplicity
 	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
+	const hasPdfDocuments = content.some((c) => c.type === "document" && c.mimeType === "application/pdf");
+	if (!hasImages && !hasPdfDocuments) {
+		return sanitizeSurrogates(
+			content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("\n"),
+		);
 	}
 
-	// If we have images, convert to content block array
+	// If we have binary content, convert to content block array
 	const blocks = content.map((block) => {
 		if (block.type === "text") {
 			return {
@@ -58,22 +73,44 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 				text: sanitizeSurrogates(block.text),
 			};
 		}
+		if (block.type === "image") {
+			return {
+				type: "image" as const,
+				source: {
+					type: "base64" as const,
+					media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+					data: block.data,
+				},
+			};
+		}
+		if (block.mimeType !== "application/pdf") {
+			return {
+				type: "text" as const,
+				text: sanitizeSurrogates(`[Unsupported document mimeType dropped: ${block.mimeType}]`),
+			};
+		}
 		return {
-			type: "image" as const,
+			type: "document" as const,
 			source: {
 				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+				media_type: "application/pdf" as const,
 				data: block.data,
 			},
 		};
 	});
 
-	// If only images (no text), add placeholder text block
+	// If only binary content (no text), add placeholder text block
 	const hasText = blocks.some((b) => b.type === "text");
 	if (!hasText) {
+		const placeholder =
+			hasPdfDocuments && !hasImages
+				? "(see attached document)"
+				: hasImages && !hasPdfDocuments
+					? "(see attached image)"
+					: "(see attached attachments)";
 		blocks.unshift({
 			type: "text" as const,
-			text: "(see attached image)",
+			text: placeholder,
 		});
 	}
 
@@ -421,7 +458,8 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 							type: "text",
 							text: sanitizeSurrogates(item.text),
 						};
-					} else {
+					}
+					if (item.type === "image") {
 						return {
 							type: "image",
 							source: {
@@ -431,8 +469,30 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 							},
 						};
 					}
+
+					// Documents: currently only PDF is supported by Anthropic.
+					if (item.mimeType !== "application/pdf") {
+						return {
+							type: "text",
+							text: sanitizeSurrogates(`[Unsupported document mimeType dropped: ${item.mimeType}]`),
+						} as unknown as ContentBlockParam;
+					}
+					return {
+						type: "document",
+						source: {
+							type: "base64",
+							media_type: "application/pdf",
+							data: item.data,
+						},
+					} as unknown as ContentBlockParam;
 				});
-				let filteredBlocks = !model?.input.includes("image") ? blocks.filter((b) => b.type !== "image") : blocks;
+				let filteredBlocks = blocks;
+				if (!model?.input.includes("image")) {
+					filteredBlocks = filteredBlocks.filter((b) => b.type !== "image");
+				}
+				if (!model?.input.includes("document")) {
+					filteredBlocks = filteredBlocks.filter((b) => b.type !== "document");
+				}
 				filteredBlocks = filteredBlocks.filter((b) => {
 					if (b.type === "text") {
 						return b.text.trim().length > 0;
@@ -530,7 +590,10 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				const lastBlock = lastMessage.content[lastMessage.content.length - 1];
 				if (
 					lastBlock &&
-					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
+					(lastBlock.type === "text" ||
+						lastBlock.type === "image" ||
+						lastBlock.type === "document" ||
+						lastBlock.type === "tool_result")
 				) {
 					(lastBlock as any).cache_control = { type: "ephemeral" };
 				}

@@ -30,7 +30,7 @@ const ModelDefinitionSchema = Type.Object({
 		]),
 	),
 	reasoning: Type.Boolean(),
-	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
+	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image"), Type.Literal("document")])),
 	cost: Type.Object({
 		input: Type.Number(),
 		output: Type.Number(),
@@ -205,7 +205,7 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
 				provider: providerName,
 				baseUrl: providerConfig.baseUrl,
 				reasoning: modelDef.reasoning,
-				input: modelDef.input as ("text" | "image")[],
+				input: modelDef.input as ("text" | "image" | "document")[],
 				cost: modelDef.cost,
 				contextWindow: modelDef.contextWindow,
 				maxTokens: modelDef.maxTokens,

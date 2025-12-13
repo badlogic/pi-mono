@@ -385,20 +385,27 @@ function convertMessages(
 					content: sanitizeSurrogates(msg.content),
 				});
 			} else {
-				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
+				const content: ChatCompletionContentPart[] = msg.content.flatMap((item): ChatCompletionContentPart[] => {
 					if (item.type === "text") {
-						return {
-							type: "text",
-							text: sanitizeSurrogates(item.text),
-						} satisfies ChatCompletionContentPartText;
-					} else {
-						return {
-							type: "image_url",
-							image_url: {
-								url: `data:${item.mimeType};base64,${item.data}`,
-							},
-						} satisfies ChatCompletionContentPartImage;
+						return [
+							{
+								type: "text",
+								text: sanitizeSurrogates(item.text),
+							} satisfies ChatCompletionContentPartText,
+						];
 					}
+					if (item.type === "image") {
+						return [
+							{
+								type: "image_url",
+								image_url: {
+									url: `data:${item.mimeType};base64,${item.data}`,
+								},
+							} satisfies ChatCompletionContentPartImage,
+						];
+					}
+					// OpenAI-compatible APIs generally don't support native documents (e.g., PDF).
+					return [];
 				});
 				const filteredContent = !model.input.includes("image")
 					? content.filter((c) => c.type !== "image_url")
@@ -471,17 +478,20 @@ function convertMessages(
 		} else if (msg.role === "toolResult") {
 			// Extract text and image content
 			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
 				.join("\n");
 			const hasImages = msg.content.some((c) => c.type === "image");
+			const hasDocuments = msg.content.some((c) => c.type === "document");
 
-			// Always send tool result with text (or placeholder if only images)
+			// Always send tool result with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
+			const placeholder =
+				hasImages && !hasDocuments ? "(see attached image)" : hasDocuments ? "(see attached document)" : "";
 			// Some providers (e.g. Mistral) require the 'name' field in tool results
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
-				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+				content: sanitizeSurrogates(hasText ? textResult : placeholder),
 				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
 			};
 			if (compat.requiresToolResultName && msg.toolName) {
@@ -507,7 +517,7 @@ function convertMessages(
 						contentBlocks.push({
 							type: "image_url",
 							image_url: {
-								url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+								url: `data:${block.mimeType};base64,${block.data}`,
 							},
 						});
 					}

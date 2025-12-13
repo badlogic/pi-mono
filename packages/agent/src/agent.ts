@@ -1,11 +1,25 @@
-import type { ImageContent, Message, QueuedMessage, ReasoningEffort, TextContent } from "@mariozechner/pi-ai";
+import type {
+	DocumentContent,
+	ImageContent,
+	Message,
+	QueuedMessage,
+	ReasoningEffort,
+	TextContent,
+} from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentTransport } from "./transports/types.js";
-import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
+import type {
+	AgentEvent,
+	AgentState,
+	AppMessage,
+	Attachment,
+	ThinkingLevel,
+	UserMessageWithAttachments,
+} from "./types.js";
 
 /**
  * Default message transformer: Keep only LLM-compatible messages, strip app-specific fields.
- * Converts attachments to proper content blocks (images → ImageContent, documents → TextContent).
+ * Converts attachments to proper content blocks (images → ImageContent, documents → DocumentContent/TextContent fallback).
  */
 function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 	return messages
@@ -15,7 +29,7 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 		})
 		.map((m) => {
 			if (m.role === "user") {
-				const { attachments, ...rest } = m as any;
+				const { attachments, ...rest } = m as UserMessageWithAttachments;
 
 				// If no attachments, return as-is
 				if (!attachments || attachments.length === 0) {
@@ -23,7 +37,12 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 				}
 
 				// Convert attachments to content blocks
-				const content = Array.isArray(rest.content) ? [...rest.content] : [{ type: "text", text: rest.content }];
+				const content: Array<TextContent | ImageContent | DocumentContent> = [];
+				if (Array.isArray(rest.content)) {
+					content.push(...rest.content);
+				} else {
+					content.push({ type: "text", text: rest.content });
+				}
 
 				for (const attachment of attachments as Attachment[]) {
 					// Add image blocks for image attachments
@@ -35,12 +54,21 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 						} as ImageContent);
 					}
 					// Add text blocks for documents with extracted text
-					else if (attachment.type === "document" && attachment.extractedText) {
-						content.push({
-							type: "text",
-							text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-							isDocument: true,
-						} as TextContent);
+					else if (attachment.type === "document") {
+						if (attachment.extractedText) {
+							content.push({
+								type: "text",
+								text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
+								isDocument: true,
+							} as TextContent);
+						} else {
+							content.push({
+								type: "document",
+								data: attachment.content,
+								mimeType: attachment.mimeType,
+								fileName: attachment.fileName,
+							} as DocumentContent);
+						}
 					}
 				}
 
@@ -177,17 +205,21 @@ export class Agent {
 		}
 
 		// Build user message with attachments
-		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
+		const content: Array<TextContent | ImageContent | DocumentContent> = [{ type: "text", text: input }];
 		if (attachments?.length) {
 			for (const a of attachments) {
 				if (a.type === "image") {
 					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
+				} else if (a.type === "document") {
+					if (a.extractedText) {
+						content.push({
+							type: "text",
+							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
+							isDocument: true,
+						} as TextContent);
+					} else {
+						content.push({ type: "document", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
+					}
 				}
 			}
 		}

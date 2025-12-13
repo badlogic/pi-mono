@@ -3,8 +3,9 @@ import { html, LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Agent } from "./agent/agent.js";
 import "./components/AgentInterface.js";
-import type { AgentTool } from "@mariozechner/pi-ai";
+import type { AgentTool, Message } from "@mariozechner/pi-ai";
 import type { AgentInterface } from "./components/AgentInterface.js";
+import type { ArtifactMessage } from "./components/Messages.js";
 import { ArtifactsRuntimeProvider } from "./components/sandbox/ArtifactsRuntimeProvider.js";
 import { AttachmentsRuntimeProvider } from "./components/sandbox/AttachmentsRuntimeProvider.js";
 import type { SandboxRuntimeProvider } from "./components/sandbox/SandboxRuntimeProvider.js";
@@ -146,7 +147,11 @@ export class ChatPanel extends LitElement {
 		// Temporarily disable the onArtifactsChange callback to prevent auto-opening on load
 		const originalCallback = this.artifactsPanel.onArtifactsChange;
 		this.artifactsPanel.onArtifactsChange = undefined;
-		await this.artifactsPanel.reconstructFromMessages(this.agent.state.messages);
+		const messagesForArtifacts = this.agent.state.messages.filter((m): m is Message | ArtifactMessage => {
+			const role = (m as { role?: string }).role;
+			return role === "user" || role === "assistant" || role === "toolResult" || role === "artifact";
+		});
+		await this.artifactsPanel.reconstructFromMessages(messagesForArtifacts);
 		this.artifactsPanel.onArtifactsChange = originalCallback;
 
 		this.hasArtifacts = this.artifactsPanel.artifacts.size > 0;

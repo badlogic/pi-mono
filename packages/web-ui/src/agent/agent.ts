@@ -2,6 +2,7 @@ import type { Context, QueuedMessage } from "@mariozechner/pi-ai";
 import {
 	type AgentTool,
 	type AssistantMessage as AssistantMessageType,
+	type DocumentContent,
 	getModel,
 	type ImageContent,
 	type Message,
@@ -143,17 +144,26 @@ export class Agent {
 		}
 
 		// Build user message with attachments
-		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
+		const content: Array<TextContent | ImageContent | DocumentContent> = [{ type: "text", text: input }];
 		if (attachments?.length) {
 			for (const a of attachments) {
 				if (a.type === "image") {
 					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
+				} else if (a.type === "document") {
+					if (a.extractedText) {
+						content.push({
+							type: "text",
+							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
+							isDocument: true,
+						} as TextContent);
+					} else {
+						content.push({
+							type: "document",
+							data: a.content,
+							mimeType: a.mimeType,
+							fileName: a.fileName,
+						} as DocumentContent);
+					}
 				}
 			}
 		}

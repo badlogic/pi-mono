@@ -2,6 +2,7 @@ import type { Static, TSchema } from "@sinclair/typebox";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	DocumentContent,
 	ImageContent,
 	Message,
 	Model,
@@ -12,8 +13,8 @@ import type {
 } from "../types.js";
 
 export interface AgentToolResult<T> {
-	// Content blocks supporting text and images
-	content: (TextContent | ImageContent)[];
+	// Content blocks supporting text, images, and documents
+	content: (TextContent | ImageContent | DocumentContent)[];
 	// Details to be displayed in a UI or logged
 	details: T;
 }

@@ -83,6 +83,7 @@ export class ToolExecutionComponent extends Container {
 		// Extract text from content blocks
 		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
 		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+		const documentBlocks = this.result.content?.filter((c: any) => c.type === "document") || [];
 
 		// Strip ANSI codes and carriage returns from raw output
 		// (bash may emit colors/formatting, and Windows may include \r)
@@ -102,6 +103,14 @@ export class ToolExecutionComponent extends Container {
 		if (imageBlocks.length > 0) {
 			const imageIndicators = imageBlocks.map((img: any) => `[Image: ${img.mimeType}]`).join("\n");
 			output = output ? `${output}\n${imageIndicators}` : imageIndicators;
+		}
+
+		// Add indicator for documents
+		if (documentBlocks.length > 0) {
+			const docIndicators = documentBlocks
+				.map((doc: any) => `[Document: ${doc.fileName ? doc.fileName : doc.mimeType}]`)
+				.join("\n");
+			output = output ? `${output}\n${docIndicators}` : docIndicators;
 		}
 
 		return output;

@@ -1,5 +1,5 @@
 /**
- * Process @file CLI arguments into text content and image attachments
+ * Process @file CLI arguments into text content and attachments
  */
 
 import type { Attachment } from "@mariozechner/pi-agent-core";
@@ -17,10 +17,21 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 	".webp": "image/webp",
 };
 
+/** Map of file extensions to MIME types for supported document formats */
+const DOCUMENT_MIME_TYPES: Record<string, string> = {
+	".pdf": "application/pdf",
+};
+
 /** Check if a file is an image based on its extension, returns MIME type or null */
 function isImageFile(filePath: string): string | null {
 	const ext = extname(filePath).toLowerCase();
 	return IMAGE_MIME_TYPES[ext] || null;
+}
+
+/** Check if a file is a supported document based on its extension, returns MIME type or null */
+function isDocumentFile(filePath: string): string | null {
+	const ext = extname(filePath).toLowerCase();
+	return DOCUMENT_MIME_TYPES[ext] || null;
 }
 
 /** Expand ~ to home directory */
@@ -36,13 +47,13 @@ function expandPath(filePath: string): string {
 
 export interface ProcessedFiles {
 	textContent: string;
-	imageAttachments: Attachment[];
+	attachments: Attachment[];
 }
 
-/** Process @file arguments into text content and image attachments */
+/** Process @file arguments into text content and attachments */
 export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 	let textContent = "";
-	const imageAttachments: Attachment[] = [];
+	const attachments: Attachment[] = [];
 
 	for (const fileArg of fileArgs) {
 		// Expand and resolve path
@@ -62,9 +73,10 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 			continue;
 		}
 
-		const mimeType = isImageFile(absolutePath);
+		const imageMimeType = isImageFile(absolutePath);
+		const documentMimeType = imageMimeType ? null : isDocumentFile(absolutePath);
 
-		if (mimeType) {
+		if (imageMimeType) {
 			// Handle image file
 			const content = readFileSync(absolutePath);
 			const base64Content = content.toString("base64");
@@ -73,14 +85,32 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 				id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
 				type: "image",
 				fileName: absolutePath.split("/").pop() || absolutePath,
-				mimeType,
+				mimeType: imageMimeType,
 				size: stats.size,
 				content: base64Content,
 			};
 
-			imageAttachments.push(attachment);
+			attachments.push(attachment);
 
 			// Add text reference to image
+			textContent += `<file name="${absolutePath}"></file>\n`;
+		} else if (documentMimeType) {
+			// Handle supported document file (binary)
+			const content = readFileSync(absolutePath);
+			const base64Content = content.toString("base64");
+
+			const attachment: Attachment = {
+				id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+				type: "document",
+				fileName: absolutePath.split("/").pop() || absolutePath,
+				mimeType: documentMimeType,
+				size: stats.size,
+				content: base64Content,
+			};
+
+			attachments.push(attachment);
+
+			// Add text reference to document
 			textContent += `<file name="${absolutePath}"></file>\n`;
 		} else {
 			// Handle text file
@@ -95,5 +125,5 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 		}
 	}
 
-	return { textContent, imageAttachments };
+	return { textContent, attachments };
 }

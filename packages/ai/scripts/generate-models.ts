@@ -48,9 +48,14 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 			modelKey = model.id; // Keep full ID for OpenRouter
 
 			// Parse input modalities
-			const input: ("text" | "image")[] = ["text"];
-			if (model.architecture?.modality?.includes("image")) {
+			const input: ("text" | "image" | "document")[] = ["text"];
+			const modality = model.architecture?.modality;
+			const modalityText = Array.isArray(modality) ? modality.join(" ") : String(modality ?? "");
+			if (modalityText.includes("image")) {
 				input.push("image");
+			}
+			if (modalityText.includes("pdf") || modalityText.includes("document")) {
+				input.push("document");
 			}
 
 			// Convert pricing from $/token to $/million tokens
@@ -101,6 +106,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
+				const inputModalities = m.modalities?.input ?? [];
+				const input: ("text" | "image" | "document")[] = ["text"];
+				if (inputModalities.includes("image")) input.push("image");
+				if (inputModalities.some((v) => v.includes("pdf") || v.includes("document"))) input.push("document");
+
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
@@ -108,7 +118,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "anthropic",
 					baseUrl: "https://api.anthropic.com",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input,
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,
@@ -127,6 +137,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
+				const inputModalities = m.modalities?.input ?? [];
+				const input: ("text" | "image" | "document")[] = ["text"];
+				if (inputModalities.includes("image")) input.push("image");
+				if (inputModalities.some((v) => v.includes("pdf") || v.includes("document"))) input.push("document");
+
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
@@ -134,7 +149,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "google",
 					baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input,
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,

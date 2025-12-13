@@ -332,7 +332,29 @@ function formatToolExecution(
 	const getTextOutput = (): string => {
 		if (!result) return "";
 		const textBlocks = result.content.filter((c) => c.type === "text");
-		return textBlocks.map((c) => (c as { type: "text"; text: string }).text).join("\n");
+		const imageBlocks = result.content.filter((c) => c.type === "image");
+		const documentBlocks = result.content.filter((c) => c.type === "document");
+
+		let output = textBlocks.map((c) => (c as { type: "text"; text: string }).text).join("\n");
+
+		if (imageBlocks.length > 0) {
+			const imageIndicators = imageBlocks
+				.map((c) => `[Image: ${(c as { mimeType?: string }).mimeType ?? "unknown"}]`)
+				.join("\n");
+			output = output ? `${output}\n${imageIndicators}` : imageIndicators;
+		}
+
+		if (documentBlocks.length > 0) {
+			const docIndicators = documentBlocks
+				.map((c) => {
+					const block = c as { mimeType?: string; fileName?: string };
+					return `[Document: ${block.fileName ?? block.mimeType ?? "unknown"}]`;
+				})
+				.join("\n");
+			output = output ? `${output}\n${docIndicators}` : docIndicators;
+		}
+
+		return output;
 	};
 
 	switch (toolName) {

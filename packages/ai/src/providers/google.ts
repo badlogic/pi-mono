@@ -14,6 +14,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	DocumentContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -332,19 +333,38 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 					parts: [{ text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
-				const parts: Part[] = msg.content.map((item) => {
-					if (item.type === "text") {
-						return { text: sanitizeSurrogates(item.text) };
-					} else {
+				const filteredItems = msg.content.filter((item) => {
+					if (item.type === "image") return model.input.includes("image");
+					if (item.type === "document") return model.input.includes("document");
+					return true;
+				});
+
+				const parts: Part[] = filteredItems
+					.map((item): Part | null => {
+						if (item.type === "text") {
+							const text = sanitizeSurrogates(item.text);
+							return text.trim().length > 0 ? { text } : null;
+						}
+						if (item.type === "image") {
+							return {
+								inlineData: {
+									mimeType: item.mimeType,
+									data: item.data,
+								},
+							};
+						}
+
+						const doc = item as DocumentContent;
 						return {
 							inlineData: {
-								mimeType: item.mimeType,
-								data: item.data,
+								mimeType: doc.mimeType,
+								data: doc.data,
 							},
 						};
-					}
-				});
-				const filteredParts = !model.input.includes("image") ? parts.filter((p) => p.text !== undefined) : parts;
+					})
+					.filter((p): p is Part => p !== null);
+
+				const filteredParts = parts;
 				if (filteredParts.length === 0) continue;
 				contents.push({
 					role: "user",
@@ -388,34 +408,52 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			// Build parts array with functionResponse and/or images
 			const parts: Part[] = [];
 
-			// Extract text and image content
+			// Extract text and binary content
 			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
 				.join("\n");
-			const imageBlocks = model.input.includes("image") ? msg.content.filter((c) => c.type === "image") : [];
+			const imageBlocks = model.input.includes("image")
+				? msg.content.filter((c): c is { type: "image"; data: string; mimeType: string } => c.type === "image")
+				: [];
+			const documentBlocks = model.input.includes("document")
+				? msg.content.filter(
+						(c): c is { type: "document"; data: string; mimeType: string } => c.type === "document",
+					)
+				: [];
 
-			// Always add functionResponse with text result (or placeholder if only images)
+			// Always add functionResponse with text result (or placeholder if only binary)
 			const hasText = textResult.length > 0;
 			const hasImages = imageBlocks.length > 0;
+			const hasDocuments = documentBlocks.length > 0;
+			const placeholder =
+				hasImages && !hasDocuments ? "(see attached image)" : hasDocuments ? "(see attached document)" : "";
 
 			parts.push({
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
 					response: {
-						result: hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "",
+						result: hasText ? sanitizeSurrogates(textResult) : placeholder,
 						isError: msg.isError,
 					},
 				},
 			});
 
-			// Add any images as inlineData parts
+			// Add any binary content as inlineData parts
 			for (const imageBlock of imageBlocks) {
 				parts.push({
 					inlineData: {
-						mimeType: (imageBlock as any).mimeType,
-						data: (imageBlock as any).data,
+						mimeType: imageBlock.mimeType,
+						data: imageBlock.data,
+					},
+				});
+			}
+			for (const docBlock of documentBlocks) {
+				parts.push({
+					inlineData: {
+						mimeType: docBlock.mimeType,
+						data: docBlock.data,
 					},
 				});
 			}
