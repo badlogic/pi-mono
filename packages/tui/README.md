@@ -8,7 +8,8 @@ Minimal terminal UI framework with differential rendering and synchronized outpu
 - **Synchronized Output**: Uses CSI 2026 for atomic screen updates (no flicker)
 - **Bracketed Paste Mode**: Handles large pastes correctly with markers for >10 line pastes
 - **Component-based**: Simple Component interface with render() method
-- **Built-in Components**: Text, Input, Editor, Markdown, Loader, SelectList, Spacer
+- **Built-in Components**: Text, Input, Editor, Markdown, Loader, SelectList, Spacer, Image
+- **Inline Images**: Renders images in terminals that support Kitty or iTerm2 graphics protocols
 - **Autocomplete Support**: File paths and slash commands
 
 ## Quick Start
@@ -189,6 +190,24 @@ Empty lines for vertical spacing.
 ```typescript
 const spacer = new Spacer(2); // 2 empty lines (default: 1)
 ```
+
+### Image
+
+Renders images inline for terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images. Falls back to a text placeholder on unsupported terminals.
+
+```typescript
+import { Image } from "@mariozechner/pi-tui";
+
+const image = new Image(
+	base64Data,        // base64-encoded image data
+	"image/png",       // MIME type
+	{ fallbackColor: (s) => s },  // theme for fallback text
+	{ maxWidthCells: 60 }         // optional: limit width
+);
+tui.addChild(image);
+```
+
+Supported formats: PNG, JPEG, GIF, WebP. Dimensions are parsed from the image headers automatically.
 
 ## Autocomplete
 

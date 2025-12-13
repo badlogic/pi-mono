@@ -1,23 +1,10 @@
-import * as os from "node:os";
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile, writeFile } from "fs/promises";
 import { resolve as resolvePath } from "path";
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return os.homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return os.homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
+import { expandPath } from "./path-utils.js";
 
 /**
  * Generate a unified diff string with line numbers and context

@@ -12,10 +12,12 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	getCapabilities,
 	Input,
 	Loader,
 	Markdown,
 	ProcessTerminal,
+	SelectList,
 	Spacer,
 	Text,
 	TruncatedText,
@@ -52,7 +54,7 @@ import { ThinkingSelectorComponent } from "./components/thinking-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import { getEditorTheme, getMarkdownTheme, getSelectListTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -159,6 +161,11 @@ export class InteractiveMode {
 			{ name: "autocompact", description: "Toggle automatic context compaction" },
 			{ name: "resume", description: "Resume a different session" },
 		];
+
+		// Add image toggle command only if terminal supports images
+		if (getCapabilities().images) {
+			slashCommands.push({ name: "show-images", description: "Toggle inline image display" });
+		}
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -585,6 +592,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/show-images") {
+				this.handleShowImagesCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -691,7 +703,9 @@ export class InteractiveMode {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
 								this.chatContainer.addChild(new Text("", 0, 0));
-								const component = new ToolExecutionComponent(content.name, content.arguments);
+								const component = new ToolExecutionComponent(content.name, content.arguments, {
+									showImages: this.settingsManager.getShowImages(),
+								});
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -731,7 +745,9 @@ export class InteractiveMode {
 
 			case "tool_execution_start": {
 				if (!this.pendingTools.has(event.toolCallId)) {
-					const component = new ToolExecutionComponent(event.toolName, event.args);
+					const component = new ToolExecutionComponent(event.toolName, event.args, {
+						showImages: this.settingsManager.getShowImages(),
+					});
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();
@@ -958,7 +974,9 @@ export class InteractiveMode {
 
 				for (const content of assistantMsg.content) {
 					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(content.name, content.arguments);
+						const component = new ToolExecutionComponent(content.name, content.arguments, {
+							showImages: this.settingsManager.getShowImages(),
+						});
 						this.chatContainer.addChild(component);
 
 						if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
@@ -1632,6 +1650,51 @@ export class InteractiveMode {
 		this.session.setAutoCompactionEnabled(newState);
 		this.footer.setAutoCompactEnabled(newState);
 		this.showStatus(`Auto-compaction: ${newState ? "on" : "off"}`);
+	}
+
+	private handleShowImagesCommand(): void {
+		// Only available if terminal supports images
+		const caps = getCapabilities();
+		if (!caps.images) {
+			this.showWarning("Your terminal does not support inline images");
+			return;
+		}
+
+		const currentValue = this.settingsManager.getShowImages();
+		const items = [
+			{ value: "yes", label: "Yes", description: "Show images inline in terminal" },
+			{ value: "no", label: "No", description: "Show text placeholder instead" },
+		];
+
+		const selector = new SelectList(items, 5, getSelectListTheme());
+		selector.setSelectedIndex(currentValue ? 0 : 1);
+
+		selector.onSelect = (item) => {
+			const newValue = item.value === "yes";
+			this.settingsManager.setShowImages(newValue);
+			this.showStatus(`Inline images: ${newValue ? "on" : "off"}`);
+			this.chatContainer.removeChild(selector);
+
+			// Update all existing tool execution components with new setting
+			for (const child of this.chatContainer.children) {
+				if (child instanceof ToolExecutionComponent) {
+					child.setShowImages(newValue);
+				}
+			}
+
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		selector.onCancel = () => {
+			this.chatContainer.removeChild(selector);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		this.chatContainer.addChild(selector);
+		this.ui.setFocus(selector);
+		this.ui.requestRender();
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {

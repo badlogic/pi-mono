@@ -1,6 +1,6 @@
 # mom (Master Of Mischief)
 
-A Slack bot powered by Claude that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
+A Slack bot powered by an LLM that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
 
 ## Features
 
@@ -94,18 +94,30 @@ Options:
 
 ## How Mom Works
 
-Mom is a Node.js app that runs on your host machine. She connects to Slack via Socket Mode, receives messages, and responds using Claude (Anthropic's API).
+Mom is a Node.js app that runs on your host machine. She connects to Slack via Socket Mode, receives messages, and responds using an LLM-based agent that can create and use tools.
 
-Mom is really a coding agent in disguise, but don't tell anyone.
+**For each channel you add mom to** (group channels or DMs), mom maintains a separate conversation history with its own context, memory, and files.
 
-When you @mention mom, she:
-1. Reads your message and the last 50 messages in the channel, including her own (which include previous tool results)
+**When a message arrives in a channel:**
+- The message is written to the channel's `log.jsonl`, retaining full channel history
+- If the message has attachments, they are stored in the channel's `attachments/` folder for mom to access
+- Mom can later search the `log.jsonl` file for previous conversations and reference the attachments
+
+**When you @mention mom (or DM her), she:**
+1. Syncs all unseen messages from `log.jsonl` into `context.jsonl`. The context is what mom actually sees in terms of content when she responds
 2. Loads **memory** from MEMORY.md files (global and channel-specific)
-3. Uses **tools** (`bash`, `read`, `write`, `edit`, `attach`)
-4. Stores everything in the **data directory**. This includes conversation logs, files, and custom CLI tools (**skills**)
-5. Responds with results
+3. Responds to your request, dynamically using tools to answer it:
+   - Read attachments and analyze them
+   - Invoke command line tools, e.g. to read your emails
+   - Write new files or programs
+   - Attach files to her response
+4. Any files or tools mom creates are stored in the channel's directory
+5. Mom's direct reply is stored in `log.jsonl`, while details like tool call results are kept in `context.jsonl` which she'll see and thus "remember" on subsequent requests
 
-Each @mention starts a fresh agent run. Context is minimal: system prompt, tool definitions, last 50 messages, and memory files. Nothing else. This keeps the context window small so mom can work on complex tasks longer. And if mom needs older messages, she can efficiently query the channel logs for essentially infinite context.
+**Context Management:**
+- Mom has limited context depending on the LLM model used. E.g. Claude Opus or Sonnet 4.5 can process a maximum of 200k tokens
+- When the context exceeds the LLM's context window size, mom compacts the context: keeps recent messages and tool results in full, summarizes older ones
+- For older history beyond context, mom can grep `log.jsonl` for infinite searchable history
 
 Everything mom does happens in a workspace you control. This is a single directory that's the only directory she can access on your host machine (when in Docker mode). You can inspect logs, memory, and tools she creates anytime.
 
@@ -164,7 +176,7 @@ You provide mom with a **data directory** (e.g., `./data`) as her workspace. Whi
 
 **What's stored here:**
 - `log.jsonl`: All channel messages (user messages, bot responses). Source of truth.
-- `context.jsonl`: Messages sent to Claude. Synced from log.jsonl at each run start.
+- `context.jsonl`: Messages sent to the LLM. Synced from log.jsonl at each run start.
 - Memory files: Context mom remembers across sessions
 - Custom tools/scripts mom creates (aka "skills")
 - Working files, cloned repos, generated output
@@ -173,13 +185,110 @@ Mom efficiently greps `log.jsonl` for conversation history, giving her essential
 
 ### Memory
 
-Mom maintains persistent memory across sessions using MEMORY.md files:
-- **Global memory** (`data/MEMORY.md`): Shared across all channels. This includes project architecture, preferences, conventions, skill documentation
+Mom uses MEMORY.md files to remember basic rules and preferences:
+- **Global memory** (`data/MEMORY.md`): Shared across all channels. Project architecture, coding conventions, communication preferences
 - **Channel memory** (`data/<channel>/MEMORY.md`): Channel-specific context, decisions, ongoing work
 
 Mom automatically reads these files before responding. You can ask her to update memory ("remember that we use tabs not spaces") or edit the files directly yourself.
 
-Memory files typically contain things like brief descriptions of available custom CLI tools and where to find them, email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
+Memory files typically contain email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
+
+### Skills
+
+Mom can install and use standard CLI tools (like GitHub CLI, npm packages, etc.). Mom can also write custom tools for your specific needs, which are called skills.
+
+Skills are stored in:
+- `/workspace/skills/`: Global tools available everywhere
+- `/workspace/<channel>/skills/`: Channel-specific tools
+
+Each skill has a `SKILL.md` file with frontmatter and detailed usage instructions, plus any scripts or programs mom needs to use the skill. The frontmatter defines the skill's name and a brief description:
+
+```markdown
+---
+name: gmail
+description: Read, search, and send Gmail via IMAP/SMTP
+---
+
+# Gmail Skill
+...
+```
+
+When mom responds, she's given the names, descriptions, and file locations of all `SKILL.md` files in `/workspace/skills/` and `/workspace/<channel>/skills/`, so she knows what's available to handle your request. When mom decides to use a skill, she reads the `SKILL.md` in full, after which she's able to use the skill by invoking its scripts and programs.
+
+You can find a set of basic skills at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills>. Just tell mom to clone this repository into `/workspace/skills/pi-skills` and she'll help you set up the rest.
+
+#### Creating a Skill
+
+You can ask mom to create skills for you. For example:
+
+> "Create a skill that lets me manage a simple notes file. I should be able to add notes, read all notes, and clear them."
+
+Mom would create something like `/workspace/skills/note/SKILL.md`:
+
+```markdown
+---
+name: note
+description: Add and read notes from a persistent notes file
+---
+
+# Note Skill
+
+Manage a simple notes file with timestamps.
+
+## Usage
+
+Add a note:
+\`\`\`bash
+bash {baseDir}/note.sh add "Buy groceries"
+\`\`\`
+
+Read all notes:
+\`\`\`bash
+bash {baseDir}/note.sh read
+\`\`\`
+
+Search notes by keyword:
+\`\`\`bash
+grep -i "groceries" ~/.notes.txt
+\`\`\`
+
+Search notes by date (format: YYYY-MM-DD):
+\`\`\`bash
+grep "2025-12-13" ~/.notes.txt
+\`\`\`
+
+Clear all notes:
+\`\`\`bash
+bash {baseDir}/note.sh clear
+\`\`\`
+```
+
+And `/workspace/skills/note/note.sh`:
+
+```bash
+#!/bin/bash
+NOTES_FILE="$HOME/.notes.txt"
+
+case "$1" in
+  add)
+    echo "[$(date -Iseconds)] $2" >> "$NOTES_FILE"
+    echo "Note added"
+    ;;
+  read)
+    cat "$NOTES_FILE" 2>/dev/null || echo "No notes yet"
+    ;;
+  clear)
+    rm -f "$NOTES_FILE"
+    echo "Notes cleared"
+    ;;
+  *)
+    echo "Usage: note.sh {add|read|clear}"
+    exit 1
+    ;;
+esac
+```
+
+Now, if you ask mom to "take a note: buy groceries", she'll use the note skill to add it. Ask her to "show me my notes" and she'll read them back to you.
 
 ### Events (Scheduled Wake-ups)
 
@@ -231,122 +340,25 @@ You can write event files directly to `data/events/` on the host machine. This l
 
 **Example workflow:** Ask mom to "remind me about the dentist tomorrow at 9am" and she'll create a one-shot event. Ask her to "check my inbox every morning at 9" and she'll create a periodic event with cron schedule `0 9 * * *`.
 
-### Custom CLI Tools ("Skills")
-
-Mom can write custom CLI tools to help with recurring tasks, access specific systems like email, calendars, web search, CRM/CMS platforms, issue trackers, Notion, project management tools, or process data (generate charts, Excel sheets, reports, etc.). You can attach files and ask her to process them with a skill, or let her pick the right tool for the task. These "skills" are stored in:
-- `data/skills/`: Global tools available everywhere
-- `data/<channel>/skills/`: Channel-specific tools
-
-**Skills are auto-discovered.** Each skill directory must contain a `SKILL.md` file with YAML frontmatter:
-
-```markdown
----
-description: Read, search, and send Gmail via IMAP/SMTP
-name: gmail
----
-
-# Gmail Skill
-
-## Setup
-Run `node gmail.js setup` and enter your Gmail app password.
-
-## Usage
-\`\`\`bash
-node {baseDir}/gmail.js search --unread --limit 10
-node {baseDir}/gmail.js read 12345
-node {baseDir}/gmail.js send --to "user@example.com" --subject "Hello" --body "Message"
-\`\`\`
-```
-
-**Frontmatter fields:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `description` | Yes | Short description shown in mom's system prompt |
-| `name` | No | Override skill name (defaults to directory name) |
-
-**Variables:**
-
-Use `{baseDir}` as a placeholder for the skill's directory path. Mom substitutes the actual path when reading the skill.
-
-**How it works:**
-
-Mom sees available skills listed in her system prompt with their descriptions. When a task matches a skill, she reads the full `SKILL.md` to get usage instructions.
-
-**Skill directory structure:**
-```
-data/skills/gmail/
-├── SKILL.md           # Required: frontmatter + instructions
-├── gmail.js           # Tool implementation
-├── config.json        # Credentials (created on first use)
-└── package.json       # Dependencies (if Node.js)
-```
-
-You develop skills together with mom. Tell her what you need and she'll create the tools accordingly. Knowing how to program and how to steer coding agents helps with this task. Ask a friendly neighborhood programmer if you get stuck. Most tools take 5-10 minutes to create. You can even put them in a git repo for versioning and reuse across different mom instances.
-
-**Real-world examples:**
-
-**Gmail**:
-```bash
-node gmail.js search --unread --limit 10
-node gmail.js read 12345
-node gmail.js send --to "user@example.com" --subject "Hello" --text "Message"
-```
-Mom creates a Node.js CLI that uses IMAP/SMTP, asks for your Gmail app password, stores it in `config.json`, and can now read/search/send emails. Supports multiple accounts.
-
-**Transcribe**:
-```bash
-bash transcribe.sh /path/to/voice_memo.m4a
-```
-Mom creates a Bash script that submits audio to Groq's Whisper API, asks for your API key once, stores it in the script, and transcribes voice memos you attach to messages.
-
-**Fetch Content**:
-```bash
-node fetch-content.js https://example.com/article
-```
-Mom creates a Node.js tool that fetches URLs and extracts readable content as markdown. No API key needed. Works for articles, docs, Wikipedia.
-
-Mom automatically discovers skills and lists them in her system prompt. She reads the `SKILL.md` before using a skill and reuses stored credentials automatically.
-
 ### Updating Mom
 
 Update mom anytime with `npm install -g @mariozechner/pi-mom`. This only updates the Node.js app on your host. Anything mom installed inside the Docker container remains unchanged.
 
 ## Message History
 
-Mom uses two files per channel to manage messages:
+Mom uses two files per channel to manage conversation history:
 
-### log.jsonl (Source of Truth)
+**log.jsonl** ([format](../../src/store.ts)) (source of truth):
+- All messages from users and mom (no tool results)
+- Custom JSONL format with timestamps, user info, text, attachments
+- Append-only, never compacted
+- Used for syncing to context and searching older history
 
-All channel messages are stored here. This includes user messages, channel chatter (messages without @mention), and bot responses. Format: one JSON object per line with ISO 8601 timestamps:
-
-```typescript
-interface LoggedMessage {
-  date: string;        // ISO 8601 (e.g., "2025-11-26T10:44:00.000Z")
-  ts: string;          // Slack timestamp (seconds.microseconds)
-  user: string;        // User ID or "bot"
-  userName?: string;   // Handle (e.g., "mario")
-  displayName?: string; // Display name (e.g., "Mario Zechner")
-  text: string;        // Message text (@mentions stripped)
-  attachments: string[]; // Filenames of attachments
-  isBot: boolean;
-}
-```
-
-**Example:**
-```json
-{"date":"2025-11-26T10:44:00.123Z","ts":"1732619040.123456","user":"U123ABC","userName":"mario","text":"hello","attachments":[],"isBot":false}
-{"date":"2025-11-26T10:44:05.456Z","ts":"1732619045456","user":"bot","text":"Hi! How can I help?","attachments":[],"isBot":true}
-```
-
-### context.jsonl (LLM Context)
-
-Messages sent to Claude are stored here. This is synced from `log.jsonl` at the start of each run to ensure:
-- Backfilled messages (from Slack API on startup) are included
-- Channel chatter between @mentions is included
-- Messages sent while mom was busy are included
-
-Mom knows how to query `log.jsonl` efficiently (see [her system prompt](src/agent.ts)) for older history beyond what's in context.
+**context.jsonl** ([format](../../src/context.ts)) (LLM context):
+- What's sent to the LLM (includes tool results and full history)
+- Auto-synced from `log.jsonl` before each @mention (picks up backfilled messages, channel chatter)
+- When context exceeds the LLM's context window size, mom compacts it: keeps recent messages and tool results in full, summarizes older ones into a compaction event. On subsequent requests, the LLM gets the summary + recent messages from the compaction point onward
+- Mom can grep `log.jsonl` for older history beyond what's in context
 
 ## Security Considerations
 
@@ -450,14 +462,6 @@ Terminal 2 (mom, with auto-restart):
 cd packages/mom
 npx tsx --watch-path src --watch src/main.ts --sandbox=docker:mom-sandbox ./data
 ```
-
-### Key Concepts
-
-- **SlackContext**: Per-message context with respond/setWorking/replaceMessage methods
-- **AgentRunner**: Returns `{ stopReason }`. Never throws for normal flow
-- **Working Indicator**: "..." appended while processing, removed on completion
-- **Memory System**: MEMORY.md files loaded into system prompt automatically
-- **Prompt Caching**: Recent messages in user prompt (not system) for better cache hits
 
 ## License
 

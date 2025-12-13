@@ -1,23 +1,10 @@
-import * as os from "node:os";
 import type { AgentTool, ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
 import { extname, resolve as resolvePath } from "path";
+import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return os.homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return os.homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
 
 /**
  * Map of file extensions to MIME types for common image formats
@@ -58,7 +45,7 @@ export const readTool: AgentTool<typeof readSchema> = {
 		{ path, offset, limit }: { path: string; offset?: number; limit?: number },
 		signal?: AbortSignal,
 	) => {
-		const absolutePath = resolvePath(expandPath(path));
+		const absolutePath = resolvePath(resolveReadPath(path));
 		const mimeType = isImageFile(absolutePath);
 
 		return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
