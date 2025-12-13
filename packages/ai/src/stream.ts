@@ -196,7 +196,7 @@ type ClampedReasoningEffort = Exclude<ReasoningEffort, "xhigh">;
 
 function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
 	// Covers gemini-3-pro, gemini-3-pro-preview, and possible other prefixed ids in the future
-	return model.id.includes("gemini-3-pro");
+	return model.id.includes("3-pro");
 }
 
 function getGoogleThinkingLevel(effort: ClampedReasoningEffort): ThinkingLevel {
