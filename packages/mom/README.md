@@ -94,18 +94,30 @@ Options:
 
 ## How Mom Works
 
-Mom is a Node.js app that runs on your host machine. She connects to Slack via Socket Mode, receives messages, and responds using Claude (Anthropic's API).
+Mom is a Node.js app that runs on your host machine. She connects to Slack via Socket Mode, receives messages, and responds using an LLM-based agent that can create and use tools.
 
-Mom is really a coding agent in disguise, but don't tell anyone.
+**For each channel you add mom to** (group channels or DMs), mom maintains a separate conversation history with its own context, memory, and files.
 
-When you @mention mom, she:
-1. Reads your message and the last 50 messages in the channel, including her own (which include previous tool results)
+**When a message arrives in a channel:**
+- The message is written to the channel's `log.jsonl`, retaining full channel history
+- If the message has attachments, they are stored in the channel's `attachments/` folder for mom to access
+- Mom can later search the `log.jsonl` file for previous conversations and reference the attachments
+
+**When you @mention mom (or DM her), she:**
+1. Syncs all unseen messages from `log.jsonl` into `context.jsonl`. The context is what mom actually sees in terms of content when she responds
 2. Loads **memory** from MEMORY.md files (global and channel-specific)
-3. Uses **tools** (`bash`, `read`, `write`, `edit`, `attach`)
-4. Stores everything in the **data directory**. This includes conversation logs, files, and custom CLI tools (**skills**)
-5. Responds with results
+3. Responds to your request, dynamically using tools to answer it:
+   - Read attachments and analyze them
+   - Invoke command line tools, e.g. to read your emails
+   - Write new files or programs
+   - Attach files to her response
+4. Any files or tools mom creates are stored in the channel's directory
+5. Mom's direct reply is stored in `log.jsonl`, while details like tool call results are kept in `context.jsonl` which she'll see and thus "remember" on subsequent requests
 
-Each @mention starts a fresh agent run. Context is minimal: system prompt, tool definitions, last 50 messages, and memory files. Nothing else. This keeps the context window small so mom can work on complex tasks longer. And if mom needs older messages, she can efficiently query the channel logs for essentially infinite context.
+**Context Management:**
+- Mom has limited context depending on the LLM model used. E.g. Claude Opus or Sonnet 4.5 can process a maximum of 200k tokens
+- When the context exceeds the LLM's context window size, mom compacts the context: keeps recent messages and tool results in full, summarizes older ones
+- For older history beyond context, mom can grep `log.jsonl` for infinite searchable history
 
 Everything mom does happens in a workspace you control. This is a single directory that's the only directory she can access on your host machine (when in Docker mode). You can inspect logs, memory, and tools she creates anytime.
 
@@ -237,6 +249,12 @@ Mom can write custom CLI tools to help with recurring tasks, access specific sys
 - `data/skills/`: Global tools available everywhere
 - `data/<channel>/skills/`: Channel-specific tools
 
+**Basic Skills Collection:**
+
+A set of ready-to-use skills is available at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills> (web search, Gmail, Google Calendar, Google Drive, transcription, YouTube transcripts, browser automation, VS Code diffs).
+
+To install, tell mom: "Clone pi-skills into /workspace/skills/pi-skills". Mom will discover them immediately and install prerequisites or ask for account setup as needed.
+
 **Skills are auto-discovered.** Each skill directory must contain a `SKILL.md` file with YAML frontmatter:
 
 ```markdown
@@ -314,39 +332,20 @@ Update mom anytime with `npm install -g @mariozechner/pi-mom`. This only updates
 
 ## Message History
 
-Mom uses two files per channel to manage messages:
+Mom uses two files per channel:
 
-### log.jsonl (Source of Truth)
+**log.jsonl** (source of truth):
+- All messages from users and mom (no tool results)
+- Custom JSONL format with timestamps, user info, text, attachments
+- Append-only, never compacted
+- Used for syncing to context and searching older history
 
-All channel messages are stored here. This includes user messages, channel chatter (messages without @mention), and bot responses. Format: one JSON object per line with ISO 8601 timestamps:
-
-```typescript
-interface LoggedMessage {
-  date: string;        // ISO 8601 (e.g., "2025-11-26T10:44:00.000Z")
-  ts: string;          // Slack timestamp (seconds.microseconds)
-  user: string;        // User ID or "bot"
-  userName?: string;   // Handle (e.g., "mario")
-  displayName?: string; // Display name (e.g., "Mario Zechner")
-  text: string;        // Message text (@mentions stripped)
-  attachments: string[]; // Filenames of attachments
-  isBot: boolean;
-}
-```
-
-**Example:**
-```json
-{"date":"2025-11-26T10:44:00.123Z","ts":"1732619040.123456","user":"U123ABC","userName":"mario","text":"hello","attachments":[],"isBot":false}
-{"date":"2025-11-26T10:44:05.456Z","ts":"1732619045456","user":"bot","text":"Hi! How can I help?","attachments":[],"isBot":true}
-```
-
-### context.jsonl (LLM Context)
-
-Messages sent to Claude are stored here. This is synced from `log.jsonl` at the start of each run to ensure:
-- Backfilled messages (from Slack API on startup) are included
-- Channel chatter between @mentions is included
-- Messages sent while mom was busy are included
-
-Mom knows how to query `log.jsonl` efficiently (see [her system prompt](src/agent.ts)) for older history beyond what's in context.
+**context.jsonl** (LLM context):
+- What's sent to Claude's API (includes tool results)
+- Contains full history plus compaction events
+- Auto-synced from `log.jsonl` before each @mention (picks up backfilled messages, channel chatter)
+- When exceeds token limit (default 100k): keeps recent messages, summarizes older ones into checkpoint
+- Mom can grep `log.jsonl` for older history beyond what's in context
 
 ## Security Considerations
 
