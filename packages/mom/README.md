@@ -185,13 +185,13 @@ Mom efficiently greps `log.jsonl` for conversation history, giving her essential
 
 ### Memory
 
-Mom maintains persistent memory across sessions using MEMORY.md files:
-- **Global memory** (`data/MEMORY.md`): Shared across all channels. This includes project architecture, preferences, conventions, skill documentation
+Mom uses MEMORY.md files to remember basic rules and preferences:
+- **Global memory** (`data/MEMORY.md`): Shared across all channels. Project architecture, coding conventions, communication preferences
 - **Channel memory** (`data/<channel>/MEMORY.md`): Channel-specific context, decisions, ongoing work
 
 Mom automatically reads these files before responding. You can ask her to update memory ("remember that we use tabs not spaces") or edit the files directly yourself.
 
-Memory files typically contain things like brief descriptions of available custom CLI tools and where to find them, email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
+Memory files typically contain email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
 
 ### Events (Scheduled Wake-ups)
 
