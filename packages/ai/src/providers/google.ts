@@ -364,11 +364,10 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 					})
 					.filter((p): p is Part => p !== null);
 
-				const filteredParts = parts;
-				if (filteredParts.length === 0) continue;
+				if (parts.length === 0) continue;
 				contents.push({
 					role: "user",
-					parts: filteredParts,
+					parts,
 				});
 			}
 		} else if (msg.role === "assistant") {
@@ -427,7 +426,13 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			const hasImages = imageBlocks.length > 0;
 			const hasDocuments = documentBlocks.length > 0;
 			const placeholder =
-				hasImages && !hasDocuments ? "(see attached image)" : hasDocuments ? "(see attached document)" : "";
+				hasDocuments && !hasImages
+					? "(see attached document)"
+					: hasImages && !hasDocuments
+						? "(see attached image)"
+						: hasImages || hasDocuments
+							? "(see attached attachments)"
+							: "";
 
 			parts.push({
 				functionResponse: {
