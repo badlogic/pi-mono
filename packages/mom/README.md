@@ -195,9 +195,11 @@ Memory files typically contain email writing tone preferences, coding convention
 
 ### Skills
 
-Mom can write custom CLI tools to help with recurring tasks, access specific systems (email, calendars, web search, CRM/CMS platforms, issue trackers, Notion, project management tools), or process data (generate charts, Excel sheets, reports, etc.). You can attach files and ask her to process them with a skill, or let her pick the right tool for the task. Skills are stored in:
-- `data/skills/`: Global tools available everywhere
-- `data/<channel>/skills/`: Channel-specific tools
+Mom can install and use standard CLI tools (like GitHub CLI, npm packages, etc.). Mom can also write custom tools for your specific needs, which are called skills.
+
+Skills are stored in:
+- `/workspace/skills/`: Global tools available everywhere
+- `/workspace/<channel>/skills/`: Channel-specific tools
 
 Each skill has a `SKILL.md` file with frontmatter and detailed usage instructions, plus any scripts or programs mom needs to use the skill. The frontmatter defines the skill's name and a brief description:
 
@@ -211,9 +213,72 @@ description: Read, search, and send Gmail via IMAP/SMTP
 ...
 ```
 
-When mom responds, she's given the names, descriptions, and file locations of all `SKILL.md` files in `data/skills/` and `data/<channel>/skills/`, so she knows what's available to handle your request. When mom decides to use a skill, she reads the `SKILL.md` in full, after which she's able to use the skill by invoking its scripts and programs.
+When mom responds, she's given the names, descriptions, and file locations of all `SKILL.md` files in `/workspace/skills/` and `/workspace/<channel>/skills/`, so she knows what's available to handle your request. When mom decides to use a skill, she reads the `SKILL.md` in full, after which she's able to use the skill by invoking its scripts and programs.
 
 You can find a set of basic skills at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills>. Just tell mom to clone this repository into `/workspace/skills/pi-skills` and she'll help you set up the rest.
+
+#### Creating a Skill
+
+You can ask mom to create skills for you. For example:
+
+> "Create a skill that lets me manage a simple notes file. I should be able to add notes, read all notes, and clear them."
+
+Mom would create something like `/workspace/skills/note/SKILL.md`:
+
+```markdown
+---
+name: note
+description: Add and read notes from a persistent notes file
+---
+
+# Note Skill
+
+Manage a simple notes file.
+
+## Usage
+
+Add a note:
+\`\`\`bash
+bash {baseDir}/note.sh add "Buy groceries"
+\`\`\`
+
+Read all notes:
+\`\`\`bash
+bash {baseDir}/note.sh read
+\`\`\`
+
+Clear all notes:
+\`\`\`bash
+bash {baseDir}/note.sh clear
+\`\`\`
+```
+
+And `/workspace/skills/note/note.sh`:
+
+```bash
+#!/bin/bash
+NOTES_FILE="$HOME/.notes.txt"
+
+case "$1" in
+  add)
+    echo "- $2" >> "$NOTES_FILE"
+    echo "Note added"
+    ;;
+  read)
+    cat "$NOTES_FILE" 2>/dev/null || echo "No notes yet"
+    ;;
+  clear)
+    rm -f "$NOTES_FILE"
+    echo "Notes cleared"
+    ;;
+  *)
+    echo "Usage: note.sh {add|read|clear}"
+    exit 1
+    ;;
+esac
+```
+
+Now, if you ask mom to "take a note: buy groceries", she'll use the note skill to add it. Ask her to "show me my notes" and she'll read them back to you.
 
 ### Events (Scheduled Wake-ups)
 
