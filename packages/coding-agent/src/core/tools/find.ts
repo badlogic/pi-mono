@@ -3,23 +3,10 @@ import { Type } from "@sinclair/typebox";
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";
 import { globSync } from "glob";
-import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../../utils/tools-manager.js";
+import { expandPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
 
 const findSchema = Type.Object({
 	pattern: Type.String({

@@ -1,22 +1,9 @@
 import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
-import { homedir } from "os";
 import nodePath from "path";
+import { expandPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
 
 const lsSchema = Type.Object({
 	path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),

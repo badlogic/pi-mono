@@ -5,8 +5,8 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import chalk from "chalk";
 import { existsSync, readFileSync, statSync } from "fs";
-import { homedir } from "os";
 import { extname, resolve } from "path";
+import { resolveReadPath } from "../core/tools/path-utils.js";
 
 /** Map of file extensions to MIME types for common image formats */
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -23,17 +23,6 @@ function isImageFile(filePath: string): string | null {
 	return IMAGE_MIME_TYPES[ext] || null;
 }
 
-/** Expand ~ to home directory */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
-
 export interface ProcessedFiles {
 	textContent: string;
 	imageAttachments: Attachment[];
@@ -45,9 +34,8 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 	const imageAttachments: Attachment[] = [];
 
 	for (const fileArg of fileArgs) {
-		// Expand and resolve path
-		const expandedPath = expandPath(fileArg);
-		const absolutePath = resolve(expandedPath);
+		// Expand and resolve path (handles ~ expansion and macOS screenshot Unicode spaces)
+		const absolutePath = resolve(resolveReadPath(fileArg));
 
 		// Check if file exists
 		if (!existsSync(absolutePath)) {
