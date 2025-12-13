@@ -1674,6 +1674,14 @@ export class InteractiveMode {
 			this.settingsManager.setShowImages(newValue);
 			this.showStatus(`Inline images: ${newValue ? "on" : "off"}`);
 			this.chatContainer.removeChild(selector);
+
+			// Update all existing tool execution components with new setting
+			for (const child of this.chatContainer.children) {
+				if (child instanceof ToolExecutionComponent) {
+					child.setShowImages(newValue);
+				}
+			}
+
 			this.ui.setFocus(this.editor);
 			this.ui.requestRender();
 		};

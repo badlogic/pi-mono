@@ -80,6 +80,11 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	setShowImages(show: boolean): void {
+		this.showImages = show;
+		this.updateDisplay();
+	}
+
 	private updateDisplay(): void {
 		const bgFn = this.result
 			? this.result.isError
