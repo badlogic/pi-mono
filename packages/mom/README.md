@@ -193,6 +193,28 @@ Mom automatically reads these files before responding. You can ask her to update
 
 Memory files typically contain email writing tone preferences, coding conventions, team member responsibilities, common troubleshooting steps, and workflow patterns. Basically anything describing how you and your team work.
 
+### Skills
+
+Mom can write custom CLI tools to help with recurring tasks, access specific systems (email, calendars, web search, CRM/CMS platforms, issue trackers, Notion, project management tools), or process data (generate charts, Excel sheets, reports, etc.). You can attach files and ask her to process them with a skill, or let her pick the right tool for the task. Skills are stored in:
+- `data/skills/`: Global tools available everywhere
+- `data/<channel>/skills/`: Channel-specific tools
+
+Each skill has a `SKILL.md` file with frontmatter and detailed usage instructions, plus any scripts or programs mom needs to use the skill. The frontmatter defines the skill's name and a brief description:
+
+```markdown
+---
+name: gmail
+description: Read, search, and send Gmail via IMAP/SMTP
+---
+
+# Gmail Skill
+...
+```
+
+When mom responds, she's given the names, descriptions, and file locations of all `SKILL.md` files in `data/skills/` and `data/<channel>/skills/`, so she knows what's available to handle your request. When mom decides to use a skill, she reads the `SKILL.md` in full, after which she's able to use the skill by invoking its scripts and programs.
+
+You can find a set of basic skills at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills>. Just tell mom to clone this repository into `/workspace/skills/pi-skills` and she'll help you set up the rest.
+
 ### Events (Scheduled Wake-ups)
 
 Mom can schedule events that wake her up at specific times or when external things happen. Events are JSON files in `data/events/`. The harness watches this directory and triggers mom when events are due.
@@ -242,89 +264,6 @@ You can write event files directly to `data/events/` on the host machine. This l
 - Periodic events should debounce (e.g., check inbox every 15 minutes, not per-email)
 
 **Example workflow:** Ask mom to "remind me about the dentist tomorrow at 9am" and she'll create a one-shot event. Ask her to "check my inbox every morning at 9" and she'll create a periodic event with cron schedule `0 9 * * *`.
-
-### Custom CLI Tools ("Skills")
-
-Mom can write custom CLI tools to help with recurring tasks, access specific systems like email, calendars, web search, CRM/CMS platforms, issue trackers, Notion, project management tools, or process data (generate charts, Excel sheets, reports, etc.). You can attach files and ask her to process them with a skill, or let her pick the right tool for the task. These "skills" are stored in:
-- `data/skills/`: Global tools available everywhere
-- `data/<channel>/skills/`: Channel-specific tools
-
-**Basic Skills Collection:**
-
-A set of ready-to-use skills is available at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills> (web search, Gmail, Google Calendar, Google Drive, transcription, YouTube transcripts, browser automation, VS Code diffs).
-
-To install, tell mom: "Clone pi-skills into /workspace/skills/pi-skills". Mom will discover them immediately and install prerequisites or ask for account setup as needed.
-
-**Skills are auto-discovered.** Each skill directory must contain a `SKILL.md` file with YAML frontmatter:
-
-```markdown
----
-description: Read, search, and send Gmail via IMAP/SMTP
-name: gmail
----
-
-# Gmail Skill
-
-## Setup
-Run `node gmail.js setup` and enter your Gmail app password.
-
-## Usage
-\`\`\`bash
-node {baseDir}/gmail.js search --unread --limit 10
-node {baseDir}/gmail.js read 12345
-node {baseDir}/gmail.js send --to "user@example.com" --subject "Hello" --body "Message"
-\`\`\`
-```
-
-**Frontmatter fields:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `description` | Yes | Short description shown in mom's system prompt |
-| `name` | No | Override skill name (defaults to directory name) |
-
-**Variables:**
-
-Use `{baseDir}` as a placeholder for the skill's directory path. Mom substitutes the actual path when reading the skill.
-
-**How it works:**
-
-Mom sees available skills listed in her system prompt with their descriptions. When a task matches a skill, she reads the full `SKILL.md` to get usage instructions.
-
-**Skill directory structure:**
-```
-data/skills/gmail/
-├── SKILL.md           # Required: frontmatter + instructions
-├── gmail.js           # Tool implementation
-├── config.json        # Credentials (created on first use)
-└── package.json       # Dependencies (if Node.js)
-```
-
-You develop skills together with mom. Tell her what you need and she'll create the tools accordingly. Knowing how to program and how to steer coding agents helps with this task. Ask a friendly neighborhood programmer if you get stuck. Most tools take 5-10 minutes to create. You can even put them in a git repo for versioning and reuse across different mom instances.
-
-**Real-world examples:**
-
-**Gmail**:
-```bash
-node gmail.js search --unread --limit 10
-node gmail.js read 12345
-node gmail.js send --to "user@example.com" --subject "Hello" --text "Message"
-```
-Mom creates a Node.js CLI that uses IMAP/SMTP, asks for your Gmail app password, stores it in `config.json`, and can now read/search/send emails. Supports multiple accounts.
-
-**Transcribe**:
-```bash
-bash transcribe.sh /path/to/voice_memo.m4a
-```
-Mom creates a Bash script that submits audio to Groq's Whisper API, asks for your API key once, stores it in the script, and transcribes voice memos you attach to messages.
-
-**Fetch Content**:
-```bash
-node fetch-content.js https://example.com/article
-```
-Mom creates a Node.js tool that fetches URLs and extracts readable content as markdown. No API key needed. Works for articles, docs, Wikipedia.
-
-Mom automatically discovers skills and lists them in her system prompt. She reads the `SKILL.md` before using a skill and reuses stored credentials automatically.
 
 ### Updating Mom
 
