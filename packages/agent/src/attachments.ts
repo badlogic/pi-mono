@@ -32,6 +32,7 @@ export function attachmentsToContentBlocks(attachments: Attachment[]): Attachmen
 				});
 			}
 		}
+		// Unknown attachment types are silently ignored
 	}
 
 	return blocks;

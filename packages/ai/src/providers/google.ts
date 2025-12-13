@@ -24,9 +24,9 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
 import { transformMessages } from "./transorm-messages.js";
 
 export interface GoogleOptions extends StreamOptions {
@@ -425,14 +425,11 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			const hasText = textResult.length > 0;
 			const hasImages = imageBlocks.length > 0;
 			const hasDocuments = documentBlocks.length > 0;
-			const placeholder =
-				hasDocuments && !hasImages
-					? "(see attached document)"
-					: hasImages && !hasDocuments
-						? "(see attached image)"
-						: hasImages || hasDocuments
-							? "(see attached attachments)"
-							: "";
+			const placeholder = getAttachmentPlaceholder({
+				hasImages,
+				hasDocuments,
+				supportsNativeDocuments: true,
+			});
 
 			parts.push({
 				functionResponse: {

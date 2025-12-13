@@ -24,6 +24,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
@@ -495,14 +496,11 @@ function convertMessages(
 
 			// Always send tool result with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
-			const placeholder =
-				hasImages && !hasDocuments
-					? "(see attached image)"
-					: hasDocuments && !hasImages
-						? "(document attachment omitted: provider has no native document support)"
-						: hasImages && hasDocuments
-							? "(see attached image; document attachment omitted)"
-							: "";
+			const placeholder = getAttachmentPlaceholder({
+				hasImages,
+				hasDocuments,
+				supportsNativeDocuments: false,
+			});
 			// Some providers (e.g. Mistral) require the 'name' field in tool results
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",

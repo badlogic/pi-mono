@@ -25,10 +25,10 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
+import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
 import { transformMessages } from "./transorm-messages.js";
 
 // OpenAI Responses-specific options
@@ -463,16 +463,13 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			const hasImages = msg.content.some((c) => c.type === "image");
 			const hasDocuments = msg.content.some((c) => c.type === "document");
 
-			// Always send function_call_output with text (or placeholder if only images)
+			// Always send function_call_output with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
-			const placeholder =
-				hasImages && !hasDocuments
-					? "(see attached image)"
-					: hasDocuments && !hasImages
-						? "(document attachment omitted: provider has no native document support)"
-						: hasImages && hasDocuments
-							? "(see attached image; document attachment omitted)"
-							: "";
+			const placeholder = getAttachmentPlaceholder({
+				hasImages,
+				hasDocuments,
+				supportsNativeDocuments: false,
+			});
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],

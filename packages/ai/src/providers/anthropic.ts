@@ -23,10 +23,10 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types.js";
+import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
 import { transformMessages } from "./transorm-messages.js";
 
 /**
@@ -102,12 +102,11 @@ function convertContentBlocks(content: (TextContent | ImageContent | DocumentCon
 	// If only binary content (no text), add placeholder text block
 	const hasText = blocks.some((b) => b.type === "text");
 	if (!hasText) {
-		const placeholder =
-			hasPdfDocuments && !hasImages
-				? "(see attached document)"
-				: hasImages && !hasPdfDocuments
-					? "(see attached image)"
-					: "(see attached attachments)";
+		const placeholder = getAttachmentPlaceholder({
+			hasImages,
+			hasDocuments: hasPdfDocuments,
+			supportsNativeDocuments: true,
+		});
 		blocks.unshift({
 			type: "text" as const,
 			text: placeholder,

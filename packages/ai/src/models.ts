@@ -3,24 +3,11 @@ import type { Api, KnownProvider, Model, Usage } from "./types.js";
 
 const modelRegistry: Map<string, Map<string, Model<Api>>> = new Map();
 
-function normalizeModelInput(model: Model<Api>): Model<Api> {
-	// Enable native document input for providers that support it broadly.
-	// This keeps older generated model lists working without requiring regeneration.
-	if (
-		(model.provider === "anthropic" || model.provider === "google") &&
-		model.input.includes("image") &&
-		!model.input.includes("document")
-	) {
-		return { ...model, input: [...model.input, "document"] };
-	}
-	return model;
-}
-
 // Initialize registry from MODELS on module load
 for (const [provider, models] of Object.entries(MODELS)) {
 	const providerModels = new Map<string, Model<Api>>();
 	for (const [id, model] of Object.entries(models)) {
-		providerModels.set(id, normalizeModelInput(model as Model<Api>));
+		providerModels.set(id, model as Model<Api>);
 	}
 	modelRegistry.set(provider, providerModels);
 }
