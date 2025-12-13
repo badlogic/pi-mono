@@ -233,7 +233,7 @@ description: Add and read notes from a persistent notes file
 
 # Note Skill
 
-Manage a simple notes file.
+Manage a simple notes file with timestamps.
 
 ## Usage
 
@@ -245,6 +245,16 @@ bash {baseDir}/note.sh add "Buy groceries"
 Read all notes:
 \`\`\`bash
 bash {baseDir}/note.sh read
+\`\`\`
+
+Search notes by keyword:
+\`\`\`bash
+grep -i "groceries" ~/.notes.txt
+\`\`\`
+
+Search notes by date (format: YYYY-MM-DD):
+\`\`\`bash
+grep "2025-12-13" ~/.notes.txt
 \`\`\`
 
 Clear all notes:
@@ -261,7 +271,7 @@ NOTES_FILE="$HOME/.notes.txt"
 
 case "$1" in
   add)
-    echo "- $2" >> "$NOTES_FILE"
+    echo "[$(date -Iseconds)] $2" >> "$NOTES_FILE"
     echo "Note added"
     ;;
   read)
