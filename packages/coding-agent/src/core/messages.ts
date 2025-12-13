@@ -5,8 +5,8 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
-import type { Message } from "@mariozechner/pi-ai";
+import type { AppMessage, Attachment, UserMessageWithAttachments } from "@mariozechner/pi-agent-core";
+import type { ImageContent, Message, TextContent, UserMessage } from "@mariozechner/pi-ai";
 
 // ============================================================================
 // Custom Message Types
@@ -79,8 +79,22 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
  * This is used by:
  * - Agent's messageTransformer option (for prompt calls)
  * - Compaction's generateSummary (for summarization)
+ *
+ * Handles:
+ * - BashExecutionMessage → user message with text
+ * - User messages with attachments → content blocks with images/documents
+ * - Standard LLM roles → pass through
  */
 export function messageTransformer(messages: AppMessage[]): Message[] {
+	const toDocumentText = (a: Attachment): string => `\n\n[Document: ${a.fileName}]\n${a.extractedText ?? ""}`;
+	const hasBinaryBlock = (content: Array<TextContent | ImageContent>, a: Attachment): boolean =>
+		content.some((c) => c.type === "image" && c.mimeType === a.mimeType && c.data === a.content);
+	const hasDocumentTextBlock = (content: Array<TextContent | ImageContent>, a: Attachment): boolean => {
+		if (!a.extractedText) return false;
+		const marker = toDocumentText(a);
+		return content.some((c) => c.type === "text" && c.text.includes(marker));
+	};
+
 	return messages
 		.map((m): Message | null => {
 			if (isBashExecutionMessage(m)) {
@@ -91,8 +105,39 @@ export function messageTransformer(messages: AppMessage[]): Message[] {
 					timestamp: m.timestamp,
 				};
 			}
-			// Pass through standard LLM roles
-			if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+			// Handle user messages with attachments
+			if (m.role === "user") {
+				const user = m as UserMessageWithAttachments;
+				const attachments = user.attachments;
+
+				if (!attachments || attachments.length === 0) {
+					return { role: "user", content: user.content, timestamp: user.timestamp } satisfies UserMessage;
+				}
+
+				const content: Array<TextContent | ImageContent> =
+					typeof user.content === "string" ? [{ type: "text", text: user.content }] : [...user.content];
+
+				for (const attachment of attachments) {
+					if (attachment.type === "image" || (attachment.type === "document" && !attachment.extractedText)) {
+						if (!hasBinaryBlock(content, attachment)) {
+							content.push({
+								type: "image",
+								data: attachment.content,
+								mimeType: attachment.mimeType,
+								fileName: attachment.fileName,
+							});
+						}
+					} else if (attachment.type === "document" && attachment.extractedText) {
+						if (!hasDocumentTextBlock(content, attachment)) {
+							content.push({ type: "text", text: toDocumentText(attachment) });
+						}
+					}
+				}
+
+				return { role: "user", content, timestamp: user.timestamp } satisfies UserMessage;
+			}
+			// Pass through other standard LLM roles
+			if (m.role === "assistant" || m.role === "toolResult") {
 				return m as Message;
 			}
 			// Filter out unknown message types

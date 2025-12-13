@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type {
 	ContentBlockParam,
+	DocumentBlockParam,
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
@@ -29,7 +30,22 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transorm-messages.js";
 
 /**
- * Convert content blocks to Anthropic API format
+ * Check if a mimeType is a PDF document
+ */
+function isPdfMimeType(mimeType: string): boolean {
+	return mimeType === "application/pdf";
+}
+
+/**
+ * Check if a mimeType is an image
+ */
+function isImageMimeType(mimeType: string): boolean {
+	return mimeType.startsWith("image/");
+}
+
+/**
+ * Convert content blocks to Anthropic API format.
+ * Handles text, images, and PDF documents (via ImageContent with PDF mimeType).
  */
 function convertContentBlocks(content: (TextContent | ImageContent)[]):
 	| string
@@ -43,37 +59,76 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 						data: string;
 					};
 			  }
+			| {
+					type: "document";
+					source: {
+						type: "base64";
+						media_type: "application/pdf";
+						data: string;
+					};
+			  }
 	  > {
-	// If only text blocks, return as concatenated string for simplicity
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
+	// Check for binary content (images or PDFs)
+	const hasBinaryContent = content.some((c) => c.type === "image");
+	if (!hasBinaryContent) {
 		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
 	}
 
-	// If we have images, convert to content block array
-	const blocks = content.map((block) => {
+	// Convert to content block array, handling images and PDFs
+	const blocks: Array<
+		| { type: "text"; text: string }
+		| {
+				type: "image";
+				source: {
+					type: "base64";
+					media_type: "image/gif" | "image/jpeg" | "image/png" | "image/webp";
+					data: string;
+				};
+		  }
+		| { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } }
+	> = [];
+
+	for (const block of content) {
 		if (block.type === "text") {
-			return {
+			blocks.push({
 				type: "text" as const,
 				text: sanitizeSurrogates(block.text),
-			};
+			});
+		} else if (isPdfMimeType(block.mimeType)) {
+			// PDF document - send as document type
+			blocks.push({
+				type: "document" as const,
+				source: {
+					type: "base64" as const,
+					media_type: "application/pdf" as const,
+					data: block.data,
+				},
+			});
+		} else if (isImageMimeType(block.mimeType)) {
+			// Image - send as image type
+			blocks.push({
+				type: "image" as const,
+				source: {
+					type: "base64" as const,
+					media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+					data: block.data,
+				},
+			});
 		}
-		return {
-			type: "image" as const,
-			source: {
-				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
-	});
+		// Ignore unsupported binary types
+	}
 
-	// If only images (no text), add placeholder text block
+	// If only binary content (no text), add placeholder text block
 	const hasText = blocks.some((b) => b.type === "text");
 	if (!hasText) {
+		const hasImages = blocks.some((b) => b.type === "image");
+		const hasDocs = blocks.some((b) => b.type === "document");
+		let placeholder = "(see attached file)";
+		if (hasImages && !hasDocs) placeholder = "(see attached image)";
+		else if (hasDocs && !hasImages) placeholder = "(see attached document)";
 		blocks.unshift({
 			type: "text" as const,
-			text: "(see attached image)",
+			text: placeholder,
 		});
 	}
 
@@ -415,24 +470,43 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 					});
 				}
 			} else {
-				const blocks: ContentBlockParam[] = msg.content.map((item) => {
+				const blocks: ContentBlockParam[] = [];
+				for (const item of msg.content) {
 					if (item.type === "text") {
-						return {
+						blocks.push({
 							type: "text",
 							text: sanitizeSurrogates(item.text),
+						});
+					} else if (isPdfMimeType(item.mimeType)) {
+						// PDF document
+						const docBlock: DocumentBlockParam = {
+							type: "document",
+							source: {
+								type: "base64",
+								media_type: "application/pdf",
+								data: item.data,
+							},
 						};
-					} else {
-						return {
+						blocks.push(docBlock);
+					} else if (isImageMimeType(item.mimeType)) {
+						// Image
+						blocks.push({
 							type: "image",
 							source: {
 								type: "base64",
 								media_type: item.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
 								data: item.data,
 							},
-						};
+						});
 					}
+					// Skip unsupported binary types
+				}
+				// Filter based on model capabilities
+				let filteredBlocks = blocks.filter((b) => {
+					if (b.type === "image" && !model?.input.includes("image")) return false;
+					if (b.type === "document" && !model?.input.includes("document")) return false;
+					return true;
 				});
-				let filteredBlocks = !model?.input.includes("image") ? blocks.filter((b) => b.type !== "image") : blocks;
 				filteredBlocks = filteredBlocks.filter((b) => {
 					if (b.type === "text") {
 						return b.text.trim().length > 0;
@@ -530,7 +604,10 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				const lastBlock = lastMessage.content[lastMessage.content.length - 1];
 				if (
 					lastBlock &&
-					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
+					(lastBlock.type === "text" ||
+						lastBlock.type === "image" ||
+						lastBlock.type === "document" ||
+						lastBlock.type === "tool_result")
 				) {
 					(lastBlock as any).cache_control = { type: "ephemeral" };
 				}

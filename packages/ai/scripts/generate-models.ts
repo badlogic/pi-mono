@@ -101,6 +101,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
+				// Anthropic supports PDF documents natively
+				const input: ("text" | "image" | "document")[] = ["text"];
+				if (m.modalities?.input?.includes("image")) input.push("image");
+				if (m.modalities?.input?.includes("image")) input.push("document"); // PDF support if vision capable
+
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
@@ -108,7 +113,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "anthropic",
 					baseUrl: "https://api.anthropic.com",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input,
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,
@@ -127,6 +132,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
+				// Google supports PDF documents natively
+				const input: ("text" | "image" | "document")[] = ["text"];
+				if (m.modalities?.input?.includes("image")) input.push("image");
+				if (m.modalities?.input?.includes("image")) input.push("document"); // PDF support if vision capable
+
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
@@ -134,7 +144,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "google",
 					baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input,
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,
@@ -153,6 +163,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
+				// OpenAI supports PDF documents natively (for vision-capable models)
+				const input: ("text" | "image" | "document")[] = ["text"];
+				if (m.modalities?.input?.includes("image")) input.push("image");
+				if (m.modalities?.input?.includes("image")) input.push("document"); // PDF support if vision capable
+
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
@@ -160,7 +175,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "openai",
 					baseUrl: "https://api.openai.com/v1",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input,
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,
@@ -338,7 +353,7 @@ async function generateModels() {
 			baseUrl: "https://api.openai.com/v1",
 			provider: "openai",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -358,7 +373,7 @@ async function generateModels() {
 			baseUrl: "https://api.openai.com/v1",
 			provider: "openai",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 5,
@@ -378,7 +393,7 @@ async function generateModels() {
 			baseUrl: "https://api.openai.com/v1",
 			provider: "openai",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,

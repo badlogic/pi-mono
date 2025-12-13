@@ -147,13 +147,19 @@ export class Agent {
 		if (attachments?.length) {
 			for (const a of attachments) {
 				if (a.type === "image") {
-					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
+					content.push({ type: "image", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
+				} else if (a.type === "document") {
+					if (a.extractedText) {
+						// Fallback: Add text blocks for documents with extracted text
+						content.push({
+							type: "text",
+							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
+							isDocument: true,
+						});
+					} else {
+						// Native PDF support: Send as ImageContent with PDF mimeType
+						content.push({ type: "image", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
+					}
 				}
 			}
 		}

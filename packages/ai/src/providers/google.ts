@@ -14,6 +14,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	ImageContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -332,19 +333,35 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 					parts: [{ text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
-				const parts: Part[] = msg.content.map((item) => {
+				const supportsImages = model.input.includes("image");
+				const supportsDocuments = model.input.includes("document");
+				const parts: Part[] = [];
+				for (const item of msg.content) {
 					if (item.type === "text") {
-						return { text: sanitizeSurrogates(item.text) };
+						parts.push({ text: sanitizeSurrogates(item.text) });
 					} else {
-						return {
-							inlineData: {
-								mimeType: item.mimeType,
-								data: item.data,
-							},
-						};
+						// Binary content - check mimeType and model capabilities
+						const isPdf = item.mimeType === "application/pdf";
+						const isImage = item.mimeType.startsWith("image/");
+						if (isPdf && supportsDocuments) {
+							parts.push({
+								inlineData: {
+									mimeType: item.mimeType,
+									data: item.data,
+								},
+							});
+						} else if (isImage && supportsImages) {
+							parts.push({
+								inlineData: {
+									mimeType: item.mimeType,
+									data: item.data,
+								},
+							});
+						}
+						// Skip unsupported binary types
 					}
-				});
-				const filteredParts = !model.input.includes("image") ? parts.filter((p) => p.text !== undefined) : parts;
+				}
+				const filteredParts = parts;
 				if (filteredParts.length === 0) continue;
 				contents.push({
 					role: "user",
@@ -385,37 +402,47 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 				parts,
 			});
 		} else if (msg.role === "toolResult") {
-			// Build parts array with functionResponse and/or images
+			// Build parts array with functionResponse and/or binary attachments
 			const parts: Part[] = [];
+			const supportsImages = model.input.includes("image");
+			const supportsDocuments = model.input.includes("document");
 
-			// Extract text and image content
+			// Extract text content
 			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
 				.join("\n");
-			const imageBlocks = model.input.includes("image") ? msg.content.filter((c) => c.type === "image") : [];
 
-			// Always add functionResponse with text result (or placeholder if only images)
+			// Extract supported binary content (images and PDFs)
+			const binaryBlocks = msg.content
+				.filter((c): c is ImageContent => c.type === "image")
+				.filter((c) => {
+					const isPdf = c.mimeType === "application/pdf";
+					const isImage = c.mimeType.startsWith("image/");
+					return (isPdf && supportsDocuments) || (isImage && supportsImages);
+				});
+
+			// Always add functionResponse with text result (or placeholder if only binary)
 			const hasText = textResult.length > 0;
-			const hasImages = imageBlocks.length > 0;
+			const hasBinary = binaryBlocks.length > 0;
 
 			parts.push({
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
 					response: {
-						result: hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "",
+						result: hasText ? sanitizeSurrogates(textResult) : hasBinary ? "(see attached)" : "",
 						isError: msg.isError,
 					},
 				},
 			});
 
-			// Add any images as inlineData parts
-			for (const imageBlock of imageBlocks) {
+			// Add any binary content as inlineData parts
+			for (const block of binaryBlocks) {
 				parts.push({
 					inlineData: {
-						mimeType: (imageBlock as any).mimeType,
-						data: (imageBlock as any).data,
+						mimeType: block.mimeType,
+						data: block.data,
 					},
 				});
 			}
