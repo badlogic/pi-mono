@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { appendFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import * as log from "./log.js";
 
 export interface Attachment {
@@ -186,7 +186,7 @@ export class ChannelStore {
 	private async downloadAttachment(localPath: string, url: string): Promise<void> {
 		const filePath = join(this.workingDir, localPath);
 
-		const dir = join(this.workingDir, localPath.substring(0, localPath.lastIndexOf("/")));
+		const dir = dirname(filePath);
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });
 		}
