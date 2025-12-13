@@ -271,19 +271,18 @@ Update mom anytime with `npm install -g @mariozechner/pi-mom`. This only updates
 
 ## Message History
 
-Mom uses two files per channel:
+Mom uses two files per channel to manage conversation history:
 
-**log.jsonl** (source of truth):
+**log.jsonl** ([format](../../src/store.ts)) (source of truth):
 - All messages from users and mom (no tool results)
 - Custom JSONL format with timestamps, user info, text, attachments
 - Append-only, never compacted
 - Used for syncing to context and searching older history
 
-**context.jsonl** (LLM context):
-- What's sent to the LLM (includes tool results)
-- Contains full history plus compaction events
+**context.jsonl** ([format](../../src/context.ts)) (LLM context):
+- What's sent to the LLM (includes tool results and full history)
 - Auto-synced from `log.jsonl` before each @mention (picks up backfilled messages, channel chatter)
-- When exceeds token limit (default 100k): keeps recent messages, summarizes older ones into checkpoint
+- When context exceeds the LLM's context window size, mom compacts it: keeps recent messages and tool results in full, summarizes older ones into a compaction event. On subsequent requests, the LLM gets the summary + recent messages from the compaction point onward
 - Mom can grep `log.jsonl` for older history beyond what's in context
 
 ## Security Considerations
@@ -388,14 +387,6 @@ Terminal 2 (mom, with auto-restart):
 cd packages/mom
 npx tsx --watch-path src --watch src/main.ts --sandbox=docker:mom-sandbox ./data
 ```
-
-### Key Concepts
-
-- **SlackContext**: Per-message context with respond/setWorking/replaceMessage methods
-- **AgentRunner**: Returns `{ stopReason }`. Never throws for normal flow
-- **Working Indicator**: "..." appended while processing, removed on completion
-- **Memory System**: MEMORY.md files loaded into system prompt automatically
-- **Prompt Caching**: Recent messages in user prompt (not system) for better cache hits
 
 ## License
 
