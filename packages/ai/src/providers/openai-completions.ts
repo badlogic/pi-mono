@@ -12,6 +12,7 @@ import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
+	DocumentContent,
 	Message,
 	Model,
 	OpenAICompat,
@@ -405,7 +406,15 @@ function convertMessages(
 						];
 					}
 					// OpenAI-compatible APIs generally don't support native documents (e.g., PDF).
-					return [];
+					// Emit a placeholder so the model understands something was omitted.
+					const doc = item as DocumentContent;
+					const label = doc.fileName ? `${doc.fileName} (${doc.mimeType})` : doc.mimeType;
+					return [
+						{
+							type: "text",
+							text: sanitizeSurrogates(`[Document attachment omitted: ${label}]`),
+						} satisfies ChatCompletionContentPartText,
+					];
 				});
 				const filteredContent = !model.input.includes("image")
 					? content.filter((c) => c.type !== "image_url")
@@ -487,7 +496,13 @@ function convertMessages(
 			// Always send tool result with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
 			const placeholder =
-				hasImages && !hasDocuments ? "(see attached image)" : hasDocuments ? "(see attached document)" : "";
+				hasImages && !hasDocuments
+					? "(see attached image)"
+					: hasDocuments && !hasImages
+						? "(document attachment omitted: provider has no native document support)"
+						: hasImages && hasDocuments
+							? "(see attached image; document attachment omitted)"
+							: "";
 			// Some providers (e.g. Mistral) require the 'name' field in tool results
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",

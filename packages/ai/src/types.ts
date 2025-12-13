@@ -64,6 +64,8 @@ export interface TextContent {
 	type: "text";
 	text: string;
 	textSignature?: string; // e.g., for OpenAI responses, the message ID
+	/** Markup for extracted document text (used by consumers for rendering/UI hints). */
+	isDocument?: boolean;
 }
 
 export interface ThinkingContent {

@@ -15,6 +15,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	DocumentContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -401,7 +402,15 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 						];
 					}
 					// OpenAI doesn't support native documents (e.g., PDF) in Responses API input.
-					return [];
+					// Emit a placeholder so the model understands something was omitted.
+					const doc = item as DocumentContent;
+					const label = doc.fileName ? `${doc.fileName} (${doc.mimeType})` : doc.mimeType;
+					return [
+						{
+							type: "input_text",
+							text: sanitizeSurrogates(`[Document attachment omitted: ${label}]`),
+						} satisfies ResponseInputText,
+					];
 				});
 				const filteredContent = !model.input.includes("image")
 					? content.filter((c) => c.type !== "input_image")
@@ -456,18 +465,18 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 
 			// Always send function_call_output with text (or placeholder if only images)
 			const hasText = textResult.length > 0;
+			const placeholder =
+				hasImages && !hasDocuments
+					? "(see attached image)"
+					: hasDocuments && !hasImages
+						? "(document attachment omitted: provider has no native document support)"
+						: hasImages && hasDocuments
+							? "(see attached image; document attachment omitted)"
+							: "";
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: sanitizeSurrogates(
-					hasText
-						? textResult
-						: hasImages && !hasDocuments
-							? "(see attached image)"
-							: hasDocuments
-								? "(see attached document)"
-								: "",
-				),
+				output: sanitizeSurrogates(hasText ? textResult : placeholder),
 			});
 
 			// If there are images and model supports them, send a follow-up user message with images

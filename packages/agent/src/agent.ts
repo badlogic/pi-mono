@@ -7,6 +7,7 @@ import type {
 	TextContent,
 } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
+import { attachmentsToContentBlocks } from "./attachments.js";
 import type { AgentTransport } from "./transports/types.js";
 import type {
 	AgentEvent,
@@ -44,32 +45,8 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 					content.push({ type: "text", text: rest.content });
 				}
 
-				for (const attachment of attachments as Attachment[]) {
-					// Add image blocks for image attachments
-					if (attachment.type === "image") {
-						content.push({
-							type: "image",
-							data: attachment.content,
-							mimeType: attachment.mimeType,
-						} as ImageContent);
-					}
-					// Add text blocks for documents with extracted text
-					else if (attachment.type === "document") {
-						if (attachment.extractedText) {
-							content.push({
-								type: "text",
-								text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-								isDocument: true,
-							} as TextContent);
-						} else {
-							content.push({
-								type: "document",
-								data: attachment.content,
-								mimeType: attachment.mimeType,
-								fileName: attachment.fileName,
-							} as DocumentContent);
-						}
-					}
+				for (const block of attachmentsToContentBlocks(attachments)) {
+					content.push(block);
 				}
 
 				return { ...rest, content } as Message;
@@ -207,21 +184,7 @@ export class Agent {
 		// Build user message with attachments
 		const content: Array<TextContent | ImageContent | DocumentContent> = [{ type: "text", text: input }];
 		if (attachments?.length) {
-			for (const a of attachments) {
-				if (a.type === "image") {
-					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document") {
-					if (a.extractedText) {
-						content.push({
-							type: "text",
-							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-							isDocument: true,
-						} as TextContent);
-					} else {
-						content.push({ type: "document", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
-					}
-				}
-			}
+			content.push(...attachmentsToContentBlocks(attachments));
 		}
 
 		const userMessage: AppMessage = {
