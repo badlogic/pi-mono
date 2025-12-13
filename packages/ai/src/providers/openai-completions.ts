@@ -68,7 +68,7 @@ function hasToolHistory(messages: Message[]): boolean {
 
 export interface OpenAICompletionsOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
-	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+	reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
