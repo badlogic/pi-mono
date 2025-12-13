@@ -24,7 +24,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
+import { getAttachmentPlaceholder, getDocumentOmittedPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
@@ -274,7 +274,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -409,11 +409,10 @@ function convertMessages(
 					// OpenAI-compatible APIs generally don't support native documents (e.g., PDF).
 					// Emit a placeholder so the model understands something was omitted.
 					const doc = item as DocumentContent;
-					const label = doc.fileName ? `${doc.fileName} (${doc.mimeType})` : doc.mimeType;
 					return [
 						{
 							type: "text",
-							text: sanitizeSurrogates(`[Document attachment omitted: ${label}]`),
+							text: sanitizeSurrogates(getDocumentOmittedPlaceholder(doc.fileName, doc.mimeType)),
 						} satisfies ChatCompletionContentPartText,
 					];
 				});

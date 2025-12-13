@@ -25,7 +25,7 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.js";
-import { getAttachmentPlaceholder } from "../utils/attachment-placeholder.js";
+import { getAttachmentPlaceholder, getDocumentOmittedPlaceholder } from "../utils/attachment-placeholder.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
@@ -281,7 +281,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -404,11 +404,10 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					// OpenAI doesn't support native documents (e.g., PDF) in Responses API input.
 					// Emit a placeholder so the model understands something was omitted.
 					const doc = item as DocumentContent;
-					const label = doc.fileName ? `${doc.fileName} (${doc.mimeType})` : doc.mimeType;
 					return [
 						{
 							type: "input_text",
-							text: sanitizeSurrogates(`[Document attachment omitted: ${label}]`),
+							text: sanitizeSurrogates(getDocumentOmittedPlaceholder(doc.fileName, doc.mimeType)),
 						} satisfies ResponseInputText,
 					];
 				});

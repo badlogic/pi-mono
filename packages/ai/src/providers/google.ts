@@ -15,6 +15,7 @@ import type {
 	AssistantMessage,
 	Context,
 	DocumentContent,
+	ImageContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -233,7 +234,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -413,12 +414,10 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 				.map((c) => c.text)
 				.join("\n");
 			const imageBlocks = model.input.includes("image")
-				? msg.content.filter((c): c is { type: "image"; data: string; mimeType: string } => c.type === "image")
+				? msg.content.filter((c): c is ImageContent => c.type === "image")
 				: [];
 			const documentBlocks = model.input.includes("document")
-				? msg.content.filter(
-						(c): c is { type: "document"; data: string; mimeType: string } => c.type === "document",
-					)
+				? msg.content.filter((c): c is DocumentContent => c.type === "document")
 				: [];
 
 			// Always add functionResponse with text result (or placeholder if only binary)

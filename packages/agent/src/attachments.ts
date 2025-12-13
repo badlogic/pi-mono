@@ -31,8 +31,11 @@ export function attachmentsToContentBlocks(attachments: Attachment[]): Attachmen
 					fileName: attachment.fileName,
 				});
 			}
+			continue;
 		}
-		// Unknown attachment types are silently ignored
+
+		// Unknown attachment type - log a warning
+		console.warn(`Unknown attachment type "${(attachment as { type: string }).type}" ignored`);
 	}
 
 	return blocks;

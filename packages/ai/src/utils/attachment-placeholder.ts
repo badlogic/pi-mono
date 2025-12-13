@@ -45,3 +45,20 @@ export function getAttachmentPlaceholder(options: AttachmentPlaceholderOptions):
 	// Both images and documents
 	return "(see attached image; document attachment omitted)";
 }
+
+/**
+ * Generate a placeholder for an individual document that cannot be sent natively.
+ * Used when iterating over content blocks to replace unsupported documents.
+ */
+export function getDocumentOmittedPlaceholder(fileName?: string, mimeType?: string): string {
+	if (fileName && mimeType) {
+		return `[Document attachment omitted: ${fileName} (${mimeType})]`;
+	}
+	if (fileName) {
+		return `[Document attachment omitted: ${fileName}]`;
+	}
+	if (mimeType) {
+		return `[Document attachment omitted: ${mimeType}]`;
+	}
+	return "[Document attachment omitted]";
+}
