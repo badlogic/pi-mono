@@ -492,18 +492,37 @@ function convertMessages(
 				.join("\n");
 			const hasImages = msg.content.some((c) => c.type === "image");
 			const hasDocuments = msg.content.some((c) => c.type === "document");
+			const supportsImages = model.input.includes("image");
 
 			// Always send tool result with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
 			const placeholder = getAttachmentPlaceholder({
 				hasImages,
 				hasDocuments,
+				supportsImages,
 				supportsNativeDocuments: false,
 			});
+
+			// Build tool result content: text + any omission notices
+			let toolResultContent = textResult;
+			if (!hasText) {
+				// No text, use placeholder entirely
+				toolResultContent = placeholder;
+			} else if (hasDocuments) {
+				// Has text but also documents that will be dropped - append notice
+				const docNotice = getAttachmentPlaceholder({
+					hasImages: false,
+					hasDocuments: true,
+					supportsImages: true,
+					supportsNativeDocuments: false,
+				});
+				toolResultContent = textResult + "\n" + docNotice;
+			}
+
 			// Some providers (e.g. Mistral) require the 'name' field in tool results
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
-				content: sanitizeSurrogates(hasText ? textResult : placeholder),
+				content: sanitizeSurrogates(toolResultContent),
 				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
 			};
 			if (compat.requiresToolResultName && msg.toolName) {

@@ -425,20 +425,42 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			// Use original content to determine if attachments existed (for placeholder)
 			const hadImages = originalImages.length > 0;
 			const hadDocuments = originalDocuments.length > 0;
-			// supportsNativeDocuments reflects whether this model can actually receive documents
+			// Check model capabilities for accurate placeholder messages
+			const supportsImages = model.input.includes("image");
 			const supportsNativeDocuments = model.input.includes("document");
 			const placeholder = getAttachmentPlaceholder({
 				hasImages: hadImages,
 				hasDocuments: hadDocuments,
+				supportsImages,
 				supportsNativeDocuments,
 			});
+
+			// Build result content: text + any omission notices for dropped attachments
+			let resultContent = textResult;
+			if (!hasText) {
+				// No text, use placeholder entirely
+				resultContent = placeholder;
+			} else {
+				// Has text - check if any attachments were dropped and append notices
+				const droppedImages = hadImages && !supportsImages;
+				const droppedDocs = hadDocuments && !supportsNativeDocuments;
+				if (droppedImages || droppedDocs) {
+					const omissionNotice = getAttachmentPlaceholder({
+						hasImages: droppedImages,
+						hasDocuments: droppedDocs,
+						supportsImages: false,
+						supportsNativeDocuments: false,
+					});
+					resultContent = textResult + "\n" + omissionNotice;
+				}
+			}
 
 			parts.push({
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
 					response: {
-						result: hasText ? sanitizeSurrogates(textResult) : placeholder,
+						result: sanitizeSurrogates(resultContent),
 						isError: msg.isError,
 					},
 				},

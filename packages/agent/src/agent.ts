@@ -181,15 +181,12 @@ export class Agent {
 			throw new Error("No model configured");
 		}
 
-		// Build user message with attachments
-		const content: Array<TextContent | ImageContent | DocumentContent> = [{ type: "text", text: input }];
-		if (attachments?.length) {
-			content.push(...attachmentsToContentBlocks(attachments));
-		}
-
+		// Build user message - store attachments separately, let messageTransformer convert them
+		// This avoids duplication: attachments are converted to content blocks only once
+		// when the message goes through the transformer
 		const userMessage: AppMessage = {
 			role: "user",
-			content,
+			content: input,
 			attachments: attachments?.length ? attachments : undefined,
 			timestamp: Date.now(),
 		};
@@ -221,7 +218,15 @@ export class Agent {
 	private async _runAgentLoop(userMessage: AppMessage) {
 		const { llmMessages, cfg } = await this._prepareRun();
 
-		const events = this.transport.run(llmMessages, userMessage as Message, cfg, this.abortController!.signal);
+		// Transform the new user message (convert attachments to content blocks)
+		const [transformedUserMessage] = await this.messageTransformer([userMessage]);
+
+		const events = this.transport.run(
+			llmMessages,
+			transformedUserMessage as Message,
+			cfg,
+			this.abortController!.signal,
+		);
 
 		await this._processEvents(events);
 	}

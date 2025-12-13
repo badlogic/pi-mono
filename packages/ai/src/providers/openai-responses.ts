@@ -461,18 +461,37 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 				.join("\n");
 			const hasImages = msg.content.some((c) => c.type === "image");
 			const hasDocuments = msg.content.some((c) => c.type === "document");
+			const supportsImages = model.input.includes("image");
 
 			// Always send function_call_output with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
 			const placeholder = getAttachmentPlaceholder({
 				hasImages,
 				hasDocuments,
+				supportsImages,
 				supportsNativeDocuments: false,
 			});
+
+			// Build output content: text + any omission notices
+			let outputContent = textResult;
+			if (!hasText) {
+				// No text, use placeholder entirely
+				outputContent = placeholder;
+			} else if (hasDocuments) {
+				// Has text but also documents that will be dropped - append notice
+				const docNotice = getAttachmentPlaceholder({
+					hasImages: false,
+					hasDocuments: true,
+					supportsImages: true,
+					supportsNativeDocuments: false,
+				});
+				outputContent = textResult + "\n" + docNotice;
+			}
+
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: sanitizeSurrogates(hasText ? textResult : placeholder),
+				output: sanitizeSurrogates(outputContent),
 			});
 
 			// If there are images and model supports them, send a follow-up user message with images

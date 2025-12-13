@@ -6,6 +6,8 @@
 export interface AttachmentPlaceholderOptions {
 	hasImages: boolean;
 	hasDocuments: boolean;
+	/** Whether the provider/model supports native image handling */
+	supportsImages?: boolean;
 	/** Whether the provider supports native document handling (e.g., Anthropic, Google) */
 	supportsNativeDocuments: boolean;
 }
@@ -18,32 +20,41 @@ export interface AttachmentPlaceholderOptions {
  * Providers that don't support documents get an explicit "omitted" message.
  */
 export function getAttachmentPlaceholder(options: AttachmentPlaceholderOptions): string {
-	const { hasImages, hasDocuments, supportsNativeDocuments } = options;
+	const { hasImages, hasDocuments, supportsImages = true, supportsNativeDocuments } = options;
 
-	if (!hasImages && !hasDocuments) {
+	// Determine what will actually be sent vs omitted
+	const willSendImages = hasImages && supportsImages;
+	const willSendDocuments = hasDocuments && supportsNativeDocuments;
+	const imagesOmitted = hasImages && !supportsImages;
+	const documentsOmitted = hasDocuments && !supportsNativeDocuments;
+
+	// Nothing to report
+	if (!willSendImages && !willSendDocuments && !imagesOmitted && !documentsOmitted) {
 		return "";
 	}
 
-	if (supportsNativeDocuments) {
-		// Anthropic, Google - documents are passed natively
-		if (hasDocuments && !hasImages) {
-			return "(see attached document)";
-		}
-		if (hasImages && !hasDocuments) {
-			return "(see attached image)";
-		}
-		return "(see attached files)";
+	// Build placeholder based on what's sent and what's omitted
+	const parts: string[] = [];
+
+	// What will be sent
+	if (willSendImages && willSendDocuments) {
+		parts.push("(see attached files)");
+	} else if (willSendImages) {
+		parts.push("(see attached image)");
+	} else if (willSendDocuments) {
+		parts.push("(see attached document)");
 	}
 
-	// OpenAI and other providers - documents are not supported natively
-	if (hasImages && !hasDocuments) {
-		return "(see attached image)";
+	// What was omitted
+	if (imagesOmitted && documentsOmitted) {
+		parts.push("(image and document attachments omitted: not supported by model)");
+	} else if (imagesOmitted) {
+		parts.push("(image attachment omitted: not supported by model)");
+	} else if (documentsOmitted) {
+		parts.push("(document attachment omitted: not supported by model)");
 	}
-	if (hasDocuments && !hasImages) {
-		return "(document attachment omitted: provider does not support native documents)";
-	}
-	// Both images and documents
-	return "(see attached image; document attachment omitted)";
+
+	return parts.join(" ");
 }
 
 /**
