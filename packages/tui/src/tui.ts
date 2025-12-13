@@ -103,6 +103,10 @@ export class TUI extends Container {
 	}
 
 	private queryCellSize(): void {
+		// Only query if terminal supports images (cell size is only used for image rendering)
+		if (!getCapabilities().images) {
+			return;
+		}
 		// Query terminal for cell size in pixels: CSI 16 t
 		// Response format: CSI 6 ; height ; width t
 		this.cellSizeQueryPending = true;
