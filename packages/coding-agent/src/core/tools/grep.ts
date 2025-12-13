@@ -3,9 +3,9 @@ import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { readFileSync, type Stats, statSync } from "fs";
-import { homedir } from "os";
 import path from "path";
 import { ensureTool } from "../../utils/tools-manager.js";
+import { expandPath } from "./path-utils.js";
 import {
 	DEFAULT_MAX_BYTES,
 	formatSize,
@@ -14,19 +14,6 @@ import {
 	truncateHead,
 	truncateLine,
 } from "./truncate.js";
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(filePath: string): string {
-	if (filePath === "~") {
-		return homedir();
-	}
-	if (filePath.startsWith("~/")) {
-		return homedir() + filePath.slice(1);
-	}
-	return filePath;
-}
 
 const grepSchema = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
