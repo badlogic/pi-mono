@@ -113,24 +113,33 @@ async function handleMessage(ctx: DiscordContext, _source: "channel" | "dm"): Pr
 	const runner = createAgentRunner(sandbox);
 	activeRuns.set(channelId, { runner, context: ctx });
 
-	await ctx.setTyping(true);
-	await ctx.setWorking(true);
+	try {
+		await ctx.setTyping(true);
+		await ctx.setWorking(true);
 
-	const result = await runner.run(ctx, channelDir, ctx.store);
+		const result = await runner.run(ctx, channelDir, ctx.store);
 
-	await ctx.setWorking(false);
+		await ctx.setWorking(false);
 
-	const active = activeRuns.get(channelId);
-	if (result.stopReason === "aborted") {
-		if (active?.stopContext) {
-			await active.stopContext.setWorking(false);
-			await active.stopContext.replaceMessage("*Stopped*");
+		const active = activeRuns.get(channelId);
+		if (result.stopReason === "aborted") {
+			if (active?.stopContext) {
+				await active.stopContext.setWorking(false);
+				await active.stopContext.replaceMessage("*Stopped*");
+			}
+		} else if (result.stopReason === "error") {
+			log.logAgentError(logCtx, "Agent stopped with error");
 		}
-	} else if (result.stopReason === "error") {
-		log.logAgentError(logCtx, "Agent stopped with error");
+	} catch (error) {
+		log.logAgentError(logCtx, error instanceof Error ? error.message : String(error));
+		try {
+			await ctx.respond(`*Error: ${error instanceof Error ? error.message : String(error)}*`);
+		} catch {
+			// Ignore if responding fails
+		}
+	} finally {
+		activeRuns.delete(channelId);
 	}
-
-	activeRuns.delete(channelId);
 }
 
 const bot = new MomDiscordBot(
@@ -221,18 +230,27 @@ setupCommandHandlers(
 			const runner = createAgentRunner(sandbox);
 			activeRuns.set(channelId, { runner, context: ctx });
 
-			await ctx.setTyping(true);
-			await ctx.setWorking(true);
+			try {
+				await ctx.setTyping(true);
+				await ctx.setWorking(true);
 
-			const result = await runner.run(ctx, channelDir, ctx.store);
+				const result = await runner.run(ctx, channelDir, ctx.store);
 
-			await ctx.setWorking(false);
+				await ctx.setWorking(false);
 
-			if (result.stopReason === "error") {
-				log.logAgentError(logCtx, "Agent stopped with error");
+				if (result.stopReason === "error") {
+					log.logAgentError(logCtx, "Agent stopped with error");
+				}
+			} catch (error) {
+				log.logAgentError(logCtx, error instanceof Error ? error.message : String(error));
+				try {
+					await ctx.respond(`*Error: ${error instanceof Error ? error.message : String(error)}*`);
+				} catch {
+					// Ignore if responding fails
+				}
+			} finally {
+				activeRuns.delete(channelId);
 			}
-
-			activeRuns.delete(channelId);
 		},
 
 		async onStopCommand(interaction) {
