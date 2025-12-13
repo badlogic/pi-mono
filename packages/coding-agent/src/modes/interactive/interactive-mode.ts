@@ -17,7 +17,6 @@ import {
 	Loader,
 	Markdown,
 	ProcessTerminal,
-	SelectList,
 	Spacer,
 	Text,
 	TruncatedText,
@@ -49,12 +48,13 @@ import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { QueueModeSelectorComponent } from "./components/queue-mode-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
+import { ShowImagesSelectorComponent } from "./components/show-images-selector.js";
 import { ThemeSelectorComponent } from "./components/theme-selector.js";
 import { ThinkingSelectorComponent } from "./components/thinking-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getEditorTheme, getMarkdownTheme, getSelectListTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -593,7 +593,7 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/show-images") {
-				this.handleShowImagesCommand();
+				this.showShowImagesSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -1652,7 +1652,7 @@ export class InteractiveMode {
 		this.showStatus(`Auto-compaction: ${newState ? "on" : "off"}`);
 	}
 
-	private handleShowImagesCommand(): void {
+	private showShowImagesSelector(): void {
 		// Only available if terminal supports images
 		const caps = getCapabilities();
 		if (!caps.images) {
@@ -1660,41 +1660,29 @@ export class InteractiveMode {
 			return;
 		}
 
-		const currentValue = this.settingsManager.getShowImages();
-		const items = [
-			{ value: "yes", label: "Yes", description: "Show images inline in terminal" },
-			{ value: "no", label: "No", description: "Show text placeholder instead" },
-		];
+		this.showSelector((done) => {
+			const selector = new ShowImagesSelectorComponent(
+				this.settingsManager.getShowImages(),
+				(newValue) => {
+					this.settingsManager.setShowImages(newValue);
 
-		const selector = new SelectList(items, 5, getSelectListTheme());
-		selector.setSelectedIndex(currentValue ? 0 : 1);
+					// Update all existing tool execution components with new setting
+					for (const child of this.chatContainer.children) {
+						if (child instanceof ToolExecutionComponent) {
+							child.setShowImages(newValue);
+						}
+					}
 
-		selector.onSelect = (item) => {
-			const newValue = item.value === "yes";
-			this.settingsManager.setShowImages(newValue);
-			this.showStatus(`Inline images: ${newValue ? "on" : "off"}`);
-			this.chatContainer.removeChild(selector);
-
-			// Update all existing tool execution components with new setting
-			for (const child of this.chatContainer.children) {
-				if (child instanceof ToolExecutionComponent) {
-					child.setShowImages(newValue);
-				}
-			}
-
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
-		};
-
-		selector.onCancel = () => {
-			this.chatContainer.removeChild(selector);
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
-		};
-
-		this.chatContainer.addChild(selector);
-		this.ui.setFocus(selector);
-		this.ui.requestRender();
+					done();
+					this.showStatus(`Inline images: ${newValue ? "on" : "off"}`);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {

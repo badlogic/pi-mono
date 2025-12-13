@@ -60,7 +60,16 @@ export class Image implements Component {
 			const result = renderImage(this.base64Data, this.dimensions, { maxWidthCells: maxWidth });
 
 			if (result) {
-				lines = [result.sequence];
+				// Return `rows` lines so TUI accounts for image height
+				// First (rows-1) lines are empty (TUI clears them)
+				// Last line: move cursor back up, then output image sequence
+				lines = [];
+				for (let i = 0; i < result.rows - 1; i++) {
+					lines.push("");
+				}
+				// Move cursor up to first row, then output image
+				const moveUp = result.rows > 1 ? `\x1b[${result.rows - 1}A` : "";
+				lines.push(moveUp + result.sequence);
 			} else {
 				const fallback = imageFallback(this.mimeType, this.dimensions, this.options.filename);
 				lines = [this.theme.fallbackColor(fallback)];

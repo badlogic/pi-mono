@@ -255,38 +255,6 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Check if image lines changed - they require special handling to avoid duplication
-		// Only force full re-render if image content actually changed, not just because images exist
-		const imageLineChanged = (() => {
-			for (let i = firstChanged; i < Math.max(newLines.length, this.previousLines.length); i++) {
-				const prevLine = this.previousLines[i] || "";
-				const newLine = newLines[i] || "";
-				if (this.containsImage(prevLine) || this.containsImage(newLine)) {
-					if (prevLine !== newLine) return true;
-				}
-			}
-			return false;
-		})();
-
-		if (imageLineChanged) {
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			// For Kitty protocol, delete all images before re-render
-			if (getCapabilities().images === "kitty") {
-				buffer += "\x1b_Ga=d\x1b\\";
-			}
-			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
-			for (let i = 0; i < newLines.length; i++) {
-				if (i > 0) buffer += "\r\n";
-				buffer += newLines[i];
-			}
-			buffer += "\x1b[?2026l"; // End synchronized output
-			this.terminal.write(buffer);
-			this.cursorRow = newLines.length - 1;
-			this.previousLines = newLines;
-			this.previousWidth = width;
-			return;
-		}
-
 		// Check if firstChanged is outside the viewport
 		// cursorRow is the line where cursor is (0-indexed)
 		// Viewport shows lines from (cursorRow - height + 1) to cursorRow

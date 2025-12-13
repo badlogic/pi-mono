@@ -107,6 +107,7 @@ export class ToolExecutionComponent extends Container {
 			for (const img of imageBlocks) {
 				// Show inline image only if terminal supports it AND user setting allows it
 				if (caps.images && this.showImages && img.data && img.mimeType) {
+					this.addChild(new Spacer(1));
 					const imageComponent = new Image(
 						img.data,
 						img.mimeType,
