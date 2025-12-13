@@ -28,6 +28,12 @@ export function detectCapabilities(): TerminalCapabilities {
 	const termProgram = process.env.TERM_PROGRAM?.toLowerCase() || "";
 	const term = process.env.TERM?.toLowerCase() || "";
 	const colorTerm = process.env.COLORTERM?.toLowerCase() || "";
+	const disableImages = process.env.PI_NO_IMAGES === "1" || process.env.PI_NO_IMAGES === "true";
+
+	if (disableImages) {
+		const trueColor = colorTerm === "truecolor" || colorTerm === "24bit";
+		return { images: null, trueColor, hyperlinks: true };
+	}
 
 	if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
 		return { images: "kitty", trueColor: true, hyperlinks: true };
