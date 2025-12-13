@@ -159,9 +159,7 @@ function buildSystemPrompt(
 	channels: ChannelInfo[],
 	users: UserInfo[],
 ): string {
-	const channelPath = guildId
-		? `${workspacePath}/${guildId}/${channelId}`
-		: `${workspacePath}/${channelId}`;
+	const channelPath = guildId ? `${workspacePath}/${guildId}/${channelId}` : `${workspacePath}/${channelId}`;
 	const isDocker = sandboxConfig.type === "docker";
 
 	const channelMappings =
@@ -520,14 +518,15 @@ export function createAgentRunner(sandboxConfig: SandboxConfig): AgentRunner {
 						const duration = (durationMs / 1000).toFixed(1);
 
 						queue.enqueue(
-							() => ctx.respondToolEmbed({
-								toolName: event.toolName,
-								label,
-								args: argsFormatted,
-								result: resultStr,
-								isError: event.isError,
-								durationSecs: duration,
-							}),
+							() =>
+								ctx.respondToolEmbed({
+									toolName: event.toolName,
+									label,
+									args: argsFormatted,
+									result: resultStr,
+									isError: event.isError,
+									durationSecs: duration,
+								}),
 							"tool result embed",
 						);
 
@@ -670,17 +669,13 @@ function translateToHostPath(
 ): string {
 	if (workspacePath === "/workspace") {
 		// Docker mode
-		const prefix = guildId
-			? `/workspace/${guildId}/${channelId}/`
-			: `/workspace/${channelId}/`;
+		const prefix = guildId ? `/workspace/${guildId}/${channelId}/` : `/workspace/${channelId}/`;
 		if (containerPath.startsWith(prefix)) {
 			return join(channelDir, containerPath.slice(prefix.length));
 		}
 		if (containerPath.startsWith("/workspace/")) {
 			// Navigate up to workspace root
-			const baseDir = guildId
-				? join(channelDir, "..", "..")
-				: join(channelDir, "..");
+			const baseDir = guildId ? join(channelDir, "..", "..") : join(channelDir, "..");
 			return join(baseDir, containerPath.slice("/workspace/".length));
 		}
 	}

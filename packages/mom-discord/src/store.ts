@@ -53,9 +53,7 @@ export class ChannelStore {
 	 * and just channelId for DMs
 	 */
 	getChannelDir(channelId: string, guildId?: string): string {
-		const dir = guildId
-			? join(this.workingDir, guildId, channelId)
-			: join(this.workingDir, channelId);
+		const dir = guildId ? join(this.workingDir, guildId, channelId) : join(this.workingDir, channelId);
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });
 		}
@@ -128,14 +126,18 @@ export class ChannelStore {
 	 * Log a bot response
 	 */
 	async logBotResponse(channelId: string, text: string, ts: string, guildId?: string): Promise<void> {
-		await this.logMessage(channelId, {
-			date: new Date().toISOString(),
-			ts,
-			user: "bot",
-			text,
-			attachments: [],
-			isBot: true,
-		}, guildId);
+		await this.logMessage(
+			channelId,
+			{
+				date: new Date().toISOString(),
+				ts,
+				user: "bot",
+				text,
+				attachments: [],
+				isBot: true,
+			},
+			guildId,
+		);
 	}
 
 	/**
