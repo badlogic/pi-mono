@@ -1,13 +1,39 @@
-import type { ImageContent, Message, QueuedMessage, ReasoningEffort, TextContent } from "@mariozechner/pi-ai";
+import type {
+	ImageContent,
+	Message,
+	QueuedMessage,
+	ReasoningEffort,
+	TextContent,
+	UserMessage,
+} from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentTransport } from "./transports/types.js";
-import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
+import type {
+	AgentEvent,
+	AgentState,
+	AppMessage,
+	Attachment,
+	ThinkingLevel,
+	UserMessageWithAttachments,
+} from "./types.js";
 
 /**
  * Default message transformer: Keep only LLM-compatible messages, strip app-specific fields.
- * Converts attachments to proper content blocks (images → ImageContent, documents → TextContent).
+ * Converts attachments to proper content blocks:
+ * - Images → ImageContent
+ * - Documents with extractedText → TextContent (fallback for models without native PDF support)
+ * - Documents without extractedText → ImageContent with PDF mimeType (native PDF support)
  */
 function defaultMessageTransformer(messages: AppMessage[]): Message[] {
+	const toDocumentText = (a: Attachment): string => `\n\n[Document: ${a.fileName}]\n${a.extractedText ?? ""}`;
+	const hasBinaryBlock = (content: Array<TextContent | ImageContent>, a: Attachment): boolean =>
+		content.some((c) => c.type === "image" && c.mimeType === a.mimeType && c.data === a.content);
+	const hasDocumentTextBlock = (content: Array<TextContent | ImageContent>, a: Attachment): boolean => {
+		if (!a.extractedText) return false;
+		const marker = toDocumentText(a);
+		return content.some((c) => c.type === "text" && c.text.includes(marker));
+	};
+
 	return messages
 		.filter((m) => {
 			// Only keep standard LLM message roles
@@ -15,36 +41,34 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 		})
 		.map((m) => {
 			if (m.role === "user") {
-				const { attachments, ...rest } = m as any;
+				const user = m as UserMessageWithAttachments;
+				const attachments = user.attachments;
 
-				// If no attachments, return as-is
 				if (!attachments || attachments.length === 0) {
-					return rest as Message;
+					return { role: "user", content: user.content, timestamp: user.timestamp } satisfies UserMessage;
 				}
 
-				// Convert attachments to content blocks
-				const content = Array.isArray(rest.content) ? [...rest.content] : [{ type: "text", text: rest.content }];
+				const content: Array<TextContent | ImageContent> =
+					typeof user.content === "string" ? [{ type: "text", text: user.content }] : [...user.content];
 
-				for (const attachment of attachments as Attachment[]) {
-					// Add image blocks for image attachments
-					if (attachment.type === "image") {
-						content.push({
-							type: "image",
-							data: attachment.content,
-							mimeType: attachment.mimeType,
-						} as ImageContent);
-					}
-					// Add text blocks for documents with extracted text
-					else if (attachment.type === "document" && attachment.extractedText) {
-						content.push({
-							type: "text",
-							text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-							isDocument: true,
-						} as TextContent);
+				for (const attachment of attachments) {
+					if (attachment.type === "image" || (attachment.type === "document" && !attachment.extractedText)) {
+						if (!hasBinaryBlock(content, attachment)) {
+							content.push({
+								type: "image",
+								data: attachment.content,
+								mimeType: attachment.mimeType,
+								fileName: attachment.fileName,
+							});
+						}
+					} else if (attachment.type === "document" && attachment.extractedText) {
+						if (!hasDocumentTextBlock(content, attachment)) {
+							content.push({ type: "text", text: toDocumentText(attachment), isDocument: true });
+						}
 					}
 				}
 
-				return { ...rest, content } as Message;
+				return { role: "user", content, timestamp: user.timestamp } satisfies UserMessage;
 			}
 			return m as Message;
 		});
@@ -181,13 +205,20 @@ export class Agent {
 		if (attachments?.length) {
 			for (const a of attachments) {
 				if (a.type === "image") {
-					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
+					content.push({ type: "image", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
+				} else if (a.type === "document") {
+					if (a.extractedText) {
+						// Fallback: Add text blocks for documents with extracted text
+						content.push({
+							type: "text",
+							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
+							isDocument: true,
+						});
+					} else {
+						// Native PDF support: Send as ImageContent with PDF mimeType
+						// Providers will handle based on model capabilities
+						content.push({ type: "image", data: a.content, mimeType: a.mimeType, fileName: a.fileName });
+					}
 				}
 			}
 		}

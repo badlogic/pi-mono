@@ -12,7 +12,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 75,
@@ -29,7 +29,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -46,7 +46,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 75,
@@ -63,7 +63,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1,
 				output: 5,
@@ -80,7 +80,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -97,7 +97,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.8,
 				output: 4,
@@ -114,7 +114,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 5,
 				output: 25,
@@ -131,7 +131,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 75,
@@ -148,7 +148,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 5,
 				output: 25,
@@ -165,7 +165,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -182,7 +182,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -199,7 +199,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -216,7 +216,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 75,
@@ -233,7 +233,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.8,
 				output: 4,
@@ -250,7 +250,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.25,
 				output: 1.25,
@@ -267,7 +267,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -284,7 +284,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -301,7 +301,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -318,7 +318,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 75,
@@ -335,7 +335,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 3,
 				output: 15,
@@ -352,7 +352,7 @@ export const MODELS = {
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1,
 				output: 5,
@@ -371,7 +371,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.15,
 				output: 0.6,
@@ -388,7 +388,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -405,7 +405,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2,
 				output: 12,
@@ -422,7 +422,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.3,
 				output: 2.5,
@@ -439,7 +439,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.3,
 				output: 2.5,
@@ -456,7 +456,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -473,7 +473,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.075,
 				output: 0.3,
@@ -507,7 +507,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -524,7 +524,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -541,7 +541,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -558,7 +558,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.5,
 				output: 2,
@@ -575,7 +575,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -592,7 +592,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.3,
 				output: 2.5,
@@ -609,7 +609,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.15,
 				output: 0.6,
@@ -626,7 +626,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -643,7 +643,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.075,
 				output: 0.3,
@@ -660,7 +660,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.0375,
 				output: 0.15,
@@ -677,7 +677,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -694,7 +694,7 @@ export const MODELS = {
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 5,
@@ -713,7 +713,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.1,
 				output: 0.4,
@@ -747,7 +747,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 150,
 				output: 600,
@@ -764,7 +764,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 5,
 				output: 15,
@@ -781,7 +781,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -798,7 +798,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2.5,
 				output: 10,
@@ -815,7 +815,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.4,
 				output: 1.6,
@@ -832,7 +832,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 10,
 				output: 40,
@@ -849,7 +849,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 21,
 				output: 168,
@@ -866,7 +866,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 10,
 				output: 30,
@@ -883,7 +883,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.25,
 				output: 2,
@@ -917,7 +917,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.75,
 				output: 14,
@@ -934,7 +934,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -968,7 +968,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.05,
 				output: 0.4,
@@ -985,7 +985,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -1002,7 +1002,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2.5,
 				output: 10,
@@ -1019,7 +1019,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2,
 				output: 8,
@@ -1036,7 +1036,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.1,
 				output: 4.4,
@@ -1053,7 +1053,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 60,
@@ -1070,7 +1070,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.25,
 				output: 2,
@@ -1087,7 +1087,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 20,
 				output: 80,
@@ -1104,7 +1104,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2.5,
 				output: 10,
@@ -1121,7 +1121,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -1138,7 +1138,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2,
 				output: 8,
@@ -1155,7 +1155,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 2,
 				output: 8,
@@ -1172,7 +1172,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 0.15,
 				output: 0.6,
@@ -1189,7 +1189,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -1206,7 +1206,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 15,
 				output: 120,
@@ -1223,7 +1223,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.75,
 				output: 14,
@@ -1240,7 +1240,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: true,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,
@@ -1257,7 +1257,7 @@ export const MODELS = {
 			provider: "openai",
 			baseUrl: "https://api.openai.com/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text", "image", "document"],
 			cost: {
 				input: 1.25,
 				output: 10,

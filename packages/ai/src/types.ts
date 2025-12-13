@@ -64,6 +64,13 @@ export interface TextContent {
 	type: "text";
 	text: string;
 	textSignature?: string; // e.g., for OpenAI responses, the message ID
+	/**
+	 * Marker for extracted document text (intended for UI rendering hints).
+	 * NOTE: This property is set inconsistently across the codebase (agent.ts and web-ui
+	 * set it, but coding-agent/messages.ts does not). No consumers currently read this
+	 * property. Consider removing or properly implementing if UI hints are needed.
+	 */
+	isDocument?: boolean;
 }
 
 export interface ThinkingContent {
@@ -74,8 +81,9 @@ export interface ThinkingContent {
 
 export interface ImageContent {
 	type: "image";
-	data: string; // base64 encoded image data
-	mimeType: string; // e.g., "image/jpeg", "image/png"
+	data: string; // base64 encoded binary data (e.g., image or PDF)
+	mimeType: string; // e.g., "image/jpeg", "image/png", "application/pdf"
+	fileName?: string; // optional filename for documents
 }
 
 export interface ToolCall {
@@ -192,7 +200,7 @@ export interface Model<TApi extends Api> {
 	provider: Provider;
 	baseUrl: string;
 	reasoning: boolean;
-	input: ("text" | "image")[];
+	input: ("text" | "image" | "document")[];
 	cost: {
 		input: number; // $/million tokens
 		output: number; // $/million tokens

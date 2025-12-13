@@ -119,7 +119,7 @@ function prepareInitialMessage(parsed: Args): {
 		return {};
 	}
 
-	const { textContent, imageAttachments } = processFileArguments(parsed.fileArgs);
+	const { textContent, attachments } = processFileArguments(parsed.fileArgs);
 
 	// Combine file content with first plain text message (if any)
 	let initialMessage: string;
@@ -132,7 +132,7 @@ function prepareInitialMessage(parsed: Args): {
 
 	return {
 		initialMessage,
-		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+		initialAttachments: attachments.length > 0 ? attachments : undefined,
 	};
 }
 

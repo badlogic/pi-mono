@@ -5,6 +5,7 @@ import type {
 	ResponseFunctionToolCall,
 	ResponseInput,
 	ResponseInputContent,
+	ResponseInputFile,
 	ResponseInputImage,
 	ResponseInputText,
 	ResponseOutputMessage,
@@ -15,6 +16,7 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
+	ImageContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -382,27 +384,41 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					content: [{ type: "input_text", text: sanitizeSurrogates(msg.content) }],
 				});
 			} else {
-				const content: ResponseInputContent[] = msg.content.map((item): ResponseInputContent => {
+				const supportsImages = model.input.includes("image");
+				const supportsDocuments = model.input.includes("document");
+				const content: ResponseInputContent[] = [];
+
+				for (const item of msg.content) {
 					if (item.type === "text") {
-						return {
+						content.push({
 							type: "input_text",
 							text: sanitizeSurrogates(item.text),
-						} satisfies ResponseInputText;
-					} else {
-						return {
-							type: "input_image",
-							detail: "auto",
-							image_url: `data:${item.mimeType};base64,${item.data}`,
-						} satisfies ResponseInputImage;
+						} satisfies ResponseInputText);
+					} else if (item.type === "image") {
+						const isPdf = item.mimeType === "application/pdf";
+						const isImage = item.mimeType.startsWith("image/");
+
+						if (isPdf && supportsDocuments) {
+							content.push({
+								type: "input_file",
+								filename: item.fileName || "document.pdf",
+								file_data: item.data,
+							} satisfies ResponseInputFile);
+						} else if (isImage && supportsImages) {
+							content.push({
+								type: "input_image",
+								detail: "auto",
+								image_url: `data:${item.mimeType};base64,${item.data}`,
+							} satisfies ResponseInputImage);
+						}
+						// Skip unsupported binary types
 					}
-				});
-				const filteredContent = !model.input.includes("image")
-					? content.filter((c) => c.type !== "input_image")
-					: content;
-				if (filteredContent.length === 0) continue;
+				}
+
+				if (content.length === 0) continue;
 				messages.push({
 					role: "user",
-					content: filteredContent,
+					content,
 				});
 			}
 		} else if (msg.role === "assistant") {
@@ -439,38 +455,57 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			if (output.length === 0) continue;
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
-			// Extract text and image content
-			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
-				.join("\n");
-			const hasImages = msg.content.some((c) => c.type === "image");
+			const supportsImages = model.input.includes("image");
+			const supportsDocuments = model.input.includes("document");
 
-			// Always send function_call_output with text (or placeholder if only images)
+			// Extract text content
+			const textResult = msg.content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
+
+			// Extract supported binary content (images and PDFs)
+			const binaryBlocks = msg.content
+				.filter((c): c is ImageContent => c.type === "image")
+				.filter((c) => {
+					const isPdf = c.mimeType === "application/pdf";
+					const isImage = c.mimeType.startsWith("image/");
+					return (isPdf && supportsDocuments) || (isImage && supportsImages);
+				});
+
+			// Always send function_call_output with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
+			const hasBinary = binaryBlocks.length > 0;
 			messages.push({
 				type: "function_call_output",
 				call_id: msg.toolCallId.split("|")[0],
-				output: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+				output: sanitizeSurrogates(hasText ? textResult : hasBinary ? "(see attached)" : ""),
 			});
 
-			// If there are images and model supports them, send a follow-up user message with images
-			if (hasImages && model.input.includes("image")) {
+			// If there are binary attachments, send a follow-up user message
+			if (hasBinary) {
 				const contentParts: ResponseInputContent[] = [];
 
 				// Add text prefix
 				contentParts.push({
 					type: "input_text",
-					text: "Attached image(s) from tool result:",
+					text: "Attached file(s) from tool result:",
 				} satisfies ResponseInputText);
 
-				// Add images
-				for (const block of msg.content) {
-					if (block.type === "image") {
+				// Add binary content
+				for (const block of binaryBlocks) {
+					const isPdf = block.mimeType === "application/pdf";
+					if (isPdf) {
+						contentParts.push({
+							type: "input_file",
+							filename: block.fileName || "document.pdf",
+							file_data: block.data,
+						} satisfies ResponseInputFile);
+					} else {
 						contentParts.push({
 							type: "input_image",
 							detail: "auto",
-							image_url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+							image_url: `data:${block.mimeType};base64,${block.data}`,
 						} satisfies ResponseInputImage);
 					}
 				}

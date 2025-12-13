@@ -12,6 +12,7 @@ import { calculateCost } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
+	ImageContent,
 	Message,
 	Model,
 	OpenAICompat,
@@ -385,28 +386,45 @@ function convertMessages(
 					content: sanitizeSurrogates(msg.content),
 				});
 			} else {
-				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
+				const supportsImages = model.input.includes("image");
+				const supportsDocuments = model.input.includes("document");
+				const content: ChatCompletionContentPart[] = [];
+				type FilePart = Extract<ChatCompletionContentPart, { type: "file" }>;
+
+				for (const item of msg.content) {
 					if (item.type === "text") {
-						return {
+						content.push({
 							type: "text",
 							text: sanitizeSurrogates(item.text),
-						} satisfies ChatCompletionContentPartText;
-					} else {
-						return {
-							type: "image_url",
-							image_url: {
-								url: `data:${item.mimeType};base64,${item.data}`,
-							},
-						} satisfies ChatCompletionContentPartImage;
+						} satisfies ChatCompletionContentPartText);
+					} else if (item.type === "image") {
+						const isPdf = item.mimeType === "application/pdf";
+						const isImage = item.mimeType.startsWith("image/");
+
+						if (isPdf && supportsDocuments) {
+							content.push({
+								type: "file",
+								file: {
+									filename: item.fileName || "document.pdf",
+									file_data: item.data,
+								},
+							} satisfies FilePart);
+						} else if (isImage && supportsImages) {
+							content.push({
+								type: "image_url",
+								image_url: {
+									url: `data:${item.mimeType};base64,${item.data}`,
+								},
+							} satisfies ChatCompletionContentPartImage);
+						}
+						// Skip unsupported binary types
 					}
-				});
-				const filteredContent = !model.input.includes("image")
-					? content.filter((c) => c.type !== "image_url")
-					: content;
-				if (filteredContent.length === 0) continue;
+				}
+
+				if (content.length === 0) continue;
 				params.push({
 					role: "user",
-					content: filteredContent,
+					content,
 				});
 			}
 		} else if (msg.role === "assistant") {
@@ -469,19 +487,31 @@ function convertMessages(
 			}
 			params.push(assistantMsg);
 		} else if (msg.role === "toolResult") {
-			// Extract text and image content
-			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
-				.join("\n");
-			const hasImages = msg.content.some((c) => c.type === "image");
+			const supportsImages = model.input.includes("image");
+			const supportsDocuments = model.input.includes("document");
 
-			// Always send tool result with text (or placeholder if only images)
+			// Extract text content
+			const textResult = msg.content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
+
+			// Extract supported binary content (images and PDFs)
+			const binaryBlocks = msg.content
+				.filter((c): c is ImageContent => c.type === "image")
+				.filter((c) => {
+					const isPdf = c.mimeType === "application/pdf";
+					const isImage = c.mimeType.startsWith("image/");
+					return (isPdf && supportsDocuments) || (isImage && supportsImages);
+				});
+
+			// Always send tool result with text (or placeholder if only binary)
 			const hasText = textResult.length > 0;
+			const hasBinary = binaryBlocks.length > 0;
 			// Some providers (e.g. Mistral) require the 'name' field in tool results
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
-				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+				content: sanitizeSurrogates(hasText ? textResult : hasBinary ? "(see attached)" : ""),
 				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
 			};
 			if (compat.requiresToolResultName && msg.toolName) {
@@ -489,25 +519,33 @@ function convertMessages(
 			}
 			params.push(toolResultMsg);
 
-			// If there are images and model supports them, send a follow-up user message with images
-			if (hasImages && model.input.includes("image")) {
-				const contentBlocks: Array<
-					{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
-				> = [];
+			// If there are binary attachments, send a follow-up user message
+			if (hasBinary) {
+				const contentBlocks: ChatCompletionContentPart[] = [];
+				type FilePart = Extract<ChatCompletionContentPart, { type: "file" }>;
 
 				// Add text prefix
 				contentBlocks.push({
 					type: "text",
-					text: "Attached image(s) from tool result:",
+					text: "Attached file(s) from tool result:",
 				});
 
-				// Add images
-				for (const block of msg.content) {
-					if (block.type === "image") {
+				// Add binary content
+				for (const block of binaryBlocks) {
+					const isPdf = block.mimeType === "application/pdf";
+					if (isPdf) {
+						contentBlocks.push({
+							type: "file",
+							file: {
+								filename: block.fileName || "document.pdf",
+								file_data: block.data,
+							},
+						} satisfies FilePart);
+					} else {
 						contentBlocks.push({
 							type: "image_url",
 							image_url: {
-								url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+								url: `data:${block.mimeType};base64,${block.data}`,
 							},
 						});
 					}
