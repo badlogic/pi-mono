@@ -1,3 +1,4 @@
+import { ThinkingLevel } from "@google/genai";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
@@ -159,15 +160,26 @@ function mapOptionsForApi<TApi extends Api>(
 		case "google-generative-ai": {
 			if (!options?.reasoning) return base as any;
 
-			const googleBudget = getGoogleBudget(
-				model as Model<"google-generative-ai">,
-				clampReasoning(options.reasoning)!,
-			);
+			const googleModel = model as Model<"google-generative-ai">;
+			const effort = clampReasoning(options.reasoning)!;
+
+			// Gemini 3 Pro models use thinkingLevel exclusively instead of thinkingBudget.
+			// https://ai.google.dev/gemini-api/docs/thinking#set-budget
+			if (isGemini3ProModel(googleModel)) {
+				return {
+					...base,
+					thinking: {
+						enabled: true,
+						level: getGoogleThinkingLevel(effort),
+					},
+				} satisfies GoogleOptions;
+			}
+
 			return {
 				...base,
 				thinking: {
 					enabled: true,
-					budgetTokens: googleBudget,
+					budgetTokens: getGoogleBudget(googleModel, effort),
 				},
 			} satisfies GoogleOptions;
 		}
@@ -181,6 +193,23 @@ function mapOptionsForApi<TApi extends Api>(
 }
 
 type ClampedReasoningEffort = Exclude<ReasoningEffort, "xhigh">;
+
+function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
+	// Covers gemini-3-pro, gemini-3-pro-preview, and possible other prefixed ids in the future
+	return model.id.includes("3-pro");
+}
+
+function getGoogleThinkingLevel(effort: ClampedReasoningEffort): ThinkingLevel {
+	// Gemini 3 Pro only supports LOW/HIGH (for now)
+	switch (effort) {
+		case "minimal":
+		case "low":
+			return ThinkingLevel.LOW;
+		case "medium":
+		case "high":
+			return ThinkingLevel.HIGH;
+	}
+}
 
 function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedReasoningEffort): number {
 	// See https://ai.google.dev/gemini-api/docs/thinking#set-budget

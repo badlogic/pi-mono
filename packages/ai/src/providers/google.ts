@@ -6,6 +6,8 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type Part,
+	type ThinkingConfig,
+	type ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -31,6 +33,7 @@ export interface GoogleOptions extends StreamOptions {
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
+		level?: ThinkingLevel;
 	};
 }
 
@@ -293,10 +296,13 @@ function buildParams(
 	}
 
 	if (options.thinking?.enabled && model.reasoning) {
-		config.thinkingConfig = {
-			includeThoughts: true,
-			...(options.thinking.budgetTokens !== undefined && { thinkingBudget: options.thinking.budgetTokens }),
-		};
+		const thinkingConfig: ThinkingConfig = { includeThoughts: true };
+		if (options.thinking.level !== undefined) {
+			thinkingConfig.thinkingLevel = options.thinking.level;
+		} else if (options.thinking.budgetTokens !== undefined) {
+			thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
+		}
+		config.thinkingConfig = thinkingConfig;
 	}
 
 	if (options.signal) {
