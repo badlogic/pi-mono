@@ -1,15 +1,15 @@
 import {
-	SlashCommandBuilder,
+	ActionRowBuilder,
 	type ChatInputCommandInteraction,
 	type Client,
+	type ModalActionRowComponentBuilder,
+	ModalBuilder,
+	type ModalSubmitInteraction,
 	REST,
 	Routes,
-	ModalBuilder,
+	SlashCommandBuilder,
 	TextInputBuilder,
 	TextInputStyle,
-	ActionRowBuilder,
-	type ModalActionRowComponentBuilder,
-	type ModalSubmitInteraction,
 } from "discord.js";
 import { existsSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
@@ -27,9 +27,7 @@ export interface CommandHandler {
 const momCommand = new SlashCommandBuilder()
 	.setName("mom")
 	.setDescription("Send a message to mom")
-	.addStringOption((option) =>
-		option.setName("message").setDescription("Your message to mom").setRequired(true),
-	);
+	.addStringOption((option) => option.setName("message").setDescription("Your message to mom").setRequired(true));
 
 const momStopCommand = new SlashCommandBuilder()
 	.setName("mom-stop")
@@ -43,20 +41,14 @@ const momMemoryCommand = new SlashCommandBuilder()
 			.setName("action")
 			.setDescription("What to do with memory")
 			.setRequired(true)
-			.addChoices(
-				{ name: "view", value: "view" },
-				{ name: "edit", value: "edit" },
-			),
+			.addChoices({ name: "view", value: "view" }, { name: "edit", value: "edit" }),
 	)
 	.addStringOption((option) =>
 		option
 			.setName("scope")
 			.setDescription("Which memory to access")
 			.setRequired(false)
-			.addChoices(
-				{ name: "channel", value: "channel" },
-				{ name: "global", value: "global" },
-			),
+			.addChoices({ name: "channel", value: "channel" }, { name: "global", value: "global" }),
 	);
 
 export const commands = [momCommand, momStopCommand, momMemoryCommand];
@@ -94,7 +86,7 @@ export async function registerCommands(clientId: string, token: string, guildId?
 /**
  * Set up command interaction handlers
  */
-export function setupCommandHandlers(client: Client, handler: CommandHandler, workingDir: string): void {
+export function setupCommandHandlers(client: Client, handler: CommandHandler, _workingDir: string): void {
 	client.on("interactionCreate", async (interaction) => {
 		// Handle slash commands
 		if (interaction.isChatInputCommand()) {

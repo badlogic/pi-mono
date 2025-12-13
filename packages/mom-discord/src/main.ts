@@ -2,7 +2,15 @@
 
 import { join, resolve } from "path";
 import { type AgentRunner, createAgentRunner } from "./agent.js";
-import { MomDiscordBot, type DiscordContext } from "./discord.js";
+import {
+	createMemoryEditModal,
+	getMemoryPath,
+	readMemory,
+	registerCommands,
+	setupCommandHandlers,
+	writeMemory,
+} from "./commands.js";
+import { type DiscordContext, MomDiscordBot } from "./discord.js";
 import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 
@@ -100,9 +108,7 @@ async function handleMessage(ctx: DiscordContext, _source: "channel" | "dm"): Pr
 	log.logUserMessage(logCtx, ctx.message.text);
 
 	// Build channel directory path
-	const channelDir = ctx.message.guild
-		? join(workingDir, ctx.message.guild, channelId)
-		: join(workingDir, channelId);
+	const channelDir = ctx.message.guild ? join(workingDir, ctx.message.guild, channelId) : join(workingDir, channelId);
 
 	const runner = createAgentRunner(sandbox);
 	activeRuns.set(channelId, { runner, context: ctx });
@@ -156,5 +162,141 @@ const bot = new MomDiscordBot(
 		workingDir,
 	},
 );
+
+// Set up slash command handlers
+setupCommandHandlers(
+	bot.getClient(),
+	{
+		async onMomCommand(interaction) {
+			const messageText = interaction.options.getString("message", true);
+			const channelId = interaction.channelId;
+
+			// Check if already running
+			if (activeRuns.has(channelId)) {
+				await interaction.reply({
+					content: "*Already working on something. Use `/mom-stop` to cancel.*",
+					ephemeral: true,
+				});
+				return;
+			}
+
+			// Defer reply to allow long-running operations
+			await interaction.deferReply();
+
+			const logCtx = {
+				channelId,
+				userName: interaction.user.username,
+				channelName:
+					interaction.channel?.isTextBased() && !interaction.channel.isDMBased()
+						? (interaction.channel as any).name
+						: undefined,
+				guildName: interaction.guild?.name,
+			};
+
+			log.logUserMessage(logCtx, messageText);
+
+			// Build channel directory path
+			const channelDir = interaction.guildId
+				? join(workingDir, interaction.guildId, channelId)
+				: join(workingDir, channelId);
+
+			// Create context from interaction
+			const ctx = await bot.createContextFromInteraction(interaction, messageText);
+
+			const runner = createAgentRunner(sandbox);
+			activeRuns.set(channelId, { runner, context: ctx });
+
+			const result = await runner.run(ctx, channelDir, ctx.store);
+
+			if (result.stopReason === "error") {
+				log.logAgentError(logCtx, "Agent stopped with error");
+			}
+
+			activeRuns.delete(channelId);
+		},
+
+		async onStopCommand(interaction) {
+			const channelId = interaction.channelId;
+			const active = activeRuns.get(channelId);
+
+			if (active) {
+				const logCtx = {
+					channelId,
+					userName: interaction.user.username,
+					channelName:
+						interaction.channel?.isTextBased() && !interaction.channel.isDMBased()
+							? (interaction.channel as any).name
+							: undefined,
+					guildName: interaction.guild?.name,
+				};
+				log.logStopRequest(logCtx);
+				active.runner.abort();
+				await interaction.reply("*Stopping...*");
+			} else {
+				await interaction.reply({ content: "*Nothing running.*", ephemeral: true });
+			}
+		},
+
+		async onMemoryCommand(interaction) {
+			const action = interaction.options.getString("action", true) as "view" | "edit";
+			const scope = (interaction.options.getString("scope") || "channel") as "channel" | "global";
+			const channelId = interaction.channelId;
+			const guildId = interaction.guildId || undefined;
+
+			const memoryPath = getMemoryPath(workingDir, channelId, guildId, scope);
+			const content = readMemory(memoryPath);
+
+			if (action === "view") {
+				const truncated = content.length > 1900 ? content.substring(0, 1897) + "..." : content;
+				await interaction.reply({
+					content: `**${scope === "global" ? "Global" : "Channel"} Memory:**\n\`\`\`\n${truncated}\n\`\`\``,
+					ephemeral: true,
+				});
+			} else {
+				// Show modal for editing
+				const modal = createMemoryEditModal(scope, content, channelId);
+				await interaction.showModal(modal);
+			}
+		},
+
+		async onMemoryEditSubmit(interaction) {
+			const customId = interaction.customId;
+			const [, , scope, channelId] = customId.split("-");
+			const guildId = interaction.guildId || undefined;
+
+			const newContent = interaction.fields.getTextInputValue("memory-content");
+			const memoryPath = getMemoryPath(workingDir, channelId, guildId, scope as "channel" | "global");
+
+			try {
+				await writeMemory(memoryPath, newContent);
+				await interaction.reply({
+					content: `*${scope === "global" ? "Global" : "Channel"} memory updated.*`,
+					ephemeral: true,
+				});
+			} catch (error) {
+				await interaction.reply({
+					content: `*Failed to update memory: ${error instanceof Error ? error.message : String(error)}*`,
+					ephemeral: true,
+				});
+			}
+		},
+	},
+	workingDir,
+);
+
+// Register slash commands once the client is ready
+bot.getClient().once("ready", async () => {
+	const clientId = bot.getClient().user?.id;
+	if (clientId) {
+		try {
+			// Register commands globally (for production)
+			// Use guildId param for faster development testing
+			await registerCommands(clientId, DISCORD_BOT_TOKEN);
+			log.logInfo("Slash commands registered");
+		} catch (error) {
+			log.logWarning("Failed to register slash commands", String(error));
+		}
+	}
+});
 
 bot.start();

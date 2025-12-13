@@ -1,19 +1,18 @@
 import {
-	Client,
-	GatewayIntentBits,
-	type Message,
-	type TextChannel,
-	type DMChannel,
-	type NewsChannel,
-	AttachmentBuilder,
-	ChannelType,
-	type Guild,
-	EmbedBuilder,
 	ActionRowBuilder,
+	AttachmentBuilder,
 	ButtonBuilder,
 	ButtonStyle,
-	type ButtonInteraction,
-	ComponentType,
+	ChannelType,
+	type ChatInputCommandInteraction,
+	Client,
+	type DMChannel,
+	EmbedBuilder,
+	GatewayIntentBits,
+	type Guild,
+	type Message,
+	type NewsChannel,
+	type TextChannel,
 } from "discord.js";
 import { readFileSync } from "fs";
 import { basename } from "path";
@@ -239,14 +238,15 @@ export class MomDiscordBot {
 	}
 
 	private async logMessage(message: Message): Promise<void> {
-		const attachments = message.attachments.size > 0
-			? this.store.processAttachments(
-				message.channel.id,
-				Array.from(message.attachments.values()).map(a => ({ name: a.name, url: a.url })),
-				message.id,
-				message.guild?.id,
-			)
-			: [];
+		const attachments =
+			message.attachments.size > 0
+				? this.store.processAttachments(
+						message.channel.id,
+						Array.from(message.attachments.values()).map((a) => ({ name: a.name, url: a.url })),
+						message.id,
+						message.guild?.id,
+					)
+				: [];
 
 		const { userName, displayName } = await this.getUserInfo(message.author.id, message.guild || undefined);
 
@@ -273,20 +273,19 @@ export class MomDiscordBot {
 
 		const { userName, displayName } = await this.getUserInfo(message.author.id, message.guild || undefined);
 
-		const channelName = message.channel.type === ChannelType.DM
-			? undefined
-			: (message.channel as TextChannel).name;
+		const channelName = message.channel.type === ChannelType.DM ? undefined : (message.channel as TextChannel).name;
 
 		const guildName = message.guild?.name;
 
-		const attachments = message.attachments.size > 0
-			? this.store.processAttachments(
-				message.channel.id,
-				Array.from(message.attachments.values()).map(a => ({ name: a.name, url: a.url })),
-				message.id,
-				message.guild?.id,
-			)
-			: [];
+		const attachments =
+			message.attachments.size > 0
+				? this.store.processAttachments(
+						message.channel.id,
+						Array.from(message.attachments.values()).map((a) => ({ name: a.name, url: a.url })),
+						message.id,
+						message.guild?.id,
+					)
+				: [];
 
 		let responseMessage: Message | null = null;
 		let accumulatedText = "";
@@ -347,12 +346,7 @@ export class MomDiscordBot {
 				}
 
 				if (shouldLog) {
-					await this.store.logBotResponse(
-						message.channel.id,
-						responseText,
-						responseMessage.id,
-						message.guild?.id,
-					);
+					await this.store.logBotResponse(message.channel.id, responseText, responseMessage.id, message.guild?.id);
 				}
 			},
 
@@ -404,22 +398,22 @@ export class MomDiscordBot {
 
 			respondToolEmbed: async (embedData: ToolResultEmbed) => {
 				const embed = new EmbedBuilder()
-					.setTitle(`${embedData.isError ? "✗" : "✓"} ${embedData.toolName}${embedData.label ? `: ${embedData.label}` : ""}`)
+					.setTitle(
+						`${embedData.isError ? "✗" : "✓"} ${embedData.toolName}${embedData.label ? `: ${embedData.label}` : ""}`,
+					)
 					.setColor(embedData.isError ? 0xff0000 : 0x00ff00)
 					.setFooter({ text: `Duration: ${embedData.durationSecs}s` });
 
 				if (embedData.args) {
 					// Truncate args to fit Discord embed field limit (1024 chars)
-					const truncatedArgs = embedData.args.length > 1000
-						? embedData.args.substring(0, 997) + "..."
-						: embedData.args;
+					const truncatedArgs =
+						embedData.args.length > 1000 ? embedData.args.substring(0, 997) + "..." : embedData.args;
 					embed.addFields({ name: "Arguments", value: "```\n" + truncatedArgs + "\n```", inline: false });
 				}
 
 				// Truncate result to fit Discord embed description limit (4096 chars)
-				const truncatedResult = embedData.result.length > 3900
-					? embedData.result.substring(0, 3897) + "..."
-					: embedData.result;
+				const truncatedResult =
+					embedData.result.length > 3900 ? embedData.result.substring(0, 3897) + "..." : embedData.result;
 				embed.setDescription("```\n" + truncatedResult + "\n```");
 
 				await channel.send({ embeds: [embed] });
@@ -451,6 +445,190 @@ export class MomDiscordBot {
 				});
 			},
 		};
+	}
+
+	/**
+	 * Create a context from a slash command interaction
+	 */
+	async createContextFromInteraction(
+		interaction: ChatInputCommandInteraction,
+		messageText: string,
+	): Promise<DiscordContext> {
+		const { userName, displayName } = await this.getUserInfo(interaction.user.id, interaction.guild || undefined);
+
+		const channelName =
+			interaction.channel?.type === ChannelType.DM ? undefined : (interaction.channel as TextChannel)?.name;
+
+		const guildName = interaction.guild?.name;
+
+		let responseMessage: Message | null = null;
+		let accumulatedText = "";
+		let isWorking = true;
+		const workingIndicator = " ...";
+
+		const channel = interaction.channel as TextChannel | DMChannel | NewsChannel;
+
+		// Helper to split long messages (Discord limit is 2000 chars)
+		const splitMessage = (text: string): string[] => {
+			const MAX_LENGTH = 2000;
+			if (text.length <= MAX_LENGTH) return [text];
+
+			const parts: string[] = [];
+			let remaining = text;
+			while (remaining.length > 0) {
+				const chunk = remaining.substring(0, MAX_LENGTH - 50);
+				remaining = remaining.substring(MAX_LENGTH - 50);
+				const suffix = remaining.length > 0 ? "\n*(continued...)*" : "";
+				parts.push(chunk + suffix);
+			}
+			return parts;
+		};
+
+		return {
+			message: {
+				text: messageText,
+				rawText: messageText,
+				user: interaction.user.id,
+				userName,
+				displayName,
+				channel: interaction.channelId,
+				guild: interaction.guildId || undefined,
+				ts: interaction.id,
+				attachments: [],
+			},
+			channelName,
+			guildName,
+			store: this.store,
+			channels: this.getChannels(),
+			users: this.getUsers(),
+
+			respond: async (responseText: string, shouldLog = true) => {
+				if (!accumulatedText) {
+					accumulatedText = responseText;
+				} else {
+					accumulatedText += "\n" + responseText;
+				}
+
+				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+				const parts = splitMessage(displayText);
+
+				if (responseMessage) {
+					await responseMessage.edit(parts[0]);
+				} else {
+					// For slash commands, send as a follow-up message
+					responseMessage = (await interaction.followUp(parts[0])) as Message;
+				}
+
+				if (shouldLog) {
+					await this.store.logBotResponse(
+						interaction.channelId,
+						responseText,
+						responseMessage.id,
+						interaction.guildId || undefined,
+					);
+				}
+			},
+
+			replaceMessage: async (text: string) => {
+				accumulatedText = text;
+				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+				const parts = splitMessage(displayText);
+
+				if (responseMessage) {
+					await responseMessage.edit(parts[0]);
+				} else {
+					responseMessage = (await interaction.followUp(parts[0])) as Message;
+				}
+			},
+
+			respondFollowUp: async (followUpText: string) => {
+				const parts = splitMessage(followUpText);
+				for (const part of parts) {
+					await channel.send(part);
+				}
+			},
+
+			setTyping: async (isTypingFlag: boolean) => {
+				if (isTypingFlag) {
+					await channel.sendTyping();
+					// Post initial "thinking" message
+					if (!responseMessage) {
+						accumulatedText = "*Thinking...*";
+						responseMessage = (await interaction.followUp(accumulatedText + workingIndicator)) as Message;
+					}
+				}
+			},
+
+			uploadFile: async (filePath: string, title?: string) => {
+				const fileName = title || basename(filePath);
+				const fileContent = readFileSync(filePath);
+				const attachment = new AttachmentBuilder(fileContent, { name: fileName });
+				await channel.send({ files: [attachment] });
+			},
+
+			setWorking: async (working: boolean) => {
+				isWorking = working;
+				if (responseMessage && accumulatedText) {
+					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+					const parts = splitMessage(displayText);
+					await responseMessage.edit(parts[0]);
+				}
+			},
+
+			respondToolEmbed: async (embedData: ToolResultEmbed) => {
+				const embed = new EmbedBuilder()
+					.setTitle(
+						`${embedData.isError ? "✗" : "✓"} ${embedData.toolName}${embedData.label ? `: ${embedData.label}` : ""}`,
+					)
+					.setColor(embedData.isError ? 0xff0000 : 0x00ff00)
+					.setFooter({ text: `Duration: ${embedData.durationSecs}s` });
+
+				if (embedData.args) {
+					const truncatedArgs =
+						embedData.args.length > 1000 ? embedData.args.substring(0, 997) + "..." : embedData.args;
+					embed.addFields({ name: "Arguments", value: "```\n" + truncatedArgs + "\n```", inline: false });
+				}
+
+				const truncatedResult =
+					embedData.result.length > 3900 ? embedData.result.substring(0, 3897) + "..." : embedData.result;
+				embed.setDescription("```\n" + truncatedResult + "\n```");
+
+				await channel.send({ embeds: [embed] });
+			},
+
+			addStopButton: async () => {
+				if (!responseMessage) return;
+
+				const stopButton = new ButtonBuilder()
+					.setCustomId(`mom-stop-${interaction.channelId}`)
+					.setLabel("Stop")
+					.setStyle(ButtonStyle.Danger)
+					.setEmoji("⏹️");
+
+				const row = new ActionRowBuilder<ButtonBuilder>().addComponents(stopButton);
+
+				await responseMessage.edit({
+					content: responseMessage.content,
+					components: [row],
+				});
+			},
+
+			removeStopButton: async () => {
+				if (!responseMessage) return;
+
+				await responseMessage.edit({
+					content: responseMessage.content,
+					components: [],
+				});
+			},
+		};
+	}
+
+	/**
+	 * Get the Discord client (for command setup)
+	 */
+	getClient(): Client {
+		return this.client;
 	}
 
 	async start(): Promise<void> {
