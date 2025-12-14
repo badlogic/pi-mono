@@ -29,6 +29,13 @@ export interface ToolResultData {
 	durationSecs: string;
 }
 
+export interface UsageSummaryData {
+	tokens: { input: number; output: number };
+	cache: { read: number; write: number };
+	context: { used: number; max: number; percent: string };
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+}
+
 export interface TransportContext {
 	transport: TransportName;
 
@@ -76,6 +83,7 @@ export interface TransportContext {
 
 	// Optional transport-specific UX
 	sendToolResult?: (data: ToolResultData) => Promise<void>;
+	sendUsageSummary?: (data: UsageSummaryData) => Promise<void>;
 	addStopControl?: () => Promise<void>;
 	removeStopControl?: () => Promise<void>;
 }

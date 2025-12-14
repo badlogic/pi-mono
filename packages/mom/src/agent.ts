@@ -165,6 +165,9 @@ Avoid Slack mrkdwn link format (<url|text>).`;
 
 	return `You are mom, a ${transport === "slack" ? "Slack bot" : "Discord bot"} assistant. Be concise. No emojis.
 
+## How to Respond
+Your text responses are automatically delivered to the channel. Do NOT try to send messages via curl, API calls, webhooks, or any other method. Just write your response as normal text output.
+
 ## Context
 - For current date/time, use: date
 - You have access to previous conversation context including tool results from prior turns.
@@ -673,14 +676,19 @@ function createRunner(
 				for (const thinking of thinkingParts) {
 					log.logThinking(logCtx, thinking);
 					queue.enqueueMessage(ctx.formatting.italic(thinking), "primary", "thinking primary");
-					queue.enqueueMessage(ctx.formatting.italic(thinking), "secondary", "thinking secondary", false);
+					if (ctx.transport === "slack") {
+						queue.enqueueMessage(ctx.formatting.italic(thinking), "secondary", "thinking secondary", false);
+					}
 				}
 
 				const text = textParts.join("\n");
 				if (text.trim()) {
 					log.logResponse(logCtx, text);
 					queue.enqueueMessage(text, "primary", "response primary");
-					queue.enqueueMessage(text, "secondary", "response secondary", false);
+					// Slack uses threads for verbose output; Discord doesn't need secondary text (only tool embeds)
+					if (ctx.transport === "slack") {
+						queue.enqueueMessage(text, "secondary", "response secondary", false);
+					}
 				}
 				break;
 			}
@@ -908,7 +916,21 @@ function createRunner(
 					const contextWindow = model.contextWindow || 200000;
 
 					const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
-					runState.queue.enqueue(() => ctx.send("secondary", summary, { log: false }), "usage summary");
+					if (ctx.sendUsageSummary) {
+						const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1) + "%";
+						runState.queue.enqueue(
+							() =>
+								ctx.sendUsageSummary!({
+									tokens: { input: runState.totalUsage.input, output: runState.totalUsage.output },
+									cache: { read: runState.totalUsage.cacheRead, write: runState.totalUsage.cacheWrite },
+									context: { used: contextTokens, max: contextWindow, percent: contextPercent },
+									cost: runState.totalUsage.cost,
+								}),
+							"usage summary",
+						);
+					} else {
+						runState.queue.enqueue(() => ctx.send("secondary", summary, { log: false }), "usage summary");
+					}
 					await queueChain;
 				}
 

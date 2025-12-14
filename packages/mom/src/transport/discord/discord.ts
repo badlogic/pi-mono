@@ -16,7 +16,7 @@ import {
 import { readFileSync } from "fs";
 import { basename } from "path";
 import * as log from "../../log.js";
-import type { ChannelInfo, ToolResultData, TransportContext, UserInfo } from "../types.js";
+import type { ChannelInfo, ToolResultData, TransportContext, UsageSummaryData, UserInfo } from "../types.js";
 import { DiscordChannelStore } from "./store.js";
 
 const DISCORD_PRIMARY_MAX_CHARS = 2000;
@@ -377,6 +377,53 @@ export class MomDiscordBot {
 			secondaryMessages.push(msg);
 		};
 
+		const sendUsageSummary = async (data: UsageSummaryData): Promise<void> => {
+			const formatNum = (n: number) => n.toLocaleString();
+			const formatCost = (n: number) => `$${n.toFixed(4)}`;
+
+			const embed = new EmbedBuilder()
+				.setColor(0x2b2d31)
+				.setAuthor({ name: "Usage Summary" })
+				.addFields(
+					{
+						name: "Tokens",
+						value: `\`${formatNum(data.tokens.input)}\` in  \`${formatNum(data.tokens.output)}\` out`,
+						inline: true,
+					},
+					{
+						name: "Context",
+						value: `\`${data.context.percent}\` of ${formatNum(data.context.max)}`,
+						inline: true,
+					},
+					{
+						name: "Cost",
+						value: `**${formatCost(data.cost.total)}**`,
+						inline: true,
+					},
+				);
+
+			if (data.cache.read > 0 || data.cache.write > 0) {
+				embed.addFields({
+					name: "Cache",
+					value: `\`${formatNum(data.cache.read)}\` read  \`${formatNum(data.cache.write)}\` write`,
+					inline: true,
+				});
+			}
+
+			const costBreakdown = [
+				`In: ${formatCost(data.cost.input)}`,
+				`Out: ${formatCost(data.cost.output)}`,
+				data.cache.read > 0 ? `Cache read: ${formatCost(data.cost.cacheRead)}` : null,
+				data.cache.write > 0 ? `Cache write: ${formatCost(data.cost.cacheWrite)}` : null,
+			]
+				.filter(Boolean)
+				.join(" | ");
+			embed.setFooter({ text: costBreakdown });
+
+			const summaryMsg = await params.postEmbed(embed);
+			secondaryMessages.push(summaryMsg);
+		};
+
 		return {
 			transport: "discord",
 			workingDir: params.workingDir,
@@ -424,7 +471,7 @@ export class MomDiscordBot {
 					await params.sendTyping();
 				}
 				if (!responseMessage) {
-					accumulatedText = formatting.italic("Thinking...");
+					accumulatedText = "-# *Thinking...*";
 					await editOrSendPrimary(accumulatedText + workingIndicator);
 				}
 			},
@@ -474,6 +521,7 @@ export class MomDiscordBot {
 			},
 
 			sendToolResult,
+			sendUsageSummary,
 			addStopControl: addStopButton,
 			removeStopControl: removeStopButton,
 		};
