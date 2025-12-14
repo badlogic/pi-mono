@@ -38,6 +38,184 @@ const COPILOT_STATIC_HEADERS = {
 	"X-Initiator": "agent",
 } as const;
 
+function getCopilotTokenFromEnv(): string | null {
+	return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || null;
+}
+
+function isCopilotModelDeprecated(model: Record<string, unknown>): boolean {
+	const deprecated = model.deprecated;
+	if (deprecated === true) return true;
+	if (model.is_deprecated === true) return true;
+	if (model.status === "deprecated") return true;
+	if (model.lifecycle === "deprecated") return true;
+	return false;
+}
+
+function getCopilotApi(modelId: string, supportedEndpoints: string[] | null): Api {
+	if (supportedEndpoints?.includes("/responses")) return "openai-responses";
+	if (supportedEndpoints?.includes("/chat/completions")) return "openai-completions";
+
+	const id = modelId.toLowerCase();
+	if (id.includes("codex") || id.startsWith("o1") || id.startsWith("o3")) {
+		return "openai-responses";
+	}
+	return "openai-completions";
+}
+
+async function fetchCopilotModels(githubToken: string): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from GitHub Copilot API...");
+		const response = await fetch("https://api.githubcopilot.com/models", {
+			headers: {
+				Accept: "application/json",
+				Authorization: `Bearer ${githubToken}`,
+				...COPILOT_STATIC_HEADERS,
+			},
+		});
+
+		if (!response.ok) {
+			const text = await response.text();
+			console.warn(`Failed to fetch GitHub Copilot models: ${response.status} ${text}`);
+			return [];
+		}
+
+		const data = (await response.json()) as unknown;
+		const list =
+			Array.isArray(data)
+				? data
+				: Array.isArray((data as any)?.data)
+					? (data as any).data
+					: Array.isArray((data as any)?.models)
+						? (data as any).models
+						: null;
+
+		if (!Array.isArray(list)) {
+			console.warn("Failed to parse GitHub Copilot models response");
+			return [];
+		}
+
+		const models: Model<any>[] = [];
+
+		for (const item of list) {
+			if (!item || typeof item !== "object") continue;
+			const model = item as Record<string, unknown>;
+
+			const id = typeof model.id === "string" ? model.id : null;
+			if (!id) continue;
+			if (isCopilotModelDeprecated(model)) continue;
+
+			const caps = model.capabilities;
+			if (!caps || typeof caps !== "object") continue;
+			const supports = (caps as Record<string, unknown>).supports;
+			if (!supports || typeof supports !== "object") continue;
+
+			const supportsToolCalls = (supports as Record<string, unknown>).tool_calls === true;
+			if (!supportsToolCalls) continue;
+
+			const supportsVision = (supports as Record<string, unknown>).vision === true;
+			const input: ("text" | "image")[] = supportsVision ? ["text", "image"] : ["text"];
+
+			const limits = (caps as Record<string, unknown>).limits;
+			const contextWindow =
+				limits && typeof limits === "object" && typeof (limits as any).max_context_window_tokens === "number"
+					? (limits as any).max_context_window_tokens
+					: 128000;
+			const maxTokens =
+				limits && typeof limits === "object" && typeof (limits as any).max_output_tokens === "number"
+					? (limits as any).max_output_tokens
+					: 8192;
+
+			const supportedEndpoints = Array.isArray(model.supported_endpoints)
+				? (model.supported_endpoints as unknown[]).filter((e): e is string => typeof e === "string")
+				: null;
+
+			const api = getCopilotApi(id, supportedEndpoints);
+
+			const base: Model<any> = {
+				id,
+				name: id,
+				api,
+				provider: "github-copilot",
+				baseUrl: "https://api.githubcopilot.com",
+				reasoning: false,
+				input,
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+				},
+				contextWindow,
+				maxTokens,
+				headers: { ...COPILOT_STATIC_HEADERS },
+			};
+
+			if (api === "openai-completions") {
+				base.compat = {
+					supportsStore: false,
+					supportsDeveloperRole: false,
+					supportsReasoningEffort: false,
+				};
+			}
+
+			if (supportedEndpoints && !supportedEndpoints.includes("/chat/completions") && !supportedEndpoints.includes("/responses")) {
+				continue;
+			}
+
+			models.push(base);
+		}
+
+		console.log(`Fetched ${models.length} tool-capable models from GitHub Copilot`);
+		return models;
+	} catch (error) {
+		console.warn("Failed to fetch GitHub Copilot models:", error);
+		return [];
+	}
+}
+
+function getFallbackCopilotModels(): Model<any>[] {
+	const fallback: Array<{ id: string; api: Api; input: ("text" | "image")[] }> = [
+		{ id: "claude-opus-4.5", api: "openai-completions", input: ["text", "image"] },
+		{ id: "claude-sonnet-4.5", api: "openai-completions", input: ["text", "image"] },
+		{ id: "claude-haiku-4.5", api: "openai-completions", input: ["text", "image"] },
+		{ id: "gemini-3-pro-preview", api: "openai-completions", input: ["text", "image"] },
+		{ id: "grok-code-fast-1", api: "openai-completions", input: ["text"] },
+		{ id: "gpt-5.2", api: "openai-responses", input: ["text", "image"] },
+		{ id: "gpt-5.1-codex-max", api: "openai-responses", input: ["text", "image"] },
+	];
+
+	return fallback.map(({ id, api, input }) => {
+		const model: Model<any> = {
+			id,
+			name: id,
+			api,
+			provider: "github-copilot",
+			baseUrl: "https://api.githubcopilot.com",
+			reasoning: false,
+			input,
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 8192,
+			headers: { ...COPILOT_STATIC_HEADERS },
+		};
+
+		if (api === "openai-completions") {
+			model.compat = {
+				supportsStore: false,
+				supportsDeveloperRole: false,
+				supportsReasoningEffort: false,
+			};
+		}
+
+		return model;
+	});
+}
+
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
@@ -312,40 +490,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		const copilotSection = (data as Record<string, unknown>)["github-copilot"];
-		if (copilotSection && typeof copilotSection === "object") {
-			const copilotModels = (copilotSection as Record<string, unknown>).models;
-			if (copilotModels && typeof copilotModels === "object") {
-				for (const [modelId, model] of Object.entries(copilotModels)) {
-					const m = model as ModelsDevModel;
-					if (m.tool_call !== true) continue;
-
-					models.push({
-						id: modelId,
-						name: m.name || modelId,
-						api: "openai-completions",
-						provider: "github-copilot",
-						baseUrl: "https://api.githubcopilot.com",
-						reasoning: m.reasoning === true,
-						input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-						cost: {
-							input: 0,
-							output: 0,
-							cacheRead: 0,
-							cacheWrite: 0,
-						},
-						contextWindow: m.limit?.context || 128000,
-						maxTokens: m.limit?.output || 8192,
-						headers: { ...COPILOT_STATIC_HEADERS },
-						compat: {
-							supportsStore: false,
-							supportsDeveloperRole: false,
-							supportsReasoningEffort: false,
-						},
-					});
-				}
-			}
-		}
 
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
@@ -365,6 +509,19 @@ async function generateModels() {
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
+	const copilotToken = getCopilotTokenFromEnv();
+	let copilotModels: Model<any>[] = [];
+	if (copilotToken) {
+		copilotModels = await fetchCopilotModels(copilotToken);
+		if (copilotModels.length === 0) {
+			console.warn("GitHub Copilot model fetch returned no models. Using fallback list.");
+			copilotModels = getFallbackCopilotModels();
+		}
+	} else {
+		console.warn("No Copilot token found (set COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN). Using fallback list.");
+		copilotModels = getFallbackCopilotModels();
+	}
+	allModels.push(...copilotModels);
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
