@@ -3,8 +3,9 @@ import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { getModelsPath } from "../config.js";
+import { getGitHubCopilotBaseUrl, normalizeDomain, refreshGitHubCopilotToken } from "./oauth/github-copilot.js";
 import { getOAuthToken, type SupportedOAuthProvider } from "./oauth/index.js";
-import { loadOAuthCredentials } from "./oauth/storage.js";
+import { loadOAuthCredentials, saveOAuthCredentials } from "./oauth/storage.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -239,8 +240,23 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 		return { models: [], error };
 	}
 
-	// Merge: custom models come after built-in
-	return { models: [...builtInModels, ...customModels], error: null };
+	const combined = [...builtInModels, ...customModels];
+
+	const copilotCreds = loadOAuthCredentials("github-copilot");
+	if (copilotCreds?.enterpriseUrl) {
+		const domain = normalizeDomain(copilotCreds.enterpriseUrl);
+		if (domain) {
+			const baseUrl = getGitHubCopilotBaseUrl(domain);
+			return {
+				models: combined.map((m) =>
+					m.provider === "github-copilot" && m.baseUrl === "https://api.githubcopilot.com" ? { ...m, baseUrl } : m,
+				),
+				error: null,
+			};
+		}
+	}
+
+	return { models: combined, error: null };
 }
 
 /**
@@ -271,6 +287,26 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 		// 3. Fall back to ANTHROPIC_API_KEY env var
 	}
 
+	if (model.provider === "github-copilot") {
+		const oauthToken = await getOAuthToken("github-copilot");
+		if (oauthToken) {
+			return oauthToken;
+		}
+
+		const githubToken = process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+		if (!githubToken) {
+			return undefined;
+		}
+
+		const enterpriseDomain = process.env.COPILOT_ENTERPRISE_URL
+			? normalizeDomain(process.env.COPILOT_ENTERPRISE_URL)
+			: undefined;
+
+		const creds = await refreshGitHubCopilotToken(githubToken, enterpriseDomain || undefined);
+		saveOAuthCredentials("github-copilot", creds);
+		return creds.access;
+	}
+
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai
 	return getApiKey(model.provider as KnownProvider);
 }
@@ -287,7 +323,18 @@ export async function getAvailableModels(): Promise<{ models: Model<Api>[]; erro
 	}
 
 	const availableModels: Model<Api>[] = [];
+	const copilotCreds = loadOAuthCredentials("github-copilot");
+	const hasCopilotEnv = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
+	const hasCopilot = !!copilotCreds || hasCopilotEnv;
+
 	for (const model of allModels) {
+		if (model.provider === "github-copilot") {
+			if (hasCopilot) {
+				availableModels.push(model);
+			}
+			continue;
+		}
+
 		const apiKey = await getApiKeyForModel(model);
 		if (apiKey) {
 			availableModels.push(model);
@@ -318,7 +365,7 @@ export function findModel(provider: string, modelId: string): { model: Model<Api
  */
 const providerToOAuthProvider: Record<string, SupportedOAuthProvider> = {
 	anthropic: "anthropic",
-	// Add more mappings as OAuth support is added for other providers
+	"github-copilot": "github-copilot",
 };
 
 // Cache for OAuth status per provider (avoids file reads on every render)

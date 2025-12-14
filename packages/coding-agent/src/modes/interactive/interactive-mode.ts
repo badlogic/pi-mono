@@ -1378,14 +1378,14 @@ export class InteractiveMode {
 						try {
 							await login(
 								providerId as SupportedOAuthProvider,
-								(url: string) => {
+								(info) => {
 									this.chatContainer.addChild(new Spacer(1));
 									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
-									this.chatContainer.addChild(new Text(theme.fg("accent", url), 1, 0));
-									this.chatContainer.addChild(new Spacer(1));
-									this.chatContainer.addChild(
-										new Text(theme.fg("warning", "Paste the authorization code below:"), 1, 0),
-									);
+									this.chatContainer.addChild(new Text(theme.fg("accent", info.url), 1, 0));
+									if (info.instructions) {
+										this.chatContainer.addChild(new Spacer(1));
+										this.chatContainer.addChild(new Text(theme.fg("warning", info.instructions), 1, 0));
+									}
 									this.ui.requestRender();
 
 									const openCmd =
@@ -1394,9 +1394,16 @@ export class InteractiveMode {
 											: process.platform === "win32"
 												? "start"
 												: "xdg-open";
-									exec(`${openCmd} "${url}"`);
+									exec(`${openCmd} "${info.url}"`);
 								},
-								async () => {
+								async (prompt) => {
+									this.chatContainer.addChild(new Spacer(1));
+									this.chatContainer.addChild(new Text(theme.fg("warning", prompt.message), 1, 0));
+									if (prompt.placeholder) {
+										this.chatContainer.addChild(new Text(theme.fg("dim", prompt.placeholder), 1, 0));
+									}
+									this.ui.requestRender();
+
 									return new Promise<string>((resolve) => {
 										const codeInput = new Input();
 										codeInput.onSubmit = () => {

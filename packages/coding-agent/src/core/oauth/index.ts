@@ -1,4 +1,5 @@
 import { loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
+import { loginGitHubCopilot, refreshGitHubCopilotToken } from "./github-copilot.js";
 import {
 	listOAuthProviders as listOAuthProvidersFromStorage,
 	loadOAuthCredentials,
@@ -18,6 +19,17 @@ export interface OAuthProviderInfo {
 	available: boolean;
 }
 
+export type OAuthPrompt = {
+	message: string;
+	placeholder?: string;
+	allowEmpty?: boolean;
+};
+
+export type OAuthAuthInfo = {
+	url: string;
+	instructions?: string;
+};
+
 /**
  * Get list of OAuth providers
  */
@@ -30,8 +42,8 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 		},
 		{
 			id: "github-copilot",
-			name: "GitHub Copilot (coming soon)",
-			available: false,
+			name: "GitHub Copilot",
+			available: true,
 		},
 	];
 }
@@ -41,15 +53,24 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
  */
 export async function login(
 	provider: SupportedOAuthProvider,
-	onAuthUrl: (url: string) => void,
-	onPromptCode: () => Promise<string>,
+	onAuth: (info: OAuthAuthInfo) => void,
+	onPrompt: (prompt: OAuthPrompt) => Promise<string>,
 ): Promise<void> {
 	switch (provider) {
 		case "anthropic":
-			await loginAnthropic(onAuthUrl, onPromptCode);
+			await loginAnthropic(
+				(url) => onAuth({ url }),
+				async () => onPrompt({ message: "Paste the authorization code below:" }),
+			);
 			break;
-		case "github-copilot":
-			throw new Error("GitHub Copilot OAuth is not yet implemented");
+		case "github-copilot": {
+			const creds = await loginGitHubCopilot({
+				onAuth: (url, instructions) => onAuth({ url, instructions }),
+				onPrompt,
+			});
+			saveOAuthCredentials("github-copilot", creds);
+			break;
+		}
 		default:
 			throw new Error(`Unknown OAuth provider: ${provider}`);
 	}
@@ -78,7 +99,8 @@ export async function refreshToken(provider: SupportedOAuthProvider): Promise<st
 			newCredentials = await refreshAnthropicToken(credentials.refresh);
 			break;
 		case "github-copilot":
-			throw new Error("GitHub Copilot OAuth is not yet implemented");
+			newCredentials = await refreshGitHubCopilotToken(credentials.refresh, credentials.enterpriseUrl);
+			break;
 		default:
 			throw new Error(`Unknown OAuth provider: ${provider}`);
 	}

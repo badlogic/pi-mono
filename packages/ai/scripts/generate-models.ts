@@ -29,6 +29,162 @@ interface ModelsDevModel {
 	};
 }
 
+const COPILOT_STATIC_HEADERS = {
+	"User-Agent": "GitHubCopilotChat/0.35.0",
+	"Editor-Version": "vscode/1.105.1",
+	"Editor-Plugin-Version": "copilot-chat/0.35.0",
+	"Copilot-Integration-Id": "copilot-developer-cli",
+	"Openai-Intent": "conversation-edits",
+	"X-Initiator": "agent",
+} as const;
+
+function getGitHubTokenFromEnv(): string | null {
+	return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || null;
+}
+
+function isDeprecatedCopilotModel(model: unknown): boolean {
+	if (!model || typeof model !== "object") return false;
+	const m = model as Record<string, unknown>;
+	if (m.deprecated === true) return true;
+	if (m.is_deprecated === true) return true;
+	if (m.status === "deprecated") return true;
+	if (m.lifecycle === "deprecated") return true;
+	const id = typeof m.id === "string" ? m.id : "";
+	return id.includes("deprecated");
+}
+
+function supportsToolsCopilotModel(model: unknown): boolean {
+	if (!model || typeof model !== "object") return true;
+	const m = model as Record<string, unknown>;
+	const caps = m.capabilities;
+	if (!caps || typeof caps !== "object") return true;
+	const tools = (caps as Record<string, unknown>).tools;
+	if (tools === undefined) return true;
+	return tools !== false;
+}
+
+function supportsVisionCopilotModel(model: unknown): boolean {
+	if (!model || typeof model !== "object") return false;
+	const m = model as Record<string, unknown>;
+	const caps = m.capabilities;
+	if (!caps || typeof caps !== "object") return false;
+	const vision = (caps as Record<string, unknown>).vision;
+	if (vision === true) return true;
+	const modalities = (caps as Record<string, unknown>).modalities;
+	if (Array.isArray(modalities)) return modalities.includes("vision") || modalities.includes("image");
+	return false;
+}
+
+function getNumberField(model: unknown, keys: string[], fallback: number): number {
+	if (!model || typeof model !== "object") return fallback;
+	const m = model as Record<string, unknown>;
+	for (const key of keys) {
+		const value = m[key];
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	return fallback;
+}
+
+async function fetchCopilotModels(githubToken: string): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from GitHub Copilot API...");
+		const response = await fetch("https://api.githubcopilot.com/models", {
+			headers: {
+				Accept: "application/json",
+				Authorization: `Bearer ${githubToken}`,
+				...COPILOT_STATIC_HEADERS,
+			},
+		});
+
+		if (!response.ok) {
+			const text = await response.text();
+			console.warn(`Failed to fetch GitHub Copilot models: ${response.status} ${text}`);
+			return [];
+		}
+
+		const data = (await response.json()) as unknown;
+		const list =
+			Array.isArray(data) ? data : Array.isArray((data as any)?.models) ? (data as any).models : (data as any)?.data;
+		if (!Array.isArray(list)) {
+			console.warn("Failed to parse GitHub Copilot models response");
+			return [];
+		}
+
+		const models: Model<any>[] = [];
+
+		for (const item of list) {
+			if (isDeprecatedCopilotModel(item)) continue;
+			if (!supportsToolsCopilotModel(item)) continue;
+
+			const id = typeof (item as any)?.id === "string" ? (item as any).id : typeof item === "string" ? item : null;
+			if (!id) continue;
+
+			const name = typeof (item as any)?.name === "string" ? (item as any).name : id;
+			const contextWindow = getNumberField(item, ["context_window", "contextWindow", "max_context_tokens"], 128000);
+			const maxTokens = getNumberField(item, ["max_output_tokens", "maxTokens", "max_tokens"], 8192);
+			const input: ("text" | "image")[] = supportsVisionCopilotModel(item) ? ["text", "image"] : ["text"];
+
+			models.push({
+				id,
+				name,
+				api: "openai-completions",
+				provider: "github-copilot",
+				baseUrl: "https://api.githubcopilot.com",
+				reasoning: false,
+				input,
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+				},
+				contextWindow,
+				maxTokens,
+				headers: { ...COPILOT_STATIC_HEADERS },
+				compat: {
+					supportsStore: false,
+					supportsDeveloperRole: false,
+					supportsReasoningEffort: false,
+				},
+			});
+		}
+
+		console.log(`Fetched ${models.length} models from GitHub Copilot`);
+		return models;
+	} catch (error) {
+		console.warn("Failed to fetch GitHub Copilot models:", error);
+		return [];
+	}
+}
+
+function getFallbackCopilotModels(): Model<any>[] {
+	const fallbackModelIds = ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "o1", "o1-mini"];
+
+	return fallbackModelIds.map((id) => ({
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "github-copilot",
+		baseUrl: "https://api.githubcopilot.com",
+		reasoning: false,
+		input: ["text"],
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+		},
+		contextWindow: 128000,
+		maxTokens: 8192,
+		headers: { ...COPILOT_STATIC_HEADERS },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: false,
+		},
+	}));
+}
+
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
@@ -321,6 +477,20 @@ async function generateModels() {
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels];
 
+	const githubToken = getGitHubTokenFromEnv();
+	let copilotModels: Model<any>[] = [];
+	if (!githubToken) {
+		console.warn("No GitHub token found for GitHub Copilot model discovery (set COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN). Using fallback list.");
+		copilotModels = getFallbackCopilotModels();
+	} else {
+		copilotModels = await fetchCopilotModels(githubToken);
+		if (copilotModels.length === 0) {
+			console.warn("No GitHub Copilot models fetched. Using fallback list.");
+			copilotModels = getFallbackCopilotModels();
+		}
+	}
+	allModels.push(...copilotModels);
+
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
 	const opus45 = allModels.find(m => m.provider === "anthropic" && m.id === "claude-opus-4-5");
@@ -458,7 +628,7 @@ export const MODELS = {
 
 	// Generate provider sections
 	for (const [providerId, models] of Object.entries(providers)) {
-		output += `\t${providerId}: {\n`;
+		output += `\t${JSON.stringify(providerId)}: {\n`;
 
 		for (const model of Object.values(models)) {
 			output += `\t\t"${model.id}": {\n`;
@@ -468,6 +638,12 @@ export const MODELS = {
 			output += `\t\t\tprovider: "${model.provider}",\n`;
 			if (model.baseUrl) {
 				output += `\t\t\tbaseUrl: "${model.baseUrl}",\n`;
+			}
+			if (model.headers) {
+				output += `\t\t\theaders: ${JSON.stringify(model.headers)},\n`;
+			}
+			if ((model as any).compat) {
+				output += `\t\t\tcompat: ${JSON.stringify((model as any).compat)},\n`;
 			}
 			output += `\t\t\treasoning: ${model.reasoning},\n`;
 			output += `\t\t\tinput: [${model.input.map(i => `"${i}"`).join(", ")}],\n`;

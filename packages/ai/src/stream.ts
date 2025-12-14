@@ -31,6 +31,10 @@ export function getApiKey(provider: any): string | undefined {
 	if (key) return key;
 
 	// Fall back to environment variables
+	if (provider === "github-copilot") {
+		return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+	}
+
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
 		anthropic: "ANTHROPIC_API_KEY",

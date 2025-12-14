@@ -6,6 +6,7 @@ export interface OAuthCredentials {
 	refresh: string;
 	access: string;
 	expires: number;
+	enterpriseUrl?: string;
 }
 
 interface OAuthStorageFormat {
