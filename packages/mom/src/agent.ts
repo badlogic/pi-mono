@@ -15,7 +15,7 @@ import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
 import type { ChannelStore } from "./store.js";
-import { createMomTools, setUploadFunction } from "./tools/index.js";
+import { clearUploadFunction, createMomTools, setUploadFunction } from "./tools/index.js";
 
 // Hardcoded model for now - TODO: make configurable (issue #63)
 const model = getModel("anthropic", "claude-sonnet-4-5");
@@ -410,8 +410,8 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 
-	// Create tools
-	const tools = createMomTools(executor);
+	// Create tools (per-channel to avoid race conditions with file uploads)
+	const tools = createMomTools(executor, channelId);
 
 	// Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
 	const memory = getMemory(channelDir);
@@ -648,8 +648,8 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			);
 			session.agent.setSystemPrompt(systemPrompt);
 
-			// Set up file upload function
-			setUploadFunction(async (filePath: string, title?: string) => {
+			// Set up file upload function (per-channel to avoid race conditions)
+			setUploadFunction(channelId, async (filePath: string, title?: string) => {
 				const hostPath = translateToHostPath(filePath, channelDir, workspacePath, channelId);
 				await ctx.uploadFile(hostPath, title);
 			});
@@ -803,6 +803,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			runState.ctx = null;
 			runState.logCtx = null;
 			runState.queue = null;
+
+			// Clean up per-channel upload function
+			clearUploadFunction(channelId);
 
 			return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
 		},
