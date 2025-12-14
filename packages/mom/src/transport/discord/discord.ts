@@ -12,6 +12,8 @@ import {
 	type Message,
 	Partials,
 	type PartialTextBasedChannelFields,
+	ThreadAutoArchiveDuration,
+	type ThreadChannel,
 } from "discord.js";
 import { readFileSync } from "fs";
 import { basename } from "path";
@@ -267,6 +269,9 @@ export class MomDiscordBot {
 		const overflowMessages: Message[] = [];
 		const secondaryMessages: Message[] = [];
 
+		// Thread for tool results (created lazily from primary message)
+		let toolThread: ThreadChannel | null = null;
+
 		let accumulatedText = "";
 		let isWorking = true;
 		const workingIndicator = " ...";
@@ -276,6 +281,25 @@ export class MomDiscordBot {
 			bold: (t: string) => `**${t}**`,
 			code: (t: string) => `\`${t}\``,
 			codeBlock: (t: string) => `\`\`\`\n${t}\n\`\`\``,
+		};
+
+		const getOrCreateThread = async (): Promise<ThreadChannel | null> => {
+			if (toolThread) return toolThread;
+			if (!responseMessage) return null;
+			if (!responseMessage.channel || responseMessage.channel.type === ChannelType.DM) return null;
+			try {
+				toolThread = await responseMessage.startThread({
+					name: "Tool Results",
+					autoArchiveDuration: ThreadAutoArchiveDuration.OneHour,
+				});
+				return toolThread;
+			} catch (err) {
+				log.logWarning(
+					"Failed to create thread for tool results",
+					err instanceof Error ? err.message : String(err),
+				);
+				return null;
+			}
 		};
 
 		const syncOverflowMessages = async (overflowParts: string[]): Promise<void> => {
@@ -373,8 +397,14 @@ export class MomDiscordBot {
 					: data.result;
 			embed.setDescription("```\n" + truncatedResult + "\n```");
 
-			const msg = await params.postEmbed(embed);
-			secondaryMessages.push(msg);
+			const thread = await getOrCreateThread();
+			if (thread) {
+				const msg = await thread.send({ embeds: [embed] });
+				secondaryMessages.push(msg);
+			} else {
+				const msg = await params.postEmbed(embed);
+				secondaryMessages.push(msg);
+			}
 		};
 
 		const sendUsageSummary = async (data: UsageSummaryData): Promise<void> => {
@@ -491,12 +521,14 @@ export class MomDiscordBot {
 			},
 
 			deletePrimaryAndSecondary: async () => {
-				for (let i = secondaryMessages.length - 1; i >= 0; i--) {
+				// Delete thread first (this also deletes messages inside it)
+				if (toolThread) {
 					try {
-						await secondaryMessages[i].delete();
+						await toolThread.delete();
 					} catch {
 						// ignore
 					}
+					toolThread = null;
 				}
 				secondaryMessages.length = 0;
 
