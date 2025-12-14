@@ -122,6 +122,9 @@ class ChannelQueue {
 // SlackBot
 // ============================================================================
 
+// Slack message length limit - messages longer than this will be truncated
+const SLACK_MAX_LENGTH = 40000;
+
 export class SlackBot {
 	private socketClient: SocketModeClient;
 	private webClient: WebClient;
@@ -134,6 +137,14 @@ export class SlackBot {
 	private users = new Map<string, SlackUser>();
 	private channels = new Map<string, SlackChannel>();
 	private queues = new Map<string, ChannelQueue>();
+
+	/**
+	 * Truncate message to Slack's length limit
+	 */
+	private truncateMessage(text: string, suffix = "\n\n_(message truncated)_"): string {
+		if (text.length <= SLACK_MAX_LENGTH) return text;
+		return text.substring(0, SLACK_MAX_LENGTH - suffix.length) + suffix;
+	}
 
 	constructor(
 		handler: MomHandler,
@@ -185,12 +196,12 @@ export class SlackBot {
 	}
 
 	async postMessage(channel: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, text });
+		const result = await this.webClient.chat.postMessage({ channel, text: this.truncateMessage(text) });
 		return result.ts as string;
 	}
 
 	async updateMessage(channel: string, ts: string, text: string): Promise<void> {
-		await this.webClient.chat.update({ channel, ts, text });
+		await this.webClient.chat.update({ channel, ts, text: this.truncateMessage(text) });
 	}
 
 	async deleteMessage(channel: string, ts: string): Promise<void> {
@@ -198,7 +209,11 @@ export class SlackBot {
 	}
 
 	async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, thread_ts: threadTs, text });
+		const result = await this.webClient.chat.postMessage({
+			channel,
+			thread_ts: threadTs,
+			text: this.truncateMessage(text),
+		});
 		return result.ts as string;
 	}
 
