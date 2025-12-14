@@ -1,17 +1,17 @@
 # mom (Master Of Mischief)
 
-A Slack bot powered by an LLM that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
+A Slack/Discord bot powered by an LLM that can execute bash commands, read/write files, and interact with your development environment. Mom is **self-managing**. She installs her own tools, programs [CLI tools (aka "skills")](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) she can use to help with your workflows and tasks, configures credentials, and maintains her workspace autonomously.
 
 ## Features
 
 - **Minimal by Design**: Turn mom into whatever you need. She builds her own tools without pre-built assumptions
 - **Self-Managing**: Installs tools (apk, npm, etc.), writes scripts, configures credentials. Zero setup from you
-- **Slack Integration**: Responds to @mentions in channels and DMs
+- **Slack & Discord Integration**: Responds to @mentions in channels and DMs on both platforms
 - **Full Bash Access**: Execute any command, read/write files, automate workflows
 - **Docker Sandbox**: Isolate mom in a container (recommended for all use)
 - **Persistent Workspace**: All conversation history, files, and tools stored in one directory you control
 - **Working Memory & Custom Tools**: Mom remembers context across sessions and creates workflow-specific CLI tools ([aka "skills"](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)) for your tasks
-- **Thread-Based Details**: Clean main messages with verbose tool details in threads
+- **Thread-Based Details**: Clean main messages with verbose tool details in threads (Slack) or embeds (Discord)
 
 ## Installation
 
@@ -49,16 +49,29 @@ npm install @mariozechner/pi-mom
 7. Install the app to your workspace. Get the **Bot User OAuth Token**. This is `MOM_SLACK_BOT_TOKEN`
 8. Add mom to any channels where you want her to operate (she'll only see messages in channels she's added to)
 
+### Discord App Setup
+
+1. Create a new Discord application at https://discord.com/developers/applications
+2. Go to **Bot** in the left sidebar and click **Add Bot**
+3. Under **Privileged Gateway Intents**, enable:
+   - `MESSAGE CONTENT INTENT`
+   - `SERVER MEMBERS INTENT`
+4. Copy the **Bot Token**. This is `DISCORD_BOT_TOKEN`
+5. Go to **OAuth2 → URL Generator** and select:
+   - Scopes: `bot`, `applications.commands`
+   - Bot Permissions: `Send Messages`, `Read Message History`, `Attach Files`, `Embed Links`, `Use Slash Commands`, `Add Reactions`
+6. Copy the generated URL and open it to invite the bot to your server
+7. The bot will respond to @mentions and DMs, and register slash commands (`/mom`, `/mom-stop`, `/mom-memory`)
+
 ## Quick Start
+
+### Slack
 
 ```bash
 # Set environment variables
 export MOM_SLACK_APP_TOKEN=xapp-...
 export MOM_SLACK_BOT_TOKEN=xoxb-...
-# Option 1: Anthropic API key
-export ANTHROPIC_API_KEY=sk-ant-...
-# Option 2: Anthropic Pro/Max (use `claude setup-token`)
-export ANTHROPIC_OAUTH_TOKEN=sk-ant-...
+export ANTHROPIC_API_KEY=sk-ant-...  # or ANTHROPIC_OAUTH_TOKEN
 
 # Create Docker sandbox (recommended)
 docker run -d \
@@ -67,11 +80,29 @@ docker run -d \
   alpine:latest \
   tail -f /dev/null
 
-# Run mom in Docker mode
+# Run mom for Slack (default)
 mom --sandbox=docker:mom-sandbox ./data
-
-# Mom will install any tools she needs herself (git, jq, etc.)
 ```
+
+### Discord
+
+```bash
+# Set environment variables
+export DISCORD_BOT_TOKEN=...
+export ANTHROPIC_API_KEY=sk-ant-...  # or ANTHROPIC_OAUTH_TOKEN
+
+# Create Docker sandbox (recommended)
+docker run -d \
+  --name mom-sandbox \
+  -v $(pwd)/data:/workspace \
+  alpine:latest \
+  tail -f /dev/null
+
+# Run mom for Discord
+mom --transport=discord --sandbox=docker:mom-sandbox ./data
+```
+
+Mom will install any tools she needs herself (git, jq, etc.).
 
 ## CLI Options
 
@@ -79,6 +110,8 @@ mom --sandbox=docker:mom-sandbox ./data
 mom [options] <working-directory>
 
 Options:
+  --transport=slack           Use Slack transport (default)
+  --transport=discord         Use Discord transport
   --sandbox=host              Run tools on host (not recommended)
   --sandbox=docker:<name>     Run tools in Docker container (recommended)
 ```
@@ -87,14 +120,15 @@ Options:
 
 | Variable | Description |
 |----------|-------------|
-| `MOM_SLACK_APP_TOKEN` | Slack app-level token (xapp-...) |
-| `MOM_SLACK_BOT_TOKEN` | Slack bot token (xoxb-...) |
+| `MOM_SLACK_APP_TOKEN` | Slack app-level token (xapp-...) - required for Slack |
+| `MOM_SLACK_BOT_TOKEN` | Slack bot token (xoxb-...) - required for Slack |
+| `DISCORD_BOT_TOKEN` | Discord bot token - required for Discord |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `ANTHROPIC_OAUTH_TOKEN` | Alternative: Anthropic OAuth token |
 
 ## How Mom Works
 
-Mom is a Node.js app that runs on your host machine. She connects to Slack via Socket Mode, receives messages, and responds using an LLM-based agent that can create and use tools.
+Mom is a Node.js app that runs on your host machine. She connects to Slack (via Socket Mode) or Discord (via Gateway), receives messages, and responds using an LLM-based agent that can create and use tools.
 
 **For each channel you add mom to** (group channels or DMs), mom maintains a separate conversation history with its own context, memory, and files.
 
@@ -128,7 +162,7 @@ Mom has access to these tools:
 - **read**: Read file contents
 - **write**: Create or overwrite files
 - **edit**: Make surgical edits to existing files
-- **attach**: Share files back to Slack
+- **attach**: Share files back to the chat (Slack or Discord)
 
 ### Bash Execution Environment
 
@@ -158,8 +192,9 @@ You never need to manually install dependencies. Just ask mom and she'll set it 
 
 You provide mom with a **data directory** (e.g., `./data`) as her workspace. While mom can technically access any directory in her execution environment, she's instructed to store all her work here:
 
+**Slack:**
 ```
-./data/                         # Your host directory
+./data/
   ├── MEMORY.md                 # Global memory (shared across channels)
   ├── settings.json             # Global settings (compaction, retry, etc.)
   ├── skills/                   # Global custom CLI tools mom creates
@@ -172,6 +207,25 @@ You provide mom with a **data directory** (e.g., `./data`) as her workspace. Whi
   │   └── skills/               # Channel-specific CLI tools
   └── D456DEF/                  # DM channels also get directories
       └── ...
+```
+
+**Discord:**
+```
+./data/
+  ├── MEMORY.md                 # Global memory (shared across channels)
+  ├── settings.json             # Global settings
+  ├── skills/                   # Global custom CLI tools
+  └── discord/
+      ├── <guildId>/            # Each Discord server (guild)
+      │   └── <channelId>/      # Each channel within the server
+      │       ├── MEMORY.md
+      │       ├── log.jsonl
+      │       ├── context.jsonl
+      │       ├── attachments/
+      │       └── skills/
+      └── dm/                   # Discord DMs
+          └── <channelId>/
+              └── ...
 ```
 
 **What's stored here:**
@@ -290,9 +344,11 @@ esac
 
 Now, if you ask mom to "take a note: buy groceries", she'll use the note skill to add it. Ask her to "show me my notes" and she'll read them back to you.
 
-### Events (Scheduled Wake-ups)
+### Events (Scheduled Wake-ups) - Slack Only
 
 Mom can schedule events that wake her up at specific times or when external things happen. Events are JSON files in `data/events/`. The harness watches this directory and triggers mom when events are due.
+
+**Note:** Events are currently only supported with the Slack transport. Discord support may be added in the future.
 
 **Three event types:**
 
@@ -339,6 +395,23 @@ You can write event files directly to `data/events/` on the host machine. This l
 - Periodic events should debounce (e.g., check inbox every 15 minutes, not per-email)
 
 **Example workflow:** Ask mom to "remind me about the dentist tomorrow at 9am" and she'll create a one-shot event. Ask her to "check my inbox every morning at 9" and she'll create a periodic event with cron schedule `0 9 * * *`.
+
+### Discord-Specific Features
+
+When running with `--transport=discord`, mom provides these additional features:
+
+**Slash Commands:**
+- `/mom <message>` - Send a message to mom (alternative to @mentioning)
+- `/mom-stop` - Stop the current operation in this channel
+- `/mom-memory` - View or edit channel/global memory via a modal
+
+**Stop Button:**
+- While mom is working, a "Stop" button appears on her response message
+- Click it to abort the current operation
+
+**Tool Results:**
+- Tool execution results are shown as Discord embeds with color-coded status (green for success, red for error)
+- Embeds include the tool name, arguments, result, and duration
 
 ### Updating Mom
 
@@ -441,7 +514,7 @@ mom --sandbox=docker:mom-exec ./data-exec
 
 ### Code Structure
 
-- `src/main.ts`: Entry point, CLI arg parsing, handler setup, SlackContext adapter
+- `src/main.ts`: Entry point, CLI arg parsing, transport routing
 - `src/agent.ts`: Agent runner, event handling, tool execution, session management
 - `src/slack.ts`: Slack integration (Socket Mode), backfill, message logging
 - `src/context.ts`: Session manager (context.jsonl), log-to-context sync
@@ -449,6 +522,9 @@ mom --sandbox=docker:mom-exec ./data-exec
 - `src/log.ts`: Centralized logging (console output)
 - `src/sandbox.ts`: Docker/host sandbox execution
 - `src/tools/`: Tool implementations (bash, read, write, edit, attach)
+- `src/transport/types.ts`: Transport abstraction (TransportContext interface)
+- `src/transport/slack/`: Slack-specific context adapter
+- `src/transport/discord/`: Discord bot, store, and slash commands
 
 ### Running in Dev Mode
 
