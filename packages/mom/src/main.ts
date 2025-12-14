@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import type { ChatInputCommandInteraction, ModalSubmitInteraction } from "discord.js";
 import { join, resolve } from "path";
-import { type AgentRunner, getOrCreateRunner } from "./agent.js";
+import { type AgentRunner, getOrCreateRunner, getOrCreateRunnerForTransport } from "./agent.js";
 import { syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
@@ -9,6 +10,19 @@ import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { type MomHandler, type SlackBot, SlackBot as SlackBotClass, type SlackEvent } from "./slack.js";
 import { ChannelStore } from "./store.js";
+import {
+	createMemoryEditModal,
+	getMemoryPath,
+	MomDiscordBot,
+	readMemory,
+	registerCommands,
+	setupCommandHandlers,
+	writeMemory,
+} from "./transport/discord/index.js";
+import { createSlackContext } from "./transport/slack/index.js";
+import type { TransportContext } from "./transport/types.js";
+
+type TransportArg = "slack" | "discord";
 
 // ============================================================================
 // Config
@@ -16,6 +30,7 @@ import { ChannelStore } from "./store.js";
 
 const MOM_SLACK_APP_TOKEN = process.env.MOM_SLACK_APP_TOKEN;
 const MOM_SLACK_BOT_TOKEN = process.env.MOM_SLACK_BOT_TOKEN;
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_OAUTH_TOKEN = process.env.ANTHROPIC_OAUTH_TOKEN;
 
@@ -23,6 +38,7 @@ interface ParsedArgs {
 	workingDir?: string;
 	sandbox: SandboxConfig;
 	downloadChannel?: string;
+	transport: TransportArg;
 }
 
 function parseArgs(): ParsedArgs {
@@ -30,19 +46,51 @@ function parseArgs(): ParsedArgs {
 	let sandbox: SandboxConfig = { type: "host" };
 	let workingDir: string | undefined;
 	let downloadChannelId: string | undefined;
+	let transport: TransportArg = "slack";
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg.startsWith("--sandbox=")) {
 			sandbox = parseSandboxArg(arg.slice("--sandbox=".length));
 		} else if (arg === "--sandbox") {
-			sandbox = parseSandboxArg(args[++i] || "");
+			const next = args[++i];
+			if (!next) {
+				console.error("Error: --sandbox requires a value (host or docker:<container-name>)");
+				process.exit(1);
+			}
+			sandbox = parseSandboxArg(next);
+		} else if (arg.startsWith("--transport=")) {
+			const value = arg.slice("--transport=".length);
+			if (value !== "slack" && value !== "discord") {
+				console.error("Error: --transport must be 'slack' or 'discord'");
+				process.exit(1);
+			}
+			transport = value;
+		} else if (arg === "--transport") {
+			const next = args[++i];
+			if (!next) {
+				console.error("Error: --transport requires a value (slack or discord)");
+				process.exit(1);
+			}
+			if (next !== "slack" && next !== "discord") {
+				console.error("Error: --transport must be 'slack' or 'discord'");
+				process.exit(1);
+			}
+			transport = next;
 		} else if (arg.startsWith("--download=")) {
 			downloadChannelId = arg.slice("--download=".length);
 		} else if (arg === "--download") {
-			downloadChannelId = args[++i];
+			const next = args[++i];
+			if (!next) {
+				console.error("Error: --download requires a channel id");
+				process.exit(1);
+			}
+			downloadChannelId = next;
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
+		} else {
+			console.error(`Unknown option: ${arg}`);
+			process.exit(1);
 		}
 	}
 
@@ -50,12 +98,13 @@ function parseArgs(): ParsedArgs {
 		workingDir: workingDir ? resolve(workingDir) : undefined,
 		sandbox,
 		downloadChannel: downloadChannelId,
+		transport,
 	};
 }
 
 const parsedArgs = parseArgs();
 
-// Handle --download mode
+// Handle Slack-only download mode
 if (parsedArgs.downloadChannel) {
 	if (!MOM_SLACK_BOT_TOKEN) {
 		console.error("Missing env: MOM_SLACK_BOT_TOKEN");
@@ -65,270 +114,424 @@ if (parsedArgs.downloadChannel) {
 	process.exit(0);
 }
 
-// Normal bot mode - require working dir
 if (!parsedArgs.workingDir) {
-	console.error("Usage: mom [--sandbox=host|docker:<name>] <working-directory>");
-	console.error("       mom --download <channel-id>");
+	console.error("Usage: mom [--transport=slack|discord] [--sandbox=host|docker:<name>] <working-directory>");
+	console.error("       mom --download <channel-id>   # Slack only");
 	process.exit(1);
 }
 
-const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
+const workingDir = parsedArgs.workingDir;
+const sandbox = parsedArgs.sandbox;
+const transport = parsedArgs.transport;
 
-if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
-	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN, ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
+if (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN) {
+	console.error("Missing env: ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
 	process.exit(1);
 }
 
 await validateSandbox(sandbox);
 
-// ============================================================================
-// State (per channel)
-// ============================================================================
-
-interface ChannelState {
-	running: boolean;
-	runner: AgentRunner;
-	store: ChannelStore;
-	stopRequested: boolean;
-	stopMessageTs?: string;
+if (transport === "discord") {
+	await startDiscordBot({ workingDir, sandbox });
+} else {
+	await startSlackBot({ workingDir, sandbox });
 }
 
-const channelStates = new Map<string, ChannelState>();
+// ============================================================================
+// Slack transport
+// ============================================================================
 
-function getState(channelId: string): ChannelState {
-	let state = channelStates.get(channelId);
-	if (!state) {
-		const channelDir = join(workingDir, channelId);
-		state = {
-			running: false,
-			runner: getOrCreateRunner(sandbox, channelId, channelDir),
-			store: new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! }),
-			stopRequested: false,
-		};
-		channelStates.set(channelId, state);
+async function startSlackBot({ workingDir, sandbox }: { workingDir: string; sandbox: SandboxConfig }): Promise<void> {
+	if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN) {
+		console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN");
+		process.exit(1);
 	}
-	return state;
-}
 
-// ============================================================================
-// Create SlackContext adapter
-// ============================================================================
+	log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
 
-function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelState, isEvent?: boolean) {
-	let messageTs: string | null = null;
-	const threadMessageTs: string[] = [];
-	let accumulatedText = "";
-	let isWorking = true;
-	const workingIndicator = " ...";
-	let updatePromise = Promise.resolve();
+	// ============================================================================
+	// State (per channel)
+	// ============================================================================
 
-	const user = slack.getUser(event.user);
+	interface ChannelState {
+		running: boolean;
+		runner: AgentRunner;
+		stopRequested: boolean;
+		stopMessageTs?: string;
+	}
 
-	// Extract event filename for status message
-	const eventFilename = isEvent ? event.text.match(/^\[EVENT:([^:]+):/)?.[1] : undefined;
+	const channelStates = new Map<string, ChannelState>();
 
-	return {
-		message: {
-			text: event.text,
-			rawText: event.text,
-			user: event.user,
-			userName: user?.userName,
-			channel: event.channel,
-			ts: event.ts,
-			attachments: (event.attachments || []).map((a) => ({ local: a.local })),
-		},
-		channelName: slack.getChannel(event.channel)?.name,
-		store: state.store,
-		channels: slack.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
-		users: slack.getAllUsers().map((u) => ({ id: u.id, userName: u.userName, displayName: u.displayName })),
+	function getState(channelId: string): ChannelState {
+		let state = channelStates.get(channelId);
+		if (!state) {
+			const channelDir = join(workingDir, channelId);
+			state = {
+				running: false,
+				runner: getOrCreateRunner(sandbox, channelId, channelDir),
+				stopRequested: false,
+			};
+			channelStates.set(channelId, state);
+		}
+		return state;
+	}
 
-		respond: async (text: string, shouldLog = true) => {
-			updatePromise = updatePromise.then(async () => {
-				accumulatedText = accumulatedText ? accumulatedText + "\n" + text : text;
-				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
+	// ============================================================================
+	// Create Slack TransportContext adapter
+	// ============================================================================
 
-				if (messageTs) {
-					await slack.updateMessage(event.channel, messageTs, displayText);
-				} else {
-					messageTs = await slack.postMessage(event.channel, displayText);
-				}
+	// ============================================================================
+	// Handler
+	// ============================================================================
 
-				if (shouldLog && messageTs) {
-					slack.logBotResponse(event.channel, text, messageTs);
-				}
-			});
-			await updatePromise;
+	const handler: MomHandler = {
+		isRunning(channelId: string): boolean {
+			const state = channelStates.get(channelId);
+			return state?.running ?? false;
 		},
 
-		replaceMessage: async (text: string) => {
-			updatePromise = updatePromise.then(async () => {
-				accumulatedText = text;
-				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-				if (messageTs) {
-					await slack.updateMessage(event.channel, messageTs, displayText);
-				} else {
-					messageTs = await slack.postMessage(event.channel, displayText);
-				}
-			});
-			await updatePromise;
-		},
-
-		respondInThread: async (text: string) => {
-			updatePromise = updatePromise.then(async () => {
-				if (messageTs) {
-					const ts = await slack.postInThread(event.channel, messageTs, text);
-					threadMessageTs.push(ts);
-				}
-			});
-			await updatePromise;
-		},
-
-		setTyping: async (isTyping: boolean) => {
-			if (isTyping && !messageTs) {
-				updatePromise = updatePromise.then(async () => {
-					if (!messageTs) {
-						accumulatedText = eventFilename ? `_Starting event: ${eventFilename}_` : "_Thinking_";
-						messageTs = await slack.postMessage(event.channel, accumulatedText + workingIndicator);
-					}
-				});
-				await updatePromise;
+		async handleStop(channelId: string, slack: SlackBot): Promise<void> {
+			const state = channelStates.get(channelId);
+			if (state?.running) {
+				state.stopRequested = true;
+				state.runner.abort();
+				const ts = await slack.postMessage(channelId, "_Stopping..._");
+				state.stopMessageTs = ts;
+			} else {
+				await slack.postMessage(channelId, "_Nothing running_");
 			}
 		},
 
-		uploadFile: async (filePath: string, title?: string) => {
-			await slack.uploadFile(event.channel, filePath, title);
-		},
+		async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
+			const state = getState(event.channel);
+			const channelDir = join(workingDir, event.channel);
 
-		setWorking: async (working: boolean) => {
-			updatePromise = updatePromise.then(async () => {
-				isWorking = working;
-				if (messageTs) {
-					const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-					await slack.updateMessage(event.channel, messageTs, displayText);
+			state.running = true;
+			state.stopRequested = false;
+
+			log.logInfo(`[${event.channel}] Starting run: ${event.text.substring(0, 50)}`);
+
+			try {
+				const syncedCount = syncLogToContext(channelDir, { mode: "slack", excludeAfterTs: event.ts });
+				if (syncedCount > 0) {
+					log.logInfo(`[${event.channel}] Synced ${syncedCount} messages from log to context`);
 				}
-			});
-			await updatePromise;
-		},
 
-		deleteMessage: async () => {
-			updatePromise = updatePromise.then(async () => {
-				// Delete thread messages first (in reverse order)
-				for (let i = threadMessageTs.length - 1; i >= 0; i--) {
-					try {
-						await slack.deleteMessage(event.channel, threadMessageTs[i]);
-					} catch {
-						// Ignore errors deleting thread messages
+				const ctx = createSlackContext({
+					workingDir,
+					channelDir,
+					event,
+					slack,
+					isEvent,
+				});
+
+				await ctx.setTyping(true);
+				await ctx.setWorking(true);
+				const result = await state.runner.run(ctx);
+				await ctx.setWorking(false);
+
+				if (result.stopReason === "aborted" && state.stopRequested) {
+					if (state.stopMessageTs) {
+						await slack.updateMessage(event.channel, state.stopMessageTs, "_Stopped_");
+						state.stopMessageTs = undefined;
+					} else {
+						await slack.postMessage(event.channel, "_Stopped_");
 					}
 				}
-				threadMessageTs.length = 0;
-				// Then delete main message
-				if (messageTs) {
-					await slack.deleteMessage(event.channel, messageTs);
-					messageTs = null;
-				}
-			});
-			await updatePromise;
+			} catch (err) {
+				log.logWarning(`[${event.channel}] Run error`, err instanceof Error ? err.message : String(err));
+			} finally {
+				state.running = false;
+			}
 		},
 	};
+
+	log.logInfo(`Starting Slack transport (socket mode) in ${workingDir}`);
+
+	const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN });
+
+	const bot = new SlackBotClass(handler, {
+		appToken: MOM_SLACK_APP_TOKEN,
+		botToken: MOM_SLACK_BOT_TOKEN,
+		workingDir,
+		store: sharedStore,
+	});
+
+	const eventsWatcher = createEventsWatcher(workingDir, bot);
+	eventsWatcher.start();
+
+	process.on("SIGINT", () => {
+		log.logInfo("Shutting down...");
+		eventsWatcher.stop();
+		process.exit(0);
+	});
+
+	process.on("SIGTERM", () => {
+		log.logInfo("Shutting down...");
+		eventsWatcher.stop();
+		process.exit(0);
+	});
+
+	bot.start();
 }
 
 // ============================================================================
-// Handler
+// Discord transport
 // ============================================================================
 
-const handler: MomHandler = {
-	isRunning(channelId: string): boolean {
-		const state = channelStates.get(channelId);
-		return state?.running ?? false;
-	},
+async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sandbox: SandboxConfig }): Promise<void> {
+	if (!DISCORD_BOT_TOKEN) {
+		console.error("Missing env: DISCORD_BOT_TOKEN");
+		process.exit(1);
+	}
 
-	async handleStop(channelId: string, slack: SlackBot): Promise<void> {
-		const state = channelStates.get(channelId);
-		if (state?.running) {
-			state.stopRequested = true;
-			state.runner.abort();
-			const ts = await slack.postMessage(channelId, "_Stopping..._");
-			state.stopMessageTs = ts; // Save for updating later
-		} else {
-			await slack.postMessage(channelId, "_Nothing running_");
+	log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+
+	type ActiveRun = { runner: AgentRunner; stopRequested: boolean; stopContext?: TransportContext };
+	const activeRuns = new Map<string, ActiveRun>();
+
+	const toRunnerKey = (channelId: string) => `discord:${channelId}`;
+
+	const formatLogCtx = (ctx: TransportContext) => {
+		const channelName = ctx.channelName
+			? ctx.guildName
+				? `${ctx.guildName}#${ctx.channelName}`
+				: ctx.channelName
+			: undefined;
+		return { channelId: ctx.message.channelId, userName: ctx.message.userName, channelName };
+	};
+
+	const handleDiscordContext = async (ctx: TransportContext): Promise<void> => {
+		const runnerKey = toRunnerKey(ctx.message.channelId);
+		const logCtx = formatLogCtx(ctx);
+		const messageText = ctx.message.text.trim().toLowerCase();
+
+		if (messageText === "stop") {
+			const active = activeRuns.get(runnerKey);
+			if (active) {
+				log.logStopRequest(logCtx);
+				await ctx.setTyping(true);
+				await ctx.replacePrimary(ctx.formatting.italic("Stopping..."));
+				active.stopRequested = true;
+				active.stopContext = ctx;
+				active.runner.abort();
+			} else {
+				await ctx.setTyping(true);
+				await ctx.replacePrimary(ctx.formatting.italic("Nothing running."));
+			}
+			return;
 		}
-	},
 
-	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
-		const state = getState(event.channel);
-		const channelDir = join(workingDir, event.channel);
+		if (activeRuns.has(runnerKey)) {
+			await ctx.setTyping(true);
+			await ctx.replacePrimary(
+				ctx.formatting.italic("Already working on something. Say `@mom stop` or use `/mom-stop`."),
+			);
+			return;
+		}
 
-		// Start run
-		state.running = true;
-		state.stopRequested = false;
+		log.logUserMessage(logCtx, ctx.message.text);
 
-		log.logInfo(`[${event.channel}] Starting run: ${event.text.substring(0, 50)}`);
+		const runner = getOrCreateRunnerForTransport(sandbox, "discord", runnerKey, ctx.channelDir, workingDir);
+		activeRuns.set(runnerKey, { runner, stopRequested: false });
 
 		try {
-			// SYNC context from log.jsonl BEFORE processing
-			// This adds any messages that were logged while mom wasn't running
-			// Exclude messages >= current ts (will be handled by agent)
-			const syncedCount = syncLogToContext(channelDir, event.ts);
-			if (syncedCount > 0) {
-				log.logInfo(`[${event.channel}] Synced ${syncedCount} messages from log to context`);
-			}
-
-			// Create context adapter
-			const ctx = createSlackContext(event, slack, state, isEvent);
-
-			// Run the agent
 			await ctx.setTyping(true);
 			await ctx.setWorking(true);
-			const result = await state.runner.run(ctx as any, state.store);
+			const result = await runner.run(ctx);
 			await ctx.setWorking(false);
 
-			if (result.stopReason === "aborted" && state.stopRequested) {
-				if (state.stopMessageTs) {
-					await slack.updateMessage(event.channel, state.stopMessageTs, "_Stopped_");
-					state.stopMessageTs = undefined;
-				} else {
-					await slack.postMessage(event.channel, "_Stopped_");
+			const active = activeRuns.get(runnerKey);
+			if (result.stopReason === "aborted" && active?.stopRequested) {
+				if (active.stopContext) {
+					try {
+						await active.stopContext.setWorking(false);
+						await active.stopContext.replacePrimary(active.stopContext.formatting.italic("Stopped."));
+					} catch {
+						// ignore
+					}
+				}
+				try {
+					await ctx.replacePrimary(ctx.formatting.italic("Stopped."));
+				} catch {
+					// ignore
 				}
 			}
-		} catch (err) {
-			log.logWarning(`[${event.channel}] Run error`, err instanceof Error ? err.message : String(err));
+		} catch (error) {
+			log.logAgentError(logCtx, error instanceof Error ? error.message : String(error));
+			try {
+				await ctx.setWorking(false);
+				await ctx.send(
+					"secondary",
+					ctx.formatting.italic(`Error: ${error instanceof Error ? error.message : String(error)}`),
+					{
+						log: false,
+					},
+				);
+			} catch {
+				// ignore
+			}
 		} finally {
-			state.running = false;
+			activeRuns.delete(runnerKey);
 		}
-	},
-};
+	};
 
-// ============================================================================
-// Start
-// ============================================================================
+	const bot = new MomDiscordBot(
+		{
+			async onMention(ctx) {
+				await handleDiscordContext(ctx);
+			},
+			async onDirectMessage(ctx) {
+				await handleDiscordContext(ctx);
+			},
+			async onStopButton(channelId) {
+				const active = activeRuns.get(toRunnerKey(channelId));
+				if (active) {
+					active.stopRequested = true;
+					active.runner.abort();
+				}
+			},
+		},
+		{ botToken: DISCORD_BOT_TOKEN, workingDir },
+	);
 
-log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+	// Slash command handlers
+	setupCommandHandlers(bot.getClient(), {
+		async onMomCommand(interaction: ChatInputCommandInteraction) {
+			const messageText = interaction.options.getString("message", true);
+			const channelId = interaction.channelId;
+			const runnerKey = toRunnerKey(channelId);
 
-// Shared store for attachment downloads (also used per-channel in getState)
-const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! });
+			if (activeRuns.has(runnerKey)) {
+				await interaction.reply({
+					content: "Already working on something. Use `/mom-stop` to cancel.",
+					ephemeral: true,
+				});
+				return;
+			}
 
-const bot = new SlackBotClass(handler, {
-	appToken: MOM_SLACK_APP_TOKEN,
-	botToken: MOM_SLACK_BOT_TOKEN,
-	workingDir,
-	store: sharedStore,
-});
+			await interaction.deferReply();
 
-// Start events watcher
-const eventsWatcher = createEventsWatcher(workingDir, bot);
-eventsWatcher.start();
+			const ctx = await bot.createContextFromInteraction(interaction, messageText, workingDir);
 
-// Handle shutdown
-process.on("SIGINT", () => {
-	log.logInfo("Shutting down...");
-	eventsWatcher.stop();
-	process.exit(0);
-});
+			await bot.store.logMessage(
+				channelId,
+				{
+					date: new Date().toISOString(),
+					ts: interaction.id,
+					user: interaction.user.id,
+					userName: interaction.user.username,
+					displayName: interaction.user.displayName || interaction.user.username,
+					text: messageText,
+					attachments: [],
+					isBot: false,
+				},
+				interaction.guildId || undefined,
+			);
 
-process.on("SIGTERM", () => {
-	log.logInfo("Shutting down...");
-	eventsWatcher.stop();
-	process.exit(0);
-});
+			log.logUserMessage(formatLogCtx(ctx), messageText);
 
-bot.start();
+			const runner = getOrCreateRunnerForTransport(sandbox, "discord", runnerKey, ctx.channelDir, workingDir);
+			activeRuns.set(runnerKey, { runner, stopRequested: false });
+
+			try {
+				await ctx.setTyping(true);
+				await ctx.setWorking(true);
+				const result = await runner.run(ctx);
+				await ctx.setWorking(false);
+				const active = activeRuns.get(runnerKey);
+				if (result.stopReason === "aborted" && active?.stopRequested) {
+					try {
+						await ctx.replacePrimary(ctx.formatting.italic("Stopped."));
+					} catch {
+						// ignore
+					}
+				}
+			} finally {
+				activeRuns.delete(runnerKey);
+			}
+		},
+
+		async onStopCommand(interaction: ChatInputCommandInteraction) {
+			const channelId = interaction.channelId;
+			const runnerKey = toRunnerKey(channelId);
+			const active = activeRuns.get(runnerKey);
+			if (active) {
+				active.stopRequested = true;
+				active.runner.abort();
+				await interaction.reply({ content: "Stopping...", ephemeral: true });
+			} else {
+				await interaction.reply({ content: "Nothing running.", ephemeral: true });
+			}
+		},
+
+		async onMemoryCommand(interaction: ChatInputCommandInteraction) {
+			const action = interaction.options.getString("action", true);
+			const scope = (interaction.options.getString("scope") || "channel") as "channel" | "global";
+			const channelId = interaction.channelId;
+			const guildId = interaction.guildId || undefined;
+
+			const memoryPath = getMemoryPath(workingDir, channelId, guildId, scope);
+			const current = readMemory(memoryPath);
+
+			if (action === "view") {
+				const max = 1800;
+				const shown = current.length > max ? current.slice(0, max) + "\n\n(truncated)" : current;
+				await interaction.reply({ content: "```markdown\n" + shown + "\n```", ephemeral: true });
+				return;
+			}
+
+			if (action === "edit") {
+				const modal = createMemoryEditModal(scope, current, channelId);
+				await interaction.showModal(modal);
+			}
+		},
+
+		async onMemoryEditSubmit(interaction: ModalSubmitInteraction) {
+			const customId = interaction.customId;
+			const [, , scope, channelId] = customId.split("-");
+			const guildId = interaction.guildId || undefined;
+
+			const newContent = interaction.fields.getTextInputValue("memory-content");
+			const memoryPath = getMemoryPath(workingDir, channelId, guildId, scope as "channel" | "global");
+
+			try {
+				await writeMemory(memoryPath, newContent);
+				await interaction.reply({
+					content: `${scope === "global" ? "Global" : "Channel"} memory updated.`,
+					ephemeral: true,
+				});
+			} catch (error) {
+				await interaction.reply({
+					content: `Failed to update memory: ${error instanceof Error ? error.message : String(error)}`,
+					ephemeral: true,
+				});
+			}
+		},
+	});
+
+	// Register slash commands on ready (global by default)
+	bot.getClient().once("ready", async () => {
+		const clientId = bot.getClient().user?.id;
+		if (!clientId) return;
+		try {
+			await registerCommands(clientId, DISCORD_BOT_TOKEN);
+			log.logInfo("Discord slash commands registered");
+		} catch (error) {
+			log.logWarning("Failed to register Discord slash commands", String(error));
+		}
+	});
+
+	process.on("SIGINT", () => {
+		log.logInfo("Shutting down...");
+		void bot.stop().finally(() => process.exit(0));
+	});
+
+	process.on("SIGTERM", () => {
+		log.logInfo("Shutting down...");
+		void bot.stop().finally(() => process.exit(0));
+	});
+
+	log.logInfo(`Starting Discord transport in ${workingDir}`);
+	await bot.start(DISCORD_BOT_TOKEN);
+}
