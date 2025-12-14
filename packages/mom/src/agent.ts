@@ -1,5 +1,5 @@
 import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, getModels, getProviders, type Model } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
 	formatSkillsForPrompt,
@@ -16,8 +16,61 @@ import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import { createMomTools } from "./tools/index.js";
 import type { ChannelInfo, ToolResultData, TransportContext, TransportName, UserInfo } from "./transport/types.js";
 
-// Hardcoded model for now - TODO: make configurable (issue #63)
-const model = getModel("anthropic", "claude-sonnet-4-5");
+const DEFAULT_MODEL = "anthropic:claude-sonnet-4-5";
+
+let configuredModel: Model<"anthropic-messages"> | null = null;
+
+function parseModelArg(modelArg: string): { provider: string; modelId: string } {
+	const parts = modelArg.split(":");
+	if (parts.length !== 2 || !parts[0] || !parts[1]) {
+		throw new Error(
+			`Invalid model format: "${modelArg}". Expected "provider:model-id" (e.g., "anthropic:claude-sonnet-4-5")`,
+		);
+	}
+	return { provider: parts[0], modelId: parts[1] };
+}
+
+function getWorkspaceModel(workingDir: string): string | undefined {
+	const settingsPath = join(workingDir, "settings.json");
+	if (!existsSync(settingsPath)) return undefined;
+	try {
+		const content = readFileSync(settingsPath, "utf-8");
+		const settings = JSON.parse(content);
+		if (settings.defaultProvider && settings.defaultModel) {
+			return `${settings.defaultProvider}:${settings.defaultModel}`;
+		}
+	} catch {
+		return undefined;
+	}
+	return undefined;
+}
+
+export function initializeModel(modelArg?: string, workingDir?: string): Model<"anthropic-messages"> {
+	const workspaceModel = workingDir ? getWorkspaceModel(workingDir) : undefined;
+	const modelStr = modelArg || process.env.MOM_MODEL || workspaceModel || DEFAULT_MODEL;
+	const { provider, modelId } = parseModelArg(modelStr);
+
+	const model = getModel(provider as "anthropic", modelId as "claude-sonnet-4-5");
+	if (!model) {
+		const providers = getProviders();
+		const availableModels = providers
+			.flatMap((p) => getModels(p).map((m) => `${p}:${m.id}`))
+			.slice(0, 10)
+			.join(", ");
+		throw new Error(`Unknown model: "${modelStr}". Available models include: ${availableModels}...`);
+	}
+
+	configuredModel = model;
+	log.logInfo(`Using model: ${provider}:${modelId}`);
+	return model;
+}
+
+function getConfiguredModel(): Model<"anthropic-messages"> {
+	if (!configuredModel) {
+		throw new Error("Model not initialized. Call initializeModel() first.");
+	}
+	return configuredModel;
+}
 
 export interface PendingMessage {
 	userName: string;
@@ -437,6 +490,7 @@ function createRunner(
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(workingDir);
 	const channelRelPath = relative(workingDir, channelDir).replaceAll("\\", "/");
+	const model = getConfiguredModel();
 
 	// Mutable per-run state - referenced by the event handler and attach tool
 	const runState = {

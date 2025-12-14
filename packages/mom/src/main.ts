@@ -2,7 +2,7 @@
 
 import type { ChatInputCommandInteraction, ModalSubmitInteraction } from "discord.js";
 import { join, resolve } from "path";
-import { type AgentRunner, getOrCreateRunner, getOrCreateRunnerForTransport } from "./agent.js";
+import { type AgentRunner, getOrCreateRunner, getOrCreateRunnerForTransport, initializeModel } from "./agent.js";
 import { syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
@@ -39,6 +39,7 @@ interface ParsedArgs {
 	sandbox: SandboxConfig;
 	downloadChannel?: string;
 	transport: TransportArg;
+	model?: string;
 }
 
 function parseArgs(): ParsedArgs {
@@ -47,6 +48,7 @@ function parseArgs(): ParsedArgs {
 	let workingDir: string | undefined;
 	let downloadChannelId: string | undefined;
 	let transport: TransportArg = "slack";
+	let model: string | undefined;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -86,6 +88,15 @@ function parseArgs(): ParsedArgs {
 				process.exit(1);
 			}
 			downloadChannelId = next;
+		} else if (arg.startsWith("--model=")) {
+			model = arg.slice("--model=".length);
+		} else if (arg === "--model") {
+			const next = args[++i];
+			if (!next) {
+				console.error("Error: --model requires a value (e.g., anthropic:claude-sonnet-4-5)");
+				process.exit(1);
+			}
+			model = next;
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
 		} else {
@@ -99,6 +110,7 @@ function parseArgs(): ParsedArgs {
 		sandbox,
 		downloadChannel: downloadChannelId,
 		transport,
+		model,
 	};
 }
 
@@ -115,8 +127,16 @@ if (parsedArgs.downloadChannel) {
 }
 
 if (!parsedArgs.workingDir) {
-	console.error("Usage: mom [--transport=slack|discord] [--sandbox=host|docker:<name>] <working-directory>");
-	console.error("       mom --download <channel-id>   # Slack only");
+	console.error("Usage: mom [options] <working-directory>");
+	console.error("");
+	console.error("Options:");
+	console.error("  --transport=slack|discord     Transport to use (default: slack)");
+	console.error("  --sandbox=host|docker:<name>  Sandbox mode (default: host)");
+	console.error("  --model=provider:model-id     Model to use (default: anthropic:claude-sonnet-4-5)");
+	console.error("  --download <channel-id>       Download Slack channel history (Slack only)");
+	console.error("");
+	console.error("Environment variables:");
+	console.error("  MOM_MODEL                     Default model (overridden by --model)");
 	process.exit(1);
 }
 
@@ -126,6 +146,13 @@ const transport = parsedArgs.transport;
 
 if (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN) {
 	console.error("Missing env: ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
+	process.exit(1);
+}
+
+try {
+	initializeModel(parsedArgs.model, workingDir);
+} catch (err) {
+	console.error(err instanceof Error ? err.message : String(err));
 	process.exit(1);
 }
 

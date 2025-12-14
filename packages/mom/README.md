@@ -110,10 +110,31 @@ Mom will install any tools she needs herself (git, jq, etc.).
 mom [options] <working-directory>
 
 Options:
-  --transport=slack           Use Slack transport (default)
-  --transport=discord         Use Discord transport
-  --sandbox=host              Run tools on host (not recommended)
-  --sandbox=docker:<name>     Run tools in Docker container (recommended)
+  --transport=slack|discord        Transport to use (default: slack)
+  --sandbox=host|docker:<name>     Sandbox mode (default: host, recommended: docker)
+  --model=provider:model-id        Model to use (default: anthropic:claude-sonnet-4-5)
+```
+
+**Model examples:**
+- `--model=anthropic:claude-sonnet-4-5` (default)
+- `--model=anthropic:claude-opus-4-5`
+- `--model=anthropic:claude-haiku-4-5`
+
+**Model resolution order** (first match wins):
+1. `--model` CLI flag
+2. `MOM_MODEL` environment variable
+3. Workspace `settings.json` (`defaultProvider` + `defaultModel`)
+4. Built-in default (`anthropic:claude-sonnet-4-5`)
+
+## Workspace Settings
+
+Create `settings.json` in your workspace directory to configure per-workspace defaults:
+
+```json
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-4-5"
+}
 ```
 
 ## Environment Variables
@@ -125,6 +146,7 @@ Options:
 | `DISCORD_BOT_TOKEN` | Discord bot token - required for Discord |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `ANTHROPIC_OAUTH_TOKEN` | Alternative: Anthropic OAuth token |
+| `MOM_MODEL` | Default model (overridden by --model) |
 
 ## How Mom Works
 
