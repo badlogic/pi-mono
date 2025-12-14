@@ -241,19 +241,19 @@ export function logUsageSummary(
 }
 
 // Startup (no context needed)
-export function logStartup(workingDir: string, sandbox: string): void {
-	console.log("Starting mom bot...");
+export function logStartup(workingDir: string, sandbox: string, botName: string): void {
+	console.log(`Starting ${botName} bot...`);
 	console.log(`  Working directory: ${workingDir}`);
 	console.log(`  Sandbox: ${sandbox}`);
 }
 
-export function logConnected(): void {
-	console.log("⚡️ Mom bot connected and listening!");
+export function logConnected(botName: string): void {
+	console.log(`⚡️ ${botName} bot connected and listening!`);
 	console.log("");
 }
 
-export function logDisconnected(): void {
-	console.log("Mom bot disconnected.");
+export function logDisconnected(botName: string): void {
+	console.log(`${botName} bot disconnected.`);
 }
 
 // Backfill

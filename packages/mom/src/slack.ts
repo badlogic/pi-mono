@@ -24,6 +24,7 @@ export interface SlackUser {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackChannel {
@@ -41,6 +42,7 @@ export interface UserInfo {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackContext {
@@ -49,6 +51,7 @@ export interface SlackContext {
 		rawText: string;
 		user: string;
 		userName?: string;
+		userEmail?: string;
 		channel: string;
 		ts: string;
 		attachments: Array<{ local: string }>;
@@ -132,6 +135,7 @@ export class SlackBot {
 	private workingDir: string;
 	private store: ChannelStore;
 	private botUserId: string | null = null;
+	private botName: string;
 	private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
 	private users = new Map<string, SlackUser>();
@@ -148,13 +152,26 @@ export class SlackBot {
 
 	constructor(
 		handler: MomHandler,
-		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore; botName: string },
 	) {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
 		this.store = config.store;
+		this.botName = config.botName;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
+	}
+
+	/**
+	 * Process mentions in message text:
+	 * - Replace bot's own mention with @{botName}
+	 * - Keep other user mentions as-is (raw Slack format like <@U12345ABC>)
+	 */
+	private processMentions(text: string): string {
+		if (!text) return "";
+		// Replace bot mention with @{botName} token
+		const processed = text.replace(new RegExp(`<@${this.botUserId}>`, "gi"), `@${this.botName}`);
+		return processed.trim();
 	}
 
 	// ==========================================================================
@@ -176,7 +193,7 @@ export class SlackBot {
 		// Record startup time - messages older than this are just logged, not processed
 		this.startupTs = (Date.now() / 1000).toFixed(6);
 
-		log.logConnected();
+		log.logConnected(this.botName);
 	}
 
 	getUser(userId: string): SlackUser | undefined {
@@ -306,7 +323,7 @@ export class SlackBot {
 				channel: e.channel,
 				ts: e.ts,
 				user: e.user,
-				text: e.text.replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				text: this.processMentions(e.text),
 				files: e.files,
 			};
 
@@ -336,7 +353,7 @@ export class SlackBot {
 
 			// SYNC: Check if busy
 			if (this.handler.isRunning(e.channel)) {
-				this.postMessage(e.channel, "_Already working. Say `@mom stop` to cancel._");
+				this.postMessage(e.channel, `_Already working. Say \`@${this.botName} stop\` to cancel._`);
 			} else {
 				this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
 			}
@@ -385,7 +402,7 @@ export class SlackBot {
 				channel: e.channel,
 				ts: e.ts,
 				user: e.user,
-				text: (e.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				text: this.processMentions(e.text || ""),
 				files: e.files,
 			};
 
@@ -521,8 +538,8 @@ export class SlackBot {
 		for (const msg of relevantMessages) {
 			const isMomMessage = msg.user === this.botUserId;
 			const user = this.users.get(msg.user!);
-			// Strip @mentions from text (same as live messages)
-			const text = (msg.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim();
+			// Process mentions in text (same as live messages)
+			const text = this.processMentions(msg.text || "");
 			// Process attachments - queues downloads in background
 			const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts!) : [];
 
@@ -579,12 +596,23 @@ export class SlackBot {
 		do {
 			const result = await this.webClient.users.list({ limit: 200, cursor });
 			const members = result.members as
-				| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+				| Array<{
+						id?: string;
+						name?: string;
+						real_name?: string;
+						deleted?: boolean;
+						profile?: { email?: string };
+				  }>
 				| undefined;
 			if (members) {
 				for (const u of members) {
 					if (u.id && u.name && !u.deleted) {
-						this.users.set(u.id, { id: u.id, userName: u.name, displayName: u.real_name || u.name });
+						this.users.set(u.id, {
+							id: u.id,
+							userName: u.name,
+							displayName: u.real_name || u.name,
+							email: u.profile?.email,
+						});
 					}
 				}
 			}

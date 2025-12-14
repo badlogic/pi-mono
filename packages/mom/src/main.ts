@@ -23,6 +23,7 @@ interface ParsedArgs {
 	workingDir?: string;
 	sandbox: SandboxConfig;
 	downloadChannel?: string;
+	botName: string;
 }
 
 function parseArgs(): ParsedArgs {
@@ -30,6 +31,7 @@ function parseArgs(): ParsedArgs {
 	let sandbox: SandboxConfig = { type: "host" };
 	let workingDir: string | undefined;
 	let downloadChannelId: string | undefined;
+	let botName = "mom";
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -41,6 +43,10 @@ function parseArgs(): ParsedArgs {
 			downloadChannelId = arg.slice("--download=".length);
 		} else if (arg === "--download") {
 			downloadChannelId = args[++i];
+		} else if (arg.startsWith("--name=")) {
+			botName = arg.slice("--name=".length);
+		} else if (arg === "--name") {
+			botName = args[++i] || "mom";
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
 		}
@@ -50,6 +56,7 @@ function parseArgs(): ParsedArgs {
 		workingDir: workingDir ? resolve(workingDir) : undefined,
 		sandbox,
 		downloadChannel: downloadChannelId,
+		botName,
 	};
 }
 
@@ -72,7 +79,11 @@ if (!parsedArgs.workingDir) {
 	process.exit(1);
 }
 
-const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
+const { workingDir, sandbox, botName } = {
+	workingDir: parsedArgs.workingDir,
+	sandbox: parsedArgs.sandbox,
+	botName: parsedArgs.botName,
+};
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
 	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN, ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
@@ -302,7 +313,7 @@ const handler: MomHandler = {
 // Start
 // ============================================================================
 
-log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`, botName);
 
 // Shared store for attachment downloads (also used per-channel in getState)
 const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! });
@@ -312,6 +323,7 @@ const bot = new SlackBotClass(handler, {
 	botToken: MOM_SLACK_BOT_TOKEN,
 	workingDir,
 	store: sharedStore,
+	botName,
 });
 
 // Start events watcher
