@@ -13,6 +13,13 @@ A Slack bot powered by an LLM that can execute bash commands, read/write files, 
 - **Working Memory & Custom Tools**: Mom remembers context across sessions and creates workflow-specific CLI tools ([aka "skills"](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)) for your tasks
 - **Thread-Based Details**: Clean main messages with verbose tool details in threads
 
+## Documentation
+
+- [Artifacts Server](docs/artifacts-server.md) - Share HTML/JS visualizations publicly with live reload
+- [Events System](docs/events.md) - Schedule reminders and periodic tasks
+- [Sandbox Guide](docs/sandbox.md) - Docker vs host mode security
+- [Slack Bot Setup](docs/slack-bot-minimal-guide.md) - Minimal Slack integration guide
+
 ## Installation
 
 ```bash
