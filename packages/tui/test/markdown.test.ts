@@ -285,6 +285,94 @@ again, hello world`,
 		});
 	});
 
+	describe("Spacing after dividers", () => {
+		it("should have only one blank line between divider and following paragraph", () => {
+			const markdown = new Markdown(
+				`hello world
+
+---
+
+again, hello world`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			const dividerIndex = plainLines.findIndex((line) => line.includes("─"));
+			assert.ok(dividerIndex !== -1, "Should have divider");
+
+			const afterDivider = plainLines.slice(dividerIndex + 1);
+			const emptyLineCount = afterDivider.findIndex((line) => line !== "");
+
+			assert.strictEqual(
+				emptyLineCount,
+				1,
+				`Expected 1 empty line after divider, but found ${emptyLineCount}. Lines after divider: ${JSON.stringify(afterDivider.slice(0, 5))}`,
+			);
+		});
+	});
+
+	describe("Spacing after headings", () => {
+		it("should have only one blank line between heading and following paragraph", () => {
+			const markdown = new Markdown(
+				`# Hello
+
+This is a paragraph`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			const headingIndex = plainLines.findIndex((line) => line.includes("Hello"));
+			assert.ok(headingIndex !== -1, "Should have heading");
+
+			const afterHeading = plainLines.slice(headingIndex + 1);
+			const emptyLineCount = afterHeading.findIndex((line) => line !== "");
+
+			assert.strictEqual(
+				emptyLineCount,
+				1,
+				`Expected 1 empty line after heading, but found ${emptyLineCount}. Lines after heading: ${JSON.stringify(afterHeading.slice(0, 5))}`,
+			);
+		});
+	});
+
+	describe("Spacing after blockquotes", () => {
+		it("should have only one blank line between blockquote and following paragraph", () => {
+			const markdown = new Markdown(
+				`hello world
+
+> This is a quote
+
+again, hello world`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			const quoteIndex = plainLines.findIndex((line) => line.includes("This is a quote"));
+			assert.ok(quoteIndex !== -1, "Should have blockquote");
+
+			const afterQuote = plainLines.slice(quoteIndex + 1);
+			const emptyLineCount = afterQuote.findIndex((line) => line !== "");
+
+			assert.strictEqual(
+				emptyLineCount,
+				1,
+				`Expected 1 empty line after blockquote, but found ${emptyLineCount}. Lines after quote: ${JSON.stringify(afterQuote.slice(0, 5))}`,
+			);
+		});
+	});
+
 	describe("HTML-like tags in text", () => {
 		it("should render content with HTML-like tags as text", () => {
 			// When the model emits something like <thinking>content</thinking> in regular text,
