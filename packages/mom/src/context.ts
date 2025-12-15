@@ -305,6 +305,38 @@ export interface MomUsageSummarySettings {
 	};
 }
 
+export type DiscordProfileStatus = "online" | "idle" | "dnd" | "invisible";
+
+export type DiscordProfileActivityType = "Playing" | "Watching" | "Listening" | "Competing" | "Streaming";
+
+export interface DiscordProfileSettings {
+	username?: string;
+	/**
+	 * Discord avatar to set for the bot user.
+	 * - If this is a URL (http/https), mom will download it.
+	 * - Otherwise, this is treated as a local file path (absolute or relative to workspace root).
+	 * - Set to an empty string ("") to clear the avatar.
+	 */
+	avatar?: string;
+	status?: DiscordProfileStatus;
+	activity?: { name: string; type: DiscordProfileActivityType };
+}
+
+export interface SlackProfileSettings {
+	/**
+	 * Slack message authorship overrides are scope gated:
+	 * - requires `chat:write.customize` to set `username`/`icon_*` in `chat.postMessage`
+	 */
+	username?: string;
+	iconUrl?: string;
+	iconEmoji?: string;
+}
+
+export interface BotProfileSettings {
+	discord?: DiscordProfileSettings;
+	slack?: SlackProfileSettings;
+}
+
 export interface MomSettings {
 	defaultProvider?: string;
 	defaultModel?: string;
@@ -312,6 +344,7 @@ export interface MomSettings {
 	compaction?: Partial<MomCompactionSettings>;
 	retry?: Partial<MomRetrySettings>;
 	usageSummary?: boolean | Partial<MomUsageSummarySettings>;
+	profile?: BotProfileSettings;
 }
 
 const DEFAULT_COMPACTION: MomCompactionSettings = {
@@ -487,6 +520,30 @@ export class MomSettingsManager {
 
 	setDefaultThinkingLevel(level: string): void {
 		this.settings.defaultThinkingLevel = level as MomSettings["defaultThinkingLevel"];
+		this.save();
+	}
+
+	getProfileSettings(): BotProfileSettings {
+		return this.settings.profile ?? {};
+	}
+
+	getDiscordProfileSettings(): DiscordProfileSettings {
+		return this.settings.profile?.discord ?? {};
+	}
+
+	getSlackProfileSettings(): SlackProfileSettings {
+		return this.settings.profile?.slack ?? {};
+	}
+
+	setDiscordProfile(profile: Partial<DiscordProfileSettings>): void {
+		const existing = this.settings.profile?.discord ?? {};
+		this.settings.profile = { ...this.settings.profile, discord: { ...existing, ...profile } };
+		this.save();
+	}
+
+	setSlackProfile(profile: Partial<SlackProfileSettings>): void {
+		const existing = this.settings.profile?.slack ?? {};
+		this.settings.profile = { ...this.settings.profile, slack: { ...existing, ...profile } };
 		this.save();
 	}
 

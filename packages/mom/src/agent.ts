@@ -16,6 +16,7 @@ import * as log from "./log.js";
 import { formatUsageSummaryText } from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import { createMomTools } from "./tools/index.js";
+import type { ProfileRuntime } from "./tools/profile.js";
 import type {
 	ChannelInfo,
 	FormatterOutput,
@@ -408,6 +409,7 @@ Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","i
 	- write: Create/overwrite files
 	- edit: Surgical file edits
 	- attach: ${toolAttachLabel}
+	- profile: Update bot profile (persists to settings.json).${transport === "discord" ? " Discord: status (online/idle/dnd/invisible), activity (Playing/Watching/etc), avatar (URL or local path), username." : " Slack: username, iconEmoji, iconUrl (per-message overrides, requires chat:write.customize scope)."}
 
 Each tool requires a "label" parameter (shown to user).
 `;
@@ -480,13 +482,18 @@ const channelRunners = new Map<string, AgentRunner>();
  * Get or create an AgentRunner for a channel.
  * Runners are cached - one per channel, persistent across messages.
  */
-export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+export function getOrCreateRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	getProfileRuntime?: () => ProfileRuntime | null,
+): AgentRunner {
 	const runnerKey = `slack:${channelId}`;
 	const existing = channelRunners.get(runnerKey);
 	if (existing) return existing;
 
 	const workingDir = resolve(channelDir, "..");
-	const runner = createRunner(sandboxConfig, "slack", runnerKey, channelDir, workingDir);
+	const runner = createRunner(sandboxConfig, "slack", runnerKey, channelDir, workingDir, getProfileRuntime);
 	channelRunners.set(runnerKey, runner);
 	return runner;
 }
@@ -497,10 +504,11 @@ export function getOrCreateRunnerForTransport(
 	runnerKey: string,
 	channelDir: string,
 	workingDir: string,
+	getProfileRuntime?: () => ProfileRuntime | null,
 ): AgentRunner {
 	const existing = channelRunners.get(runnerKey);
 	if (existing) return existing;
-	const runner = createRunner(sandboxConfig, transport, runnerKey, channelDir, workingDir);
+	const runner = createRunner(sandboxConfig, transport, runnerKey, channelDir, workingDir, getProfileRuntime);
 	channelRunners.set(runnerKey, runner);
 	return runner;
 }
@@ -515,6 +523,7 @@ function createRunner(
 	runnerKey: string,
 	channelDir: string,
 	workingDir: string,
+	getProfileRuntime?: () => ProfileRuntime | null,
 ): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(workingDir);
@@ -550,43 +559,48 @@ function createRunner(
 		throw new Error(`workingDir is not a directory: ${workingDir}`);
 	}
 	const realWorkspaceRoot = realpathSync(workingDir);
-	const tools = createMomTools(executor, () => {
-		const ctx = runState.ctx;
-		if (!ctx) return null;
-		return async (filePath: string, title?: string) => {
-			const hostPath = translateToHostPath(filePath, workingDir, channelDir, workspacePath, channelRelPath);
-			const resolvedHostPath = resolve(hostPath);
-			let realFilePath: string;
-			try {
-				realFilePath = realpathSync(resolvedHostPath);
-			} catch {
-				throw new Error("File does not exist");
-			}
-			try {
-				const stats = statSync(realFilePath);
-				if (!stats.isFile()) {
+	const tools = createMomTools(
+		executor,
+		() => {
+			const ctx = runState.ctx;
+			if (!ctx) return null;
+			return async (filePath: string, title?: string) => {
+				const hostPath = translateToHostPath(filePath, workingDir, channelDir, workspacePath, channelRelPath);
+				const resolvedHostPath = resolve(hostPath);
+				let realFilePath: string;
+				try {
+					realFilePath = realpathSync(resolvedHostPath);
+				} catch {
+					throw new Error("File does not exist");
+				}
+				try {
+					const stats = statSync(realFilePath);
+					if (!stats.isFile()) {
+						throw new Error("Path is not a file");
+					}
+				} catch (err) {
+					if (err instanceof Error) {
+						throw err;
+					}
 					throw new Error("Path is not a file");
 				}
-			} catch (err) {
-				if (err instanceof Error) {
-					throw err;
+
+				const relToWorkspace = relative(realWorkspaceRoot, realFilePath);
+				// Ensure attachments can only come from within the configured working directory (workspace root),
+				// even if the file path goes through symlinks.
+				const relNormalized = relToWorkspace.replaceAll("\\", "/");
+				const isOutside = isAbsolute(relToWorkspace) || relNormalized === ".." || relNormalized.startsWith("../");
+				if (relNormalized === "" || !isOutside) {
+					await ctx.uploadFile(realFilePath, title);
+					return;
 				}
-				throw new Error("Path is not a file");
-			}
 
-			const relToWorkspace = relative(realWorkspaceRoot, realFilePath);
-			// Ensure attachments can only come from within the configured working directory (workspace root),
-			// even if the file path goes through symlinks.
-			const relNormalized = relToWorkspace.replaceAll("\\", "/");
-			const isOutside = isAbsolute(relToWorkspace) || relNormalized === ".." || relNormalized.startsWith("../");
-			if (relNormalized === "" || !isOutside) {
-				await ctx.uploadFile(realFilePath, title);
-				return;
-			}
-
-			throw new Error("Can only attach files within the workspace directory");
-		};
-	});
+				throw new Error("Can only attach files within the workspace directory");
+			};
+		},
+		() => runState.ctx,
+		getProfileRuntime ?? (() => null),
+	);
 
 	// Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
 	const memory = getMemory(workingDir, channelDir);

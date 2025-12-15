@@ -1,7 +1,8 @@
 import { SocketModeClient } from "@slack/socket-mode";
-import { WebClient } from "@slack/web-api";
+import { type ChatPostMessageResponse, WebClient } from "@slack/web-api";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { basename, join } from "path";
+import type { MomSettingsManager, SlackProfileSettings } from "./context.js";
 import * as log from "./log.js";
 import type { Attachment, ChannelStore } from "./store.js";
 
@@ -132,20 +133,29 @@ export class SlackBot {
 	private handler: MomHandler;
 	private workingDir: string;
 	private store: ChannelStore;
+	private settingsManager?: MomSettingsManager;
 	private botUserId: string | null = null;
 	private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
 	private users = new Map<string, SlackUser>();
 	private channels = new Map<string, SlackChannel>();
 	private queues = new Map<string, ChannelQueue>();
+	private profileOverrides: { username?: string; iconUrl?: string; iconEmoji?: string } = {};
 
 	constructor(
 		handler: MomHandler,
-		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+		config: {
+			appToken: string;
+			botToken: string;
+			workingDir: string;
+			store: ChannelStore;
+			settingsManager?: MomSettingsManager;
+		},
 	) {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
 		this.store = config.store;
+		this.settingsManager = config.settingsManager;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
 	}
@@ -162,6 +172,11 @@ export class SlackBot {
 	async start(): Promise<void> {
 		const auth = await this.webClient.auth.test();
 		this.botUserId = auth.user_id as string;
+
+		const initialProfile = this.settingsManager?.getSlackProfileSettings();
+		if (initialProfile) {
+			this.setProfileOverrides(initialProfile);
+		}
 
 		await Promise.all([this.fetchUsers(), this.fetchChannels()]);
 		log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
@@ -194,7 +209,31 @@ export class SlackBot {
 	}
 
 	async postMessage(channel: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, text: this.truncateMessage(text) });
+		const iconFields = this.profileOverrides.iconEmoji
+			? { icon_emoji: this.profileOverrides.iconEmoji }
+			: this.profileOverrides.iconUrl
+				? { icon_url: this.profileOverrides.iconUrl }
+				: {};
+		const hasOverrides = Boolean(
+			this.profileOverrides.username || this.profileOverrides.iconEmoji || this.profileOverrides.iconUrl,
+		);
+
+		let result: ChatPostMessageResponse;
+		try {
+			result = await this.webClient.chat.postMessage({
+				channel,
+				text: this.truncateMessage(text),
+				...(this.profileOverrides.username ? { username: this.profileOverrides.username } : {}),
+				...iconFields,
+			});
+		} catch (err) {
+			if (!hasOverrides) throw err;
+			log.logWarning(
+				"Slack postMessage failed with authorship overrides; retrying without overrides",
+				err instanceof Error ? err.message : String(err),
+			);
+			result = await this.webClient.chat.postMessage({ channel, text: this.truncateMessage(text) });
+		}
 		return result.ts as string;
 	}
 
@@ -207,12 +246,41 @@ export class SlackBot {
 	}
 
 	async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({
-			channel,
-			thread_ts: threadTs,
-			text: this.truncateMessage(text),
-		});
+		const iconFields = this.profileOverrides.iconEmoji
+			? { icon_emoji: this.profileOverrides.iconEmoji }
+			: this.profileOverrides.iconUrl
+				? { icon_url: this.profileOverrides.iconUrl }
+				: {};
+		const hasOverrides = Boolean(
+			this.profileOverrides.username || this.profileOverrides.iconEmoji || this.profileOverrides.iconUrl,
+		);
+
+		let result: ChatPostMessageResponse;
+		try {
+			result = await this.webClient.chat.postMessage({
+				channel,
+				thread_ts: threadTs,
+				text: this.truncateMessage(text),
+				...(this.profileOverrides.username ? { username: this.profileOverrides.username } : {}),
+				...iconFields,
+			});
+		} catch (err) {
+			if (!hasOverrides) throw err;
+			log.logWarning(
+				"Slack postInThread failed with authorship overrides; retrying without overrides",
+				err instanceof Error ? err.message : String(err),
+			);
+			result = await this.webClient.chat.postMessage({
+				channel,
+				thread_ts: threadTs,
+				text: this.truncateMessage(text),
+			});
+		}
 		return result.ts as string;
+	}
+
+	setProfileOverrides(overrides: Partial<SlackProfileSettings>): void {
+		this.profileOverrides = { ...this.profileOverrides, ...overrides };
 	}
 
 	async uploadFile(channel: string, filePath: string, title?: string): Promise<void> {

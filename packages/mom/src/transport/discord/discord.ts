@@ -1,5 +1,6 @@
 import {
 	ActionRowBuilder,
+	ActivityType,
 	AttachmentBuilder,
 	ButtonBuilder,
 	ButtonStyle,
@@ -15,9 +16,16 @@ import {
 	ThreadAutoArchiveDuration,
 	type ThreadChannel,
 } from "discord.js";
-import { readFileSync } from "fs";
-import { basename } from "path";
-import type { ResolvedUsageSummarySettings } from "../../context.js";
+import { readFileSync, statSync } from "fs";
+import { request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
+import { basename, resolve } from "path";
+import type {
+	DiscordProfileActivityType,
+	DiscordProfileSettings,
+	MomSettingsManager,
+	ResolvedUsageSummarySettings,
+} from "../../context.js";
 import * as log from "../../log.js";
 import { interpolate } from "../../log.js";
 import type {
@@ -76,6 +84,7 @@ export interface MomDiscordHandler {
 export interface MomDiscordConfig {
 	botToken: string;
 	workingDir: string;
+	settingsManager?: MomSettingsManager;
 }
 
 export class MomDiscordBot {
@@ -87,10 +96,12 @@ export class MomDiscordBot {
 	private channelCache = new Map<string, string>();
 	private queues = new Map<string, ChannelQueue>();
 	private workingDir: string;
+	private settingsManager?: MomSettingsManager;
 
 	constructor(handler: MomDiscordHandler, config: MomDiscordConfig) {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
+		this.settingsManager = config.settingsManager;
 		this.client = new Client({
 			intents: [
 				GatewayIntentBits.Guilds,
@@ -115,6 +126,16 @@ export class MomDiscordBot {
 				await this.fetchGuildData(guild);
 			}
 			log.logInfo(`Discord: loaded ${this.channelCache.size} channels, ${this.userCache.size} users`);
+
+			if (this.settingsManager) {
+				const profile = this.settingsManager.getDiscordProfileSettings();
+				if (Object.keys(profile).length > 0) {
+					const result = await this.applyProfileUpdates(profile);
+					if (!result.success) {
+						log.logWarning("Discord profile apply failed", result.message);
+					}
+				}
+			}
 		});
 
 		this.client.on("messageCreate", async (message: Message) => {
@@ -762,6 +783,73 @@ export class MomDiscordBot {
 		await this.client.destroy();
 	}
 
+	public async applyProfileUpdates(
+		updates: Partial<DiscordProfileSettings>,
+	): Promise<{ success: boolean; message: string }> {
+		const user = this.client.user;
+		if (!user) {
+			return { success: false, message: "Discord client user not available yet (not ready)" };
+		}
+
+		const warnings: string[] = [];
+
+		if (updates.status) {
+			try {
+				user.setStatus(updates.status);
+			} catch (err) {
+				warnings.push(`status: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+
+		if (updates.activity) {
+			try {
+				user.setActivity(updates.activity.name, {
+					type: mapDiscordActivityType(updates.activity.type),
+				});
+			} catch (err) {
+				warnings.push(`activity: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+
+		if (updates.username) {
+			try {
+				await user.setUsername(updates.username);
+			} catch (err) {
+				warnings.push(`username: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+
+		if (updates.avatar !== undefined) {
+			try {
+				const avatar = updates.avatar.trim();
+				if (avatar === "") {
+					await user.setAvatar(null);
+				} else {
+					const buffer = await resolveAvatarBuffer(avatar, this.workingDir);
+					await user.setAvatar(buffer);
+				}
+			} catch (err) {
+				warnings.push(`avatar: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+
+		if (warnings.length > 0) {
+			return { success: false, message: `Some profile updates failed: ${warnings.join("; ")}` };
+		}
+
+		return { success: true, message: "Profile updates applied" };
+	}
+
+	public async updateProfile(
+		updates: Partial<DiscordProfileSettings>,
+	): Promise<{ success: boolean; message: string }> {
+		if (!this.settingsManager) {
+			return { success: false, message: "Discord settingsManager not configured; cannot persist profile updates" };
+		}
+		this.settingsManager.setDiscordProfile(updates);
+		return await this.applyProfileUpdates(updates);
+	}
+
 	private getQueue(channelId: string): ChannelQueue {
 		let queue = this.queues.get(channelId);
 		if (!queue) {
@@ -835,4 +923,112 @@ export class MomDiscordBot {
 
 		return true;
 	}
+}
+
+const DISCORD_AVATAR_MAX_BYTES = 8 * 1024 * 1024;
+const DISCORD_AVATAR_DOWNLOAD_TIMEOUT_MS = 10_000;
+
+function mapDiscordActivityType(type: DiscordProfileActivityType): ActivityType {
+	switch (type) {
+		case "Playing":
+			return ActivityType.Playing;
+		case "Watching":
+			return ActivityType.Watching;
+		case "Listening":
+			return ActivityType.Listening;
+		case "Competing":
+			return ActivityType.Competing;
+		case "Streaming":
+			return ActivityType.Streaming;
+		default: {
+			const exhaustive: never = type;
+			return exhaustive;
+		}
+	}
+}
+
+function isHttpUrl(value: string): boolean {
+	return value.startsWith("https://") || value.startsWith("http://");
+}
+
+async function resolveAvatarBuffer(avatar: string, workingDir: string): Promise<Buffer> {
+	if (isHttpUrl(avatar)) {
+		return await downloadUrlToBuffer(avatar, DISCORD_AVATAR_MAX_BYTES, 3);
+	}
+
+	let filePath = avatar;
+	if (filePath.startsWith("/workspace/")) {
+		filePath = filePath.replace("/workspace/", "");
+	} else if (filePath === "/workspace") {
+		filePath = "";
+	}
+	const resolved = resolve(workingDir, filePath);
+	const stats = statSync(resolved);
+	if (!stats.isFile()) {
+		throw new Error(`Avatar path is not a file: ${resolved}`);
+	}
+	if (stats.size > DISCORD_AVATAR_MAX_BYTES) {
+		throw new Error(`Avatar file too large: ${stats.size} bytes (max ${DISCORD_AVATAR_MAX_BYTES})`);
+	}
+	return readFileSync(resolved);
+}
+
+async function downloadUrlToBuffer(urlStr: string, maxBytes: number, remainingRedirects: number): Promise<Buffer> {
+	const url = new URL(urlStr);
+	const reqFn = url.protocol === "https:" ? httpsRequest : url.protocol === "http:" ? httpRequest : null;
+	if (!reqFn) throw new Error(`Unsupported URL protocol: ${url.protocol}`);
+
+	return await new Promise<Buffer>((resolvePromise, rejectPromise) => {
+		const req = reqFn(url, (res) => {
+			const statusCode = res.statusCode ?? 0;
+			const location = res.headers.location;
+
+			if (statusCode >= 300 && statusCode < 400 && location) {
+				if (remainingRedirects <= 0) {
+					rejectPromise(new Error("Too many redirects while downloading avatar"));
+					res.resume();
+					return;
+				}
+				const nextUrl = new URL(location, url).toString();
+				res.resume();
+				downloadUrlToBuffer(nextUrl, maxBytes, remainingRedirects - 1)
+					.then(resolvePromise)
+					.catch(rejectPromise);
+				return;
+			}
+
+			if (statusCode >= 400) {
+				rejectPromise(new Error(`HTTP ${statusCode} while downloading avatar`));
+				res.resume();
+				return;
+			}
+
+			const chunks: Buffer[] = [];
+			let totalBytes = 0;
+
+			res.on("data", (chunk: Buffer) => {
+				totalBytes += chunk.length;
+				if (totalBytes > maxBytes) {
+					req.destroy(new Error(`Downloaded avatar exceeds max size (${maxBytes} bytes)`));
+					return;
+				}
+				chunks.push(chunk);
+			});
+
+			res.on("end", () => {
+				resolvePromise(Buffer.concat(chunks));
+			});
+
+			res.on("error", (err) => {
+				rejectPromise(err);
+			});
+		});
+
+		req.setTimeout(DISCORD_AVATAR_DOWNLOAD_TIMEOUT_MS, () => {
+			req.destroy(new Error(`Avatar download timed out after ${DISCORD_AVATAR_DOWNLOAD_TIMEOUT_MS}ms`));
+		});
+
+		req.on("error", (err) => rejectPromise(err));
+		req.end();
+	});
 }

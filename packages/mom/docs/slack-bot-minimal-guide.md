@@ -43,6 +43,10 @@ You need **TWO tokens**:
    mpim:write
    users:read
    ```
+
+Optional scope (only if you want per-message username/icon overrides):
+- `chat:write.customize` (required by Slack to set `username` / `icon_emoji` / `icon_url` in `chat.postMessage`)
+
 5. Click "Install to Workspace" at top
 6. Copy the **Bot User OAuth Token** (starts with `xoxb-`)
 
@@ -217,6 +221,27 @@ await webClient.chat.postMessage({
   text: 'Hey there!'
 });
 ```
+
+---
+
+## Mom: Profile Overrides (settings.json)
+
+If you're running `mom`, you can configure Slack message authorship overrides via `settings.json` in the workspace root:
+
+```json
+{
+  "profile": {
+    "slack": {
+      "username": "mom-bot",
+      "iconEmoji": ":robot_face:"
+    }
+  }
+}
+```
+
+Notes:
+- These are per-message overrides on `chat.postMessage` and require `chat:write.customize`.
+- Slack presence/status is not controlled by mom (Socket Mode / Events API bots don’t have a reliable presence control surface).
 
 ### List channels
 ```javascript

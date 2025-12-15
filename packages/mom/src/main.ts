@@ -3,13 +3,14 @@
 import type { ChatInputCommandInteraction, ModalSubmitInteraction } from "discord.js";
 import { join, resolve } from "path";
 import { type AgentRunner, getOrCreateRunner, getOrCreateRunnerForTransport, initializeModel } from "./agent.js";
-import { syncLogToContext } from "./context.js";
+import { MomSettingsManager, syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { type MomHandler, type SlackBot, SlackBot as SlackBotClass, type SlackEvent } from "./slack.js";
 import { ChannelStore } from "./store.js";
+import type { ProfileRuntime } from "./tools/profile.js";
 import {
 	createMemoryEditModal,
 	getMemoryPath,
@@ -175,6 +176,7 @@ async function startSlackBot({ workingDir, sandbox }: { workingDir: string; sand
 	}
 
 	log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+	const settingsManager = new MomSettingsManager(workingDir);
 
 	// ============================================================================
 	// State (per channel)
@@ -188,6 +190,19 @@ async function startSlackBot({ workingDir, sandbox }: { workingDir: string; sand
 	}
 
 	const channelStates = new Map<string, ChannelState>();
+	let slackBot: SlackBotClass | null = null;
+
+	const getProfileRuntime = (): ProfileRuntime | null => {
+		const bot = slackBot;
+		if (!bot) return null;
+		return {
+			updateSlackProfile: async (updates) => {
+				settingsManager.setSlackProfile(updates);
+				bot.setProfileOverrides(updates);
+				return { success: true, message: "Slack profile overrides updated" };
+			},
+		};
+	};
 
 	function getState(channelId: string): ChannelState {
 		let state = channelStates.get(channelId);
@@ -195,7 +210,7 @@ async function startSlackBot({ workingDir, sandbox }: { workingDir: string; sand
 			const channelDir = join(workingDir, channelId);
 			state = {
 				running: false,
-				runner: getOrCreateRunner(sandbox, channelId, channelDir),
+				runner: getOrCreateRunner(sandbox, channelId, channelDir, getProfileRuntime),
 				stopRequested: false,
 			};
 			channelStates.set(channelId, state);
@@ -282,7 +297,9 @@ async function startSlackBot({ workingDir, sandbox }: { workingDir: string; sand
 		botToken: MOM_SLACK_BOT_TOKEN,
 		workingDir,
 		store: sharedStore,
+		settingsManager,
 	});
+	slackBot = bot;
 
 	const eventsWatcher = createEventsWatcher(workingDir, bot);
 	eventsWatcher.start();
@@ -313,6 +330,7 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 	}
 
 	log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+	const settingsManager = new MomSettingsManager(workingDir);
 
 	type ActiveRun = { runner: AgentRunner; stopRequested: boolean; stopContext?: TransportContext };
 	const activeRuns = new Map<string, ActiveRun>();
@@ -359,7 +377,9 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 
 		log.logUserMessage(logCtx, ctx.message.text);
 
-		const runner = getOrCreateRunnerForTransport(sandbox, "discord", runnerKey, ctx.channelDir, workingDir);
+		const runner = getOrCreateRunnerForTransport(sandbox, "discord", runnerKey, ctx.channelDir, workingDir, () => ({
+			updateDiscordProfile: async (updates) => bot.updateProfile(updates),
+		}));
 		activeRuns.set(runnerKey, { runner, stopRequested: false });
 
 		try {
@@ -438,7 +458,7 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 				await handleDiscordContext(ctx);
 			},
 		},
-		{ botToken: DISCORD_BOT_TOKEN, workingDir },
+		{ botToken: DISCORD_BOT_TOKEN, workingDir, settingsManager },
 	);
 
 	// Slash command handlers
@@ -477,7 +497,16 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 
 			log.logUserMessage(formatLogCtx(ctx), messageText);
 
-			const runner = getOrCreateRunnerForTransport(sandbox, "discord", runnerKey, ctx.channelDir, workingDir);
+			const runner = getOrCreateRunnerForTransport(
+				sandbox,
+				"discord",
+				runnerKey,
+				ctx.channelDir,
+				workingDir,
+				() => ({
+					updateDiscordProfile: async (updates) => bot.updateProfile(updates),
+				}),
+			);
 			activeRuns.set(runnerKey, { runner, stopRequested: false });
 
 			try {
