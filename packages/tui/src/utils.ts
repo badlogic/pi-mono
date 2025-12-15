@@ -312,11 +312,17 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 	}
 
 	// Handle newlines by processing each line separately
+	// Track ANSI state across lines so styles carry over after literal newlines
 	const inputLines = text.split("\n");
 	const result: string[] = [];
+	const tracker = new AnsiCodeTracker();
 
 	for (const inputLine of inputLines) {
-		result.push(...wrapSingleLine(inputLine, width));
+		// Prepend active ANSI codes from previous lines (except for first line)
+		const prefix = result.length > 0 ? tracker.getActiveCodes() : "";
+		result.push(...wrapSingleLine(prefix + inputLine, width));
+		// Update tracker with codes from this line for next iteration
+		updateTrackerFromText(inputLine, tracker);
 	}
 
 	return result.length > 0 ? result : [""];
