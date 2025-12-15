@@ -204,6 +204,7 @@ Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <u
 Do NOT use **double asterisks** or [markdown](links).`
 			: `## Discord Formatting (Markdown)
 Bold: **text**, Italic: *text*, Code: \`code\`, Block: \`\`\`code\`\`\`
+Posting a URL on its own line creates a rich embed preview (images, page titles, etc.).
 Avoid Slack mrkdwn link format (<url|text>).`;
 
 	const mentionGuide =
