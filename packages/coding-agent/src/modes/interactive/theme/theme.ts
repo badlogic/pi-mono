@@ -164,11 +164,77 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	return { r, g, b };
 }
 
+// The 6x6x6 color cube channel values (indices 0-5)
+const CUBE_VALUES = [0, 95, 135, 175, 215, 255];
+
+// Grayscale ramp values (indices 232-255, 24 grays from 8 to 238)
+const GRAY_VALUES = Array.from({ length: 24 }, (_, i) => 8 + i * 10);
+
+function findClosestCubeIndex(value: number): number {
+	let minDist = Infinity;
+	let minIdx = 0;
+	for (let i = 0; i < CUBE_VALUES.length; i++) {
+		const dist = Math.abs(value - CUBE_VALUES[i]);
+		if (dist < minDist) {
+			minDist = dist;
+			minIdx = i;
+		}
+	}
+	return minIdx;
+}
+
+function findClosestGrayIndex(gray: number): number {
+	let minDist = Infinity;
+	let minIdx = 0;
+	for (let i = 0; i < GRAY_VALUES.length; i++) {
+		const dist = Math.abs(gray - GRAY_VALUES[i]);
+		if (dist < minDist) {
+			minDist = dist;
+			minIdx = i;
+		}
+	}
+	return minIdx;
+}
+
+function colorDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
+	// Weighted Euclidean distance (human eye is more sensitive to green)
+	const dr = r1 - r2;
+	const dg = g1 - g2;
+	const db = b1 - b2;
+	return dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
+}
+
 function rgbTo256(r: number, g: number, b: number): number {
-	const rIndex = Math.round((r / 255) * 5);
-	const gIndex = Math.round((g / 255) * 5);
-	const bIndex = Math.round((b / 255) * 5);
-	return 16 + 36 * rIndex + 6 * gIndex + bIndex;
+	// Find closest color in the 6x6x6 cube
+	const rIdx = findClosestCubeIndex(r);
+	const gIdx = findClosestCubeIndex(g);
+	const bIdx = findClosestCubeIndex(b);
+	const cubeR = CUBE_VALUES[rIdx];
+	const cubeG = CUBE_VALUES[gIdx];
+	const cubeB = CUBE_VALUES[bIdx];
+	const cubeIndex = 16 + 36 * rIdx + 6 * gIdx + bIdx;
+	const cubeDist = colorDistance(r, g, b, cubeR, cubeG, cubeB);
+
+	// Find closest grayscale
+	const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+	const grayIdx = findClosestGrayIndex(gray);
+	const grayValue = GRAY_VALUES[grayIdx];
+	const grayIndex = 232 + grayIdx;
+	const grayDist = colorDistance(r, g, b, grayValue, grayValue, grayValue);
+
+	// Check if color has noticeable saturation (hue matters)
+	// If max-min spread is significant, prefer cube to preserve tint
+	const maxC = Math.max(r, g, b);
+	const minC = Math.min(r, g, b);
+	const spread = maxC - minC;
+
+	// Only consider grayscale if color is nearly neutral (spread < 10)
+	// AND grayscale is actually closer
+	if (spread < 10 && grayDist < cubeDist) {
+		return grayIndex;
+	}
+
+	return cubeIndex;
 }
 
 function hexTo256(hex: string): number {

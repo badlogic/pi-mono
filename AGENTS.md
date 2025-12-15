@@ -18,7 +18,8 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 
 ## Commands
 - After code changes: `npm run check` (get full output, no tail)
-- NEVER run: `npm run dev`, `npm run build`
+- NEVER run: `npm run dev`, `npm run build`, `npm test`
+- Only run specific tests if user instructs: `npm test -- test/specific.test.ts`
 - NEVER commit unless user asks
 
 ## GitHub Issues
