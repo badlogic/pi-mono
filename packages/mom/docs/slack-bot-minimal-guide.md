@@ -81,6 +81,8 @@ Optional scope (only if you want per-message username/icon overrides):
 4. Check **"Allow users to send Slash commands and messages from the messages tab"**
 5. Save
 
+**Note:** DMs are disabled by default in mom. See [DM Authorization](./dm-authorization.md) to allow specific users.
+
 ---
 
 ## 5. Subscribe to Events

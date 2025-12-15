@@ -478,6 +478,12 @@ export class SlackBot {
 
 			// Only trigger handler for DMs
 			if (isDM) {
+				// Check DM authorization (silent reject if not allowed)
+				if (!this.settingsManager?.canUserDM(e.user)) {
+					ack();
+					return;
+				}
+
 				// Check for stop command - execute immediately, don't queue!
 				if (slackEvent.text.toLowerCase().trim() === "stop") {
 					if (this.handler.isRunning(e.channel)) {

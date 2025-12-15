@@ -345,6 +345,8 @@ export interface MomSettings {
 	retry?: Partial<MomRetrySettings>;
 	usageSummary?: boolean | Partial<MomUsageSummarySettings>;
 	profile?: BotProfileSettings;
+	allowDMs?: boolean;
+	dmAllowlist?: string[];
 }
 
 const DEFAULT_COMPACTION: MomCompactionSettings = {
@@ -533,6 +535,13 @@ export class MomSettingsManager {
 
 	getSlackProfileSettings(): SlackProfileSettings {
 		return this.settings.profile?.slack ?? {};
+	}
+
+	canUserDM(userId: string): boolean {
+		if (!this.settings.allowDMs) return false;
+		const allowlist = this.settings.dmAllowlist ?? [];
+		if (allowlist.length === 0) return false;
+		return allowlist.includes(userId);
 	}
 
 	setDiscordProfile(profile: Partial<DiscordProfileSettings>): void {

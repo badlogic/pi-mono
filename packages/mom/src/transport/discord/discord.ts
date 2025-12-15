@@ -185,6 +185,10 @@ export class MomDiscordBot {
 			);
 
 			if (isDM) {
+				// Check DM authorization (silent reject if not allowed)
+				if (!this.settingsManager?.canUserDM(message.author.id)) {
+					return;
+				}
 				const ctx = await this.createContextFromMessage(
 					message,
 					attachments,

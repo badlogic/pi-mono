@@ -70,8 +70,10 @@ mom --transport=discord ~/mom-workspace
 ## 7. Test
 
 In Discord:
-- `@mom hello`
+- `@mom hello` (in a channel)
 - Or: `/mom hello`
+
+**Note:** DMs are disabled by default. See [DM Authorization](./dm-authorization.md) to allow specific users.
 
 ---
 
