@@ -26,11 +26,42 @@ const DISCORD_SECONDARY_MAX_CHARS = 2000;
 const DISCORD_EMBED_TITLE_MAX_CHARS = 256;
 const DISCORD_EMBED_ARGS_MAX_CHARS = 1000;
 const DISCORD_EMBED_DESCRIPTION_MAX_CHARS = 3900;
+const MAX_EVENT_QUEUE_SIZE = 5;
+
+type QueuedWork = () => Promise<void>;
+
+class ChannelQueue {
+	private queue: QueuedWork[] = [];
+	private processing = false;
+
+	enqueue(work: QueuedWork): void {
+		this.queue.push(work);
+		this.processNext();
+	}
+
+	size(): number {
+		return this.queue.length;
+	}
+
+	private async processNext(): Promise<void> {
+		if (this.processing || this.queue.length === 0) return;
+		this.processing = true;
+		const work = this.queue.shift()!;
+		try {
+			await work();
+		} catch (err) {
+			log.logWarning("Discord queue error", err instanceof Error ? err.message : String(err));
+		}
+		this.processing = false;
+		this.processNext();
+	}
+}
 
 export interface MomDiscordHandler {
 	onMention(ctx: TransportContext): Promise<void>;
 	onDirectMessage(ctx: TransportContext): Promise<void>;
 	onStopButton?(channelId: string): Promise<void>;
+	onEvent?(ctx: TransportContext, isEvent: boolean): Promise<void>;
 }
 
 export interface MomDiscordConfig {
@@ -45,9 +76,12 @@ export class MomDiscordBot {
 	private botUserId: string | null = null;
 	private userCache = new Map<string, { userName: string; displayName: string }>();
 	private channelCache = new Map<string, string>();
+	private queues = new Map<string, ChannelQueue>();
+	private workingDir: string;
 
 	constructor(handler: MomDiscordHandler, config: MomDiscordConfig) {
 		this.handler = handler;
+		this.workingDir = config.workingDir;
 		this.client = new Client({
 			intents: [
 				GatewayIntentBits.Guilds,
@@ -56,7 +90,6 @@ export class MomDiscordBot {
 				GatewayIntentBits.DirectMessages,
 				GatewayIntentBits.GuildMembers,
 			],
-			// Needed to reliably receive Direct Messages (DM channels aren't always cached).
 			partials: [Partials.Channel],
 		});
 		this.store = new DiscordChannelStore({ workingDir: config.workingDir });
@@ -682,5 +715,79 @@ export class MomDiscordBot {
 
 	async stop(): Promise<void> {
 		await this.client.destroy();
+	}
+
+	private getQueue(channelId: string): ChannelQueue {
+		let queue = this.queues.get(channelId);
+		if (!queue) {
+			queue = new ChannelQueue();
+			this.queues.set(channelId, queue);
+		}
+		return queue;
+	}
+
+	async enqueueEvent(event: { channelId: string; text: string }): Promise<boolean> {
+		if (!this.handler.onEvent) {
+			log.logWarning("Discord: onEvent handler not configured, cannot process event");
+			return false;
+		}
+
+		const queue = this.getQueue(event.channelId);
+		if (queue.size() >= MAX_EVENT_QUEUE_SIZE) {
+			log.logWarning(`Discord: Event queue full for ${event.channelId}, discarding: ${event.text.substring(0, 50)}`);
+			return false;
+		}
+
+		log.logInfo(`Discord: Enqueueing event for ${event.channelId}: ${event.text.substring(0, 50)}`);
+
+		queue.enqueue(async () => {
+			try {
+				const channel = await this.client.channels.fetch(event.channelId);
+				if (!channel || !channel.isTextBased()) {
+					log.logWarning(`Discord: Channel ${event.channelId} not found or not text-based`);
+					return;
+				}
+
+				const guildId = "guildId" in channel ? (channel.guildId as string | null) : null;
+				const channelName = "name" in channel ? (channel as { name?: string }).name : undefined;
+				const guild = guildId ? await this.client.guilds.fetch(guildId).catch(() => null) : null;
+				const guildName = guild?.name;
+				const channelDir = this.store.getChannelDir(event.channelId, guildId || undefined);
+
+				const ctx = this.createDiscordContext({
+					workingDir: this.workingDir,
+					channelDir,
+					channelName: channelName || undefined,
+					guildId: guildId || undefined,
+					guildName,
+					message: {
+						text: event.text,
+						rawText: event.text,
+						userId: "EVENT",
+						userName: "EVENT",
+						displayName: "EVENT",
+						channelId: event.channelId,
+						messageId: Date.now().toString(),
+						attachments: [],
+					},
+					postPrimary: async (payload) => (channel as PartialTextBasedChannelFields<boolean>).send(payload),
+					postText: async (content) => (channel as PartialTextBasedChannelFields<boolean>).send(content),
+					postEmbed: async (embed) =>
+						(channel as PartialTextBasedChannelFields<boolean>).send({ embeds: [embed] }),
+					uploadFile: async (filePath, title) => {
+						const fileName = title || basename(filePath);
+						const fileContent = readFileSync(filePath);
+						const attachment = new AttachmentBuilder(fileContent, { name: fileName });
+						await (channel as PartialTextBasedChannelFields<boolean>).send({ files: [attachment] });
+					},
+				});
+
+				await this.handler.onEvent!(ctx, true);
+			} catch (err) {
+				log.logWarning("Discord: Failed to process event", err instanceof Error ? err.message : String(err));
+			}
+		});
+
+		return true;
 	}
 }

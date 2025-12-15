@@ -244,15 +244,25 @@ export class SlackBot {
 	/**
 	 * Enqueue an event for processing. Always queues (no "already working" rejection).
 	 * Returns true if enqueued, false if queue is full (max 5).
+	 * Implements EventTransport interface.
 	 */
-	enqueueEvent(event: SlackEvent): boolean {
-		const queue = this.getQueue(event.channel);
+	enqueueEvent(event: { channelId: string; text: string }): boolean {
+		const queue = this.getQueue(event.channelId);
 		if (queue.size() >= 5) {
-			log.logWarning(`Event queue full for ${event.channel}, discarding: ${event.text.substring(0, 50)}`);
+			log.logWarning(`Event queue full for ${event.channelId}, discarding: ${event.text.substring(0, 50)}`);
 			return false;
 		}
-		log.logInfo(`Enqueueing event for ${event.channel}: ${event.text.substring(0, 50)}`);
-		queue.enqueue(() => this.handler.handleEvent(event, this, true));
+		log.logInfo(`Enqueueing event for ${event.channelId}: ${event.text.substring(0, 50)}`);
+
+		const syntheticEvent: SlackEvent = {
+			type: "mention",
+			channel: event.channelId,
+			user: "EVENT",
+			text: event.text,
+			ts: Date.now().toString(),
+		};
+
+		queue.enqueue(() => this.handler.handleEvent(syntheticEvent, this, true));
 		return true;
 	}
 

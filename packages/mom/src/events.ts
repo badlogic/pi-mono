@@ -3,7 +3,10 @@ import { existsSync, type FSWatcher, mkdirSync, readdirSync, statSync, unlinkSyn
 import { readFile } from "fs/promises";
 import { join } from "path";
 import * as log from "./log.js";
-import type { SlackBot, SlackEvent } from "./slack.js";
+
+export interface EventTransport {
+	enqueueEvent(event: { channelId: string; text: string }): boolean | Promise<boolean>;
+}
 
 // ============================================================================
 // Event Types
@@ -50,7 +53,7 @@ export class EventsWatcher {
 
 	constructor(
 		private eventsDir: string,
-		private slack: SlackBot,
+		private transport: EventTransport,
 	) {
 		this.startTime = Date.now();
 	}
@@ -315,8 +318,7 @@ export class EventsWatcher {
 		}
 	}
 
-	private execute(filename: string, event: MomEvent, deleteAfter: boolean = true): void {
-		// Format the message
+	private async execute(filename: string, event: MomEvent, deleteAfter: boolean = true): Promise<void> {
 		let scheduleInfo: string;
 		switch (event.type) {
 			case "immediate":
@@ -332,24 +334,15 @@ export class EventsWatcher {
 
 		const message = `[EVENT:${filename}:${event.type}:${scheduleInfo}] ${event.text}`;
 
-		// Create synthetic SlackEvent
-		const syntheticEvent: SlackEvent = {
-			type: "mention",
-			channel: event.channelId,
-			user: "EVENT",
+		const enqueued = await this.transport.enqueueEvent({
+			channelId: event.channelId,
 			text: message,
-			ts: Date.now().toString(),
-		};
-
-		// Enqueue for processing
-		const enqueued = this.slack.enqueueEvent(syntheticEvent);
+		});
 
 		if (enqueued && deleteAfter) {
-			// Delete file after successful enqueue (immediate and one-shot)
 			this.deleteFile(filename);
 		} else if (!enqueued) {
 			log.logWarning(`Event queue full, discarded: ${filename}`);
-			// Still delete immediate/one-shot even if discarded
 			if (deleteAfter) {
 				this.deleteFile(filename);
 			}
@@ -377,7 +370,7 @@ export class EventsWatcher {
 /**
  * Create and start an events watcher.
  */
-export function createEventsWatcher(workspaceDir: string, slack: SlackBot): EventsWatcher {
+export function createEventsWatcher(workspaceDir: string, transport: EventTransport): EventsWatcher {
 	const eventsDir = join(workspaceDir, "events");
-	return new EventsWatcher(eventsDir, slack);
+	return new EventsWatcher(eventsDir, transport);
 }

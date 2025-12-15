@@ -2,6 +2,8 @@
 
 The events system allows mom to be triggered by scheduled or immediate events. Events are JSON files in the `workspace/events/` directory. The harness watches this directory and executes events when they become due.
 
+Events are supported on both Slack and Discord transports.
+
 ## Event Types
 
 ### Immediate
@@ -109,15 +111,15 @@ If the agent errors while processing an event:
 
 ## Queue Integration
 
-Events integrate with the existing `ChannelQueue` in `SlackBot`:
+Events integrate with a `ChannelQueue` in each transport (Slack and Discord):
 
-- New method: `SlackBot.enqueueEvent(event: SlackEvent)` — always queues, no "already working" rejection
+- Each transport implements `enqueueEvent(event)` — always queues, no "already working" rejection
 - Maximum 5 events can be queued per channel. If queue is full, discard and log to console.
 - User @mom mentions retain current behavior: rejected with "Already working" message if agent is busy
 
 When an event triggers:
-1. Create a synthetic `SlackEvent` with formatted message
-2. Call `slack.enqueueEvent(event)`
+1. Create a synthetic event with formatted message
+2. Call `transport.enqueueEvent(event)`
 3. Event waits in queue if agent is busy, processed when idle
 
 ## Event Execution
@@ -130,13 +132,13 @@ When an event is dequeued and executes:
    - For one-shot: `[EVENT:dentist.json:one-shot:2025-12-15T09:00:00+01:00] Remind Mario`
    - For periodic: `[EVENT:daily-inbox.json:periodic:0 9 * * 1-5] Check inbox`
 3. After execution:
-   - If response is `[SILENT]`: delete status message, post nothing to Slack
+   - If response is `[SILENT]`: delete status message, post nothing to channel
    - Immediate and one-shot: delete the event file
    - Periodic: keep the file, event will trigger again on schedule
 
 ## Silent Completion
 
-For periodic events that check for activity (inbox, notifications, etc.), mom may find nothing to report. To avoid spamming the channel, mom can respond with just `[SILENT]`. This deletes the "Starting event..." status message and posts nothing to Slack.
+For periodic events that check for activity (inbox, notifications, etc.), mom may find nothing to report. To avoid spamming the channel, mom can respond with just `[SILENT]`. This deletes the "Starting event..." status message and posts nothing to the channel.
 
 Example: A periodic event checks for new emails every 15 minutes. If there are no new emails, mom responds `[SILENT]`. If there are new emails, mom posts a summary.
 
@@ -153,15 +155,20 @@ The filename is used as an identifier for tracking timers and in the event messa
 
 ### Files
 
-- `src/events.ts` — Event parsing, timer management, fs watching
-- `src/slack.ts` — Add `enqueueEvent()` method and `size()` to `ChannelQueue`
-- `src/main.ts` — Initialize events watcher on startup
-- `src/agent.ts` — Update system prompt with events documentation
+- `src/events.ts` — Event parsing, timer management, fs watching, `EventTransport` interface
+- `src/slack.ts` — `SlackBot` implements `EventTransport.enqueueEvent()`
+- `src/transport/discord/discord.ts` — `MomDiscordBot` implements `EventTransport.enqueueEvent()`
+- `src/main.ts` — Initialize events watcher on startup for both transports
+- `src/agent.ts` — System prompt with events documentation
 
 ### Key Components
 
 ```typescript
 // events.ts
+
+interface EventTransport {
+  enqueueEvent(event: { channelId: string; text: string }): boolean | Promise<boolean>;
+}
 
 interface ImmediateEvent {
   type: "immediate";
@@ -190,18 +197,17 @@ class EventsWatcher {
   private timers: Map<string, NodeJS.Timeout> = new Map();
   private crons: Map<string, Cron> = new Map();
   private startTime: number;
-  
+
   constructor(
     private eventsDir: string,
-    private slack: SlackBot,
-    private onError: (filename: string, error: Error) => void
+    private transport: EventTransport
   ) {
     this.startTime = Date.now();
   }
-  
+
   start(): void { /* scan existing, setup fs.watch */ }
   stop(): void { /* cancel all timers/crons, stop watching */ }
-  
+
   private handleFile(filename: string): void { /* parse, schedule */ }
   private handleDelete(filename: string): void { /* cancel timer/cron */ }
   private execute(filename: string, event: MomEvent): void { /* enqueue */ }
@@ -253,11 +259,13 @@ All `at` timestamps must include offset (e.g., `+01:00`). Periodic events use IA
 
 ### Creating Events
 
+Use unique filenames to avoid overwriting existing events. Include a timestamp or random suffix:
 ```bash
-cat > /workspace/events/dentist-reminder.json << 'EOF'
+cat > /workspace/events/dentist-reminder-$(date +%s).json << 'EOF'
 {"type": "one-shot", "channelId": "${CHANNEL}", "text": "Dentist tomorrow", "at": "2025-12-14T09:00:00+01:00"}
 EOF
 ```
+Or check if file exists first before creating.
 
 ### Managing Events
 
@@ -273,6 +281,10 @@ You receive a message like:
 ```
 
 Immediate and one-shot events auto-delete after triggering. Periodic events persist until you delete them.
+
+### Silent Completion
+
+For periodic events that find nothing to report (e.g., no new emails), respond with just `[SILENT]`. This prevents spamming the channel with "nothing to report" messages.
 
 ### Debouncing
 

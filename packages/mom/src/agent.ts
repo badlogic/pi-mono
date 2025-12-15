@@ -275,9 +275,7 @@ Scripts are in: {baseDir}/
 	### Available Skills
 	${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
 
-	${
-		transport === "slack"
-			? `## Events
+	## Events
 You can schedule events that wake you up at specific times or when external things happen. Events are JSON files in \`${workspacePath}/events/\`.
 
 ### Event Types
@@ -335,10 +333,7 @@ ${silentGuide}
 When writing programs that create immediate events (email watchers, webhook handlers, etc.), always debounce. If 50 emails arrive in a minute, don't create 50 immediate events. Instead collect events over a window and create ONE immediate event summarizing what happened, or just signal "new activity, check inbox" rather than per-item events. Or simpler: use a periodic event to check for new items every N minutes instead of immediate events.
 
 ### Limits
-Maximum 5 events can be queued. Don't create excessive immediate or periodic events.`
-			: `## Events
-Events are currently supported only when using the Slack transport in this repo. Do not create \`${workspacePath}/events/\` files from Discord sessions.`
-	}
+Maximum 5 events can be queued. Don't create excessive immediate or periodic events.
 
 	## Memory
 	Write to MEMORY.md files to persist context across conversations.

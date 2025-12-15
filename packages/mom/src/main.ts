@@ -418,6 +418,25 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 					active.runner.abort();
 				}
 			},
+			async onEvent(ctx, _isEvent) {
+				const runnerKey = toRunnerKey(ctx.message.channelId);
+				const maxWaitMs = 5 * 60 * 1000;
+				const pollIntervalMs = 2000;
+				const startTime = Date.now();
+
+				while (activeRuns.has(runnerKey)) {
+					if (Date.now() - startTime > maxWaitMs) {
+						log.logWarning(
+							`Event timed out waiting for agent: ${ctx.message.channelId}`,
+							ctx.message.text.substring(0, 50),
+						);
+						return;
+					}
+					await new Promise((r) => setTimeout(r, pollIntervalMs));
+				}
+
+				await handleDiscordContext(ctx);
+			},
 		},
 		{ botToken: DISCORD_BOT_TOKEN, workingDir },
 	);
@@ -549,16 +568,21 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 		}
 	});
 
+	const eventsWatcher = createEventsWatcher(workingDir, bot);
+
 	process.on("SIGINT", () => {
 		log.logInfo("Shutting down...");
+		eventsWatcher.stop();
 		void bot.stop().finally(() => process.exit(0));
 	});
 
 	process.on("SIGTERM", () => {
 		log.logInfo("Shutting down...");
+		eventsWatcher.stop();
 		void bot.stop().finally(() => process.exit(0));
 	});
 
 	log.logInfo(`Starting Discord transport in ${workingDir}`);
 	await bot.start(DISCORD_BOT_TOKEN);
+	eventsWatcher.start();
 }
