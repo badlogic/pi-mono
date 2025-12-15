@@ -1096,7 +1096,7 @@ const response = await complete(model, {
 
 **Note**: The OAuth token expires and needs periodic refresh. The coding agent handles this automatically. For standalone usage, you would need to implement token refresh using the refresh token stored alongside the access token.
 
-Some GitHub Copilot models require explicit enablement in your GitHub settings before use. If you get "The requested model is not supported" error, enable the model at: https://github.com/settings/copilot/features
+Some GitHub Copilot models require explicit enablement before use. If you get "The requested model is not supported" error, enable the model in VS Code: open Copilot Chat, click the model selector, select the model (marked with a warning icon), and click "Enable" to accept the terms.
 
 ## License
 

@@ -134,9 +134,12 @@ pi
 
 During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`).
 
-Some models require explicit enablement before use. If you get "The requested model is not supported" error, enable the model at:
+Some models require explicit enablement before use. If you get "The requested model is not supported" error:
 
-**https://github.com/settings/copilot/features**
+1. Open VS Code with GitHub Copilot Chat extension
+2. Open the Copilot Chat panel and click the model selector
+3. Select the model (marked with a warning icon)
+4. Click "Enable" to accept the terms
 
 For enterprise users, check with your organization's Copilot administrator for model availability and policies.
 
