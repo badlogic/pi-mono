@@ -245,7 +245,9 @@ export class Markdown implements Component {
 					styledHeading = this.theme.heading(this.theme.bold(headingPrefix + headingText));
 				}
 				lines.push(styledHeading);
-				lines.push(""); // Add spacing after headings
+				if (nextTokenType !== "space") {
+					lines.push(""); // Add spacing after headings (unless space token follows)
+				}
 				break;
 			}
 
@@ -293,13 +295,17 @@ export class Markdown implements Component {
 				for (const quoteLine of quoteLines) {
 					lines.push(this.theme.quoteBorder("│ ") + this.theme.quote(this.theme.italic(quoteLine)));
 				}
-				lines.push(""); // Add spacing after blockquotes
+				if (nextTokenType !== "space") {
+					lines.push(""); // Add spacing after blockquotes (unless space token follows)
+				}
 				break;
 			}
 
 			case "hr":
 				lines.push(this.theme.hr("─".repeat(Math.min(width, 80))));
-				lines.push(""); // Add spacing after horizontal rules
+				if (nextTokenType !== "space") {
+					lines.push(""); // Add spacing after horizontal rules (unless space token follows)
+				}
 				break;
 
 			case "html":
