@@ -14,6 +14,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Cerebras**
 - **xAI**
 - **OpenRouter**
+- **GitHub Copilot** (requires OAuth, see below)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -1072,6 +1073,30 @@ setApiKey('anthropic', 'sk-ant-...');
 // Get API key for a provider (checks both programmatic and env vars)
 const key = getApiKey('openai');
 ```
+
+## GitHub Copilot
+
+GitHub Copilot is available as a provider, but requires a special OAuth token that cannot be obtained with just a GitHub personal access token. The token exchange requires GitHub's device OAuth flow.
+
+**Using with `@mariozechner/pi-coding-agent`**: The coding agent implements the full OAuth flow. Use `/login` and select "GitHub Copilot" to authenticate. The token is stored in `~/.pi/agent/oauth.json`.
+
+**Using standalone**: If you have a valid Copilot OAuth token (e.g., from the coding agent's `oauth.json`), you can use it directly:
+
+```typescript
+import { getModel, complete } from '@mariozechner/pi-ai';
+
+const model = getModel('github-copilot', 'gpt-4o');
+
+const response = await complete(model, {
+  messages: [{ role: 'user', content: 'Hello!' }]
+}, {
+  apiKey: 'tid=...;exp=...;proxy-ep=...'  // OAuth token from ~/.pi/agent/oauth.json
+});
+```
+
+**Note**: The OAuth token expires and needs periodic refresh. The coding agent handles this automatically. For standalone usage, you would need to implement token refresh using the refresh token stored alongside the access token.
+
+Some GitHub Copilot models require explicit enablement in your GitHub settings before use. If you get "The requested model is not supported" error, enable the model at: https://github.com/settings/copilot/features
 
 ## License
 
