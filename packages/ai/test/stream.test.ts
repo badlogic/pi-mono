@@ -678,6 +678,22 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.GITHUB_COPILOT_TOKEN)("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
+		const llm = getModel("github-copilot", "gpt-4o");
+
+		it("should complete basic text generation", async () => {
+			await basicTextGeneration(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+		});
+
+		it("should handle tool calling", async () => {
+			await handleToolCall(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+		});
+
+		it("should handle streaming", async () => {
+			await handleStreaming(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+		});
+	});
+
 	// Check if ollama is installed
 	let ollamaInstalled = false;
 	try {
