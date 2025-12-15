@@ -678,19 +678,29 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.GITHUB_COPILOT_TOKEN)("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
+	// Read GitHub Copilot token from ~/.pi/agent/oauth.json if available
+	let githubCopilotToken: string | undefined;
+	try {
+		const oauthPath = join(process.env.HOME || "", ".pi/agent/oauth.json");
+		const oauthData = JSON.parse(readFileSync(oauthPath, "utf-8"));
+		githubCopilotToken = oauthData["github-copilot"]?.access;
+	} catch {
+		// oauth.json doesn't exist or is invalid
+	}
+
+	describe.skipIf(!githubCopilotToken)("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
 		const llm = getModel("github-copilot", "gpt-4o");
 
 		it("should complete basic text generation", async () => {
-			await basicTextGeneration(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+			await basicTextGeneration(llm, { apiKey: githubCopilotToken });
 		});
 
 		it("should handle tool calling", async () => {
-			await handleToolCall(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+			await handleToolCall(llm, { apiKey: githubCopilotToken });
 		});
 
 		it("should handle streaming", async () => {
-			await handleStreaming(llm, { apiKey: process.env.GITHUB_COPILOT_TOKEN });
+			await handleStreaming(llm, { apiKey: githubCopilotToken });
 		});
 	});
 
