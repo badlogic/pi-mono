@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.22.1] - 2025-12-15
+
+_Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_
+
+### Changed
+
+- Updated `@mariozechner/pi-ai` with interleaved thinking support for Anthropic models.
+
 ## [0.22.0] - 2025-12-15
 
 ### Added

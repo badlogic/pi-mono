@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.22.1] - 2025-12-15
+
+_Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_
+
+### Added
+
+- **Interleaved thinking for Anthropic**: Enabled interleaved thinking in the Anthropic provider, allowing Claude models to output thinking blocks interspersed with text responses.
+
 ## [0.22.0] - 2025-12-15
 
 ### Added

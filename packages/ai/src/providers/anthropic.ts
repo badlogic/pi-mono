@@ -285,7 +285,7 @@ function createClient(
 		const defaultHeaders = {
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
+			"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
 			...(model.headers || {}),
 		};
 
@@ -303,7 +303,7 @@ function createClient(
 		const defaultHeaders = {
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": "fine-grained-tool-streaming-2025-05-14",
+			"anthropic-beta": "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
 			...(model.headers || {}),
 		};
 

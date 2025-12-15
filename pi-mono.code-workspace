@@ -12,6 +12,9 @@
 		},
 		{
 			"path": "../pi-skills"
+		},
+		{
+			"path": "../sitegeist"
 		}
 	],
 	"settings": {}
