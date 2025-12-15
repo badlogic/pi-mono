@@ -61,23 +61,48 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 }
 
 // Filter and sort items by fuzzy match quality (best matches first)
+// Supports space-separated tokens: all tokens must match, sorted by match count then score
 export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => string): T[] {
 	if (!query.trim()) {
 		return items;
 	}
 
-	const results: { item: T; score: number }[] = [];
+	// Split query into tokens
+	const tokens = query
+		.trim()
+		.split(/\s+/)
+		.filter((t) => t.length > 0);
+
+	if (tokens.length === 0) {
+		return items;
+	}
+
+	const results: { item: T; totalScore: number }[] = [];
 
 	for (const item of items) {
 		const text = getText(item);
-		const match = fuzzyMatch(query, text);
-		if (match.matches) {
-			results.push({ item, score: match.score });
+		let totalScore = 0;
+		let allMatch = true;
+
+		// Check each token against the text - ALL must match
+		for (const token of tokens) {
+			const match = fuzzyMatch(token, text);
+			if (match.matches) {
+				totalScore += match.score;
+			} else {
+				allMatch = false;
+				break;
+			}
+		}
+
+		// Only include if all tokens match
+		if (allMatch) {
+			results.push({ item, totalScore });
 		}
 	}
 
-	// Sort ascending by score (lower = better match)
-	results.sort((a, b) => a.score - b.score);
+	// Sort by score (asc, lower is better)
+	results.sort((a, b) => a.totalScore - b.totalScore);
 
 	return results.map((r) => r.item);
 }

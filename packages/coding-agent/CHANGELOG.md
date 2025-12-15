@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Model selector fuzzy search now matches against provider name (not just model ID) and supports space-separated tokens where all tokens must match
+
 ## [0.21.0] - 2025-12-14
 
 ### Added
