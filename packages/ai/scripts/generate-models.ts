@@ -51,6 +51,26 @@ function isCopilotModelDeprecated(model: Record<string, unknown>): boolean {
 	return false;
 }
 
+/**
+ * Models to exclude from Copilot - dated snapshots, legacy models, and unsupported versions.
+ * Users should use the main model ID (e.g., "gpt-4o") instead of dated versions.
+ */
+const COPILOT_EXCLUDED_MODELS = new Set([
+	// Dated GPT-4o snapshots - use "gpt-4o" instead
+	"gpt-4o-2024-05-13",
+	"gpt-4o-2024-08-06",
+	"gpt-4o-2024-11-20",
+	// Legacy GPT-3.5 and GPT-4 models
+	"gpt-3.5-turbo",
+	"gpt-3.5-turbo-0613",
+	"gpt-4",
+	"gpt-4-0613",
+]);
+
+function isCopilotModelExcluded(modelId: string): boolean {
+	return COPILOT_EXCLUDED_MODELS.has(modelId);
+}
+
 function getCopilotApi(modelId: string, supportedEndpoints: string[] | null): Api {
 	if (supportedEndpoints?.includes("/responses")) return "openai-responses";
 	if (supportedEndpoints?.includes("/chat/completions")) return "openai-completions";
@@ -103,6 +123,7 @@ async function fetchCopilotModels(githubToken: string): Promise<Model<any>[]> {
 			const id = typeof model.id === "string" ? model.id : null;
 			if (!id) continue;
 			if (isCopilotModelDeprecated(model)) continue;
+			if (isCopilotModelExcluded(id)) continue;
 
 			const caps = model.capabilities;
 			if (!caps || typeof caps !== "object") continue;
