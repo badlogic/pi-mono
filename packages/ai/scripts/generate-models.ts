@@ -137,10 +137,17 @@ async function fetchCopilotModels(githubToken: string): Promise<Model<any>[]> {
 			const input: ("text" | "image")[] = supportsVision ? ["text", "image"] : ["text"];
 
 			const limits = (caps as Record<string, unknown>).limits;
+
+			// Copilot exposes both:
+			// - max_context_window_tokens: the model's full context window capability
+			// - max_prompt_tokens: the maximum prompt tokens Copilot will accept
+			// For pi's purposes (compaction, prompt sizing), the prompt limit is the effective context window.
 			const contextWindow =
-				limits && typeof limits === "object" && typeof (limits as any).max_context_window_tokens === "number"
-					? (limits as any).max_context_window_tokens
-					: 128000;
+				limits && typeof limits === "object" && typeof (limits as any).max_prompt_tokens === "number"
+					? (limits as any).max_prompt_tokens
+					: limits && typeof limits === "object" && typeof (limits as any).max_context_window_tokens === "number"
+						? (limits as any).max_context_window_tokens
+						: 128000;
 			const maxTokens =
 				limits && typeof limits === "object" && typeof (limits as any).max_output_tokens === "number"
 					? (limits as any).max_output_tokens
