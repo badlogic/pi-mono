@@ -1,10 +1,31 @@
-import type { Api, AssistantMessage, Message, Model } from "../types.js";
+import type { Api, AssistantMessage, Message, Model, ToolCall } from "../types.js";
+
+/**
+ * Normalize tool call ID for GitHub Copilot cross-API compatibility.
+ * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
+ * Other APIs (Claude, etc.) require max 40 chars and only alphanumeric + underscore + hyphen.
+ */
+function normalizeCopilotToolCallId(id: string): string {
+	return id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+}
 
 export function transformMessages<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
+	// Build a map of original tool call IDs to normalized IDs for github-copilot cross-API switches
+	const toolCallIdMap = new Map<string, string>();
+
 	return messages
 		.map((msg) => {
-			// User and toolResult messages pass through unchanged
-			if (msg.role === "user" || msg.role === "toolResult") {
+			// User messages pass through unchanged
+			if (msg.role === "user") {
+				return msg;
+			}
+
+			// Handle toolResult messages - normalize toolCallId if we have a mapping
+			if (msg.role === "toolResult") {
+				const normalizedId = toolCallIdMap.get(msg.toolCallId);
+				if (normalizedId && normalizedId !== msg.toolCallId) {
+					return { ...msg, toolCallId: normalizedId };
+				}
 				return msg;
 			}
 
@@ -17,6 +38,12 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 					return msg;
 				}
 
+				// Check if we need to normalize tool call IDs (github-copilot cross-API)
+				const needsToolCallIdNormalization =
+					assistantMsg.provider === "github-copilot" &&
+					model.provider === "github-copilot" &&
+					assistantMsg.api !== model.api;
+
 				// Transform message from different provider/model
 				const transformedContent = assistantMsg.content.map((block) => {
 					if (block.type === "thinking") {
@@ -26,7 +53,16 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 							text: `<thinking>\n${block.thinking}\n</thinking>`,
 						};
 					}
-					// All other blocks (text, toolCall) pass through unchanged
+					// Normalize tool call IDs for github-copilot cross-API switches
+					if (block.type === "toolCall" && needsToolCallIdNormalization) {
+						const toolCall = block as ToolCall;
+						const normalizedId = normalizeCopilotToolCallId(toolCall.id);
+						if (normalizedId !== toolCall.id) {
+							toolCallIdMap.set(toolCall.id, normalizedId);
+							return { ...toolCall, id: normalizedId };
+						}
+					}
+					// All other blocks pass through unchanged
 					return block;
 				});
 

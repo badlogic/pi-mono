@@ -2496,7 +2496,7 @@ export const MODELS = {
 		"gpt-5.1-codex": {
 			id: "gpt-5.1-codex",
 			name: "GPT-5.1-Codex",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2505,7 +2505,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2516,7 +2515,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"claude-haiku-4.5": {
 			id: "claude-haiku-4.5",
 			name: "Claude Haiku 4.5",
@@ -2592,7 +2591,7 @@ export const MODELS = {
 		"gpt-5.1-codex-mini": {
 			id: "gpt-5.1-codex-mini",
 			name: "GPT-5.1-Codex-mini",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2601,7 +2600,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2612,11 +2610,11 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 100000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"gpt-5.1": {
 			id: "gpt-5.1",
 			name: "GPT-5.1",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2625,7 +2623,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2636,11 +2633,11 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"gpt-5-codex": {
 			id: "gpt-5-codex",
 			name: "GPT-5-Codex",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2649,7 +2646,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2660,7 +2656,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"gpt-4o": {
 			id: "gpt-4o",
 			name: "GPT-4o",
@@ -2712,7 +2708,7 @@ export const MODELS = {
 		"gpt-5-mini": {
 			id: "gpt-5-mini",
 			name: "GPT-5-mini",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2721,7 +2717,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2732,7 +2727,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 64000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"gemini-2.5-pro": {
 			id: "gemini-2.5-pro",
 			name: "Gemini 2.5 Pro",
@@ -2760,7 +2755,7 @@ export const MODELS = {
 		"gpt-5.1-codex-max": {
 			id: "gpt-5.1-codex-max",
 			name: "GPT-5.1-Codex-max",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2769,7 +2764,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2780,7 +2774,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"claude-sonnet-4": {
 			id: "claude-sonnet-4",
 			name: "Claude Sonnet 4",
@@ -2808,7 +2802,7 @@ export const MODELS = {
 		"gpt-5": {
 			id: "gpt-5",
 			name: "GPT-5",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2817,7 +2811,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2828,7 +2821,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"claude-opus-4.5": {
 			id: "claude-opus-4.5",
 			name: "Claude Opus 4.5",
@@ -2856,7 +2849,7 @@ export const MODELS = {
 		"gpt-5.2": {
 			id: "gpt-5.2",
 			name: "GPT-5.2",
-			api: "openai-completions",
+			api: "openai-responses",
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {
@@ -2865,7 +2858,6 @@ export const MODELS = {
 				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
 			},
-			compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -2876,7 +2868,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 64000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"openai-responses">,
 		"claude-sonnet-4.5": {
 			id: "claude-sonnet-4.5",
 			name: "Claude Sonnet 4.5",
@@ -6031,9 +6023,9 @@ export const MODELS = {
 			contextWindow: 32768,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku": {
-			id: "anthropic/claude-3.5-haiku",
-			name: "Anthropic: Claude 3.5 Haiku",
+		"anthropic/claude-3.5-haiku-20241022": {
+			id: "anthropic/claude-3.5-haiku-20241022",
+			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6048,9 +6040,9 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku-20241022": {
-			id: "anthropic/claude-3.5-haiku-20241022",
-			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+		"anthropic/claude-3.5-haiku": {
+			id: "anthropic/claude-3.5-haiku",
+			name: "Anthropic: Claude 3.5 Haiku",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6082,23 +6074,6 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
-		"mistralai/ministral-3b": {
-			id: "mistralai/ministral-3b",
-			name: "Mistral: Ministral 3B",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.04,
-				output: 0.04,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 131072,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"mistralai/ministral-8b": {
 			id: "mistralai/ministral-8b",
 			name: "Mistral: Ministral 8B",
@@ -6110,6 +6085,23 @@ export const MODELS = {
 			cost: {
 				input: 0.09999999999999999,
 				output: 0.09999999999999999,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 131072,
+			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
+		"mistralai/ministral-3b": {
+			id: "mistralai/ministral-3b",
+			name: "Mistral: Ministral 3B",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.04,
+				output: 0.04,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
@@ -6303,23 +6295,6 @@ export const MODELS = {
 			contextWindow: 131072,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3.1-70b-instruct": {
-			id: "meta-llama/llama-3.1-70b-instruct",
-			name: "Meta: Llama 3.1 70B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.39999999999999997,
-				output: 0.39999999999999997,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 131072,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-405b-instruct": {
 			id: "meta-llama/llama-3.1-405b-instruct",
 			name: "Meta: Llama 3.1 405B Instruct",
@@ -6335,6 +6310,23 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 130815,
+			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
+		"meta-llama/llama-3.1-70b-instruct": {
+			id: "meta-llama/llama-3.1-70b-instruct",
+			name: "Meta: Llama 3.1 70B Instruct",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.39999999999999997,
+				output: 0.39999999999999997,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 131072,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"mistralai/mistral-nemo": {
@@ -6473,6 +6465,23 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
+		"openai/gpt-4o-2024-05-13": {
+			id: "openai/gpt-4o-2024-05-13",
+			name: "OpenAI: GPT-4o (2024-05-13)",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 15,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
 		"openai/gpt-4o": {
 			id: "openai/gpt-4o",
 			name: "OpenAI: GPT-4o",
@@ -6507,22 +6516,22 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
-		"openai/gpt-4o-2024-05-13": {
-			id: "openai/gpt-4o-2024-05-13",
-			name: "OpenAI: GPT-4o (2024-05-13)",
+		"meta-llama/llama-3-70b-instruct": {
+			id: "meta-llama/llama-3-70b-instruct",
+			name: "Meta: Llama 3 70B Instruct",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text"],
 			cost: {
-				input: 5,
-				output: 15,
+				input: 0.3,
+				output: 0.39999999999999997,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 128000,
-			maxTokens: 4096,
+			contextWindow: 8192,
+			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3-8b-instruct": {
 			id: "meta-llama/llama-3-8b-instruct",
@@ -6535,23 +6544,6 @@ export const MODELS = {
 			cost: {
 				input: 0.03,
 				output: 0.06,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 8192,
-			maxTokens: 16384,
-		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3-70b-instruct": {
-			id: "meta-llama/llama-3-70b-instruct",
-			name: "Meta: Llama 3 70B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.3,
-				output: 0.39999999999999997,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
@@ -6762,23 +6754,6 @@ export const MODELS = {
 			contextWindow: 8191,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"openai/gpt-3.5-turbo": {
-			id: "openai/gpt-3.5-turbo",
-			name: "OpenAI: GPT-3.5 Turbo",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.5,
-				output: 1.5,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 16385,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"openai/gpt-4": {
 			id: "openai/gpt-4",
 			name: "OpenAI: GPT-4",
@@ -6794,6 +6769,23 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 8191,
+			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
+		"openai/gpt-3.5-turbo": {
+			id: "openai/gpt-3.5-turbo",
+			name: "OpenAI: GPT-3.5 Turbo",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.5,
+				output: 1.5,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 16385,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"openrouter/auto": {

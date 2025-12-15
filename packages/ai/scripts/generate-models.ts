@@ -317,10 +317,13 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if (m.tool_call !== true) continue;
 				if (m.status === "deprecated") continue;
 
+				// gpt-5 models require responses API, others use completions
+				const needsResponsesApi = modelId.startsWith("gpt-5");
+
 				const copilotModel: Model<any> = {
 					id: modelId,
 					name: m.name || modelId,
-					api: "openai-completions",
+					api: needsResponsesApi ? "openai-responses" : "openai-completions",
 					provider: "github-copilot",
 					baseUrl: "https://api.individual.githubcopilot.com",
 					reasoning: m.reasoning === true,
@@ -334,11 +337,14 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					contextWindow: m.limit?.context || 128000,
 					maxTokens: m.limit?.output || 8192,
 					headers: { ...COPILOT_STATIC_HEADERS },
-					compat: {
-						supportsStore: false,
-						supportsDeveloperRole: false,
-						supportsReasoningEffort: false,
-					},
+					// compat only applies to openai-completions
+					...(needsResponsesApi ? {} : {
+						compat: {
+							supportsStore: false,
+							supportsDeveloperRole: false,
+							supportsReasoningEffort: false,
+						},
+					}),
 				};
 
 				models.push(copilotModel);

@@ -132,18 +132,11 @@ pi
 /login  # Select "GitHub Copilot", authorize in browser
 ```
 
-During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`).
+During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`). All models are automatically enabled after login.
 
-Some models require explicit enablement before use. If you get "The requested model is not supported" error:
+If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 
-1. Open VS Code with GitHub Copilot Chat extension
-2. Open the Copilot Chat panel and click the model selector
-3. Select the model (marked with a warning icon)
-4. Click "Enable" to accept the terms
-
-For enterprise users, check with your organization's Copilot administrator for model availability and policies.
-
-Note: Enabling some models (e.g., Grok from xAI) may involve sharing usage data with the provider. Review the terms before enabling.
+For enterprise users, check with your organization's Copilot administrator for model availability.
 
 Tokens stored in `~/.pi/agent/oauth.json` (mode 0600). Use `/logout` to clear.
 

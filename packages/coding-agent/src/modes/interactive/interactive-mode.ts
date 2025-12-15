@@ -1419,6 +1419,10 @@ export class InteractiveMode {
 										this.ui.requestRender();
 									});
 								},
+								(message) => {
+									this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
+									this.ui.requestRender();
+								},
 							);
 
 							invalidateOAuthCache();

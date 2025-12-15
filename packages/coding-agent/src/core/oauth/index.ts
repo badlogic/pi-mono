@@ -55,6 +55,7 @@ export async function login(
 	provider: SupportedOAuthProvider,
 	onAuth: (info: OAuthAuthInfo) => void,
 	onPrompt: (prompt: OAuthPrompt) => Promise<string>,
+	onProgress?: (message: string) => void,
 ): Promise<void> {
 	switch (provider) {
 		case "anthropic":
@@ -67,6 +68,7 @@ export async function login(
 			const creds = await loginGitHubCopilot({
 				onAuth: (url, instructions) => onAuth({ url, instructions }),
 				onPrompt,
+				onProgress,
 			});
 			saveOAuthCredentials("github-copilot", creds);
 			break;

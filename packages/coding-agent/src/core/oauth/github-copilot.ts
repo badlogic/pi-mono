@@ -1,3 +1,4 @@
+import { getModels } from "@mariozechner/pi-ai";
 import type { OAuthCredentials } from "./storage.js";
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
@@ -216,9 +217,58 @@ export async function refreshGitHubCopilotToken(
 	} satisfies OAuthCredentials;
 }
 
+/**
+ * Enable a model for the user's GitHub Copilot account.
+ * This is required for some models (like Claude, Grok) before they can be used.
+ */
+export async function enableGitHubCopilotModel(
+	token: string,
+	modelId: string,
+	enterpriseDomain?: string,
+): Promise<boolean> {
+	const baseUrl = getGitHubCopilotBaseUrl(token, enterpriseDomain);
+	const url = `${baseUrl}/models/${modelId}/policy`;
+
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${token}`,
+				...COPILOT_HEADERS,
+				"openai-intent": "chat-policy",
+				"x-interaction-type": "chat-policy",
+			},
+			body: JSON.stringify({ state: "enabled" }),
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Enable all known GitHub Copilot models that may require policy acceptance.
+ * Called after successful login to ensure all models are available.
+ */
+export async function enableAllGitHubCopilotModels(
+	token: string,
+	enterpriseDomain?: string,
+	onProgress?: (model: string, success: boolean) => void,
+): Promise<void> {
+	const models = getModels("github-copilot");
+	await Promise.all(
+		models.map(async (model) => {
+			const success = await enableGitHubCopilotModel(token, model.id, enterpriseDomain);
+			onProgress?.(model.id, success);
+		}),
+	);
+}
+
 export async function loginGitHubCopilot(options: {
 	onAuth: (url: string, instructions?: string) => void;
 	onPrompt: (prompt: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
+	onProgress?: (message: string) => void;
 }): Promise<OAuthCredentials> {
 	const input = await options.onPrompt({
 		message: "GitHub Enterprise URL/domain (blank for github.com)",
@@ -242,5 +292,11 @@ export async function loginGitHubCopilot(options: {
 		device.interval,
 		device.expires_in,
 	);
-	return await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain ?? undefined);
+	const credentials = await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain ?? undefined);
+
+	// Enable all models after successful login
+	options.onProgress?.("Enabling models...");
+	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
+
+	return credentials;
 }
