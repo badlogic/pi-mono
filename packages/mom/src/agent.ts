@@ -7,16 +7,49 @@ import {
 	messageTransformer,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
+import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { isAbsolute, join, relative, resolve } from "path";
 import { MomSessionManager, MomSettingsManager, syncLogToContext } from "./context.js";
 import * as log from "./log.js";
+import { formatUsageSummaryText } from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import { createMomTools } from "./tools/index.js";
-import type { ChannelInfo, ToolResultData, TransportContext, TransportName, UserInfo } from "./transport/types.js";
+import type {
+	ChannelInfo,
+	FormatterOutput,
+	ToolResultData,
+	TransportContext,
+	TransportName,
+	UserInfo,
+} from "./transport/types.js";
 
 const DEFAULT_MODEL = "anthropic:claude-sonnet-4-5";
+
+function runFormatter(script: string, workingDir: string, data: unknown): FormatterOutput | null {
+	const scriptPath = join(workingDir, script);
+	if (!existsSync(scriptPath)) {
+		log.logWarning(`Formatter script not found: ${scriptPath}`);
+		return null;
+	}
+	try {
+		const result = spawnSync(process.execPath, [scriptPath], {
+			input: JSON.stringify(data),
+			encoding: "utf8",
+			cwd: workingDir,
+			timeout: 5000,
+		});
+		if (result.status !== 0) {
+			log.logWarning(`Formatter script failed: ${result.stderr || "unknown error"}`);
+			return null;
+		}
+		return JSON.parse(result.stdout);
+	} catch (err) {
+		log.logWarning(`Formatter script error: ${err instanceof Error ? err.message : String(err)}`);
+		return null;
+	}
+}
 
 let configuredModel: Model<"anthropic-messages"> | null = null;
 
@@ -949,7 +982,8 @@ function createRunner(
 				}
 
 				// Log usage summary with context info
-				if (!wasSilent && runState.totalUsage.cost.total > 0) {
+				const usageSummarySettings = settingsManager.getUsageSummarySettings();
+				if (!wasSilent && runState.totalUsage.cost.total > 0 && usageSummarySettings.enabled) {
 					// Get last non-aborted assistant message for context calculation
 					const messages = session.messages;
 					const lastAssistantMessage = messages
@@ -964,21 +998,45 @@ function createRunner(
 							lastAssistantMessage.usage.cacheWrite
 						: 0;
 					const contextWindow = model.contextWindow || 200000;
+					const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1) + "%";
 
-					const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
+					log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
+
+					const usageData = {
+						tokens: { input: runState.totalUsage.input, output: runState.totalUsage.output },
+						cache: { read: runState.totalUsage.cacheRead, write: runState.totalUsage.cacheWrite },
+						context: { used: contextTokens, max: contextWindow, percent: contextPercent },
+						cost: runState.totalUsage.cost,
+					};
+
+					// Check for custom formatter script
+					if (usageSummarySettings.formatter) {
+						const formatterOutput = runFormatter(usageSummarySettings.formatter, workingDir, usageData);
+						if (formatterOutput) {
+							if (ctx.sendUsageSummary) {
+								runState.queue.enqueue(
+									() => ctx.sendUsageSummary!(usageData, usageSummarySettings, formatterOutput),
+									"usage summary",
+								);
+							} else {
+								const text = formatterOutput.text || "*Usage Summary*";
+								runState.queue.enqueue(() => ctx.send("secondary", text, { log: false }), "usage summary");
+							}
+							await queueChain;
+							return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+						}
+						// Formatter failed, fall through to template system
+					}
+
 					if (ctx.sendUsageSummary) {
-						const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1) + "%";
-						runState.queue.enqueue(
-							() =>
-								ctx.sendUsageSummary!({
-									tokens: { input: runState.totalUsage.input, output: runState.totalUsage.output },
-									cache: { read: runState.totalUsage.cacheRead, write: runState.totalUsage.cacheWrite },
-									context: { used: contextTokens, max: contextWindow, percent: contextPercent },
-									cost: runState.totalUsage.cost,
-								}),
-							"usage summary",
-						);
+						runState.queue.enqueue(() => ctx.sendUsageSummary!(usageData, usageSummarySettings), "usage summary");
 					} else {
+						const summary = formatUsageSummaryText(
+							runState.totalUsage,
+							contextTokens,
+							contextWindow,
+							usageSummarySettings,
+						);
 						runState.queue.enqueue(() => ctx.send("secondary", summary, { log: false }), "usage summary");
 					}
 					await queueChain;

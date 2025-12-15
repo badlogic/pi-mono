@@ -17,8 +17,17 @@ import {
 } from "discord.js";
 import { readFileSync } from "fs";
 import { basename } from "path";
+import type { ResolvedUsageSummarySettings } from "../../context.js";
 import * as log from "../../log.js";
-import type { ChannelInfo, ToolResultData, TransportContext, UsageSummaryData, UserInfo } from "../types.js";
+import { interpolate } from "../../log.js";
+import type {
+	ChannelInfo,
+	FormatterOutput,
+	ToolResultData,
+	TransportContext,
+	UsageSummaryData,
+	UserInfo,
+} from "../types.js";
 import { DiscordChannelStore } from "./store.js";
 
 const DISCORD_PRIMARY_MAX_CHARS = 2000;
@@ -440,48 +449,84 @@ export class MomDiscordBot {
 			}
 		};
 
-		const sendUsageSummary = async (data: UsageSummaryData): Promise<void> => {
-			const formatNum = (n: number) => n.toLocaleString();
-			const formatCost = (n: number) => `$${n.toFixed(4)}`;
+		const sendUsageSummary = async (
+			data: UsageSummaryData,
+			settings: ResolvedUsageSummarySettings,
+			formatterOutput?: FormatterOutput,
+		): Promise<void> => {
+			// If custom formatter output is provided, use it directly
+			if (formatterOutput) {
+				const embed = new EmbedBuilder()
+					.setColor(formatterOutput.color ?? 0x2b2d31)
+					.setAuthor({ name: formatterOutput.title ?? "Usage Summary" });
 
-			const embed = new EmbedBuilder()
-				.setColor(0x2b2d31)
-				.setAuthor({ name: "Usage Summary" })
-				.addFields(
-					{
-						name: "Tokens",
-						value: `\`${formatNum(data.tokens.input)}\` in  \`${formatNum(data.tokens.output)}\` out`,
-						inline: true,
-					},
-					{
-						name: "Context",
-						value: `\`${data.context.percent}\` of ${formatNum(data.context.max)}`,
-						inline: true,
-					},
-					{
-						name: "Cost",
-						value: `**${formatCost(data.cost.total)}**`,
-						inline: true,
-					},
-				);
+				if (formatterOutput.fields) {
+					for (const field of formatterOutput.fields) {
+						embed.addFields({ name: field.name, value: field.value, inline: field.inline ?? true });
+					}
+				}
 
-			if (data.cache.read > 0 || data.cache.write > 0) {
-				embed.addFields({
-					name: "Cache",
-					value: `\`${formatNum(data.cache.read)}\` read  \`${formatNum(data.cache.write)}\` write`,
-					inline: true,
-				});
+				if (formatterOutput.footer) {
+					embed.setFooter({ text: formatterOutput.footer });
+				}
+
+				const summaryMsg = await params.postEmbed(embed);
+				secondaryMessages.push(summaryMsg);
+				return;
 			}
 
-			const costBreakdown = [
-				`In: ${formatCost(data.cost.input)}`,
-				`Out: ${formatCost(data.cost.output)}`,
-				data.cache.read > 0 ? `Cache read: ${formatCost(data.cost.cacheRead)}` : null,
-				data.cache.write > 0 ? `Cache write: ${formatCost(data.cost.cacheWrite)}` : null,
-			]
-				.filter(Boolean)
-				.join(" | ");
-			embed.setFooter({ text: costBreakdown });
+			// Otherwise use template system
+			const formatNum = (n: number) => n.toLocaleString();
+			const formatCost = (n: number) => `$${n.toFixed(4)}`;
+			const { fields } = settings;
+
+			const embed = new EmbedBuilder().setColor(0x2b2d31).setAuthor({ name: settings.title });
+
+			if (fields.tokens.enabled) {
+				const value = interpolate(fields.tokens.format!, {
+					input: formatNum(data.tokens.input),
+					output: formatNum(data.tokens.output),
+				});
+				embed.addFields({ name: fields.tokens.label!, value, inline: true });
+			}
+
+			if (fields.context.enabled) {
+				const value = interpolate(fields.context.format!, {
+					used: formatNum(data.context.used),
+					max: formatNum(data.context.max),
+					percent: data.context.percent,
+				});
+				embed.addFields({ name: fields.context.label!, value, inline: true });
+			}
+
+			if (fields.cost.enabled) {
+				const value = interpolate(fields.cost.format!, {
+					total: formatCost(data.cost.total),
+					input: formatCost(data.cost.input),
+					output: formatCost(data.cost.output),
+					cacheRead: formatCost(data.cost.cacheRead),
+					cacheWrite: formatCost(data.cost.cacheWrite),
+				});
+				embed.addFields({ name: fields.cost.label!, value, inline: true });
+			}
+
+			if (fields.cache.enabled && (data.cache.read > 0 || data.cache.write > 0)) {
+				const value = interpolate(fields.cache.format!, {
+					read: formatNum(data.cache.read),
+					write: formatNum(data.cache.write),
+				});
+				embed.addFields({ name: fields.cache.label!, value, inline: true });
+			}
+
+			if (settings.footer.enabled) {
+				const footerText = interpolate(settings.footer.format, {
+					input: formatCost(data.cost.input),
+					output: formatCost(data.cost.output),
+					cacheRead: formatCost(data.cost.cacheRead),
+					cacheWrite: formatCost(data.cost.cacheWrite),
+				});
+				embed.setFooter({ text: footerText });
+			}
 
 			const summaryMsg = await params.postEmbed(embed);
 			secondaryMessages.push(summaryMsg);

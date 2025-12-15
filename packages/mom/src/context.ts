@@ -281,12 +281,37 @@ export interface MomRetrySettings {
 	baseDelayMs: number;
 }
 
+export interface UsageSummaryFieldConfig {
+	enabled?: boolean;
+	label?: string;
+	format?: string;
+}
+
+export type UsageSummaryFieldValue = boolean | UsageSummaryFieldConfig;
+
+export interface MomUsageSummarySettings {
+	enabled?: boolean;
+	title?: string;
+	formatter?: string;
+	fields?: {
+		tokens?: UsageSummaryFieldValue;
+		context?: UsageSummaryFieldValue;
+		cost?: UsageSummaryFieldValue;
+		cache?: UsageSummaryFieldValue;
+	};
+	footer?: {
+		enabled?: boolean;
+		format?: string;
+	};
+}
+
 export interface MomSettings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	compaction?: Partial<MomCompactionSettings>;
 	retry?: Partial<MomRetrySettings>;
+	usageSummary?: boolean | Partial<MomUsageSummarySettings>;
 }
 
 const DEFAULT_COMPACTION: MomCompactionSettings = {
@@ -300,6 +325,44 @@ const DEFAULT_RETRY: MomRetrySettings = {
 	maxRetries: 3,
 	baseDelayMs: 2000,
 };
+
+const DEFAULT_USAGE_SUMMARY_FIELDS = {
+	tokens: { enabled: true, label: "Tokens", format: "`{input}` in  `{output}` out" },
+	context: { enabled: true, label: "Context", format: "`{percent}` of {max}" },
+	cost: { enabled: true, label: "Cost", format: "**{total}**" },
+	cache: { enabled: true, label: "Cache", format: "`{read}` read  `{write}` write" },
+} as const;
+
+const DEFAULT_USAGE_SUMMARY = {
+	enabled: true,
+	title: "Usage Summary",
+	footer: {
+		enabled: true,
+		format: "In: {input} | Out: {output} | Cache read: {cacheRead} | Cache write: {cacheWrite}",
+	},
+};
+
+export interface ResolvedUsageSummarySettings {
+	enabled: boolean;
+	title: string;
+	formatter?: string;
+	fields: {
+		tokens: UsageSummaryFieldConfig;
+		context: UsageSummaryFieldConfig;
+		cost: UsageSummaryFieldConfig;
+		cache: UsageSummaryFieldConfig;
+	};
+	footer: { enabled: boolean; format: string };
+}
+
+function normalizeFieldConfig(
+	value: UsageSummaryFieldValue | undefined,
+	defaults: UsageSummaryFieldConfig,
+): UsageSummaryFieldConfig {
+	if (value === undefined) return defaults;
+	if (typeof value === "boolean") return { ...defaults, enabled: value };
+	return { ...defaults, ...value };
+}
 
 /**
  * Settings manager for mom.
@@ -369,6 +432,39 @@ export class MomSettingsManager {
 	setRetryEnabled(enabled: boolean): void {
 		this.settings.retry = { ...this.settings.retry, enabled };
 		this.save();
+	}
+
+	getUsageSummarySettings(): ResolvedUsageSummarySettings {
+		const raw = this.settings.usageSummary;
+		if (typeof raw === "boolean") {
+			return {
+				enabled: raw,
+				title: DEFAULT_USAGE_SUMMARY.title,
+				fields: {
+					tokens: { ...DEFAULT_USAGE_SUMMARY_FIELDS.tokens },
+					context: { ...DEFAULT_USAGE_SUMMARY_FIELDS.context },
+					cost: { ...DEFAULT_USAGE_SUMMARY_FIELDS.cost },
+					cache: { ...DEFAULT_USAGE_SUMMARY_FIELDS.cache },
+				},
+				footer: { ...DEFAULT_USAGE_SUMMARY.footer },
+			};
+		}
+		const userSettings = raw;
+		return {
+			enabled: userSettings?.enabled ?? DEFAULT_USAGE_SUMMARY.enabled,
+			title: userSettings?.title ?? DEFAULT_USAGE_SUMMARY.title,
+			formatter: userSettings?.formatter,
+			fields: {
+				tokens: normalizeFieldConfig(userSettings?.fields?.tokens, DEFAULT_USAGE_SUMMARY_FIELDS.tokens),
+				context: normalizeFieldConfig(userSettings?.fields?.context, DEFAULT_USAGE_SUMMARY_FIELDS.context),
+				cost: normalizeFieldConfig(userSettings?.fields?.cost, DEFAULT_USAGE_SUMMARY_FIELDS.cost),
+				cache: normalizeFieldConfig(userSettings?.fields?.cache, DEFAULT_USAGE_SUMMARY_FIELDS.cache),
+			},
+			footer: {
+				enabled: userSettings?.footer?.enabled ?? DEFAULT_USAGE_SUMMARY.footer.enabled,
+				format: userSettings?.footer?.format ?? DEFAULT_USAGE_SUMMARY.footer.format,
+			},
+		};
 	}
 
 	getDefaultModel(): string | undefined {

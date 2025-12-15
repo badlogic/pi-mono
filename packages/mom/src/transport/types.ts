@@ -1,3 +1,5 @@
+import type { ResolvedUsageSummarySettings } from "../context.js";
+
 export type TransportName = "slack" | "discord";
 
 export type ReplyTarget = "primary" | "secondary";
@@ -34,6 +36,14 @@ export interface UsageSummaryData {
 	cache: { read: number; write: number };
 	context: { used: number; max: number; percent: string };
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+}
+
+export interface FormatterOutput {
+	text?: string;
+	title?: string;
+	color?: number;
+	fields?: Array<{ name: string; value: string; inline?: boolean }>;
+	footer?: string | null;
 }
 
 export interface TransportContext {
@@ -83,7 +93,11 @@ export interface TransportContext {
 
 	// Optional transport-specific UX
 	sendToolResult?: (data: ToolResultData) => Promise<void>;
-	sendUsageSummary?: (data: UsageSummaryData) => Promise<void>;
+	sendUsageSummary?: (
+		data: UsageSummaryData,
+		settings: ResolvedUsageSummarySettings,
+		formatterOutput?: FormatterOutput,
+	) => Promise<void>;
 	addStopControl?: () => Promise<void>;
 	removeStopControl?: () => Promise<void>;
 }
