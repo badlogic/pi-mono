@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2025-12-15
+
 ### Added
 
 - **GitHub Copilot provider**: Added `github-copilot` as a known provider with models sourced from models.dev. Includes Claude, GPT, Gemini, Grok, and other models available through GitHub Copilot. ([#191](https://github.com/badlogic/pi-mono/pull/191) by [@cau1k](https://github.com/cau1k))
