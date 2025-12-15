@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.22.2] - 2025-12-15
+
+### Added
+
+- **Interleaved thinking for Anthropic**: Added `interleavedThinking` option to `AnthropicOptions`. When enabled, Claude 4 models can think between tool calls and reason after receiving tool results. Enabled by default (no extra token cost, just unlocks the capability). Set `interleavedThinking: false` to disable.
+
 ## [0.22.1] - 2025-12-15
 
 _Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_

@@ -83,6 +83,7 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 export interface AnthropicOptions extends StreamOptions {
 	thinkingEnabled?: boolean;
 	thinkingBudgetTokens?: number;
+	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
 
@@ -114,7 +115,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 
 		try {
 			const apiKey = options?.apiKey ?? getApiKey(model.provider) ?? "";
-			const { client, isOAuthToken } = createClient(model, apiKey);
+			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
 			const params = buildParams(model, context, isOAuthToken, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
@@ -280,12 +281,18 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
+	interleavedThinking: boolean,
 ): { client: Anthropic; isOAuthToken: boolean } {
+	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
+	if (interleavedThinking) {
+		betaFeatures.push("interleaved-thinking-2025-05-14");
+	}
+
 	if (apiKey.includes("sk-ant-oat")) {
 		const defaultHeaders = {
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": "oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
+			"anthropic-beta": `oauth-2025-04-20,${betaFeatures.join(",")}`,
 			...(model.headers || {}),
 		};
 
@@ -303,7 +310,7 @@ function createClient(
 		const defaultHeaders = {
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
+			"anthropic-beta": betaFeatures.join(","),
 			...(model.headers || {}),
 		};
 

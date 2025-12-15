@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.22.2] - 2025-12-15
+
+### Changed
+
+- Updated `@mariozechner/pi-ai` with interleaved thinking enabled by default for Anthropic Claude 4 models.
+
 ## [0.22.1] - 2025-12-15
 
 _Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_
