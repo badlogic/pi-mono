@@ -24,6 +24,7 @@ export interface SlackUser {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackChannel {
@@ -41,6 +42,7 @@ export interface UserInfo {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackContext {
@@ -122,6 +124,8 @@ class ChannelQueue {
 // SlackBot
 // ============================================================================
 
+const SLACK_MAX_LENGTH = 40000;
+
 export class SlackBot {
 	private socketClient: SocketModeClient;
 	private webClient: WebClient;
@@ -144,6 +148,11 @@ export class SlackBot {
 		this.store = config.store;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
+	}
+
+	private truncateMessage(text: string, suffix = "\n\n_(message truncated)_"): string {
+		if (text.length <= SLACK_MAX_LENGTH) return text;
+		return text.substring(0, SLACK_MAX_LENGTH - suffix.length) + suffix;
 	}
 
 	// ==========================================================================
@@ -185,12 +194,12 @@ export class SlackBot {
 	}
 
 	async postMessage(channel: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, text });
+		const result = await this.webClient.chat.postMessage({ channel, text: this.truncateMessage(text) });
 		return result.ts as string;
 	}
 
 	async updateMessage(channel: string, ts: string, text: string): Promise<void> {
-		await this.webClient.chat.update({ channel, ts, text });
+		await this.webClient.chat.update({ channel, ts, text: this.truncateMessage(text) });
 	}
 
 	async deleteMessage(channel: string, ts: string): Promise<void> {
@@ -198,7 +207,11 @@ export class SlackBot {
 	}
 
 	async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, thread_ts: threadTs, text });
+		const result = await this.webClient.chat.postMessage({
+			channel,
+			thread_ts: threadTs,
+			text: this.truncateMessage(text),
+		});
 		return result.ts as string;
 	}
 
@@ -574,12 +587,23 @@ export class SlackBot {
 		do {
 			const result = await this.webClient.users.list({ limit: 200, cursor });
 			const members = result.members as
-				| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+				| Array<{
+						id?: string;
+						name?: string;
+						real_name?: string;
+						deleted?: boolean;
+						profile?: { email?: string };
+				  }>
 				| undefined;
 			if (members) {
 				for (const u of members) {
 					if (u.id && u.name && !u.deleted) {
-						this.users.set(u.id, { id: u.id, userName: u.name, displayName: u.real_name || u.name });
+						this.users.set(u.id, {
+							id: u.id,
+							userName: u.name,
+							displayName: u.real_name || u.name,
+							email: u.profile?.email,
+						});
 					}
 				}
 			}

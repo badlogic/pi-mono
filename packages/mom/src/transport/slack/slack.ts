@@ -84,6 +84,7 @@ export function createSlackContext({
 			rawText: event.text,
 			userId: event.user,
 			userName: user?.userName,
+			userEmail: user?.email,
 			displayName: user?.displayName,
 			channelId: event.channel,
 			messageId: event.ts,
@@ -91,7 +92,12 @@ export function createSlackContext({
 		},
 		channelName: slack.getChannel(event.channel)?.name,
 		channels: slack.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
-		users: slack.getAllUsers().map((u) => ({ id: u.id, userName: u.userName, displayName: u.displayName })),
+		users: slack.getAllUsers().map((u) => ({
+			id: u.id,
+			userName: u.userName,
+			displayName: u.displayName,
+			email: u.email,
+		})),
 		formatting: {
 			italic: (text: string) => `_${text}_`,
 			bold: (text: string) => `*${text}*`,

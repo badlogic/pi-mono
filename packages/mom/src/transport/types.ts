@@ -13,6 +13,7 @@ export interface UserInfo {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface TransportFormatting {
@@ -64,6 +65,7 @@ export interface TransportContext {
 		rawText: string;
 		userId: string;
 		userName?: string;
+		userEmail?: string;
 		displayName?: string;
 		channelId: string;
 		messageId: string; // Slack: ts, Discord: snowflake
