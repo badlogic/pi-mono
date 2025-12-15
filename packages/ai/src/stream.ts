@@ -133,7 +133,10 @@ function mapOptionsForApi<TApi extends Api>(
 
 	switch (model.api) {
 		case "anthropic-messages": {
-			if (!options?.reasoning) return base satisfies AnthropicOptions;
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, thinkingEnabled: false } satisfies AnthropicOptions;
+			}
 
 			const anthropicBudgets = {
 				minimal: 1024,
@@ -162,7 +165,11 @@ function mapOptionsForApi<TApi extends Api>(
 			} satisfies OpenAIResponsesOptions;
 
 		case "google-generative-ai": {
-			if (!options?.reasoning) return base as any;
+			// Explicitly disable thinking when reasoning is not specified
+			// This is needed because Gemini has "dynamic thinking" enabled by default
+			if (!options?.reasoning) {
+				return { ...base, thinking: { enabled: false } } satisfies GoogleOptions;
+			}
 
 			const googleModel = model as Model<"google-generative-ai">;
 			const effort = clampReasoning(options.reasoning)!;
