@@ -125,6 +125,8 @@ pi
 /login  # Select "Anthropic (Claude Pro/Max)", authorize in browser
 ```
 
+Tokens stored in `~/.pi/agent/oauth.json` (mode 0600). Use `/logout` to clear.
+
 **GitHub Copilot:**
 
 ```bash
@@ -134,7 +136,7 @@ pi
 
 During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`). All models are automatically enabled after login.
 
-If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
+If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model, and click "Enable".
 
 For enterprise users, check with your organization's Copilot administrator for model availability.
 
