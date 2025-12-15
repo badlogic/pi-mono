@@ -4,11 +4,9 @@ const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 
 const COPILOT_HEADERS = {
 	"User-Agent": "GitHubCopilotChat/0.35.0",
-	"Editor-Version": "vscode/1.105.1",
+	"Editor-Version": "vscode/1.107.0",
 	"Editor-Plugin-Version": "copilot-chat/0.35.0",
-	"Copilot-Integration-Id": "copilot-developer-cli",
-	"Openai-Intent": "conversation-edits",
-	"X-Initiator": "agent",
+	"Copilot-Integration-Id": "vscode-chat",
 } as const;
 
 type DeviceCodeResponse = {
@@ -54,9 +52,29 @@ function getUrls(domain: string): {
 	};
 }
 
-export function getGitHubCopilotBaseUrl(enterpriseDomain?: string): string {
-	if (!enterpriseDomain) return "https://api.githubcopilot.com";
-	return `https://copilot-api.${enterpriseDomain}`;
+/**
+ * Parse the proxy-ep from a Copilot token and convert to API base URL.
+ * Token format: tid=...;exp=...;proxy-ep=proxy.individual.githubcopilot.com;...
+ * Returns API URL like https://api.individual.githubcopilot.com
+ */
+export function getBaseUrlFromToken(token: string): string | null {
+	const match = token.match(/proxy-ep=([^;]+)/);
+	if (!match) return null;
+	const proxyHost = match[1];
+	// Convert proxy.xxx to api.xxx
+	const apiHost = proxyHost.replace(/^proxy\./, "api.");
+	return `https://${apiHost}`;
+}
+
+export function getGitHubCopilotBaseUrl(token?: string, enterpriseDomain?: string): string {
+	// If we have a token, extract the base URL from proxy-ep
+	if (token) {
+		const urlFromToken = getBaseUrlFromToken(token);
+		if (urlFromToken) return urlFromToken;
+	}
+	// Fallback for enterprise or if token parsing fails
+	if (enterpriseDomain) return `https://copilot-api.${enterpriseDomain}`;
+	return "https://api.individual.githubcopilot.com";
 }
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {

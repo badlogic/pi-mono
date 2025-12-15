@@ -242,18 +242,15 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 
 	const combined = [...builtInModels, ...customModels];
 
+	// Update github-copilot base URL based on OAuth token or enterprise domain
 	const copilotCreds = loadOAuthCredentials("github-copilot");
-	if (copilotCreds?.enterpriseUrl) {
-		const domain = normalizeDomain(copilotCreds.enterpriseUrl);
-		if (domain) {
-			const baseUrl = getGitHubCopilotBaseUrl(domain);
-			return {
-				models: combined.map((m) =>
-					m.provider === "github-copilot" && m.baseUrl === "https://api.githubcopilot.com" ? { ...m, baseUrl } : m,
-				),
-				error: null,
-			};
-		}
+	if (copilotCreds) {
+		const domain = copilotCreds.enterpriseUrl ? normalizeDomain(copilotCreds.enterpriseUrl) : undefined;
+		const baseUrl = getGitHubCopilotBaseUrl(copilotCreds.access, domain ?? undefined);
+		return {
+			models: combined.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m)),
+			error: null,
+		};
 	}
 
 	return { models: combined, error: null };
@@ -288,23 +285,31 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 	}
 
 	if (model.provider === "github-copilot") {
+		// 1. Check OAuth storage (from device flow login)
 		const oauthToken = await getOAuthToken("github-copilot");
 		if (oauthToken) {
 			return oauthToken;
 		}
 
+		// 2. Use GitHub token directly (works with copilot scope on github.com)
 		const githubToken = process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 		if (!githubToken) {
 			return undefined;
 		}
 
+		// 3. For enterprise, exchange token for short-lived Copilot token
 		const enterpriseDomain = process.env.COPILOT_ENTERPRISE_URL
 			? normalizeDomain(process.env.COPILOT_ENTERPRISE_URL)
 			: undefined;
 
-		const creds = await refreshGitHubCopilotToken(githubToken, enterpriseDomain || undefined);
-		saveOAuthCredentials("github-copilot", creds);
-		return creds.access;
+		if (enterpriseDomain) {
+			const creds = await refreshGitHubCopilotToken(githubToken, enterpriseDomain);
+			saveOAuthCredentials("github-copilot", creds);
+			return creds.access;
+		}
+
+		// 4. For github.com, use token directly
+		return githubToken;
 	}
 
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai

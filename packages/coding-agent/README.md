@@ -125,6 +125,23 @@ pi
 /login  # Select "Anthropic (Claude Pro/Max)", authorize in browser
 ```
 
+**GitHub Copilot:**
+
+```bash
+pi
+/login  # Select "GitHub Copilot", authorize in browser
+```
+
+During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`).
+
+Some models require explicit enablement before use. If you get "The requested model is not supported" error, enable the model at:
+
+**https://github.com/settings/copilot/features**
+
+For enterprise users, check with your organization's Copilot administrator for model availability and policies.
+
+Note: Enabling some models (e.g., Grok from xAI) may involve sharing usage data with the provider. Review the terms before enabling.
+
 Tokens stored in `~/.pi/agent/oauth.json` (mode 0600). Use `/logout` to clear.
 
 ### Quick Start
