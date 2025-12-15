@@ -174,6 +174,15 @@ export class SlackBot {
 		return processed.trim();
 	}
 
+	/**
+	 * Check if text is a stop command (with or without bot mention prefix)
+	 */
+	private isStopCommand(text: string): boolean {
+		const normalized = text.toLowerCase().trim();
+		// Match "stop" or "@botname stop"
+		return normalized === "stop" || normalized === `@${this.botName.toLowerCase()} stop`;
+	}
+
 	// ==========================================================================
 	// Public API
 	// ==========================================================================
@@ -341,7 +350,7 @@ export class SlackBot {
 			}
 
 			// Check for stop command - execute immediately, don't queue!
-			if (slackEvent.text.toLowerCase().trim() === "stop") {
+			if (this.isStopCommand(slackEvent.text)) {
 				if (this.handler.isRunning(e.channel)) {
 					this.handler.handleStop(e.channel, this); // Don't await, don't queue
 				} else {
@@ -420,7 +429,7 @@ export class SlackBot {
 			// Only trigger handler for DMs
 			if (isDM) {
 				// Check for stop command - execute immediately, don't queue!
-				if (slackEvent.text.toLowerCase().trim() === "stop") {
+				if (this.isStopCommand(slackEvent.text)) {
 					if (this.handler.isRunning(e.channel)) {
 						this.handler.handleStop(e.channel, this); // Don't await, don't queue
 					} else {
