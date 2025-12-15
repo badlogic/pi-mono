@@ -226,10 +226,3 @@ export async function loginGitHubCopilot(options: {
 	);
 	return await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain ?? undefined);
 }
-
-export async function exchangeGitHubTokenForCopilotCredentials(options: {
-	githubToken: string;
-	enterpriseDomain?: string;
-}): Promise<OAuthCredentials> {
-	return refreshGitHubCopilotToken(options.githubToken, options.enterpriseDomain);
-}
