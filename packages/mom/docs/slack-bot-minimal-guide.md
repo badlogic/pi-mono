@@ -228,7 +228,7 @@ await webClient.chat.postMessage({
 
 ## Mom: Profile Overrides (settings.json)
 
-If you're running `mom`, you can configure Slack message authorship overrides via `settings.json` in the workspace root:
+Slack does not allow bots to change their actual profile via API, but mom can override the display name and icon on each message it sends. Add to `settings.json`:
 
 ```json
 {
@@ -241,9 +241,7 @@ If you're running `mom`, you can configure Slack message authorship overrides vi
 }
 ```
 
-Notes:
-- These are per-message overrides on `chat.postMessage` and require `chat:write.customize`.
-- Slack presence/status is not controlled by mom (Socket Mode / Events API bots don’t have a reliable presence control surface).
+Requires `chat:write.customize` scope. See [Bot Profile Configuration](./bot-profile.md) for full details and platform comparison.
 
 ### List channels
 ```javascript

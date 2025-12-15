@@ -103,7 +103,7 @@ Create `settings.json` in your workspace directory:
 
 ### Bot Profile (Optional)
 
-You can configure the Discord bot profile (presence/activity + optional username/avatar) via `settings.json`:
+Discord supports actual bot profile changes (avatar, username, status, activity). Add to `settings.json`:
 
 ```json
 {
@@ -111,17 +111,13 @@ You can configure the Discord bot profile (presence/activity + optional username
     "discord": {
       "status": "online",
       "activity": { "name": "Helping users", "type": "Watching" },
-      "avatar": "assets/mom.png",
-      "username": "mom"
+      "avatar": "assets/mom.png"
     }
   }
 }
 ```
 
-Notes:
-- `avatar` can be a local path (absolute or relative to the workspace root) or an `http(s)` URL.
-- Set `"avatar": ""` to clear the avatar.
-- Discord rate-limits username/avatar changes; frequent updates may fail. Settings are still persisted.
+See [Bot Profile Configuration](./bot-profile.md) for full details and options.
 
 ### Usage Summary Options
 

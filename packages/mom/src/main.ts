@@ -468,6 +468,11 @@ async function startDiscordBot({ workingDir, sandbox }: { workingDir: string; sa
 			const channelId = interaction.channelId;
 			const runnerKey = toRunnerKey(channelId);
 
+			const isDM = interaction.guildId === null;
+			if (isDM && !settingsManager.canUserDM(interaction.user.id)) {
+				return;
+			}
+
 			if (activeRuns.has(runnerKey)) {
 				await interaction.reply({
 					content: "Already working on something. Use `/mom-stop` to cancel.",

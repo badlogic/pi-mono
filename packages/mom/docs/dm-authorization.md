@@ -13,6 +13,18 @@ By default, mom does not respond to direct messages. This prevents unauthorized 
 
 ---
 
+## Discord Prerequisite
+
+Before DMs will work on Discord, users must enable DMs in their server privacy settings:
+
+1. Click the server name dropdown
+2. Select "Privacy Settings"
+3. Enable "Direct Messages and Friend Requests"
+
+Without this, Discord blocks the DM at the platform level before it even reaches mom.
+
+---
+
 ## Enable DMs
 
 Add to `settings.json` in your workspace root:
