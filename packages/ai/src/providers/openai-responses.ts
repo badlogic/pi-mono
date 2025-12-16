@@ -68,7 +68,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 
 		try {
 			// Create OpenAI client
-			const client = createClient(model, options?.apiKey);
+			const client = createClient(model, context, options?.apiKey);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.responses.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
@@ -297,7 +297,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	return stream;
 };
 
-function createClient(model: Model<"openai-responses">, apiKey?: string) {
+function createClient(model: Model<"openai-responses">, context: Context, apiKey?: string) {
 	if (!apiKey) {
 		if (!process.env.OPENAI_API_KEY) {
 			throw new Error(
@@ -306,11 +306,24 @@ function createClient(model: Model<"openai-responses">, apiKey?: string) {
 		}
 		apiKey = process.env.OPENAI_API_KEY;
 	}
+
+	const headers = { ...model.headers };
+	if (model.provider === "github-copilot") {
+		// Copilot expects X-Initiator to indicate whether the request is user-initiated
+		// or agent-initiated (e.g. follow-up after assistant/tool messages). If there is
+		// no prior message, default to user-initiated.
+		const messages = context.messages || [];
+		const lastMessage = messages[messages.length - 1];
+		const isAgentCall = lastMessage ? lastMessage.role !== "user" : false;
+		const initiatorValue = isAgentCall ? "agent" : "user";
+		headers["X-Initiator"] = initiatorValue;
+	}
+
 	return new OpenAI({
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders: model.headers,
+		defaultHeaders: headers,
 	});
 }
 
