@@ -243,7 +243,7 @@ async function executeToolCalls<T>(
 			args: toolCall.arguments,
 		});
 
-		let resultOrError: AgentToolResult<T> | string;
+		let result: AgentToolResult<T>;
 		let isError = false;
 
 		try {
@@ -252,10 +252,21 @@ async function executeToolCalls<T>(
 			// Validate arguments using shared validation function
 			const validatedArgs = validateToolArguments(tool, toolCall);
 
-			// Execute with validated, typed arguments
-			resultOrError = await tool.execute(toolCall.id, validatedArgs, signal);
+			// Execute with validated, typed arguments, passing update callback
+			result = await tool.execute(toolCall.id, validatedArgs, signal, (partialResult) => {
+				stream.push({
+					type: "tool_execution_update",
+					toolCallId: toolCall.id,
+					toolName: toolCall.name,
+					args: toolCall.arguments,
+					partialResult,
+				});
+			});
 		} catch (e) {
-			resultOrError = e instanceof Error ? e.message : String(e);
+			result = {
+				content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+				details: {} as T,
+			};
 			isError = true;
 		}
 
@@ -263,20 +274,16 @@ async function executeToolCalls<T>(
 			type: "tool_execution_end",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
-			result: resultOrError,
+			result,
 			isError,
 		});
-
-		// Convert result to content blocks
-		const content: ToolResultMessage<T>["content"] =
-			typeof resultOrError === "string" ? [{ type: "text", text: resultOrError }] : resultOrError.content;
 
 		const toolResultMessage: ToolResultMessage<T> = {
 			role: "toolResult",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
-			content,
-			details: typeof resultOrError === "string" ? ({} as T) : resultOrError.details,
+			content: result.content,
+			details: result.details,
 			isError,
 			timestamp: Date.now(),
 		};

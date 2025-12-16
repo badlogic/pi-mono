@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Streaming bash output**: Bash tool now streams output in real-time during execution. The TUI displays live progress with the last 5 lines visible (expandable with ctrl+o). ([#44](https://github.com/badlogic/pi-mono/issues/44))
+
 ### Changed
+
+- **Tool output display**: When collapsed, tool output now shows the last N lines instead of the first N lines, making streaming output more useful.
 
 - Updated `@mariozechner/pi-ai` with X-Initiator header support for GitHub Copilot, ensuring agent calls are not deducted from quota. ([#200](https://github.com/badlogic/pi-mono/pull/200) by [@kim0](https://github.com/kim0))
 

@@ -18,6 +18,9 @@ export interface AgentToolResult<T> {
 	details: T;
 }
 
+// Callback for streaming tool execution updates
+export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T>) => void;
+
 // AgentTool extends Tool but adds the execute function
 export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
 	// A human-readable label for the tool to be displayed in UI
@@ -26,6 +29,7 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 		toolCallId: string,
 		params: Static<TParameters>,
 		signal?: AbortSignal,
+		onUpdate?: AgentToolUpdateCallback<TDetails>,
 	) => Promise<AgentToolResult<TDetails>>;
 }
 
@@ -50,12 +54,20 @@ export type AgentEvent =
 	| { type: "message_end"; message: Message }
 	// Emitted when a tool execution starts
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
+	// Emitted when a tool execution produces output (streaming)
+	| {
+			type: "tool_execution_update";
+			toolCallId: string;
+			toolName: string;
+			args: any;
+			partialResult: AgentToolResult<any>;
+	  }
 	// Emitted when a tool execution completes
 	| {
 			type: "tool_execution_end";
 			toolCallId: string;
 			toolName: string;
-			result: AgentToolResult<any> | string;
+			result: AgentToolResult<any>;
 			isError: boolean;
 	  }
 	// Emitted when a full turn completes

@@ -35,6 +35,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 		_toolCallId: string,
 		{ command, timeout }: { command: string; timeout?: number },
 		signal?: AbortSignal,
+		onUpdate?,
 	) => {
 		return new Promise((resolve, reject) => {
 			const { shell, args } = getShellConfig();
@@ -91,6 +92,20 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 				while (chunksBytes > maxChunksBytes && chunks.length > 1) {
 					const removed = chunks.shift()!;
 					chunksBytes -= removed.length;
+				}
+
+				// Stream partial output to callback (truncated rolling buffer)
+				if (onUpdate) {
+					const fullBuffer = Buffer.concat(chunks);
+					const fullText = fullBuffer.toString("utf-8");
+					const truncation = truncateTail(fullText);
+					onUpdate({
+						content: [{ type: "text", text: truncation.content || "" }],
+						details: {
+							truncation: truncation.truncated ? truncation : undefined,
+							fullOutputPath: tempFilePath,
+						},
+					});
 				}
 			};
 

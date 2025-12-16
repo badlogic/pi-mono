@@ -44,6 +44,7 @@ export class ToolExecutionComponent extends Container {
 	private args: any;
 	private expanded = false;
 	private showImages: boolean;
+	private isPartial = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -66,12 +67,16 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
-	updateResult(result: {
-		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-		details?: any;
-		isError: boolean;
-	}): void {
+	updateResult(
+		result: {
+			content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+			details?: any;
+			isError: boolean;
+		},
+		isPartial = false,
+	): void {
 		this.result = result;
+		this.isPartial = isPartial;
 		this.updateDisplay();
 	}
 
@@ -86,11 +91,11 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.result
-			? this.result.isError
+		const bgFn = this.isPartial
+			? (text: string) => theme.bg("toolPendingBg", text)
+			: this.result?.isError
 				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text)
-			: (text: string) => theme.bg("toolPendingBg", text);
+				: (text: string) => theme.bg("toolSuccessBg", text);
 
 		this.contentText.setCustomBgFn(bgFn);
 		this.contentText.setText(this.formatToolExecution());
@@ -164,13 +169,15 @@ export class ToolExecutionComponent extends Container {
 				if (output) {
 					const lines = output.split("\n");
 					const maxLines = this.expanded ? lines.length : 5;
-					const displayLines = lines.slice(0, maxLines);
-					const remaining = lines.length - maxLines;
+					const skipped = Math.max(0, lines.length - maxLines);
+					const displayLines = lines.slice(-maxLines);
 
-					text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
-					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+					if (skipped > 0) {
+						text += theme.fg("toolOutput", `\n\n... (${skipped} earlier lines)`);
 					}
+					text +=
+						(skipped > 0 ? "\n" : "\n\n") +
+						displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
 				}
 
 				// Show truncation warning at the bottom (outside collapsed area)

@@ -553,6 +553,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `message_update` | Streaming update (text/thinking/toolcall deltas) |
 | `message_end` | Message completes |
 | `tool_execution_start` | Tool begins execution |
+| `tool_execution_update` | Tool execution progress (streaming output) |
 | `tool_execution_end` | Tool completes |
 | `auto_compaction_start` | Auto-compaction begins |
 | `auto_compaction_end` | Auto-compaction completes |
@@ -645,9 +646,9 @@ Example streaming a text response:
 {"type":"message_update","message":{...},"assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"Hello world","partial":{...}}}
 ```
 
-### tool_execution_start / tool_execution_end
+### tool_execution_start / tool_execution_update / tool_execution_end
 
-Emitted when a tool begins and completes execution.
+Emitted when a tool begins, streams progress, and completes execution.
 
 ```json
 {
@@ -657,6 +658,23 @@ Emitted when a tool begins and completes execution.
   "args": {"command": "ls -la"}
 }
 ```
+
+During execution, `tool_execution_update` events stream partial results (e.g., bash output as it arrives):
+
+```json
+{
+  "type": "tool_execution_update",
+  "toolCallId": "call_abc123",
+  "toolName": "bash",
+  "args": {"command": "ls -la"},
+  "partialResult": {
+    "content": [{"type": "text", "text": "partial output so far..."}],
+    "details": {"truncation": null, "fullOutputPath": null}
+  }
+}
+```
+
+When complete:
 
 ```json
 {
@@ -671,7 +689,7 @@ Emitted when a tool begins and completes execution.
 }
 ```
 
-Use `toolCallId` to correlate `tool_execution_start` with `tool_execution_end`.
+Use `toolCallId` to correlate events. The `partialResult` in `tool_execution_update` contains the accumulated output so far (not just the delta), allowing clients to simply replace their display on each update.
 
 ### auto_compaction_start / auto_compaction_end
 

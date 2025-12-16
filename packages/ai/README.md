@@ -822,10 +822,12 @@ const stream = agentLoop(
 // 5. message_start        - Assistant message starts
 // 6. message_update       - Assistant streams response with tool calls
 // 7. message_end          - Assistant message ends
-// 8. tool_execution_start - First calculation (15 * 20)
-// 9. tool_execution_end   - Result: 300
-// 10. tool_execution_start - Second calculation (30 * 40)
-// 11. tool_execution_end   - Result: 1200
+// 8. tool_execution_start  - First calculation (15 * 20)
+// 9. tool_execution_update - Streaming progress (for long-running tools)
+// 10. tool_execution_end   - Result: 300
+// 11. tool_execution_start - Second calculation (30 * 40)
+// 12. tool_execution_update - Streaming progress
+// 13. tool_execution_end   - Result: 1200
 // 12. message_start       - Tool result message for first calculation
 // 13. message_end         - Tool result message ends
 // 14. message_start       - Tool result message for second calculation
@@ -876,11 +878,16 @@ for await (const event of stream) {
       console.log(`Calling ${event.toolName} with:`, event.args);
       break;
 
+    case 'tool_execution_update':
+      // Streaming progress for long-running tools (e.g., bash output)
+      console.log(`Progress:`, event.partialResult.content);
+      break;
+
     case 'tool_execution_end':
       if (event.isError) {
         console.error(`Tool failed:`, event.result);
       } else {
-        console.log(`Tool result:`, event.result.output);
+        console.log(`Tool result:`, event.result.content);
       }
       break;
 
@@ -947,11 +954,13 @@ const weatherTool: AgentTool<typeof weatherSchema, { temp: number }> = {
   name: 'get_weather',
   description: 'Get current weather for a city',
   parameters: weatherSchema,
-  execute: async (toolCallId, args) => {
+  execute: async (toolCallId, args, signal, onUpdate) => {
     // args is fully typed: { city: string, units: 'celsius' | 'fahrenheit' }
+    // signal: AbortSignal for cancellation
+    // onUpdate: Optional callback for streaming progress (emits tool_execution_update events)
     const temp = Math.round(Math.random() * 30);
     return {
-      output: `Temperature in ${args.city}: ${temp}°${args.units[0].toUpperCase()}`,
+      content: [{ type: 'text', text: `Temperature in ${args.city}: ${temp}°${args.units[0].toUpperCase()}` }],
       details: { temp }
     };
   }
@@ -970,6 +979,36 @@ const chartTool: AgentTool<typeof Type.Object({ data: Type.Array(Type.Number()) 
         { type: 'text', text: `Generated chart with ${args.data.length} data points` },
         { type: 'image', data: chartImage.toString('base64'), mimeType: 'image/png' }
       ]
+    };
+  }
+};
+
+// Tools can stream progress via the onUpdate callback (emits tool_execution_update events)
+const bashTool: AgentTool<typeof Type.Object({ command: Type.String() }), { exitCode: number }> = {
+  label: 'Run Bash',
+  name: 'bash',
+  description: 'Execute a bash command',
+  parameters: Type.Object({ command: Type.String() }),
+  execute: async (toolCallId, args, signal, onUpdate) => {
+    let output = '';
+    const child = spawn('bash', ['-c', args.command]);
+
+    child.stdout.on('data', (data) => {
+      output += data.toString();
+      // Stream partial output to UI via tool_execution_update events
+      onUpdate?.({
+        content: [{ type: 'text', text: output }],
+        details: { exitCode: -1 }  // Not finished yet
+      });
+    });
+
+    const exitCode = await new Promise<number>((resolve) => {
+      child.on('close', resolve);
+    });
+
+    return {
+      content: [{ type: 'text', text: output }],
+      details: { exitCode }
     };
   }
 };

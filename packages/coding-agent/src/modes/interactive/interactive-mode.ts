@@ -755,18 +755,19 @@ export class InteractiveMode {
 				break;
 			}
 
+			case "tool_execution_update": {
+				const component = this.pendingTools.get(event.toolCallId);
+				if (component) {
+					component.updateResult({ ...event.partialResult, isError: false }, true);
+					this.ui.requestRender();
+				}
+				break;
+			}
+
 			case "tool_execution_end": {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					const resultData =
-						typeof event.result === "string"
-							? {
-									content: [{ type: "text" as const, text: event.result }],
-									details: undefined,
-									isError: event.isError,
-								}
-							: { content: event.result.content, details: event.result.details, isError: event.isError };
-					component.updateResult(resultData);
+					component.updateResult({ ...event.result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -993,11 +994,7 @@ export class InteractiveMode {
 			} else if (message.role === "toolResult") {
 				const component = this.pendingTools.get(message.toolCallId);
 				if (component) {
-					component.updateResult({
-						content: message.content,
-						details: message.details,
-						isError: message.isError,
-					});
+					component.updateResult(message);
 					this.pendingTools.delete(message.toolCallId);
 				}
 			}
