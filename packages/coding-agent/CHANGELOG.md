@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.22.4] - 2025-12-17
 
 ### Added
