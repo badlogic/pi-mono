@@ -247,6 +247,34 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("public state accessors", () => {
+		it("returns cursor position", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("a");
+			editor.handleInput("b");
+			editor.handleInput("c");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+
+			editor.handleInput("\x1b[D"); // Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 2 });
+		});
+
+		it("returns lines as a defensive copy", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.setText("a\nb");
+
+			const lines = editor.getLines();
+			assert.deepStrictEqual(lines, ["a", "b"]);
+
+			lines[0] = "mutated";
+			assert.deepStrictEqual(editor.getLines(), ["a", "b"]);
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor(defaultEditorTheme);

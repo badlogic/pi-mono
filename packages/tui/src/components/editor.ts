@@ -595,6 +595,14 @@ export class Editor implements Component {
 		return this.state.lines.join("\n");
 	}
 
+	getLines(): string[] {
+		return [...this.state.lines];
+	}
+
+	getCursor(): { line: number; col: number } {
+		return { line: this.state.cursorLine, col: this.state.cursorCol };
+	}
+
 	setText(text: string): void {
 		this.historyIndex = -1; // Exit history browsing mode
 		this.setTextInternal(text);
