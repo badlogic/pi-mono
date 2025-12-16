@@ -29,6 +29,7 @@ export interface Args {
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
+	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
 }
@@ -110,6 +111,13 @@ export function parseArgs(args: string[]): Args {
 			result.hooks.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
+		} else if (arg === "--list-models") {
+			// Check if next arg is a search pattern (not a flag or file arg)
+			if (i + 1 < args.length && !args[i + 1].startsWith("-") && !args[i + 1].startsWith("@")) {
+				result.listModels = args[++i];
+			} else {
+				result.listModels = true;
+			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (!arg.startsWith("-")) {
@@ -145,6 +153,7 @@ ${chalk.bold("Options:")}
   --hook <path>                  Load a hook file (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
   --export <file>                Export session file to HTML and exit
+  --list-models [search]         List available models (with optional fuzzy search)
   --help, -h                     Show this help
   --version, -v                  Show version number
 

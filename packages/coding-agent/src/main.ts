@@ -6,6 +6,7 @@ import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@
 import chalk from "chalk";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
+import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getModelsPath, VERSION } from "./config.js";
 import { AgentSession } from "./core/agent-session.js";
@@ -146,6 +147,13 @@ export async function main(args: string[]) {
 
 	if (parsed.help) {
 		printHelp();
+		return;
+	}
+
+	// Handle --list-models flag: list available models and exit
+	if (parsed.listModels !== undefined) {
+		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+		await listModels(searchPattern);
 		return;
 	}
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.22.4] - 2025-12-17
+
+### Added
+
+- `--list-models [search]` CLI flag to list available models with optional fuzzy search. Shows provider, model ID, context window, max output, thinking support, and image support. Only lists models with configured API keys. ([#203](https://github.com/badlogic/pi-mono/issues/203))
 
 ### Fixed
 
