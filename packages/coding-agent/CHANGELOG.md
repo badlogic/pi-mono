@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed tool execution showing green (success) background while still running. Now correctly shows gray (pending) background until the tool completes.
+
+## [0.22.3] - 2025-12-16
+
 ### Added
 
 - **Streaming bash output**: Bash tool now streams output in real-time during execution. The TUI displays live progress with the last 5 lines visible (expandable with ctrl+o). ([#44](https://github.com/badlogic/pi-mono/issues/44))
