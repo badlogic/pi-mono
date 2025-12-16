@@ -577,14 +577,19 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/clear") {
-				await this.handleClearCommand();
 				this.editor.setText("");
+				await this.handleClearCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
 				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				await this.handleCompactCommand(customInstructions);
 				this.editor.setText("");
+				this.editor.disableSubmit = true;
+				try {
+					await this.handleCompactCommand(customInstructions);
+				} finally {
+					this.editor.disableSubmit = false;
+				}
 				return;
 			}
 			if (text === "/autocompact") {
@@ -625,7 +630,7 @@ export class InteractiveMode {
 				}
 			}
 
-			// Block input during compaction (will retry automatically)
+			// Block input during compaction
 			if (this.session.isCompacting) {
 				return;
 			}
@@ -789,6 +794,8 @@ export class InteractiveMode {
 				break;
 
 			case "auto_compaction_start": {
+				// Disable submit to preserve editor text during compaction
+				this.editor.disableSubmit = true;
 				// Set up escape to abort auto-compaction
 				this.autoCompactionEscapeHandler = this.editor.onEscape;
 				this.editor.onEscape = () => {
@@ -809,6 +816,8 @@ export class InteractiveMode {
 			}
 
 			case "auto_compaction_end": {
+				// Re-enable submit
+				this.editor.disableSubmit = false;
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {
 					this.editor.onEscape = this.autoCompactionEscapeHandler;
