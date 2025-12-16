@@ -11,33 +11,32 @@
  * DISCOVERED LIMITS (Dec 2025):
  * ============================================================================
  *
- * | Provider    | Model              | Max Images | Max Size | Max Dimension | Max 8k Images |
- * |-------------|--------------------|------------|----------|---------------|---------------|
- * | Anthropic   | claude-3-5-haiku   | 100        | 5MB      | 8000px        | 100           |
- * | OpenAI      | gpt-4o-mini        | 500        | ≥25MB    | ≥20000px      | ≥50           |
- * | Gemini      | gemini-2.5-flash   | ~2000+*    | ≥40MB    | 8000px        | (untested)    |
- * | Mistral     | pixtral-12b        | 8          | ~15MB    | 8000px        | 8             |
- * | OpenRouter  | z-ai/glm-4.5v      | ~40**      | ~10MB    | ≥20000px      | ≥10           |
- * | xAI         | grok-2-vision      | ≥100       | 25MB     | 8000px        | ≥50           |
- * | Groq        | llama-4-scout-17b  | 5          | ~5MB     | ~5760px***    | 0****         |
- * | zAI         | glm-4.5v           | ≥100       | ≥20MB    | 8000px        | ≥50           |
+ * | Provider    | Model              | Max Images | Max Size | Max Dim  | Max 8k Imgs |
+ * |-------------|--------------------|------------|----------|----------|-------------|
+ * | Anthropic   | claude-3-5-haiku   | 100        | 5MB      | 8000px   | 100         |
+ * | OpenAI      | gpt-4o-mini        | 500        | ≥25MB    | ≥20000px | 100-200*    |
+ * | Gemini      | gemini-2.5-flash   | ~2000**    | ≥40MB    | 8000px   | (untested)  |
+ * | Mistral     | pixtral-12b        | 8          | ~15MB    | 8000px   | 8           |
+ * | xAI         | grok-2-vision      | ≥100       | 25MB     | 8000px   | 100-150*    |
+ * | Groq        | llama-4-scout-17b  | 5          | ~5MB     | ~5760px  | 0***        |
+ * | zAI         | glm-4.5v           | ≥100       | ≥20MB    | 8000px   | 400****     |
+ * | OpenRouter  | z-ai/glm-4.5v      | ~40****    | ~10MB    | ≥20000px | 40****      |
  *
  * Notes:
  * - Anthropic: Docs mention a "many images" rule (>20 images = 2000px max),
  *   but testing shows 100 x 8k images work fine. Anthropic may auto-resize
- *   internally. Total request size capped at 32MB.
- * - OpenAI: Documented limit is 20MB, but we observed ≥25MB working.
- *   No dimension limit found up to 20000px.
- * - Gemini: * Very permissive on count, hits rate limits before image limits.
- *   Dimension limit is 8000px (same as Anthropic).
- * - Mistral: Very restrictive on image count (only 8 images allowed).
- *   Dimension limit is 8000px.
- * - OpenRouter: ** Limited by context window (65k tokens), not explicit image
- *   limit. No dimension limit found up to 20000px.
- * - xAI: 25MB limit (26214400 bytes exactly). Dimension limit ~8000px.
- * - Groq: *** Very restrictive. Max 5 images, ~5MB size, 33177600 pixels max
- *   (≈5760x5760). **** 8k images exceed pixel limit so 0 supported.
- * - zAI: Permissive, similar to Anthropic limits.
+ *   internally. Total request size capped at 32MB. Explicit error at 101+.
+ * - OpenAI: * 100 x 8k succeeded, 200 x 8k failed with timeout. Actual limit
+ *   likely between 100-200. Documented size limit is 20MB but ≥25MB works.
+ * - Gemini: ** Very permissive on count, hits rate limits before image limits.
+ * - Mistral: Very restrictive (8 images max). Explicit error at 9+.
+ * - xAI: * 100 x 8k succeeded, 150 x 8k timed out. 25MB size limit exact.
+ * - Groq: *** Most restrictive. 5 images max, 33177600 pixels max (≈5760x5760).
+ *   8k images (64M pixels) exceed limit, so 0 supported.
+ * - zAI: **** Context-window limited (65536 tokens). 400 x 8k succeeded,
+ *   500 x 8k exceeded token limit.
+ * - OpenRouter: **** Context-window limited (65536 tokens), not explicit
+ *   image limit. 40 x 8k succeeded, 50 x 8k exceeded token limit.
  *
  * ============================================================================
  * PRACTICAL RECOMMENDATIONS FOR CODING AGENTS:
@@ -858,14 +857,14 @@ describe("Image Limits E2E Tests", () => {
 			);
 		});
 
-		// Anthropic - known to have "many images" rule (>20 images = 2000px max dimension)
-		// Testing to find actual limit with 8k dimension images
+		// Anthropic - known 100 image limit, testing if 8k dimensions change this
 		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
 			"Anthropic: max 8k images before rejection",
-			{ timeout: 600000 },
+			{ timeout: 900000 },
 			async () => {
 				const model = getModel("anthropic", "claude-3-5-haiku-20241022");
-				const counts = [5, 10, 15, 20, 21, 25, 30, 40, 50, 60, 80, 100];
+				// Known limit is 100 images - test around that boundary
+				const counts = [10, 20, 50, 80, 100, 110, 120];
 
 				let lastSuccess = 0;
 				let lastError: string | undefined;
@@ -888,13 +887,14 @@ describe("Image Limits E2E Tests", () => {
 			},
 		);
 
-		// OpenAI
+		// OpenAI - known 500 image limit
 		it.skipIf(!process.env.OPENAI_API_KEY)(
 			"OpenAI: max 8k images before rejection",
-			{ timeout: 600000 },
+			{ timeout: 1800000 },
 			async () => {
 				const model = getModel("openai", "gpt-4o-mini");
-				const counts = [5, 10, 20, 30, 50];
+				// Known limit is 500 images - test around that boundary
+				const counts = [50, 100, 200, 300, 400, 500, 550];
 
 				let lastSuccess = 0;
 				let lastError: string | undefined;
@@ -917,13 +917,14 @@ describe("Image Limits E2E Tests", () => {
 			},
 		);
 
-		// Gemini
+		// Gemini - known to be very permissive (~2000+ small images), but 8k may differ
 		it.skipIf(!process.env.GOOGLE_API_KEY)(
 			"Gemini: max 8k images before rejection",
-			{ timeout: 600000 },
+			{ timeout: 1800000 },
 			async () => {
 				const model = getModel("google", "gemini-2.5-flash");
-				const counts = [5, 10, 20, 30, 50];
+				// Test progressively - 8k images are large so limit may be lower
+				const counts = [10, 50, 100, 200, 500, 1000];
 
 				let lastSuccess = 0;
 				let lastError: string | undefined;
@@ -946,13 +947,14 @@ describe("Image Limits E2E Tests", () => {
 			},
 		);
 
-		// Mistral - already very limited (8 images max)
+		// Mistral - known 8 image limit
 		it.skipIf(!process.env.MISTRAL_API_KEY)(
 			"Mistral: max 8k images before rejection",
 			{ timeout: 600000 },
 			async () => {
 				const model = getModel("mistral", "pixtral-12b");
-				const counts = [1, 2, 4, 6, 8];
+				// Known limit is 8 images - test around that boundary
+				const counts = [1, 2, 4, 6, 8, 9, 10];
 
 				let lastSuccess = 0;
 				let lastError: string | undefined;
@@ -975,10 +977,11 @@ describe("Image Limits E2E Tests", () => {
 			},
 		);
 
-		// xAI
-		it.skipIf(!process.env.XAI_API_KEY)("xAI: max 8k images before rejection", { timeout: 600000 }, async () => {
+		// xAI - tested up to 100 small images successfully
+		it.skipIf(!process.env.XAI_API_KEY)("xAI: max 8k images before rejection", { timeout: 1200000 }, async () => {
 			const model = getModel("xai", "grok-2-vision");
-			const counts = [5, 10, 20, 30, 50];
+			// Test around the expected boundary
+			const counts = [10, 50, 100, 150, 200];
 
 			let lastSuccess = 0;
 			let lastError: string | undefined;
@@ -1031,10 +1034,11 @@ describe("Image Limits E2E Tests", () => {
 			},
 		);
 
-		// zAI
-		it.skipIf(!process.env.ZAI_API_KEY)("zAI: max 8k images before rejection", { timeout: 600000 }, async () => {
+		// zAI - tested up to 100 small images successfully, very permissive
+		it.skipIf(!process.env.ZAI_API_KEY)("zAI: max 8k images before rejection", { timeout: 1800000 }, async () => {
 			const model = getModel("zai", "glm-4.5v");
-			const counts = [5, 10, 20, 30, 50];
+			// Very permissive - extend to find actual limit
+			const counts = [50, 100, 200, 300, 400, 500];
 
 			let lastSuccess = 0;
 			let lastError: string | undefined;
@@ -1056,13 +1060,14 @@ describe("Image Limits E2E Tests", () => {
 			expect(lastSuccess).toBeGreaterThanOrEqual(5);
 		});
 
-		// OpenRouter
+		// OpenRouter - context-window limited (~40 small images), 8k will be fewer
 		it.skipIf(!process.env.OPENROUTER_API_KEY)(
 			"OpenRouter: max 8k images before rejection",
-			{ timeout: 600000 },
+			{ timeout: 900000 },
 			async () => {
 				const model = getModel("openrouter", "z-ai/glm-4.5v");
-				const counts = [1, 2, 3, 5, 10];
+				// 8k images consume more tokens, so limit will be lower than 40
+				const counts = [1, 2, 5, 10, 20, 30, 40, 50];
 
 				let lastSuccess = 0;
 				let lastError: string | undefined;
