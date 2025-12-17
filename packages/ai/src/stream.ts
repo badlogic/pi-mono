@@ -216,19 +216,6 @@ function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
 }
 
 function getGemini3ThinkingLevel(effort: ClampedReasoningEffort, model: Model<"google-generative-ai">): ThinkingLevel {
-	if (isGemini3FlashModel(model)) {
-		// Gemini 3 Flash supports all four levels
-		switch (effort) {
-			case "minimal":
-				return ThinkingLevel.MINIMAL;
-			case "low":
-				return ThinkingLevel.LOW;
-			case "medium":
-				return ThinkingLevel.MEDIUM;
-			case "high":
-				return ThinkingLevel.HIGH;
-		}
-	}
 	if (isGemini3ProModel(model)) {
 		// Gemini 3 Pro only supports LOW/HIGH (for now)
 		switch (effort) {
@@ -240,8 +227,17 @@ function getGemini3ThinkingLevel(effort: ClampedReasoningEffort, model: Model<"g
 				return ThinkingLevel.HIGH;
 		}
 	}
-	// It's not clear what other Gemini 3 models might support, default to LOW
-	return ThinkingLevel.LOW;
+	// Gemini 3 Flash supports all four levels
+	switch (effort) {
+		case "minimal":
+			return ThinkingLevel.MINIMAL;
+		case "low":
+			return ThinkingLevel.LOW;
+		case "medium":
+			return ThinkingLevel.MEDIUM;
+		case "high":
+			return ThinkingLevel.HIGH;
+	}
 }
 
 function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedReasoningEffort): number {
