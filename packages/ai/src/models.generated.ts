@@ -3043,23 +3043,6 @@ export const MODELS = {
 			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-completions">,
-		"amazon/nova-2-lite-v1:free": {
-			id: "amazon/nova-2-lite-v1:free",
-			name: "Amazon: Nova 2 Lite (free)",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 1000000,
-			maxTokens: 65535,
-		} satisfies Model<"openai-completions">,
 		"amazon/nova-2-lite-v1": {
 			id: "amazon/nova-2-lite-v1",
 			name: "Amazon: Nova 2 Lite",
