@@ -76,6 +76,7 @@ jobs:
             cp CHANGELOG.md binaries/$platform/
             mkdir -p binaries/$platform/theme
             cp dist/modes/interactive/theme/*.json binaries/$platform/theme/
+            cp -r examples binaries/$platform/
           done
 
           # Create archives
