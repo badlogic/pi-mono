@@ -220,7 +220,7 @@ export class AgentSession {
 				this._resolveRetry();
 			}
 
-			await this._handleAgentEndCompaction(msg);
+			await this._checkCompaction(msg);
 		}
 	};
 
@@ -240,6 +240,18 @@ export class AgentSession {
 		if (typeof content === "string") return content;
 		const textBlocks = content.filter((c) => c.type === "text");
 		return textBlocks.map((c) => (c as TextContent).text).join("");
+	}
+
+	/** Find the last assistant message in agent state (including aborted ones) */
+	private _findLastAssistantMessage(): AssistantMessage | null {
+		const messages = this.agent.state.messages;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				return msg as AssistantMessage;
+			}
+		}
+		return null;
 	}
 
 	/** Emit hook events based on agent events */
@@ -414,6 +426,12 @@ export class AgentSession {
 				`No API key found for ${this.model.provider}.\n\n` +
 					`Set the appropriate environment variable or update ${getModelsPath()}`,
 			);
+		}
+
+		// Check if we need to compact before sending (catches aborted responses)
+		const lastAssistant = this._findLastAssistantMessage();
+		if (lastAssistant) {
+			await this._checkCompaction(lastAssistant, false);
 		}
 
 		// Expand slash commands if requested
@@ -719,17 +737,22 @@ export class AgentSession {
 	}
 
 	/**
-	 * Handle compaction after agent_end.
+	 * Check if compaction is needed and run it.
+	 * Called after agent_end and before prompt submission.
+	 *
 	 * Two cases:
 	 * 1. Overflow: LLM returned context overflow error, remove error message from agent state, compact, auto-retry
-	 * 2. Threshold: Turn succeeded but context over threshold, compact, NO auto-retry (user continues manually)
+	 * 2. Threshold: Context over threshold, compact, NO auto-retry (user continues manually)
+	 *
+	 * @param assistantMessage The assistant message to check
+	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
 	 */
-	private async _handleAgentEndCompaction(assistantMessage: AssistantMessage): Promise<void> {
+	private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return;
 
-		// Skip if message was aborted (user cancelled)
-		if (assistantMessage.stopReason === "aborted") return;
+		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
+		if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return;
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 

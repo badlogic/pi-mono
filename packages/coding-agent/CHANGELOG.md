@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Check for compaction before submitting user prompt, not just after agent turn ends. This catches cases where user aborts mid-response and context is already near the limit.
+
 ### Changed
 
 - Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
