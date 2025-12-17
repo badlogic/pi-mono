@@ -310,13 +310,11 @@ function createClient(model: Model<"openai-responses">, context: Context, apiKey
 	const headers = { ...model.headers };
 	if (model.provider === "github-copilot") {
 		// Copilot expects X-Initiator to indicate whether the request is user-initiated
-		// or agent-initiated (e.g. follow-up after assistant/tool messages). If there is
-		// no prior message, default to user-initiated.
+		// or agent-initiated. It's an agent call if ANY message in history has assistant/tool role.
 		const messages = context.messages || [];
-		const lastMessage = messages[messages.length - 1];
-		const isAgentCall = lastMessage ? lastMessage.role !== "user" : false;
-		const initiatorValue = isAgentCall ? "agent" : "user";
-		headers["X-Initiator"] = initiatorValue;
+		const isAgentCall = messages.some((msg) => msg.role === "assistant" || msg.role === "toolResult");
+		headers["X-Initiator"] = isAgentCall ? "agent" : "user";
+		headers["Openai-Intent"] = "conversation-edits";
 	}
 
 	return new OpenAI({

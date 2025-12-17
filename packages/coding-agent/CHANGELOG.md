@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+## [0.23.2] - 2025-12-17
+
 ### Fixed
+
+- Fixed Claude models via GitHub Copilot re-answering all previous prompts in multi-turn conversations. The issue was that assistant message content was sent as an array instead of a string, which Copilot's Claude adapter misinterpreted. Also added missing `Openai-Intent: conversation-edits` header and fixed `X-Initiator` logic to check for any assistant/tool message in history. ([#209](https://github.com/badlogic/pi-mono/issues/209))
 
 - Detect image MIME type via file magic (read tool and `@file` attachments), not filename extension.
 

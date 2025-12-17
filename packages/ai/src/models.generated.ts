@@ -364,6 +364,23 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 	},
 	"google": {
+		"gemini-3-flash-preview": {
+			id: "gemini-3-flash-preview",
+			name: "Gemini 3 Flash Preview",
+			api: "google-generative-ai",
+			provider: "google",
+			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0.15,
+				output: 0.6,
+				cacheRead: 0.0375,
+				cacheWrite: 0,
+			},
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		} satisfies Model<"google-generative-ai">,
 		"gemini-2.5-flash-preview-05-20": {
 			id: "gemini-2.5-flash-preview-05-20",
 			name: "Gemini 2.5 Flash Preview 05-20",
@@ -2805,6 +2822,23 @@ export const MODELS = {
 		} satisfies Model<"openai-completions">,
 	},
 	"openrouter": {
+		"google/gemini-3-flash-preview": {
+			id: "google/gemini-3-flash-preview",
+			name: "Google: Gemini 3 Flash Preview",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0.5,
+				output: 3,
+				cacheRead: 0.049999999999999996,
+				cacheWrite: 0,
+			},
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		} satisfies Model<"openai-completions">,
 		"mistralai/mistral-small-creative": {
 			id: "mistralai/mistral-small-creative",
 			name: "Mistral: Mistral Small Creative",

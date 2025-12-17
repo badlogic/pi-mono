@@ -302,13 +302,11 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 	const headers = { ...model.headers };
 	if (model.provider === "github-copilot") {
 		// Copilot expects X-Initiator to indicate whether the request is user-initiated
-		// or agent-initiated (e.g. follow-up after assistant/tool messages). If there is
-		// no prior message, default to user-initiated.
+		// or agent-initiated. It's an agent call if ANY message in history has assistant/tool role.
 		const messages = context.messages || [];
-		const lastMessage = messages[messages.length - 1];
-		const isAgentCall = lastMessage ? lastMessage.role !== "user" : false;
-		const initiatorValue = isAgentCall ? "agent" : "user";
-		headers["X-Initiator"] = initiatorValue;
+		const isAgentCall = messages.some((msg) => msg.role === "assistant" || msg.role === "toolResult");
+		headers["X-Initiator"] = isAgentCall ? "agent" : "user";
+		headers["Openai-Intent"] = "conversation-edits";
 	}
 
 	return new OpenAI({
@@ -431,9 +429,15 @@ function convertMessages(
 
 			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
 			if (textBlocks.length > 0) {
-				assistantMsg.content = textBlocks.map((b) => {
-					return { type: "text", text: sanitizeSurrogates(b.text) };
-				});
+				// GitHub Copilot requires assistant content as a string, not an array.
+				// Sending as array causes Claude models to re-answer all previous prompts.
+				if (model.provider === "github-copilot") {
+					assistantMsg.content = textBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
+				} else {
+					assistantMsg.content = textBlocks.map((b) => {
+						return { type: "text", text: sanitizeSurrogates(b.text) };
+					});
+				}
 			}
 
 			// Handle thinking blocks
