@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+## [0.23.1] - 2025-12-17
+
 ### Fixed
 
 - Fixed TUI performance regression caused by Box component lacking render caching. Built-in tools now use Text directly (like v0.22.5), and Box has proper caching for custom tool rendering.
+
+- Fixed custom tools failing to load from `~/.pi/agent/tools/` when pi is installed globally. Module imports (`@sinclair/typebox`, `@mariozechner/pi-tui`, `@mariozechner/pi-ai`) are now resolved via aliases.
 
 ## [0.23.0] - 2025-12-17
 
