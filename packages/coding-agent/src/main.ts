@@ -115,15 +115,15 @@ async function runInteractiveMode(
 }
 
 /** Prepare initial message from @file arguments */
-function prepareInitialMessage(parsed: Args): {
+async function prepareInitialMessage(parsed: Args): Promise<{
 	initialMessage?: string;
 	initialAttachments?: Attachment[];
-} {
+}> {
 	if (parsed.fileArgs.length === 0) {
 		return {};
 	}
 
-	const { textContent, imageAttachments } = processFileArguments(parsed.fileArgs);
+	const { textContent, imageAttachments } = await processFileArguments(parsed.fileArgs);
 
 	// Combine file content with first plain text message (if any)
 	let initialMessage: string;
@@ -181,7 +181,7 @@ export async function main(args: string[]) {
 	}
 
 	// Process @file arguments
-	const { initialMessage, initialAttachments } = prepareInitialMessage(parsed);
+	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
 
 	// Determine if we're in interactive mode (needed for theme watcher)
 	const isInteractive = !parsed.print && parsed.mode === undefined;

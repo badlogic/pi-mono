@@ -153,6 +153,39 @@ describe("Coding Agent Tools", () => {
 			expect(result.details?.truncation?.totalLines).toBe(2500);
 			expect(result.details?.truncation?.outputLines).toBe(2000);
 		});
+
+		it("should detect image MIME type from file magic (not extension)", async () => {
+			const png1x1Base64 =
+				"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2Z0AAAAASUVORK5CYII=";
+			const pngBuffer = Buffer.from(png1x1Base64, "base64");
+
+			const testFile = join(testDir, "image.txt");
+			writeFileSync(testFile, pngBuffer);
+
+			const result = await readTool.execute("test-call-img-1", { path: testFile });
+
+			expect(result.content[0]?.type).toBe("text");
+			expect(getTextOutput(result)).toContain("Read image file [image/png]");
+
+			const imageBlock = result.content.find(
+				(c): c is { type: "image"; mimeType: string; data: string } => c.type === "image",
+			);
+			expect(imageBlock).toBeDefined();
+			expect(imageBlock?.mimeType).toBe("image/png");
+			expect(typeof imageBlock?.data).toBe("string");
+			expect((imageBlock?.data ?? "").length).toBeGreaterThan(0);
+		});
+
+		it("should treat files with image extension but non-image content as text", async () => {
+			const testFile = join(testDir, "not-an-image.png");
+			writeFileSync(testFile, "definitely not a png");
+
+			const result = await readTool.execute("test-call-img-2", { path: testFile });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("definitely not a png");
+			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
+		});
 	});
 
 	describe("write tool", () => {

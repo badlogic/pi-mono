@@ -45,6 +45,7 @@
 		"@mariozechner/pi-tui": "^0.23.1",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",
+		"file-type": "^21.1.1",
 		"glob": "^11.0.3",
 		"jiti": "^2.6.1"
 	},
