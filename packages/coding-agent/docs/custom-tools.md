@@ -44,6 +44,19 @@ The tool is automatically discovered and available in your next pi session.
 
 **Reserved names:** Custom tools cannot use built-in tool names (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`).
 
+## Available Imports
+
+Custom tools can import from these packages (automatically resolved by pi):
+
+| Package | Purpose |
+|---------|---------|
+| `@sinclair/typebox` | Schema definitions (`Type.Object`, `Type.String`, etc.) |
+| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `ToolSessionEvent`, etc.) |
+| `@mariozechner/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
+| `@mariozechner/pi-tui` | TUI components (`Text`, `Box`, etc. for custom rendering) |
+
+Node.js built-in modules (`node:fs`, `node:path`, etc.) are also available.
+
 ## Tool Definition
 
 ```typescript
