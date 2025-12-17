@@ -192,6 +192,8 @@ export interface Model<TApi extends Api> {
 	api: TApi;
 	provider: Provider;
 	baseUrl: string;
+	/** Bedrock inference profile ID. Used when CLAUDE_CODE_USE_BEDROCK=1 */
+	bedrockModelId?: string;
 	reasoning: boolean;
 	input: ("text" | "image")[];
 	cost: {

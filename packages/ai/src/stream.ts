@@ -56,11 +56,13 @@ export function stream<TApi extends Api>(
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
+	// Bedrock uses AWS credentials, not API key
+	const useBedrock = model.api === "anthropic-messages" && process.env.CLAUDE_CODE_USE_BEDROCK === "1";
 	const apiKey = options?.apiKey || getApiKey(model.provider);
-	if (!apiKey) {
+	if (!useBedrock && !apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
-	const providerOptions = { ...options, apiKey };
+	const providerOptions = { ...options, apiKey: apiKey || "" };
 
 	const api: Api = model.api;
 	switch (api) {

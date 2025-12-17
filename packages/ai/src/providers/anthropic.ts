@@ -1,3 +1,4 @@
+import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
 	ContentBlockParam,
@@ -115,8 +116,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 
 		try {
 			const apiKey = options?.apiKey ?? getApiKey(model.provider) ?? "";
-			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
-			const params = buildParams(model, context, isOAuthToken, options);
+			const { client, isOAuthToken, isBedrock } = createClient(model, apiKey, options?.interleavedThinking ?? true);
+			const params = buildParams(model, context, isOAuthToken, isBedrock, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
@@ -282,7 +283,16 @@ function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
 	interleavedThinking: boolean,
-): { client: Anthropic; isOAuthToken: boolean } {
+): { client: Anthropic; isOAuthToken: boolean; isBedrock: boolean } {
+	// Check for Bedrock mode
+	if (process.env.CLAUDE_CODE_USE_BEDROCK === "1") {
+		const client = new AnthropicBedrock({
+			awsRegion: process.env.AWS_REGION || "us-east-1",
+			// AWS_PROFILE is automatically picked up by the AWS SDK credential chain
+		});
+		return { client: client as unknown as Anthropic, isOAuthToken: false, isBedrock: true };
+	}
+
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (interleavedThinking) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
@@ -305,7 +315,7 @@ function createClient(
 			maxRetries: 0, // Disable SDK retries, handled by coding-agent
 		});
 
-		return { client, isOAuthToken: true };
+		return { client, isOAuthToken: true, isBedrock: false };
 	} else {
 		const defaultHeaders = {
 			accept: "application/json",
@@ -322,7 +332,7 @@ function createClient(
 			maxRetries: 0, // Disable SDK retries, handled by coding-agent
 		});
 
-		return { client, isOAuthToken: false };
+		return { client, isOAuthToken: false, isBedrock: false };
 	}
 }
 
@@ -330,10 +340,11 @@ function buildParams(
 	model: Model<"anthropic-messages">,
 	context: Context,
 	isOAuthToken: boolean,
+	isBedrock: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
 	const params: MessageCreateParamsStreaming = {
-		model: model.id,
+		model: isBedrock && model.bedrockModelId ? model.bedrockModelId : model.id,
 		messages: convertMessages(context.messages, model),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,

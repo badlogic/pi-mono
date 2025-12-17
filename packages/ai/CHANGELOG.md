@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **AWS Bedrock support for Anthropic models**: Added support for routing Anthropic API calls through AWS Bedrock. Set `CLAUDE_CODE_USE_BEDROCK=1` and `AWS_PROFILE=<profile>` to use Bedrock instead of direct Anthropic API. Supports all Claude models via inference profiles (global/us). Streaming, thinking, and prompt caching all work. Added `bedrockModelId` field to Model interface and `@anthropic-ai/bedrock-sdk` dependency.
+
 ## [0.22.3] - 2025-12-16
 
 ### Added

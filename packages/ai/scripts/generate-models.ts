@@ -36,6 +36,26 @@ const COPILOT_STATIC_HEADERS = {
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
 
+// Bedrock inference profile IDs for Anthropic models
+// These use the global/us inference profiles for cross-region availability
+const BEDROCK_MODEL_IDS: Record<string, string> = {
+	// Claude 4.x models (use global inference profiles)
+	"claude-sonnet-4-5-20250929": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+	"claude-sonnet-4-20250514": "global.anthropic.claude-sonnet-4-20250514-v1:0",
+	"claude-haiku-4-5-20251001": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+	"claude-opus-4-5-20251101": "global.anthropic.claude-opus-4-5-20251101-v1:0",
+	"claude-opus-4-20250514": "us.anthropic.claude-opus-4-20250514-v1:0",
+	"claude-opus-4-1-20250805": "us.anthropic.claude-opus-4-1-20250805-v1:0",
+	// Claude 3.x models (use us inference profiles)
+	"claude-3-7-sonnet-20250219": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+	"claude-3-5-sonnet-20241022": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+	"claude-3-5-sonnet-20240620": "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+	"claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+	"claude-3-opus-20240229": "us.anthropic.claude-3-opus-20240229-v1:0",
+	"claude-3-sonnet-20240229": "us.anthropic.claude-3-sonnet-20240229-v1:0",
+	"claude-3-haiku-20240307": "us.anthropic.claude-3-haiku-20240307-v1:0",
+};
+
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
@@ -114,6 +134,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					api: "anthropic-messages",
 					provider: "anthropic",
 					baseUrl: "https://api.anthropic.com",
+					bedrockModelId: BEDROCK_MODEL_IDS[modelId],
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -516,6 +537,9 @@ export const MODELS = {
 			output += `\t\t\tprovider: "${model.provider}",\n`;
 			if (model.baseUrl) {
 				output += `\t\t\tbaseUrl: "${model.baseUrl}",\n`;
+			}
+			if (model.bedrockModelId) {
+				output += `\t\t\tbedrockModelId: "${model.bedrockModelId}",\n`;
 			}
 			if (model.headers) {
 				output += `\t\t\theaders: ${JSON.stringify(model.headers)},\n`;
