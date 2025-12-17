@@ -44,7 +44,8 @@ import express from "express";
 import cron from "node-cron";
 import {
 	AgentPresets,
-	ClaudeAgent,
+	getAgentModels,
+	isAgentAvailable,
 	isOpenHandsAvailable,
 	type OpenHandsMode,
 	OpenHandsModeDescriptions,
@@ -7360,8 +7361,8 @@ async function main() {
 					try {
 						switch (subcommand) {
 							case "status": {
-								const available = await ClaudeAgent.isAvailable();
-								const models = ClaudeAgent.getModels();
+								const available = isAgentAvailable();
+								const models = getAgentModels();
 								const modelList = Object.keys(models).join(", ");
 
 								const embed = new EmbedBuilder()
@@ -7369,11 +7370,11 @@ async function main() {
 									.setColor(available ? 0x00ff00 : 0xff0000)
 									.addFields(
 										{
-											name: "OpenRouter API",
-											value: available ? "✅ Connected" : "❌ No API Key",
+											name: "Agent API",
+											value: available ? "✅ Connected (pi-agent-core)" : "❌ No API Key",
 											inline: true,
 										},
-										{ name: "Default Model", value: "GLM-4.5 Flash", inline: true },
+										{ name: "Default Model", value: "GLM-4.6", inline: true },
 										{ name: "Available Models", value: modelList, inline: false },
 									)
 									.setTimestamp();
