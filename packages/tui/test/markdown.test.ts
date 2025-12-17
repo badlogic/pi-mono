@@ -218,6 +218,66 @@ describe("Markdown component", () => {
 			assert.ok(allText.includes("should wrap"), "Should preserve 'should wrap'");
 		});
 
+		it("should wrap long unbroken tokens inside table cells (not only at line start)", () => {
+			const url = "https://example.com/this/is/a/very/long/url/that/should/wrap";
+			const markdown = new Markdown(
+				`| Value |
+| --- |
+| prefix ${url} |`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const width = 30;
+			const lines = markdown.render(width);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			for (const line of plainLines) {
+				assert.ok(line.length <= width, `Line exceeds width ${width}: "${line}" (length: ${line.length})`);
+			}
+
+			// Borders should stay intact (exactly 2 vertical borders for a 1-col table)
+			const tableLines = plainLines.filter((line) => line.startsWith("│"));
+			for (const line of tableLines) {
+				const borderCount = line.split("│").length - 1;
+				assert.strictEqual(borderCount, 2, `Expected 2 borders, got ${borderCount}: "${line}"`);
+			}
+
+			// Strip box drawing characters + whitespace so we can assert the URL is preserved
+			// even if it was split across multiple wrapped lines.
+			const extracted = plainLines.join("").replace(/[│├┤─\s]/g, "");
+			assert.ok(extracted.includes("prefix"), "Should preserve 'prefix'");
+			assert.ok(extracted.includes(url), "Should preserve URL");
+		});
+
+		it("should wrap styled inline code inside table cells without breaking borders", () => {
+			const markdown = new Markdown(
+				`| Code |
+| --- |
+| \`averyveryveryverylongidentifier\` |`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const width = 20;
+			const lines = markdown.render(width);
+			const joinedOutput = lines.join("\n");
+			assert.ok(joinedOutput.includes("\x1b[33m"), "Inline code should be styled (yellow)");
+
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+			for (const line of plainLines) {
+				assert.ok(line.length <= width, `Line exceeds width ${width}: "${line}" (length: ${line.length})`);
+			}
+
+			const tableLines = plainLines.filter((line) => line.startsWith("│"));
+			for (const line of tableLines) {
+				const borderCount = line.split("│").length - 1;
+				assert.strictEqual(borderCount, 2, `Expected 2 borders, got ${borderCount}: "${line}"`);
+			}
+		});
+
 		it("should handle extremely narrow width gracefully", () => {
 			const markdown = new Markdown(
 				`| A | B | C |

@@ -489,72 +489,23 @@ export class Markdown implements Component {
 	}
 
 	/**
-	 * Wrap text into multiple lines, respecting word boundaries.
-	 * Used for table cells that need to fit within a column width.
+	 * Wrap a table cell to fit into a column.
+	 *
+	 * Delegates to wrapTextWithAnsi() so ANSI codes + long tokens are handled
+	 * consistently with the rest of the renderer.
 	 */
 	private wrapCellText(text: string, maxWidth: number): string[] {
-		if (maxWidth <= 0) {
-			return [text];
-		}
-
-		// If it already fits, return as-is
-		if (visibleWidth(text) <= maxWidth) {
-			return [text];
-		}
-
-		// Split by words (preserve spaces for proper reconstruction)
-		const words = text.split(/(\s+)/);
-		const lines: string[] = [];
-		let currentLine = "";
-
-		for (const word of words) {
-			if (word === "") continue;
-
-			const wordWidth = visibleWidth(word);
-
-			// If word itself is too long, we need to break it character by character
-			if (wordWidth > maxWidth && currentLine === "") {
-				// Break the long word
-				let remaining = word;
-				while (visibleWidth(remaining) > maxWidth) {
-					// Find how many characters fit
-					let cutPoint = 1;
-					while (cutPoint < remaining.length && visibleWidth(remaining.slice(0, cutPoint + 1)) <= maxWidth) {
-						cutPoint++;
-					}
-					lines.push(remaining.slice(0, cutPoint));
-					remaining = remaining.slice(cutPoint);
-				}
-				if (remaining) {
-					currentLine = remaining;
-				}
-				continue;
-			}
-
-			if (currentLine === "") {
-				currentLine = word;
-			} else if (visibleWidth(currentLine + word) <= maxWidth) {
-				currentLine += word;
-			} else {
-				// Current line is full, start new line
-				lines.push(currentLine.trimEnd());
-				// Don't start new line with whitespace
-				currentLine = word.trim() ? word.trimStart() : "";
-			}
-		}
-
-		if (currentLine) {
-			lines.push(currentLine.trimEnd());
-		}
-
-		return lines.length > 0 ? lines : [""];
+		return wrapTextWithAnsi(text, Math.max(1, maxWidth));
 	}
 
 	/**
 	 * Render a table with width-aware cell wrapping.
 	 * Cells that don't fit are wrapped to multiple lines.
 	 */
-	private renderTable(token: Token & { header: any[]; rows: any[][] }, availableWidth: number): string[] {
+	private renderTable(
+		token: Token & { header: any[]; rows: any[][]; raw?: string },
+		availableWidth: number,
+	): string[] {
 		const lines: string[] = [];
 		const numCols = token.header.length;
 
@@ -565,6 +516,15 @@ export class Markdown implements Component {
 		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
 		// = 2 + (n-1) * 3 + 2 = 3n + 1
 		const borderOverhead = 3 * numCols + 1;
+
+		// Minimum width for a bordered table with at least 1 char per column.
+		const minTableWidth = borderOverhead + numCols;
+		if (availableWidth < minTableWidth) {
+			// Too narrow to render a stable table. Fall back to raw markdown.
+			const fallbackLines = token.raw ? wrapTextWithAnsi(token.raw, availableWidth) : [];
+			fallbackLines.push("");
+			return fallbackLines;
+		}
 
 		// Calculate natural column widths (what each column needs without constraints)
 		const naturalWidths: number[] = [];
