@@ -7,6 +7,7 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - packages/tui/README.md
 - packages/agent/README.md
 - packages/coding-agent/README.md
+- packages/discord-bot/CLAUDE.md
 - packages/mom/README.md
 - packages/pods/README.md
 - packages/web-ui/README.md
@@ -18,8 +19,7 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 
 ## Commands
 - After code changes: `npm run check` (get full output, no tail)
-- NEVER run: `npm run dev`, `npm run build`, `npm test`
-- Only run specific tests if user instructs: `npm test -- test/specific.test.ts`
+- NEVER run: `npm run dev`, `npm run build`
 - NEVER commit unless user asks
 
 ## GitHub Issues
@@ -28,7 +28,7 @@ When reading issues:
 
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
-  - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:mom`, `pkg:pods`, `pkg:proxy`, `pkg:tui`, `pkg:web-ui`
+  - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:discord-bot`, `pkg:mom`, `pkg:pods`, `pkg:proxy`, `pkg:tui`, `pkg:web-ui`
 - If an issue spans multiple packages, add all relevant labels
 
 When closing issues via commit:
@@ -37,7 +37,7 @@ When closing issues via commit:
 
 ## Tools
 - GitHub CLI for issues/PRs
-- Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:proxy, pkg:tui, pkg:web-ui
+- Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:discord-bot, pkg:mom, pkg:pods, pkg:proxy, pkg:tui, pkg:web-ui
 - TUI interaction: use tmux
 
 ## Style

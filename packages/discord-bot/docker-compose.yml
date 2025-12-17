@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  pi-discord-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pi-discord-bot
+    restart: unless-stopped
+
+    # Resource limits (adjust based on VPS)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    ports:
+      - "3001:3001"   # Webhook endpoint
+      - "9090:9090"   # Metrics endpoint
+
+    volumes:
+      - ./data:/data                    # Bot data persistence
+      - bot-logs:/app/logs              # Log volume
+
+    environment:
+      # Discord
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - REPORT_CHANNEL_ID=${REPORT_CHANNEL_ID:-}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+
+      # AI Providers
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+
+      # Creative Tools
+      - FAL_KEY=${FAL_KEY:-}
+      - SUNO_API_KEY=${SUNO_API_KEY:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+
+      # LiveKit (Real-time Voice/Video)
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+
+      # Integrations
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+
+      # Server Config
+      - NODE_ENV=production
+      - WEBHOOK_PORT=3001
+      - METRICS_PORT=9090
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  bot-logs:
+    driver: local
