@@ -2,28 +2,10 @@ import type { AgentTool, ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
-import { extname, resolve as resolvePath } from "path";
+import { resolve as resolvePath } from "path";
+import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
-
-/**
- * Map of file extensions to MIME types for common image formats
- */
-const IMAGE_MIME_TYPES: Record<string, string> = {
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png": "image/png",
-	".gif": "image/gif",
-	".webp": "image/webp",
-};
-
-/**
- * Check if a file is an image based on its extension
- */
-function isImageFile(filePath: string): string | null {
-	const ext = extname(filePath).toLowerCase();
-	return IMAGE_MIME_TYPES[ext] || null;
-}
 
 const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
@@ -46,7 +28,6 @@ export const readTool: AgentTool<typeof readSchema> = {
 		signal?: AbortSignal,
 	) => {
 		const absolutePath = resolvePath(resolveReadPath(path));
-		const mimeType = isImageFile(absolutePath);
 
 		return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
 			(resolve, reject) => {
@@ -78,6 +59,8 @@ export const readTool: AgentTool<typeof readSchema> = {
 						if (aborted) {
 							return;
 						}
+
+						const mimeType = await detectSupportedImageMimeTypeFromFile(absolutePath);
 
 						// Read the file based on type
 						let content: (TextContent | ImageContent)[];

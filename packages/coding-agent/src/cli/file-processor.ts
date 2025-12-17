@@ -2,26 +2,12 @@
  * Process @file CLI arguments into text content and image attachments
  */
 
+import { access, readFile, stat } from "node:fs/promises";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import chalk from "chalk";
-import { existsSync, readFileSync, statSync } from "fs";
-import { extname, resolve } from "path";
+import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.js";
-
-/** Map of file extensions to MIME types for common image formats */
-const IMAGE_MIME_TYPES: Record<string, string> = {
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png": "image/png",
-	".gif": "image/gif",
-	".webp": "image/webp",
-};
-
-/** Check if a file is an image based on its extension, returns MIME type or null */
-function isImageFile(filePath: string): string | null {
-	const ext = extname(filePath).toLowerCase();
-	return IMAGE_MIME_TYPES[ext] || null;
-}
+import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
 
 export interface ProcessedFiles {
 	textContent: string;
@@ -29,7 +15,7 @@ export interface ProcessedFiles {
 }
 
 /** Process @file arguments into text content and image attachments */
-export function processFileArguments(fileArgs: string[]): ProcessedFiles {
+export async function processFileArguments(fileArgs: string[]): Promise<ProcessedFiles> {
 	let textContent = "";
 	const imageAttachments: Attachment[] = [];
 
@@ -38,23 +24,25 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 		const absolutePath = resolve(resolveReadPath(fileArg));
 
 		// Check if file exists
-		if (!existsSync(absolutePath)) {
+		try {
+			await access(absolutePath);
+		} catch {
 			console.error(chalk.red(`Error: File not found: ${absolutePath}`));
 			process.exit(1);
 		}
 
 		// Check if file is empty
-		const stats = statSync(absolutePath);
+		const stats = await stat(absolutePath);
 		if (stats.size === 0) {
 			// Skip empty files
 			continue;
 		}
 
-		const mimeType = isImageFile(absolutePath);
+		const mimeType = await detectSupportedImageMimeTypeFromFile(absolutePath);
 
 		if (mimeType) {
 			// Handle image file
-			const content = readFileSync(absolutePath);
+			const content = await readFile(absolutePath);
 			const base64Content = content.toString("base64");
 
 			const attachment: Attachment = {
@@ -73,7 +61,7 @@ export function processFileArguments(fileArgs: string[]): ProcessedFiles {
 		} else {
 			// Handle text file
 			try {
-				const content = readFileSync(absolutePath, "utf-8");
+				const content = await readFile(absolutePath, "utf-8");
 				textContent += `<file name="${absolutePath}">\n${content}\n</file>\n`;
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);

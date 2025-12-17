@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Detect image MIME type via file magic (read tool and `@file` attachments), not filename extension.
+
 ## [0.22.5] - 2025-12-17
 
 ### Fixed
