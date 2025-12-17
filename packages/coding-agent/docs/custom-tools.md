@@ -1,6 +1,24 @@
 # Custom Tools
 
-Custom tools extend pi with new capabilities beyond the built-in read/write/edit/bash tools. They are TypeScript modules that define one or more tools with optional custom rendering for the TUI.
+Custom tools are additional tools that the LLM can call directly, just like the built-in `read`, `write`, `edit`, and `bash` tools. They are TypeScript modules that define callable functions with parameters, return values, and optional TUI rendering.
+
+**Example use cases:**
+- Ask the user questions with selectable options
+- Maintain state across calls (todo lists, connection pools)
+- Custom TUI rendering (progress indicators, structured output)
+- Integrate external services with proper error handling
+- Tools that need user confirmation before proceeding
+
+**When to use custom tools vs. alternatives:**
+
+| Need | Solution |
+|------|----------|
+| Always-needed context (conventions, commands) | AGENTS.md |
+| User triggers a specific prompt template | Slash command |
+| On-demand capability package (workflows, scripts, setup) | Skill |
+| Additional tool directly callable by the LLM | **Custom tool** |
+
+See [examples/custom-tools/](../examples/custom-tools/) for working examples.
 
 ## Quick Start
 

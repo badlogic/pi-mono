@@ -9,7 +9,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
-  - [API Keys](#api-keys)
+  - [API Keys & OAuth](#api-keys--oauth)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Slash Commands](#slash-commands)
@@ -101,13 +101,13 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
-### API Keys
+### API Keys & OAuth
 
 Set the environment variable for your provider:
 
 | Provider | Environment Variable |
 |----------|---------------------|
-| Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN` |
+| Anthropic | `ANTHROPIC_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | Google | `GEMINI_API_KEY` |
 | Mistral | `MISTRAL_API_KEY` |
@@ -117,31 +117,27 @@ Set the environment variable for your provider:
 | OpenRouter | `OPENROUTER_API_KEY` |
 | ZAI | `ZAI_API_KEY` |
 
-The `/model` command only shows models for providers with configured API keys.
-
-**OAuth (Claude Pro/Max subscribers):**
+**Anthropic OAuth (Claude Pro/Max):**
 
 ```bash
 pi
 /login  # Select "Anthropic (Claude Pro/Max)", authorize in browser
 ```
 
-Tokens stored in `~/.pi/agent/oauth.json` (mode 0600). Use `/logout` to clear.
+Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
 
-**GitHub Copilot:**
+**GitHub Copilot OAuth:**
 
 ```bash
 pi
 /login  # Select "GitHub Copilot", authorize in browser
 ```
 
-During login, you'll be prompted for an enterprise domain. Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`). All models are automatically enabled after login.
+Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`).
 
-If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model, and click "Enable".
+If you get "The requested model is not supported" error, enable the model in VS Code: Copilot Chat → model selector → select model → "Enable".
 
-For enterprise users, check with your organization's Copilot administrator for model availability.
-
-Tokens stored in `~/.pi/agent/oauth.json` (mode 0600). Use `/logout` to clear.
+Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
 
 ### Quick Start
 
@@ -303,6 +299,8 @@ When disabled, neither case triggers automatic compaction (use `/compact` manual
 3. Summary replaces old messages as "context handoff"
 4. Previous compaction summaries chain into new ones
 
+Compaction does not create a new session, but continues the existing one, with a marker in the `.jsonl` file that encodes the compaction point.
+
 **Configuration** (`~/.pi/agent/settings.json`):
 
 ```json
@@ -315,7 +313,7 @@ When disabled, neither case triggers automatic compaction (use `/compact` manual
 }
 ```
 
-> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
+> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
 
 ### Branching
 
@@ -427,6 +425,8 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 4. Saved default from settings
 5. First available model with valid API key
 
+> pi can help you create custom provider and model configurations.
+
 ### Themes
 
 Built-in themes: `dark` (default), `light`. Auto-detected on first run.
@@ -444,7 +444,7 @@ cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent
 
 Select with `/theme`, then edit the file. Changes apply on save.
 
-See [Theme Documentation](docs/theme.md) for all 44 color tokens.
+> See [Theme Documentation](docs/theme.md) on how to create custom themes in detail. Pi can help you create a new one.
 
 **VS Code terminal fix:** Set `terminal.integrated.minimumContrastRatio` to `1` for accurate colors.
 
@@ -490,6 +490,14 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
 
+**Example use cases:**
+- Web search and content extraction (Brave Search API)
+- Browser automation via Chrome DevTools Protocol
+- Google Calendar, Gmail, Drive integration
+- PDF/DOCX processing and creation
+- Speech-to-text transcription
+- YouTube transcript extraction
+
 **Skill locations:**
 - Pi user: `~/.pi/agent/skills/**/SKILL.md` (recursive)
 - Pi project: `.pi/skills/**/SKILL.md` (recursive)
@@ -522,7 +530,7 @@ cd {baseDir} && npm install
 
 **Disable skills:** `pi --no-skills` or set `skills.enabled: false` in settings.
 
-See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories.
+> See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories. pi can help you create new skills.
 
 ### Hooks
 
@@ -532,7 +540,7 @@ Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecyc
 - **Checkpoint code state** (git stash at each turn, restore on `/branch`)
 - **Protect paths** (block writes to `.env`, `node_modules/`, etc.)
 - **Modify tool output** (filter or transform results before the LLM sees them)
-- **Inject messages from external sources** (file watchers, webhooks, CI systems)
+- **Inject messages from external sources to wake up the agent** (file watchers, webhooks, CI systems)
 
 **Hook locations:**
 - Global: `~/.pi/agent/hooks/*.ts`
@@ -574,13 +582,13 @@ export default function (pi: HookAPI) {
 }
 ```
 
-See [Hooks Documentation](docs/hooks.md) for full API reference.
+> See [Hooks Documentation](docs/hooks.md) for full API reference. pi can help you create new hooks
 
-See [examples/hooks/](examples/hooks/) for working examples including permission gates, git checkpointing, and path protection.
+> See [examples/hooks/](examples/hooks/) for working examples including permission gates, git checkpointing, and path protection.
 
 ### Custom Tools
 
-Custom tools extend pi with new capabilities beyond the built-in tools. They are TypeScript modules that define tools with optional custom TUI rendering.
+Custom tools let you extend the built-in toolset (read, write, edit, bash, ...) and are called by the LLM directly. They are TypeScript modules that define tools with optional custom TUI integration for getting user input and custom tool call and result rendering.
 
 **Tool locations:**
 - Global: `~/.pi/agent/tools/*.ts`
@@ -619,12 +627,11 @@ export default factory;
 - Custom rendering via `renderCall()` and `renderResult()` methods
 - Streaming results via `onUpdate` callback
 - Abort handling via `signal` parameter
-- Cleanup via `dispose()` method
 - Multiple tools from one factory (return an array)
 
-See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples.
+> See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples. pi can help you create custom tools.
 
-See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
+> See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
 
 ### Settings File
 
@@ -633,8 +640,13 @@ See [examples/custom-tools/](examples/custom-tools/) for working examples includ
 ```json
 {
   "theme": "dark",
-  "shellPath": "C:\\path\\to\\bash.exe",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
   "queueMode": "one-at-a-time",
+  "shellPath": "C:\\path\\to\\bash.exe",
+  "hideThinkingBlock": false,
+  "collapseChangelog": false,
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
@@ -650,17 +662,34 @@ See [examples/custom-tools/](examples/custom-tools/) for working examples includ
   },
   "terminal": {
     "showImages": true
-  }
+  },
+  "hooks": ["/path/to/hook.ts"],
+  "hookTimeout": 30000,
+  "customTools": ["/path/to/tool.ts"]
 }
 ```
 
-**Retry settings:**
-- `enabled`: Auto-retry on transient errors (overloaded, rate limit, 5xx). Default: `true`
-- `maxRetries`: Maximum retry attempts. Default: `3`
-- `baseDelayMs`: Base delay for exponential backoff (2s, 4s, 8s). Default: `2000`
-
-**Terminal settings:**
-- `showImages`: Render images inline in supported terminals. Default: `true`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `theme` | Color theme name | auto-detected |
+| `defaultProvider` | Default model provider | - |
+| `defaultModel` | Default model ID | - |
+| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
+| `shellPath` | Custom bash path (Windows) | auto-detected |
+| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `collapseChangelog` | Show condensed changelog after update | `false` |
+| `compaction.enabled` | Enable auto-compaction | `true` |
+| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
+| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
+| `skills.enabled` | Enable skills discovery | `true` |
+| `retry.enabled` | Auto-retry on transient errors | `true` |
+| `retry.maxRetries` | Maximum retry attempts | `3` |
+| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
+| `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `hooks` | Additional hook file paths | `[]` |
+| `hookTimeout` | Timeout for hook operations (ms) | `30000` |
+| `customTools` | Additional custom tool file paths | `[]` |
 
 ---
 
@@ -768,32 +797,7 @@ Available via `--tools` flag:
 
 Example: `--tools read,grep,find,ls` for code review without modification.
 
-### Custom Tools
-
-Pi relies on CLI tools invoked via bash rather than MCP. Create a tool with a README:
-
-`~/agent-tools/screenshot/README.md`:
-```markdown
-# Screenshot Tool
-Takes a screenshot of your main display.
-
-## Usage
-```bash
-screenshot.sh
-```
-Returns the path to the saved PNG.
-```
-
-`~/agent-tools/screenshot/screenshot.sh`:
-```bash
-#!/bin/bash
-screencapture -x /tmp/screenshot-$(date +%s).png
-ls -t /tmp/screenshot-*.png | head -1
-```
-
-Usage: "Read ~/agent-tools/screenshot/README.md and take a screenshot"
-
-Reference tool READMEs in `AGENTS.md` to make them automatically available.
+For adding new tools, see [Custom Tools](#custom-tools) in the Configuration section.
 
 ---
 
@@ -830,59 +834,21 @@ Works with both session files and streaming event logs from `--mode json`.
 
 ## Philosophy
 
-Pi is opinionated about what it won't do. These are intentional design decisions.
+Pi is opinionated about what it won't do. These are intentional design decisions to minimize context bloat and avoid anti-patterns.
 
-### No MCP
+**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). The agent reads them on demand. [Would you like to know more?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-Pi does not support MCP (Model Context Protocol). Instead, it relies on four core tools (read, write, edit, bash) and assumes the agent can invoke CLI tools or write them as needed.
+**No sub-agents.** Spawn pi instances via tmux, or build a task tool with [custom tools](#custom-tools). Full observability and steerability.
 
-CLI tools are simpler: any executable with a README works. No protocol overhead, no server management. The agent reads the README and uses bash.
+**No permission popups.** Security theater. Run in a container or build your own with [Hooks](#hooks).
 
-See: [What if you don't need MCP?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
+**No plan mode.** Gather context in one session, write plans to file, start fresh for implementation.
 
-### No Sub-Agents
+**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/custom-tools/todo.ts) with [custom tools](#custom-tools).
 
-If the agent needs to delegate, it can spawn `pi` via bash or write a custom tool. Built-in sub-agents transfer context poorly; information gets lost or misrepresented. For parallel work, run multiple `pi` sessions in different terminals.
+**No background bash.** Use tmux. Full observability, direct interaction.
 
-### No Built-in To-Dos
-
-To-do lists confuse models more than they help. For task tracking, use a file:
-
-```markdown
-# TODO.md
-- [x] Implement authentication
-- [ ] Write API docs
-```
-
-### No Planning Mode
-
-Tell the agent to think through problems without modifying files. For persistent plans, write to a file:
-
-```markdown
-# PLAN.md
-## Goal
-Refactor auth to support OAuth
-## Current Step
-Working on authorization endpoints
-```
-
-### No Permission System (YOLO Mode)
-
-Pi runs with full filesystem access and no permission prompts. Why:
-- Permission systems add friction while being easily circumvented
-- Pre-checking for "dangerous" patterns causes latency and false positives
-
-**Risks:**
-- Can read, write, delete anything with your user privileges
-- Prompt injection via files or command output can influence behavior
-
-**Mitigations:**
-- Run in a container if uncomfortable
-- Don't use on systems with sensitive data you can't afford to lose
-
-### No Background Bash
-
-Use `tmux` or similar. Bonus: you can watch the agent interact with CLIs and intervene if needed.
+Read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) for the full rationale.
 
 ---
 
@@ -917,7 +883,7 @@ Never use `__dirname` directly for package assets.
 
 ### Debug Command
 
-`/debug` (hidden) writes rendered lines with ANSI codes to `~/.pi/agent/pi-debug.log` for TUI debugging.
+`/debug` (hidden) writes rendered lines with ANSI codes to `~/.pi/agent/pi-debug.log` for TUI debugging, as well as the last set of messages that were sent to the LLM.
 
 For architecture and contribution guidelines, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 

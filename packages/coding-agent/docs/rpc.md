@@ -559,6 +559,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_compaction_end` | Auto-compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
+| `hook_error` | Hook threw an error |
 
 ### agent_start
 
@@ -741,6 +742,19 @@ On final failure (max retries exceeded):
   "success": false,
   "attempt": 3,
   "finalError": "529 overloaded_error: Overloaded"
+}
+```
+
+### hook_error
+
+Emitted when a hook throws an error.
+
+```json
+{
+  "type": "hook_error",
+  "hookPath": "/path/to/hook.ts",
+  "event": "tool_call",
+  "error": "Error message..."
 }
 ```
 

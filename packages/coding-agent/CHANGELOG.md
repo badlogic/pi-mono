@@ -6,7 +6,15 @@
 
 - Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
 
-- Cleaned up documentation: `theme.md` (added missing color tokens), `skills.md` (rewrote with better framing and examples), `hooks.md` (fixed timeout/error handling docs, added examples).
+- Cleaned up documentation:
+  - `theme.md`: Added missing color tokens (`thinkingXhigh`, `bashMode`)
+  - `skills.md`: Rewrote with better framing and examples
+  - `hooks.md`: Fixed timeout/error handling docs, added import aliases section
+  - `custom-tools.md`: Added intro with use cases and comparison table
+  - `rpc.md`: Added missing `hook_error` event documentation
+  - `README.md`: Complete settings table, condensed philosophy section, standardized OAuth docs
+
+- Hooks loader now supports same import aliases as custom tools (`@sinclair/typebox`, `@mariozechner/pi-ai`, `@mariozechner/pi-tui`, `@mariozechner/pi-coding-agent`).
 
 ### Breaking Changes
 

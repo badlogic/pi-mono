@@ -44,6 +44,20 @@ You can also add explicit hook paths in `~/.pi/agent/settings.json`:
 - `hooks`: Additional hook file paths (supports `~` expansion)
 - `hookTimeout`: Timeout in milliseconds for hook operations (default: 30000). Does not apply to `tool_call` events, which have no timeout since they may prompt the user.
 
+## Available Imports
+
+Hooks can import from these packages (automatically resolved by pi):
+
+| Package | Purpose |
+|---------|---------|
+| `@mariozechner/pi-coding-agent/hooks` | Hook types (`HookAPI`, etc.) |
+| `@mariozechner/pi-coding-agent` | Additional types if needed |
+| `@mariozechner/pi-ai` | AI utilities (`ToolResultMessage`, etc.) |
+| `@mariozechner/pi-tui` | TUI components (for advanced use cases) |
+| `@sinclair/typebox` | Schema definitions |
+
+Node.js built-in modules (`node:fs`, `node:path`, etc.) are also available.
+
 ## Writing a Hook
 
 A hook is a TypeScript file that exports a default function. The function receives a `HookAPI` object used to subscribe to events.
