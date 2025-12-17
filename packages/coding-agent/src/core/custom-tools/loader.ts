@@ -4,12 +4,34 @@
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type { CustomToolFactory, CustomToolsLoadResult, ExecResult, LoadedCustomTool, ToolAPI } from "./types.js";
+
+// Create require function to resolve module paths at runtime
+const require = createRequire(import.meta.url);
+
+// Lazily computed aliases - resolved at runtime to handle global installs
+let _aliases: Record<string, string> | null = null;
+function getAliases(): Record<string, string> {
+	if (_aliases) return _aliases;
+
+	const __dirname = path.dirname(fileURLToPath(import.meta.url));
+	const packageIndex = path.resolve(__dirname, "../..", "index.js");
+
+	_aliases = {
+		"@mariozechner/pi-coding-agent": packageIndex,
+		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
+		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
+		"@sinclair/typebox": require.resolve("@sinclair/typebox"),
+	};
+	return _aliases;
+}
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -109,7 +131,11 @@ async function loadTool(
 
 	try {
 		// Create jiti instance for TypeScript/ESM loading
-		const jiti = createJiti(import.meta.url);
+		// Use aliases to resolve package imports since tools are loaded from user directories
+		// (e.g. ~/.pi/agent/tools) but import from packages installed with pi-coding-agent
+		const jiti = createJiti(import.meta.url, {
+			alias: getAliases(),
+		});
 
 		// Import the module
 		const module = await jiti.import(resolvedPath, { default: true });

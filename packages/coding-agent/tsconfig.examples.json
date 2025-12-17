@@ -5,7 +5,10 @@
 		"baseUrl": ".",
 		"paths": {
 			"@mariozechner/pi-coding-agent": ["./src/index.ts"],
-			"@mariozechner/pi-coding-agent/hooks": ["./src/core/hooks/index.ts"]
+			"@mariozechner/pi-coding-agent/hooks": ["./src/core/hooks/index.ts"],
+			"@mariozechner/pi-tui": ["../tui/src/index.ts"],
+			"@mariozechner/pi-ai": ["../ai/src/index.ts"],
+			"@sinclair/typebox": ["../../node_modules/@sinclair/typebox"]
 		},
 		"skipLibCheck": true
 	},

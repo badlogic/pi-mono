@@ -40,8 +40,8 @@ export interface ToolExecutionOptions {
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private contentBox: Box;
-	private contentText: Text; // For built-in tools
+	private contentBox?: Box; // Only used for custom tools
+	private contentText: Text; // For built-in tools (with its own padding/bg)
 	private imageComponents: Image[] = [];
 	private toolName: string;
 	private args: any;
@@ -64,12 +64,16 @@ export class ToolExecutionComponent extends Container {
 
 		this.addChild(new Spacer(1));
 
-		// Box wraps content with padding and background
-		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.addChild(this.contentBox);
-
-		// Text component for built-in tool rendering
-		this.contentText = new Text("", 0, 0);
+		if (customTool) {
+			// Custom tools use Box for flexible component rendering
+			this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
+			this.addChild(this.contentBox);
+			this.contentText = new Text("", 0, 0); // Fallback only
+		} else {
+			// Built-in tools use Text directly (has caching, better perf)
+			this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+			this.addChild(this.contentText);
+		}
 
 		this.updateDisplay();
 	}
@@ -110,11 +114,12 @@ export class ToolExecutionComponent extends Container {
 				? (text: string) => theme.bg("toolErrorBg", text)
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
-		this.contentBox.setBgFn(bgFn);
-		this.contentBox.clear();
-
 		// Check for custom tool rendering
-		if (this.customTool) {
+		if (this.customTool && this.contentBox) {
+			// Custom tools use Box for flexible component rendering
+			this.contentBox.setBgFn(bgFn);
+			this.contentBox.clear();
+
 			// Render call component
 			if (this.customTool.renderCall) {
 				try {
@@ -157,9 +162,9 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			// Built-in tool: use existing formatToolExecution
+			// Built-in tools: use Text directly with caching
+			this.contentText.setCustomBgFn(bgFn);
 			this.contentText.setText(this.formatToolExecution());
-			this.contentBox.addChild(this.contentText);
 		}
 
 		// Handle images (same for both custom and built-in)

@@ -8,7 +8,7 @@
  * The onSession callback reconstructs state by scanning past tool results.
  */
 
-import { Type } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import type { CustomAgentTool, CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";

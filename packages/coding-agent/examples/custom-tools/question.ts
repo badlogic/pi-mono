@@ -2,7 +2,7 @@
  * Question Tool - Let the LLM ask the user a question with options
  */
 
-import { Type } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import type { CustomAgentTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
 

@@ -43,7 +43,7 @@ See [docs/custom-tools.md](../../docs/custom-tools.md) for full documentation.
 
 **Factory pattern:**
 ```typescript
-import { Type } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";

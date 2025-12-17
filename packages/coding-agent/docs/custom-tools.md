@@ -7,7 +7,7 @@ Custom tools extend pi with new capabilities beyond the built-in read/write/edit
 Create a file `~/.pi/agent/tools/hello.ts`:
 
 ```typescript
-import { Type } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
 
 const factory: CustomToolFactory = (pi) => ({
@@ -47,7 +47,7 @@ The tool is automatically discovered and available in your next pi session.
 ## Tool Definition
 
 ```typescript
-import { Type } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import type { CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";
