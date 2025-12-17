@@ -184,6 +184,52 @@ OpenHandsPresets.multiAgent(task)         // Sub-agent delegation
 OpenHandsPresets.fullAudit(path)          // Security + review + docs
 ```
 
+### Lightweight Learning Agent (TypeScript)
+
+In addition to OpenHands, there's a pure TypeScript learning agent for quick tasks:
+
+```
+/agent command
+    └── lightweight-agent.ts (runLearningAgent)
+            └── expertise-manager.ts (Act-Learn-Reuse)
+                    └── src/agents/expertise/*.md (shared with OpenHands)
+```
+
+**Available Modes:**
+| Mode | Description |
+|------|-------------|
+| `general` | General purpose tasks |
+| `coding` | Code generation, review |
+| `research` | Web research, analysis |
+| `trading` | Market analysis, signals |
+
+**TypeScript API:**
+```typescript
+import { runLearningAgent, LearningPresets, actLearnReuse } from "./agents/index.js";
+
+// Quick learning-enabled task
+const result = await runLearningAgent({
+  prompt: "Review this code",
+  mode: "coding",
+  enableLearning: true,
+});
+console.log(result.learned); // { learned: true, insight: "...", expertiseFile: "..." }
+
+// Using presets
+await runLearningAgent(LearningPresets.codeReview(code));
+await runLearningAgent(LearningPresets.research(topic));
+await runLearningAgent(LearningPresets.tradingAnalysis(symbol, data));
+
+// Manual Act-Learn-Reuse cycle
+const { success, output, learned } = await actLearnReuse("trading", task, executor);
+```
+
+**Shared Expertise Directory:**
+Both OpenHands (Python) and lightweight-agent (TypeScript) share `src/agents/expertise/`:
+- OpenHands modes: developer, vulnerability_scan, code_review, test_generation, etc.
+- Lightweight modes: general, coding, research, trading
+- All accumulated learnings are persisted and reused
+
 ### Suno AI Music Generation
 
 The bot integrates Suno AI for music generation via `/suno` command using sunoapi.org:
