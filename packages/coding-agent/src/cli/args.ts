@@ -26,6 +26,7 @@ export interface Args {
 	models?: string[];
 	tools?: ToolName[];
 	hooks?: string[];
+	customTools?: string[];
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
@@ -109,6 +110,9 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--hook" && i + 1 < args.length) {
 			result.hooks = result.hooks ?? [];
 			result.hooks.push(args[++i]);
+		} else if (arg === "--tool" && i + 1 < args.length) {
+			result.customTools = result.customTools ?? [];
+			result.customTools.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
 		} else if (arg === "--list-models") {
@@ -151,6 +155,7 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --hook <path>                  Load a hook file (can be used multiple times)
+  --tool <path>                  Load a custom tool file (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)

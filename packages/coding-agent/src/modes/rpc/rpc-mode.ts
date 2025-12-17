@@ -120,6 +120,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 	});
 
+	// Load entries once for session start events
+	const entries = session.sessionManager.loadEntries();
+
 	// Set up hooks with RPC-based UI context
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
@@ -139,8 +142,31 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				});
 			}
 		});
-		// Emit session_start event
-		await hookRunner.emit({ type: "session_start" });
+		// Emit session event
+		await hookRunner.emit({
+			type: "session",
+			entries,
+			sessionFile: session.sessionFile,
+			previousSessionFile: null,
+			reason: "start",
+		});
+	}
+
+	// Emit session start event to custom tools
+	// Note: Tools get no-op UI context in RPC mode (host handles UI via protocol)
+	for (const { tool } of session.customTools) {
+		if (tool.onSession) {
+			try {
+				await tool.onSession({
+					entries,
+					sessionFile: session.sessionFile,
+					previousSessionFile: null,
+					reason: "start",
+				});
+			} catch (_err) {
+				// Silently ignore tool errors
+			}
+		}
 	}
 
 	// Output all agent events as JSON

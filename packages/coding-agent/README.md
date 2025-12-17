@@ -27,7 +27,8 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
   - [Skills](#skills)
-  - [Hooks](#hooks)(#hooks)
+  - [Hooks](#hooks)
+  - [Custom Tools](#custom-tools)
   - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
@@ -588,7 +589,8 @@ import * as fs from "node:fs";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session_start", async () => {
+  pi.on("session", async (event) => {
+    if (event.reason !== "start") return;
     fs.watch("/tmp/trigger.txt", () => {
       const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
       if (content) pi.send(content);
@@ -598,6 +600,56 @@ export default function (pi: HookAPI) {
 ```
 
 See [Hooks Documentation](docs/hooks.md) for full API reference.
+
+See [examples/hooks/](examples/hooks/) for working examples including permission gates, git checkpointing, and path protection.
+
+### Custom Tools
+
+Custom tools extend pi with new capabilities beyond the built-in tools. They are TypeScript modules that define tools with optional custom TUI rendering.
+
+**Tool locations:**
+- Global: `~/.pi/agent/tools/*.ts`
+- Project: `.pi/tools/*.ts`
+- CLI: `--tool <path>`
+- Settings: `customTools` array in `settings.json`
+
+**Quick example:**
+
+```typescript
+import { Type } from "@sinclair/typebox";
+import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
+
+const factory: CustomToolFactory = (pi) => ({
+  name: "greet",
+  label: "Greeting",
+  description: "Generate a greeting",
+  parameters: Type.Object({
+    name: Type.String({ description: "Name to greet" }),
+  }),
+
+  async execute(toolCallId, params) {
+    return {
+      content: [{ type: "text", text: `Hello, ${params.name}!` }],
+      details: { greeted: params.name },
+    };
+  },
+});
+
+export default factory;
+```
+
+**Features:**
+- Access to `pi.cwd`, `pi.exec()`, `pi.ui` (select/confirm/input dialogs)
+- Session lifecycle via `onSession` callback (for state reconstruction)
+- Custom rendering via `renderCall()` and `renderResult()` methods
+- Streaming results via `onUpdate` callback
+- Abort handling via `signal` parameter
+- Cleanup via `dispose()` method
+- Multiple tools from one factory (return an array)
+
+See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples.
+
+See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
 
 ### Settings File
 

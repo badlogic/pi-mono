@@ -43,8 +43,8 @@ A hook is a TypeScript file that exports a default function. The function receiv
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session_start", async (event, ctx) => {
-    ctx.ui.notify(`Session: ${ctx.sessionFile ?? "ephemeral"}`, "info");
+  pi.on("session", async (event, ctx) => {
+    ctx.ui.notify(`Session ${event.reason}: ${ctx.sessionFile ?? "ephemeral"}`, "info");
   });
 }
 ```
@@ -76,7 +76,7 @@ Hooks are loaded using [jiti](https://github.com/unjs/jiti), so TypeScript works
 ```
 pi starts
   │
-  ├─► session_start
+  ├─► session (reason: "start")
   │
   ▼
 user sends prompt ─────────────────────────────────────────┐
@@ -98,35 +98,53 @@ user sends prompt ────────────────────�
                                                            │
 user sends another prompt ◄────────────────────────────────┘
 
-user branches or switches session
+user branches (/branch)
   │
-  └─► session_switch
+  ├─► branch (BEFORE branch, can control)
+  └─► session (reason: "switch", AFTER branch)
+
+user switches session (/session)
+  │
+  └─► session (reason: "switch")
+
+user clears session (/clear)
+  │
+  └─► session (reason: "clear")
 ```
 
 A **turn** is one LLM response plus any tool calls. Complex tasks loop through multiple turns until the LLM responds without calling tools.
 
-### session_start
+### session
 
-Fired once when pi starts.
+Fired on startup and when session changes.
 
 ```typescript
-pi.on("session_start", async (event, ctx) => {
-  // ctx.sessionFile: string | null
-  // ctx.hasUI: boolean
+pi.on("session", async (event, ctx) => {
+  // event.entries: SessionEntry[] - all session entries
+  // event.sessionFile: string | null - current session file
+  // event.previousSessionFile: string | null - previous session file
+  // event.reason: "start" | "switch" | "clear"
 });
 ```
 
-### session_switch
+**Reasons:**
+- `start`: Initial session load on startup
+- `switch`: User switched sessions (`/session`) or branched (`/branch`)
+- `clear`: User cleared the session (`/clear`)
 
-Fired when session changes (`/branch` or session switch).
+### branch
+
+Fired BEFORE a branch happens. Can control branch behavior.
 
 ```typescript
-pi.on("session_switch", async (event, ctx) => {
-  // event.newSessionFile: string | null (null in --no-session mode)
-  // event.previousSessionFile: string | null (null in --no-session mode)
-  // event.reason: "branch" | "switch"
+pi.on("branch", async (event, ctx) => {
+  // event.targetTurnIndex: number
+  // event.entries: SessionEntry[]
+  return { skipConversationRestore: true }; // or undefined
 });
 ```
+
+Note: After branch completes, a `session` event fires with `reason: "switch"`.
 
 ### agent_start / agent_end
 
@@ -189,18 +207,6 @@ pi.on("tool_result", async (event, ctx) => {
   // event.result: string
   // event.isError: boolean
   return { result: "modified" }; // or undefined to keep original
-});
-```
-
-### branch
-
-Fired when user branches via `/branch`.
-
-```typescript
-pi.on("branch", async (event, ctx) => {
-  // event.targetTurnIndex: number
-  // event.entries: SessionEntry[]
-  return { skipConversationRestore: true }; // or undefined
 });
 ```
 
@@ -309,7 +315,9 @@ import * as fs from "node:fs";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session_start", async (event, ctx) => {
+  pi.on("session", async (event, ctx) => {
+    if (event.reason !== "start") return;
+    
     // Watch a trigger file
     const triggerFile = "/tmp/agent-trigger.txt";
     
@@ -339,7 +347,9 @@ import * as http from "node:http";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session_start", async (event, ctx) => {
+  pi.on("session", async (event, ctx) => {
+    if (event.reason !== "start") return;
+    
     const server = http.createServer((req, res) => {
       let body = "";
       req.on("data", chunk => body += chunk);
@@ -563,7 +573,7 @@ Key behaviors:
 Mode initialization:
   -> hookRunner.setUIContext(ctx, hasUI)
   -> hookRunner.setSessionFile(path)
-  -> hookRunner.emit({ type: "session_start" })
+  -> hookRunner.emit({ type: "session", reason: "start", ... })
 
 User sends prompt:
   -> AgentSession.prompt()
@@ -581,9 +591,19 @@ User sends prompt:
      -> [repeat if more tool calls]
   -> hookRunner.emit({ type: "agent_end", messages })
 
-Branch or session switch:
-  -> AgentSession.branch() or AgentSession.switchSession()
-     -> hookRunner.emit({ type: "session_switch", ... })
+Branch:
+  -> AgentSession.branch()
+     -> hookRunner.emit({ type: "branch", ... })  # BEFORE branch
+     -> [branch happens]
+     -> hookRunner.emit({ type: "session", reason: "switch", ... })  # AFTER
+
+Session switch:
+  -> AgentSession.switchSession()
+     -> hookRunner.emit({ type: "session", reason: "switch", ... })
+
+Clear:
+  -> AgentSession.reset()
+     -> hookRunner.emit({ type: "session", reason: "clear", ... })
 ```
 
 ## UI Context by Mode

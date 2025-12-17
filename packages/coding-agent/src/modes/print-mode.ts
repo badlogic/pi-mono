@@ -27,6 +27,9 @@ export async function runPrintMode(
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 ): Promise<void> {
+	// Load entries once for session start events
+	const entries = session.sessionManager.loadEntries();
+
 	// Hook runner already has no-op UI context by default (set in main.ts)
 	// Set up hooks for print mode (no UI)
 	const hookRunner = session.hookRunner;
@@ -40,8 +43,30 @@ export async function runPrintMode(
 		hookRunner.setSendHandler(() => {
 			console.error("Warning: pi.send() is not supported in print mode");
 		});
-		// Emit session_start event
-		await hookRunner.emit({ type: "session_start" });
+		// Emit session event
+		await hookRunner.emit({
+			type: "session",
+			entries,
+			sessionFile: session.sessionFile,
+			previousSessionFile: null,
+			reason: "start",
+		});
+	}
+
+	// Emit session start event to custom tools (no UI in print mode)
+	for (const { tool } of session.customTools) {
+		if (tool.onSession) {
+			try {
+				await tool.onSession({
+					entries,
+					sessionFile: session.sessionFile,
+					previousSessionFile: null,
+					reason: "start",
+				});
+			} catch (_err) {
+				// Silently ignore tool errors
+			}
+		}
 	}
 
 	// Always subscribe to enable session persistence via _handleAgentEvent

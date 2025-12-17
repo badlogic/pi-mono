@@ -19,6 +19,7 @@ import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { BranchEventResult, HookRunner, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
@@ -52,6 +53,8 @@ export interface AgentSessionConfig {
 	fileCommands?: FileSlashCommand[];
 	/** Hook runner (created in main.ts with wrapped tools) */
 	hookRunner?: HookRunner | null;
+	/** Custom tools for session lifecycle events */
+	customTools?: LoadedCustomTool[];
 }
 
 /** Options for AgentSession.prompt() */
@@ -132,6 +135,9 @@ export class AgentSession {
 	private _hookRunner: HookRunner | null = null;
 	private _turnIndex = 0;
 
+	// Custom tools for session lifecycle
+	private _customTools: LoadedCustomTool[] = [];
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -139,6 +145,7 @@ export class AgentSession {
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];
 		this._hookRunner = config.hookRunner ?? null;
+		this._customTools = config.customTools ?? [];
 	}
 
 	// =========================================================================
@@ -465,12 +472,29 @@ export class AgentSession {
 	 * Listeners are preserved and will continue receiving events.
 	 */
 	async reset(): Promise<void> {
+		const previousSessionFile = this.sessionFile;
+
 		this._disconnectFromAgent();
 		await this.abort();
 		this.agent.reset();
 		this.sessionManager.reset();
 		this._queuedMessages = [];
 		this._reconnectToAgent();
+
+		// Emit session event with reason "clear" to hooks
+		if (this._hookRunner) {
+			this._hookRunner.setSessionFile(this.sessionFile);
+			await this._hookRunner.emit({
+				type: "session",
+				entries: [],
+				sessionFile: this.sessionFile,
+				previousSessionFile,
+				reason: "clear",
+			});
+		}
+
+		// Emit session event to custom tools
+		await this._emitToolSessionEvent("clear", previousSessionFile);
 	}
 
 	// =========================================================================
@@ -1086,19 +1110,25 @@ export class AgentSession {
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
 
-		// Emit session_switch event
+		// Reload messages
+		const entries = this.sessionManager.loadEntries();
+		const loaded = loadSessionFromEntries(entries);
+
+		// Emit session event to hooks
 		if (this._hookRunner) {
 			this._hookRunner.setSessionFile(sessionPath);
 			await this._hookRunner.emit({
-				type: "session_switch",
-				newSessionFile: sessionPath,
+				type: "session",
+				entries,
+				sessionFile: sessionPath,
 				previousSessionFile,
 				reason: "switch",
 			});
 		}
 
-		// Reload messages
-		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		// Emit session event to custom tools
+		await this._emitToolSessionEvent("switch", previousSessionFile);
+
 		this.agent.replaceMessages(loaded.messages);
 
 		// Restore model if saved
@@ -1163,19 +1193,25 @@ export class AgentSession {
 			this.sessionManager.setSessionFile(newSessionFile);
 		}
 
-		// Emit session_switch event (in --no-session mode, both files are null)
+		// Reload messages from entries (works for both file and in-memory mode)
+		const newEntries = this.sessionManager.loadEntries();
+		const loaded = loadSessionFromEntries(newEntries);
+
+		// Emit session event to hooks (in --no-session mode, both files are null)
 		if (this._hookRunner) {
 			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
-				type: "session_switch",
-				newSessionFile,
+				type: "session",
+				entries: newEntries,
+				sessionFile: newSessionFile,
 				previousSessionFile,
-				reason: "branch",
+				reason: "switch",
 			});
 		}
 
-		// Reload messages from entries (works for both file and in-memory mode)
-		const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+		// Emit session event to custom tools (with reason "branch")
+		await this._emitToolSessionEvent("branch", previousSessionFile);
+
 		this.agent.replaceMessages(loaded.messages);
 
 		return { selectedText, skipped: false };
@@ -1312,5 +1348,37 @@ export class AgentSession {
 	 */
 	get hookRunner(): HookRunner | null {
 		return this._hookRunner;
+	}
+
+	/**
+	 * Get custom tools (for setting UI context in modes).
+	 */
+	get customTools(): LoadedCustomTool[] {
+		return this._customTools;
+	}
+
+	/**
+	 * Emit session event to all custom tools.
+	 * Called on session switch, branch, and clear.
+	 */
+	private async _emitToolSessionEvent(
+		reason: ToolSessionEvent["reason"],
+		previousSessionFile: string | null,
+	): Promise<void> {
+		const event: ToolSessionEvent = {
+			entries: this.sessionManager.loadEntries(),
+			sessionFile: this.sessionFile,
+			previousSessionFile,
+			reason,
+		};
+		for (const { tool } of this._customTools) {
+			if (tool.onSession) {
+				try {
+					await tool.onSession(event);
+				} catch (_err) {
+					// Silently ignore tool errors during session events
+				}
+			}
+		}
 	}
 }

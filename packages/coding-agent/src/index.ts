@@ -22,6 +22,19 @@ export {
 	getLastAssistantUsage,
 	shouldCompact,
 } from "./core/compaction.js";
+// Custom tools
+export type {
+	CustomAgentTool,
+	CustomToolFactory,
+	CustomToolsLoadResult,
+	ExecResult,
+	LoadedCustomTool,
+	RenderResultOptions,
+	SessionEvent as ToolSessionEvent,
+	ToolAPI,
+	ToolUIContext,
+} from "./core/custom-tools/index.js";
+export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
 // Hook system types
 export type {
 	AgentEndEvent,
@@ -33,8 +46,7 @@ export type {
 	HookEventContext,
 	HookFactory,
 	HookUIContext,
-	SessionStartEvent,
-	SessionSwitchEvent,
+	SessionEvent,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,

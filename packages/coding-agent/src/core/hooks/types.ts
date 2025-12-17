@@ -73,25 +73,20 @@ export interface HookEventContext {
 // ============================================================================
 
 /**
- * Event data for session_start event.
- * Fired once when the coding agent starts up.
+ * Event data for session event.
+ * Fired on startup and when session changes (switch or clear).
+ * Note: branch has its own event that fires BEFORE the branch happens.
  */
-export interface SessionStartEvent {
-	type: "session_start";
-}
-
-/**
- * Event data for session_switch event.
- * Fired when the session changes (branch or session switch).
- */
-export interface SessionSwitchEvent {
-	type: "session_switch";
-	/** New session file path, or null in --no-session mode */
-	newSessionFile: string | null;
-	/** Previous session file path, or null in --no-session mode */
+export interface SessionEvent {
+	type: "session";
+	/** All session entries (including pre-compaction history) */
+	entries: SessionEntry[];
+	/** Current session file path, or null in --no-session mode */
+	sessionFile: string | null;
+	/** Previous session file path, or null for "start" and "clear" */
 	previousSessionFile: string | null;
-	/** Reason for the switch */
-	reason: "branch" | "switch";
+	/** Reason for the session event */
+	reason: "start" | "switch" | "clear";
 }
 
 /**
@@ -176,8 +171,7 @@ export interface BranchEvent {
  * Union of all hook event types.
  */
 export type HookEvent =
-	| SessionStartEvent
-	| SessionSwitchEvent
+	| SessionEvent
 	| AgentStartEvent
 	| AgentEndEvent
 	| TurnStartEvent
@@ -235,8 +229,7 @@ export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Prom
  * Hooks use pi.on() to subscribe to events and pi.send() to inject messages.
  */
 export interface HookAPI {
-	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
-	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
+	on(event: "session", handler: HookHandler<SessionEvent>): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;

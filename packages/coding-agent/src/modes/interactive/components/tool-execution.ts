@@ -1,5 +1,6 @@
 import * as os from "node:os";
 import {
+	Box,
 	Container,
 	getCapabilities,
 	getImageDimensions,
@@ -9,6 +10,7 @@ import {
 	Text,
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
+import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
 
@@ -38,27 +40,37 @@ export interface ToolExecutionOptions {
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private contentText: Text;
+	private contentBox: Box;
+	private contentText: Text; // For built-in tools
 	private imageComponents: Image[] = [];
 	private toolName: string;
 	private args: any;
 	private expanded = false;
 	private showImages: boolean;
 	private isPartial = true;
+	private customTool?: CustomAgentTool;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
 		details?: any;
 	};
 
-	constructor(toolName: string, args: any, options: ToolExecutionOptions = {}) {
+	constructor(toolName: string, args: any, options: ToolExecutionOptions = {}, customTool?: CustomAgentTool) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
 		this.showImages = options.showImages ?? true;
+		this.customTool = customTool;
+
 		this.addChild(new Spacer(1));
-		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.addChild(this.contentText);
+
+		// Box wraps content with padding and background
+		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.addChild(this.contentBox);
+
+		// Text component for built-in tool rendering
+		this.contentText = new Text("", 0, 0);
+
 		this.updateDisplay();
 	}
 
@@ -91,15 +103,66 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
+		// Set background based on state
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
 			: this.result?.isError
 				? (text: string) => theme.bg("toolErrorBg", text)
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
-		this.contentText.setCustomBgFn(bgFn);
-		this.contentText.setText(this.formatToolExecution());
+		this.contentBox.setBgFn(bgFn);
+		this.contentBox.clear();
 
+		// Check for custom tool rendering
+		if (this.customTool) {
+			// Render call component
+			if (this.customTool.renderCall) {
+				try {
+					const callComponent = this.customTool.renderCall(this.args, theme);
+					if (callComponent) {
+						this.contentBox.addChild(callComponent);
+					}
+				} catch {
+					// Fall back to default on error
+					this.contentBox.addChild(new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0));
+				}
+			} else {
+				// No custom renderCall, show tool name
+				this.contentBox.addChild(new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0));
+			}
+
+			// Render result component if we have a result
+			if (this.result && this.customTool.renderResult) {
+				try {
+					const resultComponent = this.customTool.renderResult(
+						{ content: this.result.content as any, details: this.result.details },
+						{ expanded: this.expanded, isPartial: this.isPartial },
+						theme,
+					);
+					if (resultComponent) {
+						this.contentBox.addChild(resultComponent);
+					}
+				} catch {
+					// Fall back to showing raw output on error
+					const output = this.getTextOutput();
+					if (output) {
+						this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
+					}
+				}
+			} else if (this.result) {
+				// Has result but no custom renderResult
+				const output = this.getTextOutput();
+				if (output) {
+					this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
+				}
+			}
+		} else {
+			// Built-in tool: use existing formatToolExecution
+			this.contentText.setText(this.formatToolExecution());
+			this.contentBox.addChild(this.contentText);
+		}
+
+		// Handle images (same for both custom and built-in)
 		for (const img of this.imageComponents) {
 			this.removeChild(img);
 		}
@@ -110,7 +173,6 @@ export class ToolExecutionComponent extends Container {
 			const caps = getCapabilities();
 
 			for (const img of imageBlocks) {
-				// Show inline image only if terminal supports it AND user setting allows it
 				if (caps.images && this.showImages && img.data && img.mimeType) {
 					this.addChild(new Spacer(1));
 					const imageComponent = new Image(
@@ -142,7 +204,6 @@ export class ToolExecutionComponent extends Container {
 			.join("\n");
 
 		const caps = getCapabilities();
-		// Show text fallback if terminal doesn't support images OR if user disabled inline images
 		if (imageBlocks.length > 0 && (!caps.images || !this.showImages)) {
 			const imageIndicators = imageBlocks
 				.map((img: any) => {
@@ -159,7 +220,6 @@ export class ToolExecutionComponent extends Container {
 	private formatToolExecution(): string {
 		let text = "";
 
-		// Format based on tool type
 		if (this.toolName === "bash") {
 			const command = this.args?.command || "";
 			text = theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`));
@@ -180,7 +240,6 @@ export class ToolExecutionComponent extends Container {
 						displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
 				}
 
-				// Show truncation warning at the bottom (outside collapsed area)
 				const truncation = this.result.details?.truncation;
 				const fullOutputPath = this.result.details?.fullOutputPath;
 				if (truncation?.truncated || fullOutputPath) {
@@ -205,7 +264,6 @@ export class ToolExecutionComponent extends Container {
 			const offset = this.args?.offset;
 			const limit = this.args?.limit;
 
-			// Build path display with offset/limit suffix (in warning color if offset/limit used)
 			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			if (offset !== undefined || limit !== undefined) {
 				const startLine = offset ?? 1;
@@ -228,7 +286,6 @@ export class ToolExecutionComponent extends Container {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 
-				// Show truncation warning at the bottom (outside collapsed area)
 				const truncation = this.result.details?.truncation;
 				if (truncation?.truncated) {
 					if (truncation.firstLineExceedsLimit) {
@@ -269,7 +326,6 @@ export class ToolExecutionComponent extends Container {
 				text += ` (${totalLines} lines)`;
 			}
 
-			// Show first 10 lines of content if available
 			if (fileContent) {
 				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
@@ -288,14 +344,12 @@ export class ToolExecutionComponent extends Container {
 				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
 
 			if (this.result) {
-				// Show error message if it's an error
 				if (this.result.isError) {
 					const errorText = this.getTextOutput();
 					if (errorText) {
 						text += "\n\n" + theme.fg("error", errorText);
 					}
 				} else if (this.result.details?.diff) {
-					// Show diff if available
 					const diffLines = this.result.details.diff.split("\n");
 					const coloredLines = diffLines.map((line: string) => {
 						if (line.startsWith("+")) {
@@ -332,7 +386,6 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation warning at the bottom (outside collapsed area)
 				const entryLimit = this.result.details?.entryLimitReached;
 				const truncation = this.result.details?.truncation;
 				if (entryLimit || truncation?.truncated) {
@@ -374,7 +427,6 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation warning at the bottom (outside collapsed area)
 				const resultLimit = this.result.details?.resultLimitReached;
 				const truncation = this.result.details?.truncation;
 				if (resultLimit || truncation?.truncated) {
@@ -420,7 +472,6 @@ export class ToolExecutionComponent extends Container {
 					}
 				}
 
-				// Show truncation warning at the bottom (outside collapsed area)
 				const matchLimit = this.result.details?.matchLimitReached;
 				const truncation = this.result.details?.truncation;
 				const linesTruncated = this.result.details?.linesTruncated;
@@ -439,7 +490,7 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			// Generic tool
+			// Generic tool (shouldn't reach here for custom tools)
 			text = theme.fg("toolTitle", theme.bold(this.toolName));
 
 			const content = JSON.stringify(this.args, null, 2);
