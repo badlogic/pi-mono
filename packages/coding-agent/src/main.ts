@@ -10,6 +10,7 @@ import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getModelsPath, VERSION } from "./config.js";
 import { AgentSession } from "./core/agent-session.js";
+import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
 import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hooks/index.js";
 import { messageTransformer } from "./core/messages.js";
@@ -53,11 +54,13 @@ async function runInteractiveMode(
 	modelFallbackMessage: string | null,
 	versionCheckPromise: Promise<string | null>,
 	initialMessages: string[],
+	customTools: LoadedCustomTool[],
+	setToolUIContext: (uiContext: import("./core/hooks/types.js").HookUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
 ): Promise<void> {
-	const mode = new InteractiveMode(session, version, changelogMarkdown, fdPath);
+	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
 
 	// Initialize TUI (subscribes to agent events internally)
 	await mode.init();
@@ -317,6 +320,30 @@ export async function main(args: string[]) {
 		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
 	}
 
+	// Discover and load custom tools from:
+	// 1. ~/.pi/agent/tools/*.ts (global)
+	// 2. cwd/.pi/tools/*.ts (project-local)
+	// 3. Explicit paths in settings.json
+	// 4. CLI --tool flags
+	const configuredToolPaths = [...settingsManager.getCustomToolPaths(), ...(parsed.customTools ?? [])];
+	const builtInToolNames = Object.keys(allTools);
+	const {
+		tools: loadedCustomTools,
+		errors: toolErrors,
+		setUIContext: setToolUIContext,
+	} = await discoverAndLoadCustomTools(configuredToolPaths, cwd, builtInToolNames);
+
+	// Report custom tool loading errors
+	for (const { path, error } of toolErrors) {
+		console.error(chalk.red(`Failed to load custom tool "${path}": ${error}`));
+	}
+
+	// Add custom tools to selected tools
+	if (loadedCustomTools.length > 0) {
+		const customToolInstances = loadedCustomTools.map((lt) => lt.tool);
+		selectedTools = [...selectedTools, ...customToolInstances] as typeof selectedTools;
+	}
+
 	// Create agent
 	const agent = new Agent({
 		initialState: {
@@ -373,6 +400,7 @@ export async function main(args: string[]) {
 		scopedModels,
 		fileCommands,
 		hookRunner,
+		customTools: loadedCustomTools,
 	});
 
 	// Route to appropriate mode
@@ -406,6 +434,8 @@ export async function main(args: string[]) {
 			modelFallbackMessage,
 			versionCheckPromise,
 			parsed.messages,
+			loadedCustomTools,
+			setToolUIContext,
 			initialMessage,
 			initialAttachments,
 			fdPath,

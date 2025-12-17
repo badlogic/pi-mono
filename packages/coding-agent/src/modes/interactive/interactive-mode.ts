@@ -26,6 +26,7 @@ import {
 import { exec } from "child_process";
 import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
@@ -113,6 +114,9 @@ export class InteractiveMode {
 	private hookSelector: HookSelectorComponent | null = null;
 	private hookInput: HookInputComponent | null = null;
 
+	// Custom tools for custom rendering
+	private customTools: Map<string, LoadedCustomTool>;
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -128,11 +132,14 @@ export class InteractiveMode {
 		session: AgentSession,
 		version: string,
 		changelogMarkdown: string | null = null,
+		customTools: LoadedCustomTool[] = [],
+		private setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void = () => {},
 		fdPath: string | null = null,
 	) {
 		this.session = session;
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
+		this.customTools = new Map(customTools.map((ct) => [ct.tool.name, ct]));
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -263,7 +270,7 @@ export class InteractiveMode {
 		this.isInitialized = true;
 
 		// Initialize hooks with TUI-based UI context
-		await this.initHooks();
+		await this.initHooksAndCustomTools();
 
 		// Subscribe to agent events
 		this.subscribeToAgent();
@@ -288,7 +295,7 @@ export class InteractiveMode {
 	/**
 	 * Initialize the hook system with TUI-based UI context.
 	 */
-	private async initHooks(): Promise<void> {
+	private async initHooksAndCustomTools(): Promise<void> {
 		// Show loaded project context files
 		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
@@ -305,13 +312,37 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
+		// Show loaded custom tools
+		if (this.customTools.size > 0) {
+			const toolList = Array.from(this.customTools.values())
+				.map((ct) => theme.fg("dim", `  ${ct.tool.name} (${ct.path})`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded custom tools:\n") + toolList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Load session entries if any
+		const entries = this.session.sessionManager.loadEntries();
+
+		// Set TUI-based UI context for custom tools
+		const uiContext = this.createHookUIContext();
+		this.setToolUIContext(uiContext, true);
+
+		// Notify custom tools of session start
+		await this.emitToolSessionEvent({
+			entries,
+			sessionFile: this.session.sessionFile,
+			previousSessionFile: null,
+			reason: "start",
+		});
+
 		const hookRunner = this.session.hookRunner;
 		if (!hookRunner) {
 			return; // No hooks loaded
 		}
 
-		// Set TUI-based UI context on the hook runner
-		hookRunner.setUIContext(this.createHookUIContext(), true);
+		// Set UI context on hook runner
+		hookRunner.setUIContext(uiContext, true);
 		hookRunner.setSessionFile(this.session.sessionFile);
 
 		// Subscribe to hook errors
@@ -332,8 +363,38 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Emit session_start event
-		await hookRunner.emit({ type: "session_start" });
+		// Emit session event
+		await hookRunner.emit({
+			type: "session",
+			entries,
+			sessionFile: this.session.sessionFile,
+			previousSessionFile: null,
+			reason: "start",
+		});
+	}
+
+	/**
+	 * Emit session event to all custom tools.
+	 */
+	private async emitToolSessionEvent(event: ToolSessionEvent): Promise<void> {
+		for (const { tool } of this.customTools.values()) {
+			if (tool.onSession) {
+				try {
+					await tool.onSession(event);
+				} catch (err) {
+					this.showToolError(tool.name, err instanceof Error ? err.message : String(err));
+				}
+			}
+		}
+	}
+
+	/**
+	 * Show a tool error in the chat.
+	 */
+	private showToolError(toolName: string, error: string): void {
+		const errorText = new Text(theme.fg("error", `Tool "${toolName}" error: ${error}`), 1, 0);
+		this.chatContainer.addChild(errorText);
+		this.ui.requestRender();
 	}
 
 	/**
@@ -708,9 +769,14 @@ export class InteractiveMode {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
 								this.chatContainer.addChild(new Text("", 0, 0));
-								const component = new ToolExecutionComponent(content.name, content.arguments, {
-									showImages: this.settingsManager.getShowImages(),
-								});
+								const component = new ToolExecutionComponent(
+									content.name,
+									content.arguments,
+									{
+										showImages: this.settingsManager.getShowImages(),
+									},
+									this.customTools.get(content.name)?.tool,
+								);
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -750,9 +816,14 @@ export class InteractiveMode {
 
 			case "tool_execution_start": {
 				if (!this.pendingTools.has(event.toolCallId)) {
-					const component = new ToolExecutionComponent(event.toolName, event.args, {
-						showImages: this.settingsManager.getShowImages(),
-					});
+					const component = new ToolExecutionComponent(
+						event.toolName,
+						event.args,
+						{
+							showImages: this.settingsManager.getShowImages(),
+						},
+						this.customTools.get(event.toolName)?.tool,
+					);
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();
@@ -984,9 +1055,14 @@ export class InteractiveMode {
 
 				for (const content of assistantMsg.content) {
 					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(content.name, content.arguments, {
-							showImages: this.settingsManager.getShowImages(),
-						});
+						const component = new ToolExecutionComponent(
+							content.name,
+							content.arguments,
+							{
+								showImages: this.settingsManager.getShowImages(),
+							},
+							this.customTools.get(content.name)?.tool,
+						);
 						this.chatContainer.addChild(component);
 
 						if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
@@ -1307,6 +1383,7 @@ export class InteractiveMode {
 						this.ui.requestRender();
 						return;
 					}
+
 					this.chatContainer.clear();
 					this.isFirstUserMessage = true;
 					this.renderInitialMessages(this.session.state);
@@ -1353,7 +1430,7 @@ export class InteractiveMode {
 		this.streamingComponent = null;
 		this.pendingTools.clear();
 
-		// Switch session via AgentSession
+		// Switch session via AgentSession (emits hook and tool session events)
 		await this.session.switchSession(sessionPath);
 
 		// Clear and re-render the chat
@@ -1560,7 +1637,7 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 
-		// Reset via session
+		// Reset via session (emits hook and tool session events)
 		await this.session.reset();
 
 		// Clear UI state

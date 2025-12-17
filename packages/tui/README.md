@@ -8,7 +8,7 @@ Minimal terminal UI framework with differential rendering and synchronized outpu
 - **Synchronized Output**: Uses CSI 2026 for atomic screen updates (no flicker)
 - **Bracketed Paste Mode**: Handles large pastes correctly with markers for >10 line pastes
 - **Component-based**: Simple Component interface with render() method
-- **Built-in Components**: Text, Input, Editor, Markdown, Loader, SelectList, Spacer, Image
+- **Built-in Components**: Text, Input, Editor, Markdown, Loader, SelectList, Spacer, Image, Box, Container
 - **Inline Images**: Renders images in terminals that support Kitty or iTerm2 graphics protocols
 - **Autocomplete Support**: File paths and slash commands
 
@@ -73,6 +73,20 @@ Groups child components.
 const container = new Container();
 container.addChild(component);
 container.removeChild(component);
+```
+
+### Box
+
+Container that applies padding and background color to all children.
+
+```typescript
+const box = new Box(
+	1,                  // paddingX (default: 1)
+	1,                  // paddingY (default: 1)
+	(text) => chalk.bgGray(text)  // optional background function
+);
+box.addChild(new Text("Content", 0, 0));
+box.setBgFn((text) => chalk.bgBlue(text));  // Change background dynamically
 ```
 
 ### Text

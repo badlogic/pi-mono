@@ -26,3 +26,4 @@ coverage/
 .pi_config/
 tui-debug.log
 compaction-results/
+.opencode/

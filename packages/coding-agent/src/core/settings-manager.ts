@@ -36,6 +36,7 @@ export interface Settings {
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	hooks?: string[]; // Array of hook file paths
 	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
+	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
 }
@@ -228,6 +229,15 @@ export class SettingsManager {
 
 	setHookTimeout(timeout: number): void {
 		this.settings.hookTimeout = timeout;
+		this.save();
+	}
+
+	getCustomToolPaths(): string[] {
+		return this.settings.customTools ?? [];
+	}
+
+	setCustomToolPaths(paths: string[]): void {
+		this.settings.customTools = paths;
 		this.save();
 	}
 

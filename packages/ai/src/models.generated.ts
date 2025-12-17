@@ -5415,13 +5415,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.19999999999999998,
-				output: 0.88,
-				cacheRead: 0.106,
+				input: 0.15,
+				output: 0.75,
+				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 163840,
-			maxTokens: 4096,
+			contextWindow: 8192,
+			maxTokens: 7168,
 		} satisfies Model<"openai-completions">,
 		"mistralai/mistral-small-3.1-24b-instruct:free": {
 			id: "mistralai/mistral-small-3.1-24b-instruct:free",
