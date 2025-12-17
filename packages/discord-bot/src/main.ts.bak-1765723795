@@ -1,0 +1,2120 @@
+#!/usr/bin/env node
+/**
+ * Pi Discord Bot - A full agentic Discord bot powered by AI
+ * Similar to pi-mom but for Discord - with bash, read, write, edit tools
+ * Supports both slash commands and @mentions
+ */
+
+import { Agent, ProviderTransport, type AgentEvent } from "@mariozechner/pi-agent-core";
+import { type AgentTool, type Model } from "@mariozechner/pi-ai";
+import { Type } from "@sinclair/typebox";
+import {
+	Client,
+	GatewayIntentBits,
+	Message,
+	Partials,
+	TextChannel,
+	REST,
+	Routes,
+	SlashCommandBuilder,
+	ChatInputCommandInteraction,
+	InteractionResponse,
+	EmbedBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	ActionRowBuilder,
+	ComponentType,
+} from "discord.js";
+import chalk from "chalk";
+import { spawn } from "child_process";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from "fs";
+import { join, resolve } from "path";
+import "dotenv/config";
+import cron from "node-cron";
+import express from "express";
+import { Analytics } from "./analytics.js";
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+
+// Security: Restrict to specific user IDs (empty = allow all)
+const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || "").split(",").filter(Boolean);
+
+// Admin/Owner user ID
+const OWNER_USER_ID = "1284556970082435072";
+
+function isUserAllowed(userId: string): boolean {
+	if (ALLOWED_USER_IDS.length === 0) return true; // No restriction if not configured
+	return ALLOWED_USER_IDS.includes(userId);
+}
+
+function isOwner(userId: string): boolean {
+	return userId === OWNER_USER_ID;
+}
+
+// Model configuration - using local Ollama with devstral-small-2 (fast, no rate limits)
+const model: Model<"openai-completions"> = {
+	id: "devstral-small-2",
+	name: "Devstral Small 2",
+	api: "openai-completions",
+	provider: "ollama",
+	baseUrl: "http://localhost:11434/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 32000,
+	maxTokens: 8192,
+};
+
+// Truncation limits
+const DEFAULT_MAX_LINES = 2000;
+const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
+
+// ============================================================================
+// Bot Statistics Tracking
+// ============================================================================
+
+interface BotStats {
+	startTime: number;
+	commandsProcessed: number;
+	messagesProcessed: number;
+	errorsCount: number;
+	userInteractions: Map<string, { username: string; count: number; lastSeen: number }>;
+}
+
+const botStats: BotStats = {
+	startTime: Date.now(),
+	commandsProcessed: 0,
+	messagesProcessed: 0,
+	errorsCount: 0,
+	userInteractions: new Map(),
+};
+
+function trackUserInteraction(userId: string, username: string): void {
+	const existing = botStats.userInteractions.get(userId);
+	if (existing) {
+		existing.count++;
+		existing.lastSeen = Date.now();
+	} else {
+		botStats.userInteractions.set(userId, { username, count: 1, lastSeen: Date.now() });
+	}
+}
+
+// ============================================================================
+// Admin Action Logging
+// ============================================================================
+
+function logAdminAction(userId: string, username: string, action: string, details?: string): void {
+	const timestamp = new Date().toISOString();
+	const logEntry = `[${timestamp}] [ADMIN] ${username} (${userId}): ${action}${details ? ` - ${details}` : ""}\n`;
+
+	try {
+		const logPath = "/opt/discord-bot-data/admin-actions.log";
+		appendFileSync(logPath, logEntry);
+	} catch (error) {
+		logError("Failed to write admin log", error instanceof Error ? error.message : String(error));
+	}
+
+	logInfo(`[ADMIN] ${username}: ${action}${details ? ` - ${details}` : ""}`);
+}
+
+// ============================================================================
+// Runtime Configuration
+// ============================================================================
+
+interface RuntimeConfig {
+	[key: string]: string | number | boolean;
+}
+
+const runtimeConfig: RuntimeConfig = {
+	debugMode: false,
+	maxResponseLength: 2000,
+	defaultTimeout: 120,
+};
+
+// ============================================================================
+// Security: Rate Limiting
+// ============================================================================
+
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute window
+const RATE_LIMIT_MAX_REQUESTS = 10; // Max requests per window per user
+
+interface RateLimitEntry {
+	count: number;
+	windowStart: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitEntry>();
+
+function checkRateLimit(userId: string): { allowed: boolean; remaining: number; resetIn: number } {
+	const now = Date.now();
+	const entry = rateLimitMap.get(userId);
+
+	if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW) {
+		// New window
+		rateLimitMap.set(userId, { count: 1, windowStart: now });
+		return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - 1, resetIn: RATE_LIMIT_WINDOW };
+	}
+
+	if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+		const resetIn = RATE_LIMIT_WINDOW - (now - entry.windowStart);
+		return { allowed: false, remaining: 0, resetIn };
+	}
+
+	entry.count++;
+	return {
+		allowed: true,
+		remaining: RATE_LIMIT_MAX_REQUESTS - entry.count,
+		resetIn: RATE_LIMIT_WINDOW - (now - entry.windowStart),
+	};
+}
+
+// Cleanup old entries periodically
+setInterval(() => {
+	const now = Date.now();
+	for (const [userId, entry] of rateLimitMap.entries()) {
+		if (now - entry.windowStart > RATE_LIMIT_WINDOW * 2) {
+			rateLimitMap.delete(userId);
+		}
+	}
+}, RATE_LIMIT_WINDOW);
+
+// ============================================================================
+// Security: Dangerous Command Detection & Approval
+// ============================================================================
+
+const DANGEROUS_PATTERNS = [
+	/\bsudo\s+/i,
+	/\brm\s+.*-[rRf]/i,           // rm with dangerous flags
+	/\brm\s+-[rRf]/i,
+	/\brm\s+\/[^\s]*/i,           // rm anything starting with /
+	/\bdd\s+/i,
+	/>\s*\/dev\/(sda|nvme|vd)/i,
+	/\bmkfs/i,
+	/\bshutdown/i,
+	/\breboot/i,
+	/\bkill\s+-9/i,
+	/\bpkill\s+-9/i,
+	/\bchmod\s+777/i,
+	/\bchown\s+.*:/i,
+	/\bcurl\s+.*\|\s*(ba)?sh/i,   // curl | bash
+	/\bwget\s+.*\|\s*(ba)?sh/i,   // wget | bash
+	/\b:()\s*{\s*:\|:\s*&\s*}/i,  // fork bomb
+	/\bformat\s+/i,
+	/\bfdisk\s+/i,
+	/\bparted\s+/i,
+];
+
+function isDangerousCommand(command: string): boolean {
+	return DANGEROUS_PATTERNS.some(pattern => pattern.test(command));
+}
+
+// Global context for approval requests (set per-request)
+let currentApprovalContext: {
+	message: Message | null;
+	userId: string;
+} | null = null;
+
+function setApprovalContext(message: Message | null, userId: string): void {
+	currentApprovalContext = { message, userId };
+}
+
+async function requestApproval(command: string): Promise<boolean> {
+	if (!currentApprovalContext?.message) {
+		logWarning("No approval context available, denying dangerous command");
+		return false;
+	}
+
+	const { message, userId } = currentApprovalContext;
+	const channel = message.channel;
+
+	// Check if channel supports sending messages
+	if (!("send" in channel) || typeof channel.send !== "function") {
+		logWarning("Channel does not support sending messages");
+		return false;
+	}
+
+	try {
+		const approvalMsg = await (channel as TextChannel).send(
+			`**Dangerous command detected:**\n\`\`\`bash\n${command.substring(0, 500)}\n\`\`\`\nReact ✅ to approve, ❌ to deny (60s timeout)`
+		);
+
+		await approvalMsg.react("✅");
+		await approvalMsg.react("❌");
+
+		const collected = await approvalMsg.awaitReactions({
+			filter: (reaction: { emoji: { name: string | null } }, user: { id: string }) =>
+				["✅", "❌"].includes(reaction.emoji.name || "") &&
+				user.id === userId,
+			max: 1,
+			time: 60000,
+		});
+
+		const reaction = collected.first();
+		if (reaction?.emoji.name === "✅") {
+			await approvalMsg.edit("✅ Command approved.");
+			logInfo(`Dangerous command approved by user: ${command.substring(0, 50)}...`);
+			return true;
+		} else if (reaction?.emoji.name === "❌") {
+			await approvalMsg.edit("❌ Command denied by user.");
+			logWarning(`Dangerous command denied by user: ${command.substring(0, 50)}...`);
+			return false;
+		} else {
+			await approvalMsg.edit("⏰ Approval timed out - command denied.");
+			logWarning(`Dangerous command timed out: ${command.substring(0, 50)}...`);
+			return false;
+		}
+	} catch (error) {
+		logError("Approval request failed", error instanceof Error ? error.message : String(error));
+		return false;
+	}
+}
+
+// ============================================================================
+// Slash Commands Definition
+// ============================================================================
+
+const slashCommands = [
+	new SlashCommandBuilder()
+		.setName("ask")
+		.setDescription("Ask the AI assistant anything")
+		.addStringOption((option) =>
+			option.setName("question").setDescription("Your question or request").setRequired(true)
+		),
+
+	new SlashCommandBuilder()
+		.setName("bash")
+		.setDescription("Execute a bash command directly")
+		.addStringOption((option) =>
+			option.setName("command").setDescription("The bash command to execute").setRequired(true)
+		)
+		.addIntegerOption((option) =>
+			option.setName("timeout").setDescription("Timeout in seconds (default: no limit)").setRequired(false)
+		),
+
+	new SlashCommandBuilder()
+		.setName("read")
+		.setDescription("Read a file from the system")
+		.addStringOption((option) =>
+			option.setName("path").setDescription("Path to the file").setRequired(true)
+		)
+		.addIntegerOption((option) =>
+			option.setName("lines").setDescription("Number of lines to read").setRequired(false)
+		),
+
+	new SlashCommandBuilder()
+		.setName("remember")
+		.setDescription("Save something to memory")
+		.addStringOption((option) =>
+			option.setName("text").setDescription("What to remember").setRequired(true)
+		)
+		.addBooleanOption((option) =>
+			option.setName("global").setDescription("Save to global memory (default: channel)").setRequired(false)
+		),
+
+	new SlashCommandBuilder()
+		.setName("memory")
+		.setDescription("Show what the bot remembers"),
+
+	new SlashCommandBuilder()
+		.setName("forget")
+		.setDescription("Clear memory")
+		.addBooleanOption((option) =>
+			option.setName("global").setDescription("Clear global memory (default: channel)").setRequired(false)
+		),
+
+	new SlashCommandBuilder()
+		.setName("status")
+		.setDescription("Show bot status and system info"),
+
+	new SlashCommandBuilder()
+		.setName("skills")
+		.setDescription("List loaded skills and capabilities"),
+
+	new SlashCommandBuilder()
+		.setName("price")
+		.setDescription("Get cryptocurrency price")
+		.addStringOption((option) =>
+			option.setName("symbol").setDescription("Crypto symbol (e.g., bitcoin, ethereum)").setRequired(true)
+		),
+
+	new SlashCommandBuilder()
+		.setName("alert")
+		.setDescription("Set a price alert")
+		.addStringOption((option) =>
+			option.setName("condition").setDescription("Alert condition (e.g., 'BTC > 50000')").setRequired(true)
+		),
+
+	new SlashCommandBuilder()
+		.setName("news")
+		.setDescription("Get latest crypto news headlines")
+		.addStringOption((option) =>
+			option.setName("topic").setDescription("News topic (optional)").setRequired(false)
+		),
+
+	new SlashCommandBuilder()
+		.setName("chart")
+		.setDescription("Get TradingView chart link")
+		.addStringOption((option) =>
+			option.setName("symbol").setDescription("Trading symbol (e.g., BTCUSD)").setRequired(true)
+		)
+		.addStringOption((option) =>
+			option.setName("timeframe").setDescription("Timeframe (1h, 4h, 1D, 1W)").setRequired(true)
+		),
+
+	new SlashCommandBuilder()
+		.setName("convert")
+		.setDescription("Currency converter")
+		.addNumberOption((option) =>
+			option.setName("amount").setDescription("Amount to convert").setRequired(true)
+		)
+		.addStringOption((option) =>
+			option.setName("from").setDescription("From currency (e.g., usd, btc)").setRequired(true)
+		)
+		.addStringOption((option) =>
+			option.setName("to").setDescription("To currency (e.g., eur, eth)").setRequired(true)
+		),
+
+	// Admin Commands
+	new SlashCommandBuilder()
+		.setName("admin")
+		.setDescription("Admin-only commands (owner access required)")
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("stats")
+				.setDescription("Show bot statistics (uptime, commands, memory)")
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("users")
+				.setDescription("List users who have used the bot")
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("broadcast")
+				.setDescription("Send message to all channels bot is in")
+				.addStringOption((option) =>
+					option.setName("message").setDescription("Message to broadcast").setRequired(true)
+				)
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("reload")
+				.setDescription("Reload skills from disk without restart")
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("config")
+				.setDescription("View or set runtime configuration")
+				.addStringOption((option) =>
+					option.setName("key").setDescription("Configuration key").setRequired(true)
+				)
+				.addStringOption((option) =>
+					option.setName("value").setDescription("Configuration value (omit to view)").setRequired(false)
+				)
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("logs")
+				.setDescription("Show recent bot logs")
+				.addIntegerOption((option) =>
+					option.setName("lines").setDescription("Number of lines to show (default: 50)").setRequired(false)
+				)
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("restart")
+				.setDescription("Gracefully restart the bot (via systemd)")
+		),
+];
+
+// ============================================================================
+// CLI Parsing
+// ============================================================================
+
+function parseArgs(): { workingDir: string } {
+	const args = process.argv.slice(2);
+	let workingDir: string | undefined;
+
+	for (const arg of args) {
+		if (!arg.startsWith("-")) {
+			workingDir = arg;
+		}
+	}
+
+	if (!workingDir) {
+		console.error("Usage: pi-discord <working-directory>");
+		process.exit(1);
+	}
+
+	return { workingDir: resolve(workingDir) };
+}
+
+// ============================================================================
+// Logging
+// ============================================================================
+
+function logInfo(message: string): void {
+	console.log(chalk.blue("[INFO]"), message);
+}
+
+function logWarning(message: string, detail?: string): void {
+	console.log(chalk.yellow("[WARN]"), message, detail ? chalk.dim(detail) : "");
+}
+
+function logError(message: string, detail?: string): void {
+	console.error(chalk.red("[ERROR]"), message, detail ? chalk.dim(detail) : "");
+}
+
+function logTool(toolName: string, label: string): void {
+	console.log(chalk.cyan("[TOOL]"), `${toolName}: ${label}`);
+}
+
+function logSlash(command: string, user: string): void {
+	console.log(chalk.magenta("[SLASH]"), `/${command} by ${user}`);
+}
+
+// ============================================================================
+// Discord UI Helpers (Embeds, Buttons)
+// ============================================================================
+
+function createResponseEmbed(title: string, description: string, color: number = 0x0099FF): EmbedBuilder {
+	return new EmbedBuilder()
+		.setColor(color)
+		.setTitle(title)
+		.setDescription(description.substring(0, 4096))
+		.setTimestamp()
+		.setFooter({ text: "Pi Discord Bot" });
+}
+
+function createStatusEmbed(model: string, uptime: string, workspace: string, channels: number): EmbedBuilder {
+	return new EmbedBuilder()
+		.setColor(0x00FF00)
+		.setTitle("🤖 Pi Discord Bot Status")
+		.addFields(
+			{ name: "Model", value: `\`${model}\``, inline: true },
+			{ name: "Uptime", value: uptime, inline: true },
+			{ name: "Active Channels", value: String(channels), inline: true },
+			{ name: "Workspace", value: `\`${workspace}\``, inline: false },
+		)
+		.addFields(
+			{ name: "AI Commands", value:
+				"`/ask` - Ask the AI anything\n" +
+				"`/remember` - Save to memory\n" +
+				"`/memory` - Show memory\n" +
+				"`/forget` - Clear memory",
+				inline: true
+			},
+			{ name: "System Commands", value:
+				"`/bash` - Run shell commands\n" +
+				"`/read` - Read files\n" +
+				"`/status` - Bot status\n" +
+				"`/skills` - List capabilities",
+				inline: true
+			},
+			{ name: "Crypto Commands", value:
+				"`/price` - Get crypto price\n" +
+				"`/alert` - Set price alert\n" +
+				"`/news` - Latest news\n" +
+				"`/chart` - TradingView chart\n" +
+				"`/convert` - Currency converter",
+				inline: true
+			},
+		)
+		.setTimestamp()
+		.setFooter({ text: "Or just @mention me!" });
+}
+
+function createFeedbackButtons(): ActionRowBuilder<ButtonBuilder> {
+	return new ActionRowBuilder<ButtonBuilder>()
+		.addComponents(
+			new ButtonBuilder()
+				.setCustomId("feedback_helpful")
+				.setLabel("👍 Helpful")
+				.setStyle(ButtonStyle.Success),
+			new ButtonBuilder()
+				.setCustomId("feedback_not_helpful")
+				.setLabel("👎 Not Helpful")
+				.setStyle(ButtonStyle.Danger),
+			new ButtonBuilder()
+				.setCustomId("feedback_more")
+				.setLabel("📝 Tell me more")
+				.setStyle(ButtonStyle.Primary),
+		);
+}
+
+// ============================================================================
+// Shell Utilities
+// ============================================================================
+
+function shellEscape(s: string): string {
+	return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+interface ExecResult {
+	stdout: string;
+	stderr: string;
+	code: number;
+}
+
+interface ExecOptions {
+	timeout?: number;
+	signal?: AbortSignal;
+}
+
+async function execCommand(command: string, options?: ExecOptions): Promise<ExecResult> {
+	return new Promise((resolve, reject) => {
+		const child = spawn("sh", ["-c", command], {
+			detached: true,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		let stdout = "";
+		let stderr = "";
+		let timedOut = false;
+
+		const timeoutHandle =
+			options?.timeout && options.timeout > 0
+				? setTimeout(() => {
+						timedOut = true;
+						try { process.kill(-child.pid!, "SIGKILL"); } catch {}
+					}, options.timeout * 1000)
+				: undefined;
+
+		const onAbort = () => {
+			if (child.pid) {
+				try { process.kill(-child.pid, "SIGKILL"); } catch {}
+			}
+		};
+
+		if (options?.signal) {
+			if (options.signal.aborted) {
+				onAbort();
+			} else {
+				options.signal.addEventListener("abort", onAbort, { once: true });
+			}
+		}
+
+		child.stdout?.on("data", (data) => {
+			stdout += data.toString();
+			if (stdout.length > 10 * 1024 * 1024) {
+				stdout = stdout.slice(0, 10 * 1024 * 1024);
+			}
+		});
+
+		child.stderr?.on("data", (data) => {
+			stderr += data.toString();
+			if (stderr.length > 10 * 1024 * 1024) {
+				stderr = stderr.slice(0, 10 * 1024 * 1024);
+			}
+		});
+
+		child.on("close", (code) => {
+			if (timeoutHandle) clearTimeout(timeoutHandle);
+			if (options?.signal) {
+				options.signal.removeEventListener("abort", onAbort);
+			}
+
+			if (options?.signal?.aborted) {
+				reject(new Error(`${stdout}\n${stderr}\nCommand aborted`.trim()));
+				return;
+			}
+
+			if (timedOut) {
+				reject(new Error(`${stdout}\n${stderr}\nCommand timed out after ${options?.timeout} seconds`.trim()));
+				return;
+			}
+
+			resolve({ stdout, stderr, code: code ?? 0 });
+		});
+	});
+}
+
+// ============================================================================
+// Crypto API Utilities
+// ============================================================================
+
+async function getCryptoPrice(symbol: string): Promise<{ price: number; change24h: number; marketCap: number }> {
+	try {
+		const url = `https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
+		const response = await fetch(url);
+		const data = await response.json();
+
+		const symbolData = data[symbol.toLowerCase()];
+		if (!symbolData) {
+			throw new Error(`Symbol not found: ${symbol}`);
+		}
+
+		return {
+			price: symbolData.usd,
+			change24h: symbolData.usd_24h_change || 0,
+			marketCap: symbolData.usd_market_cap || 0,
+		};
+	} catch (error) {
+		throw new Error(`Failed to fetch price: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+async function getCryptoNews(topic?: string): Promise<Array<{ title: string; url: string; source: string }>> {
+	try {
+		// Using CryptoPanic free API (no key required for basic use)
+		const url = topic
+			? `https://cryptopanic.com/api/v1/posts/?auth_token=free&filter=${encodeURIComponent(topic)}`
+			: `https://cryptopanic.com/api/v1/posts/?auth_token=free&kind=news`;
+
+		const response = await fetch(url);
+		const data = await response.json();
+
+		if (!data.results || data.results.length === 0) {
+			return [];
+		}
+
+		return data.results.slice(0, 5).map((item: any) => ({
+			title: item.title,
+			url: item.url,
+			source: item.source?.title || "Unknown",
+		}));
+	} catch (error) {
+		// Fallback: return empty array if API fails
+		return [];
+	}
+}
+
+async function convertCurrency(amount: number, from: string, to: string): Promise<{ result: number; rate: number }> {
+	try {
+		// Use CoinGecko for crypto conversions
+		const fromLower = from.toLowerCase();
+		const toLower = to.toLowerCase();
+
+		// Get both prices in USD
+		const url = `https://api.coingecko.com/api/v3/simple/price?ids=${fromLower},${toLower}&vs_currencies=usd`;
+		const response = await fetch(url);
+		const data = await response.json();
+
+		const fromPrice = data[fromLower]?.usd;
+		const toPrice = data[toLower]?.usd;
+
+		if (!fromPrice || !toPrice) {
+			throw new Error(`Currency not found: ${!fromPrice ? from : to}`);
+		}
+
+		const rate = fromPrice / toPrice;
+		const result = amount * rate;
+
+		return { result, rate };
+	} catch (error) {
+		throw new Error(`Conversion failed: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+function generateTradingViewLink(symbol: string, timeframe: string): string {
+	// Normalize symbol (remove slashes, make uppercase)
+	const normalizedSymbol = symbol.toUpperCase().replace(/[\/\-]/g, "");
+
+	// Map common timeframes
+	const timeframeMap: Record<string, string> = {
+		"1m": "1",
+		"5m": "5",
+		"15m": "15",
+		"30m": "30",
+		"1h": "60",
+		"4h": "240",
+		"1d": "D",
+		"1w": "W",
+		"1M": "M",
+	};
+
+	const mappedTimeframe = timeframeMap[timeframe.toLowerCase()] || timeframe;
+
+	return `https://www.tradingview.com/chart/?symbol=${normalizedSymbol}&interval=${mappedTimeframe}`;
+}
+
+// ============================================================================
+// Truncation Utilities
+// ============================================================================
+
+function formatSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes}B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function truncateTail(content: string): { content: string; truncated: boolean; totalLines: number; outputLines: number } {
+	const totalBytes = Buffer.byteLength(content, "utf-8");
+	const lines = content.split("\n");
+	const totalLines = lines.length;
+
+	if (totalLines <= DEFAULT_MAX_LINES && totalBytes <= DEFAULT_MAX_BYTES) {
+		return { content, truncated: false, totalLines, outputLines: totalLines };
+	}
+
+	const outputLines: string[] = [];
+	let outputBytes = 0;
+
+	for (let i = lines.length - 1; i >= 0 && outputLines.length < DEFAULT_MAX_LINES; i--) {
+		const line = lines[i];
+		const lineBytes = Buffer.byteLength(line, "utf-8") + (outputLines.length > 0 ? 1 : 0);
+
+		if (outputBytes + lineBytes > DEFAULT_MAX_BYTES) break;
+
+		outputLines.unshift(line);
+		outputBytes += lineBytes;
+	}
+
+	return {
+		content: outputLines.join("\n"),
+		truncated: true,
+		totalLines,
+		outputLines: outputLines.length,
+	};
+}
+
+// ============================================================================
+// Agent Tools
+// ============================================================================
+
+const bashSchema = Type.Object({
+	label: Type.String({ description: "Brief description of what this command does (shown to user)" }),
+	command: Type.String({ description: "Bash command to execute" }),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional)" })),
+});
+
+function createBashTool(): AgentTool<typeof bashSchema> {
+	return {
+		name: "bash",
+		label: "bash",
+		description: `Execute a bash command. Returns stdout and stderr. Output truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB. Dangerous commands (sudo, rm -rf, etc.) require user approval.`,
+		parameters: bashSchema,
+		execute: async (_toolCallId, { command, timeout, label }, signal) => {
+			logTool("bash", label);
+
+			// Security: Check for dangerous commands and request approval
+			if (isDangerousCommand(command)) {
+				logWarning("Dangerous command detected, requesting approval", command.substring(0, 50));
+				const approved = await requestApproval(command);
+				if (!approved) {
+					throw new Error("Command denied: Requires user approval for dangerous operations.");
+				}
+			}
+
+			const result = await execCommand(command, { timeout, signal });
+			let output = "";
+			if (result.stdout) output += result.stdout;
+			if (result.stderr) {
+				if (output) output += "\n";
+				output += result.stderr;
+			}
+
+			const truncation = truncateTail(output);
+			let outputText = truncation.content || "(no output)";
+
+			if (truncation.truncated) {
+				const startLine = truncation.totalLines - truncation.outputLines + 1;
+				outputText += `\n\n[Showing lines ${startLine}-${truncation.totalLines} of ${truncation.totalLines}]`;
+			}
+
+			if (result.code !== 0) {
+				throw new Error(`${outputText}\n\nCommand exited with code ${result.code}`.trim());
+			}
+
+			return { content: [{ type: "text", text: outputText }], details: undefined };
+		},
+	};
+}
+
+const readSchema = Type.Object({
+	label: Type.String({ description: "Brief description of what you're reading (shown to user)" }),
+	path: Type.String({ description: "Path to the file to read" }),
+	offset: Type.Optional(Type.Number({ description: "Line number to start from (1-indexed)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum lines to read" })),
+});
+
+function createReadTool(): AgentTool<typeof readSchema> {
+	return {
+		name: "read",
+		label: "read",
+		description: `Read file contents. Output truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB. Use offset/limit for large files.`,
+		parameters: readSchema,
+		execute: async (_toolCallId, { path, offset, limit, label }, signal) => {
+			logTool("read", `${label} (${path})`);
+
+			const countResult = await execCommand(`wc -l < ${shellEscape(path)}`, { signal });
+			if (countResult.code !== 0) {
+				throw new Error(countResult.stderr || `Failed to read file: ${path}`);
+			}
+			const totalLines = parseInt(countResult.stdout.trim(), 10) + 1;
+
+			const startLine = offset ? Math.max(1, offset) : 1;
+			let cmd = startLine === 1 ? `cat ${shellEscape(path)}` : `tail -n +${startLine} ${shellEscape(path)}`;
+
+			const result = await execCommand(cmd, { signal });
+			if (result.code !== 0) {
+				throw new Error(result.stderr || `Failed to read file: ${path}`);
+			}
+
+			let content = result.stdout;
+
+			if (limit !== undefined) {
+				const lines = content.split("\n");
+				content = lines.slice(0, limit).join("\n");
+			}
+
+			const truncation = truncateTail(content);
+			let outputText = truncation.content;
+
+			if (truncation.truncated) {
+				const endLine = startLine + truncation.outputLines - 1;
+				outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${totalLines}. Use offset=${endLine + 1} to continue]`;
+			}
+
+			return { content: [{ type: "text", text: outputText }], details: undefined };
+		},
+	};
+}
+
+const writeSchema = Type.Object({
+	label: Type.String({ description: "Brief description of what you're writing (shown to user)" }),
+	path: Type.String({ description: "Path to the file to write" }),
+	content: Type.String({ description: "Content to write" }),
+});
+
+function createWriteTool(): AgentTool<typeof writeSchema> {
+	return {
+		name: "write",
+		label: "write",
+		description: "Write content to a file. Creates parent directories. Overwrites existing files.",
+		parameters: writeSchema,
+		execute: async (_toolCallId, { path, content, label }, signal) => {
+			logTool("write", `${label} (${path})`);
+
+			const dir = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : ".";
+			const cmd = `mkdir -p ${shellEscape(dir)} && printf '%s' ${shellEscape(content)} > ${shellEscape(path)}`;
+
+			const result = await execCommand(cmd, { signal });
+			if (result.code !== 0) {
+				throw new Error(result.stderr || `Failed to write file: ${path}`);
+			}
+
+			return { content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }], details: undefined };
+		},
+	};
+}
+
+const editSchema = Type.Object({
+	label: Type.String({ description: "Brief description of the edit (shown to user)" }),
+	path: Type.String({ description: "Path to the file to edit" }),
+	oldText: Type.String({ description: "Exact text to find and replace" }),
+	newText: Type.String({ description: "New text to replace with" }),
+});
+
+function createEditTool(): AgentTool<typeof editSchema> {
+	return {
+		name: "edit",
+		label: "edit",
+		description: "Edit a file by replacing exact text. oldText must match exactly including whitespace.",
+		parameters: editSchema,
+		execute: async (_toolCallId, { path, oldText, newText, label }, signal) => {
+			logTool("edit", `${label} (${path})`);
+
+			const readResult = await execCommand(`cat ${shellEscape(path)}`, { signal });
+			if (readResult.code !== 0) {
+				throw new Error(readResult.stderr || `File not found: ${path}`);
+			}
+
+			const content = readResult.stdout;
+
+			if (!content.includes(oldText)) {
+				throw new Error(`Could not find the exact text in ${path}. Must match exactly including whitespace.`);
+			}
+
+			const occurrences = content.split(oldText).length - 1;
+			if (occurrences > 1) {
+				throw new Error(`Found ${occurrences} occurrences. Text must be unique. Add more context.`);
+			}
+
+			const index = content.indexOf(oldText);
+			const newContent = content.substring(0, index) + newText + content.substring(index + oldText.length);
+
+			const writeResult = await execCommand(`printf '%s' ${shellEscape(newContent)} > ${shellEscape(path)}`, { signal });
+			if (writeResult.code !== 0) {
+				throw new Error(writeResult.stderr || `Failed to write file: ${path}`);
+			}
+
+			return { content: [{ type: "text", text: `Successfully edited ${path}. Changed ${oldText.length} chars to ${newText.length} chars.` }], details: undefined };
+		},
+	};
+}
+
+// ============================================================================
+// Memory System
+// ============================================================================
+
+function getMemory(channelDir: string, workspaceDir: string): string {
+	const parts: string[] = [];
+
+	const globalMemoryPath = join(workspaceDir, "MEMORY.md");
+	if (existsSync(globalMemoryPath)) {
+		try {
+			const content = readFileSync(globalMemoryPath, "utf-8").trim();
+			if (content) parts.push("### Global Memory\n" + content);
+		} catch {}
+	}
+
+	const channelMemoryPath = join(channelDir, "MEMORY.md");
+	if (existsSync(channelMemoryPath)) {
+		try {
+			const content = readFileSync(channelMemoryPath, "utf-8").trim();
+			if (content) parts.push("### Channel Memory\n" + content);
+		} catch {}
+	}
+
+	return parts.length > 0 ? parts.join("\n\n") : "(no memory yet)";
+}
+
+function addToMemory(text: string, channelDir: string, workspaceDir: string, isGlobal: boolean): void {
+	const memoryPath = isGlobal ? join(workspaceDir, "MEMORY.md") : join(channelDir, "MEMORY.md");
+	const dir = isGlobal ? workspaceDir : channelDir;
+
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+
+	const timestamp = new Date().toISOString().split("T")[0];
+	const entry = `\n- [${timestamp}] ${text}`;
+
+	if (existsSync(memoryPath)) {
+		appendFileSync(memoryPath, entry);
+	} else {
+		writeFileSync(memoryPath, `# Memory\n${entry}`);
+	}
+}
+
+function clearMemory(channelDir: string, workspaceDir: string, isGlobal: boolean): boolean {
+	const memoryPath = isGlobal ? join(workspaceDir, "MEMORY.md") : join(channelDir, "MEMORY.md");
+
+	if (existsSync(memoryPath)) {
+		writeFileSync(memoryPath, "# Memory\n");
+		return true;
+	}
+	return false;
+}
+
+// ============================================================================
+// Skills System
+// ============================================================================
+
+function loadSkills(workspacePath: string): string {
+	const skillsDir = join(workspacePath, "skills");
+	if (!existsSync(skillsDir)) {
+		return "";
+	}
+
+	const skillFiles = ["quant-trading.md", "technical-analysis.md", "risk-management.md", "trading-system-monitor.md", "market-data.md"];
+	const skills: string[] = [];
+
+	for (const file of skillFiles) {
+		const skillPath = join(skillsDir, file);
+		if (existsSync(skillPath)) {
+			try {
+				const content = readFileSync(skillPath, "utf-8").trim();
+				if (content) {
+					skills.push(content);
+				}
+			} catch {
+				// Ignore read errors
+			}
+		}
+	}
+
+	if (skills.length === 0) {
+		return "";
+	}
+
+	return "\n## Skills\n" + skills.join("\n\n---\n\n");
+}
+
+// ============================================================================
+// System Prompt
+// ============================================================================
+
+function buildSystemPrompt(workspacePath: string, channelId: string, channelName: string, memory: string): string {
+	const channelPath = `${workspacePath}/${channelId}`;
+	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	const skills = loadSkills(workspacePath);
+
+	return `You are an AI assistant Discord bot with full system access. Be helpful, concise, and efficient. No emojis unless asked.
+
+## Context
+- Current time: Use \`date\` command
+- Timezone: ${tz}
+- You have access to bash, file read/write/edit tools
+- Dangerous commands (sudo, rm -rf, etc.) require user approval via reaction
+
+## Discord Formatting
+**bold**, *italic*, \`code\`, \`\`\`code block\`\`\`, ||spoiler||, > quote
+Links: [text](url) or paste URLs directly
+
+## Workspace Layout
+${workspacePath}/
+├── MEMORY.md                    # Global memory (all channels)
+├── skills/                      # Loaded skills (quant trading, etc.)
+└── ${channelId}/                # This channel (${channelName})
+    ├── MEMORY.md                # Channel-specific memory
+    ├── log.jsonl                # Message history
+    └── scratch/                 # Your working directory
+
+## Tools
+- **bash**: Execute shell commands (primary tool). Install packages with apt/pip/npm as needed. Dangerous commands require approval.
+- **read**: Read file contents
+- **write**: Create/overwrite files
+- **edit**: Surgical text replacement in files
+
+Each tool requires a "label" parameter (shown to user while executing).
+
+## Memory
+Write important context to MEMORY.md files:
+- Global (${workspacePath}/MEMORY.md): preferences, project info, installed tools
+- Channel (${channelPath}/MEMORY.md): channel-specific decisions, ongoing work
+
+### Current Memory
+${memory}
+${skills}
+
+## Guidelines
+1. Use bash for most tasks - it's your primary tool
+2. Install tools as needed (apt-get, pip, npm, etc.)
+3. Update MEMORY.md when you learn important context
+4. Be concise in responses - Discord has character limits
+5. For long outputs, summarize and offer to show more
+6. Working directory for files: ${channelPath}/scratch/
+7. For quant/trading tasks, reference your skills knowledge
+`;
+}
+
+// ============================================================================
+// Message Logging
+// ============================================================================
+
+function logMessage(channelDir: string, entry: object): void {
+	if (!existsSync(channelDir)) {
+		mkdirSync(channelDir, { recursive: true });
+	}
+	appendFileSync(join(channelDir, "log.jsonl"), JSON.stringify(entry) + "\n");
+}
+
+// ============================================================================
+// Channel State
+// ============================================================================
+
+interface ChannelState {
+	running: boolean;
+	agent: Agent;
+}
+
+const channelStates = new Map<string, ChannelState>();
+
+function getChannelState(channelId: string, workingDir: string, channelName: string): ChannelState {
+	let state = channelStates.get(channelId);
+	if (!state) {
+		const channelDir = join(workingDir, channelId);
+		const memory = getMemory(channelDir, workingDir);
+		const systemPrompt = buildSystemPrompt(workingDir, channelId, channelName, memory);
+
+		const tools = [
+			createBashTool(),
+			createReadTool(),
+			createWriteTool(),
+			createEditTool(),
+		];
+
+		const agent = new Agent({
+			initialState: {
+				systemPrompt,
+				model,
+				thinkingLevel: "off",
+				tools,
+			},
+			transport: new ProviderTransport({
+				getApiKey: async () => "ollama", // Ollama doesn't need real API key
+			}),
+		});
+
+		state = { running: false, agent };
+		channelStates.set(channelId, state);
+	}
+	return state;
+}
+
+// ============================================================================
+// Response Handler (shared between slash commands and mentions)
+// ============================================================================
+
+async function handleAgentRequest(
+	channelId: string,
+	channelName: string,
+	userName: string,
+	userId: string,
+	text: string,
+	workingDir: string,
+	reply: (content: string) => Promise<any>,
+	editReply: (content: string) => Promise<any>,
+	sourceMessage: Message | null = null,
+): Promise<void> {
+	// User allowlist check
+	if (!isUserAllowed(userId)) {
+		await reply("_Access denied. You are not authorized to use this bot._");
+		logWarning(`Unauthorized user attempt: ${userName}`, userId);
+		return;
+	}
+
+	// Rate limiting check
+	const rateLimit = checkRateLimit(userId);
+	if (!rateLimit.allowed) {
+		const resetSecs = Math.ceil(rateLimit.resetIn / 1000);
+		await reply(`_Rate limited. Try again in ${resetSecs}s._`);
+		logWarning(`Rate limited user ${userName}`, `reset in ${resetSecs}s`);
+		return;
+	}
+
+	const channelDir = join(workingDir, channelId);
+
+	// Track statistics
+	botStats.messagesProcessed++;
+	trackUserInteraction(userId, userName);
+
+	logMessage(channelDir, {
+		date: new Date().toISOString(),
+		user: userName,
+		userId: userId,
+		text,
+		isBot: false,
+	});
+
+	const state = getChannelState(channelId, workingDir, channelName);
+
+	if (state.running) {
+		await reply("_Already working on something. Please wait..._");
+		return;
+	}
+
+	state.running = true;
+	let toolsUsed: string[] = [];
+
+	// Set approval context for dangerous command checks
+	setApprovalContext(sourceMessage, userId);
+
+	try {
+		await editReply("_Thinking..._");
+
+		const memory = getMemory(channelDir, workingDir);
+		const systemPrompt = buildSystemPrompt(workingDir, channelId, channelName, memory);
+		state.agent.setSystemPrompt(systemPrompt);
+
+		const unsubscribe = state.agent.subscribe((event: AgentEvent) => {
+			if (event.type === "tool_execution_start") {
+				const e = event as any;
+				const label = e.args?.label || e.toolName;
+				toolsUsed.push(`→ ${label}`);
+
+				const toolList = toolsUsed.slice(-5).join("\n");
+				editReply(`_Working..._\n${toolList}`).catch(() => {});
+			}
+		});
+
+		const timestamp = new Date().toISOString();
+		const userMessage = `[${timestamp}] [${userName}]: ${text}`;
+
+		await state.agent.prompt(userMessage);
+		unsubscribe();
+
+		const messages = state.agent.state.messages;
+		const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
+
+		if (lastAssistant) {
+			const responseText = lastAssistant.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
+
+			if (responseText.trim()) {
+				logMessage(channelDir, {
+					date: new Date().toISOString(),
+					user: "bot",
+					text: responseText,
+					toolsUsed,
+					isBot: true,
+				});
+
+				// Discord limit is 2000 chars
+				const MAX_LENGTH = 2000;
+				if (responseText.length <= MAX_LENGTH) {
+					await editReply(responseText);
+				} else {
+					// Truncate for slash command response
+					await editReply(responseText.substring(0, MAX_LENGTH - 50) + "\n\n_(truncated)_");
+				}
+
+				logInfo(`[${channelName}] Responded (${responseText.length} chars, ${toolsUsed.length} tools)`);
+			} else {
+				await editReply("_Done (no text response)_");
+			}
+		} else {
+			await editReply("_Done_");
+		}
+	} catch (error) {
+		const errMsg = error instanceof Error ? error.message : String(error);
+		botStats.errorsCount++;
+		logError("Error processing request", errMsg);
+		await editReply(`_Error: ${errMsg.substring(0, 500)}_`).catch(() => {});
+	} finally {
+		state.running = false;
+	}
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+async function main() {
+	const { workingDir } = parseArgs();
+
+	if (!DISCORD_BOT_TOKEN) {
+		logError("Missing DISCORD_BOT_TOKEN environment variable");
+		process.exit(1);
+	}
+
+	if (!existsSync(workingDir)) {
+		mkdirSync(workingDir, { recursive: true });
+	}
+
+	logInfo(`Starting Pi Discord Bot (agentic mode) with workspace: ${workingDir}`);
+	logInfo(`Model: ${model.id}`);
+
+	const client = new Client({
+		intents: [
+			GatewayIntentBits.Guilds,
+			GatewayIntentBits.GuildMessages,
+			GatewayIntentBits.MessageContent,
+			GatewayIntentBits.DirectMessages,
+			GatewayIntentBits.GuildMessageReactions,
+			GatewayIntentBits.DirectMessageReactions,
+		],
+		partials: [Partials.Channel, Partials.Reaction, Partials.Message],
+	});
+
+	// Register slash commands on ready
+	client.once("ready", async () => {
+		logInfo(`Logged in as ${client.user?.tag}`);
+		logInfo(`Bot ID: ${client.user?.id}`);
+
+		// Register slash commands globally
+		try {
+			const rest = new REST({ version: "10" }).setToken(DISCORD_BOT_TOKEN!);
+
+			logInfo("Registering slash commands...");
+			await rest.put(Routes.applicationCommands(client.user!.id), {
+				body: slashCommands.map((cmd) => cmd.toJSON()),
+			});
+			logInfo(`Registered ${slashCommands.length} slash commands: /${slashCommands.map(c => c.name).join(", /")}`);
+		} catch (error) {
+			logError("Failed to register slash commands", error instanceof Error ? error.message : String(error));
+		}
+
+		logInfo("Ready! Supports both /commands and @mentions");
+	});
+
+	// Handle slash commands
+	client.on("interactionCreate", async (interaction) => {
+		if (!interaction.isChatInputCommand()) return;
+
+		const { commandName, user, channelId } = interaction;
+		const channel = interaction.channel;
+		const channelName = channel && "name" in channel ? (channel as TextChannel).name : `DM:${user.username}`;
+
+		logSlash(commandName, user.username);
+
+		// Track statistics
+		botStats.commandsProcessed++;
+		trackUserInteraction(user.id, user.username);
+
+		const channelDir = join(workingDir, channelId);
+
+		try {
+			switch (commandName) {
+				case "ask": {
+					const question = interaction.options.getString("question", true);
+					await interaction.deferReply();
+
+					// For slash commands, we need to fetch a message for approval context
+					const followUpMsg = await interaction.followUp({ content: "_Processing..._", fetchReply: true }) as Message;
+
+					await handleAgentRequest(
+						channelId,
+						channelName,
+						user.username,
+						user.id,
+						question,
+						workingDir,
+						(content) => interaction.followUp(content),
+						(content) => interaction.editReply(content),
+						followUpMsg,
+					);
+					break;
+				}
+
+				case "bash": {
+					const command = interaction.options.getString("command", true);
+					const timeout = interaction.options.getInteger("timeout") || undefined;
+
+					await interaction.deferReply();
+
+					try {
+						const result = await execCommand(command, { timeout });
+						let output = result.stdout || result.stderr || "(no output)";
+
+						if (result.code !== 0) {
+							output += `\n\nExit code: ${result.code}`;
+						}
+
+						// Truncate for Discord
+						if (output.length > 1900) {
+							output = output.substring(0, 1900) + "\n...(truncated)";
+						}
+
+						await interaction.editReply(`\`\`\`\n${output}\n\`\`\``);
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Error: ${errMsg.substring(0, 500)}`);
+					}
+					break;
+				}
+
+				case "read": {
+					const path = interaction.options.getString("path", true);
+					const lines = interaction.options.getInteger("lines") || 50;
+
+					await interaction.deferReply();
+
+					try {
+						const result = await execCommand(`head -n ${lines} ${shellEscape(path)}`);
+						if (result.code !== 0) {
+							await interaction.editReply(`Error: ${result.stderr || "Failed to read file"}`);
+							return;
+						}
+
+						let output = result.stdout || "(empty file)";
+						if (output.length > 1900) {
+							output = output.substring(0, 1900) + "\n...(truncated)";
+						}
+
+						await interaction.editReply(`**${path}** (first ${lines} lines):\n\`\`\`\n${output}\n\`\`\``);
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Error: ${errMsg.substring(0, 500)}`);
+					}
+					break;
+				}
+
+				case "remember": {
+					const text = interaction.options.getString("text", true);
+					const isGlobal = interaction.options.getBoolean("global") || false;
+
+					addToMemory(text, channelDir, workingDir, isGlobal);
+
+					await interaction.reply(`Remembered${isGlobal ? " (global)" : ""}: ${text}`);
+					break;
+				}
+
+				case "memory": {
+					const memory = getMemory(channelDir, workingDir);
+
+					if (memory.length > 1900) {
+						await interaction.reply(memory.substring(0, 1900) + "\n...(truncated)");
+					} else {
+						await interaction.reply(memory || "No memories yet.");
+					}
+					break;
+				}
+
+				case "forget": {
+					const isGlobal = interaction.options.getBoolean("global") || false;
+					const cleared = clearMemory(channelDir, workingDir, isGlobal);
+
+					if (cleared) {
+						await interaction.reply(`Cleared ${isGlobal ? "global" : "channel"} memory.`);
+					} else {
+						await interaction.reply(`No ${isGlobal ? "global" : "channel"} memory to clear.`);
+					}
+					break;
+				}
+
+				case "status": {
+					const uptime = process.uptime();
+					const hours = Math.floor(uptime / 3600);
+					const mins = Math.floor((uptime % 3600) / 60);
+					const uptimeStr = `${hours}h ${mins}m`;
+
+					const statusEmbed = createStatusEmbed(model.id, uptimeStr, workingDir, channelStates.size);
+					await interaction.reply({ embeds: [statusEmbed] });
+					break;
+				}
+
+				case "skills": {
+					const skillsDir = join(workingDir, "skills");
+					let skillsList = "**Loaded Skills:**\n";
+
+					if (existsSync(skillsDir)) {
+						const files = ["quant-trading.md", "technical-analysis.md", "risk-management.md", "trading-system-monitor.md", "market-data.md"];
+						for (const file of files) {
+							const skillPath = join(skillsDir, file);
+							if (existsSync(skillPath)) {
+								const name = file.replace(".md", "").replace(/-/g, " ");
+								skillsList += `✅ **${name}**\n`;
+							}
+						}
+					}
+
+					skillsList += "\n**Capabilities:**\n";
+					skillsList += "• Quant trading analysis & monitoring\n";
+					skillsList += "• Technical indicators (RSI, MACD, Bollinger)\n";
+					skillsList += "• Risk management & position sizing\n";
+					skillsList += "• Trading system log monitoring\n";
+					skillsList += "• Market data (crypto, stocks via APIs)\n";
+					skillsList += "\n**Security:**\n";
+					skillsList += "• Dangerous commands require approval\n";
+					skillsList += "• Rate limited: 10 req/min per user\n";
+					skillsList += "\n**Event Triggers:**\n";
+					skillsList += "• Daily health report (9 AM UTC)\n";
+					skillsList += "• Webhook alerts on port 3333";
+
+					await interaction.reply(skillsList);
+					break;
+				}
+
+				case "price": {
+					const symbol = interaction.options.getString("symbol", true);
+					await interaction.deferReply();
+
+					try {
+						const priceData = await getCryptoPrice(symbol);
+						const changeEmoji = priceData.change24h >= 0 ? "📈" : "📉";
+						const changeColor = priceData.change24h >= 0 ? "+" : "";
+
+						const embed = new EmbedBuilder()
+							.setColor(priceData.change24h >= 0 ? 0x00FF00 : 0xFF0000)
+							.setTitle(`${symbol.toUpperCase()} Price`)
+							.addFields(
+								{ name: "Price", value: `$${priceData.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, inline: true },
+								{ name: "24h Change", value: `${changeEmoji} ${changeColor}${priceData.change24h.toFixed(2)}%`, inline: true },
+								{ name: "Market Cap", value: `$${(priceData.marketCap / 1e9).toFixed(2)}B`, inline: true }
+							)
+							.setTimestamp()
+							.setFooter({ text: "Data from CoinGecko" });
+
+						await interaction.editReply({ embeds: [embed] });
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Error: ${errMsg}`);
+					}
+					break;
+				}
+
+				case "alert": {
+					const condition = interaction.options.getString("condition", true);
+
+					// Parse condition (simple format: SYMBOL > PRICE or SYMBOL < PRICE)
+					const match = condition.match(/(\w+)\s*([><])\s*([\d.]+)/i);
+					if (!match) {
+						await interaction.reply("Invalid condition format. Use: `SYMBOL > PRICE` or `SYMBOL < PRICE`\nExample: `BTC > 50000`");
+						break;
+					}
+
+					const [, symbol, operator, price] = match;
+
+					// Store alert in memory
+					const alertText = `Price alert: ${symbol.toUpperCase()} ${operator} $${price}`;
+					addToMemory(alertText, channelDir, workingDir, false);
+
+					await interaction.reply(
+						`Alert set: ${symbol.toUpperCase()} ${operator} $${price}\n\n` +
+						`Note: This is stored in memory. Use /ask to request monitoring of this alert, or integrate with external monitoring tools.`
+					);
+					break;
+				}
+
+				case "news": {
+					const topic = interaction.options.getString("topic") || undefined;
+					await interaction.deferReply();
+
+					try {
+						const newsItems = await getCryptoNews(topic);
+
+						if (newsItems.length === 0) {
+							await interaction.editReply("No news found. Try again later or use a different topic.");
+							break;
+						}
+
+						const embed = new EmbedBuilder()
+							.setColor(0x0099FF)
+							.setTitle(topic ? `Crypto News: ${topic}` : "Latest Crypto News")
+							.setDescription(
+								newsItems.map((item, i) => `**${i + 1}. ${item.title}**\n[Read more](${item.url}) - ${item.source}`).join("\n\n")
+							)
+							.setTimestamp()
+							.setFooter({ text: "Data from CryptoPanic" });
+
+						await interaction.editReply({ embeds: [embed] });
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Error fetching news: ${errMsg}`);
+					}
+					break;
+				}
+
+				case "chart": {
+					const symbol = interaction.options.getString("symbol", true);
+					const timeframe = interaction.options.getString("timeframe", true);
+
+					const chartUrl = generateTradingViewLink(symbol, timeframe);
+
+					const embed = new EmbedBuilder()
+						.setColor(0x0099FF)
+						.setTitle(`${symbol.toUpperCase()} Chart (${timeframe})`)
+						.setDescription(`[Open in TradingView](${chartUrl})`)
+						.addFields(
+							{ name: "Symbol", value: symbol.toUpperCase(), inline: true },
+							{ name: "Timeframe", value: timeframe, inline: true }
+						)
+						.setTimestamp()
+						.setFooter({ text: "TradingView Chart" });
+
+					await interaction.reply({ embeds: [embed] });
+					break;
+				}
+
+				case "convert": {
+					const amount = interaction.options.getNumber("amount", true);
+					const from = interaction.options.getString("from", true);
+					const to = interaction.options.getString("to", true);
+
+					await interaction.deferReply();
+
+					try {
+						const conversion = await convertCurrency(amount, from, to);
+
+						const embed = new EmbedBuilder()
+							.setColor(0x0099FF)
+							.setTitle("Currency Conversion")
+							.addFields(
+								{ name: "From", value: `${amount.toLocaleString()} ${from.toUpperCase()}`, inline: true },
+								{ name: "To", value: `${conversion.result.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${to.toUpperCase()}`, inline: true },
+								{ name: "Rate", value: `1 ${from.toUpperCase()} = ${conversion.rate.toFixed(8)} ${to.toUpperCase()}`, inline: false }
+							)
+							.setTimestamp()
+							.setFooter({ text: "Data from CoinGecko" });
+
+						await interaction.editReply({ embeds: [embed] });
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Error: ${errMsg}`);
+					}
+					break;
+				}
+
+				case "admin": {
+					// Admin-only commands - check owner permission
+					if (!isOwner(user.id)) {
+						await interaction.reply({ content: "Permission denied. This command is owner-only.", ephemeral: true });
+						logWarning(`Unauthorized admin command attempt by ${user.username}`, user.id);
+						return;
+					}
+
+					const subcommand = interaction.options.getSubcommand();
+
+					switch (subcommand) {
+						case "stats": {
+							await interaction.deferReply({ ephemeral: true });
+
+							const uptime = Date.now() - botStats.startTime;
+							const hours = Math.floor(uptime / (1000 * 60 * 60));
+							const mins = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+							const uptimeStr = `${hours}h ${mins}m`;
+
+							const memUsage = process.memoryUsage();
+							const memoryStr = `${(memUsage.heapUsed / 1024 / 1024).toFixed(2)} MB / ${(memUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`;
+
+							const embed = new EmbedBuilder()
+								.setColor(0x00FF00)
+								.setTitle("Admin - Bot Statistics")
+								.addFields(
+									{ name: "Uptime", value: uptimeStr, inline: true },
+									{ name: "Commands Processed", value: String(botStats.commandsProcessed), inline: true },
+									{ name: "Messages Processed", value: String(botStats.messagesProcessed), inline: true },
+									{ name: "Errors Count", value: String(botStats.errorsCount), inline: true },
+									{ name: "Active Channels", value: String(channelStates.size), inline: true },
+									{ name: "Unique Users", value: String(botStats.userInteractions.size), inline: true },
+									{ name: "Memory Usage", value: memoryStr, inline: false },
+									{ name: "Model", value: `\`${model.id}\``, inline: true },
+									{ name: "Working Directory", value: `\`${workingDir}\``, inline: false }
+								)
+								.setTimestamp()
+								.setFooter({ text: "Admin Panel" });
+
+							await interaction.editReply({ embeds: [embed] });
+							logAdminAction(user.id, user.username, "stats");
+							break;
+						}
+
+						case "users": {
+							await interaction.deferReply({ ephemeral: true });
+
+							const users = Array.from(botStats.userInteractions.values())
+								.sort((a, b) => b.count - a.count)
+								.slice(0, 20)
+								.map((u, i) => {
+									const lastSeenDate = new Date(u.lastSeen);
+									const timeDiff = Date.now() - u.lastSeen;
+									const hoursAgo = Math.floor(timeDiff / (1000 * 60 * 60));
+									const minsAgo = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+									const timeAgo = hoursAgo > 0 ? `${hoursAgo}h ago` : `${minsAgo}m ago`;
+
+									return `${i + 1}. **${u.username}** - ${u.count} interactions (${timeAgo})`;
+								})
+								.join("\n");
+
+							const embed = new EmbedBuilder()
+								.setColor(0x0099FF)
+								.setTitle("Admin - User Statistics")
+								.setDescription(users || "No users yet")
+								.addFields(
+									{ name: "Total Unique Users", value: String(botStats.userInteractions.size), inline: true }
+								)
+								.setTimestamp()
+								.setFooter({ text: "Top 20 users by interaction count" });
+
+							await interaction.editReply({ embeds: [embed] });
+							logAdminAction(user.id, user.username, "users");
+							break;
+						}
+
+						case "broadcast": {
+							const message = interaction.options.getString("message", true);
+							await interaction.deferReply({ ephemeral: true });
+
+							let successCount = 0;
+							let failCount = 0;
+
+							for (const [guildId, guild] of client.guilds.cache) {
+								try {
+									const textChannels = guild.channels.cache.filter(
+										(ch) => ch.isTextBased() && ch.type === 0
+									);
+
+									if (textChannels.size > 0) {
+										const firstChannel = textChannels.first() as TextChannel;
+										await firstChannel.send(`**Broadcast from Bot Owner:**\n${message}`);
+										successCount++;
+									}
+								} catch (error) {
+									failCount++;
+									logError(`Broadcast failed for guild ${guild.name}`, error instanceof Error ? error.message : String(error));
+								}
+							}
+
+							await interaction.editReply(`Broadcast sent to ${successCount} server(s). Failed: ${failCount}`);
+							logAdminAction(user.id, user.username, "broadcast", `Sent to ${successCount} servers`);
+							break;
+						}
+
+						case "reload": {
+							await interaction.deferReply({ ephemeral: true });
+
+							try {
+								// Reload skills for all active channels
+								let reloadCount = 0;
+								for (const [channelId, state] of channelStates) {
+									const channelDir = join(workingDir, channelId);
+									const memory = getMemory(channelDir, workingDir);
+									const channelNameTemp = channelId; // We don't have channel name here
+									const systemPrompt = buildSystemPrompt(workingDir, channelId, channelNameTemp, memory);
+									state.agent.setSystemPrompt(systemPrompt);
+									reloadCount++;
+								}
+
+								await interaction.editReply(`Skills reloaded successfully for ${reloadCount} active channel(s).`);
+								logAdminAction(user.id, user.username, "reload", `Reloaded ${reloadCount} channels`);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`Error reloading skills: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "config": {
+							const key = interaction.options.getString("key", true);
+							const value = interaction.options.getString("value");
+
+							if (!value) {
+								// View configuration
+								const currentValue = runtimeConfig[key];
+								await interaction.reply({
+									content: currentValue !== undefined
+										? `**${key}** = \`${currentValue}\``
+										: `Configuration key "${key}" not found.\n\nAvailable keys:\n${Object.keys(runtimeConfig).map(k => `- ${k}`).join("\n")}`,
+									ephemeral: true
+								});
+								logAdminAction(user.id, user.username, "config view", key);
+							} else {
+								// Set configuration
+								let parsedValue: string | number | boolean = value;
+
+								// Try to parse as number or boolean
+								if (value === "true") parsedValue = true;
+								else if (value === "false") parsedValue = false;
+								else if (!isNaN(Number(value))) parsedValue = Number(value);
+
+								runtimeConfig[key] = parsedValue;
+
+								await interaction.reply({
+									content: `Configuration updated: **${key}** = \`${parsedValue}\``,
+									ephemeral: true
+								});
+								logAdminAction(user.id, user.username, "config set", `${key} = ${parsedValue}`);
+							}
+							break;
+						}
+
+						case "logs": {
+							const lines = interaction.options.getInteger("lines") || 50;
+							await interaction.deferReply({ ephemeral: true });
+
+							try {
+								// Try to read bot logs
+								const logSources = [
+									"/var/log/discord-bot.log",
+									"/opt/discord-bot-data/bot.log",
+									"/var/log/syslog"
+								];
+
+								let logs = "";
+								for (const logPath of logSources) {
+									try {
+										const result = await execCommand(`tail -n ${lines} ${shellEscape(logPath)} 2>/dev/null | grep -i discord || echo ""`);
+										if (result.stdout.trim()) {
+											logs = result.stdout;
+											break;
+										}
+									} catch {}
+								}
+
+								if (!logs) {
+									logs = "No logs found. Showing process info:\n";
+									const psResult = await execCommand(`ps aux | grep discord | grep -v grep`);
+									logs += psResult.stdout || "No process info available";
+								}
+
+								// Truncate if too long
+								if (logs.length > 1900) {
+									logs = logs.substring(logs.length - 1900);
+								}
+
+								await interaction.editReply(`**Recent Logs:**\n\`\`\`\n${logs}\n\`\`\``);
+								logAdminAction(user.id, user.username, "logs", `Viewed ${lines} lines`);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`Error fetching logs: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "restart": {
+							await interaction.reply({ content: "Initiating graceful restart...", ephemeral: true });
+							logAdminAction(user.id, user.username, "restart", "Restarting bot");
+
+							try {
+								// Try systemd restart
+								const result = await execCommand("systemctl restart discord-bot 2>&1 || systemctl restart pi-discord 2>&1 || echo 'Systemd service not found'");
+
+								if (result.stdout.includes("not found")) {
+									// Fallback: exit process and let Docker/PM2 restart it
+									await interaction.followUp({ content: "Systemd service not found. Exiting process (should auto-restart)...", ephemeral: true });
+									setTimeout(() => process.exit(0), 2000);
+								} else {
+									await interaction.followUp({ content: "Restart command sent to systemd.", ephemeral: true });
+								}
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.followUp({ content: `Error during restart: ${errMsg}`, ephemeral: true });
+							}
+							break;
+						}
+					}
+					break;
+				}
+
+				default:
+					await interaction.reply("Unknown command");
+			}
+		} catch (error) {
+			const errMsg = error instanceof Error ? error.message : String(error);
+			botStats.errorsCount++;
+			logError(`Slash command error (/${commandName})`, errMsg);
+
+			if (interaction.deferred) {
+				await interaction.editReply(`Error: ${errMsg.substring(0, 500)}`).catch(() => {});
+			} else {
+				await interaction.reply(`Error: ${errMsg.substring(0, 500)}`).catch(() => {});
+			}
+		}
+	});
+
+	// Handle button interactions
+	client.on("interactionCreate", async (interaction) => {
+		if (!interaction.isButton()) return;
+
+		const { customId, user } = interaction;
+
+		if (customId === "feedback_helpful") {
+			await interaction.reply({ content: "Thanks for the feedback! 👍", ephemeral: true });
+			logInfo(`[Feedback] ${user.username} found response helpful`);
+		} else if (customId === "feedback_not_helpful") {
+			await interaction.reply({ content: "Sorry to hear that. I'll try to do better! 👎", ephemeral: true });
+			logInfo(`[Feedback] ${user.username} found response not helpful`);
+		} else if (customId === "feedback_more") {
+			await interaction.reply({ content: "Just ask me a follow-up question!", ephemeral: true });
+		}
+	});
+
+	// Handle @mentions (keep existing functionality)
+	client.on("messageCreate", async (message: Message) => {
+		if (message.author.bot) return;
+
+		const isMention = message.mentions.has(client.user!);
+		const isDM = !message.guild;
+
+		if (!isMention && !isDM) return;
+
+		const channelId = message.channel.id;
+		const channelName = isDM ? `DM:${message.author.username}` : (message.channel as TextChannel).name || "unknown";
+
+		let text = message.content;
+		if (isMention && client.user) {
+			text = text.replace(new RegExp(`<@!?${client.user.id}>`, "g"), "").trim();
+		}
+
+		if (!text) return;
+
+		logInfo(`[${channelName}] ${message.author.username}: ${text.substring(0, 80)}...`);
+
+		let statusMessage: Message | null = null;
+
+		try {
+			if ("sendTyping" in message.channel) {
+				await (message.channel as any).sendTyping();
+			}
+			statusMessage = await message.reply("_Thinking..._");
+
+			await handleAgentRequest(
+				channelId,
+				channelName,
+				message.author.username,
+				message.author.id,
+				text,
+				workingDir,
+				(content) => message.reply(content),
+				(content) => statusMessage!.edit(content),
+				message,
+			);
+		} catch (error) {
+			const errMsg = error instanceof Error ? error.message : String(error);
+			logError("Error processing message", errMsg);
+
+			if (statusMessage) {
+				await statusMessage.edit(`_Error: ${errMsg.substring(0, 500)}_`).catch(() => {});
+			}
+		}
+	});
+
+	client.on("error", (error) => {
+		logError("Discord client error", error.message);
+	});
+
+	process.on("SIGINT", () => {
+		logInfo("Shutting down...");
+		client.destroy();
+		process.exit(0);
+	});
+
+	process.on("SIGTERM", () => {
+		logInfo("Shutting down...");
+		client.destroy();
+		process.exit(0);
+	});
+
+	await client.login(DISCORD_BOT_TOKEN);
+
+	// ========================================================================
+	// Event-Driven Triggers: Cron Jobs & Webhooks
+	// ========================================================================
+
+	const REPORT_CHANNEL_ID = process.env.REPORT_CHANNEL_ID; // Channel for scheduled reports
+	const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || "3001", 10);
+
+	// Helper: Send message to report channel
+	async function sendToReportChannel(content: string): Promise<void> {
+		if (!REPORT_CHANNEL_ID) return;
+		try {
+			const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
+			if (channel && "send" in channel) {
+				await (channel as TextChannel).send(content);
+			}
+		} catch (error) {
+			logError("Failed to send to report channel", error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	// Daily trading system health check (9 AM UTC)
+	cron.schedule("0 9 * * *", async () => {
+		logInfo("[CRON] Running daily trading system health check");
+		try {
+			const result = await execCommand(`
+				echo "=== Trading System Daily Report ==="
+				echo "Date: $(date)"
+				echo ""
+				echo "=== System Resources ==="
+				free -h | head -2
+				echo ""
+				echo "=== Trading Processes ==="
+				ps aux | grep -E 'python.*trad|collector' | grep -v grep | head -5 || echo "No trading processes found"
+				echo ""
+				echo "=== Recent Errors (last 24h) ==="
+				find /home/majinbu/organized/active-projects/trading-system/quant/rbi_bench/ -name "*.log" -mtime 0 -exec grep -l -i error {} \\; 2>/dev/null | head -5 || echo "No error logs found"
+			`);
+			await sendToReportChannel(`**Daily Trading Report**\n\`\`\`\n${result.stdout.substring(0, 1800)}\n\`\`\``);
+		} catch (error) {
+			logError("[CRON] Health check failed", error instanceof Error ? error.message : String(error));
+		}
+	});
+
+	// Hourly quick status check
+	cron.schedule("0 * * * *", async () => {
+		logInfo("[CRON] Running hourly status check");
+		try {
+			const result = await execCommand(`
+				echo "Uptime: $(uptime -p)"
+				echo "Load: $(cat /proc/loadavg | cut -d' ' -f1-3)"
+				echo "Memory: $(free -h | awk '/Mem:/ {print $3 "/" $2}')"
+			`);
+			// Only log, don't send to channel every hour
+			logInfo(`[CRON] Status: ${result.stdout.replace(/\n/g, " | ").trim()}`);
+		} catch (error) {
+			logError("[CRON] Status check failed", error instanceof Error ? error.message : String(error));
+		}
+	});
+
+	// Webhook server for external alerts
+	const webhookApp = express();
+	webhookApp.use(express.json());
+
+	// API Key Authentication Middleware
+	const WEBHOOK_API_KEY = process.env.WEBHOOK_API_KEY;
+
+	function authenticateApiKey(req: express.Request, res: express.Response, next: express.NextFunction): void {
+		// Skip auth for health endpoint
+		if (req.path === "/health") {
+			next();
+			return;
+		}
+
+		// Check for API key in header or query param
+		const apiKeyHeader = req.headers["x-api-key"] as string | undefined;
+		const apiKeyQuery = req.query.api_key as string | undefined;
+		const providedKey = apiKeyHeader || apiKeyQuery;
+
+		if (!WEBHOOK_API_KEY) {
+			logWarning("[WEBHOOK] WEBHOOK_API_KEY not configured - authentication disabled");
+			next();
+			return;
+		}
+
+		if (!providedKey) {
+			logWarning(`[WEBHOOK] Unauthorized attempt from ${req.ip} - no API key provided`);
+			res.status(401).json({ error: "Unauthorized - API key required" });
+			return;
+		}
+
+		if (providedKey !== WEBHOOK_API_KEY) {
+			logWarning(`[WEBHOOK] Unauthorized attempt from ${req.ip} - invalid API key`);
+			res.status(401).json({ error: "Unauthorized - invalid API key" });
+			return;
+		}
+
+		// Authentication successful
+		next();
+	}
+
+	// Apply authentication middleware to all routes
+	webhookApp.use(authenticateApiKey);
+
+	// Price alert webhook
+	webhookApp.post("/webhook/alert", async (req, res) => {
+		try {
+			const { message, priority } = req.body;
+			if (!message) {
+				res.status(400).json({ error: "Missing message" });
+				return;
+			}
+
+			const prefix = priority === "high" ? "**ALERT**" : "**Alert**";
+			await sendToReportChannel(`${prefix}: ${message}`);
+			logInfo(`[WEBHOOK] Alert received: ${message.substring(0, 50)}...`);
+			res.json({ status: "ok" });
+		} catch (error) {
+			logError("[WEBHOOK] Alert handling failed", error instanceof Error ? error.message : String(error));
+			res.status(500).json({ error: "Internal error" });
+		}
+	});
+
+	// Trading signal webhook
+	webhookApp.post("/webhook/signal", async (req, res) => {
+		try {
+			const { symbol, action, price, reason } = req.body;
+			if (!symbol || !action) {
+				res.status(400).json({ error: "Missing symbol or action" });
+				return;
+			}
+
+			const msg = `**Trading Signal**\nSymbol: \`${symbol}\`\nAction: **${action}**\nPrice: ${price || "N/A"}\nReason: ${reason || "N/A"}`;
+			await sendToReportChannel(msg);
+			logInfo(`[WEBHOOK] Signal: ${symbol} ${action}`);
+			res.json({ status: "ok" });
+		} catch (error) {
+			logError("[WEBHOOK] Signal handling failed", error instanceof Error ? error.message : String(error));
+			res.status(500).json({ error: "Internal error" });
+		}
+	});
+
+	// Health check endpoint
+	webhookApp.get("/health", (req, res) => {
+		res.json({
+			status: "ok",
+			uptime: process.uptime(),
+			model: model.id,
+			channels: channelStates.size,
+		});
+	});
+
+	webhookApp.listen(WEBHOOK_PORT, () => {
+		logInfo(`[WEBHOOK] Server listening on port ${WEBHOOK_PORT}`);
+	});
+
+	logInfo("Event-driven triggers initialized (cron jobs + webhooks)");
+}
+
+main().catch((error) => {
+	logError("Fatal error", error instanceof Error ? error.message : String(error));
+	process.exit(1);
+});

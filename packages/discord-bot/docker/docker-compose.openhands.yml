@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  openhands:
+    image: ghcr.io/all-hands-ai/openhands:main
+    container_name: pi-openhands
+    ports:
+      - "3100:3000"
+    volumes:
+      - openhands-data:/app/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - SANDBOX_TYPE=local
+      - LLM_MODEL=glm-4
+      - LLM_API_KEY=${ZAI_API_KEY}
+      - LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+      - WORKSPACE_MOUNT_PATH=/app/workspace
+    restart: unless-stopped
+    networks:
+      - pi-network
+
+networks:
+  pi-network:
+    driver: bridge
+
+volumes:
+  openhands-data:

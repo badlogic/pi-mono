@@ -1,0 +1,72 @@
+{
+  "name": "@mariozechner/pi-discord",
+  "version": "0.22.5",
+  "description": "Discord bot powered by Claude AI for pi-mono",
+  "type": "module",
+  "main": "dist/main.js",
+  "bin": {
+    "pi-discord": "./dist/main.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc && chmod +x dist/main.js",
+    "dev": "tsx --watch src/main.ts",
+    "start": "node dist/main.js",
+    "migrate": "tsx src/migrate.ts",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
+    "test": "tsx src/math-utils.test.ts",
+    "type-check": "tsc --noEmit",
+    "prepare": "husky install || true"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.0.69",
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.0",
+    "@gradio/client": "^2.0.0",
+    "@mariozechner/pi-agent-core": "^0.22.5",
+    "@mariozechner/pi-ai": "^0.22.5",
+    "@mariozechner/pi-coding-agent": "^0.22.5",
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@sinclair/typebox": "^0.34.0",
+    "better-sqlite3": "^11.10.0",
+    "chalk": "^5.6.2",
+    "croner": "^9.1.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "mcp-client": "^1.13.1",
+    "node-cron": "^4.2.1",
+    "prism-media": "^1.3.5",
+    "suno-api": "^0.9.3",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.19.2",
+    "@types/node-cron": "^3.0.11",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.0",
+    "husky": "^8.0.3",
+    "prettier": "^3.2.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "claude",
+    "ai",
+    "pi-mono"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

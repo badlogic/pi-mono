@@ -18,7 +18,7 @@ import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
 // Hardcoded model for now - TODO: make configurable (issue #63)
-const model = getModel("anthropic", "claude-sonnet-4-5");
+const model = getModel("anthropic", "claude-haiku-4-5");
 
 /**
  * Convert Date.now() to Slack timestamp format (seconds.microseconds)
