@@ -28,10 +28,11 @@ export async function runPrintMode(
 	initialAttachments?: Attachment[],
 ): Promise<void> {
 	// Hook runner already has no-op UI context by default (set in main.ts)
-	// Set up hooks for print mode (no UI, ephemeral session)
+	// Set up hooks for print mode (no UI)
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		hookRunner.setSessionFile(null); // Print mode is ephemeral
+		// Use actual session file if configured (via --session), otherwise null
+		hookRunner.setSessionFile(session.sessionFile);
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);
 		});
@@ -43,12 +44,13 @@ export async function runPrintMode(
 		await hookRunner.emit({ type: "session_start" });
 	}
 
-	if (mode === "json") {
-		// Output all events as JSON
-		session.subscribe((event) => {
+	// Always subscribe to enable session persistence via _handleAgentEvent
+	session.subscribe((event) => {
+		// In JSON mode, output all events
+		if (mode === "json") {
 			console.log(JSON.stringify(event));
-		});
-	}
+		}
+	});
 
 	// Send initial message with attachments
 	if (initialMessage) {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.22.5] - 2025-12-17
+
+### Fixed
+
+- Fixed `--session` flag not saving sessions in print mode (`-p`). The session manager was never receiving events because no subscriber was attached.
+
 ## [0.22.4] - 2025-12-17
 
 ### Added

@@ -203,6 +203,10 @@ export class SessionManager {
 			// Use custom session file path
 			this.sessionFile = resolve(customSessionPath);
 			this.loadSessionId();
+			// If file doesn't exist, loadSessionId() won't set sessionId, so generate one
+			if (!this.sessionId) {
+				this.sessionId = uuidv4();
+			}
 			// Mark as initialized since we're loading an existing session
 			this.sessionInitialized = existsSync(this.sessionFile);
 			// Load entries into memory
