@@ -2,6 +2,15 @@
 
 Hooks are TypeScript modules that extend the coding agent's behavior by subscribing to lifecycle events. They can intercept tool calls, prompt the user for input, modify results, and more.
 
+**Example use cases:**
+- Block dangerous commands (permission gates for `rm -rf`, `sudo`, etc.)
+- Checkpoint code state (git stash at each turn, restore on `/branch`)
+- Protect paths (block writes to `.env`, `node_modules/`, etc.)
+- Modify tool output (filter or transform results before the LLM sees them)
+- Inject messages from external sources (file watchers, webhooks, CI systems)
+
+See [examples/hooks/](../examples/hooks/) for working implementations.
+
 ## Hook Locations
 
 Hooks are automatically discovered from two locations:
@@ -33,7 +42,7 @@ You can also add explicit hook paths in `~/.pi/agent/settings.json`:
 ```
 
 - `hooks`: Additional hook file paths (supports `~` expansion)
-- `hookTimeout`: Timeout in milliseconds for non-interactive hook operations (default: 30000)
+- `hookTimeout`: Timeout in milliseconds for hook operations (default: 30000). Does not apply to `tool_call` events, which have no timeout since they may prompt the user.
 
 ## Writing a Hook
 
@@ -51,23 +60,17 @@ export default function (pi: HookAPI) {
 
 ### Setup
 
-Create a hooks directory and initialize it:
+Create a hooks directory:
 
 ```bash
 # Global hooks
 mkdir -p ~/.pi/agent/hooks
-cd ~/.pi/agent/hooks
-npm init -y
-npm install @mariozechner/pi-coding-agent
 
 # Or project-local hooks
 mkdir -p .pi/hooks
-cd .pi/hooks
-npm init -y
-npm install @mariozechner/pi-coding-agent
 ```
 
-Hooks are loaded using [jiti](https://github.com/unjs/jiti), so TypeScript works without compilation.
+Then create `.ts` files directly in these directories. Hooks are loaded using [jiti](https://github.com/unjs/jiti), so TypeScript works without compilation. The import from `@mariozechner/pi-coding-agent/hooks` resolves to the globally installed package automatically.
 
 ## Events
 
@@ -121,7 +124,7 @@ Fired on startup and when session changes.
 ```typescript
 pi.on("session", async (event, ctx) => {
   // event.entries: SessionEntry[] - all session entries
-  // event.sessionFile: string | null - current session file
+  // event.sessionFile: string | null - current session file (null with --no-session)
   // event.previousSessionFile: string | null - previous session file
   // event.reason: "start" | "switch" | "clear"
 });
@@ -171,24 +174,24 @@ pi.on("turn_start", async (event, ctx) => {
 pi.on("turn_end", async (event, ctx) => {
   // event.turnIndex: number
   // event.message: AppMessage - assistant's response
-  // event.toolResults: AppMessage[]
+  // event.toolResults: ToolResultMessage[] - tool results from this turn
 });
 ```
 
 ### tool_call
 
-Fired before tool executes. **Can block.**
+Fired before tool executes. **Can block.** No timeout (user prompts can take any time).
 
 ```typescript
 pi.on("tool_call", async (event, ctx) => {
-  // event.toolName: "bash" | "read" | "write" | "edit" | "ls" | "find" | "grep"
+  // event.toolName: string (built-in or custom tool name)
   // event.toolCallId: string
   // event.input: Record<string, unknown>
   return { block: true, reason: "..." }; // or undefined to allow
 });
 ```
 
-Tool inputs:
+Built-in tool inputs:
 - `bash`: `{ command, timeout? }`
 - `read`: `{ path, offset?, limit? }`
 - `write`: `{ path, content }`
@@ -196,6 +199,8 @@ Tool inputs:
 - `ls`: `{ path?, limit? }`
 - `find`: `{ pattern, path?, limit? }`
 - `grep`: `{ pattern, path?, glob?, ignoreCase?, literal?, context?, limit? }`
+
+Custom tools are also intercepted with their own names and input schemas.
 
 ### tool_result
 
@@ -274,7 +279,7 @@ console.log(`Working in: ${ctx.cwd}`);
 
 ### ctx.sessionFile
 
-Path to the session file, or `null` if running with `--no-session`.
+Path to the current session file, or `null` when running with `--no-session` (ephemeral mode).
 
 ```typescript
 if (ctx.sessionFile) {
@@ -490,7 +495,8 @@ In print mode, `select()` returns `null`, `confirm()` returns `false`, and `inpu
 ## Error Handling
 
 - If a hook throws an error, it's logged and the agent continues
-- If a `tool_call` hook errors or times out, the tool is **blocked** (fail-safe)
+- If a `tool_call` hook throws an error, the tool is **blocked** (fail-safe)
+- Other events have a timeout (default 30s); timeout errors are logged but don't block
 - Hook errors are displayed in the UI with the hook path and error message
 
 ## Debugging
@@ -563,9 +569,9 @@ class HookRunner {
 
 Key behaviors:
 - `emit()` has a timeout (default 30s) for safety
-- `emitToolCall()` has **no timeout** (user prompts can take any amount of time)
-- Errors in `emit()` are caught and reported via `onError()`
-- Errors in `emitToolCall()` propagate (causing tool to be blocked)
+- `emitToolCall()` has **no timeout** (user prompts can take any time)
+- Errors in `emit()` are caught, logged via `onError()`, and execution continues
+- Errors in `emitToolCall()` propagate, causing the tool to be blocked (fail-safe)
 
 ## Event Flow
 

@@ -488,66 +488,41 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 ### Skills
 
-Skills are instruction files loaded on-demand when tasks match their descriptions. Compatible with Claude Code and Codex CLI skill formats.
+Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
 
 **Skill locations:**
-- Pi user: `~/.pi/agent/skills/**/SKILL.md` (recursive, colon-separated names)
-- Pi project: `.pi/skills/**/SKILL.md` (recursive, colon-separated names)
-- Claude Code user: `~/.claude/skills/*/SKILL.md` (one level)
-- Claude Code project: `.claude/skills/*/SKILL.md` (one level)
+- Pi user: `~/.pi/agent/skills/**/SKILL.md` (recursive)
+- Pi project: `.pi/skills/**/SKILL.md` (recursive)
+- Claude Code: `~/.claude/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md`
 - Codex CLI: `~/.codex/skills/**/SKILL.md` (recursive)
-
-Later locations win on name collisions (Pi skills override Claude/Codex).
-
-Pi skills in subdirectories use colon-separated names: `~/.pi/agent/skills/db/migrate/SKILL.md` → `db:migrate`
 
 **Format:**
 
 ```markdown
 ---
-description: Extract text and tables from PDF files
+description: Web search via Brave Search API. Use for documentation, facts, or web content.
 ---
 
-# PDF Processing
+# Brave Search
 
-Use `pdftotext` for plain text extraction.
-For tables, use `tabula-py`.
+## Setup
+\`\`\`bash
+cd {baseDir} && npm install
+\`\`\`
 
-Helper scripts: {baseDir}/scripts/
+## Usage
+\`\`\`bash
+{baseDir}/search.js "query"           # Basic search
+{baseDir}/search.js "query" --content # Include page content
+\`\`\`
 ```
 
-- `description`: Required. Shown in system prompt for agent to decide when to load.
-- `name`: Optional. Overrides directory name.
-- `{baseDir}`: Placeholder for the skill's directory. Agent substitutes it when following instructions.
+- `description`: Required. Determines when the skill is loaded.
+- `{baseDir}`: Placeholder for the skill's directory.
 
-**How it works:**
+**Disable skills:** `pi --no-skills` or set `skills.enabled: false` in settings.
 
-Skills are listed in the system prompt with descriptions:
-
-```
-<available_skills>
-- pdf-extract: Extract text and tables from PDF files
-  File: ~/.pi/agent/skills/pdf-extract/SKILL.md
-  Base directory: ~/.pi/agent/skills/pdf-extract
-</available_skills>
-```
-
-Agent uses `read` tool to load full instructions when needed.
-
-**Disable skills:**
-
-CLI: `pi --no-skills`
-
-Settings (`~/.pi/agent/settings.json`):
-```json
-{
-  "skills": {
-    "enabled": false
-  }
-}
-```
-
-See [docs/skills.md](docs/skills.md) for details.
+See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories.
 
 ### Hooks
 

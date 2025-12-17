@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
+
+- Cleaned up documentation: `theme.md` (added missing color tokens), `skills.md` (rewrote with better framing and examples), `hooks.md` (fixed timeout/error handling docs, added examples).
+
+### Breaking Changes
+
+- **Hooks**: `turn_end` event's `toolResults` type changed from `AppMessage[]` to `ToolResultMessage[]`. If you have hooks that handle `turn_end` events and explicitly type the results, update your type annotations.
+
 ## [0.23.2] - 2025-12-17
 
 ### Fixed

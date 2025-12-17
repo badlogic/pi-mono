@@ -74,7 +74,7 @@ Future-proofing for syntax highlighting support:
 | `syntaxOperator` | Operators (`+`, `-`, etc) |
 | `syntaxPunctuation` | Punctuation (`;`, `,`, etc) |
 
-### Thinking Level Borders (5 colors)
+### Thinking Level Borders (6 colors)
 
 Editor border colors that indicate the current thinking/reasoning level:
 
@@ -84,11 +84,18 @@ Editor border colors that indicate the current thinking/reasoning level:
 | `thinkingMinimal` | Border for minimal thinking |
 | `thinkingLow` | Border for low thinking |
 | `thinkingMedium` | Border for medium thinking |
-| `thinkingHigh` | Border for high thinking (most prominent) |
+| `thinkingHigh` | Border for high thinking |
+| `thinkingXhigh` | Border for xhigh thinking (most prominent, OpenAI codex-max only) |
 
-These create a visual hierarchy: off → minimal → low → medium → high
+These create a visual hierarchy: off → minimal → low → medium → high → xhigh
 
-**Total: 44 color tokens** (all required)
+### Bash Mode (1 color)
+
+| Token | Purpose |
+|-------|---------|
+| `bashMode` | Editor border color when in bash mode (! prefix) |
+
+**Total: 46 color tokens** (all required)
 
 ## Theme Format
 
@@ -420,8 +427,8 @@ class Theme {
   
   // Text attributes (preserve current colors)
   bold(text: string): string
-  dim(text: string): string
   italic(text: string): string
+  underline(text: string): string
 }
 ```
 
@@ -453,6 +460,7 @@ TUI components (like `Markdown`, `SelectList`, `Editor`) are in the `@mariozechn
 export interface MarkdownTheme {
   heading: (text: string) => string;
   link: (text: string) => string;
+  linkUrl: (text: string) => string;
   code: (text: string) => string;
   codeBlock: (text: string) => string;
   codeBlockBorder: (text: string) => string;
@@ -460,21 +468,10 @@ export interface MarkdownTheme {
   quoteBorder: (text: string) => string;
   hr: (text: string) => string;
   listBullet: (text: string) => string;
-}
-
-export class Markdown {
-  constructor(
-    text: string,
-    paddingX: number,
-    paddingY: number,
-    defaultTextStyle?: DefaultTextStyle,
-    theme?: MarkdownTheme  // Optional theme functions
-  )
-  
-  // Usage in component
-  renderHeading(text: string) {
-    return this.theme.heading(text);  // Applies color
-  }
+  bold: (text: string) => string;
+  italic: (text: string) => string;
+  strikethrough: (text: string) => string;
+  underline: (text: string) => string;
 }
 ```
 
@@ -490,6 +487,7 @@ function getMarkdownTheme(): MarkdownTheme {
   return {
     heading: (text) => theme.fg('mdHeading', text),
     link: (text) => theme.fg('mdLink', text),
+    linkUrl: (text) => theme.fg('mdLinkUrl', text),
     code: (text) => theme.fg('mdCode', text),
     codeBlock: (text) => theme.fg('mdCodeBlock', text),
     codeBlockBorder: (text) => theme.fg('mdCodeBlockBorder', text),
@@ -497,6 +495,10 @@ function getMarkdownTheme(): MarkdownTheme {
     quoteBorder: (text) => theme.fg('mdQuoteBorder', text),
     hr: (text) => theme.fg('mdHr', text),
     listBullet: (text) => theme.fg('mdListBullet', text),
+    bold: (text) => theme.bold(text),
+    italic: (text) => theme.italic(text),
+    underline: (text) => theme.underline(text),
+    strikethrough: (text) => chalk.strikethrough(text),
   };
 }
 
@@ -530,7 +532,7 @@ theme.bg('toolSuccessBg', output)
 
 // Combine styles
 theme.bold(theme.fg('accent', 'Title'))
-theme.dim(theme.fg('muted', 'metadata'))
+theme.italic(theme.fg('muted', 'metadata'))
 
 // Nested foreground + background
 const userMsg = theme.bg('userMessageBg',

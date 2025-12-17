@@ -235,9 +235,9 @@ Guidelines:
 ${guidelines}
 
 Documentation:
-- Your own documentation (including custom model setup and theme creation) is at: ${readmePath}
-- Additional documentation (hooks, themes, RPC, etc.) is in: ${docsPath}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, create a custom theme, or write a hook.`;
+- Main documentation: ${readmePath}
+- Additional docs: ${docsPath}
+- When asked about: custom models/providers (README sufficient), themes (docs/theme.md), skills (docs/skills.md), hooks (docs/hooks.md), custom tools (docs/custom-tools.md), RPC (docs/rpc.md)`;
 
 	if (appendSection) {
 		prompt += appendSection;

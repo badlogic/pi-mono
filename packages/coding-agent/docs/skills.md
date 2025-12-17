@@ -1,98 +1,194 @@
 # Skills
 
-Skills are instruction files that the agent loads on-demand for specific tasks.
+Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.
 
-## Skill Locations
+**Example use cases:**
+- Web search and content extraction (Brave Search API)
+- Browser automation via Chrome DevTools Protocol
+- Google Calendar, Gmail, Drive integration
+- PDF/DOCX processing and creation
+- Speech-to-text transcription
+- YouTube transcript extraction
 
-Skills are discovered from these locations (in order of priority, later wins on name collision):
+See [Skill Repositories](#skill-repositories) for ready-to-use skills.
 
-1. `~/.codex/skills/**/SKILL.md` (Codex CLI user skills, recursive)
-2. `~/.claude/skills/*/SKILL.md` (Claude Code user skills)
-3. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project skills)
-4. `~/.pi/agent/skills/**/SKILL.md` (Pi user skills, recursive)
-5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project skills, recursive)
+## When to Use Skills
 
-Skill names and descriptions are listed in the system prompt. When a task matches a skill's description, the agent uses the `read` tool to load it.
+| Need | Solution |
+|------|----------|
+| Always-needed context (conventions, commands) | AGENTS.md |
+| User triggers a specific prompt template | Slash command |
+| Additional tool directly callable by the LLM (like read/write/edit/bash) | Custom tool |
+| On-demand capability package (workflows, scripts, setup) | Skill |
 
-## Creating Skills
+Skills are loaded when:
+- The agent decides the task matches a skill's description
+- The user explicitly asks to use a skill (e.g., "use the pdf skill to extract tables")
 
-A skill is a markdown file with YAML frontmatter containing a `description` field:
+**Good skill examples:**
+- Browser automation with helper scripts and CDP workflow
+- Google Calendar CLI with setup instructions and usage patterns
+- PDF processing with multiple tools and extraction patterns
+- Speech-to-text transcription with API setup
+
+**Not a good fit for skills:**
+- "Always use TypeScript strict mode" → put in AGENTS.md
+- "Review my code" → make a slash command
+- Need user confirmation dialogs or custom TUI rendering → make a custom tool
+
+## Skill Structure
+
+A skill is a directory with a `SKILL.md` file. Everything else is freeform. Example structure:
+
+```
+my-skill/
+├── SKILL.md              # Required: frontmatter + instructions
+├── scripts/              # Helper scripts (bash, python, node)
+│   └── process.sh
+├── references/           # Detailed docs loaded on-demand
+│   └── api-reference.md
+└── assets/               # Templates, images, etc.
+    └── template.json
+```
+
+### SKILL.md Format
 
 ```markdown
 ---
-description: Extract text and tables from PDF files
+name: my-skill
+description: What this skill does and when to use it. Be specific.
 ---
 
-# PDF Processing Instructions
+# My Skill
 
-1. Use `pdftotext` to extract plain text
-2. For tables, use `tabula-py` or similar
-3. Always verify extraction quality
+## Setup
 
-Scripts are in: {baseDir}/scripts/
+Run once before first use:
+\`\`\`bash
+cd {baseDir}
+npm install
+\`\`\`
+
+## Usage
+
+\`\`\`bash
+{baseDir}/scripts/process.sh <input>
+\`\`\`
+
+## Workflow
+
+1. First step
+2. Second step
+3. Third step
 ```
 
 ### Frontmatter Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `description` | Yes | Short description for skill selection |
-| `name` | No | Override skill name (defaults to filename or directory name) |
+| `description` | Yes | What the skill does and when to use it |
+| `name` | No | Override skill name (defaults to directory name) |
 
-The parser only supports single-line `key: value` syntax. Multiline YAML blocks are not supported.
+The `description` is critical. It's shown in the system prompt and determines when the agent loads the skill. Be specific about both what it does and when to use it.
 
-### Variables
+### The `{baseDir}` Placeholder
 
-Use `{baseDir}` as a placeholder for the skill's directory. The agent is told each skill's base directory and will substitute it when following the instructions.
+Use `{baseDir}` to reference files in the skill's directory. The agent sees each skill's base directory and substitutes it when following instructions:
 
-### Subdirectories
+```markdown
+Helper scripts: {baseDir}/scripts/
+Config template: {baseDir}/assets/config.json
+```
 
-Pi and Codex skills in subdirectories use colon-separated names:
+## Skill Locations
+
+Skills are discovered from these locations (later wins on name collision):
+
+1. `~/.codex/skills/**/SKILL.md` (Codex CLI, recursive)
+2. `~/.claude/skills/*/SKILL.md` (Claude Code user, one level)
+3. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project, one level)
+4. `~/.pi/agent/skills/**/SKILL.md` (Pi user, recursive)
+5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project, recursive)
+
+### Subdirectory Naming
+
+Pi skills in subdirectories use colon-separated names:
 - `~/.pi/agent/skills/db/migrate/SKILL.md` → `db:migrate`
 - `<cwd>/.pi/skills/aws/s3/upload/SKILL.md` → `aws:s3:upload`
 
-## Claude Code Compatibility
+## How Skills Work
 
-Pi reads Claude Code skills from `~/.claude/skills/*/SKILL.md`. The `allowed-tools` and `model` frontmatter fields are ignored since Pi cannot enforce them.
+1. At startup, pi scans skill locations and extracts names + descriptions
+2. The system prompt includes a list of available skills with their descriptions
+3. When a task matches, the agent uses `read` to load the full SKILL.md
+4. The agent follows the instructions, using `{baseDir}` to reference scripts/assets
 
-## Codex CLI Compatibility
+This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
 
-Pi reads Codex CLI skills from `~/.codex/skills/`. Unlike Claude Code skills (one level deep), Codex skills are scanned recursively, matching Codex CLI's behavior. Hidden files/directories (starting with `.`) and symlinks are skipped.
+## Example: Web Search Skill
+
+```
+brave-search/
+├── SKILL.md
+├── search.js
+└── content.js
+```
+
+**SKILL.md:**
+```markdown
+---
+name: brave-search
+description: Web search and content extraction via Brave Search API. Use for searching documentation, facts, or any web content.
+---
+
+# Brave Search
+
+## Setup
+
+\`\`\`bash
+cd {baseDir}
+npm install
+\`\`\`
+
+## Search
+
+\`\`\`bash
+{baseDir}/search.js "query"              # Basic search
+{baseDir}/search.js "query" --content    # Include page content
+\`\`\`
+
+## Extract Page Content
+
+\`\`\`bash
+{baseDir}/content.js https://example.com
+\`\`\`
+```
+
+## Compatibility
+
+**Claude Code**: Pi reads skills from `~/.claude/skills/*/SKILL.md`. The `allowed-tools` and `model` frontmatter fields are ignored.
+
+**Codex CLI**: Pi reads skills from `~/.codex/skills/` recursively. Hidden files/directories and symlinks are skipped.
+
+## Skill Repositories
+
+For inspiration and ready-to-use skills:
+
+- [Anthropic Skills](https://github.com/anthropics/skills) - Official skills for document processing (docx, pdf, pptx, xlsx), web development, and more
+- [Pi Skills](https://github.com/badlogic/pi-skills) - Skills for web search, browser automation, Google APIs, transcription
 
 ## Disabling Skills
 
-CLI flag:
+CLI:
 ```bash
 pi --no-skills
 ```
 
-Or in `~/.pi/agent/settings.json`:
+Settings (`~/.pi/agent/settings.json`):
 ```json
 {
   "skills": {
     "enabled": false
   }
 }
-```
-
-## Example
-
-```markdown
----
-description: Perform code review with security and performance analysis
----
-
-# Code Review
-
-Analyze:
-
-## Security
-- Input validation
-- SQL injection
-- XSS vulnerabilities
-
-## Performance
-- Algorithm complexity
-- Memory usage
-- Query efficiency
 ```

@@ -6,6 +6,7 @@
  */
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
+import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import type { SessionEntry } from "../session-manager.js";
 
 // ============================================================================
@@ -121,7 +122,7 @@ export interface TurnEndEvent {
 	type: "turn_end";
 	turnIndex: number;
 	message: AppMessage;
-	toolResults: AppMessage[];
+	toolResults: ToolResultMessage[];
 }
 
 /**
