@@ -116,9 +116,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
 				const msg = event.message as any;
 				if (msg.role === "assistant") {
 					// Extract text content
-					const textParts = msg.content
-						.filter((c: any) => c.type === "text")
-						.map((c: any) => c.text);
+					const textParts = msg.content.filter((c: any) => c.type === "text").map((c: any) => c.text);
 					output = textParts.join("\n");
 
 					// Extract usage
@@ -242,5 +240,103 @@ export const AgentPresets = {
 		model: DEFAULT_AGENT_MODEL,
 		maxTokens: 4000,
 		timeout: 30000,
+	}),
+};
+
+/**
+ * Learning-enabled agent options
+ */
+export interface LearningAgentOptions extends AgentOptions {
+	mode?: string; // Expertise mode (general, coding, research, trading)
+	enableLearning?: boolean; // Enable Act-Learn-Reuse cycle
+}
+
+/**
+ * Learning agent result with expertise info
+ */
+export interface LearningAgentResult extends AgentResult {
+	learned?: {
+		learned: boolean;
+		insight: string;
+		expertiseFile: string;
+	};
+	mode?: string;
+}
+
+/**
+ * Run a learning-enabled agent task
+ * Implements Act-Learn-Reuse pattern from TAC Lesson 13
+ */
+export async function runLearningAgent(options: LearningAgentOptions): Promise<LearningAgentResult> {
+	const { mode = "general", enableLearning = true, ...agentOptions } = options;
+
+	// Import expertise manager (dynamic to avoid circular deps)
+	const { actLearnReuse } = await import("./expertise-manager.js");
+
+	if (!enableLearning) {
+		// Standard execution without learning
+		const result = await runAgent(agentOptions);
+		return { ...result, mode };
+	}
+
+	// ACT-LEARN-REUSE cycle
+	const { success, output, learned, result } = await actLearnReuse(
+		mode,
+		agentOptions.prompt,
+		async (enhancedPrompt) => {
+			const agentResult = await runAgent({
+				...agentOptions,
+				prompt: enhancedPrompt,
+			});
+			return {
+				success: agentResult.success,
+				output: agentResult.output,
+				result: agentResult,
+			};
+		},
+	);
+
+	return {
+		...(result as AgentResult),
+		success,
+		output,
+		learned,
+		mode,
+	};
+}
+
+/**
+ * Learning-enabled presets
+ */
+export const LearningPresets = {
+	/** Code review with learning */
+	codeReview: (code: string, context?: string): LearningAgentOptions => ({
+		...AgentPresets.codeReview(code, context),
+		mode: "coding",
+		enableLearning: true,
+	}),
+
+	/** Research with learning */
+	research: (topic: string): LearningAgentOptions => ({
+		...AgentPresets.research(topic),
+		mode: "research",
+		enableLearning: true,
+	}),
+
+	/** Trading analysis with learning */
+	tradingAnalysis: (symbol: string, data: string): LearningAgentOptions => ({
+		...AgentPresets.tradingAnalysis(symbol, data),
+		mode: "trading",
+		enableLearning: true,
+	}),
+
+	/** General task with learning */
+	general: (task: string): LearningAgentOptions => ({
+		prompt: task,
+		model: DEFAULT_AGENT_MODEL,
+		maxTokens: 8000,
+		timeout: 60000,
+		mode: "general",
+		enableLearning: true,
 	}),
 };
