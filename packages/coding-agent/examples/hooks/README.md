@@ -13,6 +13,9 @@ Creates git stash checkpoints at each turn, allowing code restoration when branc
 ### protected-paths.ts
 Blocks writes to protected paths (.env, .git/, node_modules/).
 
+### file-trigger.ts
+Watches a trigger file and injects its contents into the conversation. Useful for external systems (CI, file watchers, webhooks) to send messages to the agent.
+
 ## Usage
 
 ```bash
