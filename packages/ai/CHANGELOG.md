@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Amazon Bedrock provider**: Added `amazon-bedrock` as a new provider for accessing Anthropic Claude models via AWS Bedrock. Uses `@anthropic-ai/bedrock-sdk` with the same `anthropic-messages` API. Supports streaming, extended thinking, and prompt caching. Authentication via AWS credentials (`AWS_PROFILE`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, or EC2/ECS instance metadata). Models are pulled from models.dev.
+
 ## [0.22.3] - 2025-12-16
 
 ### Added

@@ -28,6 +28,7 @@ export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 
 export type KnownProvider =
 	| "anthropic"
+	| "amazon-bedrock"
 	| "google"
 	| "openai"
 	| "github-copilot"

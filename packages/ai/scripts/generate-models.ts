@@ -128,6 +128,38 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Amazon Bedrock models (Anthropic Claude models only for now)
+		// Uses @anthropic-ai/bedrock-sdk which provides the same Messages API
+		if (data["amazon-bedrock"]?.models) {
+			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				// Only include Anthropic models for now (they use the anthropic-messages API via bedrock-sdk)
+				if (!modelId.startsWith("anthropic.") && !modelId.startsWith("global.anthropic.") && !modelId.startsWith("us.anthropic.")) {
+					continue;
+				}
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "anthropic-messages",
+					provider: "amazon-bedrock",
+					baseUrl: "", // Bedrock uses AWS region-based URLs, handled by SDK
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		// Process Google models
 		if (data.google?.models) {
 			for (const [modelId, model] of Object.entries(data.google.models)) {
@@ -514,9 +546,7 @@ export const MODELS = {
 			output += `\t\t\tname: "${model.name}",\n`;
 			output += `\t\t\tapi: "${model.api}",\n`;
 			output += `\t\t\tprovider: "${model.provider}",\n`;
-			if (model.baseUrl) {
-				output += `\t\t\tbaseUrl: "${model.baseUrl}",\n`;
-			}
+			output += `\t\t\tbaseUrl: "${model.baseUrl || ""}",\n`;
 			if (model.headers) {
 				output += `\t\t\theaders: ${JSON.stringify(model.headers)},\n`;
 			}

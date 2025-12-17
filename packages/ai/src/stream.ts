@@ -1,5 +1,6 @@
 import { ThinkingLevel } from "@google/genai";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type BedrockOptions, streamBedrock } from "./providers/bedrock.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
@@ -56,11 +57,23 @@ export function stream<TApi extends Api>(
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKey(model.provider);
-	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
+	// Amazon Bedrock uses AWS credentials (AWS_PROFILE, AWS_ACCESS_KEY_ID, etc.), not an API key
+	const isBedrockProvider = model.provider === "amazon-bedrock";
+
+	if (!isBedrockProvider) {
+		const apiKey = options?.apiKey || getApiKey(model.provider);
+		if (!apiKey) {
+			throw new Error(`No API key for provider: ${model.provider}`);
+		}
 	}
+
+	const apiKey = options?.apiKey || getApiKey(model.provider) || "";
 	const providerOptions = { ...options, apiKey };
+
+	// Route amazon-bedrock provider to streamBedrock (uses anthropic-messages API)
+	if (isBedrockProvider && model.api === "anthropic-messages") {
+		return streamBedrock(model as Model<"anthropic-messages">, context, providerOptions as BedrockOptions);
+	}
 
 	const api: Api = model.api;
 	switch (api) {
@@ -98,11 +111,17 @@ export function streamSimple<TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKey(model.provider);
-	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
+	// Amazon Bedrock uses AWS credentials, not an API key
+	const isBedrockProvider = model.provider === "amazon-bedrock";
+
+	if (!isBedrockProvider) {
+		const apiKey = options?.apiKey || getApiKey(model.provider);
+		if (!apiKey) {
+			throw new Error(`No API key for provider: ${model.provider}`);
+		}
 	}
 
+	const apiKey = options?.apiKey || getApiKey(model.provider) || "";
 	const providerOptions = mapOptionsForApi(model, options, apiKey);
 	return stream(model, context, providerOptions);
 }
