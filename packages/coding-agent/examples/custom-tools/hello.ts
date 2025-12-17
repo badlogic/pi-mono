@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "@mariozechner/pi-coding-agent";
 import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
 
 const factory: CustomToolFactory = (pi) => ({

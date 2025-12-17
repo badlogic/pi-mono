@@ -1,4 +1,7 @@
 // Core session management
+
+// Re-export Type from typebox for custom tools
+export { Type } from "@sinclair/typebox";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -86,7 +89,6 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.js";
-
 // Tools
 export { bashTool, codingTools, editTool, readTool, writeTool } from "./core/tools/index.js";
 
