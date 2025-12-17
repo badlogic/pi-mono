@@ -1,19 +1,21 @@
 /**
  * Agents Module
- * Claude Code subagent spawning and OpenHands Software Agent SDK integration
+ * Lightweight agent (pi-agent-core) and OpenHands Software Agent SDK integration
  */
 
-// Claude Agent exports
+// Lightweight Agent exports (pi-mono pattern)
 export {
-	type AgentOptions,
 	AgentPresets,
+	type AgentOptions,
 	type AgentResult,
-	ClaudeAgent,
-	getClaudeAgent,
+	AGENT_MODELS,
+	DEFAULT_AGENT_MODEL,
+	getAgentModels,
+	isAgentAvailable,
 	runAgent,
-} from "./claude-agent.js";
-// OpenHands Software Agent SDK integration - Core
-// OpenHands Expert Functions - Convenience exports
+} from "./lightweight-agent.js";
+
+// OpenHands Software Agent SDK integration
 export {
 	getOpenHandsModes,
 	isOpenHandsAvailable,
