@@ -284,7 +284,7 @@ export class Markdown implements Component {
 			}
 
 			case "table": {
-				const tableLines = this.renderTable(token as any);
+				const tableLines = this.renderTable(token as any, width);
 				lines.push(...tableLines);
 				break;
 			}
@@ -489,56 +489,162 @@ export class Markdown implements Component {
 	}
 
 	/**
-	 * Render a table
+	 * Wrap text into multiple lines, respecting word boundaries.
+	 * Used for table cells that need to fit within a column width.
 	 */
-	private renderTable(token: Token & { header: any[]; rows: any[][] }): string[] {
-		const lines: string[] = [];
-
-		// Calculate column widths
-		const columnWidths: number[] = [];
-
-		// Check header
-		for (let i = 0; i < token.header.length; i++) {
-			const headerText = this.renderInlineTokens(token.header[i].tokens || []);
-			const width = visibleWidth(headerText);
-			columnWidths[i] = Math.max(columnWidths[i] || 0, width);
+	private wrapCellText(text: string, maxWidth: number): string[] {
+		if (maxWidth <= 0) {
+			return [text];
 		}
 
-		// Check rows
-		for (const row of token.rows) {
-			for (let i = 0; i < row.length; i++) {
-				const cellText = this.renderInlineTokens(row[i].tokens || []);
-				const width = visibleWidth(cellText);
-				columnWidths[i] = Math.max(columnWidths[i] || 0, width);
+		// If it already fits, return as-is
+		if (visibleWidth(text) <= maxWidth) {
+			return [text];
+		}
+
+		// Split by words (preserve spaces for proper reconstruction)
+		const words = text.split(/(\s+)/);
+		const lines: string[] = [];
+		let currentLine = "";
+
+		for (const word of words) {
+			if (word === "") continue;
+
+			const wordWidth = visibleWidth(word);
+
+			// If word itself is too long, we need to break it character by character
+			if (wordWidth > maxWidth && currentLine === "") {
+				// Break the long word
+				let remaining = word;
+				while (visibleWidth(remaining) > maxWidth) {
+					// Find how many characters fit
+					let cutPoint = 1;
+					while (cutPoint < remaining.length && visibleWidth(remaining.slice(0, cutPoint + 1)) <= maxWidth) {
+						cutPoint++;
+					}
+					lines.push(remaining.slice(0, cutPoint));
+					remaining = remaining.slice(cutPoint);
+				}
+				if (remaining) {
+					currentLine = remaining;
+				}
+				continue;
+			}
+
+			if (currentLine === "") {
+				currentLine = word;
+			} else if (visibleWidth(currentLine + word) <= maxWidth) {
+				currentLine += word;
+			} else {
+				// Current line is full, start new line
+				lines.push(currentLine.trimEnd());
+				// Don't start new line with whitespace
+				currentLine = word.trim() ? word.trimStart() : "";
 			}
 		}
 
-		// Limit column widths to reasonable max
-		const maxColWidth = 40;
-		for (let i = 0; i < columnWidths.length; i++) {
-			columnWidths[i] = Math.min(columnWidths[i], maxColWidth);
+		if (currentLine) {
+			lines.push(currentLine.trimEnd());
 		}
 
-		// Render header
-		const headerCells = token.header.map((cell, i) => {
+		return lines.length > 0 ? lines : [""];
+	}
+
+	/**
+	 * Render a table with width-aware cell wrapping.
+	 * Cells that don't fit are wrapped to multiple lines.
+	 */
+	private renderTable(token: Token & { header: any[]; rows: any[][] }, availableWidth: number): string[] {
+		const lines: string[] = [];
+		const numCols = token.header.length;
+
+		if (numCols === 0) {
+			return lines;
+		}
+
+		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
+		// = 2 + (n-1) * 3 + 2 = 3n + 1
+		const borderOverhead = 3 * numCols + 1;
+
+		// Calculate natural column widths (what each column needs without constraints)
+		const naturalWidths: number[] = [];
+		for (let i = 0; i < numCols; i++) {
+			const headerText = this.renderInlineTokens(token.header[i].tokens || []);
+			naturalWidths[i] = visibleWidth(headerText);
+		}
+		for (const row of token.rows) {
+			for (let i = 0; i < row.length; i++) {
+				const cellText = this.renderInlineTokens(row[i].tokens || []);
+				naturalWidths[i] = Math.max(naturalWidths[i] || 0, visibleWidth(cellText));
+			}
+		}
+
+		// Calculate column widths that fit within available width
+		const totalNaturalWidth = naturalWidths.reduce((a, b) => a + b, 0) + borderOverhead;
+		let columnWidths: number[];
+
+		if (totalNaturalWidth <= availableWidth) {
+			// Everything fits naturally
+			columnWidths = naturalWidths;
+		} else {
+			// Need to shrink columns to fit
+			const availableForCells = availableWidth - borderOverhead;
+			if (availableForCells <= numCols) {
+				// Extremely narrow - give each column at least 1 char
+				columnWidths = naturalWidths.map(() => Math.max(1, Math.floor(availableForCells / numCols)));
+			} else {
+				// Distribute space proportionally based on natural widths
+				const totalNatural = naturalWidths.reduce((a, b) => a + b, 0);
+				columnWidths = naturalWidths.map((w) => {
+					const proportion = w / totalNatural;
+					return Math.max(1, Math.floor(proportion * availableForCells));
+				});
+
+				// Adjust for rounding errors - distribute remaining space
+				const allocated = columnWidths.reduce((a, b) => a + b, 0);
+				let remaining = availableForCells - allocated;
+				for (let i = 0; remaining > 0 && i < numCols; i++) {
+					columnWidths[i]++;
+					remaining--;
+				}
+			}
+		}
+
+		// Render header with wrapping
+		const headerCellLines: string[][] = token.header.map((cell, i) => {
 			const text = this.renderInlineTokens(cell.tokens || []);
-			return this.theme.bold(text.padEnd(columnWidths[i]));
+			return this.wrapCellText(text, columnWidths[i]);
 		});
-		lines.push("│ " + headerCells.join(" │ ") + " │");
+		const headerLineCount = Math.max(...headerCellLines.map((c) => c.length));
+
+		for (let lineIdx = 0; lineIdx < headerLineCount; lineIdx++) {
+			const rowParts = headerCellLines.map((cellLines, colIdx) => {
+				const text = cellLines[lineIdx] || "";
+				const padded = text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
+				return this.theme.bold(padded);
+			});
+			lines.push("│ " + rowParts.join(" │ ") + " │");
+		}
 
 		// Render separator
-		const separatorCells = columnWidths.map((width) => "─".repeat(width));
+		const separatorCells = columnWidths.map((w) => "─".repeat(w));
 		lines.push("├─" + separatorCells.join("─┼─") + "─┤");
 
-		// Render rows
+		// Render rows with wrapping
 		for (const row of token.rows) {
-			const rowCells = row.map((cell, i) => {
+			const rowCellLines: string[][] = row.map((cell, i) => {
 				const text = this.renderInlineTokens(cell.tokens || []);
-				const visWidth = visibleWidth(text);
-				const padding = " ".repeat(Math.max(0, columnWidths[i] - visWidth));
-				return text + padding;
+				return this.wrapCellText(text, columnWidths[i]);
 			});
-			lines.push("│ " + rowCells.join(" │ ") + " │");
+			const rowLineCount = Math.max(...rowCellLines.map((c) => c.length));
+
+			for (let lineIdx = 0; lineIdx < rowLineCount; lineIdx++) {
+				const rowParts = rowCellLines.map((cellLines, colIdx) => {
+					const text = cellLines[lineIdx] || "";
+					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
+				});
+				lines.push("│ " + rowParts.join(" │ ") + " │");
+			}
 		}
 
 		lines.push(""); // Add spacing after table
