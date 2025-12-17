@@ -1,0 +1,8 @@
+dist
+node_modules
+*.js
+!.eslintrc.js
+coverage
+# Excluded from tsconfig.json
+**/*.test.ts
+**/*.patch.ts

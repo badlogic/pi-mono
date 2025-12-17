@@ -9,6 +9,7 @@ Tools for building AI agents and managing LLM deployments.
 | **[@mariozechner/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
 | **[@mariozechner/pi-agent](packages/agent)** | Agent runtime with tool calling and state management |
 | **[@mariozechner/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
+| **[@mariozechner/pi-discord](packages/discord-bot)** | Discord bot with 89+ MCP tools, OpenHands SDK, and GLM-4.6 integration |
 | **[@mariozechner/pi-mom](packages/mom)** | Slack bot that delegates messages to the pi coding agent |
 | **[@mariozechner/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
 | **[@mariozechner/pi-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
