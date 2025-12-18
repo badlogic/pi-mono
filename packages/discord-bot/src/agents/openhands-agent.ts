@@ -46,7 +46,10 @@ export type OpenHandsMode =
 	| "refactor" // Code refactoring
 	| "debug" // Debugging and issue fixing
 	| "migrate" // Dependency/code migration
-	| "optimize"; // Performance optimization
+	| "optimize" // Performance optimization
+	| "trading_analysis" // Crypto trading analysis and signals
+	| "strategy_backtest" // Trading strategy backtesting
+	| "risk_assessment"; // Trading risk and portfolio analysis
 
 /**
  * Result from OpenHands agent execution
@@ -539,6 +542,59 @@ export const OpenHandsPresets = {
 		delegate: true,
 		securityCheck: true,
 	}),
+
+	// =========================================================================
+	// Trading Expert Presets (Moon Dev Inspired)
+	// =========================================================================
+
+	/**
+	 * Crypto trading analysis
+	 * Analyzes price action, technical indicators, sentiment
+	 */
+	tradingAnalysis: (symbol: string, priceData?: string, sentiment?: string): OpenHandsOptions => ({
+		task: `Analyze ${symbol} for trading signals.${priceData ? ` Price data: ${priceData}` : ""}${sentiment ? ` Sentiment: ${sentiment}` : ""} Provide: 1) Technical analysis (RSI, MACD, support/resistance), 2) Signal recommendation (BUY/SELL/HOLD), 3) Confidence level and reasoning.`,
+		mode: "trading_analysis",
+		timeout: 300,
+		securityCheck: false, // No code execution needed
+		enableLearning: true,
+	}),
+
+	/**
+	 * Trading strategy backtesting
+	 * Tests strategy on historical data
+	 */
+	strategyBacktest: (strategy: string, params?: string, timeframe = "1 year"): OpenHandsOptions => ({
+		task: `Backtest ${strategy} strategy${params ? ` with params: ${params}` : ""} over ${timeframe}. Analyze: 1) Win rate and profit factor, 2) Maximum drawdown, 3) Sharpe/Sortino ratios, 4) Monte Carlo simulation for robustness, 5) Recommended parameter adjustments.`,
+		mode: "strategy_backtest",
+		timeout: 600,
+		securityCheck: false,
+		enableLearning: true,
+	}),
+
+	/**
+	 * Portfolio risk assessment
+	 * Analyzes risk metrics and position sizing
+	 */
+	riskAssessment: (holdings: string, totalValue?: number): OpenHandsOptions => ({
+		task: `Assess portfolio risk for: ${holdings}${totalValue ? ` Total value: $${totalValue}` : ""}. Calculate: 1) Value at Risk (VaR) at 95% and 99%, 2) Correlation matrix, 3) Concentration risk, 4) Optimal position sizing (Kelly Criterion), 5) Risk mitigation recommendations.`,
+		mode: "risk_assessment",
+		timeout: 300,
+		securityCheck: false,
+		enableLearning: true,
+	}),
+
+	/**
+	 * Full trading audit
+	 * Combines analysis, backtest, and risk assessment
+	 */
+	fullTradingAudit: (symbol: string, strategy?: string): OpenHandsOptions => ({
+		task: `Perform full trading audit for ${symbol}${strategy ? ` using ${strategy} strategy` : ""}. Include: 1) Technical and sentiment analysis, 2) Strategy backtesting, 3) Risk assessment, 4) Final recommendation with entry/exit levels and position size.`,
+		mode: "trading_analysis",
+		timeout: 900,
+		delegate: true,
+		securityCheck: false,
+		enableLearning: true,
+	}),
 };
 
 /**
@@ -554,6 +610,9 @@ export const OpenHandsModeDescriptions: Record<OpenHandsMode, string> = {
 	debug: "Debugging - root cause analysis, fixes, regression tests",
 	migrate: "Migration - dependency upgrades, breaking changes",
 	optimize: "Optimization - performance profiling, bottlenecks",
+	trading_analysis: "Trading analysis - crypto signals, technical indicators, sentiment",
+	strategy_backtest: "Strategy backtesting - historical performance, Monte Carlo, risk metrics",
+	risk_assessment: "Risk assessment - portfolio VaR, correlation, position sizing",
 };
 
 /**
@@ -666,6 +725,46 @@ export async function runOptimize(path: string, focus?: string): Promise<OpenHan
 }
 
 // ============================================================================
+// Trading Expert Functions (Moon Dev Inspired)
+// ============================================================================
+
+/**
+ * Run crypto trading analysis with OpenHands
+ */
+export async function runTradingAnalysis(
+	symbol: string,
+	priceData?: string,
+	sentiment?: string,
+): Promise<OpenHandsResult> {
+	return runOpenHandsAgent(OpenHandsPresets.tradingAnalysis(symbol, priceData, sentiment));
+}
+
+/**
+ * Run strategy backtesting with OpenHands
+ */
+export async function runStrategyBacktest(
+	strategy: string,
+	params?: string,
+	timeframe = "1 year",
+): Promise<OpenHandsResult> {
+	return runOpenHandsAgent(OpenHandsPresets.strategyBacktest(strategy, params, timeframe));
+}
+
+/**
+ * Run portfolio risk assessment with OpenHands
+ */
+export async function runRiskAssessment(holdings: string, totalValue?: number): Promise<OpenHandsResult> {
+	return runOpenHandsAgent(OpenHandsPresets.riskAssessment(holdings, totalValue));
+}
+
+/**
+ * Run full trading audit with OpenHands
+ */
+export async function runFullTradingAudit(symbol: string, strategy?: string): Promise<OpenHandsResult> {
+	return runOpenHandsAgent(OpenHandsPresets.fullTradingAudit(symbol, strategy));
+}
+
+// ============================================================================
 // Expertise Management (Agent Experts Pattern)
 // ============================================================================
 
@@ -694,6 +793,9 @@ export function getExpertiseStats(): ExpertiseStats[] {
 		"debug",
 		"migrate",
 		"optimize",
+		"trading_analysis",
+		"strategy_backtest",
+		"risk_assessment",
 	];
 
 	return modes.map((mode) => {

@@ -73,12 +73,16 @@ import {
 	runCodeReview,
 	runDebug,
 	runDocGeneration,
+	runFullTradingAudit,
 	runLearningAgent,
 	runOpenHandsAgent,
 	runOptimize,
 	runRefactor,
+	runRiskAssessment,
 	runSecurityScan,
+	runStrategyBacktest,
 	runTestGeneration,
+	runTradingAnalysis,
 	runTwoAgentWorkflow,
 	wrapToolWithHooks,
 } from "./agents/index.js";
@@ -1489,7 +1493,47 @@ const slashCommands = [
 		.addSubcommand((sub) => sub.setName("whales").setDescription("View recent whale activity"))
 		.addSubcommand((sub) => sub.setName("signals").setDescription("View recent trading signals"))
 		.addSubcommand((sub) => sub.setName("summary").setDescription("Get market summary"))
-		.addSubcommand((sub) => sub.setName("status").setDescription("View trading agent status")),
+		.addSubcommand((sub) => sub.setName("status").setDescription("View trading agent status"))
+		.addSubcommand((sub) =>
+			sub
+				.setName("backtest")
+				.setDescription("Backtest a trading strategy (OpenHands)")
+				.addStringOption((opt) =>
+					opt
+						.setName("strategy")
+						.setDescription("Strategy name (e.g., momentum, mean-reversion)")
+						.setRequired(true),
+				)
+				.addStringOption((opt) =>
+					opt.setName("timeframe").setDescription("Backtest timeframe (default: 1 year)").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("risk")
+				.setDescription("Assess portfolio risk (OpenHands)")
+				.addStringOption((opt) =>
+					opt
+						.setName("holdings")
+						.setDescription("Holdings as JSON (e.g., [{symbol:BTC,allocation:0.5}])")
+						.setRequired(true),
+				)
+				.addNumberOption((opt) =>
+					opt.setName("value").setDescription("Total portfolio value in USD").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("audit")
+				.setDescription("Full trading audit - analysis + backtest + risk (OpenHands)")
+				.addStringOption((opt) =>
+					opt.setName("symbol").setDescription("Symbol to audit (e.g., BTC)").setRequired(true),
+				)
+				.addStringOption((opt) =>
+					opt.setName("strategy").setDescription("Strategy to backtest (optional)").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) => sub.setName("expertise").setDescription("View accumulated trading expertise")),
 
 	// Knowledge base command
 	new SlashCommandBuilder()
@@ -8019,6 +8063,147 @@ async function main() {
 										{ name: "Total Signals", value: String(stats.totalSignals), inline: true },
 										{ name: "Agents", value: agentStatus || "No agents" },
 									)
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "backtest": {
+								const strategy = interaction.options.getString("strategy", true);
+								const timeframe = interaction.options.getString("timeframe") || "1 year";
+
+								await interaction.editReply(
+									`🔬 Running ${strategy} strategy backtest over ${timeframe}... (OpenHands)`,
+								);
+
+								const result = await runStrategyBacktest(strategy, undefined, timeframe);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle(`📊 Backtest: ${strategy}`)
+										.setColor(0x7c3aed)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Timeframe", value: timeframe, inline: true },
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Strategy Backtest" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Backtest failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "risk": {
+								const holdings = interaction.options.getString("holdings", true);
+								const value = interaction.options.getNumber("value") || undefined;
+
+								await interaction.editReply(`⚖️ Analyzing portfolio risk... (OpenHands)`);
+
+								const result = await runRiskAssessment(holdings, value);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle("⚖️ Risk Assessment")
+										.setColor(0xf59e0b)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Holdings", value: holdings.substring(0, 200), inline: false },
+											...(value
+												? [{ name: "Portfolio Value", value: `$${value.toLocaleString()}`, inline: true }]
+												: []),
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Risk Assessment" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Risk assessment failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "audit": {
+								const symbol = interaction.options.getString("symbol", true).toUpperCase();
+								const strategy = interaction.options.getString("strategy") || undefined;
+
+								await interaction.editReply(
+									`🔍 Running full trading audit for ${symbol}${strategy ? ` with ${strategy}` : ""}... (OpenHands)`,
+								);
+
+								const result = await runFullTradingAudit(symbol, strategy);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle(`🔍 Full Trading Audit: ${symbol}`)
+										.setColor(0x10b981)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Symbol", value: symbol, inline: true },
+											...(strategy ? [{ name: "Strategy", value: strategy, inline: true }] : []),
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Full Trading Audit" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Trading audit failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "expertise": {
+								const expertisePath = join(process.cwd(), "src", "trading", "expertise", "trading.md");
+								let expertiseContent = "No trading expertise found.";
+
+								try {
+									const fs = await import("fs");
+									if (fs.existsSync(expertisePath)) {
+										expertiseContent = fs.readFileSync(expertisePath, "utf-8");
+									}
+								} catch {
+									expertiseContent = "Error loading expertise file.";
+								}
+
+								// Parse key sections from the expertise file
+								const sections: { name: string; value: string }[] = [];
+
+								const mentalModelMatch = expertiseContent.match(/## Mental Model\n([\s\S]*?)(?=\n## |$)/);
+								if (mentalModelMatch) {
+									sections.push({ name: "Mental Model", value: mentalModelMatch[1].trim().substring(0, 500) });
+								}
+
+								const patternsMatch = expertiseContent.match(/## Patterns Learned\n([\s\S]*?)(?=\n## |$)/);
+								if (patternsMatch) {
+									sections.push({
+										name: "Patterns Learned",
+										value: patternsMatch[1].trim().substring(0, 500) || "None yet",
+									});
+								}
+
+								const lastUpdatedMatch = expertiseContent.match(/\*Last updated: ([^*]+)\*/);
+								const sessionsMatch = expertiseContent.match(/\*Total sessions: (\d+)\*/);
+
+								const embed = new EmbedBuilder()
+									.setTitle("📚 Trading Expertise")
+									.setColor(0x8b5cf6)
+									.setDescription("Accumulated knowledge from trading sessions")
+									.addFields(
+										...sections.map((s) => ({ name: s.name, value: s.value, inline: false })),
+										{
+											name: "Last Updated",
+											value: lastUpdatedMatch ? lastUpdatedMatch[1].trim() : "Never",
+											inline: true,
+										},
+										{ name: "Total Sessions", value: sessionsMatch ? sessionsMatch[1] : "0", inline: true },
+									)
+									.setFooter({ text: "Agent Experts - Act-Learn-Reuse" })
 									.setTimestamp();
 
 								await interaction.editReply({ embeds: [embed] });
