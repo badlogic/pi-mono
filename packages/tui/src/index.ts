@@ -31,8 +31,6 @@ export {
 	isCtrlT,
 	isCtrlU,
 	isCtrlW,
-	isKittyCtrl,
-	isKittyKey,
 	isShiftTab,
 	Keys,
 } from "./keys.js";
