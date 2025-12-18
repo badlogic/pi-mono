@@ -11,6 +11,7 @@ import { SentimentAgent } from "./agents/sentiment-agent.js";
 import { WhaleAgent } from "./agents/whale-agent.js";
 import type { BaseAgent } from "./base-agent.js";
 import { ConsensusEngine } from "./consensus.js";
+import { type TradingOutcome, tradingLearning } from "./learning-service.js";
 import type { ConsensusResult, TradeSignal } from "./types.js";
 
 interface OrchestratorConfig {
@@ -259,6 +260,75 @@ export class TradingOrchestrator {
 		}
 
 		return stats;
+	}
+
+	/**
+	 * Record a trading outcome for learning
+	 * Call this when a trade is closed to improve future predictions
+	 */
+	async recordOutcome(signal: TradeSignal, exitPrice: number, success: boolean): Promise<void> {
+		const marketCondition = this.determineMarketCondition(signal);
+
+		const outcome: TradingOutcome = {
+			timestamp: new Date().toISOString(),
+			symbol: signal.symbol,
+			action: signal.action as "BUY" | "SELL" | "HOLD",
+			entryPrice: signal.price,
+			exitPrice,
+			pnl: signal.action === "BUY" ? exitPrice - signal.price : signal.price - exitPrice,
+			success,
+			confidence: signal.confidence,
+			marketCondition,
+			agents: [signal.source],
+			reason: signal.reason,
+		};
+
+		await tradingLearning.recordOutcome(outcome);
+		console.log(`[Orchestrator] Recorded ${success ? "successful" : "failed"} outcome for ${signal.symbol}`);
+	}
+
+	/**
+	 * Determine market condition from recent signals and price data
+	 */
+	private determineMarketCondition(signal: TradeSignal): "bull" | "bear" | "sideways" | "volatile" {
+		const recentSignals = this.getRecentSignals(10, signal.symbol);
+
+		if (recentSignals.length < 3) {
+			return "sideways";
+		}
+
+		// Count buy vs sell signals
+		const buySignals = recentSignals.filter((s) => s.action === "BUY").length;
+		const sellSignals = recentSignals.filter((s) => s.action === "SELL").length;
+
+		// Check for volatility (many signals with mixed actions)
+		if (buySignals > 3 && sellSignals > 3) {
+			return "volatile";
+		}
+
+		// Check for trend
+		if (buySignals > sellSignals * 2) {
+			return "bull";
+		}
+		if (sellSignals > buySignals * 2) {
+			return "bear";
+		}
+
+		return "sideways";
+	}
+
+	/**
+	 * Get learning stats
+	 */
+	getLearningStats(): { outcomes: number; sessionAge: number } {
+		return tradingLearning.getStats();
+	}
+
+	/**
+	 * Force expertise update (call when session ends)
+	 */
+	async updateExpertise(): Promise<void> {
+		await tradingLearning.updateExpertise();
 	}
 
 	/**

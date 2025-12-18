@@ -4,6 +4,7 @@
  * Queries multiple AI models in parallel for trading decisions
  */
 
+import { tradingLearning } from "./learning-service.js";
 import type { ConsensusResult, PriceData, SentimentData, TradeSignal, TradingAction } from "./types.js";
 
 interface ModelConfig {
@@ -33,6 +34,9 @@ export class ConsensusEngine {
 	private config: ConsensusConfig;
 	private openRouterKey: string | undefined;
 	private groqKey: string | undefined;
+	private expertiseContext: string | null = null;
+	private expertiseLoadedAt: number = 0;
+	private readonly EXPERTISE_CACHE_TTL = 300000; // 5 minutes
 
 	constructor(config: Partial<ConsensusConfig> = {}) {
 		this.config = {
@@ -44,6 +48,46 @@ export class ConsensusEngine {
 		};
 		this.openRouterKey = process.env.OPENROUTER_API_KEY;
 		this.groqKey = process.env.GROQ_API_KEY;
+	}
+
+	/**
+	 * Load or refresh expertise context from learning service
+	 */
+	private async loadExpertise(): Promise<string | null> {
+		const now = Date.now();
+		if (this.expertiseContext && now - this.expertiseLoadedAt < this.EXPERTISE_CACHE_TTL) {
+			return this.expertiseContext;
+		}
+
+		try {
+			const expertise = await tradingLearning.loadExpertise();
+			// Extract just the recent session insights (last 500 chars max for context efficiency)
+			const sessionMarker = "## Session Insights";
+			const sessionIndex = expertise.indexOf(sessionMarker);
+			if (sessionIndex !== -1) {
+				// Get content after marker, limit to recent insights
+				const sessionContent = expertise.slice(sessionIndex);
+				// Take only recent learnings (first 2 sessions max)
+				const sessions = sessionContent.split("### Session:");
+				const recentSessions = sessions.slice(0, 3).join("### Session:");
+				this.expertiseContext = recentSessions.slice(0, 1500);
+			} else {
+				// Fallback: take last portion of file
+				this.expertiseContext = expertise.slice(-1000);
+			}
+			this.expertiseLoadedAt = now;
+			return this.expertiseContext;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Force refresh expertise context
+	 */
+	async refreshExpertise(): Promise<void> {
+		this.expertiseLoadedAt = 0;
+		await this.loadExpertise();
 	}
 
 	/**
@@ -61,7 +105,9 @@ export class ConsensusEngine {
 			throw new Error("No models enabled for consensus");
 		}
 
-		const prompt = this.buildPrompt(symbol, priceData, sentiment, additionalContext);
+		// Load expertise context for enhanced decision making
+		const expertise = await this.loadExpertise();
+		const prompt = this.buildPrompt(symbol, priceData, sentiment, additionalContext, expertise);
 
 		// Query all models in parallel with timeout
 		const modelPromises = enabledModels.map((model) =>
@@ -119,6 +165,7 @@ export class ConsensusEngine {
 		priceData: PriceData,
 		sentiment?: SentimentData,
 		additionalContext?: string,
+		expertise?: string | null,
 	): string {
 		let prompt = `You are a crypto trading analyst. Analyze the following data and provide a trading recommendation.
 
@@ -143,6 +190,14 @@ export class ConsensusEngine {
 			prompt += `
 ## Additional Context
 ${additionalContext}
+`;
+		}
+
+		if (expertise) {
+			prompt += `
+## Historical Trading Insights
+The following are learnings from recent trading sessions. Use these to inform your decision:
+${expertise}
 `;
 		}
 
@@ -400,7 +455,8 @@ Be conservative - only recommend BUY/SELL with high conviction.`;
 	 */
 	async quickAnalysis(symbol: string, priceData: PriceData, sentiment?: SentimentData): Promise<TradeSignal> {
 		const primaryModel = this.config.models.find((m) => m.enabled) || DEFAULT_MODELS[0];
-		const prompt = this.buildPrompt(symbol, priceData, sentiment);
+		const expertise = await this.loadExpertise();
+		const prompt = this.buildPrompt(symbol, priceData, sentiment, undefined, expertise);
 
 		const result = await this.queryModel(primaryModel, prompt);
 
