@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Gemini 3 Flash thinking support**: Extended thinking level support for Gemini 3 Flash models (MINIMAL, LOW, MEDIUM, HIGH) to match Pro models' capabilities. ([#212](https://github.com/badlogic/pi-mono/pull/212) by [@markusylisiurunen](https://github.com/markusylisiurunen))
+
 ## [0.22.3] - 2025-12-16
 
 ### Added

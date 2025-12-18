@@ -174,14 +174,14 @@ function mapOptionsForApi<TApi extends Api>(
 			const googleModel = model as Model<"google-generative-ai">;
 			const effort = clampReasoning(options.reasoning)!;
 
-			// Gemini 3 Pro models use thinkingLevel exclusively instead of thinkingBudget.
+			// Gemini 3 models use thinkingLevel exclusively instead of thinkingBudget.
 			// https://ai.google.dev/gemini-api/docs/thinking#set-budget
-			if (isGemini3ProModel(googleModel)) {
+			if (isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel)) {
 				return {
 					...base,
 					thinking: {
 						enabled: true,
-						level: getGoogleThinkingLevel(effort),
+						level: getGemini3ThinkingLevel(effort, googleModel),
 					},
 				} satisfies GoogleOptions;
 			}
@@ -210,13 +210,31 @@ function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
 	return model.id.includes("3-pro");
 }
 
-function getGoogleThinkingLevel(effort: ClampedReasoningEffort): ThinkingLevel {
-	// Gemini 3 Pro only supports LOW/HIGH (for now)
+function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
+	// Covers gemini-3-flash, gemini-3-flash-preview, and possible other prefixed ids in the future
+	return model.id.includes("3-flash");
+}
+
+function getGemini3ThinkingLevel(effort: ClampedReasoningEffort, model: Model<"google-generative-ai">): ThinkingLevel {
+	if (isGemini3ProModel(model)) {
+		// Gemini 3 Pro only supports LOW/HIGH (for now)
+		switch (effort) {
+			case "minimal":
+			case "low":
+				return ThinkingLevel.LOW;
+			case "medium":
+			case "high":
+				return ThinkingLevel.HIGH;
+		}
+	}
+	// Gemini 3 Flash supports all four levels
 	switch (effort) {
 		case "minimal":
+			return ThinkingLevel.MINIMAL;
 		case "low":
 			return ThinkingLevel.LOW;
 		case "medium":
+			return ThinkingLevel.MEDIUM;
 		case "high":
 			return ThinkingLevel.HIGH;
 	}
