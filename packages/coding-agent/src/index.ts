@@ -39,13 +39,20 @@ export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
+	BashToolResultEvent,
 	BranchEvent,
 	BranchEventResult,
+	CustomToolResultEvent,
+	EditToolResultEvent,
+	FindToolResultEvent,
+	GrepToolResultEvent,
 	HookAPI,
 	HookEvent,
 	HookEventContext,
 	HookFactory,
 	HookUIContext,
+	LsToolResultEvent,
+	ReadToolResultEvent,
 	SessionEvent,
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -53,6 +60,7 @@ export type {
 	ToolResultEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
+	WriteToolResultEvent,
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
 export {
@@ -89,7 +97,22 @@ export {
 	type SkillWarning,
 } from "./core/skills.js";
 // Tools
-export { bashTool, codingTools, editTool, readTool, writeTool } from "./core/tools/index.js";
+export {
+	type BashToolDetails,
+	bashTool,
+	codingTools,
+	editTool,
+	type FindToolDetails,
+	findTool,
+	type GrepToolDetails,
+	grepTool,
+	type LsToolDetails,
+	lsTool,
+	type ReadToolDetails,
+	readTool,
+	type TruncationResult,
+	writeTool,
+} from "./core/tools/index.js";
 
 // Main entry point
 export { main } from "./main.js";

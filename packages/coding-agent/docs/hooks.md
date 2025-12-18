@@ -222,12 +222,59 @@ Fired after tool executes. **Can modify result.**
 
 ```typescript
 pi.on("tool_result", async (event, ctx) => {
-  // event.toolName, event.toolCallId, event.input
-  // event.result: string
+  // event.toolName: string
+  // event.toolCallId: string
+  // event.input: Record<string, unknown>
+  // event.content: (TextContent | ImageContent)[]
+  // event.details: tool-specific (see below)
   // event.isError: boolean
-  return { result: "modified" }; // or undefined to keep original
+  
+  // Return modified content/details, or undefined to keep original
+  return { content: [...], details: {...} };
 });
 ```
+
+The event type is a discriminated union based on `toolName`. TypeScript will narrow `details` to the correct type:
+
+```typescript
+pi.on("tool_result", async (event, ctx) => {
+  if (event.toolName === "bash") {
+    // event.details is BashToolDetails | undefined
+    if (event.details?.truncation?.truncated) {
+      // Access full output from temp file
+      const fullPath = event.details.fullOutputPath;
+    }
+  }
+});
+```
+
+#### Tool Details Types
+
+Each built-in tool has a typed `details` field. Types are exported from `@mariozechner/pi-coding-agent`:
+
+| Tool | Details Type | Source |
+|------|-------------|--------|
+| `bash` | `BashToolDetails` | `src/core/tools/bash.ts` |
+| `read` | `ReadToolDetails` | `src/core/tools/read.ts` |
+| `edit` | `undefined` | - |
+| `write` | `undefined` | - |
+| `grep` | `GrepToolDetails` | `src/core/tools/grep.ts` |
+| `find` | `FindToolDetails` | `src/core/tools/find.ts` |
+| `ls` | `LsToolDetails` | `src/core/tools/ls.ts` |
+
+Common fields in details:
+- `truncation?: TruncationResult` - present when output was truncated
+- `fullOutputPath?: string` - path to temp file with full output (bash only)
+
+`TruncationResult` contains:
+- `truncated: boolean` - whether truncation occurred
+- `truncatedBy: "lines" | "bytes" | null` - which limit was hit
+- `totalLines`, `totalBytes` - original size
+- `outputLines`, `outputBytes` - truncated size
+
+Custom tools use `CustomToolResultEvent` with `details: unknown`.
+
+**Note:** If you modify `content`, you should also update `details` accordingly. The TUI uses `details` (e.g., truncation info) for rendering, so inconsistent values will cause display issues.
 
 ## Context API
 

@@ -44,26 +44,21 @@ export function wrapToolWithHooks<T>(tool: AgentTool<any, T>, hookRunner: HookRu
 
 			// Emit tool_result event - hooks can modify the result
 			if (hookRunner.hasHandlers("tool_result")) {
-				// Extract text from result for hooks
-				const resultText = result.content
-					.filter((c): c is { type: "text"; text: string } => c.type === "text")
-					.map((c) => c.text)
-					.join("\n");
-
 				const resultResult = (await hookRunner.emit({
 					type: "tool_result",
 					toolName: tool.name,
 					toolCallId,
 					input: params,
-					result: resultText,
+					content: result.content,
+					details: result.details,
 					isError: false,
 				})) as ToolResultEventResult | undefined;
 
 				// Apply modifications if any
-				if (resultResult?.result !== undefined) {
+				if (resultResult) {
 					return {
-						...result,
-						content: [{ type: "text", text: resultResult.result }],
+						content: resultResult.content ?? result.content,
+						details: (resultResult.details ?? result.details) as T,
 					};
 				}
 			}

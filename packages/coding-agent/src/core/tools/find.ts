@@ -18,7 +18,7 @@ const findSchema = Type.Object({
 
 const DEFAULT_LIMIT = 1000;
 
-interface FindToolDetails {
+export interface FindToolDetails {
 	truncation?: TruncationResult;
 	resultLimitReached?: number;
 }
