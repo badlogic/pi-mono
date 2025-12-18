@@ -12,7 +12,8 @@ import {
 import stripAnsi from "strip-ansi";
 import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
-import { theme } from "../theme/theme.js";
+import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
+import { renderDiff } from "./diff.js";
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -280,13 +281,19 @@ export class ToolExecutionComponent extends Container {
 
 			if (this.result) {
 				const output = this.getTextOutput();
-				const lines = output.split("\n");
+				const rawPath = this.args?.file_path || this.args?.path || "";
+				const lang = getLanguageFromPath(rawPath);
+				const lines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 
 				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", replaceTabs(line))).join("\n");
+				text +=
+					"\n\n" +
+					displayLines
+						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
+						.join("\n");
 				if (remaining > 0) {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
@@ -318,9 +325,15 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "write") {
-			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			const rawPath = this.args?.file_path || this.args?.path || "";
+			const path = shortenPath(rawPath);
 			const fileContent = this.args?.content || "";
-			const lines = fileContent ? fileContent.split("\n") : [];
+			const lang = getLanguageFromPath(rawPath);
+			const lines = fileContent
+				? lang
+					? highlightCode(replaceTabs(fileContent), lang)
+					: fileContent.split("\n")
+				: [];
 			const totalLines = lines.length;
 
 			text =
@@ -336,13 +349,18 @@ export class ToolExecutionComponent extends Container {
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
 
-				text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", replaceTabs(line))).join("\n");
+				text +=
+					"\n\n" +
+					displayLines
+						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
+						.join("\n");
 				if (remaining > 0) {
 					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 				}
 			}
 		} else if (this.toolName === "edit") {
-			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			const rawPath = this.args?.file_path || this.args?.path || "";
+			const path = shortenPath(rawPath);
 			text =
 				theme.fg("toolTitle", theme.bold("edit")) +
 				" " +
@@ -355,17 +373,7 @@ export class ToolExecutionComponent extends Container {
 						text += "\n\n" + theme.fg("error", errorText);
 					}
 				} else if (this.result.details?.diff) {
-					const diffLines = this.result.details.diff.split("\n");
-					const coloredLines = diffLines.map((line: string) => {
-						if (line.startsWith("+")) {
-							return theme.fg("toolDiffAdded", line);
-						} else if (line.startsWith("-")) {
-							return theme.fg("toolDiffRemoved", line);
-						} else {
-							return theme.fg("toolDiffContext", line);
-						}
-					});
-					text += "\n\n" + coloredLines.join("\n");
+					text += "\n\n" + renderDiff(this.result.details.diff, { filePath: rawPath });
 				}
 			}
 		} else if (this.toolName === "ls") {
