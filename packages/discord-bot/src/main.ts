@@ -43,12 +43,12 @@ import "dotenv/config";
 import express from "express";
 import cron from "node-cron";
 import {
+	// Hook System
+	CheckpointUtils,
 	// Agent Experts (TAC Lesson 13)
 	CODEBASE_EXPERTS,
 	createCodebaseExpert,
-	// Hook System
 	createDiscordHookIntegration,
-	disposeChannelHookIntegration,
 	// Claude SDK Two-Agent Pattern
 	executeClaudeFeature,
 	executeWithAutoExpert,
@@ -924,6 +924,20 @@ const slashCommands = [
 		),
 
 	new SlashCommandBuilder().setName("status").setDescription("Show bot status and system info"),
+
+	new SlashCommandBuilder()
+		.setName("hooks")
+		.setDescription("View hook system status and checkpoints")
+		.addSubcommand((subcommand) => subcommand.setName("status").setDescription("Show hook system status"))
+		.addSubcommand((subcommand) => subcommand.setName("checkpoints").setDescription("List available checkpoints"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("restore")
+				.setDescription("Restore to a checkpoint")
+				.addStringOption((option) =>
+					option.setName("id").setDescription("Checkpoint ID (from /hooks checkpoints)").setRequired(true),
+				),
+		),
 
 	new SlashCommandBuilder().setName("skills").setDescription("List loaded skills and capabilities"),
 
@@ -5363,6 +5377,104 @@ async function main() {
 						channelStates.size,
 					);
 					await interaction.reply({ embeds: [statusEmbed] });
+					break;
+				}
+
+				case "hooks": {
+					await interaction.deferReply();
+					const hooksSubcommand = interaction.options.getSubcommand();
+					const channelDir = join(workingDir, interaction.channelId);
+
+					switch (hooksSubcommand) {
+						case "status": {
+							const state = channelStates.get(interaction.channelId);
+							const hasHooks = !!state?.hooks;
+							const isGitRepo = await CheckpointUtils.isGitRepo(channelDir).catch(() => false);
+
+							const embed = new EmbedBuilder()
+								.setTitle("🪝 Hook System Status")
+								.setColor(hasHooks ? 0x00ff00 : 0x808080)
+								.addFields(
+									{ name: "Hooks Active", value: hasHooks ? "✅ Yes" : "❌ No", inline: true },
+									{ name: "Git Repository", value: isGitRepo ? "✅ Yes" : "❌ No", inline: true },
+									{ name: "Session ID", value: state?.sessionId || "N/A", inline: true },
+									{ name: "Turn Index", value: String(state?.turnIndex || 0), inline: true },
+								)
+								.addFields({
+									name: "Active Hooks",
+									value: [
+										"• **Checkpoint**: Git-based state snapshots each turn",
+										"• **LSP**: Diagnostics after file write/edit",
+										"• **Expert**: Domain detection + Act-Learn-Reuse",
+									].join("\n"),
+								})
+								.setTimestamp();
+
+							await interaction.editReply({ embeds: [embed] });
+							break;
+						}
+
+						case "checkpoints": {
+							const isGitRepo = await CheckpointUtils.isGitRepo(channelDir).catch(() => false);
+							if (!isGitRepo) {
+								await interaction.editReply("❌ Not a git repository - no checkpoints available");
+								break;
+							}
+
+							const checkpoints = await CheckpointUtils.loadAllCheckpoints(channelDir);
+							if (checkpoints.length === 0) {
+								await interaction.editReply("No checkpoints found for this channel.");
+								break;
+							}
+
+							// Sort by timestamp descending and take last 10
+							const sorted = checkpoints.sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+							const list = sorted
+								.map((cp) => {
+									const date = new Date(cp.timestamp).toLocaleString();
+									return `• **Turn ${cp.turnIndex}** - \`${cp.id.slice(0, 30)}...\`\n  ${date}`;
+								})
+								.join("\n");
+
+							const embed = new EmbedBuilder()
+								.setTitle("📸 Available Checkpoints")
+								.setDescription(list)
+								.setColor(0x3498db)
+								.setFooter({ text: `${checkpoints.length} total checkpoints` })
+								.setTimestamp();
+
+							await interaction.editReply({ embeds: [embed] });
+							break;
+						}
+
+						case "restore": {
+							const checkpointId = interaction.options.getString("id", true);
+							const isGitRepo = await CheckpointUtils.isGitRepo(channelDir).catch(() => false);
+							if (!isGitRepo) {
+								await interaction.editReply("❌ Not a git repository - cannot restore");
+								break;
+							}
+
+							const checkpoint = await CheckpointUtils.loadCheckpointFromRef(channelDir, checkpointId);
+							if (!checkpoint) {
+								await interaction.editReply(`❌ Checkpoint not found: ${checkpointId}`);
+								break;
+							}
+
+							try {
+								await CheckpointUtils.restoreCheckpoint(channelDir, checkpoint);
+								await interaction.editReply(
+									`✅ Restored to turn ${checkpoint.turnIndex}\n` +
+										`Checkpoint: \`${checkpointId}\`\n` +
+										`Head SHA: \`${checkpoint.headSha.slice(0, 8)}\``,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Restore failed: ${errMsg}`);
+							}
+							break;
+						}
+					}
 					break;
 				}
 
