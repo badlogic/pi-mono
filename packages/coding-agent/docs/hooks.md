@@ -278,18 +278,45 @@ Common fields in details:
 - `totalLines`, `totalBytes` - original size
 - `outputLines`, `outputBytes` - truncated size
 
-Custom tools use `CustomToolResultEvent` with `details: unknown`. You'll need to cast or validate:
+Custom tools use `CustomToolResultEvent` with `details: unknown`. Create your own type guard to get full type safety:
 
 ```typescript
-pi.on("tool_result", async (event, ctx) => {
-  if (event.toolName === "my-custom-tool") {
-    // Cast to your tool's details type
-    const details = event.details as MyCustomToolDetails;
-  }
-});
-```
+import { 
+  isBashToolResult,
+  type CustomToolResultEvent,
+  type HookAPI,
+  type ToolResultEvent,
+} from "@mariozechner/pi-coding-agent/hooks";
 
-Custom tools define their own details type in their `execute` function return value. The hook receives whatever the tool returned, but since the hook system doesn't know about custom tool types at compile time, it's typed as `unknown`.
+interface MyCustomToolDetails {
+  someField: string;
+}
+
+// Type guard that narrows both toolName and details
+function isMyCustomToolResult(e: ToolResultEvent): e is CustomToolResultEvent & { 
+  toolName: "my-custom-tool"; 
+  details: MyCustomToolDetails;
+} {
+  return e.toolName === "my-custom-tool";
+}
+
+export default function (pi: HookAPI) {
+  pi.on("tool_result", async (event, ctx) => {
+    // Built-in tool: use provided type guard
+    if (isBashToolResult(event)) {
+      if (event.details?.fullOutputPath) {
+        console.log(`Full output at: ${event.details.fullOutputPath}`);
+      }
+    }
+
+    // Custom tool: use your own type guard
+    if (isMyCustomToolResult(event)) {
+      // event.details is now MyCustomToolDetails
+      console.log(event.details.someField);
+    }
+  });
+}
+```
 
 **Note:** If you modify `content`, you should also update `details` accordingly. The TUI uses `details` (e.g., truncation info) for rendering, so inconsistent values will cause display issues.
 
