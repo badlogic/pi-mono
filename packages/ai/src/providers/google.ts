@@ -6,7 +6,6 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type Part,
-	type Schema,
 	type ThinkingConfig,
 	type ThinkingLevel,
 } from "@google/genai";
@@ -15,7 +14,6 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
-	ImageContent,
 	Model,
 	StopReason,
 	StreamFunction,
@@ -240,12 +238,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			// Remove internal index property used during streaming
-			for (const block of output.content) {
-				if ("index" in block) {
-					delete (block as { index?: number }).index;
-				}
-			}
+			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -266,6 +259,7 @@ function createClient(model: Model<"google-generative-ai">, apiKey?: string): Go
 		apiKey = process.env.GEMINI_API_KEY;
 	}
 
+	// Build httpOptions with baseUrl and headers if provided
 	const httpOptions: { baseUrl?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;
@@ -405,33 +399,33 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			const parts: Part[] = [];
 
 			// Extract text and image content
-			const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
-			const textResult = textContent.map((c) => c.text).join("\n");
-			const imageContent = model.input.includes("image")
-				? msg.content.filter((c): c is ImageContent => c.type === "image")
-				: [];
+			const textResult = msg.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as any).text)
+				.join("\n");
+			const imageBlocks = model.input.includes("image") ? msg.content.filter((c) => c.type === "image") : [];
 
 			// Always add functionResponse with text result (or placeholder if only images)
 			const hasText = textResult.length > 0;
-			const hasImages = imageContent.length > 0;
-
-			// Use "output" key for success, "error" key for errors as per SDK documentation
-			const responseValue = hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "";
+			const hasImages = imageBlocks.length > 0;
 
 			parts.push({
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
-					response: msg.isError ? { error: responseValue } : { output: responseValue },
+					response: {
+						result: hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "",
+						isError: msg.isError,
+					},
 				},
 			});
 
 			// Add any images as inlineData parts
-			for (const imageBlock of imageContent) {
+			for (const imageBlock of imageBlocks) {
 				parts.push({
 					inlineData: {
-						mimeType: imageBlock.mimeType,
-						data: imageBlock.data,
+						mimeType: (imageBlock as any).mimeType,
+						data: (imageBlock as any).data,
 					},
 				});
 			}
@@ -446,16 +440,14 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 	return contents;
 }
 
-function convertTools(
-	tools: Tool[],
-): { functionDeclarations: { name: string; description?: string; parameters: Schema }[] }[] | undefined {
+function convertTools(tools: Tool[]): any[] | undefined {
 	if (tools.length === 0) return undefined;
 	return [
 		{
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters as Schema, // TypeBox generates JSON Schema compatible with SDK Schema type
+				parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 			})),
 		},
 	];
@@ -486,8 +478,6 @@ function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.SAFETY:
 		case FinishReason.IMAGE_SAFETY:
 		case FinishReason.IMAGE_PROHIBITED_CONTENT:
-		case FinishReason.IMAGE_RECITATION:
-		case FinishReason.IMAGE_OTHER:
 		case FinishReason.RECITATION:
 		case FinishReason.FINISH_REASON_UNSPECIFIED:
 		case FinishReason.OTHER:
