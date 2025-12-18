@@ -138,8 +138,12 @@ async function runWithPython(options: OpenHandsOptions, startTime: number): Prom
 			timeout: timeout * 1000 + 10000,
 		});
 
-		proc.stdout.on("data", (data) => (stdout += data.toString()));
-		proc.stderr.on("data", (data) => (stderr += data.toString()));
+		proc.stdout.on("data", (data) => {
+			stdout += data.toString();
+		});
+		proc.stderr.on("data", (data) => {
+			stderr += data.toString();
+		});
 
 		proc.on("close", (code) => {
 			const duration = Date.now() - startTime;
@@ -206,8 +210,12 @@ except Exception as e:
 		let stderr = "";
 
 		const proc = spawn("docker", args, { timeout: timeout * 1000 + 10000 });
-		proc.stdout.on("data", (data) => (stdout += data.toString()));
-		proc.stderr.on("data", (data) => (stderr += data.toString()));
+		proc.stdout.on("data", (data) => {
+			stdout += data.toString();
+		});
+		proc.stderr.on("data", (data) => {
+			stderr += data.toString();
+		});
 
 		proc.on("close", (code) => {
 			const duration = Date.now() - startTime;
@@ -539,7 +547,9 @@ export async function isOpenHandsAvailable(): Promise<{
 	const pythonAvailable = await new Promise<boolean>((resolve) => {
 		const proc = spawn(PYTHON_PATH, ["-c", "import openhands; print('ok')"], { timeout: 5000 });
 		let output = "";
-		proc.stdout.on("data", (data) => (output += data.toString()));
+		proc.stdout.on("data", (data) => {
+			output += data.toString();
+		});
 		proc.on("close", (code) => resolve(code === 0 && output.includes("ok")));
 		proc.on("error", () => resolve(false));
 	});
@@ -554,7 +564,9 @@ export async function isOpenHandsAvailable(): Promise<{
 			timeout: 5000,
 		});
 		let output = "";
-		proc.stdout.on("data", (data) => (output += data.toString()));
+		proc.stdout.on("data", (data) => {
+			output += data.toString();
+		});
 		proc.on("close", () => resolve(output.includes("pi-openhands")));
 		proc.on("error", () => resolve(false));
 	});
@@ -569,7 +581,9 @@ export async function isOpenHandsAvailable(): Promise<{
 			timeout: 5000,
 		});
 		let output = "";
-		proc.stdout.on("data", (data) => (output += data.toString()));
+		proc.stdout.on("data", (data) => {
+			output += data.toString();
+		});
 		proc.on("close", () => resolve(output.includes("openhands")));
 		proc.on("error", () => resolve(false));
 	});

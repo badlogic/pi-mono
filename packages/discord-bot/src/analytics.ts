@@ -392,7 +392,9 @@ export class Analytics {
 			aggregated.totalCommands += day.totalCommands;
 			aggregated.errors += day.errors;
 
-			Object.keys(day.users).forEach((userId) => aggregated.uniqueUsers.add(userId));
+			Object.keys(day.users).forEach((userId) => {
+				aggregated.uniqueUsers.add(userId);
+			});
 
 			Object.entries(day.commands).forEach(([cmd, count]) => {
 				aggregated.commands[cmd] = (aggregated.commands[cmd] || 0) + count;

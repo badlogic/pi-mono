@@ -43,16 +43,18 @@ import "dotenv/config";
 import express from "express";
 import cron from "node-cron";
 import {
-	AgentPresets,
 	getAgentModels,
+	getExpertiseModes,
 	isAgentAvailable,
 	isOpenHandsAvailable,
+	LearningPresets,
+	loadExpertise,
 	type OpenHandsMode,
 	OpenHandsModeDescriptions,
-	runAgent,
 	runCodeReview,
 	runDebug,
 	runDocGeneration,
+	runLearningAgent,
 	runOpenHandsAgent,
 	runOptimize,
 	runRefactor,
@@ -1389,6 +1391,24 @@ const slashCommands = [
 				.setName("run")
 				.setDescription("Run a custom prompt with Claude agent")
 				.addStringOption((opt) => opt.setName("prompt").setDescription("Task for the agent").setRequired(true))
+				.addStringOption((opt) =>
+					opt
+						.setName("mode")
+						.setDescription("Learning mode (default: general)")
+						.setRequired(false)
+						.addChoices(
+							{ name: "General", value: "general" },
+							{ name: "Coding", value: "coding" },
+							{ name: "Research", value: "research" },
+							{ name: "Trading", value: "trading" },
+						),
+				)
+				.addBooleanOption((opt) =>
+					opt
+						.setName("learning")
+						.setDescription("Enable learning from this task (default: true)")
+						.setRequired(false),
+				)
 				.addIntegerOption((opt) =>
 					opt.setName("timeout").setDescription("Timeout in seconds (default: 300)").setRequired(false),
 				),
@@ -1397,14 +1417,24 @@ const slashCommands = [
 			sub
 				.setName("research")
 				.setDescription("Research a topic using Claude agent")
-				.addStringOption((opt) => opt.setName("topic").setDescription("Topic to research").setRequired(true)),
+				.addStringOption((opt) => opt.setName("topic").setDescription("Topic to research").setRequired(true))
+				.addBooleanOption((opt) =>
+					opt
+						.setName("learning")
+						.setDescription("Enable learning from this task (default: true)")
+						.setRequired(false),
+				),
 		)
 		.addSubcommand((sub) =>
 			sub
 				.setName("review")
 				.setDescription("Code review with Claude agent")
-				.addStringOption((opt) =>
-					opt.setName("code").setDescription("Code to review (or paste)").setRequired(true),
+				.addStringOption((opt) => opt.setName("code").setDescription("Code to review (or paste)").setRequired(true))
+				.addBooleanOption((opt) =>
+					opt
+						.setName("learning")
+						.setDescription("Enable learning from this task (default: true)")
+						.setRequired(false),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -1414,9 +1444,39 @@ const slashCommands = [
 				.addStringOption((opt) =>
 					opt.setName("symbol").setDescription("Trading symbol (e.g., BTC, ETH)").setRequired(true),
 				)
-				.addStringOption((opt) => opt.setName("data").setDescription("Market data or context").setRequired(false)),
+				.addStringOption((opt) => opt.setName("data").setDescription("Market data or context").setRequired(false))
+				.addBooleanOption((opt) =>
+					opt
+						.setName("learning")
+						.setDescription("Enable learning from this task (default: true)")
+						.setRequired(false),
+				),
 		)
 		.addSubcommand((sub) => sub.setName("status").setDescription("Check Claude agent availability")),
+
+	// Agent Learning System command
+	new SlashCommandBuilder()
+		.setName("expertise")
+		.setDescription("View and manage agent learning system")
+		.addSubcommand((sub) => sub.setName("status").setDescription("Show expertise files and session counts"))
+		.addSubcommand((sub) => sub.setName("modes").setDescription("List available learning modes"))
+		.addSubcommand((sub) =>
+			sub
+				.setName("view")
+				.setDescription("Show accumulated expertise for a mode")
+				.addStringOption((opt) =>
+					opt
+						.setName("mode")
+						.setDescription("Learning mode to view")
+						.setRequired(true)
+						.addChoices(
+							{ name: "General", value: "general" },
+							{ name: "Coding", value: "coding" },
+							{ name: "Research", value: "research" },
+							{ name: "Trading", value: "trading" },
+						),
+				),
+		),
 
 	// OpenHands Software Agent command - Expert modes
 	new SlashCommandBuilder()
@@ -1952,9 +2012,8 @@ function extractRecentLearnings(content: string, limit: number = 5): string[] {
 	const learnings: string[] = [];
 	const sessionRegex = /### Session: (.+?)\n\*\*Task:\*\* (.+?)\n\n(.+?)(?=\n### Session:|$)/gs;
 
-	let match;
-	while ((match = sessionRegex.exec(content)) !== null) {
-		const [_, timestamp, task, learning] = match;
+	for (const match of content.matchAll(sessionRegex)) {
+		const [, timestamp, task, learning] = match;
 		learnings.push(`**${timestamp}**\n${task.substring(0, 100)}...\n${learning.substring(0, 300)}...`);
 	}
 
@@ -7386,12 +7445,24 @@ async function main() {
 							case "run": {
 								const prompt = interaction.options.getString("prompt", true);
 								const timeout = (interaction.options.getInteger("timeout") || 300) * 1000;
+								const mode = (interaction.options.getString("mode") || "general") as
+									| "general"
+									| "coding"
+									| "research"
+									| "trading";
+								const enableLearning = interaction.options.getBoolean("learning") ?? true;
 
 								await interaction.editReply(
-									`🤖 Running Claude agent...\n\n**Prompt:** ${prompt.substring(0, 200)}...`,
+									`🤖 Running Claude agent...\n\n**Prompt:** ${prompt.substring(0, 200)}...\n**Mode:** ${mode}\n**Learning:** ${enableLearning ? "Enabled" : "Disabled"}`,
 								);
 
-								const result = await runAgent({ prompt, timeout, workingDir: workingDir });
+								const result = await runLearningAgent({
+									prompt,
+									timeout,
+									workingDir: workingDir,
+									mode,
+									enableLearning,
+								});
 
 								const embed = new EmbedBuilder()
 									.setTitle("🤖 Claude Agent Result")
@@ -7400,11 +7471,20 @@ async function main() {
 									.addFields(
 										{ name: "Status", value: result.success ? "✅ Success" : "❌ Failed", inline: true },
 										{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										{ name: "Mode", value: mode, inline: true },
 									)
 									.setTimestamp();
 
 								if (result.error) {
 									embed.addFields({ name: "Error", value: result.error.substring(0, 1000), inline: false });
+								}
+
+								if (result.learned?.learned) {
+									embed.addFields({
+										name: "Learning",
+										value: `New insight captured: ${result.learned.insight.substring(0, 100)}...`,
+										inline: false,
+									});
 								}
 
 								await interaction.editReply({ embeds: [embed] });
@@ -7413,10 +7493,14 @@ async function main() {
 
 							case "research": {
 								const topic = interaction.options.getString("topic", true);
+								const enableLearning = interaction.options.getBoolean("learning") ?? true;
 
-								await interaction.editReply(`🔍 Researching: "${topic}"...\n\n⏳ This may take a few minutes.`);
+								await interaction.editReply(
+									`🔍 Researching: "${topic}"...\n\n⏳ This may take a few minutes.\n**Learning:** ${enableLearning ? "Enabled" : "Disabled"}`,
+								);
 
-								const result = await runAgent(AgentPresets.research(topic));
+								const preset = LearningPresets.research(topic);
+								const result = await runLearningAgent({ ...preset, enableLearning });
 
 								const embed = new EmbedBuilder()
 									.setTitle(`🔍 Research: ${topic.substring(0, 100)}`)
@@ -7429,18 +7513,28 @@ async function main() {
 									})
 									.setTimestamp();
 
+								if (result.learned?.learned) {
+									embed.addFields({
+										name: "Learning",
+										value: `New insight captured: ${result.learned.insight.substring(0, 100)}...`,
+										inline: false,
+									});
+								}
+
 								await interaction.editReply({ embeds: [embed] });
 								break;
 							}
 
 							case "review": {
 								const code = interaction.options.getString("code", true);
+								const enableLearning = interaction.options.getBoolean("learning") ?? true;
 
 								await interaction.editReply(
-									`📝 Reviewing code...\n\n\`\`\`\n${code.substring(0, 200)}...\n\`\`\``,
+									`📝 Reviewing code...\n\n\`\`\`\n${code.substring(0, 200)}...\n\`\`\`\n**Learning:** ${enableLearning ? "Enabled" : "Disabled"}`,
 								);
 
-								const result = await runAgent(AgentPresets.codeReview(code));
+								const preset = LearningPresets.codeReview(code);
+								const result = await runLearningAgent({ ...preset, enableLearning });
 
 								const embed = new EmbedBuilder()
 									.setTitle("📝 Code Review")
@@ -7453,6 +7547,14 @@ async function main() {
 									})
 									.setTimestamp();
 
+								if (result.learned?.learned) {
+									embed.addFields({
+										name: "Learning",
+										value: `New insight captured: ${result.learned.insight.substring(0, 100)}...`,
+										inline: false,
+									});
+								}
+
 								await interaction.editReply({ embeds: [embed] });
 								break;
 							}
@@ -7460,12 +7562,14 @@ async function main() {
 							case "trading": {
 								const symbol = interaction.options.getString("symbol", true);
 								const data = interaction.options.getString("data") || "Analyze current market conditions";
+								const enableLearning = interaction.options.getBoolean("learning") ?? true;
 
 								await interaction.editReply(
-									`📈 Analyzing ${symbol.toUpperCase()}...\n\n⏳ Running trading analysis.`,
+									`📈 Analyzing ${symbol.toUpperCase()}...\n\n⏳ Running trading analysis.\n**Learning:** ${enableLearning ? "Enabled" : "Disabled"}`,
 								);
 
-								const result = await runAgent(AgentPresets.tradingAnalysis(symbol, data));
+								const preset = LearningPresets.tradingAnalysis(symbol, data);
+								const result = await runLearningAgent({ ...preset, enableLearning });
 
 								const embed = new EmbedBuilder()
 									.setTitle(`📈 Trading Analysis: ${symbol.toUpperCase()}`)
@@ -7478,6 +7582,14 @@ async function main() {
 									})
 									.setTimestamp();
 
+								if (result.learned?.learned) {
+									embed.addFields({
+										name: "Learning",
+										value: `New insight captured: ${result.learned.insight.substring(0, 100)}...`,
+										inline: false,
+									});
+								}
+
 								await interaction.editReply({ embeds: [embed] });
 								break;
 							}
@@ -7485,6 +7597,124 @@ async function main() {
 					} catch (error) {
 						const errMsg = error instanceof Error ? error.message : String(error);
 						await interaction.editReply(`Agent error: ${errMsg}`);
+					}
+					break;
+				}
+
+				case "expertise": {
+					const subcommand = interaction.options.getSubcommand();
+					await interaction.deferReply();
+
+					try {
+						switch (subcommand) {
+							case "status": {
+								const modes = getExpertiseModes();
+								const statusList = modes
+									.map((mode) => {
+										const expertise = loadExpertise(mode);
+										const sessionMatches = expertise.match(/### Session:/g);
+										const sessionCount = sessionMatches ? sessionMatches.length : 0;
+										const icon = sessionCount > 0 ? "📚" : "📖";
+										return `${icon} **${mode}**: ${sessionCount} sessions`;
+									})
+									.join("\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("🎓 Agent Learning Status")
+									.setDescription(statusList || "No learning data yet")
+									.setColor(0x9b59b6)
+									.setFooter({ text: "Use /learning view <mode> to see accumulated expertise" })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "modes": {
+								const modes = getExpertiseModes();
+								const modeDescriptions = {
+									general: "General-purpose tasks and conversations",
+									coding: "Software development, code review, debugging",
+									research: "Information gathering, analysis, synthesis",
+									trading: "Market analysis, trading strategies, risk management",
+								};
+
+								const modeList = modes
+									.map((mode) => {
+										const desc = modeDescriptions[mode as keyof typeof modeDescriptions] || "Unknown mode";
+										return `**${mode}**\n└ ${desc}`;
+									})
+									.join("\n\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("🎯 Available Learning Modes")
+									.setDescription(modeList)
+									.setColor(0x3498db)
+									.setFooter({ text: "Agents learn from each task and improve over time" })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "view": {
+								const mode = interaction.options.getString("mode", true) as
+									| "general"
+									| "coding"
+									| "research"
+									| "trading";
+								const expertise = loadExpertise(mode);
+
+								if (!expertise || expertise.length === 0) {
+									await interaction.editReply(`No learning data yet for mode: **${mode}**`);
+									break;
+								}
+
+								// Parse sessions from markdown
+								const sessionRegex =
+									/### Session: ([\d-]+\s[\d:]+)\n\*\*Task:\*\* (.+?)\n\n([\s\S]+?)(?=\n### Session:|$)/g;
+								const sessions: Array<{ timestamp: string; task: string; content: string }> = [];
+								for (const match of expertise.matchAll(sessionRegex)) {
+									sessions.push({
+										timestamp: match[1],
+										task: match[2],
+										content: match[3],
+									});
+								}
+
+								if (sessions.length === 0) {
+									await interaction.editReply(`No sessions found for mode: **${mode}**`);
+									break;
+								}
+
+								// Show last 5 sessions
+								const recentSessions = sessions.slice(-5);
+								const sessionSummary = recentSessions
+									.map((session, idx) => {
+										const preview = session.content.substring(0, 150).trim();
+										return `**Session ${sessions.length - (recentSessions.length - idx - 1)}** (${session.timestamp})\n*Task:* ${session.task}\n${preview}...`;
+									})
+									.join("\n\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle(`🎓 Learning History: ${mode}`)
+									.setDescription(sessionSummary || "No sessions yet")
+									.setColor(0x2ecc71)
+									.addFields({
+										name: "Total Sessions",
+										value: sessions.length.toString(),
+										inline: true,
+									})
+									.setFooter({ text: "Showing last 5 sessions" })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+						}
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Learning system error: ${errMsg}`);
 					}
 					break;
 				}
@@ -7703,7 +7933,7 @@ async function main() {
 										.setDescription(
 											`You are about to clear ${expertise.sessionCount} sessions of accumulated expertise for **${mode}**.\n\n` +
 												"This will reset the agent to a blank slate. This action cannot be undone.\n\n" +
-												"Type `/openhands learning action:clear mode:${mode}` again within 30 seconds to confirm.",
+												`Type \`/openhands learning action:clear mode:${mode}\` again within 30 seconds to confirm.`,
 										)
 										.setTimestamp();
 

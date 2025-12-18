@@ -10,11 +10,16 @@
  * "Never update expertise files directly - teach agents HOW to learn"
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
 
-// Expertise directory - shared across all platforms
-const EXPERTISE_DIR = join(dirname(import.meta.url.replace("file://", "")), "expertise");
+// Get workspace root from current file location (works in both src and dist)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// Navigate up from dist/agents or src/agents to package root, then into src/agents/expertise
+const packageRoot = resolve(__dirname, "..", "..");
+const EXPERTISE_DIR = join(packageRoot, "src", "agents", "expertise");
 
 export interface ExpertiseConfig {
 	mode: string;
@@ -323,8 +328,8 @@ export function getExpertiseModes(): string[] {
 	ensureExpertiseDir();
 
 	try {
-		const files = require("fs").readdirSync(EXPERTISE_DIR);
-		return files.filter((f: string) => f.endsWith(".md")).map((f: string) => f.replace(".md", ""));
+		const files = readdirSync(EXPERTISE_DIR);
+		return files.filter((f) => f.endsWith(".md")).map((f) => f.replace(".md", ""));
 	} catch {
 		return [];
 	}
