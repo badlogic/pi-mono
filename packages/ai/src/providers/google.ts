@@ -409,14 +409,15 @@ function convertMessages(model: Model<"google-generative-ai">, context: Context)
 			const hasText = textResult.length > 0;
 			const hasImages = imageBlocks.length > 0;
 
+			// Format response according to SDK docs: use 'output' for results, 'error' for errors
+			const responseValue = hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "";
+			const response: Record<string, unknown> = msg.isError ? { error: responseValue } : { output: responseValue };
+
 			parts.push({
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
-					response: {
-						result: hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "",
-						isError: msg.isError,
-					},
+					response,
 				},
 			});
 
