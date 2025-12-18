@@ -14,6 +14,21 @@ import { spawn } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
+/**
+ * SECURITY: Escape string for safe Python string embedding
+ * Prevents command injection by properly escaping all special characters
+ */
+function escapePythonString(str: string): string {
+	return str
+		.replace(/\\/g, "\\\\") // Escape backslashes first
+		.replace(/"/g, '\\"') // Escape double quotes
+		.replace(/'/g, "\\'") // Escape single quotes
+		.replace(/\n/g, "\\n") // Escape newlines
+		.replace(/\r/g, "\\r") // Escape carriage returns
+		.replace(/\t/g, "\\t") // Escape tabs
+		.replace(/\0/g, ""); // Remove null bytes
+}
+
 // Get package root to find src files
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -186,6 +201,11 @@ async function runWithPython(options: OpenHandsOptions, startTime: number): Prom
 async function runWithDocker(options: OpenHandsOptions, startTime: number): Promise<OpenHandsResult> {
 	const { task, workspace, mode = "developer", timeout = 300 } = options;
 
+	// SECURITY: Properly escape all user inputs to prevent command injection
+	const safeTask = escapePythonString(task);
+	const safeMode = escapePythonString(mode);
+	const safeWorkspace = escapePythonString(workspace || "/app/workspace");
+
 	return new Promise((resolve) => {
 		const args = [
 			"exec",
@@ -197,12 +217,12 @@ import json
 try:
     from openhands import OpenHands
     agent = OpenHands()
-    result = agent.run("${task.replace(/"/g, '\\"')}")
+    result = agent.run("${safeTask}")
     print("###OPENHANDS_RESULT###")
-    print(json.dumps({"success": True, "output": str(result), "mode": "${mode}", "tools_used": [], "workspace": "${workspace || "/app/workspace"}"}))
+    print(json.dumps({"success": True, "output": str(result), "mode": "${safeMode}", "tools_used": [], "workspace": "${safeWorkspace}"}))
 except Exception as e:
     print("###OPENHANDS_RESULT###")
-    print(json.dumps({"success": False, "output": "", "error": str(e), "mode": "${mode}", "tools_used": [], "workspace": "${workspace || "/app/workspace"}"}))
+    print(json.dumps({"success": False, "output": "", "error": str(e), "mode": "${safeMode}", "tools_used": [], "workspace": "${safeWorkspace}"}))
 `,
 		];
 

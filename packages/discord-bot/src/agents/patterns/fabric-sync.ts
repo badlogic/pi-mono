@@ -7,6 +7,24 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+/**
+ * SECURITY: Sanitize pattern name to prevent path traversal attacks
+ * Only allows alphanumeric characters, underscores, and hyphens
+ */
+function sanitizePatternName(name: string): string {
+	// Remove any path traversal sequences and invalid characters
+	const sanitized = name
+		.replace(/\.\./g, "") // Remove path traversal
+		.replace(/[/\\]/g, "") // Remove path separators
+		.replace(/[^a-zA-Z0-9_-]/g, "_"); // Replace invalid chars with underscore
+
+	if (!sanitized || sanitized.length === 0) {
+		throw new Error("Invalid pattern name after sanitization");
+	}
+
+	return sanitized;
+}
+
 // Priority patterns to sync first
 export const PRIORITY_PATTERNS = [
 	"extract_wisdom",
@@ -144,19 +162,22 @@ export async function downloadPattern(patternName: string): Promise<string> {
  * Save pattern to local cache
  */
 async function savePatternToCache(patternName: string, content: string): Promise<void> {
+	// SECURITY: Sanitize pattern name to prevent path traversal
+	const safeName = sanitizePatternName(patternName);
+
 	// Ensure cache directory exists
 	await fs.mkdir(CACHE_DIR, { recursive: true });
 
-	const filePath = path.join(CACHE_DIR, `${patternName}.md`);
+	const filePath = path.join(CACHE_DIR, `${safeName}.md`);
 	await fs.writeFile(filePath, content, "utf-8");
 
 	// Save metadata
-	const metaPath = path.join(CACHE_DIR, `${patternName}.meta.json`);
+	const metaPath = path.join(CACHE_DIR, `${safeName}.meta.json`);
 	await fs.writeFile(
 		metaPath,
 		JSON.stringify(
 			{
-				name: patternName,
+				name: safeName,
 				lastSync: new Date().toISOString(),
 			},
 			null,
@@ -171,7 +192,9 @@ async function savePatternToCache(patternName: string, content: string): Promise
  */
 async function loadPatternFromCache(patternName: string): Promise<string | null> {
 	try {
-		const filePath = path.join(CACHE_DIR, `${patternName}.md`);
+		// SECURITY: Sanitize pattern name to prevent path traversal
+		const safeName = sanitizePatternName(patternName);
+		const filePath = path.join(CACHE_DIR, `${safeName}.md`);
 		return await fs.readFile(filePath, "utf-8");
 	} catch (error) {
 		return null;
@@ -183,7 +206,9 @@ async function loadPatternFromCache(patternName: string): Promise<string | null>
  */
 async function getPatternMetadata(patternName: string): Promise<{ lastSync?: Date } | null> {
 	try {
-		const metaPath = path.join(CACHE_DIR, `${patternName}.meta.json`);
+		// SECURITY: Sanitize pattern name to prevent path traversal
+		const safeName = sanitizePatternName(patternName);
+		const metaPath = path.join(CACHE_DIR, `${safeName}.meta.json`);
 		const content = await fs.readFile(metaPath, "utf-8");
 		const meta = JSON.parse(content);
 		return {
@@ -256,25 +281,28 @@ export async function syncFabricPatterns(
  * Tries cache first, downloads if not cached
  */
 export async function getPattern(name: string): Promise<PatternInfo | null> {
+	// SECURITY: Sanitize pattern name to prevent path traversal
+	const safeName = sanitizePatternName(name);
+
 	// Try cache first
-	let content = await loadPatternFromCache(name);
-	const metadata = await getPatternMetadata(name);
+	let content = await loadPatternFromCache(safeName);
+	const metadata = await getPatternMetadata(safeName);
 
 	// Download if not cached
 	if (!content) {
 		try {
-			console.log(`Pattern ${name} not cached, downloading...`);
-			content = await downloadPattern(name);
-			await savePatternToCache(name, content);
+			console.log(`Pattern ${safeName} not cached, downloading...`);
+			content = await downloadPattern(safeName);
+			await savePatternToCache(safeName, content);
 		} catch (error) {
-			console.error(`Failed to get pattern ${name}:`, error);
+			console.error(`Failed to get pattern ${safeName}:`, error);
 			return null;
 		}
 	}
 
 	return {
-		name,
-		path: path.join(CACHE_DIR, `${name}.md`),
+		name: safeName,
+		path: path.join(CACHE_DIR, `${safeName}.md`),
 		systemPrompt: content,
 		cached: !!metadata,
 		lastSync: metadata?.lastSync,
