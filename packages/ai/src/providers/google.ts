@@ -258,9 +258,18 @@ function createClient(model: Model<"google-generative-ai">, apiKey?: string): Go
 		}
 		apiKey = process.env.GEMINI_API_KEY;
 	}
+
+	const httpOptions: { baseUrl?: string; headers?: Record<string, string> } = {};
+	if (model.baseUrl) {
+		httpOptions.baseUrl = model.baseUrl;
+	}
+	if (model.headers) {
+		httpOptions.headers = model.headers;
+	}
+
 	return new GoogleGenAI({
 		apiKey,
-		httpOptions: model.headers ? { headers: model.headers } : undefined,
+		httpOptions: Object.keys(httpOptions).length > 0 ? httpOptions : undefined,
 	});
 }
 
