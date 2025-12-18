@@ -31,6 +31,12 @@ const customCheckpoint = createCheckpointHook({
 await CheckpointUtils.createCheckpoint(cwd, id, turnIndex, sessionId);
 await CheckpointUtils.restoreCheckpoint(cwd, checkpointData);
 const checkpoints = await CheckpointUtils.loadAllCheckpoints(cwd);
+
+// Checkpoint Tagging
+const tag = await CheckpointUtils.tagCheckpoint(cwd, checkpointId, 'v1.0', 'First working version');
+const tags = await CheckpointUtils.listTags(cwd);
+const checkpoint = await CheckpointUtils.getCheckpointByTag(cwd, 'v1.0');
+await CheckpointUtils.deleteTag(cwd, 'v1.0');
 ```
 
 ### 2. LSP Hook
@@ -107,6 +113,56 @@ const prompt = ExpertUtils.createExpertPrompt(task, context);
 ## Hook Manager
 
 Coordinates all registered hooks and routes events.
+
+### Metrics
+
+The hook manager tracks detailed execution metrics:
+
+```typescript
+import { AgentHookManager, type HookMetrics } from './agents/hooks';
+
+const manager = new AgentHookManager(cwd);
+
+// Get current metrics
+const metrics: HookMetrics = manager.getMetrics();
+console.log(metrics.totalEvents);        // Total events emitted
+console.log(metrics.eventsByType);       // Events by type (turn_start: 5, tool_call: 20, etc.)
+console.log(metrics.executionTimes);     // Execution times (total, byHook, byEvent)
+console.log(metrics.errors);             // Error counts (total, byHook)
+console.log(metrics.session);            // Session info (startTime, sessionId, turnCount)
+console.log(metrics.toolCalls);          // Tool call stats (total, blocked, modified)
+
+// Reset metrics on new session
+manager.resetMetrics('new-session-id');
+```
+
+### Debug Logging
+
+Enable detailed logging for troubleshooting:
+
+```typescript
+import { enableDebugLogging, isDebugLoggingEnabled } from './agents/hooks';
+
+// Enable debug logging
+enableDebugLogging(true);
+
+// Check if enabled
+if (isDebugLoggingEnabled()) {
+  console.log('Debug logging is active');
+}
+
+// Disable
+enableDebugLogging(false);
+```
+
+Debug logs include:
+- Event emission with hook count
+- Individual handler execution
+- Tool blocking decisions
+- Tool result modifications
+- Event timing
+
+### Basic Usage
 
 ```typescript
 import {

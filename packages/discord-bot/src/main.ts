@@ -937,6 +937,30 @@ const slashCommands = [
 				.addStringOption((option) =>
 					option.setName("id").setDescription("Checkpoint ID (from /hooks checkpoints)").setRequired(true),
 				),
+		)
+		.addSubcommand((subcommand) => subcommand.setName("metrics").setDescription("Show hook execution metrics"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("tag")
+				.setDescription("Tag a checkpoint with a friendly name")
+				.addStringOption((option) =>
+					option.setName("checkpoint_id").setDescription("Checkpoint ID to tag").setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName("name").setDescription("Tag name (alphanumeric, hyphens, underscores)").setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName("description").setDescription("Optional description").setRequired(false),
+				),
+		)
+		.addSubcommand((subcommand) => subcommand.setName("tags").setDescription("List all checkpoint tags"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("debug")
+				.setDescription("Toggle debug logging")
+				.addBooleanOption((option) =>
+					option.setName("enabled").setDescription("Enable or disable debug logging").setRequired(true),
+				),
 		),
 
 	new SlashCommandBuilder().setName("skills").setDescription("List loaded skills and capabilities"),
@@ -5472,6 +5496,124 @@ async function main() {
 								const errMsg = error instanceof Error ? error.message : String(error);
 								await interaction.editReply(`❌ Restore failed: ${errMsg}`);
 							}
+							break;
+						}
+
+						case "metrics": {
+							const state = channelStates.get(interaction.channelId);
+							if (!state?.hooks) {
+								await interaction.editReply("❌ No hooks active for this channel");
+								break;
+							}
+
+							const metrics = state.hooks.manager.getMetrics();
+							const uptime = Date.now() - metrics.session.startTime;
+							const uptimeStr =
+								uptime > 3600000
+									? `${Math.floor(uptime / 3600000)}h ${Math.floor((uptime % 3600000) / 60000)}m`
+									: `${Math.floor(uptime / 60000)}m ${Math.floor((uptime % 60000) / 1000)}s`;
+
+							const eventBreakdown = Object.entries(metrics.eventsByType)
+								.map(([type, count]) => `${type}: ${count}`)
+								.join(", ");
+
+							const hookTimes = Object.entries(metrics.executionTimes.byHook)
+								.map(([hook, time]) => `${hook}: ${time}ms`)
+								.join(", ");
+
+							const embed = new EmbedBuilder()
+								.setTitle("📊 Hook Metrics")
+								.setColor(0x9b59b6)
+								.addFields(
+									{ name: "Session ID", value: metrics.session.sessionId || "N/A", inline: true },
+									{ name: "Uptime", value: uptimeStr, inline: true },
+									{ name: "Turns", value: String(metrics.session.turnCount), inline: true },
+									{ name: "Total Events", value: String(metrics.totalEvents), inline: true },
+									{ name: "Total Execution Time", value: `${metrics.executionTimes.total}ms`, inline: true },
+									{ name: "Errors", value: String(metrics.errors.total), inline: true },
+									{
+										name: "Events by Type",
+										value: eventBreakdown || "None",
+										inline: false,
+									},
+									{
+										name: "Hook Execution Times",
+										value: hookTimes || "None",
+										inline: false,
+									},
+									{
+										name: "Tool Calls",
+										value:
+											`Total: ${metrics.toolCalls.total} | ` +
+											`Blocked: ${metrics.toolCalls.blocked} | ` +
+											`Modified: ${metrics.toolCalls.modified}`,
+										inline: false,
+									},
+								)
+								.setTimestamp();
+
+							await interaction.editReply({ embeds: [embed] });
+							break;
+						}
+
+						case "tag": {
+							const checkpointId = interaction.options.getString("checkpoint_id", true);
+							const tagName = interaction.options.getString("name", true);
+							const description = interaction.options.getString("description") || undefined;
+
+							try {
+								const tag = await CheckpointUtils.tagCheckpoint(channelDir, checkpointId, tagName, description);
+								await interaction.editReply(
+									`✅ Tagged checkpoint as **${tag.tag}**\n` +
+										`Checkpoint: \`${tag.checkpointId}\`\n` +
+										(description ? `Description: ${description}` : ""),
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to tag checkpoint: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "tags": {
+							const tags = await CheckpointUtils.listTags(channelDir);
+							if (tags.length === 0) {
+								await interaction.editReply("No tags found. Use `/hooks tag` to tag a checkpoint.");
+								break;
+							}
+
+							const list = tags
+								.slice(0, 15)
+								.map((t) => {
+									const date = new Date(t.timestamp).toLocaleString();
+									return (
+										`• **${t.tag}** → \`${t.checkpointId.slice(0, 30)}...\`\n` +
+										`  ${date}${t.description ? ` - ${t.description}` : ""}`
+									);
+								})
+								.join("\n");
+
+							const embed = new EmbedBuilder()
+								.setTitle("🏷️ Checkpoint Tags")
+								.setDescription(list)
+								.setColor(0xe67e22)
+								.setFooter({ text: `${tags.length} total tags` })
+								.setTimestamp();
+
+							await interaction.editReply({ embeds: [embed] });
+							break;
+						}
+
+						case "debug": {
+							const enabled = interaction.options.getBoolean("enabled", true);
+							// Import dynamically to avoid circular deps
+							const { enableDebugLogging, isDebugLoggingEnabled } = await import("./agents/hooks/index.js");
+							enableDebugLogging(enabled);
+							await interaction.editReply(
+								enabled
+									? "✅ Hook debug logging **enabled**. Check console for detailed hook events."
+									: "✅ Hook debug logging **disabled**.",
+							);
 							break;
 						}
 					}

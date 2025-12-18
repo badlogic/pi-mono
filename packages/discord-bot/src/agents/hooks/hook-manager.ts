@@ -41,6 +41,67 @@ import type {
 const execAsync = promisify(exec);
 
 // ============================================================================
+// Metrics Types
+// ============================================================================
+
+export interface HookMetrics {
+	/** Total events emitted */
+	totalEvents: number;
+	/** Events by type */
+	eventsByType: Record<string, number>;
+	/** Hook execution times (ms) */
+	executionTimes: {
+		total: number;
+		byHook: Record<string, number>;
+		byEvent: Record<string, number>;
+	};
+	/** Error counts */
+	errors: {
+		total: number;
+		byHook: Record<string, number>;
+	};
+	/** Session info */
+	session: {
+		startTime: number;
+		sessionId?: string;
+		turnCount: number;
+	};
+	/** Tool call stats */
+	toolCalls: {
+		total: number;
+		blocked: number;
+		modified: number;
+	};
+}
+
+// ============================================================================
+// Debug Logging
+// ============================================================================
+
+let debugLoggingEnabled = false;
+
+export function enableDebugLogging(enabled: boolean): void {
+	debugLoggingEnabled = enabled;
+	if (enabled) {
+		console.log("[HOOKS DEBUG] Debug logging enabled");
+	}
+}
+
+export function isDebugLoggingEnabled(): boolean {
+	return debugLoggingEnabled;
+}
+
+function debugLog(message: string, data?: unknown): void {
+	if (!debugLoggingEnabled) return;
+	const timestamp = new Date().toISOString();
+	if (data) {
+		console.log(`[HOOKS DEBUG ${timestamp}] ${message}`, JSON.stringify(data, null, 2));
+	} else {
+		console.log(`[HOOKS DEBUG ${timestamp}] ${message}`);
+	}
+}
+
+// ============================================================================
 // Hook Manager Implementation
 // ============================================================================
 
@@ -65,10 +126,58 @@ export class AgentHookManager implements HookManager {
 	private cwd: string;
 	private sendQueue: Array<{ text: string; attachments?: unknown[] }> = [];
 	private onSend?: (text: string, attachments?: unknown[]) => void;
+	private _metrics: HookMetrics;
 
 	constructor(cwd: string, onSend?: (text: string, attachments?: unknown[]) => void) {
 		this.cwd = cwd;
 		this.onSend = onSend;
+		this._metrics = this.createInitialMetrics();
+	}
+
+	/**
+	 * Create initial metrics object
+	 */
+	private createInitialMetrics(): HookMetrics {
+		return {
+			totalEvents: 0,
+			eventsByType: {},
+			executionTimes: {
+				total: 0,
+				byHook: {},
+				byEvent: {},
+			},
+			errors: {
+				total: 0,
+				byHook: {},
+			},
+			session: {
+				startTime: Date.now(),
+				turnCount: 0,
+			},
+			toolCalls: {
+				total: 0,
+				blocked: 0,
+				modified: 0,
+			},
+		};
+	}
+
+	/**
+	 * Get current metrics
+	 */
+	getMetrics(): HookMetrics {
+		return { ...this._metrics };
+	}
+
+	/**
+	 * Reset metrics (useful at session start)
+	 */
+	resetMetrics(sessionId?: string): void {
+		this._metrics = this.createInitialMetrics();
+		if (sessionId) {
+			this._metrics.session.sessionId = sessionId;
+		}
+		debugLog("Metrics reset", { sessionId });
 	}
 
 	/**
@@ -219,10 +328,31 @@ export class AgentHookManager implements HookManager {
 					? BranchEventResult | undefined
 					: void
 	> {
+		const eventStart = Date.now();
 		const context = this.createContext(ctx);
 		const eventType = event.type as keyof EventHandler;
 
+		// Update metrics
+		this._metrics.totalEvents++;
+		this._metrics.eventsByType[eventType] = (this._metrics.eventsByType[eventType] || 0) + 1;
+
+		// Track special events
+		if (eventType === "session") {
+			const sessionEvent = event as SessionEvent;
+			if (sessionEvent.reason === "start") {
+				this._metrics.session.sessionId = sessionEvent.sessionId;
+				this._metrics.session.startTime = Date.now();
+			}
+		} else if (eventType === "turn_start") {
+			this._metrics.session.turnCount++;
+		} else if (eventType === "tool_call") {
+			this._metrics.toolCalls.total++;
+		}
+
+		debugLog(`Emitting ${eventType} event`, { event, hookCount: this.hooks.size });
+
 		let result: any;
+		const originalResult = eventType === "tool_result" ? (event as ToolResultEvent).result : undefined;
 
 		for (const [hookId, hook] of this.hooks.entries()) {
 			if (!hook.enabled) continue;
@@ -233,8 +363,10 @@ export class AgentHookManager implements HookManager {
 			const eventHandlers = handlers[eventType];
 			if (!eventHandlers || eventHandlers.length === 0) continue;
 
+			const hookStart = Date.now();
 			for (const handler of eventHandlers) {
 				try {
+					debugLog(`Running ${hookId} handler for ${eventType}`);
 					const handlerResult = await handler(event as any, context);
 
 					// Merge results for tool_call, tool_result, and branch events
@@ -242,6 +374,8 @@ export class AgentHookManager implements HookManager {
 						if (eventType === "tool_call") {
 							const tcResult = handlerResult as ToolCallEventResult;
 							if (tcResult.block) {
+								this._metrics.toolCalls.blocked++;
+								debugLog(`Tool blocked by ${hookId}`, { reason: tcResult.reason });
 								return tcResult as any; // Block immediately
 							}
 						} else if (eventType === "tool_result") {
@@ -257,9 +391,28 @@ export class AgentHookManager implements HookManager {
 					}
 				} catch (error) {
 					console.error(`Hook ${hookId} error on ${eventType}:`, error);
+					this._metrics.errors.total++;
+					this._metrics.errors.byHook[hookId] = (this._metrics.errors.byHook[hookId] || 0) + 1;
+					debugLog(`Hook ${hookId} error`, { error: String(error) });
 				}
 			}
+			const hookDuration = Date.now() - hookStart;
+			this._metrics.executionTimes.byHook[hookId] =
+				(this._metrics.executionTimes.byHook[hookId] || 0) + hookDuration;
 		}
+
+		// Track if tool result was modified
+		if (eventType === "tool_result" && result && originalResult !== (event as ToolResultEvent).result) {
+			this._metrics.toolCalls.modified++;
+			debugLog("Tool result modified by hooks");
+		}
+
+		const totalDuration = Date.now() - eventStart;
+		this._metrics.executionTimes.total += totalDuration;
+		this._metrics.executionTimes.byEvent[eventType] =
+			(this._metrics.executionTimes.byEvent[eventType] || 0) + totalDuration;
+
+		debugLog(`Event ${eventType} completed in ${totalDuration}ms`);
 
 		return result;
 	}

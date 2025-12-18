@@ -22,15 +22,20 @@
 
 // Checkpoint Hook
 export {
+	type CheckpointTag,
 	CheckpointUtils,
 	checkpointHook,
 	cleanupOldCheckpoints,
 	createCheckpoint,
 	createCheckpointHook,
+	deleteTag,
+	getCheckpointByTag,
 	listCheckpointRefs,
+	listTags,
 	loadAllCheckpoints,
 	loadCheckpointFromRef,
 	restoreCheckpoint,
+	tagCheckpoint,
 } from "./checkpoint-hook.js";
 // Discord Integration
 export {
@@ -61,6 +66,9 @@ export {
 	createDefaultHookManager,
 	createDiscordContext,
 	createHookRegistration,
+	enableDebugLogging,
+	type HookMetrics,
+	isDebugLoggingEnabled,
 } from "./hook-manager.js";
 // LSP Hook
 export { createLSPHook, LSPUtils, lspHook } from "./lsp-hook.js";

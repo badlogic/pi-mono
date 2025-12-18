@@ -384,6 +384,10 @@ The bot includes a pi-coding-agent compatible hook system that provides safety a
 | `/hooks status` | Show hook system health, session ID, turn count |
 | `/hooks checkpoints` | List last 10 git checkpoints with timestamps |
 | `/hooks restore <id>` | Restore code to a specific checkpoint |
+| `/hooks metrics` | Show hook execution metrics (events, timing, errors) |
+| `/hooks tag <checkpoint_id> <name>` | Tag a checkpoint with a friendly name |
+| `/hooks tags` | List all checkpoint tags |
+| `/hooks debug <enabled>` | Toggle debug logging for hooks |
 
 **Active Hooks:**
 

@@ -293,6 +293,149 @@ export async function cleanupOldCheckpoints(cwd: string, config: CheckpointConfi
 }
 
 // ============================================================================
+// Checkpoint Tagging
+// ============================================================================
+
+const TAG_REF_BASE = "refs/pi-checkpoint-tags";
+
+export interface CheckpointTag {
+	tag: string;
+	checkpointId: string;
+	timestamp: number;
+	description?: string;
+}
+
+/**
+ * Tag a checkpoint with a friendly name
+ */
+export async function tagCheckpoint(
+	cwd: string,
+	checkpointId: string,
+	tag: string,
+	description?: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<CheckpointTag> {
+	if (!isSafeId(tag)) {
+		throw new Error(`Invalid tag name: ${tag} (only alphanumeric, hyphens, underscores allowed)`);
+	}
+
+	const root = await getRepoRoot(cwd);
+	const timestamp = Date.now();
+
+	// Verify checkpoint exists
+	const cpRef = `${config.refBase}/${checkpointId}`;
+	const cpSha = await git(`rev-parse --verify ${cpRef}`, root).catch(() => null);
+	if (!cpSha) {
+		throw new Error(`Checkpoint not found: ${checkpointId}`);
+	}
+
+	// Create tag commit with metadata
+	const message = [
+		`tag:${tag}`,
+		`checkpoint ${checkpointId}`,
+		`created ${new Date(timestamp).toISOString()}`,
+		description ? `description ${description}` : "",
+	]
+		.filter(Boolean)
+		.join("\n");
+
+	const tagEnv = {
+		...process.env,
+		GIT_AUTHOR_NAME: "pi-checkpoint",
+		GIT_AUTHOR_EMAIL: "checkpoint@pi",
+		GIT_COMMITTER_NAME: "pi-checkpoint",
+		GIT_COMMITTER_EMAIL: "checkpoint@pi",
+	};
+
+	// Create a tag ref pointing to the checkpoint
+	const commitSha = await git(`commit-tree ${cpSha}^{tree}`, root, {
+		input: message,
+		env: tagEnv,
+	});
+	await git(`update-ref ${TAG_REF_BASE}/${tag} ${commitSha}`, root);
+
+	return { tag, checkpointId, timestamp, description };
+}
+
+/**
+ * List all checkpoint tags
+ */
+export async function listTags(cwd: string): Promise<CheckpointTag[]> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const prefix = `${TAG_REF_BASE}/`;
+		const stdout = await git(`for-each-ref --format=%(refname) ${prefix}`, root);
+		const tagNames = stdout
+			.split("\n")
+			.filter(Boolean)
+			.map((ref) => ref.replace(prefix, ""));
+
+		const tags: CheckpointTag[] = [];
+		for (const tagName of tagNames) {
+			try {
+				const commitSha = await git(`rev-parse --verify ${TAG_REF_BASE}/${tagName}`, root);
+				const commitMsg = await git(`cat-file commit ${commitSha}`, root);
+
+				const get = (key: string) => commitMsg.match(new RegExp(`^${key} (.+)$`, "m"))?.[1]?.trim();
+				const checkpointId = get("checkpoint");
+				const created = get("created");
+				const description = get("description");
+
+				if (checkpointId) {
+					tags.push({
+						tag: tagName,
+						checkpointId,
+						timestamp: created ? new Date(created).getTime() : 0,
+						description,
+					});
+				}
+			} catch {
+				// Skip invalid tags
+			}
+		}
+
+		return tags.sort((a, b) => b.timestamp - a.timestamp);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Get checkpoint by tag name
+ */
+export async function getCheckpointByTag(
+	cwd: string,
+	tag: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<CheckpointData | null> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const commitSha = await git(`rev-parse --verify ${TAG_REF_BASE}/${tag}`, root);
+		const commitMsg = await git(`cat-file commit ${commitSha}`, root);
+
+		const checkpointId = commitMsg.match(/^checkpoint (.+)$/m)?.[1]?.trim();
+		if (!checkpointId) return null;
+
+		return loadCheckpointFromRef(cwd, checkpointId, config);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Delete a checkpoint tag
+ */
+export async function deleteTag(cwd: string, tag: string): Promise<boolean> {
+	try {
+		const root = await getRepoRoot(cwd);
+		await git(`update-ref -d ${TAG_REF_BASE}/${tag}`, root);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// ============================================================================
 // Hook Factory
 // ============================================================================
 
@@ -420,4 +563,9 @@ export const CheckpointUtils = {
 	cleanupOldCheckpoints,
 	isGitRepo,
 	getRepoRoot,
+	// Tagging support
+	tagCheckpoint,
+	listTags,
+	getCheckpointByTag,
+	deleteTag,
 };
