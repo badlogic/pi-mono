@@ -3,18 +3,12 @@
  * TAC Lesson 13: Tests the complete learning loop
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { detectExpertDomain, executeWithAutoExpert, executeWithExpert, getExpert } from "./agent-experts.js";
-import {
-	actLearnReuse,
-	createLearningPrompt,
-	extractLearnings,
-	loadExpertise,
-	updateExpertise,
-} from "./expertise-manager.js";
+import { executeWithAutoExpert, getExpert } from "./agent-experts.js";
+import { actLearnReuse, extractLearnings, loadExpertise } from "./expertise-manager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -160,10 +154,8 @@ Task completed.`;
 
 	describe("Expert Selection", () => {
 		it("should auto-select correct expert based on task", async () => {
-			const selectedExpert = "";
-
-			// Mock executor that captures the enhanced prompt
-			const executor = async (enhancedTask: string) => {
+			// Mock executor
+			const executor = async (_enhancedTask: string) => {
 				return { success: true, output: "Done" };
 			};
 
