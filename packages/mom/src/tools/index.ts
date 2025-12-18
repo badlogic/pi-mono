@@ -3,6 +3,7 @@ import type { Executor } from "../sandbox.js";
 import { attachTool } from "./attach.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
+import { createGithubFileTool, createGithubIssuesTool, createGithubSearchTool } from "./github.js";
 import { createReadTool } from "./read.js";
 import { createWebFetchTool, createWebSearchTool } from "./web.js";
 import { createWriteTool } from "./write.js";
@@ -20,5 +21,9 @@ export function createMomTools(executor: Executor): AgentTool<any>[] {
 		// Web tools (EXA_API_KEY optional)
 		createWebSearchTool(),
 		createWebFetchTool(),
+		// GitHub tools (GITHUB_TOKEN optional)
+		createGithubSearchTool(),
+		createGithubFileTool(),
+		createGithubIssuesTool(),
 	];
 }

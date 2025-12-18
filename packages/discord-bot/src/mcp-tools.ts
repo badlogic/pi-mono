@@ -3228,8 +3228,9 @@ export function createSandboxExecTool(): AgentTool<typeof sandboxExecSchema> {
 			try {
 				const { DockerSandbox } = await import("./sandbox.js");
 				const sandbox = new DockerSandbox();
+				type ExecutionResult = Awaited<ReturnType<typeof sandbox.runPython>>;
 
-				let result;
+				let result: ExecutionResult;
 				const lang = language.toLowerCase();
 
 				switch (lang) {
@@ -4209,7 +4210,7 @@ export function createImageGenerateTool(): AgentTool<typeof imageGenerateSchema>
 		label: "image_generate",
 		description: "Generate images using AI. Supports various styles and sizes.",
 		parameters: imageGenerateSchema,
-		execute: async (_toolCallId, { prompt, style, size, label }) => {
+		execute: async (_toolCallId, { prompt, style, size: _size, label }) => {
 			logMcpTool("image_generate", label);
 
 			try {
@@ -5044,7 +5045,7 @@ export function createDirectorTool(): AgentTool<typeof directorSchema> {
 		description:
 			"Film director and production planning tool. Create storyboards, shot lists, script breakdowns, and production schedules. Essential for video production workflows.",
 		parameters: directorSchema,
-		execute: async (_toolCallId, { action, project, content, format = "markdown", label }) => {
+		execute: async (_toolCallId, { action, project, content, format: _format = "markdown", label }) => {
 			logMcpTool("director", label);
 
 			try {
@@ -7241,7 +7242,7 @@ export function createTelegramBridgeTool(): AgentTool<typeof telegramBridgeSchem
 		label: "telegram_bridge",
 		description: "Bridge messages to Telegram. Send text, images, and files to Telegram chats.",
 		parameters: telegramBridgeSchema,
-		execute: async (_toolCallId, { action, chatId, message, mediaPath, label }) => {
+		execute: async (_toolCallId, { action, chatId, message, mediaPath: _mediaPath, label }) => {
 			logMcpTool("telegram_bridge", label);
 
 			try {
@@ -7456,7 +7457,7 @@ export function createWebCrawlTool(): AgentTool<typeof webCrawlSchema> {
 		label: "web_crawl",
 		description: "Crawl and extract data from multiple web pages. Follow links to specified depth.",
 		parameters: webCrawlSchema,
-		execute: async (_toolCallId, { url, depth = 1, maxPages = 5, extractSelectors, label }) => {
+		execute: async (_toolCallId, { url, depth = 1, maxPages = 5, extractSelectors: _extractSelectors, label }) => {
 			logMcpTool("web_crawl", label);
 
 			try {
