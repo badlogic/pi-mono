@@ -18,6 +18,8 @@ export { type SelectItem, SelectList, type SelectListTheme } from "./components/
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
+// Kitty keyboard protocol helpers
+export { isCtrlC, isKittyCtrl, isKittyKey, isShiftTab, Keys } from "./keys.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isCtrlC } from "../src/keys.js";
 import { ProcessTerminal } from "../src/terminal.js";
 import { type Component, TUI } from "../src/tui.js";
 
@@ -15,6 +16,13 @@ class KeyLogger implements Component {
 	}
 
 	handleInput(data: string): void {
+		// Handle Ctrl+C (raw or Kitty protocol) for exit
+		if (isCtrlC(data)) {
+			this.tui.stop();
+			console.log("\nExiting...");
+			process.exit(0);
+		}
+
 		// Convert to various representations
 		const hex = Buffer.from(data).toString("hex");
 		const charCodes = Array.from(data)
@@ -67,6 +75,8 @@ class KeyLogger implements Component {
 		// Footer
 		lines.push("=".repeat(width));
 		lines.push("Test these:".padEnd(width));
+		lines.push("  - Shift + Enter (should show: \\x1b[13;2u with Kitty protocol)".padEnd(width));
+		lines.push("  - Alt/Option + Enter".padEnd(width));
 		lines.push("  - Option/Alt + Backspace".padEnd(width));
 		lines.push("  - Cmd/Ctrl + Backspace".padEnd(width));
 		lines.push("  - Regular Backspace".padEnd(width));
@@ -84,7 +94,7 @@ const logger = new KeyLogger(tui);
 tui.addChild(logger);
 tui.setFocus(logger);
 
-// Handle Ctrl+C for clean exit
+// Handle Ctrl+C for clean exit (SIGINT still works for raw mode)
 process.on("SIGINT", () => {
 	tui.stop();
 	console.log("\nExiting...");

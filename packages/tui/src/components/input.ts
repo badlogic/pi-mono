@@ -1,3 +1,4 @@
+import { Keys } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
@@ -101,39 +102,39 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x01") {
-			// Ctrl+A - beginning of line
+		if (data === "\x01" || data === Keys.CTRL_A) {
+			// Ctrl+A - beginning of line (raw byte or Kitty protocol)
 			this.cursor = 0;
 			return;
 		}
 
-		if (data === "\x05") {
-			// Ctrl+E - end of line
+		if (data === "\x05" || data === Keys.CTRL_E) {
+			// Ctrl+E - end of line (raw byte or Kitty protocol)
 			this.cursor = this.value.length;
 			return;
 		}
 
-		if (data.charCodeAt(0) === 23) {
-			// Ctrl+W - delete word backwards
+		if (data.charCodeAt(0) === 23 || data === Keys.CTRL_W) {
+			// Ctrl+W - delete word backwards (raw byte or Kitty protocol)
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (data === "\x1b\x7f") {
-			// Option/Alt+Backspace - delete word backwards
+		if (data === "\x1b\x7f" || data === Keys.ALT_BACKSPACE) {
+			// Option/Alt+Backspace - delete word backwards (legacy or Kitty protocol)
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (data.charCodeAt(0) === 21) {
-			// Ctrl+U - delete from cursor to start of line
+		if (data.charCodeAt(0) === 21 || data === Keys.CTRL_U) {
+			// Ctrl+U - delete from cursor to start of line (raw byte or Kitty protocol)
 			this.value = this.value.slice(this.cursor);
 			this.cursor = 0;
 			return;
 		}
 
-		if (data.charCodeAt(0) === 11) {
-			// Ctrl+K - delete from cursor to end of line
+		if (data.charCodeAt(0) === 11 || data === Keys.CTRL_K) {
+			// Ctrl+K - delete from cursor to end of line (raw byte or Kitty protocol)
 			this.value = this.value.slice(0, this.cursor);
 			return;
 		}

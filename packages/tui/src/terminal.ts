@@ -51,6 +51,12 @@ export class ProcessTerminal implements Terminal {
 		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
 		process.stdout.write("\x1b[?2004h");
 
+		// Enable Kitty keyboard protocol (disambiguate escape codes)
+		// This makes terminals like Ghostty, Kitty, WezTerm send enhanced key sequences
+		// e.g., Shift+Enter becomes \x1b[13;2u instead of just \r
+		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+		process.stdout.write("\x1b[>1u");
+
 		// Set up event handlers
 		process.stdin.on("data", this.inputHandler);
 		process.stdout.on("resize", this.resizeHandler);
@@ -59,6 +65,9 @@ export class ProcessTerminal implements Terminal {
 	stop(): void {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
+
+		// Disable Kitty keyboard protocol (pop the flags we pushed)
+		process.stdout.write("\x1b[<u");
 
 		// Remove event handlers
 		if (this.inputHandler) {

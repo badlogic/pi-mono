@@ -1,4 +1,4 @@
-import { type Component, Container, Input, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { type Component, Container, Input, Keys, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import type { SessionManager } from "../../../core/session-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
@@ -144,8 +144,8 @@ class SessionList implements Component {
 				this.onCancel();
 			}
 		}
-		// Ctrl+C - exit process
-		else if (keyData === "\x03") {
+		// Ctrl+C - exit process (raw byte or Kitty keyboard protocol)
+		else if (keyData === "\x03" || keyData === Keys.CTRL_C) {
 			process.exit(0);
 		}
 		// Pass everything else to search input
