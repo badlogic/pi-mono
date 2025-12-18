@@ -25,7 +25,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.3.5",
 		"@types/node": "^22.10.5",
-		"@typescript/native-preview": "^7.0.0-dev.20251208.1",
+		"@typescript/native-preview": "^7.0.0-dev.20251218.1",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
 		"tsx": "^4.20.3",
