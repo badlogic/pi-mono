@@ -1,4 +1,4 @@
-import { Editor, isShiftTab, Keys } from "@mariozechner/pi-tui";
+import { Editor, isCtrlC, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@mariozechner/pi-tui";
 
 /**
  * Custom editor that handles Escape and Ctrl+C keys for coding-agent
@@ -12,25 +12,25 @@ export class CustomEditor extends Editor {
 	public onCtrlT?: () => void;
 
 	handleInput(data: string): void {
-		// Intercept Ctrl+T for thinking block visibility toggle (raw byte or Kitty protocol)
-		if ((data === "\x14" || data === Keys.CTRL_T) && this.onCtrlT) {
+		// Intercept Ctrl+T for thinking block visibility toggle
+		if (isCtrlT(data) && this.onCtrlT) {
 			this.onCtrlT();
 			return;
 		}
 
-		// Intercept Ctrl+O for tool output expansion (raw byte or Kitty protocol)
-		if ((data === "\x0f" || data === Keys.CTRL_O) && this.onCtrlO) {
+		// Intercept Ctrl+O for tool output expansion
+		if (isCtrlO(data) && this.onCtrlO) {
 			this.onCtrlO();
 			return;
 		}
 
-		// Intercept Ctrl+P for model cycling (raw byte or Kitty protocol)
-		if ((data === "\x10" || data === Keys.CTRL_P) && this.onCtrlP) {
+		// Intercept Ctrl+P for model cycling
+		if (isCtrlP(data) && this.onCtrlP) {
 			this.onCtrlP();
 			return;
 		}
 
-		// Intercept Shift+Tab for thinking level cycling (legacy or Kitty protocol)
+		// Intercept Shift+Tab for thinking level cycling
 		if (isShiftTab(data) && this.onShiftTab) {
 			this.onShiftTab();
 			return;
@@ -43,8 +43,8 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
-		// Intercept Ctrl+C (raw byte or Kitty keyboard protocol)
-		if ((data === "\x03" || data === Keys.CTRL_C) && this.onCtrlC) {
+		// Intercept Ctrl+C
+		if (isCtrlC(data) && this.onCtrlC) {
 			this.onCtrlC();
 			return;
 		}

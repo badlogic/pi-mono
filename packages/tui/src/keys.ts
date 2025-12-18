@@ -93,16 +93,94 @@ export function isKittyKey(data: string, codepoint: number, modifier: number): b
 	return data === kittySequence(codepoint, modifier);
 }
 
+// Raw control character codes
+const RAW = {
+	CTRL_A: "\x01",
+	CTRL_C: "\x03",
+	CTRL_E: "\x05",
+	CTRL_K: "\x0b",
+	CTRL_O: "\x0f",
+	CTRL_P: "\x10",
+	CTRL_T: "\x14",
+	CTRL_U: "\x15",
+	CTRL_W: "\x17",
+	ALT_BACKSPACE: "\x1b\x7f",
+	SHIFT_TAB: "\x1b[Z",
+} as const;
+
+/**
+ * Check if input matches Ctrl+A (raw byte or Kitty protocol).
+ */
+export function isCtrlA(data: string): boolean {
+	return data === RAW.CTRL_A || data === Keys.CTRL_A;
+}
+
 /**
  * Check if input matches Ctrl+C (raw byte or Kitty protocol).
  */
 export function isCtrlC(data: string): boolean {
-	return data === "\x03" || data === Keys.CTRL_C;
+	return data === RAW.CTRL_C || data === Keys.CTRL_C;
+}
+
+/**
+ * Check if input matches Ctrl+E (raw byte or Kitty protocol).
+ */
+export function isCtrlE(data: string): boolean {
+	return data === RAW.CTRL_E || data === Keys.CTRL_E;
+}
+
+/**
+ * Check if input matches Ctrl+K (raw byte or Kitty protocol).
+ */
+export function isCtrlK(data: string): boolean {
+	return data === RAW.CTRL_K || data === Keys.CTRL_K;
+}
+
+/**
+ * Check if input matches Ctrl+O (raw byte or Kitty protocol).
+ */
+export function isCtrlO(data: string): boolean {
+	return data === RAW.CTRL_O || data === Keys.CTRL_O;
+}
+
+/**
+ * Check if input matches Ctrl+P (raw byte or Kitty protocol).
+ */
+export function isCtrlP(data: string): boolean {
+	return data === RAW.CTRL_P || data === Keys.CTRL_P;
+}
+
+/**
+ * Check if input matches Ctrl+T (raw byte or Kitty protocol).
+ */
+export function isCtrlT(data: string): boolean {
+	return data === RAW.CTRL_T || data === Keys.CTRL_T;
+}
+
+/**
+ * Check if input matches Ctrl+U (raw byte or Kitty protocol).
+ */
+export function isCtrlU(data: string): boolean {
+	return data === RAW.CTRL_U || data === Keys.CTRL_U;
+}
+
+/**
+ * Check if input matches Ctrl+W (raw byte or Kitty protocol).
+ */
+export function isCtrlW(data: string): boolean {
+	return data === RAW.CTRL_W || data === Keys.CTRL_W;
+}
+
+/**
+ * Check if input matches Alt+Backspace (legacy or Kitty protocol).
+ */
+export function isAltBackspace(data: string): boolean {
+	return data === RAW.ALT_BACKSPACE || data === Keys.ALT_BACKSPACE;
 }
 
 /**
  * Check if input matches Shift+Tab (legacy or Kitty protocol).
  */
 export function isShiftTab(data: string): boolean {
-	return data === "\x1b[Z" || data === Keys.SHIFT_TAB;
+	return data === RAW.SHIFT_TAB || data === Keys.SHIFT_TAB;
 }

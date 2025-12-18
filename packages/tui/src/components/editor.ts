@@ -1,5 +1,5 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import { Keys } from "../keys.js";
+import { isAltBackspace, isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlU, isCtrlW, Keys } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
@@ -260,8 +260,7 @@ export class Editor implements Component {
 		// Handle special key combinations first
 
 		// Ctrl+C - Exit (let parent handle this)
-		// Handle both raw byte (\x03) and Kitty keyboard protocol
-		if (data.charCodeAt(0) === 3 || data === Keys.CTRL_C) {
+		if (isCtrlC(data)) {
 			return;
 		}
 
@@ -360,28 +359,28 @@ export class Editor implements Component {
 		}
 
 		// Continue with rest of input handling
-		// Ctrl+K - Delete to end of line (raw byte or Kitty protocol)
-		if (data.charCodeAt(0) === 11 || data === Keys.CTRL_K) {
+		// Ctrl+K - Delete to end of line
+		if (isCtrlK(data)) {
 			this.deleteToEndOfLine();
 		}
-		// Ctrl+U - Delete to start of line (raw byte or Kitty protocol)
-		else if (data.charCodeAt(0) === 21 || data === Keys.CTRL_U) {
+		// Ctrl+U - Delete to start of line
+		else if (isCtrlU(data)) {
 			this.deleteToStartOfLine();
 		}
-		// Ctrl+W - Delete word backwards (raw byte or Kitty protocol)
-		else if (data.charCodeAt(0) === 23 || data === Keys.CTRL_W) {
+		// Ctrl+W - Delete word backwards
+		else if (isCtrlW(data)) {
 			this.deleteWordBackwards();
 		}
-		// Option/Alt+Backspace (e.g. Ghostty sends ESC + DEL, or Kitty protocol)
-		else if (data === "\x1b\x7f" || data === Keys.ALT_BACKSPACE) {
+		// Option/Alt+Backspace - Delete word backwards
+		else if (isAltBackspace(data)) {
 			this.deleteWordBackwards();
 		}
-		// Ctrl+A - Move to start of line (raw byte or Kitty protocol)
-		else if (data.charCodeAt(0) === 1 || data === Keys.CTRL_A) {
+		// Ctrl+A - Move to start of line
+		else if (isCtrlA(data)) {
 			this.moveToLineStart();
 		}
-		// Ctrl+E - Move to end of line (raw byte or Kitty protocol)
-		else if (data.charCodeAt(0) === 5 || data === Keys.CTRL_E) {
+		// Ctrl+E - Move to end of line
+		else if (isCtrlE(data)) {
 			this.moveToLineEnd();
 		}
 		// New line shortcuts (but not plain LF/CR which should be submit)
