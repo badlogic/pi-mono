@@ -5,6 +5,7 @@
 import type { AgentTool } from "@mariozechner/pi-ai";
 import type { HookRunner } from "./runner.js";
 import type { ToolCallEventResult, ToolResultEventResult } from "./types.js";
+import * as fs from "node:fs/promises";
 
 /**
  * Wrap a tool with hook callbacks.
@@ -49,6 +50,16 @@ export function wrapToolWithHooks<T>(tool: AgentTool<any, T>, hookRunner: HookRu
 					.filter((c): c is { type: "text"; text: string } => c.type === "text")
 					.map((c) => c.text)
 					.join("\n");
+
+                                let fullResult: string | undefined;
+                                const details = result.details as any;
+                                if (details?.fullOutputPath) {
+                                    try {
+                                        fullResult = await fs.readFile(details.fullOutputPath, "utf-8");
+                                    } catch (err) {
+                                        console.error(`Hook system failed to read full output: ${err}`);
+                                    }
+                                }
 
 				const resultResult = (await hookRunner.emit({
 					type: "tool_result",

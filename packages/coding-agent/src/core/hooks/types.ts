@@ -153,6 +153,8 @@ export interface ToolResultEvent {
 	input: Record<string, unknown>;
 	/** Tool result content (text) */
 	result: string;
+        /** Tool non-truncated output */
+        fullResult?: string;
 	/** Whether the tool execution was an error */
 	isError: boolean;
 }
