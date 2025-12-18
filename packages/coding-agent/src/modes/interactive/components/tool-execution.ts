@@ -13,6 +13,7 @@ import stripAnsi from "strip-ansi";
 import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
+import { renderDiff } from "./diff.js";
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -358,7 +359,8 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "edit") {
-			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			const rawPath = this.args?.file_path || this.args?.path || "";
+			const path = shortenPath(rawPath);
 			text =
 				theme.fg("toolTitle", theme.bold("edit")) +
 				" " +
@@ -371,17 +373,7 @@ export class ToolExecutionComponent extends Container {
 						text += "\n\n" + theme.fg("error", errorText);
 					}
 				} else if (this.result.details?.diff) {
-					const diffLines = this.result.details.diff.split("\n");
-					const coloredLines = diffLines.map((line: string) => {
-						if (line.startsWith("+")) {
-							return theme.fg("toolDiffAdded", line);
-						} else if (line.startsWith("-")) {
-							return theme.fg("toolDiffRemoved", line);
-						} else {
-							return theme.fg("toolDiffContext", line);
-						}
-					});
-					text += "\n\n" + coloredLines.join("\n");
+					text += "\n\n" + renderDiff(this.result.details.diff, { filePath: rawPath });
 				}
 			}
 		} else if (this.toolName === "ls") {

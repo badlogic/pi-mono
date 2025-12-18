@@ -351,6 +351,10 @@ export class Theme {
 		return chalk.underline(text);
 	}
 
+	inverse(text: string): string {
+		return chalk.inverse(text);
+	}
+
 	getFgAnsi(color: ThemeColor): string {
 		const ansi = this.fgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme color: ${color}`);
