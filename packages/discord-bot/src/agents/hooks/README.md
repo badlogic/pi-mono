@@ -155,6 +155,64 @@ const branchResult = await manager.emit({
 
 ## Discord Integration
 
+### Per-Channel Hook Integration
+
+The `discord-integration.ts` module provides turnkey integration with Discord bot's agent lifecycle:
+
+```typescript
+import {
+  createDiscordHookIntegration,
+  getChannelHookIntegration,
+  disposeChannelHookIntegration,
+  generateSessionId,
+  type HookIntegration,
+} from './agents/hooks';
+
+// Create per-channel hook integration
+const hooks = createDiscordHookIntegration({
+  cwd: channelDir,
+  channelId: '1234567890',
+  userId: 'user123',
+  checkpoint: true,  // Enable git checkpointing
+  lsp: true,         // Enable LSP diagnostics
+  expert: true,      // Enable Act-Learn-Reuse
+});
+
+// Emit lifecycle events
+await hooks.emitSession('start', generateSessionId(channelId));
+await hooks.emitTurnStart(turnIndex);
+await hooks.emitTurnEnd(turnIndex, messages);
+
+// Tool events (can block or modify results)
+const { block, reason } = await hooks.emitToolCall('bash', 'call-123', { command: 'rm -rf /' });
+if (block) {
+  return `Blocked: ${reason}`;
+}
+
+const { result, isError } = await hooks.emitToolResult('write', 'call-456', input, output, false);
+
+// Cleanup when channel closes
+disposeChannelHookIntegration(channelId);
+```
+
+### Tool Wrapping
+
+Wrap existing tools to automatically emit hook events:
+
+```typescript
+import { wrapToolWithHooks } from './agents/hooks';
+
+const bashTool = createBashTool();
+const hookedBashTool = wrapToolWithHooks(bashTool, () => getChannelHookIntegration(channelId));
+
+// Tool now automatically emits tool_call and tool_result events
+await hookedBashTool.execute({ command: 'echo hello' });
+```
+
+### Discord Context
+
+Create Discord-aware context for custom hooks:
+
 ```typescript
 import { createDiscordContext } from './agents/hooks';
 
@@ -180,6 +238,32 @@ const ctx = createDiscordContext(cwd, {
 
 // Use with manager
 await manager.emit(event, ctx);
+```
+
+### Integration in main.ts
+
+The hooks are automatically integrated into the Discord bot agent lifecycle:
+
+```typescript
+// In getChannelState() - creates hook integration per channel
+const hooks = createDiscordHookIntegration({
+  cwd: channelDir,
+  channelId,
+  checkpoint: true,
+  lsp: true,
+  expert: true,
+});
+hooks.emitSession('start', sessionId);
+
+state = { running: false, agent, hooks, sessionId, turnIndex: 0 };
+
+// In handleAgentRequest() - emits turn events
+state.turnIndex++;
+await state.hooks.emitTurnStart(state.turnIndex);
+
+// ... agent execution ...
+
+await state.hooks.emitTurnEnd(state.turnIndex, messages);
 ```
 
 ## Pre-configured Hook Sets
