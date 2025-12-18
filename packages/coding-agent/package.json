@@ -34,8 +34,7 @@
 		"build:binary": "npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
 		"copy-assets": "mkdir -p dist/modes/interactive/theme && cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/",
 		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/ && mkdir -p dist/theme && cp src/modes/interactive/theme/*.json dist/theme/ && cp -r docs dist/ && cp -r examples dist/",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"check": "tsgo --noEmit && tsc -p tsconfig.examples.json",
+		"check": "tsgo --noEmit && tsgo -p tsconfig.examples.json",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

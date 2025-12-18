@@ -4,8 +4,8 @@
 		"module": "ES2022",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"moduleResolution": "bundler",
-		"baseUrl": ".",
 		"paths": {
+			"*": ["./*"],
 			"@mariozechner/pi-ai": ["../../ai/dist/index.d.ts"],
 			"@mariozechner/pi-tui": ["../../tui/dist/index.d.ts"],
 			"@mariozechner/pi-web-ui": ["../dist/index.d.ts"]

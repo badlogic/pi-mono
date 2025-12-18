@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit",
+    "check": "tsgo --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
