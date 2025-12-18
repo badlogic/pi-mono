@@ -43,14 +43,27 @@ import "dotenv/config";
 import express from "express";
 import cron from "node-cron";
 import {
+	// Agent Experts (TAC Lesson 13)
+	CODEBASE_EXPERTS,
+	createCodebaseExpert,
+	// Claude SDK Two-Agent Pattern
+	executeClaudeFeature,
+	executeWithAutoExpert,
+	// Lightweight Agent
 	getAgentModels,
+	getClaudeTaskStatus,
+	// Expertise Manager
 	getExpertiseModes,
+	initializeClaudeTask,
 	isAgentAvailable,
+	// OpenHands
 	isOpenHandsAvailable,
 	LearningPresets,
 	loadExpertise,
 	type OpenHandsMode,
 	OpenHandsModeDescriptions,
+	PRODUCT_EXPERTS,
+	resumeClaudeTask,
 	runCodeReview,
 	runDebug,
 	runDocGeneration,
@@ -60,6 +73,7 @@ import {
 	runRefactor,
 	runSecurityScan,
 	runTestGeneration,
+	runTwoAgentWorkflow,
 } from "./agents/index.js";
 import { Analytics } from "./analytics.js";
 import { browserAutomation } from "./browser/index.js";
@@ -1893,6 +1907,119 @@ const slashCommands = [
 		.addSubcommand((sub) =>
 			sub.setName("update").setDescription("Force update expertise file with current learnings"),
 		),
+
+	// Codebase Experts (TAC Lesson 13)
+	new SlashCommandBuilder()
+		.setName("expert")
+		.setDescription("Codebase Experts - domain-specific learning agents (TAC Lesson 13)")
+		.addSubcommand((sub) =>
+			sub
+				.setName("run")
+				.setDescription("Run task with auto-selected domain expert")
+				.addStringOption((opt) => opt.setName("task").setDescription("Task to execute").setRequired(true))
+				.addStringOption((opt) =>
+					opt
+						.setName("domain")
+						.setDescription("Force specific domain (auto-detect if not set)")
+						.setRequired(false)
+						.addChoices(
+							{ name: "Security (auth, OWASP)", value: "security" },
+							{ name: "Database (schema, queries)", value: "database" },
+							{ name: "Trading (signals, risk)", value: "trading" },
+							{ name: "API Integration (external APIs)", value: "api_integration" },
+							{ name: "Billing (payments)", value: "billing" },
+							{ name: "Performance (optimization)", value: "performance" },
+							{ name: "General", value: "general" },
+						),
+				),
+		)
+		.addSubcommand((sub) => sub.setName("list").setDescription("List all available codebase experts"))
+		.addSubcommand((sub) =>
+			sub
+				.setName("view")
+				.setDescription("View expertise accumulated by a domain expert")
+				.addStringOption((opt) =>
+					opt
+						.setName("domain")
+						.setDescription("Domain to view")
+						.setRequired(true)
+						.addChoices(
+							{ name: "Security", value: "security" },
+							{ name: "Database", value: "database" },
+							{ name: "Trading", value: "trading" },
+							{ name: "API Integration", value: "api_integration" },
+							{ name: "Billing", value: "billing" },
+							{ name: "Performance", value: "performance" },
+							{ name: "Meta-Agentic", value: "meta_agentic" },
+						),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("create")
+				.setDescription("Create a new domain expert (meta-agentic)")
+				.addStringOption((opt) => opt.setName("domain").setDescription("New domain name").setRequired(true))
+				.addStringOption((opt) =>
+					opt.setName("description").setDescription("What this expert handles").setRequired(true),
+				),
+		),
+
+	// Two-Phase Agent Workflow (Initializer + Coding Agent)
+	new SlashCommandBuilder()
+		.setName("task")
+		.setDescription("Two-phase agent workflow - plan then execute features")
+		.addSubcommand((sub) =>
+			sub
+				.setName("create")
+				.setDescription("Create a new task with feature breakdown")
+				.addStringOption((opt) => opt.setName("description").setDescription("Task description").setRequired(true))
+				.addStringOption((opt) =>
+					opt
+						.setName("domain")
+						.setDescription("Expert domain for this task")
+						.setRequired(false)
+						.addChoices(
+							{ name: "Coding", value: "coding" },
+							{ name: "Security", value: "security" },
+							{ name: "Database", value: "database" },
+							{ name: "Trading", value: "trading" },
+							{ name: "General", value: "general" },
+						),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("execute")
+				.setDescription("Execute next feature in a task")
+				.addStringOption((opt) => opt.setName("task_id").setDescription("Task ID to execute").setRequired(true)),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("status")
+				.setDescription("Check task progress")
+				.addStringOption((opt) => opt.setName("task_id").setDescription("Task ID to check").setRequired(true)),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("resume")
+				.setDescription("Resume an interrupted task")
+				.addStringOption((opt) => opt.setName("task_id").setDescription("Task ID to resume").setRequired(true)),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("run")
+				.setDescription("Create and execute a task in one go")
+				.addStringOption((opt) => opt.setName("description").setDescription("Task description").setRequired(true))
+				.addIntegerOption((opt) =>
+					opt
+						.setName("max_features")
+						.setDescription("Max features to execute")
+						.setRequired(false)
+						.setMinValue(1)
+						.setMaxValue(50),
+				),
+		)
+		.addSubcommand((sub) => sub.setName("list").setDescription("List all tasks")),
 ];
 
 // ============================================================================
@@ -8098,6 +8225,396 @@ async function main() {
 					} catch (error) {
 						const errMsg = error instanceof Error ? error.message : String(error);
 						await interaction.editReply(`OpenHands error: ${errMsg}`);
+					}
+					break;
+				}
+
+				// Codebase Experts (TAC Lesson 13)
+				case "expert": {
+					const subcommand = interaction.options.getSubcommand();
+					await interaction.deferReply();
+
+					try {
+						switch (subcommand) {
+							case "run": {
+								const taskDesc = interaction.options.getString("task", true);
+								const domain = interaction.options.getString("domain") || undefined;
+
+								await interaction.editReply(
+									`Running task with expert...\n\n**Task:** ${taskDesc.substring(0, 200)}${domain ? `\n**Domain:** ${domain}` : "\n**Auto-detecting domain...**"}`,
+								);
+
+								// Create executor using the lightweight agent
+								const executor = async (enhancedTask: string) => {
+									const result = await runLearningAgent({
+										prompt: enhancedTask,
+										mode: domain || "general",
+										enableLearning: true,
+									});
+									return { success: result.success, output: result.output || "" };
+								};
+
+								const result = await executeWithAutoExpert(taskDesc, executor);
+
+								const embed = new EmbedBuilder()
+									.setTitle("Expert Task Result")
+									.setColor(result.success ? 0x2ecc71 : 0xe74c3c)
+									.addFields(
+										{ name: "Expert Domain", value: result.expert, inline: true },
+										{ name: "Success", value: result.success ? "Yes" : "No", inline: true },
+										{
+											name: "Learning",
+											value: result.learned.learned
+												? `Extracted: ${result.learned.insight?.substring(0, 100)}...`
+												: "No new learnings",
+											inline: false,
+										},
+									)
+									.setDescription(
+										result.output.length > 4000 ? `${result.output.substring(0, 4000)}...` : result.output,
+									)
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "list": {
+								const expertList = Object.entries(CODEBASE_EXPERTS)
+									.map(([key, exp]) => `**${key}** (${exp.riskLevel})\n${exp.description}`)
+									.join("\n\n");
+
+								const productList = Object.entries(PRODUCT_EXPERTS)
+									.map(([key, exp]) => `**${key}**\n${exp.focus}`)
+									.join("\n\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("Available Codebase Experts")
+									.setColor(0x3498db)
+									.addFields(
+										{ name: "Codebase Experts", value: expertList.substring(0, 1024), inline: false },
+										{ name: "Product Experts", value: productList.substring(0, 1024), inline: false },
+									)
+									.setFooter({ text: "TAC Lesson 13 - Act-Learn-Reuse Pattern" });
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "view": {
+								const viewDomain = interaction.options.getString("domain", true);
+								const expertiseContent = loadExpertise(viewDomain);
+
+								if (!expertiseContent) {
+									await interaction.editReply(`No expertise found for domain: ${viewDomain}`);
+									break;
+								}
+
+								// Get expert definition if it exists
+								const expertDef = CODEBASE_EXPERTS[viewDomain] || PRODUCT_EXPERTS[viewDomain];
+
+								const embed = new EmbedBuilder()
+									.setTitle(`${viewDomain} Expert Knowledge`)
+									.setColor(0x9b59b6)
+									.setDescription(expertiseContent.substring(0, 4000) || "No expertise accumulated yet")
+									.addFields(
+										{
+											name: "Risk Level",
+											value: expertDef && "riskLevel" in expertDef ? expertDef.riskLevel : "medium",
+											inline: true,
+										},
+										{ name: "Domain", value: viewDomain, inline: true },
+									)
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "create": {
+								const newDomain = interaction.options.getString("domain", true);
+								const description = interaction.options.getString("description", true);
+
+								await interaction.editReply(
+									`Creating new expert...\n\n**Domain:** ${newDomain}\n**Description:** ${description.substring(0, 200)}\n\nUsing meta-agentic pattern...`,
+								);
+
+								// Create executor for the meta-agentic pattern
+								const executor = async (prompt: string) => {
+									const result = await runLearningAgent({
+										prompt,
+										mode: "general",
+										enableLearning: true,
+									});
+									return { success: result.success, output: result.output || "" };
+								};
+
+								const result = await createCodebaseExpert(newDomain, description, executor);
+
+								if (result.success && result.expert) {
+									const embed = new EmbedBuilder()
+										.setTitle("Expert Created")
+										.setColor(0x2ecc71)
+										.addFields(
+											{ name: "Domain", value: result.expert.name, inline: true },
+											{ name: "Risk Level", value: result.expert.riskLevel, inline: true },
+											{
+												name: "Self-Improve Prompt",
+												value: result.expert.selfImprovePrompt.substring(0, 500),
+												inline: false,
+											},
+										)
+										.setFooter({ text: "Meta-Agentic: Agents building agents" });
+
+									await interaction.editReply({ embeds: [embed] });
+								} else {
+									await interaction.editReply(`Failed to create expert: ${result.error}`);
+								}
+								break;
+							}
+						}
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Expert error: ${errMsg}`);
+					}
+					break;
+				}
+
+				// Two-Phase Agent Workflow (TAC Lesson 13)
+				case "task": {
+					const subcommand = interaction.options.getSubcommand();
+					await interaction.deferReply();
+
+					try {
+						switch (subcommand) {
+							case "create": {
+								const taskDesc = interaction.options.getString("description", true);
+								const maxFeatures = interaction.options.getInteger("max_features") || 5;
+
+								await interaction.editReply(
+									`Initializing task...\n\n**Description:** ${taskDesc.substring(0, 300)}\n**Max Features:** ${maxFeatures}\n\nPhase 1: Creating feature breakdown...`,
+								);
+
+								const result = await initializeClaudeTask({
+									prompt: taskDesc,
+									workingDir: process.cwd(),
+									maxIterations: maxFeatures,
+								});
+
+								if (result.success && result.taskId) {
+									const status = getClaudeTaskStatus(result.taskId);
+									const embed = new EmbedBuilder()
+										.setTitle("Task Created")
+										.setColor(0x3498db)
+										.addFields(
+											{ name: "Task ID", value: result.taskId, inline: true },
+											{
+												name: "Features",
+												value: String(status.spec?.features?.length || 0),
+												inline: true,
+											},
+											{
+												name: "Status",
+												value: status.progress?.completed
+													? `${status.progress.completed}/${status.progress.total}`
+													: "Ready",
+												inline: true,
+											},
+											{
+												name: "Feature List",
+												value:
+													status.spec?.features
+														?.map((f, i) => `${i + 1}. ${f.name}`)
+														.join("\n")
+														.substring(0, 1024) || "None",
+												inline: false,
+											},
+										)
+										.setFooter({ text: "Use /task execute to implement features" });
+
+									await interaction.editReply({ embeds: [embed] });
+								} else {
+									await interaction.editReply(`Failed to create task: ${result.error}`);
+								}
+								break;
+							}
+
+							case "execute": {
+								const taskId = interaction.options.getString("task_id", true);
+
+								const status = getClaudeTaskStatus(taskId);
+								if (!status.exists) {
+									await interaction.editReply(`Task not found: ${taskId}`);
+									break;
+								}
+
+								await interaction.editReply(
+									`Executing next feature...\n\n**Task:** ${taskId}\n**Next:** ${status.nextFeature?.name || "Unknown"}\n\nPhase 2: Implementing feature...`,
+								);
+
+								const result = await executeClaudeFeature(taskId);
+
+								const updatedStatus = getClaudeTaskStatus(taskId);
+								const embed = new EmbedBuilder()
+									.setTitle("Feature Executed")
+									.setColor(result.success ? 0x2ecc71 : 0xe74c3c)
+									.addFields(
+										{ name: "Task ID", value: taskId, inline: true },
+										{
+											name: "Progress",
+											value: `${updatedStatus.progress?.completed || 0}/${updatedStatus.progress?.total || 0}`,
+											inline: true,
+										},
+										{
+											name: "Next Feature",
+											value: updatedStatus.nextFeature?.name || "All complete!",
+											inline: true,
+										},
+									)
+									.setDescription(
+										result.output ? result.output.substring(0, 4000) : result.error || "No output",
+									);
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "status": {
+								const taskId = interaction.options.getString("task_id", true);
+
+								const status = getClaudeTaskStatus(taskId);
+								if (!status.exists) {
+									await interaction.editReply(`Task not found: ${taskId}`);
+									break;
+								}
+
+								const featureStatus =
+									status.spec?.features
+										?.map((f, i) => {
+											const icon =
+												f.status === "completed"
+													? "✅"
+													: f.status === "in_progress"
+														? "🔄"
+														: f.status === "failed"
+															? "❌"
+															: "⬜";
+											return `${icon} ${i + 1}. ${f.name}`;
+										})
+										.join("\n") || "No features";
+
+								const embed = new EmbedBuilder()
+									.setTitle("Task Status")
+									.setColor(0x3498db)
+									.addFields(
+										{ name: "Task ID", value: taskId, inline: true },
+										{
+											name: "Progress",
+											value: `${status.progress?.completed || 0}/${status.progress?.total || 0}`,
+											inline: true,
+										},
+										{
+											name: "Next Feature",
+											value: status.nextFeature?.name || "All complete!",
+											inline: true,
+										},
+										{ name: "Features", value: featureStatus.substring(0, 1024), inline: false },
+									);
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "resume": {
+								const taskId = interaction.options.getString("task_id", true);
+
+								const status = getClaudeTaskStatus(taskId);
+								if (!status.exists) {
+									await interaction.editReply(`Task not found: ${taskId}`);
+									break;
+								}
+
+								await interaction.editReply(
+									`Resuming task...\n\n**Task:** ${taskId}\n**Progress:** ${status.progress?.completed || 0}/${status.progress?.total || 0}\n\nContinuing from last feature...`,
+								);
+
+								const result = await resumeClaudeTask(taskId);
+
+								const embed = new EmbedBuilder()
+									.setTitle("Task Resumed")
+									.setColor(result.success ? 0x2ecc71 : 0xe74c3c)
+									.setDescription(result.output ? result.output.substring(0, 4000) : result.error || "Resumed")
+									.setFooter({ text: `Task: ${taskId}` });
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "run": {
+								const taskDesc = interaction.options.getString("description", true);
+
+								await interaction.editReply(
+									`Running full workflow...\n\n**Task:** ${taskDesc.substring(0, 300)}\n\nPhase 1: Planning → Phase 2: Executing all features...`,
+								);
+
+								const result = await runTwoAgentWorkflow({
+									prompt: taskDesc,
+									workingDir: process.cwd(),
+								});
+
+								const embed = new EmbedBuilder()
+									.setTitle("Workflow Complete")
+									.setColor(result.success ? 0x2ecc71 : 0xe74c3c)
+									.addFields(
+										{ name: "Task ID", value: result.taskId || "N/A", inline: true },
+										{ name: "Success", value: result.success ? "Yes" : "No", inline: true },
+									)
+									.setDescription(
+										result.output ? result.output.substring(0, 4000) : result.error || "Complete",
+									)
+									.setFooter({ text: "Two-Agent Pattern: Initializer + Coding" });
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+
+							case "list": {
+								// List all task specs from the tasks directory
+								const tasksDir = join(process.cwd(), ".tasks");
+								let tasks: string[] = [];
+
+								if (existsSync(tasksDir)) {
+									tasks = readdirSync(tasksDir)
+										.filter((f) => f.endsWith(".json"))
+										.map((f) => f.replace(".json", ""));
+								}
+
+								if (tasks.length === 0) {
+									await interaction.editReply("No tasks found. Use `/task create` to create one.");
+									break;
+								}
+
+								const taskList = tasks
+									.slice(0, 10)
+									.map((taskId) => {
+										const status = getClaudeTaskStatus(taskId);
+										return `**${taskId}** - ${status.progress?.completed || 0}/${status.progress?.total || 0} features`;
+									})
+									.join("\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("Tasks")
+									.setColor(0x3498db)
+									.setDescription(taskList)
+									.setFooter({ text: `Showing ${Math.min(tasks.length, 10)} of ${tasks.length}` });
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
+						}
+					} catch (error) {
+						const errMsg = error instanceof Error ? error.message : String(error);
+						await interaction.editReply(`Task error: ${errMsg}`);
 					}
 					break;
 				}
