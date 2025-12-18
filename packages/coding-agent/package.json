@@ -44,6 +44,7 @@
 		"@mariozechner/pi-ai": "^0.23.3",
 		"@mariozechner/pi-tui": "^0.23.3",
 		"chalk": "^5.5.0",
+		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
 		"file-type": "^21.1.1",
 		"glob": "^11.0.3",
