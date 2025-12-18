@@ -46,14 +46,19 @@ import {
 	// Agent Experts (TAC Lesson 13)
 	CODEBASE_EXPERTS,
 	createCodebaseExpert,
+	// Hook System
+	createDiscordHookIntegration,
+	disposeChannelHookIntegration,
 	// Claude SDK Two-Agent Pattern
 	executeClaudeFeature,
 	executeWithAutoExpert,
+	generateSessionId,
 	// Lightweight Agent
 	getAgentModels,
 	getClaudeTaskStatus,
 	// Expertise Manager
 	getExpertiseModes,
+	type HookIntegration,
 	initializeClaudeTask,
 	isAgentAvailable,
 	// OpenHands
@@ -3328,6 +3333,9 @@ function createConversationSummary(messages: unknown[]): string {
 interface ChannelState {
 	running: boolean;
 	agent: Agent;
+	hooks?: HookIntegration;
+	sessionId?: string;
+	turnIndex: number;
 }
 
 const channelStates = new Map<string, ChannelState>();
@@ -3395,7 +3403,22 @@ function getChannelState(channelId: string, workingDir: string, channelName: str
 			logInfo(`Restored ${sessionMessages.length} messages for channel ${channelId}`);
 		}
 
-		state = { running: false, agent };
+		// Create hook integration for this channel
+		const sessionId = generateSessionId(channelId);
+		const hooks = createDiscordHookIntegration({
+			cwd: channelDir,
+			channelId,
+			checkpoint: true,
+			lsp: true,
+			expert: true,
+		});
+
+		// Emit session start event
+		hooks.emitSession("start", sessionId).catch((err) => {
+			logWarning(`[${channelId}] Hook session event failed:`, err);
+		});
+
+		state = { running: false, agent, hooks, sessionId, turnIndex: 0 };
 		channelStates.set(channelId, state);
 	}
 	return state;
@@ -3465,6 +3488,14 @@ async function handleAgentRequest(
 	state.running = true;
 	const toolsUsed: string[] = [];
 	const startTime = Date.now();
+
+	// Emit turn_start hook event
+	if (state.hooks) {
+		state.turnIndex++;
+		state.hooks.emitTurnStart(state.turnIndex).catch((err) => {
+			logWarning(`[${channelId}] Hook turn_start failed:`, err);
+		});
+	}
 
 	// Set approval context for dangerous command checks
 	setApprovalContext(sourceMessage, userId);
@@ -3878,6 +3909,13 @@ async function handleAgentRequest(
 			maxDelay: 10000,
 		});
 		unsubscribe();
+
+		// Emit turn_end hook event
+		if (state.hooks) {
+			state.hooks.emitTurnEnd(state.turnIndex, state.agent.state.messages).catch((err) => {
+				logWarning(`[${channelId}] Hook turn_end failed:`, err);
+			});
+		}
 
 		const messages = state.agent.state.messages;
 

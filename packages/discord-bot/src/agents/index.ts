@@ -76,18 +76,26 @@ export {
 	createCheckpointHook,
 	createDefaultHookManager,
 	createDiscordContext,
+	// Discord Integration
+	createDiscordHookIntegration,
 	createExpertHook,
 	createExpertPrompt,
 	createHookRegistration,
 	// LSP Hook
 	createLSPHook,
 	createTaskAwareExpertHook,
+	type DiscordHookConfig,
 	detectDomain,
+	disposeAllHookIntegrations,
+	disposeChannelHookIntegration,
 	type ExpertContext,
 	type ExpertHookConfig,
 	ExpertUtils,
 	expertHook,
+	generateSessionId,
+	getChannelHookIntegration,
 	getDomainRiskLevel,
+	type HookIntegration,
 	type HookManager,
 	type HookRegistration,
 	type LSPConfig,
@@ -108,6 +116,7 @@ export {
 	type ToolResultEventResult,
 	type TurnEndEvent,
 	type TurnStartEvent,
+	wrapToolWithHooks,
 } from "./hooks/index.js";
 // Lightweight Agent exports (pi-mono pattern)
 export {

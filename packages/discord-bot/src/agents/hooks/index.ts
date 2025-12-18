@@ -32,6 +32,17 @@ export {
 	loadCheckpointFromRef,
 	restoreCheckpoint,
 } from "./checkpoint-hook.js";
+// Discord Integration
+export {
+	createDiscordHookIntegration,
+	type DiscordHookConfig,
+	disposeAllHookIntegrations,
+	disposeChannelHookIntegration,
+	generateSessionId,
+	getChannelHookIntegration,
+	type HookIntegration,
+	wrapToolWithHooks,
+} from "./discord-integration.js";
 // Expert Hook
 export {
 	buildExpertContext,
