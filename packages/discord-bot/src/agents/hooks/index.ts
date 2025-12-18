@@ -96,6 +96,17 @@ export {
 	listExpertise,
 	processAgentOutput,
 } from "./expert-hook.js";
+// Extension Loader
+export {
+	discoverExtensions,
+	type ExtensionLoadResult,
+	ExtensionManager,
+	ExtensionUtils,
+	extensionToRegistration,
+	type HookExtension,
+	loadAllExtensions,
+	loadExtension,
+} from "./extension-loader.js";
 // Hook Manager
 export {
 	AgentHookManager,

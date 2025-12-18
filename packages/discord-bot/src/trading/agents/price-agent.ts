@@ -4,6 +4,7 @@
  */
 
 import { BaseAgent } from "../base-agent.js";
+import { rateLimiter } from "../rate-limiter.js";
 import type { AgentConfig, PriceData, TradeSignal } from "../types.js";
 
 interface PriceAgentConfig extends AgentConfig {
@@ -52,8 +53,11 @@ export class PriceAgent extends BaseAgent {
 		const symbols = this.config.symbols.map((s) => s.toLowerCase()).join(",");
 
 		try {
-			const response = await fetch(
-				`https://api.coingecko.com/api/v3/simple/price?ids=${symbols}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,
+			// Use rate limiter to avoid CoinGecko throttling
+			const response = await rateLimiter.execute("coingecko", () =>
+				fetch(
+					`https://api.coingecko.com/api/v3/simple/price?ids=${symbols}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,
+				),
 			);
 
 			if (!response.ok) {
@@ -151,8 +155,11 @@ export class PriceAgent extends BaseAgent {
 	 */
 	async getPrice(symbol: string): Promise<PriceData | null> {
 		try {
-			const response = await fetch(
-				`https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,
+			// Use rate limiter to avoid CoinGecko throttling
+			const response = await rateLimiter.execute("coingecko", () =>
+				fetch(
+					`https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,
+				),
 			);
 
 			if (!response.ok) return null;

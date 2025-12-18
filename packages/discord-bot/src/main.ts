@@ -1060,7 +1060,12 @@ const slashCommands = [
 				.setDescription("Remove a blocking rule")
 				.addIntegerOption((option) => option.setName("id").setDescription("Rule ID to remove").setRequired(true)),
 		)
-		.addSubcommand((subcommand) => subcommand.setName("rules-preset").setDescription("Apply preset security rules")),
+		.addSubcommand((subcommand) => subcommand.setName("rules-preset").setDescription("Apply preset security rules"))
+		// Extension commands
+		.addSubcommand((subcommand) => subcommand.setName("extensions").setDescription("List loaded hook extensions"))
+		.addSubcommand((subcommand) =>
+			subcommand.setName("extensions-reload").setDescription("Reload hook extensions from skills directory"),
+		),
 
 	new SlashCommandBuilder().setName("skills").setDescription("List loaded skills and capabilities"),
 
@@ -6122,6 +6127,65 @@ async function main() {
 							} catch (error) {
 								const errMsg = error instanceof Error ? error.message : String(error);
 								await interaction.editReply(`❌ Failed to apply presets: ${errMsg}`);
+							}
+							break;
+						}
+
+						// Extension commands
+						case "extensions": {
+							try {
+								const { ExtensionManager } = await import("./agents/hooks/index.js");
+								const skillsDir = join(workingDir, "skills");
+								const manager = new ExtensionManager(skillsDir);
+								await manager.loadAll();
+								const extensions = manager.list();
+
+								if (extensions.length === 0) {
+									await interaction.editReply(
+										"No hook extensions loaded.\n" + `Place extension files in \`${skillsDir}/hooks/\``,
+									);
+									break;
+								}
+
+								const list = extensions
+									.map((ext) => {
+										const status = ext.enabled ? "🟢" : "⚪";
+										const age = Math.floor((Date.now() - ext.loadedAt) / 1000);
+										return `${status} **${ext.name}** (\`${ext.id}\`)\n  ${ext.description || "No description"}\n  Loaded ${age}s ago`;
+									})
+									.join("\n\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("🔌 Hook Extensions")
+									.setDescription(list)
+									.setColor(0x9b59b6)
+									.setFooter({ text: `${extensions.length} extensions loaded` })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to list extensions: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "extensions-reload": {
+							try {
+								const { ExtensionManager } = await import("./agents/hooks/index.js");
+								const skillsDir = join(workingDir, "skills");
+								const manager = new ExtensionManager(skillsDir);
+								const { loaded, errors } = await manager.loadAll();
+
+								let message = `✅ Reloaded ${loaded} hook extension(s)`;
+								if (errors.length > 0) {
+									message += `\n\n⚠️ ${errors.length} error(s):\n${errors.slice(0, 3).join("\n")}`;
+								}
+
+								await interaction.editReply(message);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to reload extensions: ${errMsg}`);
 							}
 							break;
 						}
