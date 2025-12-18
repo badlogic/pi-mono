@@ -91,6 +91,12 @@ src/
 │   └── voice-session.ts # Per-channel voice state
 ├── agents/              # AI agent integrations (Claude, OpenHands)
 │   ├── expertise/       # Agent Experts learning files (per mode)
+│   ├── hooks/           # pi-coding-agent compatible hook system
+│   │   ├── checkpoint-hook.ts   # Git-based state snapshots
+│   │   ├── lsp-hook.ts          # Language server diagnostics
+│   │   ├── expert-hook.ts       # Act-Learn-Reuse integration
+│   │   ├── discord-integration.ts # Per-channel lifecycle hooks
+│   │   └── hook-manager.ts      # Event coordination
 │   ├── claude-agent.ts  # Claude Code subagent spawning
 │   ├── openhands-agent.ts   # OpenHands SDK TypeScript wrapper
 │   ├── openhands-runner.py  # OpenHands Python runner (GLM via Z.ai)
@@ -366,6 +372,74 @@ const { remaining } = await sunoService.getCredits();
 ```
 
 **Environment Variable:** `SUNO_API_KEY` (from sunoapi.org)
+
+### Agent Hooks System
+
+The bot includes a pi-coding-agent compatible hook system that provides safety and quality features:
+
+**Slash Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/hooks status` | Show hook system health, session ID, turn count |
+| `/hooks checkpoints` | List last 10 git checkpoints with timestamps |
+| `/hooks restore <id>` | Restore code to a specific checkpoint |
+
+**Active Hooks:**
+
+| Hook | Trigger | Effect |
+|------|---------|--------|
+| **Checkpoint** | `turn_start` | Creates git ref snapshot (`refs/pi-checkpoints/`) |
+| **LSP** | `tool_result` (write/edit) | Appends language diagnostics to tool output |
+| **Expert** | `turn_start/end` | Detects domain, injects expertise, captures learnings |
+
+**Supported LSP Languages:**
+- TypeScript/JavaScript (typescript-language-server)
+- Python (pyright-langserver)
+- Go (gopls)
+- Rust (rust-analyzer)
+- Dart/Flutter, Vue, Svelte
+
+**Event Flow per Discord Message:**
+```
+User message → turn_start → checkpoint created
+              ↓
+Agent runs tools → LSP diagnostics injected after write/edit
+              ↓
+Response sent → turn_end → expert learning captured
+```
+
+**TypeScript API:**
+```typescript
+import {
+  createDiscordHookIntegration,
+  CheckpointUtils,
+  wrapToolWithHooks,
+} from "./agents/index.js";
+
+// Create per-channel hook integration
+const hooks = createDiscordHookIntegration({
+  cwd: channelDir,
+  channelId,
+  checkpoint: true,
+  lsp: true,
+  expert: true,
+});
+
+// Emit lifecycle events
+await hooks.emitSession('start', sessionId);
+await hooks.emitTurnStart(turnIndex);
+await hooks.emitTurnEnd(turnIndex, messages);
+
+// Wrap tools with hook events
+const hookedWriteTool = wrapToolWithHooks(createWriteTool(), () => hooks);
+
+// List and restore checkpoints
+const checkpoints = await CheckpointUtils.loadAllCheckpoints(cwd);
+await CheckpointUtils.restoreCheckpoint(cwd, checkpoint);
+```
+
+**Files:** `src/agents/hooks/` - See `README.md` in that directory for full API documentation.
 
 ### Model Provider System
 
