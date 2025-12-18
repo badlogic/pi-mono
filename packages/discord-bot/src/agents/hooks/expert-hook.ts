@@ -13,7 +13,7 @@
  * Based on TAC Lesson 13: Agent Experts
  */
 
-import { existsSync, readdirSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, readdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CODEBASE_EXPERTS, detectExpertDomain, PRODUCT_EXPERTS } from "../agent-experts.js";
 import {
