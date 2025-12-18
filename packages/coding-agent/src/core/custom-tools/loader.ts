@@ -224,7 +224,7 @@ export async function loadCustomTools(
 
 /**
  * Discover tool files from a directory.
- * Returns all .ts files in the directory (non-recursive).
+ * Returns all .ts files (and symlinks to .ts files) in the directory (non-recursive).
  */
 function discoverToolsInDir(dir: string): string[] {
 	if (!fs.existsSync(dir)) {
@@ -233,7 +233,9 @@ function discoverToolsInDir(dir: string): string[] {
 
 	try {
 		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		return entries.filter((e) => e.isFile() && e.name.endsWith(".ts")).map((e) => path.join(dir, e.name));
+		return entries
+			.filter((e) => (e.isFile() || e.isSymbolicLink()) && e.name.endsWith(".ts"))
+			.map((e) => path.join(dir, e.name));
 	} catch {
 		return [];
 	}

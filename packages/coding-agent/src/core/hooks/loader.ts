@@ -198,7 +198,7 @@ export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooks
 
 /**
  * Discover hook files from a directory.
- * Returns all .ts files in the directory (non-recursive).
+ * Returns all .ts files (and symlinks to .ts files) in the directory (non-recursive).
  */
 function discoverHooksInDir(dir: string): string[] {
 	if (!fs.existsSync(dir)) {
@@ -207,7 +207,9 @@ function discoverHooksInDir(dir: string): string[] {
 
 	try {
 		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		return entries.filter((e) => e.isFile() && e.name.endsWith(".ts")).map((e) => path.join(dir, e.name));
+		return entries
+			.filter((e) => (e.isFile() || e.isSymbolicLink()) && e.name.endsWith(".ts"))
+			.map((e) => path.join(dir, e.name));
 	} catch {
 		return [];
 	}
