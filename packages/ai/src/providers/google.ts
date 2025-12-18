@@ -469,6 +469,8 @@ function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.IMAGE_SAFETY:
 		case FinishReason.IMAGE_PROHIBITED_CONTENT:
 		case FinishReason.RECITATION:
+		case FinishReason.IMAGE_RECITATION:
+		case FinishReason.IMAGE_OTHER:
 		case FinishReason.FINISH_REASON_UNSPECIFIED:
 		case FinishReason.OTHER:
 		case FinishReason.LANGUAGE:
