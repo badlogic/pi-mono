@@ -4,6 +4,11 @@
  *
  * TAC Lesson 13: Agent Experts - Act-Learn-Reuse Pattern
  * "The massive problem with agents is they forget - Agent Experts solve this"
+ *
+ * Includes pi-coding-agent compatible hooks:
+ * - Checkpoint Hook: Git-based state checkpointing
+ * - LSP Hook: Language Server Protocol diagnostics
+ * - Expert Hook: Act-Learn-Reuse integration
  */
 
 // Agent Experts - Advanced TAC Lesson 13 (Codebase Experts, Meta-Agentics)
@@ -46,6 +51,64 @@ export {
 	SELF_IMPROVE_PROMPTS,
 	updateExpertise,
 } from "./expertise-manager.js";
+// Agent Hooks - pi-coding-agent compatible (checkpoint, LSP, expert)
+export {
+	// Types
+	type AgentHookAPI,
+	type AgentHookContext,
+	type AgentHookEvent,
+	type AgentHookFactory,
+	// Hook Manager
+	AgentHookManager,
+	ALL_HOOKS,
+	type BranchEvent,
+	type BranchEventResult,
+	// Expert Hook
+	buildExpertContext,
+	type CheckpointConfig,
+	type CheckpointData,
+	CheckpointUtils,
+	CODING_HOOKS,
+	// Checkpoint Hook
+	checkpointHook,
+	cleanupOldCheckpoints,
+	createCheckpoint,
+	createCheckpointHook,
+	createDefaultHookManager,
+	createDiscordContext,
+	createExpertHook,
+	createExpertPrompt,
+	createHookRegistration,
+	// LSP Hook
+	createLSPHook,
+	createTaskAwareExpertHook,
+	detectDomain,
+	type ExpertContext,
+	type ExpertHookConfig,
+	ExpertUtils,
+	expertHook,
+	getDomainRiskLevel,
+	type HookManager,
+	type HookRegistration,
+	type LSPConfig,
+	type LSPDiagnostic,
+	LSPUtils,
+	listCheckpointRefs,
+	loadAllCheckpoints,
+	loadCheckpointFromRef,
+	lspHook,
+	MINIMAL_HOOKS,
+	processAgentOutput,
+	restoreCheckpoint,
+	SECURITY_HOOKS,
+	type SessionEvent,
+	type ToolCallEvent,
+	type ToolCallEventResult,
+	type ToolResultEvent,
+	type ToolResultEventResult,
+	type TurnEndEvent,
+	type TurnStartEvent,
+} from "./hooks/index.js";
 // Lightweight Agent exports (pi-mono pattern)
 export {
 	AGENT_MODELS,
