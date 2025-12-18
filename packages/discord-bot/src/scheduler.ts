@@ -32,10 +32,8 @@ export class TaskScheduler {
 	private cronJobs: Map<string, cron.ScheduledTask> = new Map();
 	private context: TaskExecutionContext;
 	private db: BotDatabase;
-	private tasksFilePath: string;
 
 	constructor(tasksFilePath: string, context: TaskExecutionContext, db: BotDatabase) {
-		this.tasksFilePath = tasksFilePath;
 		this.context = context;
 		this.db = db;
 

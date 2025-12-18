@@ -40,7 +40,7 @@ export function createWebSearchTool(): AgentTool<typeof webSearchSchema> {
 					content: [
 						{
 							type: "text",
-							text: "Error: EXA_API_KEY not configured. Use bash with curl instead:\ncurl -s 'https://html.duckduckgo.com/html/?q=YOUR+QUERY' | grep -oP '(?<=<a rel=\"nofollow\" class=\"result__a\" href=\")[^\"]*'",
+							text: 'Error: EXA_API_KEY not configured. Use bash with curl instead:\ncurl -s \'https://html.duckduckgo.com/html/?q=YOUR+QUERY\' | grep -oP \'(?<=<a rel="nofollow" class="result__a" href=")[^"]*\'',
 						},
 					],
 					details: undefined,
