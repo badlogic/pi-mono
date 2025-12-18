@@ -6,13 +6,12 @@
 import { existsSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // Agent Experts
 import {
 	CODEBASE_EXPERTS,
 	detectExpertDomain,
-	executeWithExpert,
 	getExpert,
 	META_PROMPT_TEMPLATE,
 	PRODUCT_EXPERTS,
