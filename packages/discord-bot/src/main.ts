@@ -55,6 +55,7 @@ import {
 	generateSessionId,
 	// Lightweight Agent
 	getAgentModels,
+	getChannelHookIntegration,
 	getClaudeTaskStatus,
 	// Expertise Manager
 	getExpertiseModes,
@@ -79,6 +80,7 @@ import {
 	runSecurityScan,
 	runTestGeneration,
 	runTwoAgentWorkflow,
+	wrapToolWithHooks,
 } from "./agents/index.js";
 import { Analytics } from "./analytics.js";
 import { browserAutomation } from "./browser/index.js";
@@ -3361,11 +3363,27 @@ function getChannelState(channelId: string, workingDir: string, channelName: str
 		const memory = getMemory(channelDir, workingDir);
 		const systemPrompt = buildSystemPrompt(workingDir, channelId, channelName, memory);
 
+		// Create hook integration FIRST (before tools, so we can wrap them)
+		const sessionId = generateSessionId(channelId);
+		const hooks = createDiscordHookIntegration({
+			cwd: channelDir,
+			channelId,
+			checkpoint: true,
+			lsp: true,
+			expert: true,
+		});
+
+		// Helper to wrap tools with hook events (for LSP diagnostics on file changes)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const wrapTool = <T extends { name: string; execute: (...args: any[]) => Promise<any> }>(tool: T): T =>
+			wrapToolWithHooks(tool, () => getChannelHookIntegration(channelId));
+
+		// Create tools and wrap file-modifying ones with hooks for LSP diagnostics
 		const tools = [
-			createBashTool(),
-			createReadTool(),
-			createWriteTool(),
-			createEditTool(),
+			wrapTool(createBashTool()),
+			createReadTool(), // Read doesn't need hooks
+			wrapTool(createWriteTool()), // Write triggers LSP
+			wrapTool(createEditTool()), // Edit triggers LSP
 			...getAllMcpTools(), // MCP tools: web_search, github, hf, memory
 		];
 
@@ -3402,16 +3420,6 @@ function getChannelState(channelId: string, workingDir: string, channelName: str
 			agent.replaceMessages(sessionMessages as Parameters<typeof agent.replaceMessages>[0]);
 			logInfo(`Restored ${sessionMessages.length} messages for channel ${channelId}`);
 		}
-
-		// Create hook integration for this channel
-		const sessionId = generateSessionId(channelId);
-		const hooks = createDiscordHookIntegration({
-			cwd: channelDir,
-			channelId,
-			checkpoint: true,
-			lsp: true,
-			expert: true,
-		});
 
 		// Emit session start event
 		hooks.emitSession("start", sessionId).catch((err) => {
