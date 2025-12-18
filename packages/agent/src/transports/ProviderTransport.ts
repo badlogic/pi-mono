@@ -34,15 +34,7 @@ export class ProviderTransport implements AgentTransport {
 		this.options = options;
 	}
 
-	private async getModelAndKey(cfg: AgentRunConfig) {
-		let apiKey: string | undefined;
-		if (this.options.getApiKey) {
-			apiKey = await this.options.getApiKey(cfg.model.provider);
-		}
-		if (!apiKey) {
-			throw new Error(`No API key found for provider: ${cfg.model.provider}`);
-		}
-
+	private getModel(cfg: AgentRunConfig) {
 		let model = cfg.model;
 		if (this.options.corsProxyUrl && cfg.model.baseUrl) {
 			model = {
@@ -50,8 +42,7 @@ export class ProviderTransport implements AgentTransport {
 				baseUrl: `${this.options.corsProxyUrl}/?url=${encodeURIComponent(cfg.model.baseUrl)}`,
 			};
 		}
-
-		return { model, apiKey };
+		return model;
 	}
 
 	private buildContext(messages: Message[], cfg: AgentRunConfig): AgentContext {
@@ -62,19 +53,20 @@ export class ProviderTransport implements AgentTransport {
 		};
 	}
 
-	private buildLoopConfig(model: typeof cfg.model, apiKey: string, cfg: AgentRunConfig): AgentLoopConfig {
+	private buildLoopConfig(model: AgentRunConfig["model"], cfg: AgentRunConfig): AgentLoopConfig {
 		return {
 			model,
 			reasoning: cfg.reasoning,
-			apiKey,
+			// Resolve API key per assistant response (important for expiring OAuth tokens)
+			getApiKey: this.options.getApiKey ? (provider) => this.options.getApiKey?.(provider) : undefined,
 			getQueuedMessages: cfg.getQueuedMessages,
 		};
 	}
 
 	async *run(messages: Message[], userMessage: Message, cfg: AgentRunConfig, signal?: AbortSignal) {
-		const { model, apiKey } = await this.getModelAndKey(cfg);
+		const model = this.getModel(cfg);
 		const context = this.buildContext(messages, cfg);
-		const pc = this.buildLoopConfig(model, apiKey, cfg);
+		const pc = this.buildLoopConfig(model, cfg);
 
 		for await (const ev of agentLoop(userMessage as unknown as UserMessage, context, pc, signal)) {
 			yield ev;
@@ -82,9 +74,9 @@ export class ProviderTransport implements AgentTransport {
 	}
 
 	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
-		const { model, apiKey } = await this.getModelAndKey(cfg);
+		const model = this.getModel(cfg);
 		const context = this.buildContext(messages, cfg);
-		const pc = this.buildLoopConfig(model, apiKey, cfg);
+		const pc = this.buildLoopConfig(model, cfg);
 
 		for await (const ev of agentLoopContinue(context, pc, signal)) {
 			yield ev;

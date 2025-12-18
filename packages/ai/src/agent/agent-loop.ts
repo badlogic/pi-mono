@@ -174,7 +174,12 @@ async function streamAssistantResponse(
 
 	// Use custom stream function if provided, otherwise use default streamSimple
 	const streamFunction = streamFn || streamSimple;
-	const response = await streamFunction(config.model, processedContext, { ...config, signal });
+
+	// Resolve API key for every assistant response (important for expiring tokens)
+	const resolvedApiKey =
+		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+
+	const response = await streamFunction(config.model, processedContext, { ...config, apiKey: resolvedApiKey, signal });
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
