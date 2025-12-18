@@ -60,6 +60,11 @@ export interface HookMetrics {
 		total: number;
 		byHook: Record<string, number>;
 	};
+	/** Timeout counts */
+	timeouts: {
+		total: number;
+		byHook: Record<string, number>;
+	};
 	/** Session info */
 	session: {
 		startTime: number;
@@ -72,7 +77,30 @@ export interface HookMetrics {
 		blocked: number;
 		modified: number;
 	};
+	/** Memory usage (bytes) */
+	memory: {
+		heapUsed: number;
+		heapTotal: number;
+		external: number;
+		lastUpdated: number;
+	};
 }
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+export interface HookManagerConfig {
+	/** Timeout for individual hook handlers (ms) */
+	handlerTimeoutMs: number;
+	/** Update memory metrics every N events */
+	memoryUpdateInterval: number;
+}
+
+const DEFAULT_CONFIG: HookManagerConfig = {
+	handlerTimeoutMs: 5000, // 5 second timeout per handler
+	memoryUpdateInterval: 10, // Update memory every 10 events
+};
 
 // ============================================================================
 // Debug Logging
@@ -127,10 +155,16 @@ export class AgentHookManager implements HookManager {
 	private sendQueue: Array<{ text: string; attachments?: unknown[] }> = [];
 	private onSend?: (text: string, attachments?: unknown[]) => void;
 	private _metrics: HookMetrics;
+	private config: HookManagerConfig;
 
-	constructor(cwd: string, onSend?: (text: string, attachments?: unknown[]) => void) {
+	constructor(
+		cwd: string,
+		onSend?: (text: string, attachments?: unknown[]) => void,
+		config: Partial<HookManagerConfig> = {},
+	) {
 		this.cwd = cwd;
 		this.onSend = onSend;
+		this.config = { ...DEFAULT_CONFIG, ...config };
 		this._metrics = this.createInitialMetrics();
 	}
 
@@ -138,6 +172,7 @@ export class AgentHookManager implements HookManager {
 	 * Create initial metrics object
 	 */
 	private createInitialMetrics(): HookMetrics {
+		const memUsage = process.memoryUsage();
 		return {
 			totalEvents: 0,
 			eventsByType: {},
@@ -150,6 +185,10 @@ export class AgentHookManager implements HookManager {
 				total: 0,
 				byHook: {},
 			},
+			timeouts: {
+				total: 0,
+				byHook: {},
+			},
 			session: {
 				startTime: Date.now(),
 				turnCount: 0,
@@ -159,7 +198,66 @@ export class AgentHookManager implements HookManager {
 				blocked: 0,
 				modified: 0,
 			},
+			memory: {
+				heapUsed: memUsage.heapUsed,
+				heapTotal: memUsage.heapTotal,
+				external: memUsage.external,
+				lastUpdated: Date.now(),
+			},
 		};
+	}
+
+	/**
+	 * Update memory metrics
+	 */
+	private updateMemoryMetrics(): void {
+		const memUsage = process.memoryUsage();
+		this._metrics.memory = {
+			heapUsed: memUsage.heapUsed,
+			heapTotal: memUsage.heapTotal,
+			external: memUsage.external,
+			lastUpdated: Date.now(),
+		};
+	}
+
+	/**
+	 * Run handler with timeout
+	 */
+	private async runWithTimeout<T>(
+		hookId: string,
+		handler: () => Promise<T>,
+		timeoutMs: number,
+	): Promise<{ result: T | undefined; timedOut: boolean }> {
+		return new Promise((resolve) => {
+			let completed = false;
+
+			const timer = setTimeout(() => {
+				if (!completed) {
+					completed = true;
+					this._metrics.timeouts.total++;
+					this._metrics.timeouts.byHook[hookId] = (this._metrics.timeouts.byHook[hookId] || 0) + 1;
+					debugLog(`Hook ${hookId} timed out after ${timeoutMs}ms`);
+					resolve({ result: undefined, timedOut: true });
+				}
+			}, timeoutMs);
+
+			handler()
+				.then((result) => {
+					if (!completed) {
+						completed = true;
+						clearTimeout(timer);
+						resolve({ result, timedOut: false });
+					}
+				})
+				.catch((error) => {
+					if (!completed) {
+						completed = true;
+						clearTimeout(timer);
+						debugLog(`Hook ${hookId} error:`, error);
+						resolve({ result: undefined, timedOut: false });
+					}
+				});
+		});
 	}
 
 	/**
@@ -349,6 +447,11 @@ export class AgentHookManager implements HookManager {
 			this._metrics.toolCalls.total++;
 		}
 
+		// Update memory metrics periodically
+		if (this._metrics.totalEvents % this.config.memoryUpdateInterval === 0) {
+			this.updateMemoryMetrics();
+		}
+
 		debugLog(`Emitting ${eventType} event`, { event, hookCount: this.hooks.size });
 
 		let result: any;
@@ -365,35 +468,49 @@ export class AgentHookManager implements HookManager {
 
 			const hookStart = Date.now();
 			for (const handler of eventHandlers) {
-				try {
-					debugLog(`Running ${hookId} handler for ${eventType}`);
-					const handlerResult = await handler(event as any, context);
+				debugLog(`Running ${hookId} handler for ${eventType}`);
 
-					// Merge results for tool_call, tool_result, and branch events
-					if (handlerResult !== undefined) {
-						if (eventType === "tool_call") {
-							const tcResult = handlerResult as ToolCallEventResult;
-							if (tcResult.block) {
-								this._metrics.toolCalls.blocked++;
-								debugLog(`Tool blocked by ${hookId}`, { reason: tcResult.reason });
-								return tcResult as any; // Block immediately
-							}
-						} else if (eventType === "tool_result") {
-							const trResult = handlerResult as ToolResultEventResult;
-							if (trResult.result !== undefined) {
-								// Update the event's result for subsequent handlers
-								(event as ToolResultEvent).result = trResult.result;
-								result = trResult;
-							}
-						} else if (eventType === "branch") {
-							result = handlerResult;
+				// Run handler with timeout protection
+				const { result: handlerResult, timedOut } = await this.runWithTimeout(
+					hookId,
+					async () => {
+						try {
+							return await handler(event as any, context);
+						} catch (error) {
+							console.error(`Hook ${hookId} error on ${eventType}:`, error);
+							this._metrics.errors.total++;
+							this._metrics.errors.byHook[hookId] = (this._metrics.errors.byHook[hookId] || 0) + 1;
+							debugLog(`Hook ${hookId} error`, { error: String(error) });
+							return undefined;
 						}
+					},
+					this.config.handlerTimeoutMs,
+				);
+
+				if (timedOut) {
+					// Continue to next handler if this one timed out
+					continue;
+				}
+
+				// Merge results for tool_call, tool_result, and branch events
+				if (handlerResult !== undefined) {
+					if (eventType === "tool_call") {
+						const tcResult = handlerResult as ToolCallEventResult;
+						if (tcResult.block) {
+							this._metrics.toolCalls.blocked++;
+							debugLog(`Tool blocked by ${hookId}`, { reason: tcResult.reason });
+							return tcResult as any; // Block immediately
+						}
+					} else if (eventType === "tool_result") {
+						const trResult = handlerResult as ToolResultEventResult;
+						if (trResult.result !== undefined) {
+							// Update the event's result for subsequent handlers
+							(event as ToolResultEvent).result = trResult.result;
+							result = trResult;
+						}
+					} else if (eventType === "branch") {
+						result = handlerResult;
 					}
-				} catch (error) {
-					console.error(`Hook ${hookId} error on ${eventType}:`, error);
-					this._metrics.errors.total++;
-					this._metrics.errors.byHook[hookId] = (this._metrics.errors.byHook[hookId] || 0) + 1;
-					debugLog(`Hook ${hookId} error`, { error: String(error) });
 				}
 			}
 			const hookDuration = Date.now() - hookStart;

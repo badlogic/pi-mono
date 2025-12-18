@@ -81,6 +81,7 @@ export {
 	buildExpertContext,
 	clearAllExpertise,
 	clearExpertise,
+	clearExpertiseCache,
 	createExpertHook,
 	createExpertPrompt,
 	createTaskAwareExpertHook,
@@ -90,6 +91,7 @@ export {
 	expertHook,
 	exportExpertise,
 	getDomainRiskLevel,
+	getExpertiseCacheStats,
 	getExpertiseSummary,
 	listExpertise,
 	processAgentOutput,
@@ -101,6 +103,7 @@ export {
 	createDiscordContext,
 	createHookRegistration,
 	enableDebugLogging,
+	type HookManagerConfig,
 	type HookMetrics,
 	isDebugLoggingEnabled,
 } from "./hook-manager.js";

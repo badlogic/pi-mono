@@ -38,6 +38,85 @@ const DEFAULT_CONFIG: ExpertHookConfig = {
 };
 
 // ============================================================================
+// Expertise Cache (Performance Optimization)
+// ============================================================================
+
+interface CacheEntry {
+	content: string;
+	loadedAt: number;
+	size: number;
+}
+
+const expertiseCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60000; // 1 minute cache TTL
+const MAX_CACHE_SIZE = 10; // Max cached domains
+
+/**
+ * Load expertise with caching
+ */
+function loadExpertiseCached(domain: string): string {
+	const now = Date.now();
+	const cached = expertiseCache.get(domain);
+
+	// Return cached if fresh
+	if (cached && now - cached.loadedAt < CACHE_TTL_MS) {
+		return cached.content;
+	}
+
+	// Evict oldest if at limit
+	if (expertiseCache.size >= MAX_CACHE_SIZE) {
+		let oldestDomain: string | null = null;
+		let oldestTime = Infinity;
+		for (const [d, entry] of expertiseCache.entries()) {
+			if (entry.loadedAt < oldestTime) {
+				oldestTime = entry.loadedAt;
+				oldestDomain = d;
+			}
+		}
+		if (oldestDomain) expertiseCache.delete(oldestDomain);
+	}
+
+	// Load from disk and cache
+	const content = loadExpertise(domain);
+	expertiseCache.set(domain, {
+		content,
+		loadedAt: now,
+		size: content.length,
+	});
+
+	return content;
+}
+
+/**
+ * Invalidate cache for a domain (after update)
+ */
+function invalidateExpertiseCache(domain: string): void {
+	expertiseCache.delete(domain);
+}
+
+/**
+ * Clear entire expertise cache
+ */
+export function clearExpertiseCache(): void {
+	expertiseCache.clear();
+}
+
+/**
+ * Get cache statistics
+ */
+export function getExpertiseCacheStats(): { size: number; domains: string[]; totalBytes: number } {
+	let totalBytes = 0;
+	for (const entry of expertiseCache.values()) {
+		totalBytes += entry.size;
+	}
+	return {
+		size: expertiseCache.size,
+		domains: Array.from(expertiseCache.keys()),
+		totalBytes,
+	};
+}
+
+// ============================================================================
 // Domain Detection
 // ============================================================================
 
@@ -169,11 +248,11 @@ export function getDomainRiskLevel(domain: string): "low" | "medium" | "high" | 
 // ============================================================================
 
 /**
- * Build expert context for a task
+ * Build expert context for a task (uses caching)
  */
 export function buildExpertContext(task: string, domain?: string): ExpertContext {
 	const detectedDomain = domain || detectDomain(task);
-	const expertise = loadExpertise(detectedDomain);
+	const expertise = loadExpertiseCached(detectedDomain);
 	const riskLevel = getDomainRiskLevel(detectedDomain);
 
 	return {
@@ -263,9 +342,16 @@ export function processAgentOutput(
 	}
 
 	const learnings = extractLearnings(output);
-	return updateExpertise(domain, learnings, task, success, {
+	const result = updateExpertise(domain, learnings, task, success, {
 		maxInsights: config.maxSessionInsights,
 	});
+
+	// Invalidate cache after update
+	if (result.learned) {
+		invalidateExpertiseCache(domain);
+	}
+
+	return result;
 }
 
 // ============================================================================

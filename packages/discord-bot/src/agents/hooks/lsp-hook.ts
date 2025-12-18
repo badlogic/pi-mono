@@ -33,6 +33,13 @@ const DEFAULT_CONFIG: LSPConfig = {
 	servers: ["typescript", "pyright", "gopls", "rust-analyzer", "dart"],
 };
 
+// ============================================================================
+// Performance Configuration
+// ============================================================================
+
+const MAX_ACTIVE_CONNECTIONS = 3; // Limit concurrent LSP connections
+const LAZY_INIT = true; // Don't pre-warm on session start
+
 const LANGUAGE_IDS: Record<string, string> = {
 	".dart": "dart",
 	".ts": "typescript",
@@ -262,6 +269,7 @@ class LSPManager {
 	private broken = new Set<string>();
 	private cwd: string;
 	private config: LSPConfig;
+	private lastUsed = new Map<string, number>(); // Track LRU for connection eviction
 
 	constructor(cwd: string, config: LSPConfig = DEFAULT_CONFIG) {
 		this.cwd = cwd;
@@ -270,6 +278,38 @@ class LSPManager {
 
 	private clientKey(serverId: string, root: string): string {
 		return `${serverId}:${root}`;
+	}
+
+	/**
+	 * Evict least recently used connection if at limit
+	 */
+	private async evictIfNeeded(): Promise<void> {
+		if (this.clients.size < MAX_ACTIVE_CONNECTIONS) return;
+
+		// Find LRU connection
+		let oldestKey: string | null = null;
+		let oldestTime = Infinity;
+
+		for (const [key, time] of this.lastUsed.entries()) {
+			if (time < oldestTime) {
+				oldestTime = time;
+				oldestKey = key;
+			}
+		}
+
+		if (oldestKey) {
+			const client = this.clients.get(oldestKey);
+			if (client) {
+				try {
+					await client.connection.sendRequest("shutdown");
+					await client.connection.sendNotification("exit");
+					client.connection.end();
+					client.process.kill();
+				} catch {}
+				this.clients.delete(oldestKey);
+				this.lastUsed.delete(oldestKey);
+			}
+		}
 	}
 
 	private async initializeClient(config: LSPServerConfig, root: string): Promise<LSPClient | undefined> {
@@ -400,9 +440,14 @@ class LSPManager {
 
 			const existing = this.clients.get(key);
 			if (existing) {
+				// Update LRU timestamp
+				this.lastUsed.set(key, Date.now());
 				clients.push(existing);
 				continue;
 			}
+
+			// Evict if at connection limit before spawning new
+			await this.evictIfNeeded();
 
 			if (!this.spawning.has(key)) {
 				const promise = this.initializeClient(config, root);
@@ -413,6 +458,7 @@ class LSPManager {
 			const client = await this.spawning.get(key);
 			if (client) {
 				this.clients.set(key, client);
+				this.lastUsed.set(key, Date.now());
 				clients.push(client);
 			}
 		}
@@ -513,19 +559,21 @@ export function createLSPHook(config: Partial<LSPConfig> = {}): (api: AgentHookA
 			if (event.reason === "start" || event.reason === "switch") {
 				lspManager = new LSPManager(ctx.cwd, finalConfig);
 
-				// Pre-warm: trigger LSP initialization for detected project type
-				const warmupMap: Record<string, string> = {
-					"pubspec.yaml": ".dart",
-					"package.json": ".ts",
-					"pyproject.toml": ".py",
-					"go.mod": ".go",
-					"Cargo.toml": ".rs",
-				};
+				// Only pre-warm if lazy init is disabled
+				if (!LAZY_INIT) {
+					const warmupMap: Record<string, string> = {
+						"pubspec.yaml": ".dart",
+						"package.json": ".ts",
+						"pyproject.toml": ".py",
+						"go.mod": ".go",
+						"Cargo.toml": ".rs",
+					};
 
-				for (const [marker, ext] of Object.entries(warmupMap)) {
-					if (existsSync(join(ctx.cwd, marker))) {
-						lspManager.getClientsForFile(join(ctx.cwd, `dummy${ext}`)).catch(() => {});
-						break;
+					for (const [marker, ext] of Object.entries(warmupMap)) {
+						if (existsSync(join(ctx.cwd, marker))) {
+							lspManager.getClientsForFile(join(ctx.cwd, `dummy${ext}`)).catch(() => {});
+							break;
+						}
 					}
 				}
 			} else if (event.reason === "clear") {
