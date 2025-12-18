@@ -105,7 +105,7 @@ export function getNextFeature(spec: TaskSpec): Feature | undefined {
  */
 export async function executeFeature(taskId: string, feature: Feature, enableLearning = true): Promise<PhaseResult> {
 	const spec = loadTaskSpec(taskId);
-	const startTime = Date.now();
+	const _startTime = Date.now(); // Reserved for future duration tracking
 
 	// Mark feature as in progress
 	updateFeature(taskId, feature.id, {
@@ -278,6 +278,7 @@ export async function executeAllFeatures(options: ExecuteOptions): Promise<Phase
 	// Update task status
 	updateTaskSpec(taskId, { status: "executing" });
 
+	// eslint-disable-next-line no-constant-condition
 	while (true) {
 		const result = await executeNextFeature({ taskId, enableLearning });
 		results.push(result);
