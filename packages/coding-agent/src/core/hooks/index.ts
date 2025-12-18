@@ -29,3 +29,12 @@ export type {
 	TurnStartEvent,
 	WriteToolResultEvent,
 } from "./types.js";
+export {
+	isBashToolResult,
+	isEditToolResult,
+	isFindToolResult,
+	isGrepToolResult,
+	isLsToolResult,
+	isReadToolResult,
+	isWriteToolResult,
+} from "./types.js";

@@ -234,19 +234,25 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-The event type is a discriminated union based on `toolName`. TypeScript will narrow `details` to the correct type:
+The event type is a discriminated union based on `toolName`. Use the provided type guards to narrow `details` to the correct type:
 
 ```typescript
-pi.on("tool_result", async (event, ctx) => {
-  if (event.toolName === "bash") {
-    // event.details is BashToolDetails | undefined
-    if (event.details?.truncation?.truncated) {
-      // Access full output from temp file
-      const fullPath = event.details.fullOutputPath;
+import { isBashToolResult, type HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+
+export default function (pi: HookAPI) {
+  pi.on("tool_result", async (event, ctx) => {
+    if (isBashToolResult(event)) {
+      // event.details is BashToolDetails | undefined
+      if (event.details?.truncation?.truncated) {
+        // Access full output from temp file
+        const fullPath = event.details.fullOutputPath;
+      }
     }
-  }
-});
+  });
+}
 ```
+
+Available type guards: `isBashToolResult`, `isReadToolResult`, `isEditToolResult`, `isWriteToolResult`, `isGrepToolResult`, `isFindToolResult`, `isLsToolResult`.
 
 #### Tool Details Types
 
@@ -272,7 +278,18 @@ Common fields in details:
 - `totalLines`, `totalBytes` - original size
 - `outputLines`, `outputBytes` - truncated size
 
-Custom tools use `CustomToolResultEvent` with `details: unknown`.
+Custom tools use `CustomToolResultEvent` with `details: unknown`. You'll need to cast or validate:
+
+```typescript
+pi.on("tool_result", async (event, ctx) => {
+  if (event.toolName === "my-custom-tool") {
+    // Cast to your tool's details type
+    const details = event.details as MyCustomToolDetails;
+  }
+});
+```
+
+Custom tools define their own details type in their `execute` function return value. The hook receives whatever the tool returned, but since the hook system doesn't know about custom tool types at compile time, it's typed as `unknown`.
 
 **Note:** If you modify `content`, you should also update `details` accordingly. The TUI uses `details` (e.g., truncation info) for rendering, so inconsistent values will cause display issues.
 

@@ -35,7 +35,6 @@ export type {
 	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
-// Hook system types
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -61,6 +60,16 @@ export type {
 	TurnEndEvent,
 	TurnStartEvent,
 	WriteToolResultEvent,
+} from "./core/hooks/index.js";
+// Hook system types and type guards
+export {
+	isBashToolResult,
+	isEditToolResult,
+	isFindToolResult,
+	isGrepToolResult,
+	isLsToolResult,
+	isReadToolResult,
+	isWriteToolResult,
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
 export {
