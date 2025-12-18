@@ -81,10 +81,12 @@ export {
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
+	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
+	type SkillWarning,
 } from "./core/skills.js";
 // Tools
 export { bashTool, codingTools, editTool, readTool, writeTool } from "./core/tools/index.js";

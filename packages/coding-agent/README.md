@@ -488,7 +488,9 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 ### Skills
 
-Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
+Skills are self-contained capability packages that the agent loads on-demand. Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
+
+A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
 
 **Example use cases:**
 - Web search and content extraction (Brave Search API)
@@ -508,6 +510,7 @@ Skills are self-contained capability packages that the agent loads on-demand. A 
 
 ```markdown
 ---
+name: brave-search
 description: Web search via Brave Search API. Use for documentation, facts, or web content.
 ---
 
@@ -515,18 +518,18 @@ description: Web search via Brave Search API. Use for documentation, facts, or w
 
 ## Setup
 \`\`\`bash
-cd {baseDir} && npm install
+cd /path/to/brave-search && npm install
 \`\`\`
 
 ## Usage
 \`\`\`bash
-{baseDir}/search.js "query"           # Basic search
-{baseDir}/search.js "query" --content # Include page content
+./search.js "query"           # Basic search
+./search.js "query" --content # Include page content
 \`\`\`
 ```
 
-- `description`: Required. Determines when the skill is loaded.
-- `{baseDir}`: Placeholder for the skill's directory.
+- `name`: Required. Must match parent directory name. Lowercase, hyphens, max 64 chars.
+- `description`: Required. Max 1024 chars. Determines when the skill is loaded.
 
 **Disable skills:** `pi --no-skills` or set `skills.enabled: false` in settings.
 
