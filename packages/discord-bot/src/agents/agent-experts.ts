@@ -519,6 +519,7 @@ export async function executeWithExpert<T>(
 export function detectExpertDomain(task: string): string {
 	const taskLower = task.toLowerCase();
 
+	// Order matters! More specific domains checked first
 	const domainKeywords: Record<string, string[]> = {
 		security: [
 			"security",
@@ -549,11 +550,42 @@ export function detectExpertDomain(task: string): string {
 			"mongodb",
 			"orm",
 		],
+		// Performance before trading (both have "optimize" related tasks)
+		performance: [
+			"performance",
+			"optimize",
+			"cache",
+			"caching",
+			"profil",
+			"bottleneck",
+			"memory",
+			"cpu",
+			"latency",
+			"throughput",
+			"scale",
+			"benchmark",
+			"slow",
+			"fast",
+		],
+		billing: ["billing", "payment", "subscription", "invoice", "stripe", "paypal", "charge", "refund", "transaction"],
+		api_integration: [
+			"api",
+			"integration",
+			"webhook",
+			"endpoint",
+			"rest",
+			"graphql",
+			"rate limit",
+			"retry",
+			"external service",
+		],
+		// Trading checked after performance to avoid "strategy" false positives
 		trading: [
 			"trading",
 			"market",
 			"signal",
-			"strategy",
+			"trade strategy",
+			"trading strategy",
 			"price",
 			"indicator",
 			"position",
@@ -569,30 +601,6 @@ export function detectExpertDomain(task: string): string {
 			"sharpe",
 			"drawdown",
 			"volatility",
-		],
-		api_integration: [
-			"api",
-			"integration",
-			"webhook",
-			"endpoint",
-			"rest",
-			"graphql",
-			"rate limit",
-			"retry",
-			"external service",
-		],
-		billing: ["billing", "payment", "subscription", "invoice", "stripe", "paypal", "charge", "refund", "transaction"],
-		performance: [
-			"performance",
-			"optimize",
-			"cache",
-			"profil",
-			"bottleneck",
-			"memory",
-			"cpu",
-			"latency",
-			"throughput",
-			"scale",
 		],
 	};
 
