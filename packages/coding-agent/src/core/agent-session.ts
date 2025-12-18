@@ -14,7 +14,7 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import { isContextOverflow } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
@@ -275,7 +275,8 @@ export class AgentSession {
 				type: "turn_end",
 				turnIndex: this._turnIndex,
 				message: event.message,
-				toolResults: event.toolResults,
+				// Type assertion needed due to AgentEvent union type narrowing
+				toolResults: event.toolResults as ToolResultMessage[],
 			};
 			await this._hookRunner.emit(hookEvent);
 			this._turnIndex++;
