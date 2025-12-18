@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.23.4] - 2025-12-18
+
 ### Added
 
 - **Syntax highlighting**: Added syntax highlighting for markdown code blocks, read tool output, and write tool content. Uses cli-highlight with theme-aware color mapping and VS Code-style syntax colors. ([#214](https://github.com/badlogic/pi-mono/pull/214) by [@svkozak](https://github.com/svkozak))

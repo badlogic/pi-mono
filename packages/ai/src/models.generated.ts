@@ -2486,6 +2486,25 @@ export const MODELS = {
 		} satisfies Model<"openai-completions">,
 	},
 	"github-copilot": {
+		"gemini-3-flash-preview": {
+			id: "gemini-3-flash-preview",
+			name: "Gemini 3 Flash",
+			api: "openai-completions",
+			provider: "github-copilot",
+			baseUrl: "https://api.individual.githubcopilot.com",
+			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 64000,
+		} satisfies Model<"openai-completions">,
 		"grok-code-fast-1": {
 			id: "grok-code-fast-1",
 			name: "Grok Code Fast 1",
@@ -5058,8 +5077,8 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.049999999999999996,
-				output: 0.19999999999999998,
+				input: 0.02,
+				output: 0.09999999999999999,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
