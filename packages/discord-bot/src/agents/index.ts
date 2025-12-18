@@ -1,9 +1,39 @@
 /**
  * Agents Module
- * Lightweight agent (pi-agent-core), OpenHands SDK, and Agent Experts system
+ * Lightweight agent (pi-agent-core), OpenHands SDK, Claude SDK, and Agent Experts system
+ *
+ * TAC Lesson 13: Agent Experts - Act-Learn-Reuse Pattern
+ * "The massive problem with agents is they forget - Agent Experts solve this"
  */
 
-// Agent Experts - Act-Learn-Reuse System
+// Agent Experts - Advanced TAC Lesson 13 (Codebase Experts, Meta-Agentics)
+export {
+	CODEBASE_EXPERTS,
+	createCodebaseExpert,
+	detectExpertDomain,
+	executeWithAutoExpert,
+	executeWithExpert,
+	generateSelfImprovePrompt,
+	getExpert,
+	loadExpertConfig,
+	META_PROMPT_TEMPLATE,
+	PRODUCT_EXPERTS,
+} from "./agent-experts.js";
+// Claude SDK Agent - Two-Agent Pattern (Initializer + Coding)
+export {
+	type ClaudeAgentOptions,
+	type ClaudeAgentResult,
+	executeNextFeature as executeClaudeFeature,
+	type FeatureSpec,
+	getTaskStatus as getClaudeTaskStatus,
+	initializeTask as initializeClaudeTask,
+	isClaudeSDKAvailable,
+	loadTaskSpec as loadClaudeTaskSpec,
+	resumeTask as resumeClaudeTask,
+	runTwoAgentWorkflow,
+	type TaskSpec as ClaudeTaskSpec,
+} from "./claude-sdk-agent.js";
+// Agent Experts - Act-Learn-Reuse System (Basic)
 export {
 	actLearnReuse,
 	createLearningPrompt,
