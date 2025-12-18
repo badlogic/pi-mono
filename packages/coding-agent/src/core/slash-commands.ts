@@ -99,7 +99,7 @@ export function substituteArgs(content: string, args: string[]): string {
 }
 
 /**
- * Recursively scan a directory for .md files and load them as slash commands
+ * Recursively scan a directory for .md files (and symlinks to .md files) and load them as slash commands
  */
 function loadCommandsFromDir(dir: string, source: "user" | "project", subdir: string = ""): FileSlashCommand[] {
 	const commands: FileSlashCommand[] = [];
@@ -118,7 +118,7 @@ function loadCommandsFromDir(dir: string, source: "user" | "project", subdir: st
 				// Recurse into subdirectory
 				const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
 				commands.push(...loadCommandsFromDir(fullPath, source, newSubdir));
-			} else if (entry.isFile() && entry.name.endsWith(".md")) {
+			} else if ((entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")) {
 				try {
 					const rawContent = readFileSync(fullPath, "utf-8");
 					const { frontmatter, content } = parseFrontmatter(rawContent);
