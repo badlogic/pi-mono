@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Shift+Enter for newlines**: Fixed Shift+Enter not working for newlines in Ghostty, Kitty, WezTerm, and other terminals supporting the Kitty keyboard protocol. Also fixed Alt+Enter, Shift+Tab, and all Ctrl+key combinations (Ctrl+A/C/E/K/O/P/T/U/W). (by [@kim0](https://github.com/kim0))
+- **Kitty keyboard protocol support**: Added support for the Kitty keyboard protocol, enabling Shift+Enter, Alt+Enter, Shift+Tab, Ctrl+D to exit, and all Ctrl+key combinations to work in Ghostty, Kitty, WezTerm, and other modern terminals. (by [@kim0](https://github.com/kim0))
 
 ## [0.23.4] - 2025-12-18
 

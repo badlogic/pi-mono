@@ -23,6 +23,7 @@ export {
 	isAltBackspace,
 	isCtrlA,
 	isCtrlC,
+	isCtrlD,
 	isCtrlE,
 	isCtrlK,
 	isCtrlO,

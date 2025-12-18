@@ -18,6 +18,7 @@ const CODEPOINTS = {
 	// Letters (lowercase ASCII)
 	a: 97,
 	c: 99,
+	d: 100,
 	e: 101,
 	k: 107,
 	o: 111,
@@ -52,6 +53,7 @@ export const Keys = {
 	// Ctrl+<letter> combinations
 	CTRL_A: kittySequence(CODEPOINTS.a, MODIFIERS.ctrl),
 	CTRL_C: kittySequence(CODEPOINTS.c, MODIFIERS.ctrl),
+	CTRL_D: kittySequence(CODEPOINTS.d, MODIFIERS.ctrl),
 	CTRL_E: kittySequence(CODEPOINTS.e, MODIFIERS.ctrl),
 	CTRL_K: kittySequence(CODEPOINTS.k, MODIFIERS.ctrl),
 	CTRL_O: kittySequence(CODEPOINTS.o, MODIFIERS.ctrl),
@@ -97,6 +99,7 @@ export function isKittyKey(data: string, codepoint: number, modifier: number): b
 const RAW = {
 	CTRL_A: "\x01",
 	CTRL_C: "\x03",
+	CTRL_D: "\x04",
 	CTRL_E: "\x05",
 	CTRL_K: "\x0b",
 	CTRL_O: "\x0f",
@@ -120,6 +123,13 @@ export function isCtrlA(data: string): boolean {
  */
 export function isCtrlC(data: string): boolean {
 	return data === RAW.CTRL_C || data === Keys.CTRL_C;
+}
+
+/**
+ * Check if input matches Ctrl+D (raw byte or Kitty protocol).
+ */
+export function isCtrlD(data: string): boolean {
+	return data === RAW.CTRL_D || data === Keys.CTRL_D;
 }
 
 /**

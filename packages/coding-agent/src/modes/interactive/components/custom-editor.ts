@@ -1,4 +1,4 @@
-import { Editor, isCtrlC, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@mariozechner/pi-tui";
+import { Editor, isCtrlC, isCtrlD, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@mariozechner/pi-tui";
 
 /**
  * Custom editor that handles Escape and Ctrl+C keys for coding-agent
@@ -6,6 +6,7 @@ import { Editor, isCtrlC, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@marioze
 export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlC?: () => void;
+	public onCtrlD?: () => void;
 	public onShiftTab?: () => void;
 	public onCtrlP?: () => void;
 	public onCtrlO?: () => void;
@@ -46,6 +47,15 @@ export class CustomEditor extends Editor {
 		// Intercept Ctrl+C
 		if (isCtrlC(data) && this.onCtrlC) {
 			this.onCtrlC();
+			return;
+		}
+
+		// Intercept Ctrl+D (only when editor is empty)
+		if (isCtrlD(data)) {
+			if (this.getText().length === 0 && this.onCtrlD) {
+				this.onCtrlD();
+			}
+			// Always consume Ctrl+D (don't pass to parent)
 			return;
 		}
 
