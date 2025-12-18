@@ -230,6 +230,102 @@ Both OpenHands (Python) and lightweight-agent (TypeScript) share `src/agents/exp
 - Lightweight modes: general, coding, research, trading
 - All accumulated learnings are persisted and reused
 
+### Agent Experts (TAC Lesson 13)
+
+Advanced codebase experts implementing the Act-Learn-Reuse pattern via `/expert` command:
+
+**Slash Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/expert run` | Execute task with auto-selected domain expert |
+| `/expert list` | List all codebase and product experts |
+| `/expert view` | View accumulated expertise for a domain |
+| `/expert create` | Create new expert via meta-agentic pattern |
+
+**Codebase Experts (High-Risk Domains):**
+
+| Domain | Risk Level | Description |
+|--------|------------|-------------|
+| `security` | critical | Authentication, authorization, encryption |
+| `database` | critical | Schema, migrations, query optimization |
+| `trading` | critical | Financial transactions, market analysis |
+| `billing` | critical | Payment processing, subscriptions |
+| `api_integration` | high | External API contracts, error handling |
+| `performance` | high | Optimization, profiling, caching |
+
+**Product Experts:**
+- `user_experience` - UX patterns, preferences, friction points
+- `error_recovery` - Error patterns, recovery strategies
+- `workflow_optimization` - Process improvements, automation
+
+**TypeScript API:**
+```typescript
+import {
+  executeWithAutoExpert,
+  createCodebaseExpert,
+  CODEBASE_EXPERTS
+} from "./agents/index.js";
+
+// Auto-select expert and execute with learning
+const { success, output, learned, expert } = await executeWithAutoExpert(
+  "Review authentication flow for security issues",
+  async (enhancedTask) => runLearningAgent({ prompt: enhancedTask })
+);
+
+// Create new expert (meta-agentic: agents building agents)
+const result = await createCodebaseExpert("websockets", "Real-time communication", executor);
+```
+
+### Two-Phase Agent Workflow
+
+Two-Agent Pattern (from TAC autonomous-coding) via `/task` command:
+
+**Slash Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/task create` | Initialize task with feature breakdown (Phase 1) |
+| `/task execute` | Execute next feature (Phase 2) |
+| `/task status` | Check task progress |
+| `/task resume` | Resume interrupted task |
+| `/task run` | Run full workflow end-to-end |
+| `/task list` | List all tasks |
+
+**Workflow:**
+```
+Phase 1: Initializer Agent    Phase 2: Coding Agent
+┌─────────────────────┐      ┌────────────────────────┐
+│ Analyze task        │      │ Implement feature      │
+│ Create feature list │ ───► │ Update expertise       │
+│ Define priorities   │      │ Mark complete/failed   │
+└─────────────────────┘      └────────────────────────┘
+```
+
+**TypeScript API:**
+```typescript
+import {
+  initializeClaudeTask,
+  executeClaudeFeature,
+  runTwoAgentWorkflow
+} from "./agents/index.js";
+
+// Full workflow (recommended for most tasks)
+const result = await runTwoAgentWorkflow({
+  prompt: "Add user authentication with JWT",
+  workingDir: process.cwd(),
+});
+
+// Manual two-phase approach
+const init = await initializeClaudeTask({ prompt: task });
+while (getClaudeTaskStatus(init.taskId).nextFeature) {
+  await executeClaudeFeature(init.taskId);
+}
+```
+
+**Task Persistence:**
+Tasks are saved to `.tasks/{taskId}.json` and can be resumed across sessions.
+
 ### Suno AI Music Generation
 
 The bot integrates Suno AI for music generation via `/suno` command using sunoapi.org:
