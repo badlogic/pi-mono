@@ -20,21 +20,49 @@
  *   await manager.emit({ type: 'session', ... });
  */
 
+// Blocking Rules
+export {
+	addBlockingRule,
+	applyPresetRules,
+	type BlockedAction,
+	type BlockingResult,
+	type BlockingRule,
+	BlockingRulesUtils,
+	checkBlocking,
+	clearBlockedActions,
+	closeBlockingRulesDb,
+	getBlockedActions,
+	getBlockingRule,
+	listBlockingRules,
+	PRESET_RULES,
+	removeBlockingRule,
+	setRuleEnabled,
+} from "./blocking-rules.js";
 // Checkpoint Hook
 export {
+	autoCleanup,
+	type BranchMetadata,
+	type CheckpointDiff,
 	type CheckpointTag,
 	CheckpointUtils,
+	type CleanupResult,
 	checkpointHook,
 	cleanupOldCheckpoints,
+	createBranchPoint,
 	createCheckpoint,
 	createCheckpointHook,
+	deleteBranch,
 	deleteTag,
 	getCheckpointByTag,
+	getCheckpointDiff,
+	getFileDiff,
+	listBranches,
 	listCheckpointRefs,
 	listTags,
 	loadAllCheckpoints,
 	loadCheckpointFromRef,
 	restoreCheckpoint,
+	switchToBranch,
 	tagCheckpoint,
 } from "./checkpoint-hook.js";
 // Discord Integration
@@ -51,13 +79,19 @@ export {
 // Expert Hook
 export {
 	buildExpertContext,
+	clearAllExpertise,
+	clearExpertise,
 	createExpertHook,
 	createExpertPrompt,
 	createTaskAwareExpertHook,
 	detectDomain,
+	type ExpertiseInfo,
 	ExpertUtils,
 	expertHook,
+	exportExpertise,
 	getDomainRiskLevel,
+	getExpertiseSummary,
+	listExpertise,
 	processAgentOutput,
 } from "./expert-hook.js";
 // Hook Manager
@@ -71,7 +105,19 @@ export {
 	isDebugLoggingEnabled,
 } from "./hook-manager.js";
 // LSP Hook
-export { createLSPHook, LSPUtils, lspHook } from "./lsp-hook.js";
+export {
+	createLSPHook,
+	detectProjectLanguages,
+	disableLSP,
+	enableLSP,
+	getEnabledLSP,
+	getLSPStatus,
+	isLSPAvailable,
+	type LSPStatus,
+	LSPUtils,
+	lspHook,
+	resetLSPConfig,
+} from "./lsp-hook.js";
 // Types
 export * from "./types.js";
 

@@ -961,7 +961,106 @@ const slashCommands = [
 				.addBooleanOption((option) =>
 					option.setName("enabled").setDescription("Enable or disable debug logging").setRequired(true),
 				),
-		),
+		)
+		// Phase 1.1: Branch support
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("branch")
+				.setDescription("Create a branch point from a checkpoint")
+				.addStringOption((option) =>
+					option.setName("checkpoint_id").setDescription("Checkpoint ID to branch from").setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName("description").setDescription("Branch description").setRequired(false),
+				),
+		)
+		.addSubcommand((subcommand) => subcommand.setName("branches").setDescription("List all branch points"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("switch")
+				.setDescription("Switch to a branch")
+				.addStringOption((option) =>
+					option.setName("branch_id").setDescription("Branch ID to switch to").setRequired(true),
+				),
+		)
+		// Phase 2.1: Checkpoint diff
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("diff")
+				.setDescription("Show changes since a checkpoint")
+				.addStringOption((option) =>
+					option.setName("checkpoint_id").setDescription("Checkpoint ID to diff against").setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("cleanup")
+				.setDescription("Clean up old checkpoints")
+				.addIntegerOption((option) =>
+					option.setName("keep").setDescription("Number of checkpoints to keep (default: 50)").setRequired(false),
+				),
+		)
+		// Phase 2.2: Expertise management
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("expertise")
+				.setDescription("View accumulated expertise")
+				.addStringOption((option) =>
+					option.setName("domain").setDescription("Domain to view (leave empty for all)").setRequired(false),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("clear-expertise")
+				.setDescription("Clear expertise for a domain")
+				.addStringOption((option) =>
+					option.setName("domain").setDescription("Domain to clear (or 'all')").setRequired(true),
+				),
+		)
+		// Phase 2.3: LSP configuration
+		.addSubcommand((subcommand) => subcommand.setName("lsp").setDescription("Show LSP server status"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("lsp-enable")
+				.setDescription("Enable an LSP server")
+				.addStringOption((option) =>
+					option
+						.setName("server")
+						.setDescription("Server ID (typescript, pyright, gopls, rust-analyzer, dart)")
+						.setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("lsp-disable")
+				.setDescription("Disable an LSP server")
+				.addStringOption((option) =>
+					option.setName("server").setDescription("Server ID to disable").setRequired(true),
+				),
+		)
+		// Phase 3.1: Blocking rules
+		.addSubcommand((subcommand) => subcommand.setName("rules").setDescription("List blocking rules"))
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("rules-add")
+				.setDescription("Add a blocking rule")
+				.addStringOption((option) =>
+					option.setName("tool").setDescription("Tool name (bash, write, edit, or *)").setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName("pattern").setDescription("Regex pattern to block").setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName("reason").setDescription("Reason for blocking").setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName("rules-remove")
+				.setDescription("Remove a blocking rule")
+				.addIntegerOption((option) => option.setName("id").setDescription("Rule ID to remove").setRequired(true)),
+		)
+		.addSubcommand((subcommand) => subcommand.setName("rules-preset").setDescription("Apply preset security rules")),
 
 	new SlashCommandBuilder().setName("skills").setDescription("List loaded skills and capabilities"),
 
@@ -5614,6 +5713,416 @@ async function main() {
 									? "✅ Hook debug logging **enabled**. Check console for detailed hook events."
 									: "✅ Hook debug logging **disabled**.",
 							);
+							break;
+						}
+
+						// Phase 1.1: Branch support
+						case "branch": {
+							const checkpointId = interaction.options.getString("checkpoint_id", true);
+							const description = interaction.options.getString("description") || undefined;
+
+							try {
+								const { createBranchPoint } = await import("./agents/hooks/index.js");
+								const branch = await createBranchPoint(channelDir, checkpointId, description);
+								if (!branch) {
+									await interaction.editReply("❌ Failed to create branch. Checkpoint not found.");
+									break;
+								}
+								await interaction.editReply(
+									`✅ Created branch **${branch.branchId}**\n` +
+										`From checkpoint: \`${branch.parentCheckpointId.slice(0, 40)}...\`\n` +
+										`At turn: ${branch.parentTurnIndex}\n` +
+										(description ? `Description: ${description}` : ""),
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to create branch: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "branches": {
+							const { listBranches } = await import("./agents/hooks/index.js");
+							const branches = await listBranches(channelDir);
+
+							if (branches.length === 0) {
+								await interaction.editReply("No branches found. Use `/hooks branch` to create one.");
+								break;
+							}
+
+							const list = branches
+								.slice(0, 10)
+								.map((b) => {
+									const date = new Date(b.createdAt).toLocaleString();
+									return (
+										`• **${b.branchId.slice(0, 25)}**\n` +
+										`  Turn ${b.parentTurnIndex} | ${date}\n` +
+										(b.description ? `  ${b.description}` : "")
+									);
+								})
+								.join("\n");
+
+							const embed = new EmbedBuilder()
+								.setTitle("🌿 Branch Points")
+								.setDescription(list)
+								.setColor(0x27ae60)
+								.setFooter({ text: `${branches.length} total branches` })
+								.setTimestamp();
+
+							await interaction.editReply({ embeds: [embed] });
+							break;
+						}
+
+						case "switch": {
+							const branchId = interaction.options.getString("branch_id", true);
+
+							try {
+								const { switchToBranch } = await import("./agents/hooks/index.js");
+								const checkpoint = await switchToBranch(channelDir, branchId);
+								if (!checkpoint) {
+									await interaction.editReply("❌ Failed to switch branch. Branch not found.");
+									break;
+								}
+								await interaction.editReply(
+									`✅ Switched to branch **${branchId}**\n` +
+										`Restored to turn ${checkpoint.turnIndex}\n` +
+										`Checkpoint: \`${checkpoint.id.slice(0, 40)}...\``,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to switch branch: ${errMsg}`);
+							}
+							break;
+						}
+
+						// Phase 2.1: Checkpoint diff
+						case "diff": {
+							const checkpointId = interaction.options.getString("checkpoint_id", true);
+
+							try {
+								const { getCheckpointDiff } = await import("./agents/hooks/index.js");
+								const diff = await getCheckpointDiff(channelDir, checkpointId);
+								if (!diff) {
+									await interaction.editReply("❌ Checkpoint not found or diff failed.");
+									break;
+								}
+
+								const addedList = diff.added.slice(0, 5).join("\n  ");
+								const modifiedList = diff.modified.slice(0, 5).join("\n  ");
+								const deletedList = diff.deleted.slice(0, 5).join("\n  ");
+
+								const embed = new EmbedBuilder()
+									.setTitle("📝 Checkpoint Diff")
+									.setDescription(`Changes since checkpoint \`${checkpointId.slice(0, 30)}...\``)
+									.setColor(diff.added.length > 0 || diff.modified.length > 0 ? 0xe74c3c : 0x2ecc71)
+									.addFields(
+										{
+											name: `➕ Added (${diff.added.length})`,
+											value: addedList || "None",
+											inline: false,
+										},
+										{
+											name: `📝 Modified (${diff.modified.length})`,
+											value: modifiedList || "None",
+											inline: false,
+										},
+										{
+											name: `➖ Deleted (${diff.deleted.length})`,
+											value: deletedList || "None",
+											inline: false,
+										},
+									)
+									.setFooter({ text: diff.summary })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Diff failed: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "cleanup": {
+							const keepCount = interaction.options.getInteger("keep") || 50;
+
+							try {
+								const { autoCleanup } = await import("./agents/hooks/index.js");
+								const result = await autoCleanup(channelDir, { maxCheckpoints: keepCount });
+
+								await interaction.editReply(
+									`✅ Cleanup complete!\n` +
+										`• Checkpoints removed: ${result.checkpointsRemoved}\n` +
+										`• Tags removed: ${result.tagsRemoved}\n` +
+										`• Branches removed: ${result.branchesRemoved}\n` +
+										`• Space freed: ${result.freedSpace}`,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Cleanup failed: ${errMsg}`);
+							}
+							break;
+						}
+
+						// Phase 2.2: Expertise management
+						case "expertise": {
+							const domain = interaction.options.getString("domain");
+
+							try {
+								const { listExpertise, getExpertiseSummary } = await import("./agents/hooks/index.js");
+
+								if (domain) {
+									const summary = getExpertiseSummary(domain);
+									if (!summary.exists) {
+										await interaction.editReply(`No expertise found for domain: ${domain}`);
+										break;
+									}
+
+									const preview = summary.content.slice(0, 1500);
+									const embed = new EmbedBuilder()
+										.setTitle(`🧠 ${domain.replace(/_/g, " ").toUpperCase()} Expertise`)
+										.setDescription(preview + (summary.content.length > 1500 ? "\n...(truncated)" : ""))
+										.setColor(
+											summary.riskLevel === "critical"
+												? 0xe74c3c
+												: summary.riskLevel === "high"
+													? 0xe67e22
+													: 0x3498db,
+										)
+										.addFields(
+											{ name: "Insights", value: String(summary.insightCount), inline: true },
+											{ name: "Risk Level", value: summary.riskLevel.toUpperCase(), inline: true },
+										)
+										.setTimestamp();
+
+									await interaction.editReply({ embeds: [embed] });
+								} else {
+									const allExpertise = listExpertise();
+									if (allExpertise.length === 0) {
+										await interaction.editReply("No expertise accumulated yet. Complete tasks to learn!");
+										break;
+									}
+
+									const list = allExpertise
+										.slice(0, 10)
+										.map((e) => {
+											const date = new Date(e.lastModified).toLocaleDateString();
+											return `• **${e.domain}**: ${e.insightCount} insights (${(e.size / 1024).toFixed(1)}KB) - ${date}`;
+										})
+										.join("\n");
+
+									const embed = new EmbedBuilder()
+										.setTitle("🧠 Accumulated Expertise")
+										.setDescription(list)
+										.setColor(0x9b59b6)
+										.setFooter({ text: `${allExpertise.length} domains with expertise` })
+										.setTimestamp();
+
+									await interaction.editReply({ embeds: [embed] });
+								}
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to load expertise: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "clear-expertise": {
+							const domain = interaction.options.getString("domain", true);
+
+							try {
+								const { clearExpertise, clearAllExpertise } = await import("./agents/hooks/index.js");
+
+								if (domain === "all") {
+									const count = clearAllExpertise();
+									await interaction.editReply(`✅ Cleared expertise for ${count} domains.`);
+								} else {
+									const success = clearExpertise(domain);
+									if (success) {
+										await interaction.editReply(`✅ Cleared expertise for **${domain}**.`);
+									} else {
+										await interaction.editReply(`❌ No expertise found for domain: ${domain}`);
+									}
+								}
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to clear expertise: ${errMsg}`);
+							}
+							break;
+						}
+
+						// Phase 2.3: LSP configuration
+						case "lsp": {
+							try {
+								const { getLSPStatus, detectProjectLanguages } = await import("./agents/hooks/index.js");
+								const state = channelStates.get(interaction.channelId);
+								const sessionId = state?.sessionId;
+								const status = getLSPStatus(sessionId);
+								const detected = detectProjectLanguages(channelDir);
+
+								const list = status
+									.map((s) => {
+										const avail = s.available ? "✅" : "❌";
+										const enabled = s.enabled ? "🟢" : "⚪";
+										const exts = s.extensions.slice(0, 3).join(", ");
+										return `${avail} ${enabled} **${s.id}** (${exts})`;
+									})
+									.join("\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("🔧 LSP Server Status")
+									.setDescription(list)
+									.setColor(0x3498db)
+									.addFields(
+										{
+											name: "Detected Languages",
+											value: detected.length > 0 ? detected.join(", ") : "None detected",
+											inline: false,
+										},
+										{
+											name: "Legend",
+											value: "✅ = Available | ❌ = Not installed | 🟢 = Enabled | ⚪ = Disabled",
+											inline: false,
+										},
+									)
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to get LSP status: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "lsp-enable": {
+							const server = interaction.options.getString("server", true);
+							try {
+								const { enableLSP } = await import("./agents/hooks/index.js");
+								const state = channelStates.get(interaction.channelId);
+								const sessionId = state?.sessionId || "default";
+								const success = enableLSP(sessionId, server);
+								if (success) {
+									await interaction.editReply(`✅ Enabled LSP server: **${server}**`);
+								} else {
+									await interaction.editReply(`❌ Invalid server ID: ${server}`);
+								}
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to enable LSP: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "lsp-disable": {
+							const server = interaction.options.getString("server", true);
+							try {
+								const { disableLSP } = await import("./agents/hooks/index.js");
+								const state = channelStates.get(interaction.channelId);
+								const sessionId = state?.sessionId || "default";
+								const success = disableLSP(sessionId, server);
+								await interaction.editReply(
+									success
+										? `✅ Disabled LSP server: **${server}**`
+										: `⚠️ Server **${server}** was not enabled.`,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to disable LSP: ${errMsg}`);
+							}
+							break;
+						}
+
+						// Phase 3.1: Blocking rules
+						case "rules": {
+							try {
+								const { listBlockingRules } = await import("./agents/hooks/index.js");
+								const rules = listBlockingRules(workingDir, interaction.channelId);
+
+								if (rules.length === 0) {
+									await interaction.editReply(
+										"No blocking rules configured.\n" +
+											"Use `/hooks rules-add` to add rules or `/hooks rules-preset` for security defaults.",
+									);
+									break;
+								}
+
+								const list = rules
+									.slice(0, 10)
+									.map((r) => {
+										const status = r.enabled ? "🟢" : "⚪";
+										return `${status} **#${r.id}** \`${r.toolName}\` → \`${r.pattern.slice(0, 30)}\`\n  ${r.reason}`;
+									})
+									.join("\n\n");
+
+								const embed = new EmbedBuilder()
+									.setTitle("🛡️ Blocking Rules")
+									.setDescription(list)
+									.setColor(0xe74c3c)
+									.setFooter({ text: `${rules.length} total rules` })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to list rules: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "rules-add": {
+							const tool = interaction.options.getString("tool", true);
+							const pattern = interaction.options.getString("pattern", true);
+							const reason = interaction.options.getString("reason", true);
+
+							try {
+								const { addBlockingRule } = await import("./agents/hooks/index.js");
+								const rule = addBlockingRule(workingDir, interaction.channelId, tool, pattern, reason, {
+									createdBy: interaction.user.id,
+								});
+								await interaction.editReply(
+									`✅ Added blocking rule **#${rule.id}**\n` +
+										`Tool: \`${tool}\`\n` +
+										`Pattern: \`${pattern}\`\n` +
+										`Reason: ${reason}`,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to add rule: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "rules-remove": {
+							const ruleId = interaction.options.getInteger("id", true);
+
+							try {
+								const { removeBlockingRule } = await import("./agents/hooks/index.js");
+								const success = removeBlockingRule(workingDir, ruleId, interaction.channelId);
+								await interaction.editReply(
+									success
+										? `✅ Removed blocking rule **#${ruleId}**`
+										: `❌ Rule #${ruleId} not found or not owned by this channel.`,
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to remove rule: ${errMsg}`);
+							}
+							break;
+						}
+
+						case "rules-preset": {
+							try {
+								const { applyPresetRules } = await import("./agents/hooks/index.js");
+								const count = applyPresetRules(workingDir, interaction.channelId, interaction.user.id);
+								await interaction.editReply(
+									`✅ Applied ${count} preset security rules.\n` +
+										"These block dangerous commands like `rm -rf /`, fork bombs, etc.",
+								);
+							} catch (error) {
+								const errMsg = error instanceof Error ? error.message : String(error);
+								await interaction.editReply(`❌ Failed to apply presets: ${errMsg}`);
+							}
 							break;
 						}
 					}

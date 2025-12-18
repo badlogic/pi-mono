@@ -293,6 +293,386 @@ export async function cleanupOldCheckpoints(cwd: string, config: CheckpointConfi
 }
 
 // ============================================================================
+// Checkpoint Diff
+// ============================================================================
+
+export interface CheckpointDiff {
+	added: string[];
+	modified: string[];
+	deleted: string[];
+	summary: string;
+}
+
+/**
+ * Get diff between current state and a checkpoint
+ */
+export async function getCheckpointDiff(
+	cwd: string,
+	checkpointId: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<CheckpointDiff | null> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const cpRef = `${config.refBase}/${checkpointId}`;
+
+		// Get the worktree tree from checkpoint
+		const cpSha = await git(`rev-parse --verify ${cpRef}`, root).catch(() => null);
+		if (!cpSha) return null;
+
+		const commitMsg = await git(`cat-file commit ${cpSha}`, root);
+		const worktreeTree = commitMsg.match(/^worktree-tree (.+)$/m)?.[1]?.trim();
+		if (!worktreeTree) return null;
+
+		// Get current worktree state
+		const tmpDir = await mkdtemp(join(tmpdir(), "pi-diff-"));
+		const tmpIndex = join(tmpDir, "index");
+
+		try {
+			const tmpEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+			await git("add -A .", root, { env: tmpEnv });
+			const currentTree = await git("write-tree", root, { env: tmpEnv });
+
+			// Get diff between trees
+			const diffOutput = await git(`diff-tree -r --name-status ${worktreeTree} ${currentTree}`, root);
+			const lines = diffOutput.split("\n").filter(Boolean);
+
+			const added: string[] = [];
+			const modified: string[] = [];
+			const deleted: string[] = [];
+
+			for (const line of lines) {
+				const [status, ...pathParts] = line.split("\t");
+				const filePath = pathParts.join("\t");
+				switch (status) {
+					case "A":
+						added.push(filePath);
+						break;
+					case "M":
+						modified.push(filePath);
+						break;
+					case "D":
+						deleted.push(filePath);
+						break;
+				}
+			}
+
+			const parts: string[] = [];
+			if (added.length > 0) parts.push(`+${added.length} added`);
+			if (modified.length > 0) parts.push(`~${modified.length} modified`);
+			if (deleted.length > 0) parts.push(`-${deleted.length} deleted`);
+
+			return {
+				added,
+				modified,
+				deleted,
+				summary: parts.length > 0 ? parts.join(", ") : "No changes",
+			};
+		} finally {
+			await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+		}
+	} catch (error) {
+		console.error("Checkpoint diff failed:", error);
+		return null;
+	}
+}
+
+/**
+ * Get file content diff for a specific file
+ */
+export async function getFileDiff(
+	cwd: string,
+	checkpointId: string,
+	filePath: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<string | null> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const cpRef = `${config.refBase}/${checkpointId}`;
+
+		const cpSha = await git(`rev-parse --verify ${cpRef}`, root).catch(() => null);
+		if (!cpSha) return null;
+
+		const commitMsg = await git(`cat-file commit ${cpSha}`, root);
+		const worktreeTree = commitMsg.match(/^worktree-tree (.+)$/m)?.[1]?.trim();
+		if (!worktreeTree) return null;
+
+		// Get diff for specific file
+		const diff = await git(`diff ${worktreeTree}:${filePath} ${filePath}`, root).catch(() => null);
+		return diff;
+	} catch {
+		return null;
+	}
+}
+
+// ============================================================================
+// Branch Support
+// ============================================================================
+
+export interface BranchMetadata {
+	branchId: string;
+	parentCheckpointId: string;
+	parentTurnIndex: number;
+	createdAt: number;
+	description?: string;
+}
+
+/**
+ * Create a branch point from a checkpoint
+ */
+export async function createBranchPoint(
+	cwd: string,
+	checkpointId: string,
+	description?: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<BranchMetadata | null> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const cpRef = `${config.refBase}/${checkpointId}`;
+
+		// Verify checkpoint exists
+		const cpSha = await git(`rev-parse --verify ${cpRef}`, root).catch(() => null);
+		if (!cpSha) return null;
+
+		// Load checkpoint to get turn index
+		const checkpoint = await loadCheckpointFromRef(cwd, checkpointId, config);
+		if (!checkpoint) return null;
+
+		// Generate branch ID
+		const branchId = `branch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const createdAt = Date.now();
+
+		// Create branch ref with metadata
+		const message = [
+			`branch:${branchId}`,
+			`parent ${checkpointId}`,
+			`parentTurn ${checkpoint.turnIndex}`,
+			`created ${new Date(createdAt).toISOString()}`,
+			description ? `description ${description}` : "",
+		]
+			.filter(Boolean)
+			.join("\n");
+
+		const branchEnv = {
+			...process.env,
+			GIT_AUTHOR_NAME: "pi-branch",
+			GIT_AUTHOR_EMAIL: "branch@pi",
+			GIT_COMMITTER_NAME: "pi-branch",
+			GIT_COMMITTER_EMAIL: "branch@pi",
+		};
+
+		const commitSha = await git(`commit-tree ${cpSha}^{tree}`, root, {
+			input: message,
+			env: branchEnv,
+		});
+		await git(`update-ref refs/pi-branches/${branchId} ${commitSha}`, root);
+
+		return {
+			branchId,
+			parentCheckpointId: checkpointId,
+			parentTurnIndex: checkpoint.turnIndex,
+			createdAt,
+			description,
+		};
+	} catch (error) {
+		console.error("Branch creation failed:", error);
+		return null;
+	}
+}
+
+/**
+ * List all branch points
+ */
+export async function listBranches(cwd: string): Promise<BranchMetadata[]> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const prefix = "refs/pi-branches/";
+		const stdout = await git(`for-each-ref --format=%(refname) ${prefix}`, root);
+		const branchRefs = stdout
+			.split("\n")
+			.filter(Boolean)
+			.map((ref) => ref.replace(prefix, ""));
+
+		const branches: BranchMetadata[] = [];
+		for (const branchId of branchRefs) {
+			try {
+				const commitSha = await git(`rev-parse --verify refs/pi-branches/${branchId}`, root);
+				const commitMsg = await git(`cat-file commit ${commitSha}`, root);
+
+				const get = (key: string) => commitMsg.match(new RegExp(`^${key} (.+)$`, "m"))?.[1]?.trim();
+				const parentCheckpointId = get("parent");
+				const parentTurn = get("parentTurn");
+				const created = get("created");
+				const description = get("description");
+
+				if (parentCheckpointId && parentTurn) {
+					branches.push({
+						branchId,
+						parentCheckpointId,
+						parentTurnIndex: parseInt(parentTurn, 10),
+						createdAt: created ? new Date(created).getTime() : 0,
+						description,
+					});
+				}
+			} catch {
+				// Skip invalid branches
+			}
+		}
+
+		return branches.sort((a, b) => b.createdAt - a.createdAt);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Switch to a branch (restore its checkpoint)
+ */
+export async function switchToBranch(
+	cwd: string,
+	branchId: string,
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<CheckpointData | null> {
+	try {
+		const root = await getRepoRoot(cwd);
+		const commitSha = await git(`rev-parse --verify refs/pi-branches/${branchId}`, root);
+		const commitMsg = await git(`cat-file commit ${commitSha}`, root);
+
+		const parentCheckpointId = commitMsg.match(/^parent (.+)$/m)?.[1]?.trim();
+		if (!parentCheckpointId) return null;
+
+		// Load and restore the parent checkpoint
+		const checkpoint = await loadCheckpointFromRef(cwd, parentCheckpointId, config);
+		if (!checkpoint) return null;
+
+		await restoreCheckpoint(cwd, checkpoint);
+		return checkpoint;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Delete a branch
+ */
+export async function deleteBranch(cwd: string, branchId: string): Promise<boolean> {
+	try {
+		const root = await getRepoRoot(cwd);
+		await git(`update-ref -d refs/pi-branches/${branchId}`, root);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// ============================================================================
+// Auto-Cleanup
+// ============================================================================
+
+export interface CleanupResult {
+	checkpointsRemoved: number;
+	tagsRemoved: number;
+	branchesRemoved: number;
+	freedSpace: string;
+}
+
+/**
+ * Cleanup old checkpoints, keeping only recent ones
+ * Also cleans orphaned tags and branches
+ */
+export async function autoCleanup(
+	cwd: string,
+	options: {
+		maxCheckpoints?: number;
+		maxAgeDays?: number;
+		keepTagged?: boolean;
+	} = {},
+	config: CheckpointConfig = DEFAULT_CONFIG,
+): Promise<CleanupResult> {
+	const { maxCheckpoints = config.maxCheckpoints, maxAgeDays = 30, keepTagged = true } = options;
+
+	let checkpointsRemoved = 0;
+	let tagsRemoved = 0;
+	let branchesRemoved = 0;
+
+	try {
+		const root = await getRepoRoot(cwd);
+
+		// Get all checkpoints
+		const allCheckpoints = await loadAllCheckpoints(cwd, undefined, config);
+		const tags = await listTags(cwd);
+		const taggedIds = new Set(tags.map((t) => t.checkpointId));
+
+		// Sort by timestamp (newest first)
+		allCheckpoints.sort((a, b) => b.timestamp - a.timestamp);
+
+		const now = Date.now();
+		const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+		const toDelete: string[] = [];
+
+		// Determine which checkpoints to delete
+		for (let i = 0; i < allCheckpoints.length; i++) {
+			const cp = allCheckpoints[i];
+			const age = now - cp.timestamp;
+
+			// Keep if tagged and keepTagged is true
+			if (keepTagged && taggedIds.has(cp.id)) continue;
+
+			// Delete if over max count or too old
+			if (i >= maxCheckpoints || age > maxAgeMs) {
+				toDelete.push(cp.id);
+			}
+		}
+
+		// Delete checkpoints
+		for (const id of toDelete) {
+			try {
+				await git(`update-ref -d ${config.refBase}/${id}`, root);
+				checkpointsRemoved++;
+			} catch {
+				// Ignore errors
+			}
+		}
+
+		// Clean orphaned tags (pointing to deleted checkpoints)
+		const remainingCpIds = new Set(allCheckpoints.filter((cp) => !toDelete.includes(cp.id)).map((cp) => cp.id));
+		for (const tag of tags) {
+			if (!remainingCpIds.has(tag.checkpointId)) {
+				try {
+					await deleteTag(cwd, tag.tag);
+					tagsRemoved++;
+				} catch {
+					// Ignore errors
+				}
+			}
+		}
+
+		// Clean orphaned branches
+		const branches = await listBranches(cwd);
+		for (const branch of branches) {
+			if (!remainingCpIds.has(branch.parentCheckpointId)) {
+				try {
+					await deleteBranch(cwd, branch.branchId);
+					branchesRemoved++;
+				} catch {
+					// Ignore errors
+				}
+			}
+		}
+
+		// Run git gc to free space
+		await git("gc --prune=now --quiet", root).catch(() => {});
+
+		// Get freed space (rough estimate based on objects removed)
+		const freedSpace = `~${(checkpointsRemoved * 0.1).toFixed(1)}MB`;
+
+		return { checkpointsRemoved, tagsRemoved, branchesRemoved, freedSpace };
+	} catch (error) {
+		console.error("Auto-cleanup failed:", error);
+		return { checkpointsRemoved, tagsRemoved, branchesRemoved, freedSpace: "0MB" };
+	}
+}
+
+// ============================================================================
 // Checkpoint Tagging
 // ============================================================================
 
@@ -568,4 +948,14 @@ export const CheckpointUtils = {
 	listTags,
 	getCheckpointByTag,
 	deleteTag,
+	// Diff support
+	getCheckpointDiff,
+	getFileDiff,
+	// Branch support
+	createBranchPoint,
+	listBranches,
+	switchToBranch,
+	deleteBranch,
+	// Auto-cleanup
+	autoCleanup,
 };

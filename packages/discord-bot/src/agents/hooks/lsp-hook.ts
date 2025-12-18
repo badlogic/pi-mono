@@ -593,6 +593,119 @@ export function createLSPHook(config: Partial<LSPConfig> = {}): (api: AgentHookA
  */
 export const lspHook = createLSPHook();
 
+// ============================================================================
+// LSP Configuration Management
+// ============================================================================
+
+export interface LSPStatus {
+	id: string;
+	extensions: string[];
+	available: boolean;
+	binary: string | undefined;
+	enabled: boolean;
+}
+
+// Global enabled servers state (per-session)
+const enabledServers = new Map<string, Set<string>>();
+
+/**
+ * Get LSP status for all servers
+ */
+export function getLSPStatus(sessionId?: string): LSPStatus[] {
+	const enabled = sessionId ? enabledServers.get(sessionId) : null;
+	const defaultEnabled = new Set(DEFAULT_CONFIG.servers);
+
+	return LSP_SERVERS.map((server) => {
+		const binary = which(server.id === "typescript" ? "typescript-language-server" : server.id);
+		return {
+			id: server.id,
+			extensions: server.extensions,
+			available: !!binary,
+			binary,
+			enabled: enabled ? enabled.has(server.id) : defaultEnabled.has(server.id),
+		};
+	});
+}
+
+/**
+ * Enable an LSP server for a session
+ */
+export function enableLSP(sessionId: string, serverId: string): boolean {
+	const validIds = LSP_SERVERS.map((s) => s.id);
+	if (!validIds.includes(serverId)) return false;
+
+	if (!enabledServers.has(sessionId)) {
+		enabledServers.set(sessionId, new Set(DEFAULT_CONFIG.servers));
+	}
+	enabledServers.get(sessionId)!.add(serverId);
+	return true;
+}
+
+/**
+ * Disable an LSP server for a session
+ */
+export function disableLSP(sessionId: string, serverId: string): boolean {
+	if (!enabledServers.has(sessionId)) {
+		enabledServers.set(sessionId, new Set(DEFAULT_CONFIG.servers));
+	}
+	return enabledServers.get(sessionId)!.delete(serverId);
+}
+
+/**
+ * Get enabled servers for a session
+ */
+export function getEnabledLSP(sessionId: string): string[] {
+	const enabled = enabledServers.get(sessionId);
+	return enabled ? Array.from(enabled) : [...DEFAULT_CONFIG.servers];
+}
+
+/**
+ * Reset LSP configuration for a session
+ */
+export function resetLSPConfig(sessionId: string): void {
+	enabledServers.delete(sessionId);
+}
+
+/**
+ * Detect project languages from files
+ */
+export function detectProjectLanguages(cwd: string): string[] {
+	const detected: Set<string> = new Set();
+
+	const markerToLanguage: Record<string, string> = {
+		"package.json": "typescript",
+		"tsconfig.json": "typescript",
+		"pyproject.toml": "pyright",
+		"requirements.txt": "pyright",
+		"go.mod": "gopls",
+		"Cargo.toml": "rust-analyzer",
+		"pubspec.yaml": "dart",
+	};
+
+	for (const [marker, lang] of Object.entries(markerToLanguage)) {
+		if (existsSync(join(cwd, marker))) {
+			detected.add(lang);
+		}
+	}
+
+	return Array.from(detected);
+}
+
+/**
+ * Get language from file extension
+ */
+export function getLanguageFromExtension(ext: string): string | undefined {
+	return LANGUAGE_IDS[ext];
+}
+
+/**
+ * Check if a server is available (binary exists)
+ */
+export function isLSPAvailable(serverId: string): boolean {
+	const binary = serverId === "typescript" ? "typescript-language-server" : serverId;
+	return !!which(binary);
+}
+
 /**
  * Export utilities
  */
@@ -602,4 +715,13 @@ export const LSPUtils = {
 	formatDiagnostic,
 	LANGUAGE_IDS,
 	LSP_SERVERS: LSP_SERVERS.map((s) => ({ id: s.id, extensions: s.extensions })),
+	// Configuration
+	getLSPStatus,
+	enableLSP,
+	disableLSP,
+	getEnabledLSP,
+	resetLSPConfig,
+	detectProjectLanguages,
+	getLanguageFromExtension,
+	isLSPAvailable,
 };

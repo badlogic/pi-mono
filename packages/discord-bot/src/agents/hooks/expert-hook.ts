@@ -13,6 +13,8 @@
  * Based on TAC Lesson 13: Agent Experts
  */
 
+import { existsSync, readdirSync, unlinkSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { CODEBASE_EXPERTS, detectExpertDomain, PRODUCT_EXPERTS } from "../agent-experts.js";
 import {
 	extractLearnings,
@@ -447,6 +449,135 @@ export function createTaskAwareExpertHook(
  */
 export const expertHook = createExpertHook();
 
+// ============================================================================
+// Expertise Management
+// ============================================================================
+
+export interface ExpertiseInfo {
+	domain: string;
+	path: string;
+	size: number;
+	lastModified: number;
+	insightCount: number;
+}
+
+/**
+ * List all expertise files with stats
+ */
+export function listExpertise(): ExpertiseInfo[] {
+	const expertiseDir = dirname(getExpertisePath("general"));
+	if (!existsSync(expertiseDir)) return [];
+
+	const files = readdirSync(expertiseDir).filter((f) => f.endsWith(".md"));
+	const result: ExpertiseInfo[] = [];
+
+	for (const file of files) {
+		const domain = file.replace(".md", "");
+		const path = join(expertiseDir, file);
+		try {
+			const { stat } = require("fs");
+			const stats = require("fs").statSync(path);
+			const content = loadExpertise(domain);
+			const insightCount = (content.match(/^### /gm) || []).length;
+
+			result.push({
+				domain,
+				path,
+				size: stats.size,
+				lastModified: stats.mtimeMs,
+				insightCount,
+			});
+		} catch {
+			// Skip invalid files
+		}
+	}
+
+	return result.sort((a, b) => b.lastModified - a.lastModified);
+}
+
+/**
+ * Clear expertise for a specific domain
+ */
+export function clearExpertise(domain: string): boolean {
+	const path = getExpertisePath(domain);
+	if (!existsSync(path)) return false;
+
+	try {
+		// Write empty template instead of deleting
+		const template = `# ${domain.replace(/_/g, " ").toUpperCase()} Expertise
+
+## Accumulated Learnings
+
+_No learnings yet. Complete tasks in this domain to accumulate expertise._
+
+## Session Insights
+
+_Insights from recent sessions will appear here._
+`;
+		writeFileSync(path, template, "utf-8");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Clear all expertise files
+ */
+export function clearAllExpertise(): number {
+	const expertiseDir = dirname(getExpertisePath("general"));
+	if (!existsSync(expertiseDir)) return 0;
+
+	let cleared = 0;
+	const files = readdirSync(expertiseDir).filter((f) => f.endsWith(".md"));
+
+	for (const file of files) {
+		const domain = file.replace(".md", "");
+		if (clearExpertise(domain)) cleared++;
+	}
+
+	return cleared;
+}
+
+/**
+ * Export expertise to a single markdown file
+ */
+export function exportExpertise(): string {
+	const expertise = listExpertise();
+	const parts: string[] = ["# Exported Expertise\n"];
+	parts.push(`_Exported at ${new Date().toISOString()}_\n`);
+
+	for (const exp of expertise) {
+		const content = loadExpertise(exp.domain);
+		parts.push(`\n---\n\n## ${exp.domain.replace(/_/g, " ").toUpperCase()}\n`);
+		parts.push(`_${exp.insightCount} insights, ${(exp.size / 1024).toFixed(1)}KB_\n`);
+		parts.push(content);
+	}
+
+	return parts.join("\n");
+}
+
+/**
+ * Get expertise summary for a domain
+ */
+export function getExpertiseSummary(domain: string): {
+	exists: boolean;
+	content: string;
+	insightCount: number;
+	riskLevel: string;
+} {
+	const content = loadExpertise(domain);
+	const insightCount = (content.match(/^### /gm) || []).length;
+	const riskLevel = getDomainRiskLevel(domain);
+
+	return {
+		exists: content.length > 0,
+		content,
+		insightCount,
+		riskLevel,
+	};
+}
+
 /**
  * Export utilities
  */
@@ -458,4 +589,10 @@ export const ExpertUtils = {
 	processAgentOutput,
 	DOMAIN_PATTERNS,
 	DOMAIN_RISK_LEVELS,
+	// Expertise management
+	listExpertise,
+	clearExpertise,
+	clearAllExpertise,
+	exportExpertise,
+	getExpertiseSummary,
 };
