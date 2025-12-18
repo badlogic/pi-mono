@@ -123,6 +123,18 @@ export {
 } from "./lsp-hook.js";
 // Types
 export * from "./types.js";
+// Extension Loader
+export {
+	ensureExtensionsDir,
+	type ExtensionEvent,
+	ExtensionLoader,
+	type ExtensionLoaderConfig,
+	type ExtensionMetadata,
+	getExtensionLoader,
+	loadAllExtensions,
+	type LoadedExtension,
+	onExtensionEvent,
+} from "./extension-loader.js";
 
 // ============================================================================
 // Convenience: Pre-configured hook sets
