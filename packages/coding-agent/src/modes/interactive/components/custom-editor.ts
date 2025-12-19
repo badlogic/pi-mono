@@ -1,4 +1,4 @@
-import { Editor, isCtrlC, isCtrlD, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@mariozechner/pi-tui";
+import { Editor, isCtrlC, isCtrlD, isCtrlO, isCtrlP, isCtrlT, isEscape, isShiftTab } from "@mariozechner/pi-tui";
 
 /**
  * Custom editor that handles Escape and Ctrl+C keys for coding-agent
@@ -39,7 +39,7 @@ export class CustomEditor extends Editor {
 
 		// Intercept Escape key - but only if autocomplete is NOT active
 		// (let parent handle escape for autocomplete cancellation)
-		if (data === "\x1b" && this.onEscape && !this.isShowingAutocomplete()) {
+		if (isEscape(data) && this.onEscape && !this.isShowingAutocomplete()) {
 			this.onEscape();
 			return;
 		}

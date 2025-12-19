@@ -3,7 +3,7 @@
  * Displays a list of string options with keyboard navigation.
  */
 
-import { Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, isEscape, Spacer, Text } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -84,7 +84,7 @@ export class HookSelectorComponent extends Container {
 			}
 		}
 		// Escape
-		else if (keyData === "\x1b") {
+		else if (isEscape(keyData)) {
 			this.onCancelCallback();
 		}
 	}

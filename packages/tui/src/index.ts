@@ -31,6 +31,7 @@ export {
 	isCtrlT,
 	isCtrlU,
 	isCtrlW,
+	isEscape,
 	isShiftTab,
 	Keys,
 } from "./keys.js";

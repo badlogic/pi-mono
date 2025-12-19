@@ -1,4 +1,4 @@
-import { isCtrlC } from "../keys.js";
+import { isCtrlC, isEscape } from "../keys.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth } from "../utils.js";
 
@@ -163,7 +163,7 @@ export class SelectList implements Component {
 			}
 		}
 		// Escape or Ctrl+C
-		else if (keyData === "\x1b" || isCtrlC(keyData)) {
+		else if (isEscape(keyData) || isCtrlC(keyData)) {
 			if (this.onCancel) {
 				this.onCancel();
 			}

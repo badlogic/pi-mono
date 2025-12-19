@@ -28,6 +28,7 @@ const CODEPOINTS = {
 	w: 119,
 
 	// Special keys
+	escape: 27,
 	tab: 9,
 	enter: 13,
 	backspace: 127,
@@ -193,4 +194,13 @@ export function isAltBackspace(data: string): boolean {
  */
 export function isShiftTab(data: string): boolean {
 	return data === RAW.SHIFT_TAB || data === Keys.SHIFT_TAB;
+}
+
+/**
+ * Check if input matches the Escape key (raw byte or Kitty protocol).
+ * Raw: \x1b (single byte)
+ * Kitty: \x1b[27u (codepoint 27 = escape)
+ */
+export function isEscape(data: string): boolean {
+	return data === "\x1b" || data === `\x1b[${CODEPOINTS.escape}u`;
 }

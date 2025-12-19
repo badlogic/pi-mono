@@ -1,5 +1,5 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import { isAltBackspace, isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlU, isCtrlW, Keys } from "../keys.js";
+import { isAltBackspace, isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlU, isCtrlW, isEscape, Keys } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
@@ -267,7 +267,7 @@ export class Editor implements Component {
 		// Handle autocomplete special keys first (but don't block other input)
 		if (this.isAutocompleting && this.autocompleteList) {
 			// Escape - cancel autocomplete
-			if (data === "\x1b") {
+			if (isEscape(data)) {
 				this.cancelAutocomplete();
 				return;
 			}
