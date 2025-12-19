@@ -77,6 +77,16 @@ interface ParsedKittySequence {
  *
  * Returns null if not a valid Kitty sequence.
  */
+// Virtual codepoints for functional keys (negative to avoid conflicts)
+const FUNCTIONAL_CODEPOINTS = {
+	delete: -10,
+	insert: -11,
+	pageUp: -12,
+	pageDown: -13,
+	home: -14,
+	end: -15,
+} as const;
+
 function parseKittySequence(data: string): ParsedKittySequence | null {
 	// Match CSI u format: \x1b[<num>u or \x1b[<num>;<mod>u
 	const csiUMatch = data.match(/^\x1b\[(\d+)(?:;(\d+))?u$/);
@@ -93,6 +103,35 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 		// Map arrow letters to virtual codepoints for easier matching
 		const arrowCodes: Record<string, number> = { A: -1, B: -2, C: -3, D: -4 };
 		const codepoint = arrowCodes[arrowMatch[2]!]!;
+		return { codepoint, modifier: modValue - 1 };
+	}
+
+	// Match functional keys with ~ terminator: \x1b[<num>~ or \x1b[<num>;<mod>~
+	// DELETE=3, INSERT=2, PAGEUP=5, PAGEDOWN=6, etc.
+	const funcMatch = data.match(/^\x1b\[(\d+)(?:;(\d+))?~$/);
+	if (funcMatch) {
+		const keyNum = parseInt(funcMatch[1]!, 10);
+		const modValue = funcMatch[2] ? parseInt(funcMatch[2], 10) : 1;
+		// Map functional key numbers to virtual codepoints
+		const funcCodes: Record<number, number> = {
+			2: FUNCTIONAL_CODEPOINTS.insert,
+			3: FUNCTIONAL_CODEPOINTS.delete,
+			5: FUNCTIONAL_CODEPOINTS.pageUp,
+			6: FUNCTIONAL_CODEPOINTS.pageDown,
+			7: FUNCTIONAL_CODEPOINTS.home, // Alternative home
+			8: FUNCTIONAL_CODEPOINTS.end, // Alternative end
+		};
+		const codepoint = funcCodes[keyNum];
+		if (codepoint !== undefined) {
+			return { codepoint, modifier: modValue - 1 };
+		}
+	}
+
+	// Match Home/End with modifier: \x1b[1;<mod>H/F
+	const homeEndMatch = data.match(/^\x1b\[1;(\d+)([HF])$/);
+	if (homeEndMatch) {
+		const modValue = parseInt(homeEndMatch[1]!, 10);
+		const codepoint = homeEndMatch[2] === "H" ? FUNCTIONAL_CODEPOINTS.home : FUNCTIONAL_CODEPOINTS.end;
 		return { codepoint, modifier: modValue - 1 };
 	}
 
@@ -407,4 +446,38 @@ export function isCtrlLeft(data: string): boolean {
  */
 export function isCtrlRight(data: string): boolean {
 	return data === "\x1b[1;5C" || matchesKittySequence(data, ARROW_CODEPOINTS.right, MODIFIERS.ctrl);
+}
+
+/**
+ * Check if input matches Home key.
+ * Handles legacy formats and Kitty protocol with lock key modifiers.
+ */
+export function isHome(data: string): boolean {
+	return (
+		data === "\x1b[H" ||
+		data === "\x1b[1~" ||
+		data === "\x1b[7~" ||
+		matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.home, 0)
+	);
+}
+
+/**
+ * Check if input matches End key.
+ * Handles legacy formats and Kitty protocol with lock key modifiers.
+ */
+export function isEnd(data: string): boolean {
+	return (
+		data === "\x1b[F" ||
+		data === "\x1b[4~" ||
+		data === "\x1b[8~" ||
+		matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.end, 0)
+	);
+}
+
+/**
+ * Check if input matches Delete key (forward delete).
+ * Handles legacy format and Kitty protocol with lock key modifiers.
+ */
+export function isDelete(data: string): boolean {
+	return data === "\x1b[3~" || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.delete, 0);
 }

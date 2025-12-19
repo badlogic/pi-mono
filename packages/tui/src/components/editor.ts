@@ -16,8 +16,11 @@ import {
 	isCtrlRight,
 	isCtrlU,
 	isCtrlW,
+	isDelete,
+	isEnd,
 	isEnter,
 	isEscape,
+	isHome,
 	isShiftEnter,
 	isTab,
 } from "../keys.js";
@@ -459,16 +462,13 @@ export class Editor implements Component {
 			this.handleBackspace();
 		}
 		// Line navigation shortcuts (Home/End keys)
-		else if (data === "\x1b[H" || data === "\x1b[1~" || data === "\x1b[7~") {
-			// Home key
+		else if (isHome(data)) {
 			this.moveToLineStart();
-		} else if (data === "\x1b[F" || data === "\x1b[4~" || data === "\x1b[8~") {
-			// End key
+		} else if (isEnd(data)) {
 			this.moveToLineEnd();
 		}
 		// Forward delete (Fn+Backspace or Delete key)
-		else if (data === "\x1b[3~") {
-			// Delete key
+		else if (isDelete(data)) {
 			this.handleForwardDelete();
 		}
 		// Word navigation (Option/Alt + Arrow or Ctrl + Arrow)

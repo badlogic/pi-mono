@@ -8,6 +8,7 @@ import {
 	isCtrlK,
 	isCtrlU,
 	isCtrlW,
+	isDelete,
 	isEnter,
 } from "../keys.js";
 import type { Component } from "../tui.js";
@@ -118,7 +119,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x1b[3~") {
+		if (isDelete(data)) {
 			// Delete - delete grapheme at cursor (handles emojis, etc.)
 			if (this.cursor < this.value.length) {
 				const afterCursor = this.value.slice(this.cursor);
