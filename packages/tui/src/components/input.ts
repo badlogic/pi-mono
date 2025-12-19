@@ -1,4 +1,4 @@
-import { isAltBackspace, isCtrlA, isCtrlE, isCtrlK, isCtrlU, isCtrlW } from "../keys.js";
+import { isAltBackspace, isArrowLeft, isArrowRight, isCtrlA, isCtrlE, isCtrlK, isCtrlU, isCtrlW } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
@@ -78,7 +78,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x1b[D") {
+		if (isArrowLeft(data)) {
 			// Left arrow
 			if (this.cursor > 0) {
 				this.cursor--;
@@ -86,7 +86,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x1b[C") {
+		if (isArrowRight(data)) {
 			// Right arrow
 			if (this.cursor < this.value.length) {
 				this.cursor++;

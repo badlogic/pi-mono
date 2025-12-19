@@ -1,5 +1,26 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import { isAltBackspace, isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlU, isCtrlW, isEscape, Keys } from "../keys.js";
+import {
+	isAltBackspace,
+	isAltEnter,
+	isAltLeft,
+	isAltRight,
+	isArrowDown,
+	isArrowLeft,
+	isArrowRight,
+	isArrowUp,
+	isCtrlA,
+	isCtrlC,
+	isCtrlE,
+	isCtrlK,
+	isCtrlLeft,
+	isCtrlRight,
+	isCtrlU,
+	isCtrlW,
+	isEnter,
+	isEscape,
+	isShiftEnter,
+	isTab,
+} from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
@@ -272,15 +293,15 @@ export class Editor implements Component {
 				return;
 			}
 			// Let the autocomplete list handle navigation and selection
-			else if (data === "\x1b[A" || data === "\x1b[B" || data === "\r" || data === "\t") {
+			else if (isArrowUp(data) || isArrowDown(data) || isEnter(data) || isTab(data)) {
 				// Only pass arrow keys to the list, not Enter/Tab (we handle those directly)
-				if (data === "\x1b[A" || data === "\x1b[B") {
+				if (isArrowUp(data) || isArrowDown(data)) {
 					this.autocompleteList.handleInput(data);
 					return;
 				}
 
 				// If Tab was pressed, always apply the selection
-				if (data === "\t") {
+				if (isTab(data)) {
 					const selected = this.autocompleteList.getSelectedItem();
 					if (selected && this.autocompleteProvider) {
 						const result = this.autocompleteProvider.applyCompletion(
@@ -305,7 +326,7 @@ export class Editor implements Component {
 				}
 
 				// If Enter was pressed on a slash command, apply completion and submit
-				if (data === "\r" && this.autocompletePrefix.startsWith("/")) {
+				if (isEnter(data) && this.autocompletePrefix.startsWith("/")) {
 					const selected = this.autocompleteList.getSelectedItem();
 					if (selected && this.autocompleteProvider) {
 						const result = this.autocompleteProvider.applyCompletion(
@@ -324,7 +345,7 @@ export class Editor implements Component {
 					// Don't return - fall through to submission logic
 				}
 				// If Enter was pressed on a file path, apply completion
-				else if (data === "\r") {
+				else if (isEnter(data)) {
 					const selected = this.autocompleteList.getSelectedItem();
 					if (selected && this.autocompleteProvider) {
 						const result = this.autocompleteProvider.applyCompletion(
@@ -353,7 +374,7 @@ export class Editor implements Component {
 		}
 
 		// Tab key - context-aware completion (but not when already autocompleting)
-		if (data === "\t" && !this.isAutocompleting) {
+		if (isTab(data) && !this.isAutocompleting) {
 			this.handleTabCompletion();
 			return;
 		}
@@ -388,8 +409,8 @@ export class Editor implements Component {
 			(data.charCodeAt(0) === 10 && data.length > 1) || // Ctrl+Enter with modifiers
 			data === "\x1b\r" || // Option+Enter in some terminals (legacy)
 			data === "\x1b[13;2~" || // Shift+Enter in some terminals (legacy format)
-			data === Keys.SHIFT_ENTER || // Shift+Enter in Kitty keyboard protocol
-			data === Keys.ALT_ENTER || // Alt+Enter in Kitty keyboard protocol
+			isShiftEnter(data) || // Shift+Enter (Kitty protocol, handles lock bits)
+			isAltEnter(data) || // Alt+Enter (Kitty protocol, handles lock bits)
 			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
 			(data === "\n" && data.length === 1) || // Shift+Enter from iTerm2 mapping
 			data === "\\\r" // Shift+Enter in VS Code terminal
@@ -451,19 +472,15 @@ export class Editor implements Component {
 			this.handleForwardDelete();
 		}
 		// Word navigation (Option/Alt + Arrow or Ctrl + Arrow)
-		// Option+Left: \x1b[1;3D or \x1bb
-		// Option+Right: \x1b[1;3C or \x1bf
-		// Ctrl+Left: \x1b[1;5D
-		// Ctrl+Right: \x1b[1;5C
-		else if (data === "\x1b[1;3D" || data === "\x1bb" || data === "\x1b[1;5D") {
+		else if (isAltLeft(data) || isCtrlLeft(data)) {
 			// Word left
 			this.moveWordBackwards();
-		} else if (data === "\x1b[1;3C" || data === "\x1bf" || data === "\x1b[1;5C") {
+		} else if (isAltRight(data) || isCtrlRight(data)) {
 			// Word right
 			this.moveWordForwards();
 		}
 		// Arrow keys
-		else if (data === "\x1b[A") {
+		else if (isArrowUp(data)) {
 			// Up - history navigation or cursor movement
 			if (this.isEditorEmpty()) {
 				this.navigateHistory(-1); // Start browsing history
@@ -472,17 +489,17 @@ export class Editor implements Component {
 			} else {
 				this.moveCursor(-1, 0); // Cursor movement (within text or history entry)
 			}
-		} else if (data === "\x1b[B") {
+		} else if (isArrowDown(data)) {
 			// Down - history navigation or cursor movement
 			if (this.historyIndex > -1 && this.isOnLastVisualLine()) {
 				this.navigateHistory(1); // Navigate to newer history entry or clear
 			} else {
 				this.moveCursor(1, 0); // Cursor movement (within text or history entry)
 			}
-		} else if (data === "\x1b[C") {
+		} else if (isArrowRight(data)) {
 			// Right
 			this.moveCursor(0, 1);
-		} else if (data === "\x1b[D") {
+		} else if (isArrowLeft(data)) {
 			// Left
 			this.moveCursor(0, -1);
 		}

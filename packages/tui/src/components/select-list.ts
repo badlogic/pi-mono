@@ -1,4 +1,4 @@
-import { isCtrlC, isEscape } from "../keys.js";
+import { isArrowDown, isArrowUp, isCtrlC, isEnter, isEscape } from "../keys.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth } from "../utils.js";
 
@@ -146,17 +146,17 @@ export class SelectList implements Component {
 
 	handleInput(keyData: string): void {
 		// Up arrow - wrap to bottom when at top
-		if (keyData === "\x1b[A") {
+		if (isArrowUp(keyData)) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredItems.length - 1 : this.selectedIndex - 1;
 			this.notifySelectionChange();
 		}
 		// Down arrow - wrap to top when at bottom
-		else if (keyData === "\x1b[B") {
+		else if (isArrowDown(keyData)) {
 			this.selectedIndex = this.selectedIndex === this.filteredItems.length - 1 ? 0 : this.selectedIndex + 1;
 			this.notifySelectionChange();
 		}
 		// Enter
-		else if (keyData === "\r") {
+		else if (isEnter(keyData)) {
 			const selectedItem = this.filteredItems[this.selectedIndex];
 			if (selectedItem && this.onSelect) {
 				this.onSelect(selectedItem);
