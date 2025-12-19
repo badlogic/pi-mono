@@ -8,6 +8,7 @@ import {
 	isArrowLeft,
 	isArrowRight,
 	isArrowUp,
+	isBackspace,
 	isCtrlA,
 	isCtrlC,
 	isCtrlE,
@@ -421,8 +422,8 @@ export class Editor implements Component {
 			// Modifier + Enter = new line
 			this.addNewLine();
 		}
-		// Plain Enter (char code 13 for CR) - only CR submits, LF adds new line
-		else if (data.charCodeAt(0) === 13 && data.length === 1) {
+		// Plain Enter - submit (handles both legacy \r and Kitty protocol with lock bits)
+		else if (isEnter(data)) {
 			// If submit is disabled, do nothing
 			if (this.disableSubmit) {
 				return;
@@ -458,7 +459,7 @@ export class Editor implements Component {
 			}
 		}
 		// Backspace
-		else if (data.charCodeAt(0) === 127 || data.charCodeAt(0) === 8) {
+		else if (isBackspace(data)) {
 			this.handleBackspace();
 		}
 		// Line navigation shortcuts (Home/End keys)
