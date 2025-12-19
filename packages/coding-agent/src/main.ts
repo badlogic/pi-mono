@@ -15,7 +15,12 @@ import { exportFromFile } from "./core/export-html.js";
 import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hooks/index.js";
 import { messageTransformer } from "./core/messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
-import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
+import {
+	resolveModelScope,
+	resolveSingleModelPattern,
+	restoreModelFromSession,
+	type ScopedModel,
+} from "./core/model-resolver.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { loadSlashCommands } from "./core/slash-commands.js";
@@ -24,6 +29,7 @@ import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
+import { parseModelOverride } from "./utils/model-override.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
 /** Check npm registry for new version (non-blocking) */
@@ -106,7 +112,24 @@ async function runInteractiveMode(
 
 		// Process the message
 		try {
-			await session.prompt(userInput);
+			// Check for model override syntax: [model] or [model:thinking]
+			const override = parseModelOverride(userInput);
+			if (override) {
+				const resolved = await resolveSingleModelPattern(override.pattern);
+				if (resolved) {
+					// Use the resolved model for this prompt only
+					await session.prompt(override.text, {
+						modelOverride: {
+							model: resolved.model,
+							thinkingLevel: override.thinkingLevel ?? resolved.thinkingLevel,
+						},
+					});
+				} else {
+					mode.showError(`No model found matching "${override.pattern}"`);
+				}
+			} else {
+				await session.prompt(userInput);
+			}
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			mode.showError(errorMessage);

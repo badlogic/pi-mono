@@ -33,6 +33,8 @@ export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
 	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean }
+	| { type: "model_override_start"; model: Model<any>; originalModel: Model<any>; thinkingLevel?: ThinkingLevel }
+	| { type: "model_override_end"; restoredModel: Model<any> }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -63,6 +65,11 @@ export interface PromptOptions {
 	expandSlashCommands?: boolean;
 	/** Image/file attachments */
 	attachments?: Attachment[];
+	/** Temporary model override for this prompt only */
+	modelOverride?: {
+		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+	};
 }
 
 /** Result from cycleModel() */
@@ -137,6 +144,9 @@ export class AgentSession {
 
 	// Custom tools for session lifecycle
 	private _customTools: LoadedCustomTool[] = [];
+
+	// Model override state (for single-message model switching)
+	private _modelOverride: { originalModel: Model<any>; originalThinking: ThinkingLevel } | null = null;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -221,6 +231,15 @@ export class AgentSession {
 			}
 
 			await this._checkCompaction(msg);
+		}
+
+		// Restore model after agent completes (for single-message model override)
+		if (event.type === "agent_end" && this._modelOverride) {
+			const { originalModel, originalThinking } = this._modelOverride;
+			this._modelOverride = null;
+			this.agent.setModel(originalModel);
+			this.agent.setThinkingLevel(originalThinking);
+			this._emit({ type: "model_override_end", restoredModel: originalModel });
 		}
 	};
 
@@ -401,6 +420,7 @@ export class AgentSession {
 	 * Send a prompt to the agent.
 	 * - Validates model and API key before sending
 	 * - Expands file-based slash commands by default
+	 * - Supports temporary model override for single message
 	 * @throws Error if no model selected or no API key available
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
@@ -409,7 +429,45 @@ export class AgentSession {
 
 		const expandCommands = options?.expandSlashCommands ?? true;
 
-		// Validate model
+		// Handle model override for this prompt
+		if (options?.modelOverride) {
+			const { model: overrideModel, thinkingLevel } = options.modelOverride;
+			const currentModel = this.model;
+			const currentThinking = this.thinkingLevel;
+
+			if (!currentModel) {
+				throw new Error("Cannot use model override without a base model selected");
+			}
+
+			// Validate API key for override model
+			const overrideApiKey = await getApiKeyForModel(overrideModel);
+			if (!overrideApiKey) {
+				throw new Error(
+					`No API key found for override model ${overrideModel.provider}/${overrideModel.id}.\n\n` +
+						`Set the appropriate environment variable or update ${getModelsPath()}`,
+				);
+			}
+
+			// Store original model/thinking for restoration after agent_end
+			this._modelOverride = { originalModel: currentModel, originalThinking: currentThinking };
+
+			// Apply override
+			this.agent.setModel(overrideModel);
+			if (thinkingLevel !== undefined) {
+				const effectiveThinking = overrideModel.reasoning ? thinkingLevel : "off";
+				this.agent.setThinkingLevel(effectiveThinking);
+			}
+
+			// Emit event for UI feedback
+			this._emit({
+				type: "model_override_start",
+				model: overrideModel,
+				originalModel: currentModel,
+				thinkingLevel,
+			});
+		}
+
+		// Validate model (either original or override)
 		if (!this.model) {
 			throw new Error(
 				"No model selected.\n\n" +

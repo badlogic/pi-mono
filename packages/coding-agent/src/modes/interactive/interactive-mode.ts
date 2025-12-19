@@ -973,6 +973,17 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 			}
+
+			case "model_override_start": {
+				const thinkingInfo = event.thinkingLevel ? `:${event.thinkingLevel}` : "";
+				this.showStatus(`Using ${event.model.id}${thinkingInfo} for this message`);
+				break;
+			}
+
+			case "model_override_end": {
+				this.showStatus(`Restored model: ${event.restoredModel.id}`);
+				break;
+			}
 		}
 	}
 

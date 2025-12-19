@@ -430,7 +430,8 @@ export class RpcClient {
 	}
 
 	private async send(command: RpcCommandBody): Promise<RpcResponse> {
-		if (!this.process?.stdin) {
+		const stdin = this.process?.stdin;
+		if (!stdin) {
 			throw new Error("Client not started");
 		}
 
@@ -456,7 +457,7 @@ export class RpcClient {
 				},
 			});
 
-			this.process!.stdin!.write(JSON.stringify(fullCommand) + "\n");
+			stdin.write(JSON.stringify(fullCommand) + "\n");
 		});
 	}
 

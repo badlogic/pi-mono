@@ -141,6 +141,107 @@ export async function resolveModelScope(patterns: string[]): Promise<ScopedModel
 	return scopedModels;
 }
 
+/**
+ * Resolve a single model pattern to a Model object with optional thinking level.
+ * Silently returns null if no match (no console warnings).
+ */
+export async function resolveSingleModelPattern(
+	pattern: string,
+): Promise<{ model: Model<Api>; thinkingLevel: ThinkingLevel } | null> {
+	const { models: availableModels, error } = await getAvailableModels();
+
+	if (error || availableModels.length === 0) {
+		return null;
+	}
+
+	// Parse pattern:level format
+	const parts = pattern.split(":");
+	const modelPattern = parts[0];
+	let thinkingLevel: ThinkingLevel = "off";
+
+	if (parts.length > 1) {
+		const level = parts[1];
+		if (isValidThinkingLevel(level)) {
+			thinkingLevel = level;
+		}
+	}
+
+	// Check for provider/modelId format
+	const slashIndex = modelPattern.indexOf("/");
+	if (slashIndex !== -1) {
+		const provider = modelPattern.substring(0, slashIndex);
+		const modelId = modelPattern.substring(slashIndex + 1);
+		const providerMatch = availableModels.find(
+			(m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
+		);
+		if (providerMatch) {
+			return { model: providerMatch, thinkingLevel };
+		}
+	}
+
+	// Check for exact ID match (case-insensitive)
+	const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
+	if (exactMatch) {
+		return { model: exactMatch, thinkingLevel };
+	}
+
+	// Fall back to partial matching
+	const matches = availableModels.filter(
+		(m) =>
+			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
+			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
+	);
+
+	if (matches.length === 0) {
+		return null;
+	}
+
+	// Helper to check if a model ID looks like an alias (no date suffix)
+	const isAlias = (id: string): boolean => {
+		if (id.endsWith("-latest")) return true;
+		const datePattern = /-\d{8}$/;
+		return !datePattern.test(id);
+	};
+
+	// Provider priority: prefer native providers over aggregators like OpenRouter
+	const providerPriority: Record<string, number> = {
+		anthropic: 1,
+		openai: 1,
+		google: 1,
+		xai: 1,
+		mistral: 1,
+		groq: 1,
+		cerebras: 1,
+		zai: 1,
+		"github-copilot": 2,
+		openrouter: 3, // Aggregator - lowest priority
+	};
+	const getProviderPriority = (provider: string): number => providerPriority[provider] ?? 2;
+
+	// Sort by: provider priority (asc), then ID (desc)
+	const sortModels = (a: Model<Api>, b: Model<Api>): number => {
+		const priorityDiff = getProviderPriority(a.provider) - getProviderPriority(b.provider);
+		if (priorityDiff !== 0) return priorityDiff;
+		return b.id.localeCompare(a.id);
+	};
+
+	// Separate into aliases and dated versions
+	const aliases = matches.filter((m) => isAlias(m.id));
+	const datedVersions = matches.filter((m) => !isAlias(m.id));
+
+	let bestMatch: Model<Api>;
+
+	if (aliases.length > 0) {
+		aliases.sort(sortModels);
+		bestMatch = aliases[0];
+	} else {
+		datedVersions.sort(sortModels);
+		bestMatch = datedVersions[0];
+	}
+
+	return { model: bestMatch, thinkingLevel };
+}
+
 export interface InitialModelResult {
 	model: Model<Api> | null;
 	thinkingLevel: ThinkingLevel;
