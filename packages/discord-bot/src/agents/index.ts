@@ -159,3 +159,28 @@ export {
 	// Trading Expert Functions (Moon Dev Inspired)
 	runTradingAnalysis,
 } from "./openhands-agent.js";
+
+// Skill Manager - Hybrid Letta + Pi-Mono Implementation
+export {
+	type ALRResult,
+	actLearnReuse as skillActLearnReuse,
+	createLearningPrompt as createSkillPrompt,
+	createSkillBundle,
+	discoverSkills,
+	extractLearnings as extractSkillLearnings,
+	getExpertise as getSkillExpertise,
+	type LearningResult as SkillLearningResult,
+	type LoadDepth,
+	loadSkill,
+	migrateToBundle,
+	type Priority as SkillPriority,
+	type ResourceType,
+	recordLearning,
+	type Skill,
+	type SkillBody,
+	SkillManager,
+	type SkillMetadata,
+	type SkillResources,
+	searchSkills,
+	skillExists,
+} from "./skill-manager.js";
