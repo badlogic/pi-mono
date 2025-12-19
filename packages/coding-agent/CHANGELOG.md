@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.24.2] - 2025-12-20
+
+### Fixed
+
+- **More Kitty keyboard protocol fixes**: Fixed Backspace, Enter, Home, End, and Delete keys not working with Caps Lock enabled. The initial fix in 0.24.1 missed several key handlers that were still using raw byte detection. Now all key handlers use the helper functions that properly mask out lock key bits. ([#243](https://github.com/badlogic/pi-mono/issues/243))
+
 ## [0.24.1] - 2025-12-19
 
 ### Added
