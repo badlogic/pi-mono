@@ -15,7 +15,7 @@
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow } from "@mariozechner/pi-ai";
+import { isContextOverflow, supportsXhigh } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
@@ -101,9 +101,6 @@ export interface SessionStats {
 // ============================================================================
 // Constants
 // ============================================================================
-
-/** Models that support xhigh thinking level */
-const XHIGH_MODELS = ["gpt-5.1-codex-max", "gpt-5.2", "gpt-5.2-codex"];
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
@@ -670,8 +667,7 @@ export class AgentSession {
 	 * Check if current model supports xhigh thinking level.
 	 */
 	supportsXhighThinking(): boolean {
-		const modelId = this.model?.id || "";
-		return XHIGH_MODELS.some((m) => modelId === m || modelId.endsWith(`/${m}`));
+		return this.model ? supportsXhigh(this.model) : false;
 	}
 
 	/**

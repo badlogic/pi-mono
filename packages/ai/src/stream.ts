@@ -1,4 +1,5 @@
 import { ThinkingLevel } from "@google/genai";
+import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
@@ -155,13 +156,13 @@ function mapOptionsForApi<TApi extends Api>(
 		case "openai-completions":
 			return {
 				...base,
-				reasoningEffort: options?.reasoning,
+				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
 			} satisfies OpenAICompletionsOptions;
 
 		case "openai-responses":
 			return {
 				...base,
-				reasoningEffort: options?.reasoning,
+				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
 			} satisfies OpenAIResponsesOptions;
 
 		case "google-generative-ai": {

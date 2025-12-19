@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **xhigh thinking level support**: Added `supportsXhigh()` function to check if a model supports xhigh reasoning level. Also clamps xhigh to high for OpenAI models that don't support it. ([#236](https://github.com/badlogic/pi-mono/pull/236) by [@theBucky](https://github.com/theBucky))
+
 ## [0.23.5] - 2025-12-19
 
 ### Added
