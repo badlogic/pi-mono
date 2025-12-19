@@ -194,7 +194,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 
 					// Some endpoints return reasoning in reasoning_content (llama.cpp),
 					// or reasoning (other openai compatible endpoints)
-					const reasoningFields = ["reasoning_content", "reasoning"];
+					const reasoningFields = ["reasoning_content", "reasoning", "reasoning_text"];
 					for (const field of reasoningFields) {
 						if (
 							(choice.delta as any)[field] !== null &&
