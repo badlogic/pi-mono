@@ -28,6 +28,10 @@ export async function selectSession(sessionManager: SessionManager): Promise<str
 					resolve(null);
 				}
 			},
+			() => {
+				ui.stop();
+				process.exit(0);
+			},
 		);
 
 		ui.addChild(selector);

@@ -33,6 +33,7 @@ class SessionList implements Component {
 	private searchInput: Input;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
+	public onExit: () => void = () => {};
 	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
 	constructor(sessions: SessionItem[]) {
@@ -153,9 +154,9 @@ class SessionList implements Component {
 				this.onCancel();
 			}
 		}
-		// Ctrl+C - exit process
+		// Ctrl+C - exit
 		else if (isCtrlC(keyData)) {
-			process.exit(0);
+			this.onExit();
 		}
 		// Pass everything else to search input
 		else {
@@ -171,7 +172,12 @@ class SessionList implements Component {
 export class SessionSelectorComponent extends Container {
 	private sessionList: SessionList;
 
-	constructor(sessionManager: SessionManager, onSelect: (sessionPath: string) => void, onCancel: () => void) {
+	constructor(
+		sessionManager: SessionManager,
+		onSelect: (sessionPath: string) => void,
+		onCancel: () => void,
+		onExit: () => void,
+	) {
 		super();
 
 		// Load all sessions
@@ -188,6 +194,7 @@ export class SessionSelectorComponent extends Container {
 		this.sessionList = new SessionList(sessions);
 		this.sessionList.onSelect = onSelect;
 		this.sessionList.onCancel = onCancel;
+		this.sessionList.onExit = onExit;
 
 		this.addChild(this.sessionList);
 
