@@ -65,12 +65,14 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
  */
 export function loadProjectContextFiles(): Array<{ path: string; content: string }> {
 	const contextFiles: Array<{ path: string; content: string }> = [];
+	const seenPaths = new Set<string>();
 
 	// 1. Load global context from ~/{CONFIG_DIR_NAME}/agent/
 	const globalContextDir = getAgentDir();
 	const globalContext = loadContextFileFromDir(globalContextDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);
+		seenPaths.add(globalContext.path);
 	}
 
 	// 2. Walk up from cwd to root, collecting all context files
@@ -82,9 +84,10 @@ export function loadProjectContextFiles(): Array<{ path: string; content: string
 
 	while (true) {
 		const contextFile = loadContextFileFromDir(currentDir);
-		if (contextFile) {
+		if (contextFile && !seenPaths.has(contextFile.path)) {
 			// Add to beginning so we get top-most parent first
 			ancestorContextFiles.unshift(contextFile);
+			seenPaths.add(contextFile.path);
 		}
 
 		// Stop if we've reached root
