@@ -24,6 +24,29 @@ export {
 	META_PROMPT_TEMPLATE,
 	PRODUCT_EXPERTS,
 } from "./agent-experts.js";
+// Agent-to-Agent Messaging System
+export {
+	type AgentInfo,
+	type AgentMessage,
+	AgentMessageBus,
+	type BroadcastResult,
+	createAgentMessagingTools,
+	disposeAgentMessageBus,
+	getAgentMessageBus,
+	type MessageResult,
+} from "./agent-messaging.js";
+// Archival Memory - Long-Term Storage with Semantic Search
+export {
+	type ArchivalEntry,
+	ArchivalMemory,
+	type ArchivalSearchResult,
+	createArchivalTools,
+	disposeArchivalMemory,
+	type EmbeddingProvider,
+	getArchivalMemory,
+	LocalTFIDFEmbedding,
+	OpenAIEmbedding,
+} from "./archival-memory.js";
 // Claude SDK Agent - Two-Agent Pattern (Initializer + Coding)
 export {
 	type ClaudeAgentOptions,
@@ -38,6 +61,31 @@ export {
 	runTwoAgentWorkflow,
 	type TaskSpec as ClaudeTaskSpec,
 } from "./claude-sdk-agent.js";
+// Context Compression - Intelligent Context Window Management
+export {
+	type CompressedContext,
+	type CompressionConfig,
+	type ContextItem,
+	ContextManager,
+	createContextManager,
+	createContextTools,
+	DEFAULT_COMPRESSION_CONFIG,
+	estimateItemTokens,
+	estimateTokens,
+	estimateTotalTokens,
+	type SummarizationResult,
+} from "./context-compression.js";
+// Conversation Memory - Full-Text Search with FTS5
+export {
+	ConversationMemory,
+	type ConversationMessage,
+	createConversationTools,
+	disposeConversationMemory,
+	getConversationMemory,
+	type RecallOptions,
+	type SearchResult as ConversationSearchResult,
+	type TimeRange,
+} from "./conversation-memory.js";
 // Agent Experts - Act-Learn-Reuse System (Basic)
 export {
 	actLearnReuse,
@@ -134,7 +182,20 @@ export {
 	runAgent,
 	runLearningAgent,
 } from "./lightweight-agent.js";
-
+// Memory Blocks - Letta-Style Structured Agent Memory
+export {
+	createMemoryTools,
+	createTradingMemoryManager,
+	DEFAULT_BLOCKS,
+	disposeMemoryManager,
+	getMemoryManager,
+	type MemoryBlock,
+	type MemoryBlockConfig,
+	MemoryBlockManager,
+	type MemoryEditResult,
+	type MemoryToolContext,
+	TRADING_BLOCKS,
+} from "./memory-blocks.js";
 // OpenHands Software Agent SDK integration
 export {
 	getOpenHandsModes,
@@ -159,7 +220,17 @@ export {
 	// Trading Expert Functions (Moon Dev Inspired)
 	runTradingAnalysis,
 } from "./openhands-agent.js";
-
+// Shared Memory Blocks - Multi-Agent Collaborative Memory
+export {
+	createSharedBlockTools,
+	disposeSharedBlockManager,
+	getSharedBlockManager,
+	type SharedBlock,
+	SharedBlockManager,
+	type SharedBlockPermissions,
+	type SharedBlockSubscription,
+	type SharedBlockUpdate,
+} from "./shared-blocks.js";
 // Skill Manager - Hybrid Letta + Pi-Mono Implementation
 export {
 	type ALRResult,
