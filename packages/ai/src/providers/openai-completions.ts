@@ -309,6 +309,20 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 		const isAgentCall = lastMessage ? lastMessage.role !== "user" : false;
 		headers["X-Initiator"] = isAgentCall ? "agent" : "user";
 		headers["Openai-Intent"] = "conversation-edits";
+
+		// Copilot requires this header when sending images
+		const hasImages = messages.some((msg) => {
+			if (msg.role === "user" && Array.isArray(msg.content)) {
+				return msg.content.some((c) => c.type === "image");
+			}
+			if (msg.role === "toolResult" && Array.isArray(msg.content)) {
+				return msg.content.some((c) => c.type === "image");
+			}
+			return false;
+		});
+		if (hasImages) {
+			headers["Copilot-Vision-Request"] = "true";
+		}
 	}
 
 	return new OpenAI({
