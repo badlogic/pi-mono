@@ -73,6 +73,16 @@ export {
 	isWriteToolResult,
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
+// Model configuration and OAuth
+export { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
+export {
+	getOAuthProviders,
+	login,
+	logout,
+	type OAuthAuthInfo,
+	type OAuthPrompt,
+	type SupportedOAuthProvider,
+} from "./core/oauth/index.js";
 export {
 	type CompactionEntry,
 	createSummaryMessage,
