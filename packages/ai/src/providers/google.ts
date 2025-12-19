@@ -266,9 +266,10 @@ function createClient(model: Model<"google-generative-ai">, apiKey?: string): Go
 		apiKey = process.env.GEMINI_API_KEY;
 	}
 
-	const httpOptions: { baseUrl?: string; headers?: Record<string, string> } = {};
+	const httpOptions: { baseUrl?: string; apiVersion?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;
+		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
 	if (model.headers) {
 		httpOptions.headers = model.headers;
