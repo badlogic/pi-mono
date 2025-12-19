@@ -309,14 +309,13 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "äö");
 		});
 
-		it("deletes multi-code-unit emojis with repeated Backspace", () => {
+		it("deletes multi-code-unit emojis with single Backspace", () => {
 			const editor = new Editor(defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
 
-			// Delete the last emoji (👍) - requires 2 backspaces since emojis are 2 code units
-			editor.handleInput("\x7f"); // Backspace
+			// Delete the last emoji (👍) - single backspace deletes whole grapheme cluster
 			editor.handleInput("\x7f"); // Backspace
 
 			const text = editor.getText();
@@ -341,19 +340,17 @@ describe("Editor component", () => {
 			assert.strictEqual(text, "äxöü");
 		});
 
-		it("moves cursor in code units across multi-code-unit emojis before insertion", () => {
+		it("moves cursor across multi-code-unit emojis with single arrow key", () => {
 			const editor = new Editor(defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
 			editor.handleInput("🎉");
 
-			// Move cursor left over last emoji (🎉)
-			editor.handleInput("\x1b[D"); // Left arrow
+			// Move cursor left over last emoji (🎉) - single arrow moves over whole grapheme
 			editor.handleInput("\x1b[D"); // Left arrow
 
 			// Move cursor left over second emoji (👍)
-			editor.handleInput("\x1b[D");
 			editor.handleInput("\x1b[D");
 
 			// Insert 'x' between first and second emoji
