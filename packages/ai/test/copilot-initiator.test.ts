@@ -175,7 +175,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("user");
 		});
 
-		it("sets X-Initiator: agent when assistant message exists in history", async () => {
+		it("sets X-Initiator: agent when last message is assistant", async () => {
 			const context: Context = {
 				messages: [{ role: "user", content: "Hello", timestamp: Date.now() }, assistantMessage],
 			};
@@ -186,7 +186,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
 		});
 
-		it("sets X-Initiator: agent when toolResult exists in history", async () => {
+		it("sets X-Initiator: agent when last message is toolResult", async () => {
 			const context: Context = {
 				messages: [{ role: "user", content: "Hello", timestamp: Date.now() }, toolResultMessage],
 			};
@@ -197,7 +197,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
 		});
 
-		it("sets X-Initiator: agent for multi-turn conversation (last is user, but assistant in history)", async () => {
+		it("sets X-Initiator: user for multi-turn conversation when last message is user", async () => {
 			const context: Context = {
 				messages: [
 					{ role: "user", content: "Hello", timestamp: Date.now() },
@@ -209,7 +209,7 @@ describe("GitHub Copilot Headers", () => {
 			const stream = streamOpenAICompletions(copilotCompletionsModel, context, { apiKey: "test-key" });
 			await consumeStream(stream);
 
-			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
+			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("user");
 		});
 
 		it("sets X-Initiator: user when there are no messages", async () => {
@@ -259,7 +259,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("user");
 		});
 
-		it("sets X-Initiator: agent when assistant message exists in history", async () => {
+		it("sets X-Initiator: agent when last message is assistant", async () => {
 			const context: Context = {
 				messages: [
 					{ role: "user", content: "Hello", timestamp: Date.now() },
@@ -273,7 +273,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
 		});
 
-		it("sets X-Initiator: agent when toolResult exists in history", async () => {
+		it("sets X-Initiator: agent when last message is toolResult", async () => {
 			const context: Context = {
 				messages: [{ role: "user", content: "Hello", timestamp: Date.now() }, toolResultMessage],
 			};
@@ -284,7 +284,7 @@ describe("GitHub Copilot Headers", () => {
 			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
 		});
 
-		it("sets X-Initiator: agent for multi-turn conversation (last is user, but assistant in history)", async () => {
+		it("sets X-Initiator: user for multi-turn conversation when last message is user", async () => {
 			const context: Context = {
 				messages: [
 					{ role: "user", content: "Hello", timestamp: Date.now() },
@@ -296,7 +296,7 @@ describe("GitHub Copilot Headers", () => {
 			const stream = streamOpenAIResponses(copilotResponsesModel, context, { apiKey: "test-key" });
 			await consumeStream(stream);
 
-			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("agent");
+			expect(lastOpenAIConfig?.defaultHeaders?.["X-Initiator"]).toBe("user");
 		});
 
 		it("sets X-Initiator: user when there are no messages", async () => {
