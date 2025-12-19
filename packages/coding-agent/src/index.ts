@@ -35,17 +35,23 @@ export type {
 	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
-// Hook system types
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
+	BashToolResultEvent,
 	BranchEvent,
 	BranchEventResult,
+	CustomToolResultEvent,
+	EditToolResultEvent,
+	FindToolResultEvent,
+	GrepToolResultEvent,
 	HookAPI,
 	HookEvent,
 	HookEventContext,
 	HookFactory,
 	HookUIContext,
+	LsToolResultEvent,
+	ReadToolResultEvent,
 	SessionEvent,
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -53,6 +59,17 @@ export type {
 	ToolResultEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
+	WriteToolResultEvent,
+} from "./core/hooks/index.js";
+// Hook system types and type guards
+export {
+	isBashToolResult,
+	isEditToolResult,
+	isFindToolResult,
+	isGrepToolResult,
+	isLsToolResult,
+	isReadToolResult,
+	isWriteToolResult,
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
 export {
@@ -81,13 +98,30 @@ export {
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
+	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
+	type SkillWarning,
 } from "./core/skills.js";
 // Tools
-export { bashTool, codingTools, editTool, readTool, writeTool } from "./core/tools/index.js";
+export {
+	type BashToolDetails,
+	bashTool,
+	codingTools,
+	editTool,
+	type FindToolDetails,
+	findTool,
+	type GrepToolDetails,
+	grepTool,
+	type LsToolDetails,
+	lsTool,
+	type ReadToolDetails,
+	readTool,
+	type TruncationResult,
+	writeTool,
+} from "./core/tools/index.js";
 
 // Main entry point
 export { main } from "./main.js";

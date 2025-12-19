@@ -13,7 +13,7 @@ const readSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
 
-interface ReadToolDetails {
+export interface ReadToolDetails {
 	truncation?: TruncationResult;
 }
 

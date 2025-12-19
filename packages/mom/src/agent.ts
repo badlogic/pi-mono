@@ -118,7 +118,7 @@ function loadMomSkills(channelDir: string, workspacePath: string): Skill[] {
 
 	// Load workspace-level skills (global)
 	const workspaceSkillsDir = join(hostWorkspacePath, "skills");
-	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })) {
+	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
 		// Translate paths to container paths for system prompt
 		skill.filePath = translatePath(skill.filePath);
 		skill.baseDir = translatePath(skill.baseDir);
@@ -127,7 +127,7 @@ function loadMomSkills(channelDir: string, workspacePath: string): Skill[] {
 
 	// Load channel-specific skills (override workspace skills on collision)
 	const channelSkillsDir = join(channelDir, "skills");
-	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" })) {
+	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" }).skills) {
 		skill.filePath = translatePath(skill.filePath);
 		skill.baseDir = translatePath(skill.baseDir);
 		skillMap.set(skill.name, skill);
