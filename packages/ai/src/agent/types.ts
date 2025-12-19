@@ -85,6 +85,21 @@ export interface QueuedMessage<TApp = Message> {
 // Configuration for agent loop execution
 export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
+
+	/**
+	 * Optional hook to resolve an API key dynamically for each LLM call.
+	 *
+	 * This is useful for short-lived OAuth tokens (e.g. GitHub Copilot) that may
+	 * expire during long-running tool execution phases.
+	 *
+	 * The agent loop will call this before each assistant response and pass the
+	 * returned value as `apiKey` to `streamSimple()` (or a custom `streamFn`).
+	 *
+	 * If it returns `undefined`, the loop falls back to `config.apiKey`, and then
+	 * to `streamSimple()`'s own provider key lookup (setApiKey/env vars).
+	 */
+	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
 	preprocessor?: (messages: AgentContext["messages"], abortSignal?: AbortSignal) => Promise<AgentContext["messages"]>;
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
 }
