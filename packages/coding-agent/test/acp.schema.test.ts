@@ -244,10 +244,15 @@ describe("ACP schema validation", () => {
 			const sessionId = "schema-test-8";
 
 			handleAgentEvent(agent, sessionId, {
-				type: "tool_execution_end",
+				type: "tool_execution_start",
 				toolCallId: "tc6",
 				toolName: "edit",
 				args: { path: "file.txt", oldText: "before", newText: "after" },
+			});
+			handleAgentEvent(agent, sessionId, {
+				type: "tool_execution_end",
+				toolCallId: "tc6",
+				toolName: "edit",
 				result: {
 					content: [{ type: "text", text: "ok" }],
 					details: { diff: "-1 before\n+1 after" },
@@ -255,8 +260,8 @@ describe("ACP schema validation", () => {
 				isError: false,
 			});
 
-			expect(updates).toHaveLength(1);
-			const payload = updates[0];
+			expect(updates).toHaveLength(2);
+			const payload = updates[1];
 
 			const result = sessionNotificationSchema.safeParse(payload);
 			if (!result.success) {
@@ -277,18 +282,23 @@ describe("ACP schema validation", () => {
 			const sessionId = "schema-test-9";
 
 			handleAgentEvent(agent, sessionId, {
-				type: "tool_execution_end",
+				type: "tool_execution_start",
 				toolCallId: "tc7",
 				toolName: "read",
 				args: { path: "/absolute/path/to/file.txt" },
+			});
+			handleAgentEvent(agent, sessionId, {
+				type: "tool_execution_end",
+				toolCallId: "tc7",
+				toolName: "read",
 				result: {
 					content: [{ type: "text", text: "file contents" }],
 				},
 				isError: false,
 			});
 
-			expect(updates).toHaveLength(1);
-			const payload = updates[0];
+			expect(updates).toHaveLength(2);
+			const payload = updates[1];
 
 			const result = sessionNotificationSchema.safeParse(payload);
 			if (!result.success) {

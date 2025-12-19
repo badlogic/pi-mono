@@ -408,10 +408,15 @@ describe("ACP tool content + locations mapping (unit)", () => {
 		const sessionId = "s-tool-1";
 
 		(agent as unknown as { handleAgentEvent: (sid: string, ev: unknown) => void }).handleAgentEvent(sessionId, {
-			type: "tool_execution_end",
+			type: "tool_execution_start",
 			toolCallId: "t1",
 			toolName: "read",
 			args: { path: "image.png" },
+		});
+		(agent as unknown as { handleAgentEvent: (sid: string, ev: unknown) => void }).handleAgentEvent(sessionId, {
+			type: "tool_execution_end",
+			toolCallId: "t1",
+			toolName: "read",
 			result: {
 				content: [
 					{ type: "text", text: "Read image file [image/png]" },
@@ -422,8 +427,8 @@ describe("ACP tool content + locations mapping (unit)", () => {
 			isError: false,
 		});
 
-		expect(updates).toHaveLength(1);
-		const msg = updates[0] as any;
+		expect(updates).toHaveLength(2);
+		const msg = updates[1] as any;
 		expect(msg).toMatchObject({
 			sessionId,
 			update: {
@@ -453,10 +458,15 @@ describe("ACP tool content + locations mapping (unit)", () => {
 		const sessionId = "s-tool-2";
 
 		(agent as unknown as { handleAgentEvent: (sid: string, ev: unknown) => void }).handleAgentEvent(sessionId, {
-			type: "tool_execution_end",
+			type: "tool_execution_start",
 			toolCallId: "t2",
 			toolName: "edit",
 			args: { path: "file.txt", oldText: "before", newText: "after" },
+		});
+		(agent as unknown as { handleAgentEvent: (sid: string, ev: unknown) => void }).handleAgentEvent(sessionId, {
+			type: "tool_execution_end",
+			toolCallId: "t2",
+			toolName: "edit",
 			result: {
 				content: [{ type: "text", text: "ok" }],
 				details: { diff: "-1 before\n+1 after" },
@@ -464,8 +474,8 @@ describe("ACP tool content + locations mapping (unit)", () => {
 			isError: false,
 		});
 
-		expect(updates).toHaveLength(1);
-		const msg = updates[0] as any;
+		expect(updates).toHaveLength(2);
+		const msg = updates[1] as any;
 		expect(msg.update.locations).toEqual([{ path: "file.txt" }]);
 
 		const diff = (msg.update.content as any[]).find((c) => c.type === "diff");
