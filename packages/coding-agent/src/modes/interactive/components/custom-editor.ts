@@ -1,4 +1,4 @@
-import { Editor } from "@mariozechner/pi-tui";
+import { Editor, isCtrlC, isCtrlD, isCtrlO, isCtrlP, isCtrlT, isShiftTab } from "@mariozechner/pi-tui";
 
 /**
  * Custom editor that handles Escape and Ctrl+C keys for coding-agent
@@ -6,6 +6,7 @@ import { Editor } from "@mariozechner/pi-tui";
 export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlC?: () => void;
+	public onCtrlD?: () => void;
 	public onShiftTab?: () => void;
 	public onCtrlP?: () => void;
 	public onCtrlO?: () => void;
@@ -13,25 +14,25 @@ export class CustomEditor extends Editor {
 
 	handleInput(data: string): void {
 		// Intercept Ctrl+T for thinking block visibility toggle
-		if (data === "\x14" && this.onCtrlT) {
+		if (isCtrlT(data) && this.onCtrlT) {
 			this.onCtrlT();
 			return;
 		}
 
 		// Intercept Ctrl+O for tool output expansion
-		if (data === "\x0f" && this.onCtrlO) {
+		if (isCtrlO(data) && this.onCtrlO) {
 			this.onCtrlO();
 			return;
 		}
 
 		// Intercept Ctrl+P for model cycling
-		if (data === "\x10" && this.onCtrlP) {
+		if (isCtrlP(data) && this.onCtrlP) {
 			this.onCtrlP();
 			return;
 		}
 
 		// Intercept Shift+Tab for thinking level cycling
-		if (data === "\x1b[Z" && this.onShiftTab) {
+		if (isShiftTab(data) && this.onShiftTab) {
 			this.onShiftTab();
 			return;
 		}
@@ -44,8 +45,17 @@ export class CustomEditor extends Editor {
 		}
 
 		// Intercept Ctrl+C
-		if (data === "\x03" && this.onCtrlC) {
+		if (isCtrlC(data) && this.onCtrlC) {
 			this.onCtrlC();
+			return;
+		}
+
+		// Intercept Ctrl+D (only when editor is empty)
+		if (isCtrlD(data)) {
+			if (this.getText().length === 0 && this.onCtrlD) {
+				this.onCtrlD();
+			}
+			// Always consume Ctrl+D (don't pass to parent)
 			return;
 		}
 

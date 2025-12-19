@@ -573,6 +573,7 @@ export class InteractiveMode {
 		};
 
 		this.editor.onCtrlC = () => this.handleCtrlC();
+		this.editor.onCtrlD = () => this.handleCtrlD();
 		this.editor.onShiftTab = () => this.cycleThinkingLevel();
 		this.editor.onCtrlP = () => this.cycleModel();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
@@ -1142,6 +1143,12 @@ export class InteractiveMode {
 			this.clearEditor();
 			this.lastSigintTime = now;
 		}
+	}
+
+	private handleCtrlD(): void {
+		// Only called when editor is empty (enforced by CustomEditor)
+		this.stop();
+		process.exit(0);
 	}
 
 	private updateEditorBorderColor(): void {

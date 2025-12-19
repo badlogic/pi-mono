@@ -1,4 +1,5 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
+import { isAltBackspace, isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlU, isCtrlW, Keys } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
@@ -259,7 +260,7 @@ export class Editor implements Component {
 		// Handle special key combinations first
 
 		// Ctrl+C - Exit (let parent handle this)
-		if (data.charCodeAt(0) === 3) {
+		if (isCtrlC(data)) {
 			return;
 		}
 
@@ -359,34 +360,36 @@ export class Editor implements Component {
 
 		// Continue with rest of input handling
 		// Ctrl+K - Delete to end of line
-		if (data.charCodeAt(0) === 11) {
+		if (isCtrlK(data)) {
 			this.deleteToEndOfLine();
 		}
 		// Ctrl+U - Delete to start of line
-		else if (data.charCodeAt(0) === 21) {
+		else if (isCtrlU(data)) {
 			this.deleteToStartOfLine();
 		}
 		// Ctrl+W - Delete word backwards
-		else if (data.charCodeAt(0) === 23) {
+		else if (isCtrlW(data)) {
 			this.deleteWordBackwards();
 		}
-		// Option/Alt+Backspace (e.g. Ghostty sends ESC + DEL)
-		else if (data === "\x1b\x7f") {
+		// Option/Alt+Backspace - Delete word backwards
+		else if (isAltBackspace(data)) {
 			this.deleteWordBackwards();
 		}
 		// Ctrl+A - Move to start of line
-		else if (data.charCodeAt(0) === 1) {
+		else if (isCtrlA(data)) {
 			this.moveToLineStart();
 		}
 		// Ctrl+E - Move to end of line
-		else if (data.charCodeAt(0) === 5) {
+		else if (isCtrlE(data)) {
 			this.moveToLineEnd();
 		}
 		// New line shortcuts (but not plain LF/CR which should be submit)
 		else if (
 			(data.charCodeAt(0) === 10 && data.length > 1) || // Ctrl+Enter with modifiers
-			data === "\x1b\r" || // Option+Enter in some terminals
-			data === "\x1b[13;2~" || // Shift+Enter in some terminals
+			data === "\x1b\r" || // Option+Enter in some terminals (legacy)
+			data === "\x1b[13;2~" || // Shift+Enter in some terminals (legacy format)
+			data === Keys.SHIFT_ENTER || // Shift+Enter in Kitty keyboard protocol
+			data === Keys.ALT_ENTER || // Alt+Enter in Kitty keyboard protocol
 			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
 			(data === "\n" && data.length === 1) || // Shift+Enter from iTerm2 mapping
 			data === "\\\r" // Shift+Enter in VS Code terminal

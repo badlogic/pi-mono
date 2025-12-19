@@ -1,3 +1,4 @@
+import { isAltBackspace, isCtrlA, isCtrlE, isCtrlK, isCtrlU, isCtrlW } from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
@@ -101,38 +102,38 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x01") {
+		if (isCtrlA(data)) {
 			// Ctrl+A - beginning of line
 			this.cursor = 0;
 			return;
 		}
 
-		if (data === "\x05") {
+		if (isCtrlE(data)) {
 			// Ctrl+E - end of line
 			this.cursor = this.value.length;
 			return;
 		}
 
-		if (data.charCodeAt(0) === 23) {
+		if (isCtrlW(data)) {
 			// Ctrl+W - delete word backwards
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (data === "\x1b\x7f") {
+		if (isAltBackspace(data)) {
 			// Option/Alt+Backspace - delete word backwards
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (data.charCodeAt(0) === 21) {
+		if (isCtrlU(data)) {
 			// Ctrl+U - delete from cursor to start of line
 			this.value = this.value.slice(this.cursor);
 			this.cursor = 0;
 			return;
 		}
 
-		if (data.charCodeAt(0) === 11) {
+		if (isCtrlK(data)) {
 			// Ctrl+K - delete from cursor to end of line
 			this.value = this.value.slice(0, this.cursor);
 			return;
