@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.24.5] - 2025-12-20
+
+### Fixed
+
+- **Input buffering in iTerm2**: Fixed Ctrl+C, Ctrl+D, and other keys requiring multiple presses in iTerm2. The cell size query response parser was incorrectly holding back keyboard input.
+
 ## [0.24.4] - 2025-12-20
 
 ### Fixed
