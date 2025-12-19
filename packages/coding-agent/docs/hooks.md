@@ -645,7 +645,7 @@ main.ts
 
 ## Tool Wrapping
 
-Tools are wrapped with hook callbacks before the agent is created:
+Tools (built-in and custom) are wrapped with hook callbacks after tool discovery/selection, before the agent is created:
 
 ```
 main.ts

@@ -315,9 +315,6 @@ export async function main(args: string[]) {
 	if (hooks.length > 0) {
 		const timeout = settingsManager.getHookTimeout();
 		hookRunner = new HookRunner(hooks, cwd, timeout);
-
-		// Wrap tools with hook callbacks
-		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
 	}
 
 	// Discover and load custom tools from:
@@ -342,6 +339,11 @@ export async function main(args: string[]) {
 	if (loadedCustomTools.length > 0) {
 		const customToolInstances = loadedCustomTools.map((lt) => lt.tool);
 		selectedTools = [...selectedTools, ...customToolInstances] as typeof selectedTools;
+	}
+
+	// Wrap tools with hook callbacks (built-in and custom)
+	if (hookRunner) {
+		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
 	}
 
 	// Create agent
