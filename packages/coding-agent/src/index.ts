@@ -122,6 +122,7 @@ export {
 	type TruncationResult,
 	writeTool,
 } from "./core/tools/index.js";
-
 // Main entry point
 export { main } from "./main.js";
+// Theme utilities for custom tools
+export { getMarkdownTheme } from "./modes/interactive/theme/theme.js";
