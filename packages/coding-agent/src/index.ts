@@ -24,6 +24,7 @@ export {
 } from "./core/compaction.js";
 // Custom tools
 export type {
+	AgentToolUpdateCallback,
 	CustomAgentTool,
 	CustomToolFactory,
 	CustomToolsLoadResult,
