@@ -315,6 +315,65 @@ export function createWebhookServer(client: Client): express.Application {
 		});
 	});
 
+	// ========================================================================
+	// Cross-Platform Hub Endpoints
+	// ========================================================================
+
+	// Lazy import to avoid circular dependency
+	let hubMiddleware: ReturnType<typeof import("./cross-platform-hub.js").createHubWebhookMiddleware> | null = null;
+
+	async function getHubMiddleware() {
+		if (!hubMiddleware) {
+			const { getHub, createHubWebhookMiddleware } = await import("./cross-platform-hub.js");
+			const hub = getHub();
+			hub.registerDiscord(client);
+			hubMiddleware = createHubWebhookMiddleware(hub);
+		}
+		return hubMiddleware;
+	}
+
+	// POST /hub/message - Ingest cross-platform message
+	app.post("/hub/message", async (req, res) => {
+		const middleware = await getHubMiddleware();
+		await middleware.ingestMessage(req, res);
+	});
+
+	// POST /hub/broadcast - Broadcast to all platforms
+	app.post("/hub/broadcast", async (req, res) => {
+		const middleware = await getHubMiddleware();
+		await middleware.broadcast(req, res);
+	});
+
+	// POST /hub/github - GitHub webhook handler
+	app.post("/hub/github", async (req, res) => {
+		const middleware = await getHubMiddleware();
+		await middleware.githubWebhook(req, res);
+	});
+
+	// GET /hub/stats - Hub statistics
+	app.get("/hub/stats", async (_req, res) => {
+		const middleware = await getHubMiddleware();
+		middleware.stats(_req, res);
+	});
+
+	// GET /hub/routes - List routing rules
+	app.get("/hub/routes", async (_req, res) => {
+		const middleware = await getHubMiddleware();
+		middleware.routes(_req, res);
+	});
+
+	// POST /hub/routes - Add routing rule
+	app.post("/hub/routes", async (req, res) => {
+		const middleware = await getHubMiddleware();
+		middleware.addRoute(req, res);
+	});
+
+	// DELETE /hub/routes/:id - Remove routing rule
+	app.delete("/hub/routes/:id", async (req, res) => {
+		const middleware = await getHubMiddleware();
+		middleware.removeRoute(req, res);
+	});
+
 	// 404 handler
 	app.use((_req, res) => {
 		res.status(404).json({ error: "Not found" });

@@ -195,6 +195,63 @@ jobs:
 | Model providers | OpenRouter, Anthropic | Anthropic, Bedrock, Vertex |
 | Local development | Works with pi CLI | Separate tooling |
 
+## Cross-Platform Integration
+
+Pi Agent can notify Discord, Slack, and Telegram when events occur via the Cross-Platform Hub.
+
+### Setup
+
+1. Deploy the Discord bot with webhook server enabled
+2. Configure your workflow to use the hub:
+
+```yaml
+- uses: ./.github/actions/pi-agent
+  with:
+    openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+    hub_webhook_url: ${{ secrets.HUB_WEBHOOK_URL }}
+    hub_api_key: ${{ secrets.WEBHOOK_API_KEY }}
+    notify_platforms: "discord,telegram,slack"
+```
+
+### Hub Endpoints
+
+The Cross-Platform Hub provides these endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/hub/message` | POST | Ingest a cross-platform message |
+| `/hub/broadcast` | POST | Broadcast to all platforms |
+| `/hub/github` | POST | GitHub webhook handler |
+| `/hub/stats` | GET | Hub statistics |
+| `/hub/routes` | GET/POST | List or add routing rules |
+| `/hub/routes/:id` | DELETE | Remove a routing rule |
+
+### Message Flow
+
+```
+GitHub Action → Hub Webhook → Discord Bot → Routes → Telegram/Slack/Discord
+```
+
+### Example: Trading Alerts
+
+Route trading signals from Discord to all platforms:
+
+```bash
+curl -X POST "https://your-bot.example.com/hub/routes" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "id": "trading-signals",
+    "from": "discord",
+    "to": ["telegram", "slack"],
+    "toIds": {
+      "telegram": "123456789",
+      "slack": "C0123456789"
+    },
+    "enabled": true
+  }'
+```
+
 ## Troubleshooting
 
 ### Action not triggering

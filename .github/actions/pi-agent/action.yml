@@ -73,6 +73,18 @@ inputs:
     required: false
     default: "10"
 
+  # Cross-platform integration
+  hub_webhook_url:
+    description: "Cross-platform hub webhook URL for Discord/Slack/Telegram notifications"
+    required: false
+  hub_api_key:
+    description: "API key for cross-platform hub authentication"
+    required: false
+  notify_platforms:
+    description: "Comma-separated list of platforms to notify (discord,slack,telegram)"
+    required: false
+    default: "discord"
+
 outputs:
   conclusion:
     description: "Execution result: success, failure, or skipped"
@@ -270,6 +282,49 @@ runs:
           -f body="🤖 **Pi Agent** $STATUS
 
 [View run details](https://github.com/$REPO/actions/runs/$RUN_ID)"
+
+    - name: Notify cross-platform hub
+      if: always() && inputs.hub_webhook_url != ''
+      shell: bash
+      env:
+        HUB_WEBHOOK_URL: ${{ inputs.hub_webhook_url }}
+        HUB_API_KEY: ${{ inputs.hub_api_key }}
+        NOTIFY_PLATFORMS: ${{ inputs.notify_platforms }}
+        REPO: ${{ github.repository }}
+        EVENT_NAME: ${{ github.event_name }}
+        ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || '' }}
+        ACTOR: ${{ github.actor }}
+        CONCLUSION: ${{ steps.run-agent.outputs.conclusion || 'skipped' }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        # Build notification content
+        if [[ "$CONCLUSION" == "success" ]]; then
+          EMOJI="✅"
+          STATUS="completed successfully"
+        elif [[ "$CONCLUSION" == "skipped" ]]; then
+          EMOJI="⏭️"
+          STATUS="was skipped"
+        else
+          EMOJI="❌"
+          STATUS="failed"
+        fi
+
+        CONTENT="$EMOJI **Pi Agent** $STATUS on $REPO
+        Event: $EVENT_NAME
+        ${ISSUE_NUMBER:+Issue/PR: #$ISSUE_NUMBER}
+        Actor: @$ACTOR
+        [View run](https://github.com/$REPO/actions/runs/$RUN_ID)"
+
+        # Send to hub
+        curl -s -X POST "$HUB_WEBHOOK_URL/hub/message" \
+          -H "Content-Type: application/json" \
+          ${HUB_API_KEY:+-H "X-API-Key: $HUB_API_KEY"} \
+          -d "{
+            \"source\": \"github\",
+            \"sourceId\": \"$REPO#${ISSUE_NUMBER:-$RUN_ID}\",
+            \"sourceUser\": \"$ACTOR\",
+            \"content\": \"$CONTENT\"
+          }" || echo "Hub notification failed (non-fatal)"
 
     - name: Set skipped output
       if: steps.check-trigger.outputs.should_run != 'true'

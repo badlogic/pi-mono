@@ -104,7 +104,81 @@ src/
 ├── music/               # AI music generation
 │   └── suno-service.ts  # Suno API integration (sunoapi.org)
 ├── knowledge/           # RAG knowledge base
+├── cross-platform-hub.ts # Unified Discord/Slack/Telegram/GitHub messaging
 └── news/                # News feed integration
+```
+
+### Cross-Platform Hub
+
+Unified messaging layer that connects Discord, Slack, Telegram, and GitHub Actions:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Discord   │     │    Slack    │     │  Telegram   │     │   GitHub    │
+│    Bot      │     │    (MOM)    │     │    Bot      │     │   Action    │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │                   │
+       ▼                   ▼                   ▼                   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         CROSS-PLATFORM HUB                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │  Event Bus  │  │   Router    │  │   Context   │  │  Webhooks   │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Files:**
+- `src/cross-platform-hub.ts` - Core hub with event routing, platform adapters
+- `src/webhook-server.ts` - Hub webhook endpoints (`/hub/*`)
+
+**Hub Endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/hub/message` | POST | Ingest cross-platform message |
+| `/hub/broadcast` | POST | Broadcast to all platforms |
+| `/hub/github` | POST | GitHub webhook handler |
+| `/hub/stats` | GET | Hub statistics |
+| `/hub/routes` | GET/POST/DELETE | Manage routing rules |
+
+**TypeScript API:**
+```typescript
+import { getHub, CrossPlatformHub } from "./cross-platform-hub.js";
+
+// Get singleton hub instance
+const hub = getHub();
+
+// Register platforms
+hub.registerDiscord(discordClient, reportChannelId);
+hub.registerTelegram(telegramBot, chatId);
+hub.registerSlack(slackWebClient, channelId);
+hub.registerGitHub(webhookUrl, token);
+
+// Ingest a message (triggers routing rules)
+await hub.ingest({
+  id: "msg-123",
+  timestamp: new Date(),
+  source: "discord",
+  sourceId: "channel-123",
+  sourceUser: "user123",
+  content: "Trading signal: BUY BTC",
+});
+
+// Broadcast to all connected platforms
+await hub.broadcast("System alert: New deployment", {
+  platforms: ["discord", "telegram"],
+  priority: "high",
+});
+
+// Add custom routing rule
+hub.addRoute({
+  id: "trading-alerts",
+  from: "discord",
+  to: ["telegram", "slack"],
+  toIds: { telegram: "123456789", slack: "C0123456" },
+  filter: (msg) => msg.content.includes("signal"),
+  enabled: true,
+});
 ```
 
 ### OpenHands Software Agent Integration
