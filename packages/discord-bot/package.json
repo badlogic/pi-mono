@@ -17,7 +17,7 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
-    "test": "tsx src/math-utils.test.ts",
+    "test": "vitest --run",
     "type-check": "tsc --noEmit",
     "prepare": "husky install || true"
   },
@@ -55,7 +55,8 @@
     "husky": "^8.0.3",
     "prettier": "^3.2.5",
     "tsx": "^4.7.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   },
   "keywords": [
     "discord",
