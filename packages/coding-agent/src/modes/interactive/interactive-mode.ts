@@ -1435,6 +1435,10 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
+				() => {
+					this.stop();
+					process.exit(0);
+				},
 			);
 			return { component: selector, focus: selector.getSessionList() };
 		});
