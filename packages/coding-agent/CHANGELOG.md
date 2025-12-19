@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.24.3] - 2025-12-19
+
 ### Fixed
 
 - **Footer overflow on narrow terminals**: Fixed footer path display exceeding terminal width when resizing to very narrow widths, causing rendering crashes. /arminsayshi
