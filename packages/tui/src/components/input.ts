@@ -2,6 +2,9 @@ import { isAltBackspace, isArrowLeft, isArrowRight, isCtrlA, isCtrlE, isCtrlK, i
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
+// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
+const segmenter = new Intl.Segmenter();
+
 /**
  * Input component - single-line text input with horizontal scrolling
  */
@@ -70,34 +73,48 @@ export class Input implements Component {
 		}
 
 		if (data === "\x7f" || data === "\x08") {
-			// Backspace
+			// Backspace - delete grapheme before cursor (handles emojis, etc.)
 			if (this.cursor > 0) {
-				this.value = this.value.slice(0, this.cursor - 1) + this.value.slice(this.cursor);
-				this.cursor--;
+				const beforeCursor = this.value.slice(0, this.cursor);
+				const graphemes = [...segmenter.segment(beforeCursor)];
+				const lastGrapheme = graphemes[graphemes.length - 1];
+				const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
+				this.value = this.value.slice(0, this.cursor - graphemeLength) + this.value.slice(this.cursor);
+				this.cursor -= graphemeLength;
 			}
 			return;
 		}
 
 		if (isArrowLeft(data)) {
-			// Left arrow
+			// Left arrow - move by one grapheme (handles emojis, etc.)
 			if (this.cursor > 0) {
-				this.cursor--;
+				const beforeCursor = this.value.slice(0, this.cursor);
+				const graphemes = [...segmenter.segment(beforeCursor)];
+				const lastGrapheme = graphemes[graphemes.length - 1];
+				this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
 			}
 			return;
 		}
 
 		if (isArrowRight(data)) {
-			// Right arrow
+			// Right arrow - move by one grapheme (handles emojis, etc.)
 			if (this.cursor < this.value.length) {
-				this.cursor++;
+				const afterCursor = this.value.slice(this.cursor);
+				const graphemes = [...segmenter.segment(afterCursor)];
+				const firstGrapheme = graphemes[0];
+				this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
 			}
 			return;
 		}
 
 		if (data === "\x1b[3~") {
-			// Delete
+			// Delete - delete grapheme at cursor (handles emojis, etc.)
 			if (this.cursor < this.value.length) {
-				this.value = this.value.slice(0, this.cursor) + this.value.slice(this.cursor + 1);
+				const afterCursor = this.value.slice(this.cursor);
+				const graphemes = [...segmenter.segment(afterCursor)];
+				const firstGrapheme = graphemes[0];
+				const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+				this.value = this.value.slice(0, this.cursor) + this.value.slice(this.cursor + graphemeLength);
 			}
 			return;
 		}

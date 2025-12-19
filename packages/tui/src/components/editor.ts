@@ -793,14 +793,20 @@ export class Editor implements Component {
 		this.historyIndex = -1; // Exit history browsing mode
 
 		if (this.state.cursorCol > 0) {
-			// Delete character in current line
+			// Delete grapheme before cursor (handles emojis, combining characters, etc.)
 			const line = this.state.lines[this.state.cursorLine] || "";
+			const beforeCursor = line.slice(0, this.state.cursorCol);
 
-			const before = line.slice(0, this.state.cursorCol - 1);
+			// Find the last grapheme in the text before cursor
+			const graphemes = [...segmenter.segment(beforeCursor)];
+			const lastGrapheme = graphemes[graphemes.length - 1];
+			const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
+
+			const before = line.slice(0, this.state.cursorCol - graphemeLength);
 			const after = line.slice(this.state.cursorCol);
 
 			this.state.lines[this.state.cursorLine] = before + after;
-			this.state.cursorCol--;
+			this.state.cursorCol -= graphemeLength;
 		} else if (this.state.cursorLine > 0) {
 			// Merge with previous line
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -943,9 +949,16 @@ export class Editor implements Component {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
-			// Delete character at cursor position (forward delete)
+			// Delete grapheme at cursor position (handles emojis, combining characters, etc.)
+			const afterCursor = currentLine.slice(this.state.cursorCol);
+
+			// Find the first grapheme at cursor
+			const graphemes = [...segmenter.segment(afterCursor)];
+			const firstGrapheme = graphemes[0];
+			const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+
 			const before = currentLine.slice(0, this.state.cursorCol);
-			const after = currentLine.slice(this.state.cursorCol + 1);
+			const after = currentLine.slice(this.state.cursorCol + graphemeLength);
 			this.state.lines[this.state.cursorLine] = before + after;
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
 			// At end of line - merge with next line
@@ -1087,18 +1100,24 @@ export class Editor implements Component {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 			if (deltaCol > 0) {
-				// Moving right
+				// Moving right - move by one grapheme (handles emojis, combining characters, etc.)
 				if (this.state.cursorCol < currentLine.length) {
-					this.state.cursorCol++;
+					const afterCursor = currentLine.slice(this.state.cursorCol);
+					const graphemes = [...segmenter.segment(afterCursor)];
+					const firstGrapheme = graphemes[0];
+					this.state.cursorCol += firstGrapheme ? firstGrapheme.segment.length : 1;
 				} else if (this.state.cursorLine < this.state.lines.length - 1) {
 					// Wrap to start of next logical line
 					this.state.cursorLine++;
 					this.state.cursorCol = 0;
 				}
 			} else {
-				// Moving left
+				// Moving left - move by one grapheme (handles emojis, combining characters, etc.)
 				if (this.state.cursorCol > 0) {
-					this.state.cursorCol--;
+					const beforeCursor = currentLine.slice(0, this.state.cursorCol);
+					const graphemes = [...segmenter.segment(beforeCursor)];
+					const lastGrapheme = graphemes[graphemes.length - 1];
+					this.state.cursorCol -= lastGrapheme ? lastGrapheme.segment.length : 1;
 				} else if (this.state.cursorLine > 0) {
 					// Wrap to end of previous logical line
 					this.state.cursorLine--;
