@@ -17,6 +17,14 @@ Full-featured example demonstrating:
 - Proper branching support via details storage
 - State management without external files
 
+### subagent/
+Delegate tasks to specialized subagents with isolated context windows. Includes:
+- `subagent.ts` - The custom tool (single, parallel, and chain modes)
+- `agents/` - Sample agent definitions (scout, planner, reviewer, worker)
+- `commands/` - Workflow presets (/implement, /scout-and-plan, /implement-and-review)
+
+See [subagent/README.md](subagent/README.md) for full documentation.
+
 ## Usage
 
 ```bash
