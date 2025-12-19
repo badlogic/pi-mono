@@ -29,11 +29,142 @@ export interface ScopedModel {
 }
 
 /**
+ * Helper to check if a model ID looks like an alias (no date suffix)
+ * Dates are typically in format: -20241022 or -20250929
+ */
+function isAlias(id: string): boolean {
+	// Check if ID ends with -latest
+	if (id.endsWith("-latest")) return true;
+
+	// Check if ID ends with a date pattern (-YYYYMMDD)
+	const datePattern = /-\d{8}$/;
+	return !datePattern.test(id);
+}
+
+/**
+ * Try to match a pattern to a model from the available models list.
+ * Returns the matched model or null if no match found.
+ */
+function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Model<Api> | null {
+	// Check for provider/modelId format (provider is everything before the first /)
+	const slashIndex = modelPattern.indexOf("/");
+	if (slashIndex !== -1) {
+		const provider = modelPattern.substring(0, slashIndex);
+		const modelId = modelPattern.substring(slashIndex + 1);
+		const providerMatch = availableModels.find(
+			(m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
+		);
+		if (providerMatch) {
+			return providerMatch;
+		}
+		// No exact provider/model match - fall through to other matching
+	}
+
+	// Check for exact ID match (case-insensitive)
+	const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
+	if (exactMatch) {
+		return exactMatch;
+	}
+
+	// No exact match - fall back to partial matching
+	const matches = availableModels.filter(
+		(m) =>
+			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
+			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
+	);
+
+	if (matches.length === 0) {
+		return null;
+	}
+
+	// Separate into aliases and dated versions
+	const aliases = matches.filter((m) => isAlias(m.id));
+	const datedVersions = matches.filter((m) => !isAlias(m.id));
+
+	if (aliases.length > 0) {
+		// Prefer alias - if multiple aliases, pick the one that sorts highest
+		aliases.sort((a, b) => b.id.localeCompare(a.id));
+		return aliases[0];
+	} else {
+		// No alias found, pick latest dated version
+		datedVersions.sort((a, b) => b.id.localeCompare(a.id));
+		return datedVersions[0];
+	}
+}
+
+export interface ParsedModelResult {
+	model: Model<Api> | null;
+	thinkingLevel: ThinkingLevel;
+	warning: string | null;
+}
+
+/**
+ * Parse a pattern to extract model and thinking level.
+ * Handles models with colons in their IDs (e.g., OpenRouter's :exacto suffix).
+ *
+ * Algorithm:
+ * 1. Try to match full pattern as a model
+ * 2. If found, return it with "off" thinking level
+ * 3. If not found and has colons, split on last colon:
+ *    - If suffix is valid thinking level, use it and recurse on prefix
+ *    - If suffix is invalid, warn and recurse on prefix with "off"
+ *
+ * @internal Exported for testing
+ */
+export function parseModelPattern(pattern: string, availableModels: Model<Api>[]): ParsedModelResult {
+	// Try exact match first
+	const exactMatch = tryMatchModel(pattern, availableModels);
+	if (exactMatch) {
+		return { model: exactMatch, thinkingLevel: "off", warning: null };
+	}
+
+	// No match - try splitting on last colon if present
+	const lastColonIndex = pattern.lastIndexOf(":");
+	if (lastColonIndex === -1) {
+		// No colons, pattern simply doesn't match any model
+		return { model: null, thinkingLevel: "off", warning: null };
+	}
+
+	const prefix = pattern.substring(0, lastColonIndex);
+	const suffix = pattern.substring(lastColonIndex + 1);
+
+	if (isValidThinkingLevel(suffix)) {
+		// Valid thinking level - recurse on prefix and use this level
+		const result = parseModelPattern(prefix, availableModels);
+		if (result.model) {
+			// Only use this thinking level if no warning from inner recursion
+			// (if there was an invalid suffix deeper, we already have "off")
+			return {
+				model: result.model,
+				thinkingLevel: result.warning ? "off" : suffix,
+				warning: result.warning,
+			};
+		}
+		return result;
+	} else {
+		// Invalid suffix - recurse on prefix with "off" and warn
+		const result = parseModelPattern(prefix, availableModels);
+		if (result.model) {
+			return {
+				model: result.model,
+				thinkingLevel: "off",
+				warning: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using "off" instead.`,
+			};
+		}
+		return result;
+	}
+}
+
+/**
  * Resolve model patterns to actual Model objects with optional thinking levels
  * Format: "pattern:level" where :level is optional
  * For each pattern, finds all matching models and picks the best version:
  * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
  * 2. If no alias, pick the latest dated version
+ *
+ * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
+ * The algorithm tries to match the full pattern first, then progressively
+ * strips colon-suffixes to find a match.
  */
 export async function resolveModelScope(patterns: string[]): Promise<ScopedModel[]> {
 	const { models: availableModels, error } = await getAvailableModels();
@@ -46,95 +177,20 @@ export async function resolveModelScope(patterns: string[]): Promise<ScopedModel
 	const scopedModels: ScopedModel[] = [];
 
 	for (const pattern of patterns) {
-		// Parse pattern:level format
-		const parts = pattern.split(":");
-		const modelPattern = parts[0];
-		let thinkingLevel: ThinkingLevel = "off";
+		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
 
-		if (parts.length > 1) {
-			const level = parts[1];
-			if (isValidThinkingLevel(level)) {
-				thinkingLevel = level;
-			} else {
-				console.warn(
-					chalk.yellow(`Warning: Invalid thinking level "${level}" in pattern "${pattern}". Using "off" instead.`),
-				);
-			}
+		if (warning) {
+			console.warn(chalk.yellow(`Warning: ${warning}`));
 		}
 
-		// Check for provider/modelId format (provider is everything before the first /)
-		const slashIndex = modelPattern.indexOf("/");
-		if (slashIndex !== -1) {
-			const provider = modelPattern.substring(0, slashIndex);
-			const modelId = modelPattern.substring(slashIndex + 1);
-			const providerMatch = availableModels.find(
-				(m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
-			);
-			if (providerMatch) {
-				if (
-					!scopedModels.find(
-						(sm) => sm.model.id === providerMatch.id && sm.model.provider === providerMatch.provider,
-					)
-				) {
-					scopedModels.push({ model: providerMatch, thinkingLevel });
-				}
-				continue;
-			}
-			// No exact provider/model match - fall through to other matching
-		}
-
-		// Check for exact ID match (case-insensitive)
-		const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
-		if (exactMatch) {
-			// Exact match found - use it directly
-			if (!scopedModels.find((sm) => sm.model.id === exactMatch.id && sm.model.provider === exactMatch.provider)) {
-				scopedModels.push({ model: exactMatch, thinkingLevel });
-			}
+		if (!model) {
+			console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
 			continue;
-		}
-
-		// No exact match - fall back to partial matching
-		const matches = availableModels.filter(
-			(m) =>
-				m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-				m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
-		);
-
-		if (matches.length === 0) {
-			console.warn(chalk.yellow(`Warning: No models match pattern "${modelPattern}"`));
-			continue;
-		}
-
-		// Helper to check if a model ID looks like an alias (no date suffix)
-		// Dates are typically in format: -20241022 or -20250929
-		const isAlias = (id: string): boolean => {
-			// Check if ID ends with -latest
-			if (id.endsWith("-latest")) return true;
-
-			// Check if ID ends with a date pattern (-YYYYMMDD)
-			const datePattern = /-\d{8}$/;
-			return !datePattern.test(id);
-		};
-
-		// Separate into aliases and dated versions
-		const aliases = matches.filter((m) => isAlias(m.id));
-		const datedVersions = matches.filter((m) => !isAlias(m.id));
-
-		let bestMatch: Model<Api>;
-
-		if (aliases.length > 0) {
-			// Prefer alias - if multiple aliases, pick the one that sorts highest
-			aliases.sort((a, b) => b.id.localeCompare(a.id));
-			bestMatch = aliases[0];
-		} else {
-			// No alias found, pick latest dated version
-			datedVersions.sort((a, b) => b.id.localeCompare(a.id));
-			bestMatch = datedVersions[0];
 		}
 
 		// Avoid duplicates
-		if (!scopedModels.find((sm) => sm.model.id === bestMatch.id && sm.model.provider === bestMatch.provider)) {
-			scopedModels.push({ model: bestMatch, thinkingLevel });
+		if (!scopedModels.find((sm) => sm.model.id === model.id && sm.model.provider === model.provider)) {
+			scopedModels.push({ model, thinkingLevel });
 		}
 	}
 
