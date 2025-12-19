@@ -1,5 +1,15 @@
 import type { Model } from "@mariozechner/pi-ai";
-import { Container, Input, isEscape, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import {
+	Container,
+	Input,
+	isArrowDown,
+	isArrowUp,
+	isEnter,
+	isEscape,
+	Spacer,
+	Text,
+	type TUI,
+} from "@mariozechner/pi-tui";
 import { getAvailableModels } from "../../../core/model-config.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
@@ -175,17 +185,17 @@ export class ModelSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		// Up arrow - wrap to bottom when at top
-		if (keyData === "\x1b[A") {
+		if (isArrowUp(keyData)) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 		}
 		// Down arrow - wrap to top when at bottom
-		else if (keyData === "\x1b[B") {
+		else if (isArrowDown(keyData)) {
 			this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 		}
 		// Enter
-		else if (keyData === "\r") {
+		else if (isEnter(keyData)) {
 			const selectedModel = this.filteredModels[this.selectedIndex];
 			if (selectedModel) {
 				this.handleSelect(selectedModel.model);

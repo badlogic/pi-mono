@@ -1,4 +1,15 @@
-import { type Component, Container, isCtrlC, isEscape, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import {
+	type Component,
+	Container,
+	isArrowDown,
+	isArrowUp,
+	isCtrlC,
+	isEnter,
+	isEscape,
+	Spacer,
+	Text,
+	truncateToWidth,
+} from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -79,15 +90,15 @@ class UserMessageList implements Component {
 
 	handleInput(keyData: string): void {
 		// Up arrow - go to previous (older) message, wrap to bottom when at top
-		if (keyData === "\x1b[A") {
+		if (isArrowUp(keyData)) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.messages.length - 1 : this.selectedIndex - 1;
 		}
 		// Down arrow - go to next (newer) message, wrap to top when at bottom
-		else if (keyData === "\x1b[B") {
+		else if (isArrowDown(keyData)) {
 			this.selectedIndex = this.selectedIndex === this.messages.length - 1 ? 0 : this.selectedIndex + 1;
 		}
 		// Enter - select message and branch
-		else if (keyData === "\r") {
+		else if (isEnter(keyData)) {
 			const selected = this.messages[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.index);

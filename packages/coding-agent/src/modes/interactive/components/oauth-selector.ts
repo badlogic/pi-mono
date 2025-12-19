@@ -1,4 +1,4 @@
-import { Container, isEscape, Spacer, TruncatedText } from "@mariozechner/pi-tui";
+import { Container, isArrowDown, isArrowUp, isEnter, isEscape, Spacer, TruncatedText } from "@mariozechner/pi-tui";
 import { getOAuthProviders, type OAuthProviderInfo } from "../../../core/oauth/index.js";
 import { loadOAuthCredentials } from "../../../core/oauth/storage.js";
 import { theme } from "../theme/theme.js";
@@ -90,17 +90,17 @@ export class OAuthSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		// Up arrow
-		if (keyData === "\x1b[A") {
+		if (isArrowUp(keyData)) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
 		}
 		// Down arrow
-		else if (keyData === "\x1b[B") {
+		else if (isArrowDown(keyData)) {
 			this.selectedIndex = Math.min(this.allProviders.length - 1, this.selectedIndex + 1);
 			this.updateList();
 		}
 		// Enter
-		else if (keyData === "\r") {
+		else if (isEnter(keyData)) {
 			const selectedProvider = this.allProviders[this.selectedIndex];
 			if (selectedProvider?.available) {
 				this.onSelectCallback(selectedProvider.id);

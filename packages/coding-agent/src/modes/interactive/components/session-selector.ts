@@ -2,7 +2,10 @@ import {
 	type Component,
 	Container,
 	Input,
+	isArrowDown,
+	isArrowUp,
 	isCtrlC,
+	isEnter,
 	isEscape,
 	Spacer,
 	Text,
@@ -134,15 +137,15 @@ class SessionList implements Component {
 
 	handleInput(keyData: string): void {
 		// Up arrow
-		if (keyData === "\x1b[A") {
+		if (isArrowUp(keyData)) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 		}
 		// Down arrow
-		else if (keyData === "\x1b[B") {
+		else if (isArrowDown(keyData)) {
 			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
 		// Enter
-		else if (keyData === "\r") {
+		else if (isEnter(keyData)) {
 			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.path);
