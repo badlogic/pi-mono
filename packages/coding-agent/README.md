@@ -843,7 +843,7 @@ Pi is opinionated about what it won't do. These are intentional design decisions
 
 **No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). The agent reads them on demand. [Would you like to know more?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-**No sub-agents.** Spawn pi instances via tmux, or build a task tool with [custom tools](#custom-tools). Full observability and steerability.
+**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/custom-tools/subagent/) with [custom tools](#custom-tools). Full observability and steerability.
 
 **No permission popups.** Security theater. Run in a container or build your own with [Hooks](#hooks).
 
