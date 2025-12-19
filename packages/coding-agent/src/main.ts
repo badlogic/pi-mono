@@ -21,7 +21,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { loadSlashCommands } from "./core/slash-commands.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
 import { allTools, codingTools } from "./core/tools/index.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runAcpMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
@@ -178,6 +178,20 @@ export async function main(args: string[]) {
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
 		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
 		process.exit(1);
+	}
+
+	// Validate: ACP mode doesn't support @file arguments
+	if (parsed.mode === "acp" && parsed.fileArgs.length > 0) {
+		console.error(chalk.red("Error: @file arguments are not supported in ACP mode"));
+		process.exit(1);
+	}
+
+	// ACP mode: start JSON-RPC server over stdio without initializing the TUI/theme
+	// and without requiring model configuration. The ACP handshake (initialize)
+	// must always work so clients can negotiate capabilities.
+	if (parsed.mode === "acp") {
+		await runAcpMode();
+		return;
 	}
 
 	// Process @file arguments

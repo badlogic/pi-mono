@@ -2,6 +2,7 @@
  * Run modes for the coding agent.
  */
 
+export { runAcpMode } from "./acp/acp-mode.js";
 export { InteractiveMode } from "./interactive/interactive-mode.js";
 export { runPrintMode } from "./print-mode.js";
 export { type ModelInfo, RpcClient, type RpcClientOptions, type RpcEventListener } from "./rpc/rpc-client.js";

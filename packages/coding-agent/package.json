@@ -39,6 +39,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
+		"@agentclientprotocol/sdk": "^0.4.0",
 		"@mariozechner/pi-agent-core": "^0.24.0",
 		"@mariozechner/pi-ai": "^0.24.0",
 		"@mariozechner/pi-tui": "^0.24.0",
