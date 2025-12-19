@@ -16,6 +16,8 @@
 
 - **Dynamic API key refresh**: OAuth tokens (GitHub Copilot, Anthropic OAuth) are now refreshed before each LLM call, preventing failures in long-running agent loops where tokens expire mid-session. ([#223](https://github.com/badlogic/pi-mono/pull/223) by [@kim0](https://github.com/kim0))
 
+- **ACP mode improvements**: Added `PI_ACP_DEBUG` file logging, advertised ACP slash commands (`/thinking`, `/compact`, `/clear`), and improved tool call titles/error visibility for editor integrations.
+
 - **`/hotkeys` command**: Shows all keyboard shortcuts in a formatted table.
 
 - **Markdown table borders**: Tables now render with proper top and bottom borders.

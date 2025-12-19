@@ -46,7 +46,7 @@ function loadOAuthCredentialsFromDisk(): { hasCopilot: boolean; hasAnthropic: bo
 		const parsed = JSON.parse(raw) as Record<string, unknown>;
 		return {
 			hasCopilot: Boolean(parsed["github-copilot"]),
-			hasAnthropic: Boolean(parsed["anthropic"]),
+			hasAnthropic: Boolean(parsed.anthropic),
 			raw,
 		};
 	} catch {

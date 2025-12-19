@@ -35,6 +35,7 @@ import { SessionManager } from "../../core/session-manager.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 import { buildSystemPrompt } from "../../core/system-prompt.js";
 import { codingTools } from "../../core/tools/index.js";
+import { acpLog } from "./acp-mode.js";
 import { AcpSessionManager, type AcpSessionState } from "./acp-session-manager.js";
 
 export interface AcpAgentConfig {
@@ -64,6 +65,7 @@ export class AcpAgent implements AcpAgentInterface {
 	}
 
 	async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
+		acpLog("info", "initialize called");
 		return {
 			protocolVersion: 1,
 			agentCapabilities: {
@@ -87,7 +89,47 @@ export class AcpAgent implements AcpAgentInterface {
 		throw new Error("Authentication not implemented");
 	}
 
+	/**
+	 * Get the list of available slash commands for ACP.
+	 */
+	private getAvailableCommands(): Array<{ name: string; description: string; input?: { hint: string } | null }> {
+		return [
+			{
+				name: "thinking",
+				description: "Set reasoning level (off, minimal, low, medium, high, xhigh)",
+				input: { hint: "level" },
+			},
+			{
+				name: "compact",
+				description: "Manually compact the session context",
+				input: { hint: "optional instructions" },
+			},
+			{ name: "clear", description: "Clear context and start a fresh session" },
+			{ name: "test-error", description: "Trigger a test error to verify error handling" },
+		];
+	}
+
+	/**
+	 * Send available commands to the client.
+	 */
+	private sendAvailableCommands(sessionId: string): void {
+		const commands = this.getAvailableCommands();
+		acpLog("info", "Sending available commands", { sessionId, commands: commands.map((c) => c.name) });
+		this.connection
+			.sessionUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: "available_commands_update",
+					availableCommands: commands,
+				},
+			})
+			.catch((err) => {
+				acpLog("error", "Failed to send available commands", err);
+			});
+	}
+
 	async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
+		acpLog("info", "newSession called", { cwd: params.cwd });
 		const sessionId = crypto.randomUUID();
 		const cwd = params.cwd || this.config.cwd;
 
@@ -122,6 +164,12 @@ export class AcpAgent implements AcpAgentInterface {
 				})),
 			};
 		}
+
+		// Send available slash commands to client after returning the response
+		// Use setImmediate to ensure the response is sent first
+		setImmediate(() => {
+			this.sendAvailableCommands(sessionId);
+		});
 
 		return response;
 	}
@@ -159,6 +207,7 @@ export class AcpAgent implements AcpAgentInterface {
 	}
 
 	async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {
+		acpLog("info", "setSessionModel called", { sessionId: params.sessionId, modelId: params.modelId });
 		const state = this.sessionManager.get(params.sessionId);
 		const agentSession = state.agentSession;
 
@@ -190,23 +239,131 @@ export class AcpAgent implements AcpAgentInterface {
 	}
 
 	async prompt(params: PromptRequest): Promise<PromptResponse> {
+		acpLog("info", "prompt called", { sessionId: params.sessionId, promptParts: params.prompt.length });
 		const state = this.sessionManager.get(params.sessionId);
 		const agentSession = state.agentSession;
 
 		// Convert ACP prompt parts to text and attachments
 		const { text, attachments } = this.convertPromptParts(params.prompt);
 
+		// Check for slash commands
+		const commandResult = await this.handleSlashCommand(params.sessionId, state, text.trim());
+		if (commandResult.handled) {
+			return {
+				stopReason: "end_turn" as const,
+			};
+		}
+
 		// Send prompt (don't await - events will stream)
 		void this.runWithCwd(state.cwd, async () => {
 			await agentSession.prompt(text, { attachments });
 		}).catch((error: unknown) => {
-			// Log error but don't throw - error events will be sent via sessionUpdate
-			console.error("Prompt error:", error);
+			const errorMessage = error instanceof Error ? error.stack || error.message : String(error);
+			acpLog("error", "Prompt error:", errorMessage);
 		});
 
 		return {
 			stopReason: "end_turn" as const,
 		};
+	}
+
+	private parseThinkingLevel(value: string): ThinkingLevel | null {
+		switch (value) {
+			case "off":
+			case "minimal":
+			case "low":
+			case "medium":
+			case "high":
+			case "xhigh":
+				return value;
+			default:
+				return null;
+		}
+	}
+
+	/**
+	 * Handle slash commands. Returns { handled: true } if command was processed.
+	 */
+	private async handleSlashCommand(
+		sessionId: string,
+		state: AcpSessionState,
+		text: string,
+	): Promise<{ handled: boolean }> {
+		if (!text.startsWith("/")) {
+			return { handled: false };
+		}
+
+		const spaceIndex = text.indexOf(" ");
+		const command = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+
+		acpLog("info", "Handling slash command", { command, args });
+
+		switch (command) {
+			case "thinking": {
+				const validLevels = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+				const level = args.toLowerCase();
+				const parsed = this.parseThinkingLevel(level);
+				if (!parsed) {
+					this.sendAgentMessage(
+						sessionId,
+						`Invalid thinking level: ${args}. Valid levels: ${validLevels.join(", ")}`,
+					);
+					return { handled: true };
+				}
+				state.agentSession.setThinkingLevel(parsed);
+				this.sendAgentMessage(sessionId, `Thinking level set to: ${parsed}`);
+				return { handled: true };
+			}
+
+			case "compact": {
+				this.sendAgentMessage(sessionId, "Compacting session context...");
+				try {
+					await this.runWithCwd(state.cwd, async () => {
+						await state.agentSession.compact(args || undefined);
+					});
+					this.sendAgentMessage(sessionId, "Context compacted successfully.");
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					this.sendAgentMessage(sessionId, `Error compacting: ${msg}`);
+				}
+				return { handled: true };
+			}
+
+			case "clear": {
+				await state.agentSession.reset();
+				this.sendAgentMessage(sessionId, "Session context cleared.");
+				return { handled: true };
+			}
+
+			case "test-error": {
+				// Simulate an error for testing error relay
+				this.sendAgentMessage(sessionId, "Error: This is a test error to verify error handling works correctly.");
+				return { handled: true };
+			}
+
+			default:
+				// Unknown command - let it pass through to the model
+				return { handled: false };
+		}
+	}
+
+	/**
+	 * Send an agent message chunk to the client.
+	 */
+	private sendAgentMessage(sessionId: string, text: string): void {
+		this.connection
+			.sessionUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: {
+						type: "text",
+						text,
+					},
+				},
+			})
+			.catch(() => {});
 	}
 
 	async cancel(params: CancelNotification): Promise<void> {
@@ -259,6 +416,10 @@ export class AcpAgent implements AcpAgentInterface {
 			// Get initial model
 			const { models: availableModels } = await getAvailableModels();
 			const initialModel = availableModels.length > 0 ? availableModels[0] : null;
+			acpLog("info", "Initial model selected", {
+				model: initialModel ? `${initialModel.provider}/${initialModel.id}` : null,
+				availableCount: availableModels.length,
+			});
 
 			if (!initialModel) {
 				throw new Error("No models available. Please configure API keys.");
@@ -352,10 +513,31 @@ export class AcpAgent implements AcpAgentInterface {
 			}
 
 			case "message_end": {
-				const message = event.message as { role?: string };
+				const message = event.message as {
+					role?: string;
+					content?: unknown;
+					errorMessage?: string;
+					stopReason?: string;
+				};
 				if (message.role === "assistant") {
 					const hadTextDeltas = this.assistantTextDeltaEmittedBySession.get(sessionId) ?? false;
-					if (!hadTextDeltas) {
+
+					// If there's an error, send it as an agent message so the user sees it
+					if (message.errorMessage) {
+						acpLog("error", "Model error", { error: message.errorMessage });
+						this.connection
+							.sessionUpdate({
+								sessionId,
+								update: {
+									sessionUpdate: "agent_message_chunk",
+									content: {
+										type: "text",
+										text: `Error: ${message.errorMessage}`,
+									},
+								},
+							})
+							.catch(() => {});
+					} else if (!hadTextDeltas) {
 						const text = this.extractTextFromAssistantMessage(event.message);
 						if (text.trim().length > 0) {
 							this.connection
@@ -387,7 +569,7 @@ export class AcpAgent implements AcpAgentInterface {
 						update: {
 							sessionUpdate: "tool_call",
 							toolCallId: event.toolCallId,
-							title: event.toolName,
+							title: this.getToolTitle(event.toolName, args),
 							kind: this.toToolKind(event.toolName),
 							status: "pending",
 							locations: this.toLocations(event.toolName, args),
@@ -446,6 +628,8 @@ export class AcpAgent implements AcpAgentInterface {
 				this.toolArgsByCallId.delete(event.toolCallId);
 				break;
 			}
+
+			// turn_end and agent_end are handled implicitly - no action needed
 		}
 	}
 
@@ -497,7 +681,7 @@ export class AcpAgent implements AcpAgentInterface {
 		const contents: ToolCallContent[] = [];
 
 		const resultRecord = this.asRecord(result);
-		const rawContent = "content" in resultRecord ? resultRecord["content"] : result;
+		const rawContent = "content" in resultRecord ? resultRecord.content : result;
 
 		// Preserve structured tool output content blocks (text/image/etc.) if present.
 		if (Array.isArray(rawContent)) {
@@ -525,17 +709,17 @@ export class AcpAgent implements AcpAgentInterface {
 
 	private mapToolContentBlock(block: unknown): Extract<ToolCallContent, { type: "content" }>["content"] {
 		if (this.isRecord(block)) {
-			const type = block["type"];
+			const type = block.type;
 
-			if (type === "text" && typeof block["text"] === "string") {
-				return { type: "text", text: block["text"] };
+			if (type === "text" && typeof block.text === "string") {
+				return { type: "text", text: block.text };
 			}
 
-			if (type === "image" && typeof block["data"] === "string" && typeof block["mimeType"] === "string") {
-				const uri = typeof block["uri"] === "string" ? block["uri"] : undefined;
+			if (type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") {
+				const uri = typeof block.uri === "string" ? block.uri : undefined;
 				return uri
-					? { type: "image", data: block["data"], mimeType: block["mimeType"], uri }
-					: { type: "image", data: block["data"], mimeType: block["mimeType"] };
+					? { type: "image", data: block.data, mimeType: block.mimeType, uri }
+					: { type: "image", data: block.data, mimeType: block.mimeType };
 			}
 		}
 
@@ -558,8 +742,8 @@ export class AcpAgent implements AcpAgentInterface {
 			const newText = this.getStringArg(args, ["newText", "new_text"]);
 			if (!newText) return undefined;
 
-			const details = this.asRecord(result["details"]);
-			const unifiedDiff = typeof details["diff"] === "string" ? details["diff"] : undefined;
+			const details = this.asRecord(result.details);
+			const unifiedDiff = typeof details.diff === "string" ? details.diff : undefined;
 
 			return {
 				type: "diff",
@@ -580,6 +764,52 @@ export class AcpAgent implements AcpAgentInterface {
 			oldText: null,
 			newText,
 		};
+	}
+
+	/**
+	 * Generate a descriptive title for a tool call.
+	 */
+	private getToolTitle(toolName: string, args: Record<string, unknown>): string {
+		const tool = toolName.toLowerCase();
+
+		switch (tool) {
+			case "bash": {
+				const command = this.getStringArg(args, ["command"]);
+				if (command) {
+					// Truncate long commands
+					const maxLen = 80;
+					const truncated = command.length > maxLen ? command.slice(0, maxLen) + "..." : command;
+					return `bash: ${truncated}`;
+				}
+				return "bash";
+			}
+			case "read": {
+				const path = this.getStringArg(args, ["path"]);
+				return path ? `read: ${path}` : "read";
+			}
+			case "write": {
+				const path = this.getStringArg(args, ["path"]);
+				return path ? `write: ${path}` : "write";
+			}
+			case "edit": {
+				const path = this.getStringArg(args, ["path"]);
+				return path ? `edit: ${path}` : "edit";
+			}
+			case "grep": {
+				const pattern = this.getStringArg(args, ["pattern"]);
+				return pattern ? `grep: ${pattern}` : "grep";
+			}
+			case "find": {
+				const pattern = this.getStringArg(args, ["pattern", "glob"]);
+				return pattern ? `find: ${pattern}` : "find";
+			}
+			case "ls": {
+				const path = this.getStringArg(args, ["path"]);
+				return path ? `ls: ${path}` : "ls";
+			}
+			default:
+				return toolName;
+		}
 	}
 
 	private toToolKind(toolName: string): ToolKind {
@@ -636,11 +866,30 @@ export class AcpAgent implements AcpAgentInterface {
 
 				case "image":
 					if (part.data) {
+						// Detect actual image format from base64 data and correct mimeType if needed
+						let detectedMimeType = part.mimeType;
+						if (part.data.startsWith("iVBORw0KGgo")) {
+							detectedMimeType = "image/png";
+						} else if (part.data.startsWith("/9j/")) {
+							detectedMimeType = "image/jpeg";
+						} else if (part.data.startsWith("R0lGOD")) {
+							detectedMimeType = "image/gif";
+						} else if (part.data.startsWith("UklGR")) {
+							detectedMimeType = "image/webp";
+						}
+
+						if (detectedMimeType !== part.mimeType) {
+							acpLog("debug", "Correcting image mimeType", {
+								original: part.mimeType,
+								detected: detectedMimeType,
+							});
+						}
+
 						attachments.push({
 							id: crypto.randomUUID(),
 							type: "image",
 							fileName: "image",
-							mimeType: part.mimeType,
+							mimeType: detectedMimeType,
 							size: part.data.length,
 							content: part.data,
 						});

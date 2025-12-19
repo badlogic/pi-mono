@@ -8,17 +8,96 @@
  * - Uses @agentclientprotocol/sdk for JSON-RPC transport
  * - Supports session management, prompting, and streaming responses
  * - Events are streamed via ACP sessionUpdate notifications
+ *
+ * Debugging:
+ * - Set PI_ACP_DEBUG=1 to enable logging to /tmp/pi-acp.log
+ * - Set PI_ACP_DEBUG=/path/to/file.log to log to a custom file
  */
 
+import * as fs from "node:fs";
 import { ReadableStream, WritableStream } from "node:stream/web";
 import { type Stream as AcpStream, AgentSideConnection, type AnyMessage } from "@agentclientprotocol/sdk";
 import { AcpAgent, type AcpAgentConfig } from "./acp-agent.js";
+
+const DEBUG_ENV = process.env.PI_ACP_DEBUG;
+/**
+ * PI_ACP_DEBUG:
+ * - unset/""/0: disabled
+ * - "1": enabled, logs to /tmp/pi-acp.log
+ * - any other value: treated as a path to a log file
+ */
+const DEBUG_ENABLED = DEBUG_ENV !== undefined && DEBUG_ENV !== "" && DEBUG_ENV !== "0";
+const LOG_FILE = DEBUG_ENV && DEBUG_ENV !== "1" && DEBUG_ENV !== "0" ? DEBUG_ENV : "/tmp/pi-acp.log";
+
+let logStream: fs.WriteStream | null = null;
+
+function getLogStream(): fs.WriteStream | null {
+	if (!DEBUG_ENABLED) return null;
+	if (!logStream) {
+		logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
+	}
+	return logStream;
+}
+
+/**
+ * Log a message to the ACP log file.
+ * Only logs when PI_ACP_DEBUG environment variable is set.
+ * Use this instead of console.log/console.error in ACP mode since stdio is used for the protocol.
+ */
+function formatLogArg(value: unknown): string {
+	if (value instanceof Error) {
+		return value.stack || value.message;
+	}
+	if (typeof value === "string") {
+		return value;
+	}
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return String(value);
+	}
+}
+
+export function acpLog(level: "info" | "error" | "debug", message: string, ...args: unknown[]): void {
+	const stream = getLogStream();
+	if (!stream) return;
+
+	const timestamp = new Date().toISOString();
+	const formatted = args.length > 0 ? `${message} ${args.map(formatLogArg).join(" ")}` : message;
+	const line = `[${timestamp}] [${level.toUpperCase()}] ${formatted}\n`;
+	stream.write(line);
+}
+
+function setupErrorHandlers(): void {
+	process.on("exit", () => {
+		if (logStream) {
+			logStream.end();
+			logStream = null;
+		}
+	});
+
+	process.on("uncaughtException", (err) => {
+		acpLog("error", "Uncaught exception:", err.stack || err.message);
+		if (logStream) {
+			logStream.end(() => process.exit(1));
+		} else {
+			process.exit(1);
+		}
+	});
+
+	process.on("unhandledRejection", (reason) => {
+		acpLog("error", "Unhandled rejection:", reason);
+	});
+
+	acpLog("info", "ACP mode started", { pid: process.pid, cwd: process.cwd() });
+}
 
 /**
  * Run in ACP mode.
  * Sets up JSON-RPC over stdin/stdout and creates an ACP agent server.
  */
 export async function runAcpMode(): Promise<never> {
+	setupErrorHandlers();
 	const cwd = process.cwd();
 
 	// Build ACP stream (NDJSON over stdio)
@@ -28,6 +107,7 @@ export async function runAcpMode(): Promise<never> {
 	const stream = {
 		writable: new WritableStream<AnyMessage>({
 			write(message) {
+				acpLog("debug", ">>> SEND", message);
 				const line = JSON.stringify(message) + "\n";
 				return new Promise<void>((resolve, reject) => {
 					process.stdout.write(encoder.encode(line), (err) => {
@@ -51,9 +131,10 @@ export async function runAcpMode(): Promise<never> {
 						}
 						try {
 							const message = JSON.parse(line) as AnyMessage;
+							acpLog("debug", "<<< RECV", message);
 							controller.enqueue(message);
 						} catch (err) {
-							console.error("Failed to parse ACP message:", err);
+							acpLog("error", "Failed to parse ACP message:", err);
 						}
 						newlineIndex = buffer.indexOf("\n");
 					}
