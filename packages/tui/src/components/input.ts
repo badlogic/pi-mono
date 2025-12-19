@@ -1,4 +1,15 @@
-import { isAltBackspace, isArrowLeft, isArrowRight, isCtrlA, isCtrlE, isCtrlK, isCtrlU, isCtrlW } from "../keys.js";
+import {
+	isAltBackspace,
+	isArrowLeft,
+	isArrowRight,
+	isBackspace,
+	isCtrlA,
+	isCtrlE,
+	isCtrlK,
+	isCtrlU,
+	isCtrlW,
+	isEnter,
+} from "../keys.js";
 import type { Component } from "../tui.js";
 import { visibleWidth } from "../utils.js";
 
@@ -64,7 +75,7 @@ export class Input implements Component {
 			return;
 		}
 		// Handle special keys
-		if (data === "\r" || data === "\n") {
+		if (isEnter(data) || data === "\n") {
 			// Enter - submit
 			if (this.onSubmit) {
 				this.onSubmit(this.value);
@@ -72,7 +83,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (data === "\x7f" || data === "\x08") {
+		if (isBackspace(data)) {
 			// Backspace - delete grapheme before cursor (handles emojis, etc.)
 			if (this.cursor > 0) {
 				const beforeCursor = this.value.slice(0, this.cursor);
