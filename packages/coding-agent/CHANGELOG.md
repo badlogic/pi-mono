@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.24.4] - 2025-12-20
+
+### Fixed
+
+- **Arrow keys and Enter in selector components**: Fixed arrow keys and Enter not working in model selector, session selector, OAuth selector, and other selector components when Caps Lock or Num Lock is enabled. ([#243](https://github.com/badlogic/pi-mono/issues/243))
+
 ## [0.24.3] - 2025-12-19
 
 ### Fixed
