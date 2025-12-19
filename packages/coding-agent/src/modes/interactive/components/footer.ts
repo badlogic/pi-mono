@@ -188,11 +188,15 @@ export class FooterComponent implements Component {
 		}
 
 		// Truncate path if too long to fit width
-		const maxPathLength = Math.max(20, width - 10); // Leave some margin
-		if (pwd.length > maxPathLength) {
-			const start = pwd.slice(0, Math.floor(maxPathLength / 2) - 2);
-			const end = pwd.slice(-(Math.floor(maxPathLength / 2) - 1));
-			pwd = `${start}...${end}`;
+		if (pwd.length > width) {
+			const half = Math.floor(width / 2) - 2;
+			if (half > 0) {
+				const start = pwd.slice(0, half);
+				const end = pwd.slice(-(half - 1));
+				pwd = `${start}...${end}`;
+			} else {
+				pwd = pwd.slice(0, Math.max(1, width));
+			}
 		}
 
 		// Build stats line

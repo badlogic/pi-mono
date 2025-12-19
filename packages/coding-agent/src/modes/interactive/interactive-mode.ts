@@ -37,6 +37,7 @@ import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { CompactionComponent } from "./components/compaction.js";
@@ -682,6 +683,11 @@ export class InteractiveMode {
 			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/arminsayshi") {
+				this.handleArminSaysHi();
 				this.editor.setText("");
 				return;
 			}
@@ -1753,6 +1759,12 @@ export class InteractiveMode {
 		this.chatContainer.addChild(
 			new Text(theme.fg("accent", "✓ Debug log written") + "\n" + theme.fg("muted", debugLogPath), 1, 1),
 		);
+		this.ui.requestRender();
+	}
+
+	private handleArminSaysHi(): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new ArminComponent(this.ui));
 		this.ui.requestRender();
 	}
 
