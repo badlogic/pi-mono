@@ -11,7 +11,14 @@ import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import type { HookUIContext } from "../hooks/types.js";
-import type { CustomToolFactory, CustomToolsLoadResult, ExecResult, LoadedCustomTool, ToolAPI } from "./types.js";
+import type {
+	CustomToolFactory,
+	CustomToolsLoadResult,
+	ExecOptions,
+	ExecResult,
+	LoadedCustomTool,
+	ToolAPI,
+} from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -69,8 +76,9 @@ function resolveToolPath(toolPath: string, cwd: string): string {
 
 /**
  * Execute a command and return stdout/stderr/code.
+ * Supports cancellation via AbortSignal and timeout.
  */
-async function execCommand(command: string, args: string[], cwd: string): Promise<ExecResult> {
+async function execCommand(command: string, args: string[], cwd: string, options?: ExecOptions): Promise<ExecResult> {
 	return new Promise((resolve) => {
 		const proc = spawn(command, args, {
 			cwd,
@@ -80,6 +88,37 @@ async function execCommand(command: string, args: string[], cwd: string): Promis
 
 		let stdout = "";
 		let stderr = "";
+		let killed = false;
+		let timeoutId: NodeJS.Timeout | undefined;
+
+		const killProcess = () => {
+			if (!killed) {
+				killed = true;
+				proc.kill("SIGTERM");
+				// Force kill after 5 seconds if SIGTERM doesn't work
+				setTimeout(() => {
+					if (!proc.killed) {
+						proc.kill("SIGKILL");
+					}
+				}, 5000);
+			}
+		};
+
+		// Handle abort signal
+		if (options?.signal) {
+			if (options.signal.aborted) {
+				killProcess();
+			} else {
+				options.signal.addEventListener("abort", killProcess, { once: true });
+			}
+		}
+
+		// Handle timeout
+		if (options?.timeout && options.timeout > 0) {
+			timeoutId = setTimeout(() => {
+				killProcess();
+			}, options.timeout);
+		}
 
 		proc.stdout.on("data", (data) => {
 			stdout += data.toString();
@@ -90,18 +129,28 @@ async function execCommand(command: string, args: string[], cwd: string): Promis
 		});
 
 		proc.on("close", (code) => {
+			if (timeoutId) clearTimeout(timeoutId);
+			if (options?.signal) {
+				options.signal.removeEventListener("abort", killProcess);
+			}
 			resolve({
 				stdout,
 				stderr,
 				code: code ?? 0,
+				killed,
 			});
 		});
 
 		proc.on("error", (err) => {
+			if (timeoutId) clearTimeout(timeoutId);
+			if (options?.signal) {
+				options.signal.removeEventListener("abort", killProcess);
+			}
 			resolve({
 				stdout,
 				stderr: stderr || err.message,
 				code: 1,
+				killed,
 			});
 		});
 	});
@@ -182,7 +231,7 @@ export async function loadCustomTools(
 	// Shared API object - all tools get the same instance
 	const sharedApi: ToolAPI = {
 		cwd,
-		exec: (command: string, args: string[]) => execCommand(command, args, cwd),
+		exec: (command: string, args: string[], options?: ExecOptions) => execCommand(command, args, cwd, options),
 		ui: createNoOpUIContext(),
 		hasUI: false,
 	};
@@ -224,21 +273,32 @@ export async function loadCustomTools(
 
 /**
  * Discover tool files from a directory.
- * Returns all .ts files (and symlinks to .ts files) in the directory (non-recursive).
+ * Only loads index.ts files from subdirectories (e.g., tools/mytool/index.ts).
  */
 function discoverToolsInDir(dir: string): string[] {
 	if (!fs.existsSync(dir)) {
 		return [];
 	}
 
+	const tools: string[] = [];
+
 	try {
 		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		return entries
-			.filter((e) => (e.isFile() || e.isSymbolicLink()) && e.name.endsWith(".ts"))
-			.map((e) => path.join(dir, e.name));
+
+		for (const entry of entries) {
+			if (entry.isDirectory() || entry.isSymbolicLink()) {
+				// Check for index.ts in subdirectory
+				const indexPath = path.join(dir, entry.name, "index.ts");
+				if (fs.existsSync(indexPath)) {
+					tools.push(indexPath);
+				}
+			}
+		}
 	} catch {
 		return [];
 	}
+
+	return tools;
 }
 
 /**

@@ -2,12 +2,22 @@
 
 Delegate tasks to specialized subagents with isolated context windows.
 
+## Features
+
+- **Isolated context**: Each subagent runs in a separate `pi` process
+- **Streaming output**: See tool calls and progress as they happen
+- **Parallel streaming**: All parallel tasks stream updates simultaneously
+- **Markdown rendering**: Final output rendered with proper formatting (expanded view)
+- **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
+- **Abort support**: Ctrl+C propagates to kill subagent processes
+
 ## Structure
 
 ```
 subagent/
 ├── README.md            # This file
-├── subagent.ts          # The custom tool
+├── subagent.ts          # The custom tool (entry point)
+├── agents.ts            # Agent discovery logic
 ├── agents/              # Sample agent definitions
 │   ├── scout.md         # Fast recon, returns compressed context
 │   ├── planner.md       # Creates implementation plans
@@ -21,57 +31,54 @@ subagent/
 
 ## Installation
 
-From the `examples/custom-tools/subagent/` directory:
+From the repository root, symlink the files:
 
 ```bash
-# Copy the tool
-mkdir -p ~/.pi/agent/tools
-cp subagent.ts ~/.pi/agent/tools/
+# Symlink the tool (must be in a subdirectory with index.ts)
+mkdir -p ~/.pi/agent/tools/subagent
+ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/subagent.ts" ~/.pi/agent/tools/subagent/index.ts
+ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/agents.ts" ~/.pi/agent/tools/subagent/agents.ts
 
-# Copy agents
+# Symlink agents
 mkdir -p ~/.pi/agent/agents
-cp agents/*.md ~/.pi/agent/agents/
+for f in packages/coding-agent/examples/custom-tools/subagent/agents/*.md; do
+  ln -sf "$(pwd)/$f" ~/.pi/agent/agents/$(basename "$f")
+done
 
-# Copy workflow commands
+# Symlink workflow commands
 mkdir -p ~/.pi/agent/commands
-cp commands/*.md ~/.pi/agent/commands/
+for f in packages/coding-agent/examples/custom-tools/subagent/commands/*.md; do
+  ln -sf "$(pwd)/$f" ~/.pi/agent/commands/$(basename "$f")
+done
 ```
 
 ## Security Model
 
-This example intentionally executes a separate `pi` subprocess with a delegated system prompt and tool/model configuration.
+This tool executes a separate `pi` subprocess with a delegated system prompt and tool/model configuration.
 
-Treat **project-local agent definitions as repo-controlled prompts**:
-- A project can define agents in `.pi/agents/*.md`.
-- Those prompts can instruct the model to read files, run bash commands, etc. (depending on the allowed tools).
+**Project-local agents** (`.pi/agents/*.md`) are repo-controlled prompts that can instruct the model to read files, run bash commands, etc.
 
-**Default behavior:** the tool only loads **user-level agents** from `~/.pi/agent/agents`.
+**Default behavior:** Only loads **user-level agents** from `~/.pi/agent/agents`.
 
-To enable project-local agents, pass `agentScope: "both"` (or `"project"`) explicitly. Only do this for repositories you trust.
+To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only do this for repositories you trust.
 
-When running interactively, the tool will prompt for confirmation before running project-local agents. Set `confirmProjectAgents: false` to disable the prompt.
+When running interactively, the tool prompts for confirmation before running project-local agents. Set `confirmProjectAgents: false` to disable.
 
 ## Usage
 
 ### Single agent
 ```
-> Use the subagent tool with agent "scout" and task "find all authentication code"
+Use scout to find all authentication code
 ```
 
 ### Parallel execution
 ```
-> Use subagent with tasks:
->   - scout: "analyze the auth module"
->   - scout: "analyze the api module"
->   - scout: "analyze the database module"
+Run 2 scouts in parallel: one to find models, one to find providers
 ```
 
 ### Chained workflow
 ```
-> Use subagent chain:
->   1. scout: "find code related to caching"
->   2. planner: "plan Redis integration using: {previous}"
->   3. worker: "implement: {previous}"
+Use a chain: first have scout find the read tool, then have planner suggest improvements
 ```
 
 ### Workflow commands
@@ -86,119 +93,32 @@ When running interactively, the tool will prompt for confirmation before running
 | Mode | Parameter | Description |
 |------|-----------|-------------|
 | Single | `{ agent, task }` | One agent, one task |
-| Parallel | `{ tasks: [...] }` | Multiple agents run concurrently |
+| Parallel | `{ tasks: [...] }` | Multiple agents run concurrently (max 8, 4 concurrent) |
 | Chain | `{ chain: [...] }` | Sequential with `{previous}` placeholder |
 
-<details>
-<summary>Flow Diagrams</summary>
+## Output Display
 
-### Single Mode
+**Collapsed view** (default):
+- Status icon (✓/✗/⏳) and agent name
+- Last 5-10 items (tool calls and text)
+- Usage stats: `3 turns ↑input ↓output RcacheRead WcacheWrite $cost ctx:contextTokens model`
 
-```
-┌─────────────────┐
-│   Main Agent    │
-└────────┬────────┘
-         │ "use scout to find auth code"
-         ▼
-┌─────────────────┐
-│  subagent tool  │
-└────────┬────────┘
-         │ pi -p --model haiku ...
-         ▼
-┌─────────────────┐
-│     Scout       │
-│   (subprocess)  │
-└────────┬────────┘
-         │ stdout
-         ▼
-┌─────────────────┐
-│   Tool Result   │
-└─────────────────┘
-```
+**Expanded view** (Ctrl+O):
+- Full task text
+- All tool calls with formatted arguments
+- Final output rendered as Markdown
+- Per-task usage (for chain/parallel)
 
-### Parallel Mode
+**Parallel mode streaming**:
+- Shows all tasks with live status (⏳ running, ✓ done, ✗ failed)
+- Updates as each task makes progress
+- Shows "2/3 done, 1 running" status
 
-```
-┌──────────────────────┐
-│      Main Agent      │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│    subagent tool     │
-│    Promise.all()     │
-└──────────┬───────────┘
-           │
-     ┌─────┼─────┐
-     ▼     ▼     ▼
-┌──────┐┌──────┐┌──────┐
-│Scout ││Scout ││Scout │
-│ auth ││ api  ││  db  │
-└──┬───┘└──┬───┘└──┬───┘
-   │       │       │
-   └───────┼───────┘
-           ▼
-┌──────────────────────┐
-│   Combined Result    │
-└──────────────────────┘
-```
-
-### Chain Mode
-
-```
-┌─────────────────┐
-│   Main Agent    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  subagent tool  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Step 1: Scout  │
-└────────┬────────┘
-         │ {previous} = scout output
-         ▼
-┌─────────────────┐
-│ Step 2: Planner │
-└────────┬────────┘
-         │ {previous} = planner output
-         ▼
-┌─────────────────┐
-│ Step 3: Worker  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Chain Result   │
-└─────────────────┘
-```
-
-### Workflow Command Expansion
-
-```
-/implement add Redis
-        │
-        ▼
-┌─────────────────────────────────────────┐
-│  Expands to chain:                      │
-│  1. scout: "find code for add Redis"    │
-│  2. planner: "plan using {previous}"    │
-│  3. worker: "implement {previous}"      │
-└─────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────┐
-│            Chain Execution              │
-│                                         │
-│ scout ──► planner ──► worker            │
-│ (haiku)   (sonnet)    (sonnet)          │
-└─────────────────────────────────────────┘
-```
-
-</details>
+**Tool call formatting** (mimics built-in tools):
+- `$ command` for bash
+- `read ~/path:1-10` for read
+- `grep /pattern/ in ~/path` for grep
+- etc.
 
 ## Agent Definitions
 
@@ -216,30 +136,37 @@ System prompt for the agent goes here.
 ```
 
 **Locations:**
-- `~/.pi/agent/agents/*.md` - User-level (global)
-- `.pi/agents/*.md` - Project-level (only loaded if `agentScope` includes `"project"`)
+- `~/.pi/agent/agents/*.md` - User-level (always loaded)
+- `.pi/agents/*.md` - Project-level (only with `agentScope: "project"` or `"both"`)
+
+Project agents override user agents with the same name when `agentScope: "both"`.
 
 ## Sample Agents
 
-| Agent | Purpose | Model |
-|-------|---------|-------|
-| `scout` | Fast codebase recon, returns compressed context | Haiku |
-| `planner` | Creates implementation plans from context | Sonnet |
-| `reviewer` | Code review for quality/security | Sonnet |
-| `worker` | General-purpose with full capabilities | Sonnet |
+| Agent | Purpose | Model | Tools |
+|-------|---------|-------|-------|
+| `scout` | Fast codebase recon | Haiku | read, grep, find, ls, bash |
+| `planner` | Implementation plans | Sonnet | read, grep, find, ls |
+| `reviewer` | Code review | Sonnet | read, grep, find, ls, bash |
+| `worker` | General-purpose | Sonnet | (all default) |
 
 ## Workflow Commands
 
-Commands are prompt templates that invoke the subagent tool:
-
 | Command | Flow |
 |---------|------|
-| `/implement <query>` | scout -> planner -> worker |
-| `/scout-and-plan <query>` | scout -> planner |
-| `/implement-and-review <query>` | worker -> reviewer -> worker |
+| `/implement <query>` | scout → planner → worker |
+| `/scout-and-plan <query>` | scout → planner |
+| `/implement-and-review <query>` | worker → reviewer → worker |
+
+## Error Handling
+
+- **Exit code != 0**: Tool returns error with stderr/output
+- **stopReason "error"**: LLM error propagated with error message
+- **stopReason "aborted"**: User abort (Ctrl+C) kills subprocess, throws error
+- **Chain mode**: Stops at first failing step, reports which step failed
 
 ## Limitations
 
-- No timeout/cancellation (subprocess limitation)
-- Output truncated to 500 lines / 50KB per agent
-- Agents discovered fresh on each invocation
+- Output truncated to last 10 items in collapsed view (expand to see all)
+- Agents discovered fresh on each invocation (allows editing mid-session)
+- Parallel mode limited to 8 tasks, 4 concurrent

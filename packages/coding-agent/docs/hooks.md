@@ -363,15 +363,23 @@ ctx.ui.notify("Operation complete", "info");
 ctx.ui.notify("Something went wrong", "error");
 ```
 
-### ctx.exec(command, args)
+### ctx.exec(command, args, options?)
 
-Execute a command and get the result.
+Execute a command and get the result. Supports cancellation via `AbortSignal` and timeout.
 
 ```typescript
 const result = await ctx.exec("git", ["status"]);
 // result.stdout: string
 // result.stderr: string
 // result.code: number
+// result.killed?: boolean  // True if killed by signal/timeout
+
+// With timeout (5 seconds)
+const result = await ctx.exec("slow-command", [], { timeout: 5000 });
+
+// With abort signal
+const controller = new AbortController();
+const result = await ctx.exec("long-command", [], { signal: controller.signal });
 ```
 
 ### ctx.cwd

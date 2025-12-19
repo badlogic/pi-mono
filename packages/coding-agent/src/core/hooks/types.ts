@@ -27,6 +27,15 @@ export interface ExecResult {
 	stdout: string;
 	stderr: string;
 	code: number;
+	/** True if the process was killed due to signal or timeout */
+	killed?: boolean;
+}
+
+export interface ExecOptions {
+	/** AbortSignal to cancel the process */
+	signal?: AbortSignal;
+	/** Timeout in milliseconds */
+	timeout?: number;
 }
 
 /**
@@ -65,7 +74,7 @@ export interface HookUIContext {
  */
 export interface HookEventContext {
 	/** Execute a command and return stdout/stderr/code */
-	exec(command: string, args: string[]): Promise<ExecResult>;
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** UI methods for user interaction */
 	ui: HookUIContext;
 	/** Whether UI is available (false in print mode) */

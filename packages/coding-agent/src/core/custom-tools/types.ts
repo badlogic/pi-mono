@@ -19,6 +19,15 @@ export interface ExecResult {
 	stdout: string;
 	stderr: string;
 	code: number;
+	/** True if the process was killed due to signal or timeout */
+	killed?: boolean;
+}
+
+export interface ExecOptions {
+	/** AbortSignal to cancel the process */
+	signal?: AbortSignal;
+	/** Timeout in milliseconds */
+	timeout?: number;
 }
 
 /** API passed to custom tool factory (stable across session changes) */
@@ -26,7 +35,7 @@ export interface ToolAPI {
 	/** Current working directory */
 	cwd: string;
 	/** Execute a command */
-	exec(command: string, args: string[]): Promise<ExecResult>;
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** UI methods for user interaction (select, confirm, input, notify) */
 	ui: ToolUIContext;
 	/** Whether UI is available (false in print/RPC mode) */

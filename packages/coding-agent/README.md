@@ -595,10 +595,12 @@ export default function (pi: HookAPI) {
 
 Custom tools let you extend the built-in toolset (read, write, edit, bash, ...) and are called by the LLM directly. They are TypeScript modules that define tools with optional custom TUI integration for getting user input and custom tool call and result rendering.
 
-**Tool locations:**
-- Global: `~/.pi/agent/tools/*.ts`
-- Project: `.pi/tools/*.ts`
-- CLI: `--tool <path>`
+**Tool locations (auto-discovered):**
+- Global: `~/.pi/agent/tools/*/index.ts`
+- Project: `.pi/tools/*/index.ts`
+
+**Explicit paths:**
+- CLI: `--tool <path>` (any .ts file)
 - Settings: `customTools` array in `settings.json`
 
 **Quick example:**

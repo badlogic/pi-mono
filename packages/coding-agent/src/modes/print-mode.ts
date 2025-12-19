@@ -109,4 +109,13 @@ export async function runPrintMode(
 			}
 		}
 	}
+
+	// Ensure stdout is fully flushed before returning
+	// This prevents race conditions where the process exits before all output is written
+	await new Promise<void>((resolve, reject) => {
+		process.stdout.write("", (err) => {
+			if (err) reject(err);
+			else resolve();
+		});
+	});
 }

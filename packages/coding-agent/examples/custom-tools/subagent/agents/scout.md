@@ -22,9 +22,6 @@ Strategy:
 
 Output format:
 
-## Query
-One line summary of what was searched.
-
 ## Files Retrieved
 List with exact line ranges:
 1. `path/to/file.ts` (lines 10-50) - Description of what's here
