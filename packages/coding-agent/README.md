@@ -167,6 +167,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/queue` | Set message queue mode: one-at-a-time (default) or all-at-once |
 | `/export [file]` | Export session to self-contained HTML |
 | `/session` | Show session info: path, message counts, token usage, cost |
+| `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
 | `/branch` | Create new conversation branch from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
@@ -199,8 +200,8 @@ The agent reads, writes, and edits files, and executes commands via bash.
 |-----|--------|
 | Arrow keys | Move cursor / browse history (Up when empty) |
 | Option+Left/Right | Move by word |
-| Ctrl+A / Home | Start of line |
-| Ctrl+E / End | End of line |
+| Ctrl+A / Home / Cmd+Left | Start of line |
+| Ctrl+E / End / Cmd+Right | End of line |
 
 **Editing:**
 
@@ -219,6 +220,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Tab | Path completion / accept autocomplete |
 | Escape | Cancel autocomplete / abort streaming |
 | Ctrl+C | Clear editor (first) / exit (second) |
+| Ctrl+D | Exit (when editor is empty) |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P | Cycle models (scoped by `--models`) |
 | Ctrl+O | Toggle tool output expansion |

@@ -158,6 +158,7 @@ export class InteractiveMode {
 			{ name: "copy", description: "Copy last agent message to clipboard" },
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
+			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 			{ name: "branch", description: "Create a new branch from a previous message" },
 			{ name: "login", description: "Login with OAuth provider" },
 			{ name: "logout", description: "Logout from OAuth provider" },
@@ -206,6 +207,9 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "ctrl+c twice") +
 			theme.fg("muted", " to exit") +
+			"\n" +
+			theme.fg("dim", "ctrl+d") +
+			theme.fg("muted", " to exit (empty)") +
 			"\n" +
 			theme.fg("dim", "ctrl+k") +
 			theme.fg("muted", " to delete line") +
@@ -616,6 +620,11 @@ export class InteractiveMode {
 			}
 			if (text === "/changelog") {
 				this.handleChangelogCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/hotkeys") {
+				this.handleHotkeysCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -1632,6 +1641,48 @@ export class InteractiveMode {
 		this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 		this.ui.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, getMarkdownTheme()));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleHotkeysCommand(): void {
+		const hotkeys = `
+**Navigation**
+| Key | Action |
+|-----|--------|
+| \`Arrow keys\` | Move cursor / browse history (Up when empty) |
+| \`Option+Left/Right\` | Move by word |
+| \`Ctrl+A\` / \`Home\` / \`Cmd+Left\` | Start of line |
+| \`Ctrl+E\` / \`End\` / \`Cmd+Right\` | End of line |
+
+**Editing**
+| Key | Action |
+|-----|--------|
+| \`Enter\` | Send message |
+| \`Shift+Enter\` / \`Alt+Enter\` | New line |
+| \`Ctrl+W\` / \`Option+Backspace\` | Delete word backwards |
+| \`Ctrl+U\` | Delete to start of line |
+| \`Ctrl+K\` | Delete to end of line |
+
+**Other**
+| Key | Action |
+|-----|--------|
+| \`Tab\` | Path completion / accept autocomplete |
+| \`Escape\` | Cancel autocomplete / abort streaming |
+| \`Ctrl+C\` | Clear editor (first) / exit (second) |
+| \`Ctrl+D\` | Exit (when editor is empty) |
+| \`Shift+Tab\` | Cycle thinking level |
+| \`Ctrl+P\` | Cycle models |
+| \`Ctrl+O\` | Toggle tool output expansion |
+| \`Ctrl+T\` | Toggle thinking block visibility |
+| \`/\` | Slash commands |
+| \`!\` | Run bash command |
+`;
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, getMarkdownTheme()));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
