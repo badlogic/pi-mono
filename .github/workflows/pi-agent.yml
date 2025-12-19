@@ -1,0 +1,125 @@
+name: Pi Agent
+
+on:
+  # Respond to @pi mentions in comments
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+  # Auto-review PRs
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+  # Triage new issues
+  issues:
+    types: [opened, labeled, assigned]
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Custom prompt for the agent"
+        required: true
+        type: string
+      mode:
+        description: "Execution mode"
+        required: false
+        default: "custom"
+        type: choice
+        options:
+          - custom
+          - review
+          - triage
+
+concurrency:
+  group: pi-agent-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Handle @pi mentions in comments
+  mention-response:
+    if: |
+      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+      contains(github.event.comment.body, '@pi')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/pi-agent
+        with:
+          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          trigger_phrase: "@pi"
+          mode: "auto"
+          track_progress: "true"
+
+  # Auto-review PRs (optional - uncomment to enable)
+  # pr-review:
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     pull-requests: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - uses: ./.github/actions/pi-agent
+  #       with:
+  #         openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         mode: "review"
+  #         track_progress: "true"
+
+  # Handle labeled issues
+  labeled-issue:
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'pi-agent'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/pi-agent
+        with:
+          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: "triage"
+          label_trigger: "pi-agent"
+          track_progress: "true"
+
+  # Manual trigger
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/pi-agent
+        with:
+          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ github.event.inputs.prompt }}
+          mode: ${{ github.event.inputs.mode }}
+          track_progress: "true"

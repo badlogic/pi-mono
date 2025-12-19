@@ -1,0 +1,18 @@
+{
+  "name": "pi-agent-action",
+  "version": "1.0.0",
+  "description": "GitHub Action for pi-coding-agent automation",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
