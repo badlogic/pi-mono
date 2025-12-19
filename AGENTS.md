@@ -49,6 +49,7 @@ When closing issues via commit:
 - Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
 
 ## Changelog
+Location: `packages/coding-agent/CHANGELOG.md`
 - New entries ALWAYS go under `## [Unreleased]` section
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
