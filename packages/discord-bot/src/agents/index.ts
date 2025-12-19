@@ -148,9 +148,14 @@ export {
 	runCodeReview,
 	runDebug,
 	runDocGeneration,
+	runFullTradingAudit,
 	runOpenHandsAgent,
 	runOptimize,
 	runRefactor,
+	runRiskAssessment,
 	runSecurityScan,
+	runStrategyBacktest,
 	runTestGeneration,
+	// Trading Expert Functions (Moon Dev Inspired)
+	runTradingAnalysis,
 } from "./openhands-agent.js";

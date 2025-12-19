@@ -73,12 +73,16 @@ import {
 	runCodeReview,
 	runDebug,
 	runDocGeneration,
+	runFullTradingAudit,
 	runLearningAgent,
 	runOpenHandsAgent,
 	runOptimize,
 	runRefactor,
+	runRiskAssessment,
 	runSecurityScan,
+	runStrategyBacktest,
 	runTestGeneration,
+	runTradingAnalysis,
 	runTwoAgentWorkflow,
 	wrapToolWithHooks,
 } from "./agents/index.js";
@@ -1489,7 +1493,47 @@ const slashCommands = [
 		.addSubcommand((sub) => sub.setName("whales").setDescription("View recent whale activity"))
 		.addSubcommand((sub) => sub.setName("signals").setDescription("View recent trading signals"))
 		.addSubcommand((sub) => sub.setName("summary").setDescription("Get market summary"))
-		.addSubcommand((sub) => sub.setName("status").setDescription("View trading agent status")),
+		.addSubcommand((sub) => sub.setName("status").setDescription("View trading agent status"))
+		.addSubcommand((sub) =>
+			sub
+				.setName("backtest")
+				.setDescription("Backtest a trading strategy (OpenHands)")
+				.addStringOption((opt) =>
+					opt
+						.setName("strategy")
+						.setDescription("Strategy name (e.g., momentum, mean-reversion)")
+						.setRequired(true),
+				)
+				.addStringOption((opt) =>
+					opt.setName("timeframe").setDescription("Backtest timeframe (default: 1 year)").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("risk")
+				.setDescription("Assess portfolio risk (OpenHands)")
+				.addStringOption((opt) =>
+					opt
+						.setName("holdings")
+						.setDescription("Holdings as JSON (e.g., [{symbol:BTC,allocation:0.5}])")
+						.setRequired(true),
+				)
+				.addNumberOption((opt) =>
+					opt.setName("value").setDescription("Total portfolio value in USD").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("audit")
+				.setDescription("Full trading audit - analysis + backtest + risk (OpenHands)")
+				.addStringOption((opt) =>
+					opt.setName("symbol").setDescription("Symbol to audit (e.g., BTC)").setRequired(true),
+				)
+				.addStringOption((opt) =>
+					opt.setName("strategy").setDescription("Strategy to backtest (optional)").setRequired(false),
+				),
+		)
+		.addSubcommand((sub) => sub.setName("expertise").setDescription("View accumulated trading expertise")),
 
 	// Knowledge base command
 	new SlashCommandBuilder()
@@ -3471,15 +3515,29 @@ function createConversationSummary(messages: unknown[]): string {
 // Channel State
 // ============================================================================
 
+interface QueuedMessage {
+	channelId: string;
+	channelName: string;
+	userName: string;
+	userId: string;
+	text: string;
+	workingDir: string;
+	reply: (content: string) => Promise<any>;
+	editReply: (content: string) => Promise<any>;
+	sourceMessage: Message | null;
+}
+
 interface ChannelState {
 	running: boolean;
 	agent: Agent;
 	hooks?: HookIntegration;
 	sessionId?: string;
 	turnIndex: number;
+	messageQueue: QueuedMessage[];
 }
 
 const channelStates = new Map<string, ChannelState>();
+const MAX_QUEUE_SIZE = 5;
 
 // Message deduplication - track processed message IDs to prevent double responses
 const processedMessages = new Set<string>();
@@ -3565,10 +3623,37 @@ function getChannelState(channelId: string, workingDir: string, channelName: str
 			logWarning(`[${channelId}] Hook session event failed:`, err);
 		});
 
-		state = { running: false, agent, hooks, sessionId, turnIndex: 0 };
+		state = { running: false, agent, hooks, sessionId, turnIndex: 0, messageQueue: [] };
 		channelStates.set(channelId, state);
 	}
 	return state;
+}
+
+// ============================================================================
+// Message Queue Processing
+// ============================================================================
+
+async function processNextQueuedMessage(channelId: string): Promise<void> {
+	const state = channelStates.get(channelId);
+	if (!state || state.running || state.messageQueue.length === 0) {
+		return;
+	}
+
+	const nextMessage = state.messageQueue.shift()!;
+	logInfo(`[${channelId}] Processing queued message from ${nextMessage.userName}`);
+
+	// Process the queued message
+	await handleAgentRequestInternal(
+		nextMessage.channelId,
+		nextMessage.channelName,
+		nextMessage.userName,
+		nextMessage.userId,
+		nextMessage.text,
+		nextMessage.workingDir,
+		nextMessage.reply,
+		nextMessage.editReply,
+		nextMessage.sourceMessage,
+	);
 }
 
 // ============================================================================
@@ -3602,6 +3687,63 @@ async function handleAgentRequest(
 		return;
 	}
 
+	const state = getChannelState(channelId, workingDir, channelName);
+
+	// Queue management - add to queue if already processing
+	if (state.running) {
+		// Check queue size limit
+		if (state.messageQueue.length >= MAX_QUEUE_SIZE) {
+			// Drop oldest message
+			const dropped = state.messageQueue.shift();
+			logWarning(`[${channelId}] Queue full, dropped message from ${dropped?.userName}`);
+		}
+
+		// Add to queue
+		state.messageQueue.push({
+			channelId,
+			channelName,
+			userName,
+			userId,
+			text,
+			workingDir,
+			reply,
+			editReply,
+			sourceMessage,
+		});
+
+		const queuePosition = state.messageQueue.length;
+		logInfo(`[${channelId}] Queued message from ${userName}, position: ${queuePosition}`);
+		// Note: Don't send queue notification via reply() as it creates a separate message
+		// The user will see their response when the queue is processed
+		return;
+	}
+
+	// Process immediately
+	await handleAgentRequestInternal(
+		channelId,
+		channelName,
+		userName,
+		userId,
+		text,
+		workingDir,
+		reply,
+		editReply,
+		sourceMessage,
+	);
+}
+
+// Internal function that does the actual processing
+async function handleAgentRequestInternal(
+	channelId: string,
+	channelName: string,
+	userName: string,
+	userId: string,
+	text: string,
+	workingDir: string,
+	reply: (content: string) => Promise<any>,
+	editReply: (content: string) => Promise<any>,
+	sourceMessage: Message | null = null,
+): Promise<void> {
 	const channelDir = join(workingDir, channelId);
 
 	// Track statistics
@@ -3619,18 +3761,6 @@ async function handleAgentRequest(
 	// Get model config for this user
 	const model = getUserModel(userId);
 	const state = getChannelState(channelId, workingDir, channelName);
-
-	// Use a simple queue - if already running, silently skip (don't send "already working" message)
-	if (state.running) {
-		logWarning(`Channel ${channelId} already processing, queuing request`);
-		// Wait briefly for previous request to finish
-		await new Promise((resolve) => setTimeout(resolve, 2000));
-		if (state.running) {
-			// Still running after wait - skip silently to avoid spam
-			logWarning(`Channel ${channelId} still busy, skipping request`);
-			return;
-		}
-	}
 
 	state.running = true;
 	const toolsUsed: string[] = [];
@@ -4180,6 +4310,13 @@ async function handleAgentRequest(
 		await editReply(`_Error: ${errMsg.substring(0, 500)}_`).catch(() => {});
 	} finally {
 		state.running = false;
+
+		// Process next queued message if any
+		setImmediate(() => {
+			processNextQueuedMessage(channelId).catch((err) => {
+				logError(`Error processing queued message for channel ${channelId}`, err);
+			});
+		});
 	}
 }
 
@@ -8026,6 +8163,147 @@ async function main() {
 								await interaction.editReply({ embeds: [embed] });
 								break;
 							}
+
+							case "backtest": {
+								const strategy = interaction.options.getString("strategy", true);
+								const timeframe = interaction.options.getString("timeframe") || "1 year";
+
+								await interaction.editReply(
+									`🔬 Running ${strategy} strategy backtest over ${timeframe}... (OpenHands)`,
+								);
+
+								const result = await runStrategyBacktest(strategy, undefined, timeframe);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle(`📊 Backtest: ${strategy}`)
+										.setColor(0x7c3aed)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Timeframe", value: timeframe, inline: true },
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Strategy Backtest" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Backtest failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "risk": {
+								const holdings = interaction.options.getString("holdings", true);
+								const value = interaction.options.getNumber("value") || undefined;
+
+								await interaction.editReply(`⚖️ Analyzing portfolio risk... (OpenHands)`);
+
+								const result = await runRiskAssessment(holdings, value);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle("⚖️ Risk Assessment")
+										.setColor(0xf59e0b)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Holdings", value: holdings.substring(0, 200), inline: false },
+											...(value
+												? [{ name: "Portfolio Value", value: `$${value.toLocaleString()}`, inline: true }]
+												: []),
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Risk Assessment" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Risk assessment failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "audit": {
+								const symbol = interaction.options.getString("symbol", true).toUpperCase();
+								const strategy = interaction.options.getString("strategy") || undefined;
+
+								await interaction.editReply(
+									`🔍 Running full trading audit for ${symbol}${strategy ? ` with ${strategy}` : ""}... (OpenHands)`,
+								);
+
+								const result = await runFullTradingAudit(symbol, strategy);
+
+								if (result.success) {
+									const embed = new EmbedBuilder()
+										.setTitle(`🔍 Full Trading Audit: ${symbol}`)
+										.setColor(0x10b981)
+										.setDescription(result.output.substring(0, 4000))
+										.addFields(
+											{ name: "Symbol", value: symbol, inline: true },
+											...(strategy ? [{ name: "Strategy", value: strategy, inline: true }] : []),
+											{ name: "Duration", value: `${(result.duration / 1000).toFixed(1)}s`, inline: true },
+										)
+										.setFooter({ text: "OpenHands Full Trading Audit" })
+										.setTimestamp();
+
+									await interaction.editReply({ content: "", embeds: [embed] });
+								} else {
+									await interaction.editReply(`Trading audit failed: ${result.error || "Unknown error"}`);
+								}
+								break;
+							}
+
+							case "expertise": {
+								const expertisePath = join(process.cwd(), "src", "trading", "expertise", "trading.md");
+								let expertiseContent = "No trading expertise found.";
+
+								try {
+									const fs = await import("fs");
+									if (fs.existsSync(expertisePath)) {
+										expertiseContent = fs.readFileSync(expertisePath, "utf-8");
+									}
+								} catch {
+									expertiseContent = "Error loading expertise file.";
+								}
+
+								// Parse key sections from the expertise file
+								const sections: { name: string; value: string }[] = [];
+
+								const mentalModelMatch = expertiseContent.match(/## Mental Model\n([\s\S]*?)(?=\n## |$)/);
+								if (mentalModelMatch) {
+									sections.push({ name: "Mental Model", value: mentalModelMatch[1].trim().substring(0, 500) });
+								}
+
+								const patternsMatch = expertiseContent.match(/## Patterns Learned\n([\s\S]*?)(?=\n## |$)/);
+								if (patternsMatch) {
+									sections.push({
+										name: "Patterns Learned",
+										value: patternsMatch[1].trim().substring(0, 500) || "None yet",
+									});
+								}
+
+								const lastUpdatedMatch = expertiseContent.match(/\*Last updated: ([^*]+)\*/);
+								const sessionsMatch = expertiseContent.match(/\*Total sessions: (\d+)\*/);
+
+								const embed = new EmbedBuilder()
+									.setTitle("📚 Trading Expertise")
+									.setColor(0x8b5cf6)
+									.setDescription("Accumulated knowledge from trading sessions")
+									.addFields(
+										...sections.map((s) => ({ name: s.name, value: s.value, inline: false })),
+										{
+											name: "Last Updated",
+											value: lastUpdatedMatch ? lastUpdatedMatch[1].trim() : "Never",
+											inline: true,
+										},
+										{ name: "Total Sessions", value: sessionsMatch ? sessionsMatch[1] : "0", inline: true },
+									)
+									.setFooter({ text: "Agent Experts - Act-Learn-Reuse" })
+									.setTimestamp();
+
+								await interaction.editReply({ embeds: [embed] });
+								break;
+							}
 						}
 					} catch (error) {
 						const errMsg = error instanceof Error ? error.message : String(error);
@@ -10073,7 +10351,10 @@ async function main() {
 		}
 	});
 
-	// Hourly quick status check
+	// Memory alert tracking (prevent spam)
+	let lastMemoryAlertThreshold: "none" | "warning" | "critical" = "none";
+
+	// Hourly quick status check with memory monitoring
 	cron.schedule("0 * * * *", async () => {
 		logInfo("[CRON] Running hourly status check");
 		try {
@@ -10082,8 +10363,88 @@ async function main() {
 				echo "Load: $(cat /proc/loadavg | cut -d' ' -f1-3)"
 				echo "Memory: $(free -h | awk '/Mem:/ {print $3 "/" $2}')"
 			`);
-			// Only log, don't send to channel every hour
+			// Log status
 			logInfo(`[CRON] Status: ${result.stdout.replace(/\n/g, " | ").trim()}`);
+
+			// Memory monitoring and alerting
+			const memoryCheck = await execCommand(`
+				# Get memory info in parseable format
+				free -m | awk '/Mem:/ {printf "TOTAL=%d\\nUSED=%d\\nAVAIL=%d\\nPERCENT=%.1f", $2, $3, $7, ($3/$2)*100}'
+				echo ""
+				echo "TOP_PROCESSES:"
+				ps aux --sort=-%mem | awk 'NR>1 {printf "%s\\t%.1f%%\\t%s\\n", $11, $4, $1}' | head -3
+			`);
+
+			if (memoryCheck.code === 0) {
+				const output = memoryCheck.stdout;
+
+				// Parse memory stats
+				const percentMatch = output.match(/PERCENT=([\d.]+)/);
+				const totalMatch = output.match(/TOTAL=(\d+)/);
+				const usedMatch = output.match(/USED=(\d+)/);
+				const availMatch = output.match(/AVAIL=(\d+)/);
+
+				if (percentMatch && totalMatch && usedMatch && availMatch) {
+					const memoryPercent = parseFloat(percentMatch[1]);
+					const totalGB = (parseInt(totalMatch[1], 10) / 1024).toFixed(1);
+					const usedGB = (parseInt(usedMatch[1], 10) / 1024).toFixed(1);
+					const availGB = (parseInt(availMatch[1], 10) / 1024).toFixed(1);
+
+					// Extract top processes
+					const topProcessesMatch = output.match(/TOP_PROCESSES:\n([\s\S]+)$/);
+					const topProcesses = topProcessesMatch ? topProcessesMatch[1].trim() : "Unable to fetch";
+
+					// Determine threshold
+					let currentThreshold: "none" | "warning" | "critical" = "none";
+					if (memoryPercent >= 95) {
+						currentThreshold = "critical";
+					} else if (memoryPercent >= 90) {
+						currentThreshold = "warning";
+					}
+
+					// Send alert if threshold crossed and different from last alert
+					if (currentThreshold !== "none" && currentThreshold !== lastMemoryAlertThreshold) {
+						const alertLevel = currentThreshold === "critical" ? "🚨 CRITICAL" : "⚠️ WARNING";
+						const alertMessage = [
+							`**${alertLevel}: High Memory Usage**`,
+							``,
+							`**Memory Usage:** ${memoryPercent.toFixed(1)}% (${usedGB}Gi / ${totalGB}Gi)`,
+							`**Available:** ${availGB}Gi`,
+							``,
+							`**Top 3 Processes by Memory:**`,
+							`\`\`\``,
+							topProcesses,
+							`\`\`\``,
+							``,
+							currentThreshold === "critical"
+								? `⚠️ **Action required:** Memory usage is critically high. Consider restarting services or investigating memory leaks.`
+								: `Monitor closely. Alert will trigger again if usage increases to 95%+.`,
+						].join("\n");
+
+						// Send to alert channel or DM first allowed user
+						if (ALERTS_CHANNEL_ID) {
+							await channelRouter.sendAlert(alertMessage);
+						} else if (ALLOWED_USER_IDS.length > 0) {
+							try {
+								const user = await client.users.fetch(ALLOWED_USER_IDS[0]);
+								await user.send(alertMessage);
+							} catch (dmError) {
+								logError(
+									"[CRON] Failed to send memory alert DM",
+									dmError instanceof Error ? dmError.message : String(dmError),
+								);
+							}
+						}
+
+						lastMemoryAlertThreshold = currentThreshold;
+						logInfo(`[CRON] Memory alert sent: ${currentThreshold} (${memoryPercent.toFixed(1)}%)`);
+					} else if (currentThreshold === "none" && lastMemoryAlertThreshold !== "none") {
+						// Memory returned to normal, reset tracking
+						lastMemoryAlertThreshold = "none";
+						logInfo(`[CRON] Memory returned to normal levels (${memoryPercent.toFixed(1)}%)`);
+					}
+				}
+			}
 		} catch (error) {
 			logError("[CRON] Status check failed", error instanceof Error ? error.message : String(error));
 		}

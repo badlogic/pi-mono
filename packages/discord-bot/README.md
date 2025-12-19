@@ -341,6 +341,26 @@ The bot includes a webhook server for receiving external alerts and trading sign
 | POST | `/webhook/ci` | CI/CD notifications |
 | POST | `/webhook/custom` | Custom webhooks |
 
+### Security
+
+The webhook server includes multiple security layers:
+
+1. **IP Allowlist**: Only requests from allowed IPs are accepted (default: localhost only)
+2. **API Key Authentication**: Valid API key bypasses IP restrictions
+3. **Rate Limiting**: 3 unauthorized attempts per minute triggers 5-minute block
+4. **Request Size Limits**: Prevents DoS attacks
+5. **Helmet.js**: Security headers and HSTS
+
+**Environment Variables:**
+- `WEBHOOK_API_KEY` - Required for authenticated requests
+- `WEBHOOK_ALLOWED_IPS` - Comma-separated list of allowed IPs (default: `127.0.0.1,::1,::ffff:127.0.0.1`)
+
+**Security Behavior:**
+- Requests from non-allowed IPs without valid API key → `403 Forbidden`
+- Requests with valid API key bypass IP restrictions → allowed from any IP
+- 3+ failed auth attempts in 1 minute → IP blocked for 5 minutes
+- All unauthorized attempts logged with IP address
+
 ### External Access
 
 - **URL**: `http://your-server:3001`
@@ -349,18 +369,25 @@ The bot includes a webhook server for receiving external alerts and trading sign
 ### Examples
 
 ```bash
-# Health check
+# Health check (no auth required)
 curl http://localhost:3001/health
 
-# Send alert
+# Send alert (requires API key if accessing from non-allowed IP)
+curl -X POST http://localhost:3001/webhook/alert \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-webhook-api-key" \
+  -d '{"message":"BTC price alert","priority":"high"}'
+
+# Send trading signal (authenticated request)
+curl -X POST http://localhost:3001/webhook/signal \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-webhook-api-key" \
+  -d '{"symbol":"BTC/USD","action":"BUY","price":"42000"}'
+
+# From allowed IP (no API key needed if IP is in allowlist)
 curl -X POST http://localhost:3001/webhook/alert \
   -H "Content-Type: application/json" \
   -d '{"message":"BTC price alert","priority":"high"}'
-
-# Send trading signal
-curl -X POST http://localhost:3001/webhook/signal \
-  -H "Content-Type: application/json" \
-  -d '{"symbol":"BTC/USD","action":"BUY","price":"42000"}'
 ```
 
 ## Configuration
@@ -375,6 +402,8 @@ curl -X POST http://localhost:3001/webhook/signal \
 | `GITHUB_TOKEN` | No | GitHub API token |
 | `HF_TOKEN` | No | HuggingFace token |
 | `WEBHOOK_PORT` | No | Webhook server port (default: 3001) |
+| `WEBHOOK_API_KEY` | No | API key for webhook authentication |
+| `WEBHOOK_ALLOWED_IPS` | No | Comma-separated IP allowlist (default: localhost only) |
 | `REPORT_CHANNEL_ID` | No | Channel for alerts |
 
 ### Changing the Model
