@@ -20,6 +20,7 @@ export interface SkillsSettings {
 
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
+	kittyProtocol?: boolean; // default: true - disable if keys don't work (Ghostty + num_lock issue)
 }
 
 export interface Settings {
@@ -262,6 +263,18 @@ export class SettingsManager {
 			this.settings.terminal = {};
 		}
 		this.settings.terminal.showImages = show;
+		this.save();
+	}
+
+	getKittyProtocol(): boolean {
+		return this.settings.terminal?.kittyProtocol ?? true;
+	}
+
+	setKittyProtocol(enabled: boolean): void {
+		if (!this.settings.terminal) {
+			this.settings.terminal = {};
+		}
+		this.settings.terminal.kittyProtocol = enabled;
 		this.save();
 	}
 }

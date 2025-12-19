@@ -28,6 +28,10 @@ export interface Terminal {
 	clearScreen(): void; // Clear entire screen and move cursor to (0,0)
 }
 
+export interface ProcessTerminalOptions {
+	kittyProtocol?: boolean; // default: true
+}
+
 /**
  * Real terminal using process.stdin/stdout
  */
@@ -35,6 +39,11 @@ export class ProcessTerminal implements Terminal {
 	private wasRaw = false;
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
+	private kittyProtocol: boolean;
+
+	constructor(options?: ProcessTerminalOptions) {
+		this.kittyProtocol = options?.kittyProtocol ?? true;
+	}
 
 	start(onInput: (data: string) => void, onResize: () => void): void {
 		this.inputHandler = onInput;
@@ -55,7 +64,9 @@ export class ProcessTerminal implements Terminal {
 		// This makes terminals like Ghostty, Kitty, WezTerm send enhanced key sequences
 		// e.g., Shift+Enter becomes \x1b[13;2u instead of just \r
 		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
-		process.stdout.write("\x1b[>1u");
+		if (this.kittyProtocol) {
+			process.stdout.write("\x1b[>1u");
+		}
 
 		// Set up event handlers
 		process.stdin.on("data", this.inputHandler);
@@ -67,7 +78,9 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.write("\x1b[?2004l");
 
 		// Disable Kitty keyboard protocol (pop the flags we pushed)
-		process.stdout.write("\x1b[<u");
+		if (this.kittyProtocol) {
+			process.stdout.write("\x1b[<u");
+		}
 
 		// Remove event handlers
 		if (this.inputHandler) {

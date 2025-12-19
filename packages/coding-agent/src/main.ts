@@ -200,7 +200,7 @@ export async function main(args: string[]) {
 
 	// Handle --resume flag: show session selector
 	if (parsed.resume) {
-		const selectedSession = await selectSession(sessionManager);
+		const selectedSession = await selectSession(sessionManager, settingsManager);
 		if (!selectedSession) {
 			console.log(chalk.dim("No session selected"));
 			return;

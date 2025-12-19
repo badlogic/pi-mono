@@ -4,12 +4,16 @@
 
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import type { SessionManager } from "../core/session-manager.js";
+import type { SettingsManager } from "../core/settings-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
 /** Show TUI session selector and return selected session path or null if cancelled */
-export async function selectSession(sessionManager: SessionManager): Promise<string | null> {
+export async function selectSession(
+	sessionManager: SessionManager,
+	settingsManager: SettingsManager,
+): Promise<string | null> {
 	return new Promise((resolve) => {
-		const ui = new TUI(new ProcessTerminal());
+		const ui = new TUI(new ProcessTerminal({ kittyProtocol: settingsManager.getKittyProtocol() }));
 		let resolved = false;
 
 		const selector = new SessionSelectorComponent(

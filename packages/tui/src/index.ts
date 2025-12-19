@@ -36,7 +36,7 @@ export {
 	Keys,
 } from "./keys.js";
 // Terminal interface and implementations
-export { ProcessTerminal, type Terminal } from "./terminal.js";
+export { ProcessTerminal, type ProcessTerminalOptions, type Terminal } from "./terminal.js";
 // Terminal image support
 export {
 	type CellDimensions,

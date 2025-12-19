@@ -140,7 +140,7 @@ export class InteractiveMode {
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
 		this.customTools = new Map(customTools.map((ct) => [ct.tool.name, ct]));
-		this.ui = new TUI(new ProcessTerminal());
+		this.ui = new TUI(new ProcessTerminal({ kittyProtocol: session.settingsManager.getKittyProtocol() }));
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
