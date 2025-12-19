@@ -166,24 +166,20 @@ export class TUI extends Container {
 			this.cellSizeQueryPending = false;
 		}
 
-		// Check if we have a partial response starting (wait for more data)
-		// ESC [ 6 ; ... could be incomplete
-		const partialPattern = /\x1b\[6;[\d;]*$/;
-		if (partialPattern.test(this.inputBuffer)) {
-			return ""; // Wait for more data
+		// Check if we have a partial cell size response starting (wait for more data)
+		// Patterns that could be incomplete cell size response: \x1b, \x1b[, \x1b[6, \x1b[6;...(no t yet)
+		const partialCellSizePattern = /\x1b(\[6?;?[\d;]*)?$/;
+		if (partialCellSizePattern.test(this.inputBuffer)) {
+			// Check if it's actually a complete different escape sequence (ends with a letter)
+			// Cell size response ends with 't', Kitty keyboard ends with 'u', arrows end with A-D, etc.
+			const lastChar = this.inputBuffer[this.inputBuffer.length - 1];
+			if (!/[a-zA-Z~]/.test(lastChar)) {
+				// Doesn't end with a terminator, might be incomplete - wait for more
+				return "";
+			}
 		}
 
-		// Check for any ESC that might be start of response
-		const escIndex = this.inputBuffer.lastIndexOf("\x1b");
-		if (escIndex !== -1 && escIndex > this.inputBuffer.length - 10) {
-			// Might be incomplete escape sequence, wait a bit
-			// But return any data before it
-			const before = this.inputBuffer.substring(0, escIndex);
-			this.inputBuffer = this.inputBuffer.substring(escIndex);
-			return before;
-		}
-
-		// No response found, return buffered data as user input
+		// No cell size response found, return buffered data as user input
 		const result = this.inputBuffer;
 		this.inputBuffer = "";
 		this.cellSizeQueryPending = false; // Give up waiting
