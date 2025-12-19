@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **ACP mode improvements**: Added `PI_ACP_DEBUG` file logging, advertised ACP slash commands (`/thinking`, `/compact`, `/clear`), and improved tool call titles/error visibility for editor integrations.
+
 ## [0.24.0] - 2025-12-19
 
 ### Added
@@ -15,8 +19,6 @@
 - **Kitty keyboard protocol support**: Shift+Enter, Alt+Enter, Shift+Tab, Ctrl+D, and all Ctrl+key combinations now work in Ghostty, Kitty, WezTerm, and other modern terminals. ([#225](https://github.com/badlogic/pi-mono/pull/225) by [@kim0](https://github.com/kim0))
 
 - **Dynamic API key refresh**: OAuth tokens (GitHub Copilot, Anthropic OAuth) are now refreshed before each LLM call, preventing failures in long-running agent loops where tokens expire mid-session. ([#223](https://github.com/badlogic/pi-mono/pull/223) by [@kim0](https://github.com/kim0))
-
-- **ACP mode improvements**: Added `PI_ACP_DEBUG` file logging, advertised ACP slash commands (`/thinking`, `/compact`, `/clear`), and improved tool call titles/error visibility for editor integrations.
 
 - **`/hotkeys` command**: Shows all keyboard shortcuts in a formatted table.
 
