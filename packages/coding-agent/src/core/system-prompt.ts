@@ -149,7 +149,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		// Append skills section (only if read tool is available)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
 		if (skillsEnabled && customPromptHasRead) {
-			const skills = loadSkills();
+			const { skills } = loadSkills();
 			prompt += formatSkillsForPrompt(skills);
 		}
 
@@ -255,7 +255,7 @@ Documentation:
 
 	// Append skills section (only if read tool is available)
 	if (skillsEnabled && hasRead) {
-		const skills = loadSkills();
+		const { skills } = loadSkills();
 		prompt += formatSkillsForPrompt(skills);
 	}
 

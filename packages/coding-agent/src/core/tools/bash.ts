@@ -21,7 +21,7 @@ const bashSchema = Type.Object({
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
 });
 
-interface BashToolDetails {
+export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
 }

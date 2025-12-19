@@ -22,7 +22,7 @@ See [examples/custom-tools/](../examples/custom-tools/) for working examples.
 
 ## Quick Start
 
-Create a file `~/.pi/agent/tools/hello.ts`:
+Create a file `~/.pi/agent/tools/hello/index.ts`:
 
 ```typescript
 import { Type } from "@sinclair/typebox";
@@ -51,12 +51,25 @@ The tool is automatically discovered and available in your next pi session.
 
 ## Tool Locations
 
+Tools must be in a subdirectory with an `index.ts` entry point:
+
 | Location | Scope | Auto-discovered |
 |----------|-------|-----------------|
-| `~/.pi/agent/tools/*.ts` | Global (all projects) | Yes |
-| `.pi/tools/*.ts` | Project-local | Yes |
+| `~/.pi/agent/tools/*/index.ts` | Global (all projects) | Yes |
+| `.pi/tools/*/index.ts` | Project-local | Yes |
 | `settings.json` `customTools` array | Configured paths | Yes |
 | `--tool <path>` CLI flag | One-off/debugging | No |
+
+**Example structure:**
+```
+~/.pi/agent/tools/
+├── hello/
+│   └── index.ts        # Entry point (auto-discovered)
+└── complex-tool/
+    ├── index.ts        # Entry point (auto-discovered)
+    ├── helpers.ts      # Helper module (not loaded directly)
+    └── types.ts        # Type definitions (not loaded directly)
+```
 
 **Priority:** Later sources win on name conflicts. CLI `--tool` takes highest priority.
 
@@ -125,7 +138,7 @@ The factory receives a `ToolAPI` object (named `pi` by convention):
 ```typescript
 interface ToolAPI {
   cwd: string;  // Current working directory
-  exec(command: string, args: string[]): Promise<ExecResult>;
+  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   ui: {
     select(title: string, options: string[]): Promise<string | null>;
     confirm(title: string, message: string): Promise<boolean>;
@@ -134,9 +147,35 @@ interface ToolAPI {
   };
   hasUI: boolean;  // false in --print or --mode rpc
 }
+
+interface ExecOptions {
+  signal?: AbortSignal;  // Cancel the process
+  timeout?: number;      // Timeout in milliseconds
+}
+
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+  killed?: boolean;  // True if process was killed by signal/timeout
+}
 ```
 
 Always check `pi.hasUI` before using UI methods.
+
+### Cancellation Example
+
+Pass the `signal` from `execute` to `pi.exec` to support cancellation:
+
+```typescript
+async execute(toolCallId, params, signal) {
+  const result = await pi.exec("long-running-command", ["arg"], { signal });
+  if (result.killed) {
+    return { content: [{ type: "text", text: "Cancelled" }] };
+  }
+  return { content: [{ type: "text", text: result.stdout }] };
+}
+```
 
 ## Session Lifecycle
 

@@ -2,6 +2,8 @@
 
 Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.
 
+Pi implements the [Agent Skills standard](https://agentskills.io/specification).
+
 **Example use cases:**
 - Web search and content extraction (Brave Search API)
 - Browser automation via Chrome DevTools Protocol
@@ -65,14 +67,13 @@ description: What this skill does and when to use it. Be specific.
 
 Run once before first use:
 \`\`\`bash
-cd {baseDir}
-npm install
+cd /path/to/skill && npm install
 \`\`\`
 
 ## Usage
 
 \`\`\`bash
-{baseDir}/scripts/process.sh <input>
+./scripts/process.sh <input>
 \`\`\`
 
 ## Workflow
@@ -84,20 +85,54 @@ npm install
 
 ### Frontmatter Fields
 
-| Field | Required | Description |
+Per the [Agent Skills specification](https://agentskills.io/specification#frontmatter-required):
+
+| Field | Required | Constraints |
 |-------|----------|-------------|
-| `description` | Yes | What the skill does and when to use it |
-| `name` | No | Override skill name (defaults to directory name) |
+| `name` | Yes | Max 64 chars. Lowercase a-z, 0-9, hyphens only. Must match parent directory name. |
+| `description` | Yes | Max 1024 chars. What the skill does and when to use it. |
+| `license` | No | License name or reference to bundled license file. |
+| `compatibility` | No | Max 500 chars. Environment requirements (system packages, network access, etc.). |
+| `metadata` | No | Arbitrary key-value mapping for additional metadata. |
+| `allowed-tools` | No | Space-delimited list of pre-approved tools (experimental). |
 
-The `description` is critical. It's shown in the system prompt and determines when the agent loads the skill. Be specific about both what it does and when to use it.
+#### Name Validation
 
-### The `{baseDir}` Placeholder
+The `name` field must:
+- Be 1-64 characters
+- Contain only lowercase letters (a-z), numbers (0-9), and hyphens
+- Not start or end with a hyphen
+- Not contain consecutive hyphens (--)
+- Match the parent directory name exactly
 
-Use `{baseDir}` to reference files in the skill's directory. The agent sees each skill's base directory and substitutes it when following instructions:
+Valid: `pdf-processing`, `data-analysis`, `code-review`
+Invalid: `PDF-Processing`, `-pdf`, `pdf--processing`
+
+#### Description Best Practices
+
+The `description` is critical. It determines when the agent loads the skill. Be specific about both what it does and when to use it.
+
+Good:
+```yaml
+description: Extracts text and tables from PDF files, fills PDF forms, and merges multiple PDFs. Use when working with PDF documents or when the user mentions PDFs, forms, or document extraction.
+```
+
+Poor:
+```yaml
+description: Helps with PDFs.
+```
+
+### File References
+
+Use relative paths from the skill directory:
 
 ```markdown
-Helper scripts: {baseDir}/scripts/
-Config template: {baseDir}/assets/config.json
+See [the reference guide](references/REFERENCE.md) for details.
+
+Run the extraction script:
+\`\`\`bash
+./scripts/extract.py input.pdf
+\`\`\`
 ```
 
 ## Skill Locations
@@ -110,20 +145,27 @@ Skills are discovered from these locations (later wins on name collision):
 4. `~/.pi/agent/skills/**/SKILL.md` (Pi user, recursive)
 5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project, recursive)
 
-### Subdirectory Naming
-
-Pi skills in subdirectories use colon-separated names:
-- `~/.pi/agent/skills/db/migrate/SKILL.md` → `db:migrate`
-- `<cwd>/.pi/skills/aws/s3/upload/SKILL.md` → `aws:s3:upload`
-
 ## How Skills Work
 
 1. At startup, pi scans skill locations and extracts names + descriptions
-2. The system prompt includes a list of available skills with their descriptions
+2. The system prompt includes available skills in XML format
 3. When a task matches, the agent uses `read` to load the full SKILL.md
-4. The agent follows the instructions, using `{baseDir}` to reference scripts/assets
+4. The agent follows the instructions, using relative paths to reference scripts/assets
 
 This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
+
+## Validation Warnings
+
+Pi validates skills against the Agent Skills standard and warns (but still loads) non-compliant skills:
+
+- Name doesn't match parent directory
+- Name exceeds 64 characters
+- Name contains invalid characters
+- Name starts/ends with hyphen or has consecutive hyphens
+- Description missing or exceeds 1024 characters
+- Unknown frontmatter fields
+
+Name collisions (same name from different locations) warn and keep the first skill found.
 
 ## Example: Web Search Skill
 
@@ -146,21 +188,20 @@ description: Web search and content extraction via Brave Search API. Use for sea
 ## Setup
 
 \`\`\`bash
-cd {baseDir}
-npm install
+cd /path/to/brave-search && npm install
 \`\`\`
 
 ## Search
 
 \`\`\`bash
-{baseDir}/search.js "query"              # Basic search
-{baseDir}/search.js "query" --content    # Include page content
+./search.js "query"              # Basic search
+./search.js "query" --content    # Include page content
 \`\`\`
 
 ## Extract Page Content
 
 \`\`\`bash
-{baseDir}/content.js https://example.com
+./content.js https://example.com
 \`\`\`
 ```
 

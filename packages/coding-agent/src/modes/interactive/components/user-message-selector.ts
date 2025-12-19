@@ -1,4 +1,4 @@
-import { type Component, Container, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { type Component, Container, isCtrlC, isEscape, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -94,13 +94,13 @@ class UserMessageList implements Component {
 			}
 		}
 		// Escape - cancel
-		else if (keyData === "\x1b") {
+		else if (isEscape(keyData)) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
 		}
 		// Ctrl+C - cancel
-		else if (keyData === "\x03") {
+		else if (isCtrlC(keyData)) {
 			if (this.onCancel) {
 				this.onCancel();
 			}

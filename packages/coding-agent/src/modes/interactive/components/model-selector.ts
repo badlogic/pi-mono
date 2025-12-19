@@ -1,5 +1,5 @@
 import type { Model } from "@mariozechner/pi-ai";
-import { Container, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, Input, isEscape, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { getAvailableModels } from "../../../core/model-config.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
@@ -192,7 +192,7 @@ export class ModelSelectorComponent extends Container {
 			}
 		}
 		// Escape
-		else if (keyData === "\x1b") {
+		else if (isEscape(keyData)) {
 			this.onCancelCallback();
 		}
 		// Pass everything else to search input

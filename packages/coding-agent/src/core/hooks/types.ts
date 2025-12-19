@@ -6,8 +6,15 @@
  */
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { ToolResultMessage } from "@mariozechner/pi-ai";
+import type { ImageContent, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { SessionEntry } from "../session-manager.js";
+import type {
+	BashToolDetails,
+	FindToolDetails,
+	GrepToolDetails,
+	LsToolDetails,
+	ReadToolDetails,
+} from "../tools/index.js";
 
 // ============================================================================
 // Execution Context
@@ -20,6 +27,15 @@ export interface ExecResult {
 	stdout: string;
 	stderr: string;
 	code: number;
+	/** True if the process was killed due to signal or timeout */
+	killed?: boolean;
+}
+
+export interface ExecOptions {
+	/** AbortSignal to cancel the process */
+	signal?: AbortSignal;
+	/** Timeout in milliseconds */
+	timeout?: number;
 }
 
 /**
@@ -58,7 +74,7 @@ export interface HookUIContext {
  */
 export interface HookEventContext {
 	/** Execute a command and return stdout/stderr/code */
-	exec(command: string, args: string[]): Promise<ExecResult>;
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** UI methods for user interaction */
 	ui: HookUIContext;
 	/** Whether UI is available (false in print mode) */
@@ -140,21 +156,104 @@ export interface ToolCallEvent {
 }
 
 /**
- * Event data for tool_result event.
- * Fired after a tool is executed. Hooks can modify the result.
+ * Base interface for tool_result events.
  */
-export interface ToolResultEvent {
+interface ToolResultEventBase {
 	type: "tool_result";
-	/** Tool name (e.g., "bash", "edit", "write") */
-	toolName: string;
 	/** Tool call ID */
 	toolCallId: string;
 	/** Tool input parameters */
 	input: Record<string, unknown>;
-	/** Tool result content (text) */
-	result: string;
+	/** Full content array (text and images) */
+	content: (TextContent | ImageContent)[];
 	/** Whether the tool execution was an error */
 	isError: boolean;
+}
+
+/** Tool result event for bash tool */
+export interface BashToolResultEvent extends ToolResultEventBase {
+	toolName: "bash";
+	details: BashToolDetails | undefined;
+}
+
+/** Tool result event for read tool */
+export interface ReadToolResultEvent extends ToolResultEventBase {
+	toolName: "read";
+	details: ReadToolDetails | undefined;
+}
+
+/** Tool result event for edit tool */
+export interface EditToolResultEvent extends ToolResultEventBase {
+	toolName: "edit";
+	details: undefined;
+}
+
+/** Tool result event for write tool */
+export interface WriteToolResultEvent extends ToolResultEventBase {
+	toolName: "write";
+	details: undefined;
+}
+
+/** Tool result event for grep tool */
+export interface GrepToolResultEvent extends ToolResultEventBase {
+	toolName: "grep";
+	details: GrepToolDetails | undefined;
+}
+
+/** Tool result event for find tool */
+export interface FindToolResultEvent extends ToolResultEventBase {
+	toolName: "find";
+	details: FindToolDetails | undefined;
+}
+
+/** Tool result event for ls tool */
+export interface LsToolResultEvent extends ToolResultEventBase {
+	toolName: "ls";
+	details: LsToolDetails | undefined;
+}
+
+/** Tool result event for custom/unknown tools */
+export interface CustomToolResultEvent extends ToolResultEventBase {
+	toolName: string;
+	details: unknown;
+}
+
+/**
+ * Event data for tool_result event.
+ * Fired after a tool is executed. Hooks can modify the result.
+ * Use toolName to discriminate and get typed details.
+ */
+export type ToolResultEvent =
+	| BashToolResultEvent
+	| ReadToolResultEvent
+	| EditToolResultEvent
+	| WriteToolResultEvent
+	| GrepToolResultEvent
+	| FindToolResultEvent
+	| LsToolResultEvent
+	| CustomToolResultEvent;
+
+// Type guards for narrowing ToolResultEvent to specific tool types
+export function isBashToolResult(e: ToolResultEvent): e is BashToolResultEvent {
+	return e.toolName === "bash";
+}
+export function isReadToolResult(e: ToolResultEvent): e is ReadToolResultEvent {
+	return e.toolName === "read";
+}
+export function isEditToolResult(e: ToolResultEvent): e is EditToolResultEvent {
+	return e.toolName === "edit";
+}
+export function isWriteToolResult(e: ToolResultEvent): e is WriteToolResultEvent {
+	return e.toolName === "write";
+}
+export function isGrepToolResult(e: ToolResultEvent): e is GrepToolResultEvent {
+	return e.toolName === "grep";
+}
+export function isFindToolResult(e: ToolResultEvent): e is FindToolResultEvent {
+	return e.toolName === "find";
+}
+export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
+	return e.toolName === "ls";
 }
 
 /**
@@ -201,8 +300,10 @@ export interface ToolCallEventResult {
  * Allows hooks to modify tool results.
  */
 export interface ToolResultEventResult {
-	/** Modified result text (if not set, original result is used) */
-	result?: string;
+	/** Replacement content array (text and images) */
+	content?: (TextContent | ImageContent)[];
+	/** Replacement details */
+	details?: unknown;
 	/** Override isError flag */
 	isError?: boolean;
 }

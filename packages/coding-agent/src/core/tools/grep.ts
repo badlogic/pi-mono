@@ -31,7 +31,7 @@ const grepSchema = Type.Object({
 
 const DEFAULT_LIMIT = 100;
 
-interface GrepToolDetails {
+export interface GrepToolDetails {
 	truncation?: TruncationResult;
 	matchLimitReached?: number;
 	linesTruncated?: boolean;

@@ -445,6 +445,10 @@ export async function main(args: string[]) {
 		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
 		// Clean up and exit (file watchers keep process alive)
 		stopThemeWatcher();
+		// Wait for stdout to fully flush before exiting
+		if (process.stdout.writableLength > 0) {
+			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
+		}
 		process.exit(0);
 	}
 }

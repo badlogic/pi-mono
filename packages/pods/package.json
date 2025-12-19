@@ -1,10 +1,10 @@
 {
 	"name": "@mariozechner/pi",
-	"version": "0.23.4",
+	"version": "0.24.0",
 	"description": "CLI tool for managing vLLM deployments on GPU pods",
 	"type": "module",
 	"bin": {
-		"pi": "dist/cli.js"
+		"pi-pods": "dist/cli.js"
 	},
 	"scripts": {
 		"clean": "rm -rf dist",
@@ -34,7 +34,7 @@
 		"node": ">=20.0.0"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "^0.23.4",
+		"@mariozechner/pi-agent-core": "^0.24.0",
 		"chalk": "^5.5.0"
 	},
 	"devDependencies": {}

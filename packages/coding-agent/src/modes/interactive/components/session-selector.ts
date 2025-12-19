@@ -1,4 +1,13 @@
-import { type Component, Container, Input, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import {
+	type Component,
+	Container,
+	Input,
+	isCtrlC,
+	isEscape,
+	Spacer,
+	Text,
+	truncateToWidth,
+} from "@mariozechner/pi-tui";
 import type { SessionManager } from "../../../core/session-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
@@ -139,13 +148,13 @@ class SessionList implements Component {
 			}
 		}
 		// Escape - cancel
-		else if (keyData === "\x1b") {
+		else if (isEscape(keyData)) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
 		}
 		// Ctrl+C - exit process
-		else if (keyData === "\x03") {
+		else if (isCtrlC(keyData)) {
 			process.exit(0);
 		}
 		// Pass everything else to search input

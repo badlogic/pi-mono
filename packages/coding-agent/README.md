@@ -167,6 +167,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/queue` | Set message queue mode: one-at-a-time (default) or all-at-once |
 | `/export [file]` | Export session to self-contained HTML |
 | `/session` | Show session info: path, message counts, token usage, cost |
+| `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
 | `/branch` | Create new conversation branch from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
@@ -199,8 +200,8 @@ The agent reads, writes, and edits files, and executes commands via bash.
 |-----|--------|
 | Arrow keys | Move cursor / browse history (Up when empty) |
 | Option+Left/Right | Move by word |
-| Ctrl+A / Home | Start of line |
-| Ctrl+E / End | End of line |
+| Ctrl+A / Home / Cmd+Left | Start of line |
+| Ctrl+E / End / Cmd+Right | End of line |
 
 **Editing:**
 
@@ -219,6 +220,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Tab | Path completion / accept autocomplete |
 | Escape | Cancel autocomplete / abort streaming |
 | Ctrl+C | Clear editor (first) / exit (second) |
+| Ctrl+D | Exit (when editor is empty) |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P | Cycle models (scoped by `--models`) |
 | Ctrl+O | Toggle tool output expansion |
@@ -488,7 +490,9 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 ### Skills
 
-Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
+Skills are self-contained capability packages that the agent loads on-demand. Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
+
+A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
 
 **Example use cases:**
 - Web search and content extraction (Brave Search API)
@@ -508,6 +512,7 @@ Skills are self-contained capability packages that the agent loads on-demand. A 
 
 ```markdown
 ---
+name: brave-search
 description: Web search via Brave Search API. Use for documentation, facts, or web content.
 ---
 
@@ -515,18 +520,18 @@ description: Web search via Brave Search API. Use for documentation, facts, or w
 
 ## Setup
 \`\`\`bash
-cd {baseDir} && npm install
+cd /path/to/brave-search && npm install
 \`\`\`
 
 ## Usage
 \`\`\`bash
-{baseDir}/search.js "query"           # Basic search
-{baseDir}/search.js "query" --content # Include page content
+./search.js "query"           # Basic search
+./search.js "query" --content # Include page content
 \`\`\`
 ```
 
-- `description`: Required. Determines when the skill is loaded.
-- `{baseDir}`: Placeholder for the skill's directory.
+- `name`: Required. Must match parent directory name. Lowercase, hyphens, max 64 chars.
+- `description`: Required. Max 1024 chars. Determines when the skill is loaded.
 
 **Disable skills:** `pi --no-skills` or set `skills.enabled: false` in settings.
 
@@ -590,10 +595,12 @@ export default function (pi: HookAPI) {
 
 Custom tools let you extend the built-in toolset (read, write, edit, bash, ...) and are called by the LLM directly. They are TypeScript modules that define tools with optional custom TUI integration for getting user input and custom tool call and result rendering.
 
-**Tool locations:**
-- Global: `~/.pi/agent/tools/*.ts`
-- Project: `.pi/tools/*.ts`
-- CLI: `--tool <path>`
+**Tool locations (auto-discovered):**
+- Global: `~/.pi/agent/tools/*/index.ts`
+- Project: `.pi/tools/*/index.ts`
+
+**Explicit paths:**
+- CLI: `--tool <path>` (any .ts file)
 - Settings: `customTools` array in `settings.json`
 
 **Quick example:**
@@ -838,7 +845,7 @@ Pi is opinionated about what it won't do. These are intentional design decisions
 
 **No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). The agent reads them on demand. [Would you like to know more?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-**No sub-agents.** Spawn pi instances via tmux, or build a task tool with [custom tools](#custom-tools). Full observability and steerability.
+**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/custom-tools/subagent/) with [custom tools](#custom-tools). Full observability and steerability.
 
 **No permission popups.** Security theater. Run in a container or build your own with [Hooks](#hooks).
 

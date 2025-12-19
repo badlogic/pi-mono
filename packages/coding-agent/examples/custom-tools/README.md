@@ -4,27 +4,38 @@ Example custom tools for pi-coding-agent.
 
 ## Examples
 
-### hello.ts
+Each example uses the `subdirectory/index.ts` structure required for tool discovery.
+
+### hello/
 Minimal example showing the basic structure of a custom tool.
 
-### question.ts
+### question/
 Demonstrates `pi.ui.select()` for asking the user questions with options.
 
-### todo.ts
+### todo/
 Full-featured example demonstrating:
 - `onSession` for state reconstruction from session history
 - Custom `renderCall` and `renderResult`
 - Proper branching support via details storage
 - State management without external files
 
+### subagent/
+Delegate tasks to specialized subagents with isolated context windows. Includes:
+- `index.ts` - The custom tool (single, parallel, and chain modes)
+- `agents.ts` - Agent discovery helper
+- `agents/` - Sample agent definitions (scout, planner, reviewer, worker)
+- `commands/` - Workflow presets (/implement, /scout-and-plan, /implement-and-review)
+
+See [subagent/README.md](subagent/README.md) for full documentation.
+
 ## Usage
 
 ```bash
-# Test directly
-pi --tool examples/custom-tools/todo.ts
+# Test directly (can point to any .ts file)
+pi --tool examples/custom-tools/todo/index.ts
 
-# Or copy to tools directory for persistent use
-cp todo.ts ~/.pi/agent/tools/
+# Or copy entire folder to tools directory for persistent use
+cp -r todo ~/.pi/agent/tools/
 ```
 
 Then in pi:

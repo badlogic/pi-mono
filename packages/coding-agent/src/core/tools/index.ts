@@ -1,9 +1,10 @@
-export { bashTool } from "./bash.js";
+export { type BashToolDetails, bashTool } from "./bash.js";
 export { editTool } from "./edit.js";
-export { findTool } from "./find.js";
-export { grepTool } from "./grep.js";
-export { lsTool } from "./ls.js";
-export { readTool } from "./read.js";
+export { type FindToolDetails, findTool } from "./find.js";
+export { type GrepToolDetails, grepTool } from "./grep.js";
+export { type LsToolDetails, lsTool } from "./ls.js";
+export { type ReadToolDetails, readTool } from "./read.js";
+export type { TruncationResult } from "./truncate.js";
 export { writeTool } from "./write.js";
 
 import { bashTool } from "./bash.js";

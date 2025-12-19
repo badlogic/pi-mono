@@ -318,7 +318,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if (m.status === "deprecated") continue;
 
 				// gpt-5 models require responses API, others use completions
-				const needsResponsesApi = modelId.startsWith("gpt-5");
+				const needsResponsesApi = modelId.startsWith("gpt-5") || modelId.startsWith("oswe");
 
 				const copilotModel: Model<any> = {
 					id: modelId,

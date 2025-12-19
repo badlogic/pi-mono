@@ -1,4 +1,4 @@
-import { Container, Spacer, TruncatedText } from "@mariozechner/pi-tui";
+import { Container, isEscape, Spacer, TruncatedText } from "@mariozechner/pi-tui";
 import { getOAuthProviders, type OAuthProviderInfo } from "../../../core/oauth/index.js";
 import { loadOAuthCredentials } from "../../../core/oauth/storage.js";
 import { theme } from "../theme/theme.js";
@@ -107,7 +107,7 @@ export class OAuthSelectorComponent extends Container {
 			}
 		}
 		// Escape
-		else if (keyData === "\x1b") {
+		else if (isEscape(keyData)) {
 			this.onCancelCallback();
 		}
 	}

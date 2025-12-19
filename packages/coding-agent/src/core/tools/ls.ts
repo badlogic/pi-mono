@@ -12,7 +12,7 @@ const lsSchema = Type.Object({
 
 const DEFAULT_LIMIT = 500;
 
-interface LsToolDetails {
+export interface LsToolDetails {
 	truncation?: TruncationResult;
 	entryLimitReached?: number;
 }

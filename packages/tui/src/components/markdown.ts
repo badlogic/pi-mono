@@ -585,6 +585,10 @@ export class Markdown implements Component {
 			}
 		}
 
+		// Render top border
+		const topBorderCells = columnWidths.map((w) => "─".repeat(w));
+		lines.push("┌─" + topBorderCells.join("─┬─") + "─┐");
+
 		// Render header with wrapping
 		const headerCellLines: string[][] = token.header.map((cell, i) => {
 			const text = this.renderInlineTokens(cell.tokens || []);
@@ -621,6 +625,10 @@ export class Markdown implements Component {
 				lines.push("│ " + rowParts.join(" │ ") + " │");
 			}
 		}
+
+		// Render bottom border
+		const bottomBorderCells = columnWidths.map((w) => "─".repeat(w));
+		lines.push("└─" + bottomBorderCells.join("─┴─") + "─┘");
 
 		lines.push(""); // Add spacing after table
 		return lines;
