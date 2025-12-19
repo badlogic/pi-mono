@@ -5,7 +5,7 @@
  * They can provide custom rendering for tool calls and results in the TUI.
  */
 
-import type { AgentTool, AgentToolResult } from "@mariozechner/pi-ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
@@ -14,6 +14,9 @@ import type { SessionEntry } from "../session-manager.js";
 
 /** Alias for clarity */
 export type ToolUIContext = HookUIContext;
+
+/** Re-export for custom tools to use in execute signature */
+export type { AgentToolUpdateCallback };
 
 export interface ExecResult {
 	stdout: string;
@@ -62,7 +65,35 @@ export interface RenderResultOptions {
 	isPartial: boolean;
 }
 
-/** Custom tool with optional lifecycle and rendering methods */
+/**
+ * Custom tool with optional lifecycle and rendering methods.
+ *
+ * The execute signature inherited from AgentTool includes an optional onUpdate callback
+ * for streaming progress updates during long-running operations:
+ * - The callback emits partial results to subscribers (e.g. TUI/RPC), not to the LLM.
+ * - Partial updates should use the same TDetails type as the final result (use a union if needed).
+ *
+ * @example
+ * ```typescript
+ * type Details =
+ *   | { status: "running"; step: number; total: number }
+ *   | { status: "done"; count: number };
+ *
+ * async execute(toolCallId, params, signal, onUpdate) {
+ *   const items = params.items || [];
+ *   for (let i = 0; i < items.length; i++) {
+ *     onUpdate?.({
+ *       content: [{ type: "text", text: `Step ${i + 1}/${items.length}...` }],
+ *       details: { status: "running", step: i + 1, total: items.length },
+ *     });
+ *     await processItem(items[i], signal);
+ *   }
+ *   return { content: [{ type: "text", text: "Done" }], details: { status: "done", count: items.length } };
+ * }
+ * ```
+ *
+ * Progress updates are rendered via renderResult with isPartial: true.
+ */
 export interface CustomAgentTool<TParams extends TSchema = TSchema, TDetails = any>
 	extends AgentTool<TParams, TDetails> {
 	/** Called on session start/switch/branch/clear - use to reconstruct state from entries */

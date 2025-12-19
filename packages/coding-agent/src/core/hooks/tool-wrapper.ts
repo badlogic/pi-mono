@@ -2,7 +2,7 @@
  * Tool wrapper - wraps tools with hook callbacks for interception.
  */
 
-import type { AgentTool } from "@mariozechner/pi-ai";
+import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-ai";
 import type { HookRunner } from "./runner.js";
 import type { ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
@@ -10,11 +10,17 @@ import type { ToolCallEventResult, ToolResultEventResult } from "./types.js";
  * Wrap a tool with hook callbacks.
  * - Emits tool_call event before execution (can block)
  * - Emits tool_result event after execution (can modify result)
+ * - Forwards onUpdate callback to wrapped tool for progress streaming
  */
 export function wrapToolWithHooks<T>(tool: AgentTool<any, T>, hookRunner: HookRunner): AgentTool<any, T> {
 	return {
 		...tool,
-		execute: async (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => {
+		execute: async (
+			toolCallId: string,
+			params: Record<string, unknown>,
+			signal?: AbortSignal,
+			onUpdate?: AgentToolUpdateCallback<T>,
+		) => {
 			// Emit tool_call event - hooks can block execution
 			// If hook errors/times out, block by default (fail-safe)
 			if (hookRunner.hasHandlers("tool_call")) {
@@ -39,8 +45,8 @@ export function wrapToolWithHooks<T>(tool: AgentTool<any, T>, hookRunner: HookRu
 				}
 			}
 
-			// Execute the actual tool
-			const result = await tool.execute(toolCallId, params, signal);
+			// Execute the actual tool, forwarding onUpdate for progress streaming
+			const result = await tool.execute(toolCallId, params, signal, onUpdate);
 
 			// Emit tool_result event - hooks can modify the result
 			if (hookRunner.hasHandlers("tool_result")) {

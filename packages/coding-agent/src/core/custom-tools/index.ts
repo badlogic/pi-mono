@@ -4,6 +4,7 @@
 
 export { discoverAndLoadCustomTools, loadCustomTools } from "./loader.js";
 export type {
+	AgentToolUpdateCallback,
 	CustomAgentTool,
 	CustomToolFactory,
 	CustomToolsLoadResult,
