@@ -99,6 +99,19 @@ export interface SessionStats {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/** Models that support xhigh thinking level */
+const XHIGH_MODELS = ["gpt-5.1-codex-max", "gpt-5.2", "gpt-5.2-codex"];
+
+/** Standard thinking levels */
+const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+
+/** Thinking levels including xhigh (for supported models) */
+const THINKING_LEVELS_WITH_XHIGH: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+// ============================================================================
 // AgentSession Class
 // ============================================================================
 
@@ -637,18 +650,28 @@ export class AgentSession {
 	cycleThinkingLevel(): ThinkingLevel | null {
 		if (!this.supportsThinking()) return null;
 
-		const modelId = this.model?.id || "";
-		const supportsXhigh = modelId.includes("codex-max");
-		const levels: ThinkingLevel[] = supportsXhigh
-			? ["off", "minimal", "low", "medium", "high", "xhigh"]
-			: ["off", "minimal", "low", "medium", "high"];
-
+		const levels = this.getAvailableThinkingLevels();
 		const currentIndex = levels.indexOf(this.thinkingLevel);
 		const nextIndex = (currentIndex + 1) % levels.length;
 		const nextLevel = levels[nextIndex];
 
 		this.setThinkingLevel(nextLevel);
 		return nextLevel;
+	}
+
+	/**
+	 * Get available thinking levels for current model.
+	 */
+	getAvailableThinkingLevels(): ThinkingLevel[] {
+		return this.supportsXhighThinking() ? THINKING_LEVELS_WITH_XHIGH : THINKING_LEVELS;
+	}
+
+	/**
+	 * Check if current model supports xhigh thinking level.
+	 */
+	supportsXhighThinking(): boolean {
+		const modelId = this.model?.id || "";
+		return XHIGH_MODELS.some((m) => modelId === m || modelId.endsWith(`/${m}`));
 	}
 
 	/**

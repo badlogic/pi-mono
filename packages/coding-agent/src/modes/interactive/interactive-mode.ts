@@ -1301,6 +1301,7 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new ThinkingSelectorComponent(
 				this.session.thinkingLevel,
+				this.session.getAvailableThinkingLevels(),
 				(level) => {
 					this.session.setThinkingLevel(level);
 					this.updateEditorBorderColor();
