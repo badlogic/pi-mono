@@ -2891,13 +2891,15 @@ function loadDiscordSkills(channelDir: string, workspacePath: string): Skill[] {
 
 	// Load workspace-level skills (global)
 	const workspaceSkillsDir = join(workspacePath, "skills");
-	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })) {
+	const workspaceResult = loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" });
+	for (const skill of workspaceResult.skills) {
 		skillMap.set(skill.name, skill);
 	}
 
 	// Load channel-specific skills (override workspace skills on collision)
 	const channelSkillsDir = join(channelDir, "skills");
-	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" })) {
+	const channelResult = loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" });
+	for (const skill of channelResult.skills) {
 		skillMap.set(skill.name, skill);
 	}
 
