@@ -335,12 +335,15 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					}
 
 					if (responseData.usageMetadata) {
+						// promptTokenCount includes cachedContentTokenCount, so subtract to get fresh input
+						const promptTokens = responseData.usageMetadata.promptTokenCount || 0;
+						const cacheReadTokens = responseData.usageMetadata.cachedContentTokenCount || 0;
 						output.usage = {
-							input: responseData.usageMetadata.promptTokenCount || 0,
+							input: promptTokens - cacheReadTokens,
 							output:
 								(responseData.usageMetadata.candidatesTokenCount || 0) +
 								(responseData.usageMetadata.thoughtsTokenCount || 0),
-							cacheRead: responseData.usageMetadata.cachedContentTokenCount || 0,
+							cacheRead: cacheReadTokens,
 							cacheWrite: 0,
 							totalTokens: responseData.usageMetadata.totalTokenCount || 0,
 							cost: {
