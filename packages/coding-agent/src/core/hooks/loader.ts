@@ -9,7 +9,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { createJiti } from "jiti";
-import { getAgentDir } from "../../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
 import type { HookAPI, HookFactory } from "./types.js";
 
 // Create require function to resolve module paths at runtime
@@ -245,7 +245,7 @@ export async function discoverAndLoadHooks(configuredPaths: string[], cwd: strin
 	addPaths(discoverHooksInDir(globalHooksDir));
 
 	// 2. Project-local hooks: cwd/.pi/hooks/
-	const localHooksDir = path.join(cwd, ".pi", "hooks");
+	const localHooksDir = path.join(cwd, CONFIG_DIR_NAME, "hooks");
 	addPaths(discoverHooksInDir(localHooksDir));
 
 	// 3. Explicitly configured paths (can override/add)

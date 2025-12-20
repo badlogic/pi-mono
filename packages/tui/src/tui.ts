@@ -75,6 +75,7 @@ export class Container implements Component {
  */
 export class TUI extends Container {
 	public terminal: Terminal;
+	public crashLogPath: string;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
 	private focusedComponent: Component | null = null;
@@ -83,9 +84,10 @@ export class TUI extends Container {
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
 
-	constructor(terminal: Terminal) {
+	constructor(terminal: Terminal, crashLogPath?: string) {
 		super();
 		this.terminal = terminal;
+		this.crashLogPath = crashLogPath ?? path.join(os.tmpdir(), "pi-crash.log");
 	}
 
 	setFocus(component: Component | null): void {
@@ -295,7 +297,7 @@ export class TUI extends Container {
 			const isImageLine = this.containsImage(line);
 			if (!isImageLine && visibleWidth(line) > width) {
 				// Log all lines to crash file for debugging
-				const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
+				const crashLogPath = this.crashLogPath;
 				const crashData = [
 					`Crash at ${new Date().toISOString()}`,
 					`Terminal width: ${width}`,

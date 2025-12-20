@@ -3,13 +3,14 @@
  */
 
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
+import { getCrashLogPath } from "../config.js";
 import type { SessionManager } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
 /** Show TUI session selector and return selected session path or null if cancelled */
 export async function selectSession(sessionManager: SessionManager): Promise<string | null> {
 	return new Promise((resolve) => {
-		const ui = new TUI(new ProcessTerminal());
+		const ui = new TUI(new ProcessTerminal(), getCrashLogPath());
 		let resolved = false;
 
 		const selector = new SessionSelectorComponent(

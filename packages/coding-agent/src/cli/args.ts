@@ -4,7 +4,7 @@
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import chalk from "chalk";
-import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../config.js";
+import { APP_NAME, ENV_AGENT_DIR } from "../config.js";
 import { allTools, type ToolName } from "../core/tools/index.js";
 
 export type Mode = "text" | "json" | "rpc";
@@ -196,8 +196,8 @@ ${chalk.bold("Examples:")}
   # Read-only mode (no file modifications possible)
   ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
 
-  # Export a session file to HTML
-  ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
+  # Export a session file to HTML (sessions are stored in $XDG_DATA_HOME/pi/agent/sessions/)
+  ${APP_NAME} --export path/to/session.jsonl
   ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
@@ -210,7 +210,13 @@ ${chalk.bold("Environment Variables:")}
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
-  ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  ${ENV_AGENT_DIR.padEnd(23)} - Override config/data directory (bypasses XDG)
+
+${chalk.bold("XDG Base Directory Locations:")}
+  Config: $XDG_CONFIG_HOME/pi/agent/ (settings.json, models.json, oauth.json)
+  Data:   $XDG_DATA_HOME/pi/agent/   (sessions/, themes/, tools/, hooks/, skills/, agents/)
+  State:  $XDG_STATE_HOME/pi/agent/  (debug logs, crash logs)
+  Note: On macOS, uses ~/Library/Application Support and ~/Library/Logs by default
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents

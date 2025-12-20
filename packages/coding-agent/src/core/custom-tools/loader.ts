@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
-import { getAgentDir } from "../../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type {
 	CustomToolFactory,
@@ -336,7 +336,7 @@ export async function discoverAndLoadCustomTools(
 	addPaths(discoverToolsInDir(globalToolsDir));
 
 	// 2. Project-local tools: cwd/.pi/tools/
-	const localToolsDir = path.join(cwd, ".pi", "tools");
+	const localToolsDir = path.join(cwd, CONFIG_DIR_NAME, "tools");
 	addPaths(discoverToolsInDir(localToolsDir));
 
 	// 3. Explicitly configured paths (can override/add)

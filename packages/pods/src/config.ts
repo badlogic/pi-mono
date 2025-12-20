@@ -1,11 +1,97 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { homedir, platform } from "os";
+import { dirname, join } from "path";
 import type { Config, Pod } from "./types.js";
 
-// Get config directory from env or use default
+// =============================================================================
+// XDG Base Directory Specification Support
+// =============================================================================
+
+/**
+ * Check if we're on macOS.
+ */
+function isMacOS(): boolean {
+	return platform() === "darwin";
+}
+
+/**
+ * Get XDG_CONFIG_HOME or platform-appropriate default.
+ */
+function getXdgConfigHome(): string {
+	if (process.env.XDG_CONFIG_HOME) {
+		return process.env.XDG_CONFIG_HOME;
+	}
+	if (isMacOS()) {
+		return join(homedir(), "Library", "Application Support");
+	}
+	return join(homedir(), ".config");
+}
+
+/**
+ * Get the legacy config path (~/.pi/pods.json).
+ */
+function getLegacyConfigPath(): string {
+	return join(homedir(), ".pi", "pods.json");
+}
+
+let migrationDone = false;
+
+/**
+ * Migrate pods.json from legacy ~/.pi/ to XDG location.
+ */
+function migrateFromLegacyPath(): void {
+	if (migrationDone) {
+		return;
+	}
+	migrationDone = true;
+
+	// Skip if user has explicit override
+	if (process.env.PI_CONFIG_DIR) {
+		return;
+	}
+
+	const legacyPath = getLegacyConfigPath();
+	const newConfigDir = join(getXdgConfigHome(), "pi");
+	const newConfigPath = join(newConfigDir, "pods.json");
+
+	// Skip if legacy file doesn't exist
+	if (!existsSync(legacyPath)) {
+		return;
+	}
+
+	// Skip if new location already has the file
+	if (existsSync(newConfigPath)) {
+		return;
+	}
+
+	try {
+		// Ensure target directory exists
+		mkdirSync(newConfigDir, { recursive: true });
+
+		// Copy the file
+		cpSync(legacyPath, newConfigPath);
+
+		// Remove legacy file
+		rmSync(legacyPath);
+
+		// Try to remove ~/.pi/ if it's now empty
+		const legacyDir = dirname(legacyPath);
+		try {
+			if (existsSync(legacyDir) && readdirSync(legacyDir).length === 0) {
+				rmSync(legacyDir, { recursive: true, force: true });
+			}
+		} catch {
+			// Ignore errors when cleaning up parent
+		}
+	} catch (error) {
+		console.warn(`Warning: Failed to migrate from legacy path ${legacyPath}:`, error);
+	}
+}
+
+// Get config directory from env or use XDG default
 const getConfigDir = (): string => {
-	const configDir = process.env.PI_CONFIG_DIR || join(homedir(), ".pi");
+	migrateFromLegacyPath();
+	const configDir = process.env.PI_CONFIG_DIR || join(getXdgConfigHome(), "pi");
 	if (!existsSync(configDir)) {
 		mkdirSync(configDir, { recursive: true });
 	}

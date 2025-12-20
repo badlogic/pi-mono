@@ -24,7 +24,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
-import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
+import { APP_NAME, getCrashLogPath, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
@@ -141,7 +141,7 @@ export class InteractiveMode {
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
 		this.customTools = new Map(customTools.map((ct) => [ct.tool.name, ct]));
-		this.ui = new TUI(new ProcessTerminal());
+		this.ui = new TUI(new ProcessTerminal(), getCrashLogPath());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();

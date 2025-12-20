@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME, getSkillsDir } from "../config.js";
 
 /**
  * Standard frontmatter fields per Agent Skills spec.
@@ -347,7 +347,7 @@ export function loadSkills(): LoadSkillsResult {
 	addSkills(loadSkillsFromDirInternal(claudeProjectDir, "claude-project", "claude"));
 
 	// Pi: recursive
-	const globalSkillsDir = join(homedir(), CONFIG_DIR_NAME, "agent", "skills");
+	const globalSkillsDir = getSkillsDir();
 	addSkills(loadSkillsFromDirInternal(globalSkillsDir, "user", "recursive"));
 
 	const projectSkillsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "skills");
