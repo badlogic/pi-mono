@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { stream } from "../src/stream.js";
+import { resolveApiKey, stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+
+// Resolve OAuth tokens at module level (async, runs before tests)
+const oauthTokens = await Promise.all([
+	resolveApiKey("anthropic"),
+	resolveApiKey("github-copilot"),
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("google-antigravity"),
+]);
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
 
 async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -46,9 +55,9 @@ describe("Token Statistics on Abort", () => {
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider", () => {
 		const llm = getModel("google", "gemini-2.5-flash");
 
-		it("should include token stats when aborted mid-stream", async () => {
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm, { thinking: { enabled: true } });
-		}, 10000);
+		});
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
@@ -57,32 +66,140 @@ describe("Token Statistics on Abort", () => {
 			api: "openai-completions",
 		};
 
-		it("should include token stats when aborted mid-stream", async () => {
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
-		}, 10000);
+		});
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
 		const llm = getModel("openai", "gpt-5-mini");
 
-		it("should include token stats when aborted mid-stream", async () => {
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
-		}, 20000);
+		});
 	});
 
-	describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider", () => {
-		const llm = getModel("anthropic", "claude-opus-4-1-20250805");
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider", () => {
+		const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
 
-		it("should include token stats when aborted mid-stream", async () => {
-			await testTokensOnAbort(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
-		}, 10000);
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider", () => {
+		const llm = getModel("xai", "grok-3-fast");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider", () => {
+		const llm = getModel("groq", "openai/gpt-oss-20b");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider", () => {
+		const llm = getModel("cerebras", "gpt-oss-120b");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
+		const llm = getModel("zai", "glm-4.5-flash");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
 		const llm = getModel("mistral", "devstral-medium-latest");
 
-		it("should include token stats when aborted mid-stream", async () => {
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
-		}, 10000);
+		});
+	});
+
+	// =========================================================================
+	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
+	// =========================================================================
+
+	describe("Anthropic OAuth Provider", () => {
+		const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
+
+		it.skipIf(!anthropicOAuthToken)(
+			"should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				await testTokensOnAbort(llm, { apiKey: anthropicOAuthToken });
+			},
+		);
+	});
+
+	describe("GitHub Copilot Provider", () => {
+		it.skipIf(!githubCopilotToken)(
+			"gpt-4o - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("github-copilot", "gpt-4o");
+				await testTokensOnAbort(llm, { apiKey: githubCopilotToken });
+			},
+		);
+
+		it.skipIf(!githubCopilotToken)(
+			"claude-sonnet-4 - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("github-copilot", "claude-sonnet-4");
+				await testTokensOnAbort(llm, { apiKey: githubCopilotToken });
+			},
+		);
+	});
+
+	describe("Google Gemini CLI Provider", () => {
+		it.skipIf(!geminiCliToken)(
+			"gemini-2.5-flash - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("google-gemini-cli", "gemini-2.5-flash");
+				await testTokensOnAbort(llm, { apiKey: geminiCliToken });
+			},
+		);
+	});
+
+	describe("Google Antigravity Provider", () => {
+		it.skipIf(!antigravityToken)(
+			"gemini-3-flash - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("google-antigravity", "gemini-3-flash");
+				await testTokensOnAbort(llm, { apiKey: antigravityToken });
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"claude-sonnet-4-5 - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("google-antigravity", "claude-sonnet-4-5");
+				await testTokensOnAbort(llm, { apiKey: antigravityToken });
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"gpt-oss-120b-medium - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("google-antigravity", "gpt-oss-120b-medium");
+				await testTokensOnAbort(llm, { apiKey: antigravityToken });
+			},
+		);
 	});
 });

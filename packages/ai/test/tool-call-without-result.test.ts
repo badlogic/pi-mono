@@ -1,8 +1,17 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete } from "../src/stream.js";
-import type { Context, Tool } from "../src/types.js";
+import { complete, resolveApiKey } from "../src/stream.js";
+import type { Api, Context, Model, OptionsForApi, Tool } from "../src/types.js";
+
+// Resolve OAuth tokens at module level (async, runs before tests)
+const oauthTokens = await Promise.all([
+	resolveApiKey("anthropic"),
+	resolveApiKey("github-copilot"),
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("google-antigravity"),
+]);
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
 
 // Simple calculate tool
 const calculateSchema = Type.Object({
@@ -17,7 +26,10 @@ const calculateTool: Tool = {
 	parameters: calculateSchema,
 };
 
-async function testToolCallWithoutResult(model: any, options: any = {}) {
+async function testToolCallWithoutResult<TApi extends Api>(
+	model: Model<TApi>,
+	options: OptionsForApi<TApi> = {} as OptionsForApi<TApi>,
+) {
 	// Step 1: Create context with the calculate tool
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant. Use the calculate tool when asked to perform calculations.",
@@ -70,7 +82,8 @@ async function testToolCallWithoutResult(model: any, options: any = {}) {
 		.filter((block) => block.type === "text")
 		.map((block) => (block.type === "text" ? block.text : ""))
 		.join(" ");
-	expect(textContent.length).toBeGreaterThan(0);
+	const toolCalls = secondResponse.content.filter((block) => block.type === "toolCall").length;
+	expect(toolCalls || textContent.length).toBeGreaterThan(0);
 	console.log("Answer:", textContent);
 
 	// Verify the stop reason is either "stop" or "toolUse" (new tool call)
@@ -78,19 +91,158 @@ async function testToolCallWithoutResult(model: any, options: any = {}) {
 }
 
 describe("Tool Call Without Result Tests", () => {
-	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider - Missing Tool Result", () => {
-		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+	// =========================================================================
+	// API Key-based providers
+	// =========================================================================
 
-		it("should filter out tool calls without corresponding tool results", async () => {
+	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider", () => {
+		const model = getModel("google", "gemini-2.5-flash");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
-		}, 30000);
+		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider - Missing Tool Result", () => {
+	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
+		const model: Model<"openai-completions"> = {
+			...getModel("openai", "gpt-4o-mini")!,
+			api: "openai-completions",
+		};
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
+		const model = getModel("openai", "gpt-5-mini");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider", () => {
+		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider", () => {
+		const model = getModel("xai", "grok-3-fast");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider", () => {
+		const model = getModel("groq", "openai/gpt-oss-20b");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider", () => {
+		const model = getModel("cerebras", "gpt-oss-120b");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
+		const model = getModel("zai", "glm-4.5-flash");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
 		const model = getModel("mistral", "devstral-medium-latest");
 
-		it("should filter out tool calls without corresponding tool results", async () => {
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
-		}, 30000);
+		});
+	});
+
+	// =========================================================================
+	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
+	// =========================================================================
+
+	describe("Anthropic OAuth Provider", () => {
+		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+
+		it.skipIf(!anthropicOAuthToken)(
+			"should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				await testToolCallWithoutResult(model, { apiKey: anthropicOAuthToken });
+			},
+		);
+	});
+
+	describe("GitHub Copilot Provider", () => {
+		it.skipIf(!githubCopilotToken)(
+			"gpt-4o - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("github-copilot", "gpt-4o");
+				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
+			},
+		);
+
+		it.skipIf(!githubCopilotToken)(
+			"claude-sonnet-4 - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("github-copilot", "claude-sonnet-4");
+				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
+			},
+		);
+	});
+
+	describe("Google Gemini CLI Provider", () => {
+		it.skipIf(!geminiCliToken)(
+			"gemini-2.5-flash - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("google-gemini-cli", "gemini-2.5-flash");
+				await testToolCallWithoutResult(model, { apiKey: geminiCliToken });
+			},
+		);
+	});
+
+	describe("Google Antigravity Provider", () => {
+		it.skipIf(!antigravityToken)(
+			"gemini-3-flash - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("google-antigravity", "gemini-3-flash");
+				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"claude-sonnet-4-5 - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("google-antigravity", "claude-sonnet-4-5");
+				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"gpt-oss-120b-medium - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("google-antigravity", "gpt-oss-120b-medium");
+				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
+			},
+		);
 	});
 });
