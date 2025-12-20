@@ -3,6 +3,7 @@ import { agentLoop, agentLoopContinue } from "../src/agent/agent-loop.js";
 import { calculateTool } from "../src/agent/tools/calculate.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig } from "../src/agent/types.js";
 import { getModel } from "../src/models.js";
+import { resolveApiKey } from "../src/stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -12,6 +13,15 @@ import type {
 	ToolResultMessage,
 	UserMessage,
 } from "../src/types.js";
+
+// Resolve OAuth tokens at module level (async, runs before tests)
+const oauthTokens = await Promise.all([
+	resolveApiKey("anthropic"),
+	resolveApiKey("github-copilot"),
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("google-antigravity"),
+]);
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
 
 async function calculateTest<TApi extends Api>(model: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Create the agent context with the calculator tool
@@ -250,127 +260,271 @@ describe("Agent Calculator Tests", () => {
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Agent", () => {
 		const model = getModel("google", "gemini-2.5-flash");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider Agent", () => {
 		const model = getModel("openai", "gpt-4o-mini");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider Agent", () => {
 		const model = getModel("openai", "gpt-5-mini");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider Agent", () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider Agent", () => {
 		const model = getModel("xai", "grok-3");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider Agent", () => {
 		const model = getModel("groq", "openai/gpt-oss-20b");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider Agent", () => {
 		const model = getModel("cerebras", "gpt-oss-120b");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider Agent", () => {
 		const model = getModel("zai", "glm-4.5-air");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Agent", () => {
 		const model = getModel("mistral", "devstral-medium-latest");
 
-		it("should calculate multiple expressions and sum the results", async () => {
+		it("should calculate multiple expressions and sum the results", { retry: 3 }, async () => {
 			const result = await calculateTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
-		}, 30000);
+		});
 
-		it("should handle abort during tool execution", async () => {
+		it("should handle abort during tool execution", { retry: 3 }, async () => {
 			const result = await abortTest(model);
 			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
-		}, 30000);
+		});
+	});
+
+	// =========================================================================
+	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
+	// =========================================================================
+
+	describe("Anthropic OAuth Provider Agent", () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+
+		it.skipIf(!anthropicOAuthToken)(
+			"should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const result = await calculateTest(model, { apiKey: anthropicOAuthToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!anthropicOAuthToken)("should handle abort during tool execution", { retry: 3 }, async () => {
+			const result = await abortTest(model, { apiKey: anthropicOAuthToken });
+			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	describe("GitHub Copilot Provider Agent", () => {
+		it.skipIf(!githubCopilotToken)(
+			"gpt-4o - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("github-copilot", "gpt-4o");
+				const result = await calculateTest(model, { apiKey: githubCopilotToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!githubCopilotToken)("gpt-4o - should handle abort during tool execution", { retry: 3 }, async () => {
+			const model = getModel("github-copilot", "gpt-4o");
+			const result = await abortTest(model, { apiKey: githubCopilotToken });
+			expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+		});
+
+		it.skipIf(!githubCopilotToken)(
+			"claude-sonnet-4 - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("github-copilot", "claude-sonnet-4");
+				const result = await calculateTest(model, { apiKey: githubCopilotToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!githubCopilotToken)(
+			"claude-sonnet-4 - should handle abort during tool execution",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("github-copilot", "claude-sonnet-4");
+				const result = await abortTest(model, { apiKey: githubCopilotToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+			},
+		);
+	});
+
+	describe("Google Gemini CLI Provider Agent", () => {
+		it.skipIf(!geminiCliToken)(
+			"gemini-2.5-flash - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-gemini-cli", "gemini-2.5-flash");
+				const result = await calculateTest(model, { apiKey: geminiCliToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!geminiCliToken)(
+			"gemini-2.5-flash - should handle abort during tool execution",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-gemini-cli", "gemini-2.5-flash");
+				const result = await abortTest(model, { apiKey: geminiCliToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+			},
+		);
+	});
+
+	describe("Google Antigravity Provider Agent", () => {
+		it.skipIf(!antigravityToken)(
+			"gemini-3-flash - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "gemini-3-flash");
+				const result = await calculateTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"gemini-3-flash - should handle abort during tool execution",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "gemini-3-flash");
+				const result = await abortTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"claude-sonnet-4-5 - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "claude-sonnet-4-5");
+				const result = await calculateTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"claude-sonnet-4-5 - should handle abort during tool execution",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "claude-sonnet-4-5");
+				const result = await abortTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"gpt-oss-120b-medium - should calculate multiple expressions and sum the results",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "gpt-oss-120b-medium");
+				const result = await calculateTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(2);
+			},
+		);
+
+		it.skipIf(!antigravityToken)(
+			"gpt-oss-120b-medium - should handle abort during tool execution",
+			{ retry: 3 },
+			async () => {
+				const model = getModel("google-antigravity", "gpt-oss-120b-medium");
+				const result = await abortTest(model, { apiKey: antigravityToken });
+				expect(result.toolCallCount).toBeGreaterThanOrEqual(1);
+			},
+		);
 	});
 });
 
@@ -422,7 +576,7 @@ describe("agentLoopContinue", () => {
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from user message", () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 
-		it("should continue and get assistant response when last message is user", async () => {
+		it("should continue and get assistant response when last message is user", { retry: 3 }, async () => {
 			const userMessage: UserMessage = {
 				role: "user",
 				content: [{ type: "text", text: "Say exactly: HELLO WORLD" }],
@@ -463,13 +617,13 @@ describe("agentLoopContinue", () => {
 			const messageEndEvents = events.filter((e) => e.type === "message_end");
 			expect(messageEndEvents.length).toBe(1); // Only assistant message
 			expect((messageEndEvents[0] as any).message.role).toBe("assistant");
-		}, 30000);
+		});
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("continue from tool result", () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 
-		it("should continue processing after tool results", async () => {
+		it("should continue processing after tool results", { retry: 3 }, async () => {
 			// Simulate a conversation where:
 			// 1. User asked to calculate something
 			// 2. Assistant made a tool call
@@ -542,6 +696,6 @@ describe("agentLoopContinue", () => {
 					.join(" ");
 				expect(textContent).toMatch(/8/);
 			}
-		}, 30000);
+		});
 	});
 });

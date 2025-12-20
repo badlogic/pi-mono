@@ -308,8 +308,8 @@ describe("Context overflow error handling", () => {
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");
-			// Cerebras returns status code with no body
-			expect(result.errorMessage).toMatch(/4(00|13).*\(no body\)/i);
+			// Cerebras returns status code with no body (400, 413, or 429 for token rate limit)
+			expect(result.errorMessage).toMatch(/4(00|13|29).*\(no body\)/i);
 			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 		}, 120000);
 	});
