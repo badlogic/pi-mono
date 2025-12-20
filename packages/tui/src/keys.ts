@@ -259,9 +259,16 @@ export function isCtrlE(data: string): boolean {
 /**
  * Check if input matches Ctrl+K (raw byte or Kitty protocol).
  * Ignores lock key bits.
+ * Also checks if first byte is 0x0b for compatibility with terminals
+ * that may send trailing bytes.
  */
 export function isCtrlK(data: string): boolean {
-	return data === RAW.CTRL_K || data === Keys.CTRL_K || matchesKittySequence(data, CODEPOINTS.k, MODIFIERS.ctrl);
+	return (
+		data === RAW.CTRL_K ||
+		(data.length > 0 && data.charCodeAt(0) === 0x0b) ||
+		data === Keys.CTRL_K ||
+		matchesKittySequence(data, CODEPOINTS.k, MODIFIERS.ctrl)
+	);
 }
 
 /**

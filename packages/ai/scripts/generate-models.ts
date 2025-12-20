@@ -482,6 +482,97 @@ async function generateModels() {
 		});
 	}
 
+	// Add Google Cloud Code Assist models (Gemini CLI / Antigravity)
+	// These use OAuth authentication via Google account, cost is $0 (uses account quota)
+	const CLOUD_CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+	const cloudCodeAssistModels: Model<"google-cloud-code-assist">[] = [
+		{
+			id: "gemini-3-pro-high",
+			name: "Gemini 3 Pro High (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3-pro-low",
+			name: "Gemini 3 Pro Low (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3-flash",
+			name: "Gemini 3 Flash (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "claude-sonnet-4-5",
+			name: "Claude Sonnet 4.5 (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-sonnet-4-5-thinking",
+			name: "Claude Sonnet 4.5 Thinking (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-opus-4-5-thinking",
+			name: "Claude Opus 4.5 Thinking (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "gpt-oss-120b-medium",
+			name: "GPT-OSS 120B Medium (Cloud Code Assist)",
+			api: "google-cloud-code-assist",
+			provider: "google-cloud-code-assist",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131072,
+			maxTokens: 32768,
+		},
+	];
+	allModels.push(...cloudCodeAssistModels);
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
