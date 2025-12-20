@@ -16,6 +16,7 @@ import type { AssistantMessage } from "../types.js";
  * - OpenRouter: "This endpoint's maximum context length is X tokens. However, you requested about Y tokens"
  * - llama.cpp: "the request exceeds the available context size, try increasing it"
  * - LM Studio: "tokens to keep from the initial prompt is greater than the context length"
+ * - GitHub Copilot: "prompt token count of X exceeds the limit of Y"
  * - Cerebras: Returns "400 status code (no body)" - handled separately below
  * - Mistral: Returns "400 status code (no body)" - handled separately below
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
@@ -28,6 +29,7 @@ const OVERFLOW_PATTERNS = [
 	/maximum prompt length is \d+/i, // xAI (Grok)
 	/reduce the length of the messages/i, // Groq
 	/maximum context length is \d+ tokens/i, // OpenRouter (all backends)
+	/exceeds the limit of \d+/i, // GitHub Copilot
 	/exceeds the available context size/i, // llama.cpp server
 	/greater than the context length/i, // LM Studio
 	/context length exceeded/i, // Generic fallback

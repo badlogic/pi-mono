@@ -7,7 +7,7 @@ import type { Context, ImageContent, Model, StopReason, TextContent, Tool } from
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transorm-messages.js";
 
-type GoogleApiType = "google-generative-ai" | "google-cloud-code-assist";
+type GoogleApiType = "google-generative-ai" | "google-gemini-cli";
 
 /**
  * Convert internal messages to Gemini Content[] format.
@@ -48,14 +48,23 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 
 			for (const block of msg.content) {
 				if (block.type === "text") {
+					// Skip empty text blocks - they can cause issues with some models (e.g. Claude via Antigravity)
+					if (!block.text || block.text.trim() === "") continue;
 					parts.push({ text: sanitizeSurrogates(block.text) });
 				} else if (block.type === "thinking") {
-					const thinkingPart: Part = {
-						thought: true,
-						thoughtSignature: block.thinkingSignature,
-						text: sanitizeSurrogates(block.thinking),
-					};
-					parts.push(thinkingPart);
+					// Thinking blocks require signatures for Claude via Antigravity.
+					// If signature is missing (e.g. from GPT-OSS), convert to regular text with delimiters.
+					if (block.thinkingSignature) {
+						parts.push({
+							thought: true,
+							text: sanitizeSurrogates(block.thinking),
+							thoughtSignature: block.thinkingSignature,
+						});
+					} else {
+						parts.push({
+							text: `<thinking>\n${sanitizeSurrogates(block.thinking)}\n</thinking>`,
+						});
+					}
 				} else if (block.type === "toolCall") {
 					const part: Part = {
 						functionCall: {
@@ -112,10 +121,17 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				});
 			}
 
-			contents.push({
-				role: "user",
-				parts,
-			});
+			// Cloud Code Assist API requires all function responses to be in a single user turn.
+			// Check if the last content is already a user turn with function responses and merge.
+			const lastContent = contents[contents.length - 1];
+			if (lastContent?.role === "user" && lastContent.parts?.some((p) => p.functionResponse)) {
+				lastContent.parts.push(...parts);
+			} else {
+				contents.push({
+					role: "user",
+					parts,
+				});
+			}
 		}
 	}
 

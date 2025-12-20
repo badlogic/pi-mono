@@ -81,7 +81,7 @@ export {
 	logout,
 	type OAuthAuthInfo,
 	type OAuthPrompt,
-	type SupportedOAuthProvider,
+	type OAuthProvider,
 } from "./core/oauth/index.js";
 export {
 	type CompactionEntry,

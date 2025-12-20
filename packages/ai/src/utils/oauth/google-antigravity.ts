@@ -1,20 +1,36 @@
+/**
+ * Antigravity OAuth flow (Gemini 3, Claude, GPT-OSS via Google Cloud)
+ * Uses different OAuth credentials than google-gemini-cli for access to additional models.
+ */
+
 import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
-const CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
-const CLIENT_SECRET = "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";
-const REDIRECT_URI = "http://localhost:8085/oauth2callback";
+// Antigravity OAuth credentials (different from Gemini CLI)
+const CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const CLIENT_SECRET = "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";
+const REDIRECT_URI = "http://localhost:51121/oauth-callback";
+
+// Antigravity requires additional scopes
 const SCOPES = [
 	"https://www.googleapis.com/auth/cloud-platform",
 	"https://www.googleapis.com/auth/userinfo.email",
 	"https://www.googleapis.com/auth/userinfo.profile",
+	"https://www.googleapis.com/auth/cclog",
+	"https://www.googleapis.com/auth/experimentsandconfigs",
 ];
+
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
 
-export interface GoogleCloudCredentials extends OAuthCredentials {
+// Antigravity uses sandbox endpoint
+const CODE_ASSIST_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+
+// Fallback project ID when discovery fails
+const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
+
+export interface AntigravityCredentials extends OAuthCredentials {
 	projectId: string;
 	email?: string;
 }
@@ -42,9 +58,9 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 		});
 
 		const server = createServer((req, res) => {
-			const url = new URL(req.url || "", `http://localhost:8085`);
+			const url = new URL(req.url || "", `http://localhost:51121`);
 
-			if (url.pathname === "/oauth2callback") {
+			if (url.pathname === "/oauth-callback") {
 				const code = url.searchParams.get("code");
 				const state = url.searchParams.get("state");
 				const error = url.searchParams.get("error");
@@ -81,7 +97,7 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 			reject(err);
 		});
 
-		server.listen(8085, "127.0.0.1", () => {
+		server.listen(51121, "127.0.0.1", () => {
 			resolve({
 				server,
 				getCode: () => codePromise,
@@ -91,16 +107,9 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 }
 
 interface LoadCodeAssistPayload {
-	cloudaicompanionProject?: string;
+	cloudaicompanionProject?: string | { id?: string };
 	currentTier?: { id?: string };
 	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
-}
-
-interface OnboardUserPayload {
-	done?: boolean;
-	response?: {
-		cloudaicompanionProject?: { id?: string };
-	};
 }
 
 /**
@@ -111,59 +120,32 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * Get default tier ID from allowed tiers
- */
-function getDefaultTierId(allowedTiers?: Array<{ id?: string; isDefault?: boolean }>): string | undefined {
-	if (!allowedTiers || allowedTiers.length === 0) return undefined;
-	const defaultTier = allowedTiers.find((t) => t.isDefault);
-	return defaultTier?.id ?? allowedTiers[0]?.id;
-}
-
-/**
- * Discover or provision a Google Cloud project for the user
+ * Discover or provision a project for the user
  */
 async function discoverProject(accessToken: string, onProgress?: (message: string) => void): Promise<string> {
 	const headers = {
 		Authorization: `Bearer ${accessToken}`,
 		"Content-Type": "application/json",
 		"User-Agent": "google-api-nodejs-client/9.15.1",
-		"X-Goog-Api-Client": "gl-node/22.17.0",
+		"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+		"Client-Metadata": JSON.stringify({
+			ideType: "IDE_UNSPECIFIED",
+			platform: "PLATFORM_UNSPECIFIED",
+			pluginType: "GEMINI",
+		}),
 	};
 
-	// Try to load existing project via loadCodeAssist
-	onProgress?.("Checking for existing Cloud Code Assist project...");
-	const loadResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
-		method: "POST",
-		headers,
-		body: JSON.stringify({
-			metadata: {
-				ideType: "IDE_UNSPECIFIED",
-				platform: "PLATFORM_UNSPECIFIED",
-				pluginType: "GEMINI",
-			},
-		}),
-	});
+	// Try endpoints in order: prod first, then sandbox
+	const endpoints = ["https://cloudcode-pa.googleapis.com", "https://daily-cloudcode-pa.sandbox.googleapis.com"];
 
-	if (loadResponse.ok) {
-		const data = (await loadResponse.json()) as LoadCodeAssistPayload;
+	onProgress?.("Checking for existing project...");
 
-		// If we have an existing project, use it
-		if (data.cloudaicompanionProject) {
-			return data.cloudaicompanionProject;
-		}
-
-		// Otherwise, try to onboard with the FREE tier
-		const tierId = getDefaultTierId(data.allowedTiers) ?? "FREE";
-
-		onProgress?.("Provisioning Cloud Code Assist project (this may take a moment)...");
-
-		// Onboard with retries (the API may take time to provision)
-		for (let attempt = 0; attempt < 10; attempt++) {
-			const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
+	for (const endpoint of endpoints) {
+		try {
+			const loadResponse = await fetch(`${endpoint}/v1internal:loadCodeAssist`, {
 				method: "POST",
 				headers,
 				body: JSON.stringify({
-					tierId,
 					metadata: {
 						ideType: "IDE_UNSPECIFIED",
 						platform: "PLATFORM_UNSPECIFIED",
@@ -172,27 +154,29 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
 				}),
 			});
 
-			if (onboardResponse.ok) {
-				const onboardData = (await onboardResponse.json()) as OnboardUserPayload;
-				const projectId = onboardData.response?.cloudaicompanionProject?.id;
+			if (loadResponse.ok) {
+				const data = (await loadResponse.json()) as LoadCodeAssistPayload;
 
-				if (onboardData.done && projectId) {
-					return projectId;
+				// Handle both string and object formats
+				if (typeof data.cloudaicompanionProject === "string" && data.cloudaicompanionProject) {
+					return data.cloudaicompanionProject;
+				}
+				if (
+					data.cloudaicompanionProject &&
+					typeof data.cloudaicompanionProject === "object" &&
+					data.cloudaicompanionProject.id
+				) {
+					return data.cloudaicompanionProject.id;
 				}
 			}
-
-			// Wait before retrying
-			if (attempt < 9) {
-				onProgress?.(`Waiting for project provisioning (attempt ${attempt + 2}/10)...`);
-				await wait(3000);
-			}
+		} catch {
+			// Try next endpoint
 		}
 	}
 
-	throw new Error(
-		"Could not discover or provision a Google Cloud project. " +
-			"Please ensure you have access to Google Cloud Code Assist (Gemini CLI).",
-	);
+	// Use fallback project ID
+	onProgress?.("Using default project...");
+	return DEFAULT_PROJECT_ID;
 }
 
 /**
@@ -217,12 +201,50 @@ async function getUserEmail(accessToken: string): Promise<string | undefined> {
 }
 
 /**
- * Login with Google Cloud OAuth
+ * Refresh Antigravity token
  */
-export async function loginGoogleCloud(
+export async function refreshAntigravityToken(refreshToken: string, projectId: string): Promise<OAuthCredentials> {
+	const response = await fetch(TOKEN_URL, {
+		method: "POST",
+		headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		body: new URLSearchParams({
+			client_id: CLIENT_ID,
+			client_secret: CLIENT_SECRET,
+			refresh_token: refreshToken,
+			grant_type: "refresh_token",
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`Antigravity token refresh failed: ${error}`);
+	}
+
+	const data = (await response.json()) as {
+		access_token: string;
+		expires_in: number;
+		refresh_token?: string;
+	};
+
+	return {
+		type: "oauth",
+		refresh: data.refresh_token || refreshToken,
+		access: data.access_token,
+		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
+		projectId,
+	};
+}
+
+/**
+ * Login with Antigravity OAuth
+ *
+ * @param onAuth - Callback with URL and optional instructions
+ * @param onProgress - Optional progress callback
+ */
+export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
-): Promise<GoogleCloudCredentials> {
+): Promise<AntigravityCredentials> {
 	const { verifier, challenge } = generatePKCE();
 
 	// Start local server for callback
@@ -302,7 +324,7 @@ export async function loginGoogleCloud(
 		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
-		const credentials: GoogleCloudCredentials = {
+		const credentials: AntigravityCredentials = {
 			type: "oauth",
 			refresh: tokenData.refresh_token,
 			access: tokenData.access_token,
@@ -311,63 +333,10 @@ export async function loginGoogleCloud(
 			email,
 		};
 
-		saveOAuthCredentials("google-cloud-code-assist", credentials);
+		saveOAuthCredentials("google-antigravity", credentials);
 
 		return credentials;
 	} finally {
 		server.close();
 	}
-}
-
-/**
- * Refresh Google Cloud OAuth token using refresh token
- */
-export async function refreshGoogleCloudToken(
-	refreshToken: string,
-	existingProjectId?: string,
-): Promise<GoogleCloudCredentials> {
-	const tokenResponse = await fetch(TOKEN_URL, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/x-www-form-urlencoded",
-		},
-		body: new URLSearchParams({
-			client_id: CLIENT_ID,
-			client_secret: CLIENT_SECRET,
-			refresh_token: refreshToken,
-			grant_type: "refresh_token",
-		}),
-	});
-
-	if (!tokenResponse.ok) {
-		const error = await tokenResponse.text();
-		throw new Error(`Token refresh failed: ${error}`);
-	}
-
-	const tokenData = (await tokenResponse.json()) as {
-		access_token: string;
-		expires_in: number;
-		refresh_token?: string; // May or may not be returned
-	};
-
-	// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
-	const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
-
-	// Get user email
-	const email = await getUserEmail(tokenData.access_token);
-
-	// Use existing project ID or discover new one
-	let projectId = existingProjectId;
-	if (!projectId) {
-		projectId = await discoverProject(tokenData.access_token);
-	}
-
-	return {
-		type: "oauth",
-		refresh: tokenData.refresh_token || refreshToken, // Use new refresh token if provided, otherwise keep existing
-		access: tokenData.access_token,
-		expires: expiresAt,
-		projectId,
-		email,
-	};
 }

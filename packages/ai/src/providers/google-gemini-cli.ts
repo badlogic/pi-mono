@@ -1,5 +1,6 @@
 /**
- * Google Cloud Code Assist provider for Gemini CLI / Antigravity authentication.
+ * Google Gemini CLI / Antigravity provider.
+ * Shared implementation for both google-gemini-cli and google-antigravity providers.
  * Uses the Cloud Code Assist API endpoint to access Gemini and Claude models.
  */
 
@@ -20,7 +21,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { convertMessages, convertTools, mapStopReasonString, mapToolChoice } from "./google-shared.js";
 
-export interface GoogleCloudCodeAssistOptions extends StreamOptions {
+export interface GoogleGeminiCliOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -29,11 +30,27 @@ export interface GoogleCloudCodeAssistOptions extends StreamOptions {
 	projectId?: string;
 }
 
-const ENDPOINT = "https://cloudcode-pa.googleapis.com";
-const HEADERS = {
-	"User-Agent": "google-api-nodejs-client/9.15.1",
+const DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+// Headers for Gemini CLI (prod endpoint)
+const GEMINI_CLI_HEADERS = {
+	"User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"X-Goog-Api-Client": "gl-node/22.17.0",
-	"Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
+	"Client-Metadata": JSON.stringify({
+		ideType: "IDE_UNSPECIFIED",
+		platform: "PLATFORM_UNSPECIFIED",
+		pluginType: "GEMINI",
+	}),
+};
+
+// Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
+const ANTIGRAVITY_HEADERS = {
+	"User-Agent": "antigravity/1.11.5 darwin/arm64",
+	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+	"Client-Metadata": JSON.stringify({
+		ideType: "IDE_UNSPECIFIED",
+		platform: "PLATFORM_UNSPECIFIED",
+		pluginType: "GEMINI",
+	}),
 };
 
 // Counter for generating unique tool call IDs
@@ -92,10 +109,10 @@ interface CloudCodeAssistResponseChunk {
 	traceId?: string;
 }
 
-export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assist"> = (
-	model: Model<"google-cloud-code-assist">,
+export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
+	model: Model<"google-gemini-cli">,
 	context: Context,
-	options?: GoogleCloudCodeAssistOptions,
+	options?: GoogleGeminiCliOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
 
@@ -103,7 +120,7 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
-			api: "google-cloud-code-assist" as Api,
+			api: "google-gemini-cli" as Api,
 			provider: model.provider,
 			model: model.id,
 			usage: {
@@ -141,7 +158,12 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 			}
 
 			const requestBody = buildRequest(model, context, projectId, options);
-			const url = `${ENDPOINT}/v1internal:streamGenerateContent?alt=sse`;
+			const endpoint = model.baseUrl || DEFAULT_ENDPOINT;
+			const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+
+			// Use Antigravity headers for sandbox endpoint, otherwise Gemini CLI headers
+			const isAntigravity = endpoint.includes("sandbox.googleapis.com");
+			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
 			const response = await fetch(url, {
 				method: "POST",
@@ -149,7 +171,7 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
 					Accept: "text/event-stream",
-					...HEADERS,
+					...headers,
 				},
 				body: JSON.stringify(requestBody),
 				signal: options?.signal,
@@ -379,10 +401,10 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 };
 
 function buildRequest(
-	model: Model<"google-cloud-code-assist">,
+	model: Model<"google-gemini-cli">,
 	context: Context,
 	projectId: string,
-	options: GoogleCloudCodeAssistOptions = {},
+	options: GoogleGeminiCliOptions = {},
 ): CloudCodeAssistRequest {
 	const contents = convertMessages(model, context);
 

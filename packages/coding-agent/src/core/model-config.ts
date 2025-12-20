@@ -1,11 +1,22 @@
-import { type Api, getApiKey, getModels, getProviders, type KnownProvider, type Model } from "@mariozechner/pi-ai";
+import {
+	type Api,
+	getApiKey,
+	getGitHubCopilotBaseUrl,
+	getModels,
+	getProviders,
+	type KnownProvider,
+	loadOAuthCredentials,
+	type Model,
+	normalizeDomain,
+	refreshGitHubCopilotToken,
+	removeOAuthCredentials,
+	saveOAuthCredentials,
+} from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { getModelsPath } from "../config.js";
-import { getGitHubCopilotBaseUrl, normalizeDomain, refreshGitHubCopilotToken } from "./oauth/github-copilot.js";
-import { getOAuthToken, refreshToken, type SupportedOAuthProvider } from "./oauth/index.js";
-import { loadOAuthCredentials, removeOAuthCredentials, saveOAuthCredentials } from "./oauth/storage.js";
+import { getOAuthToken, type OAuthProvider, refreshToken } from "./oauth/index.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -312,9 +323,10 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 		return githubToken;
 	}
 
-	// For Google Cloud Code Assist, check OAuth and encode projectId with token
-	if (model.provider === "google-cloud-code-assist") {
-		const credentials = loadOAuthCredentials("google-cloud-code-assist");
+	// For Google Gemini CLI and Antigravity, check OAuth and encode projectId with token
+	if (model.provider === "google-gemini-cli" || model.provider === "google-antigravity") {
+		const oauthProvider = model.provider as "google-gemini-cli" | "google-antigravity";
+		const credentials = loadOAuthCredentials(oauthProvider);
 		if (!credentials) {
 			return undefined;
 		}
@@ -322,13 +334,13 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 		// Check if token is expired
 		if (Date.now() >= credentials.expires) {
 			try {
-				await refreshToken("google-cloud-code-assist");
-				const refreshedCreds = loadOAuthCredentials("google-cloud-code-assist");
+				await refreshToken(oauthProvider);
+				const refreshedCreds = loadOAuthCredentials(oauthProvider);
 				if (refreshedCreds?.projectId) {
 					return JSON.stringify({ token: refreshedCreds.access, projectId: refreshedCreds.projectId });
 				}
 			} catch {
-				removeOAuthCredentials("google-cloud-code-assist");
+				removeOAuthCredentials(oauthProvider);
 				return undefined;
 			}
 		}
@@ -395,10 +407,11 @@ export function findModel(provider: string, modelId: string): { model: Model<Api
  * Mapping from model provider to OAuth provider ID.
  * Only providers that support OAuth are listed here.
  */
-const providerToOAuthProvider: Record<string, SupportedOAuthProvider> = {
+const providerToOAuthProvider: Record<string, OAuthProvider> = {
 	anthropic: "anthropic",
 	"github-copilot": "github-copilot",
-	"google-cloud-code-assist": "google-cloud-code-assist",
+	"google-gemini-cli": "google-gemini-cli",
+	"google-antigravity": "google-antigravity",
 };
 
 // Cache for OAuth status per provider (avoids file reads on every render)

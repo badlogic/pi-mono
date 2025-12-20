@@ -1,3 +1,7 @@
+/**
+ * Anthropic OAuth flow (Claude Pro/Max)
+ */
+
 import { createHash, randomBytes } from "crypto";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
@@ -18,6 +22,9 @@ function generatePKCE(): { verifier: string; challenge: string } {
 
 /**
  * Login with Anthropic OAuth (device code flow)
+ *
+ * @param onAuthUrl - Callback to handle the authorization URL (e.g., open browser)
+ * @param onPromptCode - Callback to prompt user for the authorization code
  */
 export async function loginAnthropic(
 	onAuthUrl: (url: string) => void,
@@ -90,14 +97,12 @@ export async function loginAnthropic(
 }
 
 /**
- * Refresh Anthropic OAuth token using refresh token
+ * Refresh Anthropic OAuth token
  */
 export async function refreshAnthropicToken(refreshToken: string): Promise<OAuthCredentials> {
-	const tokenResponse = await fetch(TOKEN_URL, {
+	const response = await fetch(TOKEN_URL, {
 		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
+		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
 			grant_type: "refresh_token",
 			client_id: CLIENT_ID,
@@ -105,24 +110,21 @@ export async function refreshAnthropicToken(refreshToken: string): Promise<OAuth
 		}),
 	});
 
-	if (!tokenResponse.ok) {
-		const error = await tokenResponse.text();
-		throw new Error(`Token refresh failed: ${error}`);
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`Anthropic token refresh failed: ${error}`);
 	}
 
-	const tokenData = (await tokenResponse.json()) as {
+	const data = (await response.json()) as {
 		access_token: string;
 		refresh_token: string;
 		expires_in: number;
 	};
 
-	// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
-	const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
-
 	return {
 		type: "oauth",
-		refresh: tokenData.refresh_token,
-		access: tokenData.access_token,
-		expires: expiresAt,
+		refresh: data.refresh_token,
+		access: data.access_token,
+		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
 	};
 }

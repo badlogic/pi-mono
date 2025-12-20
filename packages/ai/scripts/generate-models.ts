@@ -482,16 +482,59 @@ async function generateModels() {
 		});
 	}
 
-	// Add Google Cloud Code Assist models (Gemini CLI / Antigravity)
-	// These use OAuth authentication via Google account, cost is $0 (uses account quota)
+	// Google Cloud Code Assist models (Gemini CLI)
+	// Uses production endpoint, standard Gemini models only
 	const CLOUD_CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
-	const cloudCodeAssistModels: Model<"google-cloud-code-assist">[] = [
+	const cloudCodeAssistModels: Model<"google-gemini-cli">[] = [
+		{
+			id: "gemini-2.5-pro",
+			name: "Gemini 2.5 Pro (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-2.5-flash",
+			name: "Gemini 2.5 Flash (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-2.0-flash",
+			name: "Gemini 2.0 Flash (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 8192,
+		},
+	];
+	allModels.push(...cloudCodeAssistModels);
+
+	// Antigravity models (Gemini 3, Claude, GPT-OSS via Google Cloud)
+	// Uses sandbox endpoint and different OAuth credentials for access to additional models
+	const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+	const antigravityModels: Model<"google-gemini-cli">[] = [
 		{
 			id: "gemini-3-pro-high",
-			name: "Gemini 3 Pro High (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "Gemini 3 Pro High (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -500,10 +543,10 @@ async function generateModels() {
 		},
 		{
 			id: "gemini-3-pro-low",
-			name: "Gemini 3 Pro Low (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "Gemini 3 Pro Low (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -512,22 +555,22 @@ async function generateModels() {
 		},
 		{
 			id: "gemini-3-flash",
-			name: "Gemini 3 Flash (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
-			reasoning: false,
+			name: "Gemini 3 Flash (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
+			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 1048576,
-			maxTokens: 65536,
+			maxTokens: 65535,
 		},
 		{
 			id: "claude-sonnet-4-5",
-			name: "Claude Sonnet 4.5 (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "Claude Sonnet 4.5 (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: false,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -536,10 +579,10 @@ async function generateModels() {
 		},
 		{
 			id: "claude-sonnet-4-5-thinking",
-			name: "Claude Sonnet 4.5 Thinking (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "Claude Sonnet 4.5 Thinking (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -548,10 +591,10 @@ async function generateModels() {
 		},
 		{
 			id: "claude-opus-4-5-thinking",
-			name: "Claude Opus 4.5 Thinking (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "Claude Opus 4.5 Thinking (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -560,18 +603,18 @@ async function generateModels() {
 		},
 		{
 			id: "gpt-oss-120b-medium",
-			name: "GPT-OSS 120B Medium (Cloud Code Assist)",
-			api: "google-cloud-code-assist",
-			provider: "google-cloud-code-assist",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
+			name: "GPT-OSS 120B Medium (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 131072,
 			maxTokens: 32768,
 		},
 	];
-	allModels.push(...cloudCodeAssistModels);
+	allModels.push(...antigravityModels);
 
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};

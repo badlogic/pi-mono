@@ -5,12 +5,21 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, stream } from "../src/stream.js";
+import { complete, resolveApiKey, stream } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Resolve OAuth tokens at module level (async, runs before tests)
+const oauthTokens = await Promise.all([
+	resolveApiKey("anthropic"),
+	resolveApiKey("github-copilot"),
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("google-antigravity"),
+]);
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -314,7 +323,7 @@ async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: Options
 		context.messages.push(...results);
 
 		// If we got a stop response with text content, we're likely done
-		expect(response.stopReason).not.toBe("error");
+		expect(response.stopReason, `Error: ${response.errorMessage}`).not.toBe("error");
 		if (response.stopReason === "stop") {
 			break;
 		}
@@ -419,34 +428,6 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle streaming", async () => {
 			await handleStreaming(model);
-		});
-
-		it("should handle image input", async () => {
-			await handleImage(model);
-		});
-	});
-
-	describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider (claude-sonnet-4-20250514)", () => {
-		const model = getModel("anthropic", "claude-sonnet-4-20250514");
-
-		it("should complete basic text generation", async () => {
-			await basicTextGeneration(model, { thinkingEnabled: true });
-		});
-
-		it("should handle tool calling", async () => {
-			await handleToolCall(model);
-		});
-
-		it("should handle streaming", async () => {
-			await handleStreaming(model);
-		});
-
-		it("should handle thinking", async () => {
-			await handleThinking(model, { thinkingEnabled: true });
-		});
-
-		it("should handle multi-turn with thinking and tools", async () => {
-			await multiTurn(model, { thinkingEnabled: true });
 		});
 
 		it("should handle image input", async () => {
@@ -678,29 +659,162 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	// Read GitHub Copilot token from ~/.pi/agent/oauth.json if available
-	let githubCopilotToken: string | undefined;
-	try {
-		const oauthPath = join(process.env.HOME || "", ".pi/agent/oauth.json");
-		const oauthData = JSON.parse(readFileSync(oauthPath, "utf-8"));
-		githubCopilotToken = oauthData["github-copilot"]?.access;
-	} catch {
-		// oauth.json doesn't exist or is invalid
-	}
+	// =========================================================================
+	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
+	// Tokens are resolved at module level (see oauthTokens above)
+	// =========================================================================
 
-	describe.skipIf(!githubCopilotToken)("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
+	describe("Anthropic OAuth Provider (claude-sonnet-4-20250514)", () => {
+		const model = getModel("anthropic", "claude-sonnet-4-20250514");
+
+		it.skipIf(!anthropicOAuthToken)("should complete basic text generation", async () => {
+			await basicTextGeneration(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle tool calling", async () => {
+			await handleToolCall(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle streaming", async () => {
+			await handleStreaming(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle thinking", async () => {
+			await handleThinking(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle multi-turn with thinking and tools", async () => {
+			await multiTurn(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle image input", async () => {
+			await handleImage(model, { apiKey: anthropicOAuthToken });
+		});
+	});
+
+	describe("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
 		const llm = getModel("github-copilot", "gpt-4o");
 
-		it("should complete basic text generation", async () => {
+		it.skipIf(!githubCopilotToken)("should complete basic text generation", async () => {
 			await basicTextGeneration(llm, { apiKey: githubCopilotToken });
 		});
 
-		it("should handle tool calling", async () => {
+		it.skipIf(!githubCopilotToken)("should handle tool calling", async () => {
 			await handleToolCall(llm, { apiKey: githubCopilotToken });
 		});
 
-		it("should handle streaming", async () => {
+		it.skipIf(!githubCopilotToken)("should handle streaming", async () => {
 			await handleStreaming(llm, { apiKey: githubCopilotToken });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle thinking", { retry: 2 }, async () => {
+			const thinkingModel = getModel("github-copilot", "gpt-5-mini");
+			await handleThinking(thinkingModel, { apiKey: githubCopilotToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle multi-turn with thinking and tools", async () => {
+			const thinkingModel = getModel("github-copilot", "gpt-5-mini");
+			await multiTurn(thinkingModel, { apiKey: githubCopilotToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle image input", async () => {
+			await handleImage(llm, { apiKey: githubCopilotToken });
+		});
+	});
+
+	describe("Google Gemini CLI Provider (gemini-2.5-flash)", () => {
+		const llm = getModel("google-gemini-cli", "gemini-2.5-flash");
+
+		it.skipIf(!geminiCliToken)("should complete basic text generation", async () => {
+			await basicTextGeneration(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle tool calling", async () => {
+			await handleToolCall(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle streaming", async () => {
+			await handleStreaming(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle thinking", async () => {
+			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, budgetTokens: 1024 } });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle multi-turn with thinking and tools", async () => {
+			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, budgetTokens: 2048 } });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle image input", async () => {
+			await handleImage(llm, { apiKey: geminiCliToken });
+		});
+	});
+
+	describe("Google Antigravity Provider (gemini-3-flash)", () => {
+		const llm = getModel("google-antigravity", "gemini-3-flash");
+
+		it.skipIf(!antigravityToken)("should complete basic text generation", async () => {
+			await basicTextGeneration(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle tool calling", async () => {
+			await handleToolCall(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle streaming", async () => {
+			await handleStreaming(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle thinking", async () => {
+			// gemini-3-flash has reasoning: false, use gemini-3-pro-high for thinking
+			const thinkingModel = getModel("google-antigravity", "gemini-3-pro-high");
+			await handleThinking(thinkingModel, {
+				apiKey: antigravityToken,
+				thinking: { enabled: true, budgetTokens: 1024 },
+			});
+		});
+
+		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", async () => {
+			const thinkingModel = getModel("google-antigravity", "gemini-3-pro-high");
+			await multiTurn(thinkingModel, { apiKey: antigravityToken, thinking: { enabled: true, budgetTokens: 2048 } });
+		});
+
+		it.skipIf(!antigravityToken)("should handle image input", async () => {
+			await handleImage(llm, { apiKey: antigravityToken });
+		});
+	});
+
+	describe("Google Antigravity Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("google-antigravity", "claude-sonnet-4-5");
+
+		it.skipIf(!antigravityToken)("should complete basic text generation", async () => {
+			await basicTextGeneration(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle tool calling", async () => {
+			await handleToolCall(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle streaming", async () => {
+			await handleStreaming(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle thinking", async () => {
+			// claude-sonnet-4-5 has reasoning: false, use claude-sonnet-4-5-thinking
+			const thinkingModel = getModel("google-antigravity", "claude-sonnet-4-5-thinking");
+			await handleThinking(thinkingModel, {
+				apiKey: antigravityToken,
+				thinking: { enabled: true, budgetTokens: 4096 },
+			});
+		});
+
+		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", async () => {
+			const thinkingModel = getModel("google-antigravity", "claude-sonnet-4-5-thinking");
+			await multiTurn(thinkingModel, { apiKey: antigravityToken, thinking: { enabled: true, budgetTokens: 4096 } });
+		});
+
+		it.skipIf(!antigravityToken)("should handle image input", async () => {
+			await handleImage(llm, { apiKey: antigravityToken });
 		});
 	});
 

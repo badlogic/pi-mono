@@ -30,7 +30,7 @@ import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../c
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
-import { listOAuthProviders, login, logout, type SupportedOAuthProvider } from "../../core/oauth/index.js";
+import { listOAuthProviders, login, logout, type OAuthProvider } from "../../core/oauth/index.js";
 import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
@@ -1503,7 +1503,7 @@ export class InteractiveMode {
 
 						try {
 							await login(
-								providerId as SupportedOAuthProvider,
+								providerId as OAuthProvider,
 								(info) => {
 									this.chatContainer.addChild(new Spacer(1));
 									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
@@ -1563,7 +1563,7 @@ export class InteractiveMode {
 						}
 					} else {
 						try {
-							await logout(providerId as SupportedOAuthProvider);
+							await logout(providerId as OAuthProvider);
 							invalidateOAuthCache();
 							this.chatContainer.addChild(new Spacer(1));
 							this.chatContainer.addChild(

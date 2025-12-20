@@ -2,10 +2,7 @@ import { ThinkingLevel } from "@google/genai";
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
-import {
-	type GoogleCloudCodeAssistOptions,
-	streamGoogleCloudCodeAssist,
-} from "./providers/google-cloud-code-assist.js";
+import { type GoogleGeminiCliOptions, streamGoogleGeminiCli } from "./providers/google-gemini-cli.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
@@ -19,6 +16,7 @@ import type {
 	ReasoningEffort,
 	SimpleStreamOptions,
 } from "./types.js";
+import { getOAuthApiKey, getOAuthProviderForModelProvider } from "./utils/oauth/index.js";
 
 const apiKeys: Map<string, string> = new Map();
 
@@ -28,6 +26,10 @@ export function setApiKey(provider: any, key: string): void {
 	apiKeys.set(provider, key);
 }
 
+/**
+ * Get API key from environment variables (sync).
+ * Does NOT check OAuth credentials - use getApiKeyAsync for that.
+ */
 export function getApiKey(provider: KnownProvider): string | undefined;
 export function getApiKey(provider: string): string | undefined;
 export function getApiKey(provider: any): string | undefined {
@@ -56,6 +58,33 @@ export function getApiKey(provider: any): string | undefined {
 	return envVar ? process.env[envVar] : undefined;
 }
 
+/**
+ * Resolve API key from OAuth credentials or environment (async).
+ * Automatically refreshes expired OAuth tokens.
+ *
+ * Priority:
+ * 1. Explicitly set keys (via setApiKey)
+ * 2. OAuth credentials from ~/.pi/agent/oauth.json
+ * 3. Environment variables
+ */
+export async function resolveApiKey(provider: KnownProvider): Promise<string | undefined>;
+export async function resolveApiKey(provider: string): Promise<string | undefined>;
+export async function resolveApiKey(provider: any): Promise<string | undefined> {
+	// Check explicit keys first
+	const key = apiKeys.get(provider);
+	if (key) return key;
+
+	// Check OAuth credentials (auto-refresh if expired)
+	const oauthProvider = getOAuthProviderForModelProvider(provider);
+	if (oauthProvider) {
+		const oauthKey = await getOAuthApiKey(oauthProvider);
+		if (oauthKey) return oauthKey;
+	}
+
+	// Fall back to sync getApiKey for env vars
+	return getApiKey(provider);
+}
+
 export function stream<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
@@ -81,11 +110,11 @@ export function stream<TApi extends Api>(
 		case "google-generative-ai":
 			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
 
-		case "google-cloud-code-assist":
-			return streamGoogleCloudCodeAssist(
-				model as Model<"google-cloud-code-assist">,
+		case "google-gemini-cli":
+			return streamGoogleGeminiCli(
+				model as Model<"google-gemini-cli">,
 				context,
-				providerOptions as GoogleCloudCodeAssistOptions,
+				providerOptions as GoogleGeminiCliOptions,
 			);
 
 		default: {
@@ -207,10 +236,10 @@ function mapOptionsForApi<TApi extends Api>(
 			} satisfies GoogleOptions;
 		}
 
-		case "google-cloud-code-assist": {
+		case "google-gemini-cli": {
 			// Cloud Code Assist uses thinking budget tokens like Gemini 2.5
 			if (!options?.reasoning) {
-				return { ...base, thinking: { enabled: false } } satisfies GoogleCloudCodeAssistOptions;
+				return { ...base, thinking: { enabled: false } } satisfies GoogleGeminiCliOptions;
 			}
 
 			const effort = clampReasoning(options.reasoning)!;
@@ -227,7 +256,7 @@ function mapOptionsForApi<TApi extends Api>(
 					enabled: true,
 					budgetTokens: budgets[effort],
 				},
-			} satisfies GoogleCloudCodeAssistOptions;
+			} satisfies GoogleGeminiCliOptions;
 		}
 
 		default: {

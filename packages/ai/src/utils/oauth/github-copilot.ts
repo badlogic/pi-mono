@@ -1,5 +1,9 @@
-import { getModels } from "@mariozechner/pi-ai";
-import type { OAuthCredentials } from "./storage.js";
+/**
+ * GitHub Copilot OAuth flow
+ */
+
+import { getModels } from "../../models.js";
+import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 
@@ -182,12 +186,16 @@ async function pollForGitHubAccessToken(
 	throw new Error("Device flow timed out");
 }
 
+/**
+ * Refresh GitHub Copilot token
+ */
 export async function refreshGitHubCopilotToken(
 	refreshToken: string,
 	enterpriseDomain?: string,
 ): Promise<OAuthCredentials> {
 	const domain = enterpriseDomain || "github.com";
 	const urls = getUrls(domain);
+
 	const raw = await fetchJson(urls.copilotTokenUrl, {
 		headers: {
 			Accept: "application/json",
@@ -207,14 +215,13 @@ export async function refreshGitHubCopilotToken(
 		throw new Error("Invalid Copilot token response fields");
 	}
 
-	const expires = expiresAt * 1000 - 5 * 60 * 1000;
 	return {
 		type: "oauth",
 		refresh: refreshToken,
 		access: token,
-		expires,
+		expires: expiresAt * 1000 - 5 * 60 * 1000,
 		enterpriseUrl: enterpriseDomain,
-	} satisfies OAuthCredentials;
+	};
 }
 
 /**
@@ -265,6 +272,13 @@ export async function enableAllGitHubCopilotModels(
 	);
 }
 
+/**
+ * Login with GitHub Copilot OAuth (device code flow)
+ *
+ * @param options.onAuth - Callback with URL and optional instructions (user code)
+ * @param options.onPrompt - Callback to prompt user for input
+ * @param options.onProgress - Optional progress callback
+ */
 export async function loginGitHubCopilot(options: {
 	onAuth: (url: string, instructions?: string) => void;
 	onPrompt: (prompt: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
@@ -297,6 +311,9 @@ export async function loginGitHubCopilot(options: {
 	// Enable all models after successful login
 	options.onProgress?.("Enabling models...");
 	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
+
+	// Save credentials
+	saveOAuthCredentials("github-copilot", credentials);
 
 	return credentials;
 }

@@ -117,25 +117,30 @@ Set the environment variable for your provider:
 | OpenRouter | `OPENROUTER_API_KEY` |
 | ZAI | `ZAI_API_KEY` |
 
-**Anthropic OAuth (Claude Pro/Max):**
+**OAuth Providers:**
+
+Use `/login` to authenticate with subscription-based or free-tier providers:
+
+| Provider | Models | Cost |
+|----------|--------|------|
+| Anthropic (Claude Pro/Max) | Claude models via your subscription | Subscription |
+| GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
+| Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
+| Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
 
 ```bash
 pi
-/login  # Select "Anthropic (Claude Pro/Max)", authorize in browser
+/login  # Select provider, authorize in browser
 ```
 
-Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
+**GitHub Copilot notes:**
+- Press Enter for github.com, or enter your GitHub Enterprise Server domain
+- If you get "model not supported" error, enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
 
-**GitHub Copilot OAuth:**
-
-```bash
-pi
-/login  # Select "GitHub Copilot", authorize in browser
-```
-
-Press Enter to use github.com, or enter your GitHub Enterprise Server domain (e.g., `github.mycompany.com`).
-
-If you get "The requested model is not supported" error, enable the model in VS Code: Copilot Chat → model selector → select model → "Enable".
+**Google providers notes:**
+- Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
+- Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
+- Both are free with any Google account, subject to rate limits
 
 Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
 
