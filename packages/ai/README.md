@@ -795,6 +795,8 @@ The Agent API streams events during execution, allowing you to build reactive UI
 
 This continues until the assistant produces a response without tool calls.
 
+**Queued messages**: If you provide `getQueuedMessages` in the loop config, the agent checks for queued user messages after each tool call. When queued messages are found, any remaining tool calls from the current assistant message are skipped and returned as error tool results (`isError: true`) with the message "Skipped due to queued user message." The queued user messages are injected before the next assistant response.
+
 ### Event Flow Example
 
 Given a prompt asking to calculate two expressions and sum them:
