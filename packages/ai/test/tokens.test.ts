@@ -17,7 +17,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 		messages: [
 			{
 				role: "user",
-				content: "Write a long poem with 10 stanzas about the beauty of nature.",
+				content: "Write a long poem with 20 stanzas about the beauty of nature.",
 				timestamp: Date.now(),
 			},
 		],
@@ -27,10 +27,14 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 	const response = stream(llm, context, { ...options, signal: controller.signal });
 
 	let abortFired = false;
+	let text = "";
 	for await (const event of response) {
 		if (!abortFired && (event.type === "text_delta" || event.type === "thinking_delta")) {
-			abortFired = true;
-			setTimeout(() => controller.abort(), 3000);
+			text += event.delta;
+			if (text.length >= 1000) {
+				abortFired = true;
+				controller.abort();
+			}
 		}
 	}
 
@@ -38,16 +42,26 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers only send usage in the final chunk, so when aborted they have no token stats
-	// Anthropic and Google send usage information early in the stream
-	if (llm.api === "openai-completions" || llm.api === "openai-responses") {
+	// OpenAI providers, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
+	// so when aborted they have no token stats Anthropic and Google send usage information early in the stream
+	if (
+		llm.api === "openai-completions" ||
+		llm.api === "openai-responses" ||
+		llm.provider === "google-gemini-cli" ||
+		llm.provider === "zai" ||
+		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
+	) {
 		expect(msg.usage.input).toBe(0);
 		expect(msg.usage.output).toBe(0);
 	} else {
 		expect(msg.usage.input).toBeGreaterThan(0);
 		expect(msg.usage.output).toBeGreaterThan(0);
-		expect(msg.usage.cost.input).toBeGreaterThan(0);
-		expect(msg.usage.cost.total).toBeGreaterThan(0);
+
+		// Antigravity Gemini and Claude models report token usage, but no cost
+		if (llm.provider !== "google-antigravity") {
+			expect(msg.usage.cost.input).toBeGreaterThan(0);
+			expect(msg.usage.cost.total).toBeGreaterThan(0);
+		}
 	}
 }
 
