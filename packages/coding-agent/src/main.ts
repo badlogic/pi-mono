@@ -3,6 +3,7 @@
  */
 
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
@@ -294,6 +295,15 @@ export async function main(args: string[]) {
 		initialThinking = parsed.thinking;
 	}
 
+	// Clamp thinking level to model capabilities
+	if (initialModel) {
+		if (!initialModel.reasoning) {
+			initialThinking = "off";
+		} else if (initialThinking === "xhigh" && !supportsXhigh(initialModel)) {
+			initialThinking = "high";
+		}
+	}
+
 	// Determine which tools to use
 	let selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
 
@@ -377,11 +387,6 @@ export async function main(args: string[]) {
 			},
 		}),
 	});
-
-	// If initial thinking was requested but model doesn't support it, reset to off
-	if (initialThinking !== "off" && initialModel && !initialModel.reasoning) {
-		agent.setThinkingLevel("off");
-	}
 
 	// Load previous messages if continuing, resuming, or using --session
 	if (parsed.continue || parsed.resume || parsed.session) {
