@@ -172,6 +172,16 @@ export function getXdgStateHome(): string {
 	return join(homedir(), ".local", "state");
 }
 
+/**
+ * Ensures a directory exists recursively.
+ */
+function ensureDir(dir: string): string {
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	return dir;
+}
+
 // =============================================================================
 // XDG-based Directory Functions
 // =============================================================================
@@ -184,9 +194,9 @@ export function getXdgStateHome(): string {
 export function getConfigDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
-		return envDir;
+		return ensureDir(envDir);
 	}
-	return join(getXdgConfigHome(), "pi", "agent");
+	return ensureDir(join(getXdgConfigHome(), "pi", "agent"));
 }
 
 /**
@@ -197,9 +207,9 @@ export function getConfigDir(): string {
 export function getDataDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
-		return envDir;
+		return ensureDir(envDir);
 	}
-	return join(getXdgDataHome(), "pi", "agent");
+	return ensureDir(join(getXdgDataHome(), "pi", "agent"));
 }
 
 /**
@@ -210,9 +220,9 @@ export function getDataDir(): string {
 export function getStateDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
-		return envDir;
+		return ensureDir(envDir);
 	}
-	return join(getXdgStateHome(), "pi", "agent");
+	return ensureDir(join(getXdgStateHome(), "pi", "agent"));
 }
 
 /**
@@ -360,7 +370,7 @@ export function getAgentDir(): string {
 /** Get path to user's custom themes directory */
 export function getCustomThemesDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "themes");
+	return ensureDir(join(getDataDir(), "themes"));
 }
 
 /** Get path to models.json */
@@ -384,37 +394,37 @@ export function getSettingsPath(): string {
 /** Get path to tools directory */
 export function getToolsDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "tools");
+	return ensureDir(join(getDataDir(), "tools"));
 }
 
 /** Get path to hooks directory */
 export function getHooksDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "hooks");
+	return ensureDir(join(getDataDir(), "hooks"));
 }
 
 /** Get path to slash commands directory */
 export function getCommandsDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "commands");
+	return ensureDir(join(getDataDir(), "commands"));
 }
 
 /** Get path to sessions directory */
 export function getSessionsDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "sessions");
+	return ensureDir(join(getDataDir(), "sessions"));
 }
 
 /** Get path to skills directory */
 export function getSkillsDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "skills");
+	return ensureDir(join(getDataDir(), "skills"));
 }
 
 /** Get path to agents directory */
 export function getAgentsDir(): string {
 	migrateFromLegacyPaths();
-	return join(getDataDir(), "agents");
+	return ensureDir(join(getDataDir(), "agents"));
 }
 
 /** Get path to debug log file */

@@ -38,6 +38,16 @@ function getXdgConfigHome(): string {
 }
 
 /**
+ * Ensures a directory exists recursively.
+ */
+function ensureDir(dir: string): string {
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	return dir;
+}
+
+/**
  * Get the legacy config path (~/.pi/pods.json).
  */
 function getLegacyConfigPath(): string {
@@ -102,10 +112,7 @@ function migrateFromLegacyPath(): void {
 const getConfigDir = (): string => {
 	migrateFromLegacyPath();
 	const configDir = process.env.PI_CONFIG_DIR || join(getXdgConfigHome(), "pi");
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true });
-	}
-	return configDir;
+	return ensureDir(configDir);
 };
 
 const getConfigPath = (): string => {
