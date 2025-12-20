@@ -1,4 +1,16 @@
 // Core session management
+
+// Config paths for custom tools
+export {
+	CONFIG_DIR_NAME,
+	getAgentsDir,
+	getConfigDir,
+	getDataDir,
+	getHooksDir,
+	getSkillsDir,
+	getStateDir,
+	getToolsDir,
+} from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
