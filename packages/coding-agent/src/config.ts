@@ -106,14 +106,25 @@ function isMacOS(): boolean {
 }
 
 /**
+ * Check if we're on Windows.
+ */
+function isWindows(): boolean {
+	return platform() === "win32";
+}
+
+/**
  * Get XDG_CONFIG_HOME or platform-appropriate default.
  * - If XDG_CONFIG_HOME is set, use it
+ * - Windows: %APPDATA%
  * - macOS: ~/Library/Application Support
  * - Linux/other: ~/.config
  */
 export function getXdgConfigHome(): string {
 	if (process.env.XDG_CONFIG_HOME) {
 		return process.env.XDG_CONFIG_HOME;
+	}
+	if (isWindows()) {
+		return process.env.APPDATA || join(homedir(), "AppData", "Roaming");
 	}
 	if (isMacOS()) {
 		return join(homedir(), "Library", "Application Support");
@@ -124,12 +135,16 @@ export function getXdgConfigHome(): string {
 /**
  * Get XDG_DATA_HOME or platform-appropriate default.
  * - If XDG_DATA_HOME is set, use it
+ * - Windows: %APPDATA%
  * - macOS: ~/Library/Application Support
  * - Linux/other: ~/.local/share
  */
 export function getXdgDataHome(): string {
 	if (process.env.XDG_DATA_HOME) {
 		return process.env.XDG_DATA_HOME;
+	}
+	if (isWindows()) {
+		return process.env.APPDATA || join(homedir(), "AppData", "Roaming");
 	}
 	if (isMacOS()) {
 		return join(homedir(), "Library", "Application Support");
@@ -140,12 +155,16 @@ export function getXdgDataHome(): string {
 /**
  * Get XDG_STATE_HOME or platform-appropriate default.
  * - If XDG_STATE_HOME is set, use it
+ * - Windows: %LOCALAPPDATA%
  * - macOS: ~/Library/Logs
  * - Linux/other: ~/.local/state
  */
 export function getXdgStateHome(): string {
 	if (process.env.XDG_STATE_HOME) {
 		return process.env.XDG_STATE_HOME;
+	}
+	if (isWindows()) {
+		return process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
 	}
 	if (isMacOS()) {
 		return join(homedir(), "Library", "Logs");

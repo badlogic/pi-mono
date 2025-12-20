@@ -15,11 +15,21 @@ function isMacOS(): boolean {
 }
 
 /**
+ * Check if we're on Windows.
+ */
+function isWindows(): boolean {
+	return platform() === "win32";
+}
+
+/**
  * Get XDG_CONFIG_HOME or platform-appropriate default.
  */
 function getXdgConfigHome(): string {
 	if (process.env.XDG_CONFIG_HOME) {
 		return process.env.XDG_CONFIG_HOME;
+	}
+	if (isWindows()) {
+		return process.env.APPDATA || join(homedir(), "AppData", "Roaming");
 	}
 	if (isMacOS()) {
 		return join(homedir(), "Library", "Application Support");
