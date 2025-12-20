@@ -90,50 +90,108 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 	});
 }
 
+interface LoadCodeAssistPayload {
+	cloudaicompanionProject?: string;
+	currentTier?: { id?: string };
+	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
+}
+
+interface OnboardUserPayload {
+	done?: boolean;
+	response?: {
+		cloudaicompanionProject?: { id?: string };
+	};
+}
+
+/**
+ * Wait helper for onboarding retries
+ */
+function wait(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Get default tier ID from allowed tiers
+ */
+function getDefaultTierId(allowedTiers?: Array<{ id?: string; isDefault?: boolean }>): string | undefined {
+	if (!allowedTiers || allowedTiers.length === 0) return undefined;
+	const defaultTier = allowedTiers.find((t) => t.isDefault);
+	return defaultTier?.id ?? allowedTiers[0]?.id;
+}
+
 /**
  * Discover or provision a Google Cloud project for the user
  */
-async function discoverProject(accessToken: string): Promise<string> {
-	// Try to load existing projects via loadCodeAssist
-	const response = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
+async function discoverProject(accessToken: string, onProgress?: (message: string) => void): Promise<string> {
+	const headers = {
+		Authorization: `Bearer ${accessToken}`,
+		"Content-Type": "application/json",
+		"User-Agent": "google-api-nodejs-client/9.15.1",
+		"X-Goog-Api-Client": "gl-node/22.17.0",
+	};
+
+	// Try to load existing project via loadCodeAssist
+	onProgress?.("Checking for existing Cloud Code Assist project...");
+	const loadResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
 		method: "POST",
-		headers: {
-			Authorization: `Bearer ${accessToken}`,
-			"Content-Type": "application/json",
-			"User-Agent": "google-api-nodejs-client/9.15.1",
-			"X-Goog-Api-Client": "gl-node/22.17.0",
-		},
-		body: JSON.stringify({}),
+		headers,
+		body: JSON.stringify({
+			metadata: {
+				ideType: "IDE_UNSPECIFIED",
+				platform: "PLATFORM_UNSPECIFIED",
+				pluginType: "GEMINI",
+			},
+		}),
 	});
 
-	if (response.ok) {
-		const data = (await response.json()) as { projects?: Array<{ projectId: string }> };
-		if (data.projects && data.projects.length > 0) {
-			return data.projects[0].projectId;
+	if (loadResponse.ok) {
+		const data = (await loadResponse.json()) as LoadCodeAssistPayload;
+
+		// If we have an existing project, use it
+		if (data.cloudaicompanionProject) {
+			return data.cloudaicompanionProject;
 		}
-	}
 
-	// Try to onboard the user if no projects found
-	const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${accessToken}`,
-			"Content-Type": "application/json",
-			"User-Agent": "google-api-nodejs-client/9.15.1",
-			"X-Goog-Api-Client": "gl-node/22.17.0",
-		},
-		body: JSON.stringify({}),
-	});
+		// Otherwise, try to onboard with the FREE tier
+		const tierId = getDefaultTierId(data.allowedTiers) ?? "FREE";
 
-	if (onboardResponse.ok) {
-		const data = (await onboardResponse.json()) as { projectId?: string };
-		if (data.projectId) {
-			return data.projectId;
+		onProgress?.("Provisioning Cloud Code Assist project (this may take a moment)...");
+
+		// Onboard with retries (the API may take time to provision)
+		for (let attempt = 0; attempt < 10; attempt++) {
+			const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					tierId,
+					metadata: {
+						ideType: "IDE_UNSPECIFIED",
+						platform: "PLATFORM_UNSPECIFIED",
+						pluginType: "GEMINI",
+					},
+				}),
+			});
+
+			if (onboardResponse.ok) {
+				const onboardData = (await onboardResponse.json()) as OnboardUserPayload;
+				const projectId = onboardData.response?.cloudaicompanionProject?.id;
+
+				if (onboardData.done && projectId) {
+					return projectId;
+				}
+			}
+
+			// Wait before retrying
+			if (attempt < 9) {
+				onProgress?.(`Waiting for project provisioning (attempt ${attempt + 2}/10)...`);
+				await wait(3000);
+			}
 		}
 	}
 
 	throw new Error(
-		"Could not discover or provision a Google Cloud project. Please ensure you have access to Google Cloud Code Assist.",
+		"Could not discover or provision a Google Cloud project. " +
+			"Please ensure you have access to Google Cloud Code Assist (Gemini CLI).",
 	);
 }
 
@@ -239,8 +297,7 @@ export async function loginGoogleCloud(
 		const email = await getUserEmail(tokenData.access_token);
 
 		// Discover project
-		onProgress?.("Discovering Google Cloud project...");
-		const projectId = await discoverProject(tokenData.access_token);
+		const projectId = await discoverProject(tokenData.access_token, onProgress);
 
 		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
