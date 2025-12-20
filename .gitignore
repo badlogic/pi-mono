@@ -28,3 +28,4 @@ tui-debug.log
 compaction-results/
 .opencode/
 syntax.jsonl
+out.jsonl
