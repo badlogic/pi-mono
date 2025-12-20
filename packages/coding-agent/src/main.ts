@@ -3,6 +3,7 @@
  */
 
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
@@ -191,6 +192,27 @@ export async function main(args: string[]) {
 	const themeName = settingsManager.getTheme();
 	initTheme(themeName, isInteractive);
 
+	// Normalize default thinking level for default model
+	const defaultProvider = settingsManager.getDefaultProvider();
+	const defaultModelId = settingsManager.getDefaultModel();
+	const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel();
+	if (defaultProvider && defaultModelId && defaultThinkingLevel) {
+		const { model: defaultModel, error } = findModel(defaultProvider, defaultModelId);
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
+		}
+		if (defaultModel) {
+			if (!defaultModel.reasoning) {
+				if (defaultThinkingLevel !== "off") {
+					settingsManager.setDefaultThinkingLevel("off");
+				}
+			} else if (defaultThinkingLevel === "xhigh" && !supportsXhigh(defaultModel)) {
+				settingsManager.setDefaultThinkingLevel("high");
+			}
+		}
+	}
+
 	// Setup session manager
 	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
 
@@ -292,6 +314,11 @@ export async function main(args: string[]) {
 	// CLI --thinking flag takes highest priority
 	if (parsed.thinking) {
 		initialThinking = parsed.thinking;
+	}
+
+	// Clamp xhigh if current model doesn't support it
+	if (initialModel && initialThinking === "xhigh" && initialModel.reasoning && !supportsXhigh(initialModel)) {
+		initialThinking = "high";
 	}
 
 	// Determine which tools to use

@@ -1167,11 +1167,16 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private refreshFooter(): void {
+		this.footer.updateState(this.session.state);
+	}
+
 	private cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
 		if (newLevel === null) {
 			this.showStatus("Current model does not support thinking");
 		} else {
+			this.refreshFooter();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
 		}
@@ -1184,6 +1189,7 @@ export class InteractiveMode {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
+				this.refreshFooter();
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
@@ -1310,6 +1316,7 @@ export class InteractiveMode {
 				this.session.getAvailableThinkingLevels(),
 				(level) => {
 					this.session.setThinkingLevel(level);
+					this.refreshFooter();
 					this.updateEditorBorderColor();
 					done();
 					this.showStatus(`Thinking level: ${level}`);
@@ -1380,10 +1387,22 @@ export class InteractiveMode {
 				this.session.model,
 				this.settingsManager,
 				(model) => {
-					this.agent.setModel(model);
-					this.sessionManager.saveModelChange(model.provider, model.id);
-					done();
-					this.showStatus(`Model: ${model.id}`);
+					void this.session
+						.setModel(model)
+						.then(() => {
+							this.refreshFooter();
+							this.updateEditorBorderColor();
+							done();
+							const thinkingStr =
+								this.session.model?.reasoning && this.session.thinkingLevel !== "off"
+									? ` (thinking: ${this.session.thinkingLevel})`
+									: "";
+							this.showStatus(`Model: ${model.id}${thinkingStr}`);
+						})
+						.catch((error: unknown) => {
+							done();
+							this.showError(error instanceof Error ? error.message : String(error));
+						});
 				},
 				() => {
 					done();

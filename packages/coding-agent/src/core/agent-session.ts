@@ -529,6 +529,12 @@ export class AgentSession {
 	// Model Management
 	// =========================================================================
 
+	private normalizeThinkingLevelForModel(model: Model<any>, level: ThinkingLevel): ThinkingLevel {
+		if (!model.reasoning) return "off";
+		if (level === "xhigh" && !supportsXhigh(model)) return "high";
+		return level;
+	}
+
 	/**
 	 * Set model directly.
 	 * Validates API key, saves to session and settings.
@@ -543,6 +549,11 @@ export class AgentSession {
 		this.agent.setModel(model);
 		this.sessionManager.saveModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+
+		const normalizedThinking = this.normalizeThinkingLevelForModel(model, this.thinkingLevel);
+		if (normalizedThinking !== this.thinkingLevel) {
+			this.setThinkingLevel(normalizedThinking);
+		}
 	}
 
 	/**
@@ -580,11 +591,8 @@ export class AgentSession {
 		this.sessionManager.saveModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
-		// Apply thinking level (silently use "off" if not supported)
-		const effectiveThinking = next.model.reasoning ? next.thinkingLevel : "off";
-		this.agent.setThinkingLevel(effectiveThinking);
-		this.sessionManager.saveThinkingLevelChange(effectiveThinking);
-		this.settingsManager.setDefaultThinkingLevel(effectiveThinking);
+		const effectiveThinking = this.normalizeThinkingLevelForModel(next.model, next.thinkingLevel);
+		this.setThinkingLevel(effectiveThinking);
 
 		return { model: next.model, thinkingLevel: effectiveThinking, isScoped: true };
 	}
@@ -612,7 +620,12 @@ export class AgentSession {
 		this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
-		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
+		const effectiveThinking = this.normalizeThinkingLevelForModel(nextModel, this.thinkingLevel);
+		if (effectiveThinking !== this.thinkingLevel) {
+			this.setThinkingLevel(effectiveThinking);
+		}
+
+		return { model: nextModel, thinkingLevel: effectiveThinking, isScoped: false };
 	}
 
 	/**
@@ -634,7 +647,11 @@ export class AgentSession {
 	 * Saves to session and settings.
 	 */
 	setThinkingLevel(level: ThinkingLevel): void {
-		const effectiveLevel = this.supportsThinking() ? level : "off";
+		const effectiveLevel = this.model
+			? this.normalizeThinkingLevelForModel(this.model, level)
+			: this.supportsThinking()
+				? level
+				: "off";
 		this.agent.setThinkingLevel(effectiveLevel);
 		this.sessionManager.saveThinkingLevelChange(effectiveLevel);
 		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
@@ -1187,6 +1204,13 @@ export class AgentSession {
 		const savedThinking = this.sessionManager.loadThinkingLevel();
 		if (savedThinking) {
 			this.agent.setThinkingLevel(savedThinking as ThinkingLevel);
+		}
+
+		if (this.model) {
+			const normalizedThinking = this.normalizeThinkingLevelForModel(this.model, this.thinkingLevel);
+			if (normalizedThinking !== this.thinkingLevel) {
+				this.setThinkingLevel(normalizedThinking);
+			}
 		}
 
 		this._reconnectToAgent();
