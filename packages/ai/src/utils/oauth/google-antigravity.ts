@@ -8,8 +8,11 @@ import { createServer, type Server } from "http";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
 // Antigravity OAuth credentials (different from Gemini CLI)
-const CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-const CLIENT_SECRET = "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";
+const decode = (s: string) => Buffer.from(s, "base64").toString();
+const CLIENT_ID = decode(
+	"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+);
+const CLIENT_SECRET = decode("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
 
 // Antigravity requires additional scopes

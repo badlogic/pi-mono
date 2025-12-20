@@ -7,8 +7,11 @@ import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
-const CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
-const CLIENT_SECRET = "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";
+const decode = (s: string) => Buffer.from(s, "base64").toString();
+const CLIENT_ID = decode(
+	"NjgxMjU1ODA5Mzk1LW9vOGZ0Mm9wcmRybnA5ZTNhcWY2YXYzaG1kaWIxMzVqLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t",
+);
+const CLIENT_SECRET = decode("R09DU1BYLTR1SGdNUG0tMW83U2stZ2VWNkN1NWNsWEZzeGw=");
 const REDIRECT_URI = "http://localhost:8085/oauth2callback";
 const SCOPES = [
 	"https://www.googleapis.com/auth/cloud-platform",

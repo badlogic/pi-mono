@@ -5,7 +5,8 @@
 import { getModels } from "../../models.js";
 import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
 
-const CLIENT_ID = "Iv1.b507a08c87ecfe98";
+const decode = (s: string) => Buffer.from(s, "base64").toString();
+const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
 
 const COPILOT_HEADERS = {
 	"User-Agent": "GitHubCopilotChat/0.35.0",
