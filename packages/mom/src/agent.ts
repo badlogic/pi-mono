@@ -1,4 +1,4 @@
-import { Agent, type AgentEvent, ProviderTransport } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentEvent, type Attachment, ProviderTransport } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
@@ -7,7 +7,7 @@ import {
 	messageTransformer,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { MomSessionManager, MomSettingsManager } from "./context.js";
@@ -62,6 +62,18 @@ function getAnthropicApiKey(): string {
 		throw new Error("ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY must be set");
 	}
 	return key;
+}
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	png: "image/png",
+	gif: "image/gif",
+	webp: "image/webp",
+};
+
+function getImageMimeType(filename: string): string | undefined {
+	return IMAGE_MIME_TYPES[filename.toLowerCase().split(".").pop() || ""];
 }
 
 function getMemory(channelDir: string): string {
@@ -716,10 +728,34 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offsetSign}${offsetHours}:${offsetMins}`;
 			let userMessage = `[${timestamp}] [${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
-			// Add attachment paths if any (convert to absolute paths in execution environment)
-			if (ctx.message.attachments && ctx.message.attachments.length > 0) {
-				const attachmentPaths = ctx.message.attachments.map((a) => `${workspacePath}/${a.local}`).join("\n");
-				userMessage += `\n\n<slack_attachments>\n${attachmentPaths}\n</slack_attachments>`;
+			const imageAttachments: Attachment[] = [];
+			const nonImagePaths: string[] = [];
+
+			for (const a of ctx.message.attachments || []) {
+				const fullPath = `${workspacePath}/${a.local}`;
+				const mimeType = getImageMimeType(a.local);
+
+				if (mimeType && existsSync(fullPath)) {
+					try {
+						const stats = statSync(fullPath);
+						imageAttachments.push({
+							id: a.local,
+							type: "image",
+							fileName: a.local.split("/").pop() || a.local,
+							mimeType,
+							size: stats.size,
+							content: readFileSync(fullPath).toString("base64"),
+						});
+					} catch {
+						nonImagePaths.push(fullPath);
+					}
+				} else {
+					nonImagePaths.push(fullPath);
+				}
+			}
+
+			if (nonImagePaths.length > 0) {
+				userMessage += `\n\n<slack_attachments>\n${nonImagePaths.join("\n")}\n</slack_attachments>`;
 			}
 
 			// Debug: write context to last_prompt.jsonl
@@ -727,10 +763,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				systemPrompt,
 				messages: session.messages,
 				newUserMessage: userMessage,
+				imageAttachmentCount: imageAttachments.length,
 			};
 			await writeFile(join(channelDir, "last_prompt.jsonl"), JSON.stringify(debugContext, null, 2));
 
-			await session.prompt(userMessage);
+			await session.prompt(userMessage, imageAttachments.length > 0 ? { attachments: imageAttachments } : undefined);
 
 			// Wait for queued messages
 			await queueChain;
