@@ -1382,6 +1382,7 @@ export class InteractiveMode {
 				this.ui,
 				this.session.model,
 				this.settingsManager,
+				this.session.scopedModels,
 				async (model) => {
 					try {
 						await this.session.setModel(model);

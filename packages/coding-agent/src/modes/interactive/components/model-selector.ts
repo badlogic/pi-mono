@@ -22,6 +22,11 @@ interface ModelItem {
 	model: Model<any>;
 }
 
+interface ScopedModelItem {
+	model: Model<any>;
+	thinkingLevel: string;
+}
+
 /**
  * Component that renders a model selector with search
  */
@@ -37,11 +42,13 @@ export class ModelSelectorComponent extends Container {
 	private onCancelCallback: () => void;
 	private errorMessage: string | null = null;
 	private tui: TUI;
+	private scopedModels: ReadonlyArray<ScopedModelItem>;
 
 	constructor(
 		tui: TUI,
 		currentModel: Model<any> | null,
 		settingsManager: SettingsManager,
+		scopedModels: ReadonlyArray<ScopedModelItem>,
 		onSelect: (model: Model<any>) => void,
 		onCancel: () => void,
 	) {
@@ -50,6 +57,7 @@ export class ModelSelectorComponent extends Container {
 		this.tui = tui;
 		this.currentModel = currentModel;
 		this.settingsManager = settingsManager;
+		this.scopedModels = scopedModels;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
@@ -57,10 +65,12 @@ export class ModelSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
-		// Add hint about API key filtering
-		this.addChild(
-			new Text(theme.fg("warning", "Only showing models with configured API keys (see README for details)"), 0, 0),
-		);
+		// Add hint about model filtering
+		const hintText =
+			scopedModels.length > 0
+				? "Showing models from --models scope"
+				: "Only showing models with configured API keys (see README for details)";
+		this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
 		this.addChild(new Spacer(1));
 
 		// Create search input
@@ -93,23 +103,34 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	private async loadModels(): Promise<void> {
-		// Load available models fresh (includes custom models from models.json)
-		const { models: availableModels, error } = await getAvailableModels();
+		let models: ModelItem[];
 
-		// If there's an error loading models.json, we'll show it via the "no models" path
-		// The error will be displayed to the user
-		if (error) {
-			this.allModels = [];
-			this.filteredModels = [];
-			this.errorMessage = error;
-			return;
+		// Use scoped models if provided via --models flag
+		if (this.scopedModels.length > 0) {
+			models = this.scopedModels.map((scoped) => ({
+				provider: scoped.model.provider,
+				id: scoped.model.id,
+				model: scoped.model,
+			}));
+		} else {
+			// Load available models fresh (includes custom models from models.json)
+			const { models: availableModels, error } = await getAvailableModels();
+
+			// If there's an error loading models.json, we'll show it via the "no models" path
+			// The error will be displayed to the user
+			if (error) {
+				this.allModels = [];
+				this.filteredModels = [];
+				this.errorMessage = error;
+				return;
+			}
+
+			models = availableModels.map((model) => ({
+				provider: model.provider,
+				id: model.id,
+				model,
+			}));
 		}
-
-		const models: ModelItem[] = availableModels.map((model) => ({
-			provider: model.provider,
-			id: model.id,
-			model,
-		}));
 
 		// Sort: current model first, then by provider
 		models.sort((a, b) => {

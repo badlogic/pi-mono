@@ -64,11 +64,8 @@ src/
 │   ├── slash-commands.ts     # loadSlashCommands() from ~/.pi/agent/commands/
 │   ├── system-prompt.ts      # buildSystemPrompt(), loadProjectContextFiles()
 │   │
-│   ├── oauth/                # OAuth authentication
-│   │   ├── index.ts          # OAuth exports
-│   │   ├── anthropic.ts      # Anthropic OAuth (Claude Pro/Max)
-│   │   ├── github-copilot.ts # GitHub Copilot OAuth
-│   │   └── storage.ts        # Token persistence
+│   ├── oauth/                # OAuth authentication (thin wrapper)
+│   │   └── index.ts          # Re-exports from @mariozechner/pi-ai with convenience wrappers
 │   │
 │   ├── hooks/                # Hook system for extending behavior
 │   │   ├── index.ts          # Hook exports

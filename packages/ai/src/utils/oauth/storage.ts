@@ -1,5 +1,8 @@
 /**
- * OAuth credential storage for ~/.pi/agent/oauth.json
+ * OAuth credential storage with configurable backend.
+ *
+ * Default: ~/.pi/agent/oauth.json
+ * Override with setOAuthStorage() for custom storage locations or backends.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -23,54 +26,104 @@ export interface OAuthStorage {
 export type OAuthProvider = "anthropic" | "github-copilot" | "google-gemini-cli" | "google-antigravity";
 
 /**
- * Get the path to the OAuth credentials file
+ * Storage backend interface.
+ * Implement this to use a custom storage location or backend.
  */
-export function getOAuthPath(): string {
-	return join(homedir(), ".pi", "agent", "oauth.json");
+export interface OAuthStorageBackend {
+	/** Load all OAuth credentials. Return empty object if none exist. */
+	load(): OAuthStorage;
+	/** Save all OAuth credentials. */
+	save(storage: OAuthStorage): void;
 }
 
-/**
- * Ensure the config directory exists
- */
-function ensureConfigDir(): void {
-	const configDir = dirname(getOAuthPath());
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true, mode: 0o700 });
-	}
-}
+// ============================================================================
+// Default filesystem backend
+// ============================================================================
 
-/**
- * Load all OAuth credentials from ~/.pi/agent/oauth.json
- */
-export function loadOAuthStorage(): OAuthStorage {
-	const filePath = getOAuthPath();
-	if (!existsSync(filePath)) {
+const DEFAULT_PATH = join(homedir(), ".pi", "agent", "oauth.json");
+
+function defaultLoad(): OAuthStorage {
+	if (!existsSync(DEFAULT_PATH)) {
 		return {};
 	}
-
 	try {
-		const content = readFileSync(filePath, "utf-8");
+		const content = readFileSync(DEFAULT_PATH, "utf-8");
 		return JSON.parse(content);
 	} catch {
 		return {};
 	}
 }
 
+function defaultSave(storage: OAuthStorage): void {
+	const configDir = dirname(DEFAULT_PATH);
+	if (!existsSync(configDir)) {
+		mkdirSync(configDir, { recursive: true, mode: 0o700 });
+	}
+	writeFileSync(DEFAULT_PATH, JSON.stringify(storage, null, 2), "utf-8");
+	chmodSync(DEFAULT_PATH, 0o600);
+}
+
+// ============================================================================
+// Configurable backend
+// ============================================================================
+
+let currentBackend: OAuthStorageBackend = {
+	load: defaultLoad,
+	save: defaultSave,
+};
+
 /**
- * Save all OAuth credentials to ~/.pi/agent/oauth.json
+ * Configure the OAuth storage backend.
+ *
+ * @example
+ * // Custom file path
+ * setOAuthStorage({
+ *   load: () => JSON.parse(readFileSync('/custom/path/oauth.json', 'utf-8')),
+ *   save: (storage) => writeFileSync('/custom/path/oauth.json', JSON.stringify(storage))
+ * });
+ *
+ * @example
+ * // In-memory storage (for testing)
+ * let memoryStorage = {};
+ * setOAuthStorage({
+ *   load: () => memoryStorage,
+ *   save: (storage) => { memoryStorage = storage; }
+ * });
  */
-function saveOAuthStorage(storage: OAuthStorage): void {
-	ensureConfigDir();
-	const filePath = getOAuthPath();
-	writeFileSync(filePath, JSON.stringify(storage, null, 2), "utf-8");
-	chmodSync(filePath, 0o600);
+export function setOAuthStorage(backend: OAuthStorageBackend): void {
+	currentBackend = backend;
+}
+
+/**
+ * Reset to default filesystem storage (~/.pi/agent/oauth.json)
+ */
+export function resetOAuthStorage(): void {
+	currentBackend = { load: defaultLoad, save: defaultSave };
+}
+
+/**
+ * Get the default OAuth path (for reference, may not be used if custom backend is set)
+ */
+export function getOAuthPath(): string {
+	return DEFAULT_PATH;
+}
+
+// ============================================================================
+// Public API (uses current backend)
+// ============================================================================
+
+/**
+ * Load all OAuth credentials
+ */
+export function loadOAuthStorage(): OAuthStorage {
+	return currentBackend.load();
 }
 
 /**
  * Load OAuth credentials for a specific provider
  */
 export function loadOAuthCredentials(provider: string): OAuthCredentials | null {
-	const storage = loadOAuthStorage();
+	const storage = currentBackend.load();
 	return storage[provider] || null;
 }
 
@@ -78,18 +131,18 @@ export function loadOAuthCredentials(provider: string): OAuthCredentials | null 
  * Save OAuth credentials for a specific provider
  */
 export function saveOAuthCredentials(provider: string, creds: OAuthCredentials): void {
-	const storage = loadOAuthStorage();
+	const storage = currentBackend.load();
 	storage[provider] = creds;
-	saveOAuthStorage(storage);
+	currentBackend.save(storage);
 }
 
 /**
  * Remove OAuth credentials for a specific provider
  */
 export function removeOAuthCredentials(provider: string): void {
-	const storage = loadOAuthStorage();
+	const storage = currentBackend.load();
 	delete storage[provider];
-	saveOAuthStorage(storage);
+	currentBackend.save(storage);
 }
 
 /**
@@ -103,6 +156,6 @@ export function hasOAuthCredentials(provider: string): boolean {
  * List all providers with OAuth credentials
  */
 export function listOAuthProviders(): string[] {
-	const storage = loadOAuthStorage();
+	const storage = currentBackend.load();
 	return Object.keys(storage);
 }

@@ -3,13 +3,15 @@
  */
 
 import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { supportsXhigh } from "@mariozechner/pi-ai";
+import { setOAuthStorage, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getModelsPath, VERSION } from "./config.js";
+import { getModelsPath, getOAuthPath, VERSION } from "./config.js";
 import { AgentSession } from "./core/agent-session.js";
 import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
@@ -26,6 +28,32 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
+
+/** Configure OAuth storage to use the coding-agent's configurable path */
+function configureOAuthStorage(): void {
+	const oauthPath = getOAuthPath();
+
+	setOAuthStorage({
+		load: () => {
+			if (!existsSync(oauthPath)) {
+				return {};
+			}
+			try {
+				return JSON.parse(readFileSync(oauthPath, "utf-8"));
+			} catch {
+				return {};
+			}
+		},
+		save: (storage) => {
+			const dir = dirname(oauthPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true, mode: 0o700 });
+			}
+			writeFileSync(oauthPath, JSON.stringify(storage, null, 2), "utf-8");
+			chmodSync(oauthPath, 0o600);
+		},
+	});
+}
 
 /** Check npm registry for new version (non-blocking) */
 async function checkForNewVersion(currentVersion: string): Promise<string | null> {
@@ -142,6 +170,10 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 }
 
 export async function main(args: string[]) {
+	// Configure OAuth storage to use the coding-agent's configurable path
+	// This must happen before any OAuth operations
+	configureOAuthStorage();
+
 	const parsed = parseArgs(args);
 
 	if (parsed.version) {

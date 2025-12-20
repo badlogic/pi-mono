@@ -1115,29 +1115,137 @@ setApiKey('anthropic', 'sk-ant-...');
 const key = getApiKey('openai');
 ```
 
-## GitHub Copilot
+## OAuth Providers
 
-GitHub Copilot is available as a provider, requiring OAuth authentication via GitHub's device flow.
+Several providers require OAuth authentication instead of static API keys. This library provides login flows, automatic token refresh, and credential storage for:
 
-**Using with `@mariozechner/pi-coding-agent`**: Use `/login` and select "GitHub Copilot" to authenticate. All models are automatically enabled after login. Token stored in `~/.pi/agent/oauth.json`.
+- **Anthropic** (Claude Pro/Max subscription)
+- **GitHub Copilot** (Copilot subscription)
+- **Google Gemini CLI** (Free Gemini 2.0/2.5 via Google Cloud Code Assist)
+- **Antigravity** (Free Gemini 3, Claude, GPT-OSS via Google Cloud)
 
-**Using standalone**: If you have a valid Copilot OAuth token (e.g., from the coding agent's `oauth.json`):
+Credentials are stored in `~/.pi/agent/oauth.json` by default (with `chmod 600` permissions). Use `setOAuthStorage()` to configure a custom storage backend for different locations or environments (the coding-agent does this to respect its configurable config directory).
+
+### Using with @mariozechner/pi-coding-agent
+
+Use `/login` and select a provider to authenticate. Tokens are automatically refreshed when expired.
+
+### Programmatic OAuth
+
+For standalone usage, the library exposes low-level OAuth functions:
 
 ```typescript
-import { getModel, complete } from '@mariozechner/pi-ai';
+import {
+  // Login functions (each implements provider-specific OAuth flow)
+  loginAnthropic,
+  loginGitHubCopilot,
+  loginGeminiCli,
+  loginAntigravity,
+  
+  // Token management
+  refreshToken,        // Refresh token for any provider
+  getOAuthApiKey,      // Get API key (auto-refreshes if expired)
+  
+  // Credential storage
+  loadOAuthCredentials,
+  saveOAuthCredentials,
+  removeOAuthCredentials,
+  hasOAuthCredentials,
+  listOAuthProviders,
+  getOAuthPath,
+  
+  // Types
+  type OAuthProvider,  // 'anthropic' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
+  type OAuthCredentials,
+} from '@mariozechner/pi-ai';
+```
+
+### Login Flow Example
+
+Each provider has a different OAuth flow. Here's an example with GitHub Copilot:
+
+```typescript
+import { loginGitHubCopilot, saveOAuthCredentials } from '@mariozechner/pi-ai';
+
+const credentials = await loginGitHubCopilot({
+  onAuth: (url, instructions) => {
+    // Display the URL and instructions to the user
+    console.log(`Open: ${url}`);
+    if (instructions) console.log(instructions);
+  },
+  onPrompt: async (prompt) => {
+    // Prompt user for input (e.g., device code confirmation)
+    return await getUserInput(prompt.message);
+  },
+  onProgress: (message) => {
+    // Optional: show progress updates
+    console.log(message);
+  }
+});
+
+// Save credentials for later use
+saveOAuthCredentials('github-copilot', credentials);
+```
+
+### Using OAuth Tokens
+
+Call `getOAuthApiKey()` before **every** `complete()` or `stream()` call. This function checks token expiry and refreshes automatically when needed:
+
+```typescript
+import { getModel, complete, getOAuthApiKey } from '@mariozechner/pi-ai';
 
 const model = getModel('github-copilot', 'gpt-4o');
 
+// Always call getOAuthApiKey() right before the API call
+// Do NOT cache the result - tokens expire and need refresh
+const apiKey = await getOAuthApiKey('github-copilot');
+if (!apiKey) {
+  throw new Error('Not logged in to GitHub Copilot');
+}
+
 const response = await complete(model, {
   messages: [{ role: 'user', content: 'Hello!' }]
-}, {
-  apiKey: 'tid=...;exp=...;proxy-ep=...'  // OAuth token from ~/.pi/agent/oauth.json
-});
+}, { apiKey });
 ```
 
-**Note**: OAuth tokens expire and need periodic refresh. The coding agent handles this automatically.
+### Custom Storage Backend
 
-If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
+Override the default storage location with `setOAuthStorage()`:
+
+```typescript
+import { setOAuthStorage, resetOAuthStorage } from '@mariozechner/pi-ai';
+import { readFileSync, writeFileSync } from 'fs';
+
+// Custom file path
+setOAuthStorage({
+  load: () => {
+    try {
+      return JSON.parse(readFileSync('/custom/path/oauth.json', 'utf-8'));
+    } catch {
+      return {};
+    }
+  },
+  save: (storage) => {
+    writeFileSync('/custom/path/oauth.json', JSON.stringify(storage, null, 2));
+  }
+});
+
+// In-memory storage (for testing or browser environments)
+let memoryStorage = {};
+setOAuthStorage({
+  load: () => memoryStorage,
+  save: (storage) => { memoryStorage = storage; }
+});
+
+// Reset to default (~/.pi/agent/oauth.json)
+resetOAuthStorage();
+```
+
+### Provider Notes
+
+**GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
+
+**Google Gemini CLI / Antigravity**: These use Google Cloud OAuth. The API key returned by `getOAuthApiKey()` is a JSON string containing both the token and project ID, which the library handles automatically.
 
 ## License
 

@@ -43,8 +43,11 @@ export {
 	type OAuthCredentials,
 	type OAuthProvider,
 	type OAuthStorage,
+	type OAuthStorageBackend,
 	removeOAuthCredentials,
+	resetOAuthStorage,
 	saveOAuthCredentials,
+	setOAuthStorage,
 } from "./storage.js";
 
 // ============================================================================

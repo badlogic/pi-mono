@@ -13,15 +13,25 @@ import {
 	loginGitHubCopilot,
 	type OAuthCredentials,
 	type OAuthProvider,
+	type OAuthStorageBackend,
 	refreshToken as refreshTokenFromAi,
 	removeOAuthCredentials,
+	resetOAuthStorage,
 	saveOAuthCredentials,
+	setOAuthStorage,
 } from "@mariozechner/pi-ai";
 
 // Re-export types and functions
-export type { OAuthCredentials, OAuthProvider };
+export type { OAuthCredentials, OAuthProvider, OAuthStorageBackend };
 export { listOAuthProvidersFromAi as listOAuthProviders };
-export { getOAuthApiKey, loadOAuthCredentials, removeOAuthCredentials, saveOAuthCredentials };
+export {
+	getOAuthApiKey,
+	loadOAuthCredentials,
+	removeOAuthCredentials,
+	resetOAuthStorage,
+	saveOAuthCredentials,
+	setOAuthStorage,
+};
 
 // Types for OAuth flow
 export interface OAuthAuthInfo {
