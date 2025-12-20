@@ -7,6 +7,8 @@ export interface OAuthCredentials {
 	access: string;
 	expires: number;
 	enterpriseUrl?: string;
+	projectId?: string; // For Google Cloud Code Assist
+	email?: string; // For Google Cloud Code Assist
 }
 
 interface OAuthStorageFormat {

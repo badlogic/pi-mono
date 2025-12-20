@@ -40,6 +40,15 @@ All models support: text, image, pdf input; text output; cost is $0 (uses Google
 
 ## Implementation Steps
 
+### Phase 1: AI Provider (COMPLETED)
+
+Steps 1-8 completed. The provider is implemented in:
+- `packages/ai/src/providers/google-cloud-code-assist.ts`
+- `packages/ai/src/providers/google-shared.ts`
+- Models added to `packages/ai/scripts/generate-models.ts`
+
+---
+
 ### Step 1: Update types.ts
 File: `packages/ai/src/types.ts`
 

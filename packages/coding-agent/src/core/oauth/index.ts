@@ -1,5 +1,6 @@
 import { loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
 import { loginGitHubCopilot, refreshGitHubCopilotToken } from "./github-copilot.js";
+import { loginGoogleCloud, refreshGoogleCloudToken } from "./google-cloud.js";
 import {
 	listOAuthProviders as listOAuthProvidersFromStorage,
 	loadOAuthCredentials,
@@ -11,7 +12,7 @@ import {
 // Re-export for convenience
 export { listOAuthProvidersFromStorage as listOAuthProviders };
 
-export type SupportedOAuthProvider = "anthropic" | "github-copilot";
+export type SupportedOAuthProvider = "anthropic" | "github-copilot" | "google-cloud-code-assist";
 
 export interface OAuthProviderInfo {
 	id: SupportedOAuthProvider;
@@ -45,6 +46,11 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 			name: "GitHub Copilot",
 			available: true,
 		},
+		{
+			id: "google-cloud-code-assist",
+			name: "Google Cloud Code Assist (Gemini CLI)",
+			available: true,
+		},
 	];
 }
 
@@ -71,6 +77,10 @@ export async function login(
 				onProgress,
 			});
 			saveOAuthCredentials("github-copilot", creds);
+			break;
+		}
+		case "google-cloud-code-assist": {
+			await loginGoogleCloud(onAuth, onProgress);
 			break;
 		}
 		default:
@@ -102,6 +112,9 @@ export async function refreshToken(provider: SupportedOAuthProvider): Promise<st
 			break;
 		case "github-copilot":
 			newCredentials = await refreshGitHubCopilotToken(credentials.refresh, credentials.enterpriseUrl);
+			break;
+		case "google-cloud-code-assist":
+			newCredentials = await refreshGoogleCloudToken(credentials.refresh, credentials.projectId);
 			break;
 		default:
 			throw new Error(`Unknown OAuth provider: ${provider}`);

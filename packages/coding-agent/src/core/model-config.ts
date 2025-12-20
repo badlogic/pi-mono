@@ -4,8 +4,8 @@ import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { getModelsPath } from "../config.js";
 import { getGitHubCopilotBaseUrl, normalizeDomain, refreshGitHubCopilotToken } from "./oauth/github-copilot.js";
-import { getOAuthToken, type SupportedOAuthProvider } from "./oauth/index.js";
-import { loadOAuthCredentials, saveOAuthCredentials } from "./oauth/storage.js";
+import { getOAuthToken, refreshToken, type SupportedOAuthProvider } from "./oauth/index.js";
+import { loadOAuthCredentials, removeOAuthCredentials, saveOAuthCredentials } from "./oauth/storage.js";
 
 // Handle both default and named exports
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -312,6 +312,33 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 		return githubToken;
 	}
 
+	// For Google Cloud Code Assist, check OAuth and encode projectId with token
+	if (model.provider === "google-cloud-code-assist") {
+		const credentials = loadOAuthCredentials("google-cloud-code-assist");
+		if (!credentials) {
+			return undefined;
+		}
+
+		// Check if token is expired
+		if (Date.now() >= credentials.expires) {
+			try {
+				await refreshToken("google-cloud-code-assist");
+				const refreshedCreds = loadOAuthCredentials("google-cloud-code-assist");
+				if (refreshedCreds?.projectId) {
+					return JSON.stringify({ token: refreshedCreds.access, projectId: refreshedCreds.projectId });
+				}
+			} catch {
+				removeOAuthCredentials("google-cloud-code-assist");
+				return undefined;
+			}
+		}
+
+		if (credentials.projectId) {
+			return JSON.stringify({ token: credentials.access, projectId: credentials.projectId });
+		}
+		return undefined;
+	}
+
 	// For built-in providers, use getApiKey from @mariozechner/pi-ai
 	return getApiKey(model.provider as KnownProvider);
 }
@@ -371,6 +398,7 @@ export function findModel(provider: string, modelId: string): { model: Model<Api
 const providerToOAuthProvider: Record<string, SupportedOAuthProvider> = {
 	anthropic: "anthropic",
 	"github-copilot": "github-copilot",
+	"google-cloud-code-assist": "google-cloud-code-assist",
 };
 
 // Cache for OAuth status per provider (avoids file reads on every render)

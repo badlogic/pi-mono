@@ -119,14 +119,25 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 		};
 
 		try {
-			const apiKey = options?.apiKey;
-			if (!apiKey) {
-				throw new Error("Google Cloud Code Assist requires an OAuth access token");
+			// apiKey is JSON-encoded: { token, projectId }
+			const apiKeyRaw = options?.apiKey;
+			if (!apiKeyRaw) {
+				throw new Error("Google Cloud Code Assist requires OAuth authentication. Use /login to authenticate.");
 			}
 
-			const projectId = options?.projectId;
-			if (!projectId) {
-				throw new Error("Google Cloud Code Assist requires a project ID");
+			let accessToken: string;
+			let projectId: string;
+
+			try {
+				const parsed = JSON.parse(apiKeyRaw) as { token: string; projectId: string };
+				accessToken = parsed.token;
+				projectId = parsed.projectId;
+			} catch {
+				throw new Error("Invalid Google Cloud Code Assist credentials. Use /login to re-authenticate.");
+			}
+
+			if (!accessToken || !projectId) {
+				throw new Error("Missing token or projectId in Google Cloud credentials. Use /login to re-authenticate.");
 			}
 
 			const requestBody = buildRequest(model, context, projectId, options);
@@ -135,7 +146,7 @@ export const streamGoogleCloudCodeAssist: StreamFunction<"google-cloud-code-assi
 			const response = await fetch(url, {
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${apiKey}`,
+					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
 					Accept: "text/event-stream",
 					...HEADERS,
