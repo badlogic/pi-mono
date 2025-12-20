@@ -92,6 +92,7 @@ async function runLoop(
 	let hasMoreToolCalls = true;
 	let firstTurn = true;
 	let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
+	let queuedAfterTools: QueuedMessage<any>[] | null = null;
 
 	while (hasMoreToolCalls || queuedMessages.length > 0) {
 		if (!firstTurn) {
@@ -132,14 +133,27 @@ async function runLoop(
 		const toolResults: ToolResultMessage[] = [];
 		if (hasMoreToolCalls) {
 			// Execute tool calls
-			toolResults.push(...(await executeToolCalls(currentContext.tools, message, signal, stream)));
+			const toolExecution = await executeToolCalls(
+				currentContext.tools,
+				message,
+				signal,
+				stream,
+				config.getQueuedMessages,
+			);
+			toolResults.push(...toolExecution.toolResults);
+			queuedAfterTools = toolExecution.queuedMessages ?? null;
 			currentContext.messages.push(...toolResults);
 			newMessages.push(...toolResults);
 		}
 		stream.push({ type: "turn_end", message, toolResults: toolResults });
 
 		// Get queued messages after turn completes
-		queuedMessages = (await config.getQueuedMessages?.()) || [];
+		if (queuedAfterTools && queuedAfterTools.length > 0) {
+			queuedMessages = queuedAfterTools;
+			queuedAfterTools = null;
+		} else {
+			queuedMessages = (await config.getQueuedMessages?.()) || [];
+		}
 	}
 
 	stream.push({ type: "agent_end", messages: newMessages });
@@ -234,11 +248,14 @@ async function executeToolCalls<T>(
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, Message[]>,
-): Promise<ToolResultMessage<T>[]> {
+	getQueuedMessages?: AgentLoopConfig["getQueuedMessages"],
+): Promise<{ toolResults: ToolResultMessage<T>[]; queuedMessages?: QueuedMessage<any>[] }> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
 	const results: ToolResultMessage<any>[] = [];
+	let queuedMessages: QueuedMessage<any>[] | undefined;
 
-	for (const toolCall of toolCalls) {
+	for (let index = 0; index < toolCalls.length; index++) {
+		const toolCall = toolCalls[index];
 		const tool = tools?.find((t) => t.name === toolCall.name);
 
 		stream.push({
@@ -296,7 +313,58 @@ async function executeToolCalls<T>(
 		results.push(toolResultMessage);
 		stream.push({ type: "message_start", message: toolResultMessage });
 		stream.push({ type: "message_end", message: toolResultMessage });
+
+		if (getQueuedMessages) {
+			const queued = await getQueuedMessages();
+			if (queued.length > 0) {
+				queuedMessages = queued;
+				const remainingCalls = toolCalls.slice(index + 1);
+				for (const skipped of remainingCalls) {
+					results.push(skipToolCall(skipped, stream));
+				}
+				break;
+			}
+		}
 	}
 
-	return results;
+	return { toolResults: results, queuedMessages };
+}
+
+function skipToolCall<T>(
+	toolCall: Extract<AssistantMessage["content"][number], { type: "toolCall" }>,
+	stream: EventStream<AgentEvent, Message[]>,
+): ToolResultMessage<T> {
+	const result: AgentToolResult<T> = {
+		content: [{ type: "text", text: "Skipped due to queued user message." }],
+		details: {} as T,
+	};
+
+	stream.push({
+		type: "tool_execution_start",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		args: toolCall.arguments,
+	});
+	stream.push({
+		type: "tool_execution_end",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		result,
+		isError: true,
+	});
+
+	const toolResultMessage: ToolResultMessage<T> = {
+		role: "toolResult",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		content: result.content,
+		details: result.details,
+		isError: true,
+		timestamp: Date.now(),
+	};
+
+	stream.push({ type: "message_start", message: toolResultMessage });
+	stream.push({ type: "message_end", message: toolResultMessage });
+
+	return toolResultMessage;
 }
