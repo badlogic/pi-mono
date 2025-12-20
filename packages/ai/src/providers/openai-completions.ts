@@ -262,6 +262,20 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 							}
 						}
 					}
+
+					const reasoningDetails = (choice.delta as any).reasoning_details;
+					if (reasoningDetails && Array.isArray(reasoningDetails)) {
+						for (const detail of reasoningDetails) {
+							if (detail.type === "reasoning.encrypted" && detail.id && detail.data) {
+								const matchingToolCall = output.content.find(
+									(b) => b.type === "toolCall" && b.id === detail.id,
+								) as ToolCall | undefined;
+								if (matchingToolCall) {
+									matchingToolCall.thoughtSignature = JSON.stringify(detail);
+								}
+							}
+						}
+					}
 				}
 			}
 
@@ -487,6 +501,19 @@ function convertMessages(
 						arguments: JSON.stringify(tc.arguments),
 					},
 				}));
+				const reasoningDetails = toolCalls
+					.filter((tc) => tc.thoughtSignature)
+					.map((tc) => {
+						try {
+							return JSON.parse(tc.thoughtSignature!);
+						} catch {
+							return null;
+						}
+					})
+					.filter(Boolean);
+				if (reasoningDetails.length > 0) {
+					(assistantMsg as any).reasoning_details = reasoningDetails;
+				}
 			}
 			// Skip assistant messages that have no content and no tool calls.
 			// Mistral explicitly requires "either content or tool_calls, but not none".
