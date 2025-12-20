@@ -35,6 +35,7 @@ function getAliases(): Record<string, string> {
 		"@mariozechner/pi-coding-agent": packageIndex,
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
+		"@sinclair/typebox/compiler": require.resolve("@sinclair/typebox/compiler"),
 		"@sinclair/typebox": require.resolve("@sinclair/typebox"),
 	};
 	return _aliases;
