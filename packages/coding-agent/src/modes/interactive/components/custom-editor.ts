@@ -6,6 +6,7 @@ import {
 	isCtrlO,
 	isCtrlP,
 	isCtrlT,
+	isCtrlZ,
 	isEscape,
 	isShiftTab,
 } from "@mariozechner/pi-tui";
@@ -22,11 +23,18 @@ export class CustomEditor extends Editor {
 	public onCtrlO?: () => void;
 	public onCtrlT?: () => void;
 	public onCtrlG?: () => void;
+	public onCtrlZ?: () => void;
 
 	handleInput(data: string): void {
 		// Intercept Ctrl+G for external editor
 		if (isCtrlG(data) && this.onCtrlG) {
 			this.onCtrlG();
+			return;
+		}
+
+		// Intercept Ctrl+Z for suspend
+		if (isCtrlZ(data) && this.onCtrlZ) {
+			this.onCtrlZ();
 			return;
 		}
 
