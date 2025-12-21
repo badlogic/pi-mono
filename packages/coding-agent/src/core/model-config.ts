@@ -76,8 +76,6 @@ const ModelsConfigSchema = Type.Object({
 });
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
-type ProviderConfig = Static<typeof ProviderConfigSchema>;
-type ModelDefinition = Static<typeof ModelDefinitionSchema>;
 
 // Custom provider API key mappings (provider name -> apiKey config)
 const customProviderApiKeys: Map<string, string> = new Map();

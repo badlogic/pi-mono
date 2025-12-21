@@ -27,9 +27,6 @@ const SCOPES = [
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-// Antigravity uses sandbox endpoint
-const CODE_ASSIST_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
-
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
@@ -113,13 +110,6 @@ interface LoadCodeAssistPayload {
 	cloudaicompanionProject?: string | { id?: string };
 	currentTier?: { id?: string };
 	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
-}
-
-/**
- * Wait helper for onboarding retries
- */
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

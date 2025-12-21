@@ -456,7 +456,7 @@ export class RpcClient {
 				},
 			});
 
-			this.process!.stdin!.write(JSON.stringify(fullCommand) + "\n");
+			this.process!.stdin!.write(`${JSON.stringify(fullCommand)}\n`);
 		});
 	}
 

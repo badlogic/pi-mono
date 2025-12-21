@@ -235,7 +235,7 @@ export class Markdown implements Component {
 		switch (token.type) {
 			case "heading": {
 				const headingLevel = token.depth;
-				const headingPrefix = "#".repeat(headingLevel) + " ";
+				const headingPrefix = `${"#".repeat(headingLevel)} `;
 				const headingText = this.renderInlineTokens(token.tokens || []);
 				let styledHeading: string;
 				if (headingLevel === 1) {
@@ -263,17 +263,17 @@ export class Markdown implements Component {
 			}
 
 			case "code": {
-				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
 				if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
-						lines.push("  " + hlLine);
+						lines.push(`  ${hlLine}`);
 					}
 				} else {
 					// Split code by newlines and style each line
 					const codeLines = token.text.split("\n");
 					for (const codeLine of codeLines) {
-						lines.push("  " + this.theme.codeBlock(codeLine));
+						lines.push(`  ${this.theme.codeBlock(codeLine)}`);
 					}
 				}
 				lines.push(this.theme.codeBlockBorder("```"));
@@ -443,7 +443,7 @@ export class Markdown implements Component {
 						lines.push(line);
 					} else {
 						// Regular content - add parent indent + 2 spaces for continuation
-						lines.push(indent + "  " + line);
+						lines.push(`${indent}  ${line}`);
 					}
 				}
 			} else {
@@ -478,16 +478,16 @@ export class Markdown implements Component {
 				lines.push(text);
 			} else if (token.type === "code") {
 				// Code block in list item
-				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
 				if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
-						lines.push("  " + hlLine);
+						lines.push(`  ${hlLine}`);
 					}
 				} else {
 					const codeLines = token.text.split("\n");
 					for (const codeLine of codeLines) {
-						lines.push("  " + this.theme.codeBlock(codeLine));
+						lines.push(`  ${this.theme.codeBlock(codeLine)}`);
 					}
 				}
 				lines.push(this.theme.codeBlockBorder("```"));
@@ -587,7 +587,7 @@ export class Markdown implements Component {
 
 		// Render top border
 		const topBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("┌─" + topBorderCells.join("─┬─") + "─┐");
+		lines.push(`┌─${topBorderCells.join("─┬─")}─┐`);
 
 		// Render header with wrapping
 		const headerCellLines: string[][] = token.header.map((cell, i) => {
@@ -602,12 +602,12 @@ export class Markdown implements Component {
 				const padded = text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				return this.theme.bold(padded);
 			});
-			lines.push("│ " + rowParts.join(" │ ") + " │");
+			lines.push(`│ ${rowParts.join(" │ ")} │`);
 		}
 
 		// Render separator
 		const separatorCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("├─" + separatorCells.join("─┼─") + "─┤");
+		lines.push(`├─${separatorCells.join("─┼─")}─┤`);
 
 		// Render rows with wrapping
 		for (const row of token.rows) {
@@ -622,13 +622,13 @@ export class Markdown implements Component {
 					const text = cellLines[lineIdx] || "";
 					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				});
-				lines.push("│ " + rowParts.join(" │ ") + " │");
+				lines.push(`│ ${rowParts.join(" │ ")} │`);
 			}
 		}
 
 		// Render bottom border
 		const bottomBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("└─" + bottomBorderCells.join("─┴─") + "─┘");
+		lines.push(`└─${bottomBorderCells.join("─┴─")}─┘`);
 
 		lines.push(""); // Add spacing after table
 		return lines;

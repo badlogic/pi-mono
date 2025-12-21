@@ -153,12 +153,12 @@ function loadCommandsFromDir(dir: string, source: "user" | "project", subdir: st
 						content,
 						source: sourceStr,
 					});
-				} catch (error) {
+				} catch (_error) {
 					// Silently skip files that can't be read
 				}
 			}
 		}
-	} catch (error) {
+	} catch (_error) {
 		// Silently skip directories that can't be read
 	}
 

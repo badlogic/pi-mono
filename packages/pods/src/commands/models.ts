@@ -207,7 +207,7 @@ export const startModel = async (
 		.replace("{{VLLM_ARGS}}", vllmArgs.join(" "));
 
 	// Upload customized script
-	const result = await sshExec(
+	await sshExec(
 		pod.ssh,
 		`cat > /tmp/model_run_${name}.sh << 'EOF'
 ${scriptContent}
@@ -341,7 +341,7 @@ WRAPPER
 
 	if (startupFailed) {
 		// Model failed to start - clean up and report error
-		console.log("\n" + chalk.red(`✗ Model failed to start: ${failureReason}`));
+		console.log(`\n${chalk.red(`✗ Model failed to start: ${failureReason}`)}`);
 
 		// Remove the failed model from config
 		const config = loadConfig();
@@ -352,7 +352,7 @@ WRAPPER
 
 		// Provide helpful suggestions based on failure reason
 		if (failureReason.includes("OOM") || failureReason.includes("memory")) {
-			console.log("\n" + chalk.bold("Suggestions:"));
+			console.log(`\n${chalk.bold("Suggestions:")}`);
 			console.log("  • Try reducing GPU memory utilization: --memory 50%");
 			console.log("  • Use a smaller context window: --context 4k");
 			console.log("  • Use a quantized version of the model (e.g., FP8)");
@@ -360,24 +360,24 @@ WRAPPER
 			console.log("  • Try a smaller model variant");
 		}
 
-		console.log("\n" + chalk.cyan('Check full logs: pi ssh "tail -100 ~/.vllm_logs/' + name + '.log"'));
+		console.log(`\n${chalk.cyan(`Check full logs: pi ssh "tail -100 ~/.vllm_logs/${name}.log"`)}`);
 		process.exit(1);
 	} else if (startupComplete) {
 		// Model started successfully - output connection details
-		console.log("\n" + chalk.green("✓ Model started successfully!"));
-		console.log("\n" + chalk.bold("Connection Details:"));
+		console.log(`\n${chalk.green("✓ Model started successfully!")}`);
+		console.log(`\n${chalk.bold("Connection Details:")}`);
 		console.log(chalk.cyan("─".repeat(50)));
 		console.log(chalk.white("Base URL:    ") + chalk.yellow(`http://${host}:${port}/v1`));
 		console.log(chalk.white("Model:       ") + chalk.yellow(modelId));
 		console.log(chalk.white("API Key:     ") + chalk.yellow(process.env.PI_API_KEY || "(not set)"));
 		console.log(chalk.cyan("─".repeat(50)));
 
-		console.log("\n" + chalk.bold("Export for shell:"));
+		console.log(`\n${chalk.bold("Export for shell:")}`);
 		console.log(chalk.gray(`export OPENAI_BASE_URL="http://${host}:${port}/v1"`));
 		console.log(chalk.gray(`export OPENAI_API_KEY="${process.env.PI_API_KEY || "your-api-key"}"`));
 		console.log(chalk.gray(`export OPENAI_MODEL="${modelId}"`));
 
-		console.log("\n" + chalk.bold("Example usage:"));
+		console.log(`\n${chalk.bold("Example usage:")}`);
 		console.log(
 			chalk.gray(`
   # Python

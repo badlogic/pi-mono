@@ -44,7 +44,7 @@ export function getShellConfig(): { shell: string; args: string[] } {
 			return cachedShellConfig;
 		}
 		throw new Error(
-			`Custom shell path not found: ${customShellPath}\n` + `Please update shellPath in ~/.pi/agent/settings.json`,
+			`Custom shell path not found: ${customShellPath}\nPlease update shellPath in ~/.pi/agent/settings.json`,
 		);
 	}
 

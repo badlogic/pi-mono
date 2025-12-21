@@ -23,6 +23,8 @@ function defaultMessageTransformer(messages: AppMessage[]): Message[] {
 		.map((m) => {
 			if (m.role === "user") {
 				// Strip attachments field (app-specific)
+
+				// biome-ignore lint/correctness/noUnusedVariables: fine here
 				const { attachments, ...rest } = m as any;
 				return rest as Message;
 			}

@@ -54,7 +54,7 @@ export function isBashExecutionMessage(msg: AppMessage | Message): msg is BashEx
 export function bashExecutionToText(msg: BashExecutionMessage): string {
 	let text = `Ran \`${msg.command}\`\n`;
 	if (msg.output) {
-		text += "```\n" + msg.output + "\n```";
+		text += `\`\`\`\n${msg.output}\n\`\`\``;
 	} else {
 		text += "(no output)";
 	}

@@ -89,7 +89,7 @@ export const grepTool: AgentTool<typeof grepSchema> = {
 					let searchStat: Stats;
 					try {
 						searchStat = statSync(searchPath);
-					} catch (err) {
+					} catch (_err) {
 						settle(() => reject(new Error(`Path not found: ${searchPath}`)));
 						return;
 					}

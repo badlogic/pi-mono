@@ -84,7 +84,7 @@ function escapeHtml(text: string): string {
 
 function shortenPath(path: string): string {
 	const home = homedir();
-	return path.startsWith(home) ? "~" + path.slice(home.length) : path;
+	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
 function replaceTabs(text: string): string {

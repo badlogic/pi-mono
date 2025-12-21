@@ -534,7 +534,7 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
-	} catch (error) {
+	} catch (_error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
 		theme = loadTheme("dark");
@@ -598,7 +598,7 @@ function startThemeWatcher(): void {
 						if (onThemeChangeCallback) {
 							onThemeChangeCallback();
 						}
-					} catch (error) {
+					} catch (_error) {
 						// Ignore errors (file might be in invalid state while being edited)
 					}
 				}, 100);
@@ -619,7 +619,7 @@ function startThemeWatcher(): void {
 				}, 100);
 			}
 		});
-	} catch (error) {
+	} catch (_error) {
 		// Ignore errors starting watcher
 	}
 }

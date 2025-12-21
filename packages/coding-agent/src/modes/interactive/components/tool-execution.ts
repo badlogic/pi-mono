@@ -21,7 +21,7 @@ import { renderDiff } from "./diff.js";
 function shortenPath(path: string): string {
 	const home = os.homedir();
 	if (path.startsWith(home)) {
-		return "~" + path.slice(home.length);
+		return `~${path.slice(home.length)}`;
 	}
 	return path;
 }
@@ -269,7 +269,7 @@ export class ToolExecutionComponent extends Container {
 							);
 						}
 					}
-					text += "\n" + theme.fg("warning", `[${warnings.join(". ")}]`);
+					text += `\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`;
 				}
 			}
 		} else if (this.toolName === "read") {
@@ -284,7 +284,7 @@ export class ToolExecutionComponent extends Container {
 				pathDisplay += theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
 			}
 
-			text = theme.fg("toolTitle", theme.bold("read")) + " " + pathDisplay;
+			text = `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`;
 
 			if (this.result) {
 				const output = this.getTextOutput();
@@ -377,17 +377,17 @@ export class ToolExecutionComponent extends Container {
 				if (this.result.isError) {
 					const errorText = this.getTextOutput();
 					if (errorText) {
-						text += "\n\n" + theme.fg("error", errorText);
+						text += `\n\n${theme.fg("error", errorText)}`;
 					}
 				} else if (this.result.details?.diff) {
-					text += "\n\n" + renderDiff(this.result.details.diff, { filePath: rawPath });
+					text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath })}`;
 				}
 			}
 		} else if (this.toolName === "ls") {
 			const path = shortenPath(this.args?.path || ".");
 			const limit = this.args?.limit;
 
-			text = theme.fg("toolTitle", theme.bold("ls")) + " " + theme.fg("accent", path);
+			text = `${theme.fg("toolTitle", theme.bold("ls"))} ${theme.fg("accent", path)}`;
 			if (limit !== undefined) {
 				text += theme.fg("toolOutput", ` (limit ${limit})`);
 			}
@@ -400,7 +400,7 @@ export class ToolExecutionComponent extends Container {
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
-					text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
+					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
@@ -416,7 +416,7 @@ export class ToolExecutionComponent extends Container {
 					if (truncation?.truncated) {
 						warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 					}
-					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+					text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 				}
 			}
 		} else if (this.toolName === "find") {
@@ -441,7 +441,7 @@ export class ToolExecutionComponent extends Container {
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
-					text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
+					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
@@ -457,7 +457,7 @@ export class ToolExecutionComponent extends Container {
 					if (truncation?.truncated) {
 						warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 					}
-					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+					text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 				}
 			}
 		} else if (this.toolName === "grep") {
@@ -486,7 +486,7 @@ export class ToolExecutionComponent extends Container {
 					const displayLines = lines.slice(0, maxLines);
 					const remaining = lines.length - maxLines;
 
-					text += "\n\n" + displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
+					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
 						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
 					}
@@ -506,7 +506,7 @@ export class ToolExecutionComponent extends Container {
 					if (linesTruncated) {
 						warnings.push("some lines truncated");
 					}
-					text += "\n" + theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`);
+					text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 				}
 			}
 		} else {
@@ -514,10 +514,10 @@ export class ToolExecutionComponent extends Container {
 			text = theme.fg("toolTitle", theme.bold(this.toolName));
 
 			const content = JSON.stringify(this.args, null, 2);
-			text += "\n\n" + content;
+			text += `\n\n${content}`;
 			const output = this.getTextOutput();
 			if (output) {
-				text += "\n" + output;
+				text += `\n${output}`;
 			}
 		}
 

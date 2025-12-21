@@ -110,7 +110,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						currentItem = item;
 						currentBlock = {
 							type: "toolCall",
-							id: item.call_id + "|" + item.id,
+							id: `${item.call_id}|${item.id}`,
 							name: item.name,
 							arguments: {},
 							partialJson: item.arguments || "",
@@ -251,7 +251,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 					} else if (item.type === "function_call") {
 						const toolCall: ToolCall = {
 							type: "toolCall",
-							id: item.call_id + "|" + item.id,
+							id: `${item.call_id}|${item.id}`,
 							name: item.name,
 							arguments: JSON.parse(item.arguments),
 						};
@@ -462,9 +462,9 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					// OpenAI requires id to be max 64 characters
 					let msgId = textBlock.textSignature;
 					if (!msgId) {
-						msgId = "msg_" + msgIndex;
+						msgId = `msg_${msgIndex}`;
 					} else if (msgId.length > 64) {
-						msgId = "msg_" + shortHash(msgId);
+						msgId = `msg_${shortHash(msgId)}`;
 					}
 					output.push({
 						type: "message",

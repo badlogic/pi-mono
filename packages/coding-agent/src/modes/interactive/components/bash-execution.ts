@@ -132,11 +132,11 @@ export class BashExecutionComponent extends Container {
 			if (this.expanded) {
 				// Show all lines
 				const displayText = availableLines.map((line) => theme.fg("muted", line)).join("\n");
-				this.contentContainer.addChild(new Text("\n" + displayText, 1, 0));
+				this.contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
 			} else {
 				// Render preview lines, then cap at PREVIEW_LINES visual lines
 				const tempText = new Text(
-					"\n" + previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n"),
+					`\n${previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n")}`,
 					1,
 					0,
 				);
@@ -170,7 +170,7 @@ export class BashExecutionComponent extends Container {
 			}
 
 			if (statusParts.length > 0) {
-				this.contentContainer.addChild(new Text("\n" + statusParts.join("\n"), 1, 0));
+				this.contentContainer.addChild(new Text(`\n${statusParts.join("\n")}`, 1, 0));
 			}
 		}
 	}

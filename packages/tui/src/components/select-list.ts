@@ -90,16 +90,16 @@ export class SelectList implements Component {
 					if (remainingWidth > 10) {
 						const truncatedDesc = truncateToWidth(item.description, remainingWidth, "");
 						// Apply selectedText to entire line content
-						line = this.theme.selectedText("→ " + truncatedValue + spacing + truncatedDesc);
+						line = this.theme.selectedText(`→ ${truncatedValue}${spacing}${truncatedDesc}`);
 					} else {
 						// Not enough space for description
 						const maxWidth = width - prefixWidth - 2;
-						line = this.theme.selectedText("→ " + truncateToWidth(displayValue, maxWidth, ""));
+						line = this.theme.selectedText(`→ ${truncateToWidth(displayValue, maxWidth, "")}`);
 					}
 				} else {
 					// No description or not enough width
 					const maxWidth = width - prefixWidth - 2;
-					line = this.theme.selectedText("→ " + truncateToWidth(displayValue, maxWidth, ""));
+					line = this.theme.selectedText(`→ ${truncateToWidth(displayValue, maxWidth, "")}`);
 				}
 			} else {
 				const displayValue = item.label || item.value;

@@ -92,8 +92,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			// Error handlers - track errors but don't log them
 			// (they'll be shown via execution-error message)
 			window.addEventListener("error", (e) => {
-				const text =
-					(e.error?.stack || e.message || String(e)) + " at line " + (e.lineno || "?") + ":" + (e.colno || "?");
+				const text = `${e.error?.stack || e.message || String(e)} at line ${e.lineno || "?"}:${e.colno || "?"}`;
 
 				lastError = {
 					message: e.error?.message || e.message || String(e),
@@ -102,7 +101,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 			});
 
 			window.addEventListener("unhandledrejection", (e) => {
-				const text = "Unhandled promise rejection: " + (e.reason?.message || e.reason || "Unknown error");
+				const text = `Unhandled promise rejection: ${e.reason?.message || e.reason || "Unknown error"}`;
 
 				lastError = {
 					message: e.reason?.message || String(e.reason) || "Unhandled promise rejection",

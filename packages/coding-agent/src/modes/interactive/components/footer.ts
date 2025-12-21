@@ -168,17 +168,17 @@ export class FooterComponent implements Component {
 		// Format token counts (similar to web-ui)
 		const formatTokens = (count: number): string => {
 			if (count < 1000) return count.toString();
-			if (count < 10000) return (count / 1000).toFixed(1) + "k";
-			if (count < 1000000) return Math.round(count / 1000) + "k";
-			if (count < 10000000) return (count / 1000000).toFixed(1) + "M";
-			return Math.round(count / 1000000) + "M";
+			if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+			if (count < 1000000) return `${Math.round(count / 1000)}k`;
+			if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+			return `${Math.round(count / 1000000)}M`;
 		};
 
 		// Replace home directory with ~
 		let pwd = process.cwd();
 		const home = process.env.HOME || process.env.USERPROFILE;
 		if (home && pwd.startsWith(home)) {
-			pwd = "~" + pwd.slice(home.length);
+			pwd = `~${pwd.slice(home.length)}`;
 		}
 
 		// Add git branch if available
@@ -247,7 +247,7 @@ export class FooterComponent implements Component {
 		if (statsLeftWidth > width) {
 			// Truncate statsLeft to fit width (no room for right side)
 			const plainStatsLeft = statsLeft.replace(/\x1b\[[0-9;]*m/g, "");
-			statsLeft = plainStatsLeft.substring(0, width - 3) + "...";
+			statsLeft = `${plainStatsLeft.substring(0, width - 3)}...`;
 			statsLeftWidth = visibleWidth(statsLeft);
 		}
 

@@ -51,7 +51,7 @@ export async function executeJavaScript(
 		// Add console output - result.console contains { type: string, text: string } from sandbox.js
 		if (result.console && result.console.length > 0) {
 			for (const entry of result.console) {
-				output += entry.text + "\n";
+				output += `${entry.text}\n`;
 			}
 		}
 
@@ -230,7 +230,7 @@ export const javascriptReplRenderer: ToolRenderer<JavaScriptReplParams, JavaScri
 				if (isTextBased && f.contentBase64) {
 					try {
 						extractedText = atob(f.contentBase64);
-					} catch (e) {
+					} catch (_e) {
 						console.warn("Failed to decode base64 content for", f.fileName);
 					}
 				}

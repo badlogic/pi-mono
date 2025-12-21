@@ -202,7 +202,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const isSlashCommand = prefix.startsWith("/") && beforePrefix.trim() === "" && !prefix.slice(1).includes("/");
 		if (isSlashCommand) {
 			// This is a command name completion
-			const newLine = beforePrefix + "/" + item.value + " " + afterCursor;
+			const newLine = `${beforePrefix}/${item.value} ${afterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
@@ -216,7 +216,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		// Check if we're completing a file attachment (prefix starts with "@")
 		if (prefix.startsWith("@")) {
 			// This is a file attachment completion
-			const newLine = beforePrefix + item.value + " " + afterCursor;
+			const newLine = `${beforePrefix + item.value} ${afterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
@@ -299,7 +299,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		if (path.startsWith("~/")) {
 			const expandedPath = join(homedir(), path.slice(2));
 			// Preserve trailing slash if original path had one
-			return path.endsWith("/") && !expandedPath.endsWith("/") ? expandedPath + "/" : expandedPath;
+			return path.endsWith("/") && !expandedPath.endsWith("/") ? `${expandedPath}/` : expandedPath;
 		} else if (path === "~") {
 			return homedir();
 		}
@@ -387,20 +387,20 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				if (isAtPrefix) {
 					const pathWithoutAt = expandedPrefix;
 					if (pathWithoutAt.endsWith("/")) {
-						relativePath = "@" + pathWithoutAt + name;
+						relativePath = `@${pathWithoutAt}${name}`;
 					} else if (pathWithoutAt.includes("/")) {
 						if (pathWithoutAt.startsWith("~/")) {
 							const homeRelativeDir = pathWithoutAt.slice(2); // Remove ~/
 							const dir = dirname(homeRelativeDir);
-							relativePath = "@~/" + (dir === "." ? name : join(dir, name));
+							relativePath = `@~/${dir === "." ? name : join(dir, name)}`;
 						} else {
-							relativePath = "@" + join(dirname(pathWithoutAt), name);
+							relativePath = `@${join(dirname(pathWithoutAt), name)}`;
 						}
 					} else {
 						if (pathWithoutAt.startsWith("~")) {
-							relativePath = "@~/" + name;
+							relativePath = `@~/${name}`;
 						} else {
-							relativePath = "@" + name;
+							relativePath = `@${name}`;
 						}
 					}
 				} else if (prefix.endsWith("/")) {
@@ -411,14 +411,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					if (prefix.startsWith("~/")) {
 						const homeRelativeDir = prefix.slice(2); // Remove ~/
 						const dir = dirname(homeRelativeDir);
-						relativePath = "~/" + (dir === "." ? name : join(dir, name));
+						relativePath = `~/${dir === "." ? name : join(dir, name)}`;
 					} else if (prefix.startsWith("/")) {
 						// Absolute path - construct properly
 						const dir = dirname(prefix);
 						if (dir === "/") {
-							relativePath = "/" + name;
+							relativePath = `/${name}`;
 						} else {
-							relativePath = dir + "/" + name;
+							relativePath = `${dir}/${name}`;
 						}
 					} else {
 						relativePath = join(dirname(prefix), name);
@@ -426,14 +426,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				} else {
 					// For standalone entries, preserve ~/ if original prefix was ~/
 					if (prefix.startsWith("~")) {
-						relativePath = "~/" + name;
+						relativePath = `~/${name}`;
 					} else {
 						relativePath = name;
 					}
 				}
 
 				suggestions.push({
-					value: isDirectory ? relativePath + "/" : relativePath,
+					value: isDirectory ? `${relativePath}/` : relativePath,
 					label: name,
 					description: isDirectory ? "directory" : "file",
 				});
@@ -449,7 +449,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			});
 
 			return suggestions;
-		} catch (e) {
+		} catch (_e) {
 			// Directory doesn't exist or not accessible
 			return [];
 		}
@@ -509,7 +509,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				const entryName = basename(pathWithoutSlash);
 
 				suggestions.push({
-					value: "@" + entryPath,
+					value: `@${entryPath}`,
 					label: entryName + (isDirectory ? "/" : ""),
 					description: pathWithoutSlash,
 				});

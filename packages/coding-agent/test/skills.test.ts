@@ -106,7 +106,7 @@ describe("skills", () => {
 		});
 
 		it("should load all skills from fixture directory", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills } = loadSkillsFromDir({
 				dir: fixturesDir,
 				source: "test",
 			});

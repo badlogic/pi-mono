@@ -177,6 +177,7 @@ async function streamAssistantResponse(
 		systemPrompt: context.systemPrompt,
 		messages: [...processedMessages].map((m) => {
 			if (m.role === "toolResult") {
+				// biome-ignore lint/correctness/noUnusedVariables: fine here
 				const { details, ...rest } = m;
 				return rest;
 			} else {

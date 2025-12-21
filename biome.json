@@ -7,11 +7,7 @@
 			"style": {
 				"noNonNullAssertion": "off",
 				"useConst": "error",
-				"useNodejsImportProtocol": "off",
-				"useTemplate": "off"
-			},
-			"correctness": {
-				"noUnusedVariables": "off"
+				"useNodejsImportProtocol": "off"
 			},
 			"suspicious": {
 				"noExplicitAny": "off",

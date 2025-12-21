@@ -137,7 +137,7 @@ export function createExtractDocumentTool(): AgentTool<typeof extractDocumentSch
 			const urlParts = url.split("/");
 			let fileName = urlParts[urlParts.length - 1]?.split("?")[0] || "document";
 			if (url.startsWith("https://arxiv.org/")) {
-				fileName = fileName + ".pdf";
+				fileName = `${fileName}.pdf`;
 			}
 
 			// Use loadAttachment to process the document

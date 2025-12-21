@@ -126,7 +126,6 @@ export const readTool: AgentTool<typeof readSchema> = {
 								details = { truncation };
 							} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
 								// User specified limit, there's more content, but no truncation
-								const endLineDisplay = startLineDisplay + userLimitedLines - 1;
 								const remaining = allLines.length - (startLine + userLimitedLines);
 								const nextOffset = startLine + userLimitedLines + 1;
 

@@ -243,7 +243,7 @@ export class SessionManager {
 	private getSessionDirectory(): string {
 		const cwd = process.cwd();
 		// Replace all path separators and colons (for Windows drive letters) with dashes
-		const safePath = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
+		const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 
 		const configDir = getAgentDir();
 		const sessionDir = join(configDir, "sessions", safePath);
@@ -325,9 +325,9 @@ export class SessionManager {
 
 		// Write to file only if enabled
 		if (this.enabled) {
-			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 			for (const memEntry of this.inMemoryEntries.slice(1)) {
-				appendFileSync(this.sessionFile, JSON.stringify(memEntry) + "\n");
+				appendFileSync(this.sessionFile, `${JSON.stringify(memEntry)}\n`);
 			}
 		}
 	}
@@ -346,7 +346,7 @@ export class SessionManager {
 			this.inMemoryEntries.push(entry);
 			// Write to file only if enabled
 			if (this.enabled) {
-				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 			}
 		}
 	}
@@ -365,7 +365,7 @@ export class SessionManager {
 			this.inMemoryEntries.push(entry);
 			// Write to file only if enabled
 			if (this.enabled) {
-				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 			}
 		}
 	}
@@ -385,7 +385,7 @@ export class SessionManager {
 			this.inMemoryEntries.push(entry);
 			// Write to file only if enabled
 			if (this.enabled) {
-				appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 			}
 		}
 	}
@@ -395,7 +395,7 @@ export class SessionManager {
 		this.inMemoryEntries.push(entry);
 		// Write to file only if enabled
 		if (this.enabled) {
-			appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
 
@@ -625,7 +625,7 @@ export class SessionManager {
 			thinkingLevel: state.thinkingLevel,
 			branchedFrom: this.sessionFile,
 		};
-		appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+		appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
 
 		// Write messages up to and including the branch point (if >= 0)
 		if (branchFromIndex >= 0) {
@@ -636,7 +636,7 @@ export class SessionManager {
 					timestamp: new Date().toISOString(),
 					message,
 				};
-				appendFileSync(newSessionFile, JSON.stringify(messageEntry) + "\n");
+				appendFileSync(newSessionFile, `${JSON.stringify(messageEntry)}\n`);
 			}
 		}
 
@@ -675,7 +675,7 @@ export class SessionManager {
 		if (this.enabled) {
 			// Write to file
 			for (const entry of newEntries) {
-				appendFileSync(newSessionFile, JSON.stringify(entry) + "\n");
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
 			}
 			return newSessionFile;
 		} else {

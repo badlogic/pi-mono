@@ -565,5 +565,5 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 	}
 
 	// Add reset code before ellipsis to prevent styling leaking into it
-	return result + "\x1b[0m" + ellipsis;
+	return `${result}\x1b[0m${ellipsis}`;
 }

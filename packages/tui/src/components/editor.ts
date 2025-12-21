@@ -1310,10 +1310,6 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			// Always create new SelectList to ensure update
 			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
 		} else {
-			// No matches - check if we're still in a valid context before cancelling
-			const currentLine = this.state.lines[this.state.cursorLine] || "";
-			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-
 			this.cancelAutocomplete();
 		}
 	}

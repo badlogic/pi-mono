@@ -144,7 +144,7 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 
 		respond: async (text: string, shouldLog = true) => {
 			updatePromise = updatePromise.then(async () => {
-				accumulatedText = accumulatedText ? accumulatedText + "\n" + text : text;
+				accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
 				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
 				if (messageTs) {

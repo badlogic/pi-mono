@@ -49,7 +49,7 @@ describe("TruncatedText component", () => {
 	});
 
 	it("preserves ANSI codes in output and pads correctly", () => {
-		const styledText = chalk.red("Hello") + " " + chalk.blue("world");
+		const styledText = `${chalk.red("Hello")} ${chalk.blue("world")}`;
 		const text = new TruncatedText(styledText, 1, 0);
 		const lines = text.render(40);
 

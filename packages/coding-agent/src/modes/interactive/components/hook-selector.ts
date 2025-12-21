@@ -58,7 +58,7 @@ export class HookSelectorComponent extends Container {
 			if (isSelected) {
 				text = theme.fg("accent", "→ ") + theme.fg("accent", option);
 			} else {
-				text = "  " + theme.fg("text", option);
+				text = `  ${theme.fg("text", option)}`;
 			}
 
 			this.listContainer.addChild(new Text(text, 1, 0));

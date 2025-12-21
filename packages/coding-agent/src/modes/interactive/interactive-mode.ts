@@ -239,7 +239,7 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
-		const header = new Text(logo + "\n" + instructions, 1, 0);
+		const header = new Text(`${logo}\n${instructions}`, 1, 0);
 
 		// Setup UI layout
 		this.ui.addChild(new Spacer(1));
@@ -1340,7 +1340,7 @@ export class InteractiveMode {
 		if (queuedMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of queuedMessages) {
-				const queuedText = theme.fg("dim", "Queued: " + message);
+				const queuedText = theme.fg("dim", `Queued: ${message}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
 			}
 		}
@@ -1808,7 +1808,7 @@ export class InteractiveMode {
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(
-			new Text(theme.fg("accent", "✓ Context cleared") + "\n" + theme.fg("muted", "Started fresh session"), 1, 1),
+			new Text(`${theme.fg("accent", "✓ Context cleared")}\n${theme.fg("muted", "Started fresh session")}`, 1, 1),
 		);
 		this.ui.requestRender();
 	}
@@ -1840,7 +1840,7 @@ export class InteractiveMode {
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(
-			new Text(theme.fg("accent", "✓ Debug log written") + "\n" + theme.fg("muted", debugLogPath), 1, 1),
+			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
 		this.ui.requestRender();
 	}

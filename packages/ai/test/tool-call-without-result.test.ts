@@ -1,4 +1,4 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete, resolveApiKey } from "../src/stream.js";
@@ -17,8 +17,6 @@ const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken
 const calculateSchema = Type.Object({
 	expression: Type.String({ description: "The mathematical expression to evaluate" }),
 });
-
-type CalculateParams = Static<typeof calculateSchema>;
 
 const calculateTool: Tool = {
 	name: "calculate",

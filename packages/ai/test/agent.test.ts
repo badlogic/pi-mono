@@ -215,7 +215,7 @@ async function abortTest<TApi extends Api>(model: Model<TApi>, options: OptionsF
 	const stream = agentLoop(userPrompt, context, config, abortController.signal);
 
 	// Abort after first tool execution
-	const abortPromise = (async () => {
+	(async () => {
 		for await (const event of stream) {
 			events.push(event);
 

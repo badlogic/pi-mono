@@ -444,7 +444,7 @@ describe("Context overflow error handling", () => {
 				console.log("Pulling gpt-oss:20b model for Ollama overflow tests...");
 				try {
 					execSync("ollama pull gpt-oss:20b", { stdio: "inherit" });
-				} catch (e) {
+				} catch (_e) {
 					console.warn("Failed to pull gpt-oss:20b model, tests will be skipped");
 					return;
 				}

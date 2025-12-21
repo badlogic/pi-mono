@@ -92,7 +92,7 @@ export class MomSessionManager {
 		};
 
 		this.inMemoryEntries.push(entry);
-		appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 	}
 
 	/**
@@ -215,7 +215,7 @@ export class MomSessionManager {
 			};
 
 			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
 
@@ -270,9 +270,9 @@ export class MomSessionManager {
 		this.pendingEntries = [];
 
 		// Write to file
-		appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 		for (const memEntry of this.inMemoryEntries.slice(1)) {
-			appendFileSync(this.contextFile, JSON.stringify(memEntry) + "\n");
+			appendFileSync(this.contextFile, `${JSON.stringify(memEntry)}\n`);
 		}
 	}
 
@@ -287,7 +287,7 @@ export class MomSessionManager {
 			this.pendingEntries.push(entry);
 		} else {
 			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
 
@@ -302,7 +302,7 @@ export class MomSessionManager {
 			this.pendingEntries.push(entry);
 		} else {
 			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
 
@@ -318,13 +318,13 @@ export class MomSessionManager {
 			this.pendingEntries.push(entry);
 		} else {
 			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
 
 	saveCompaction(entry: CompactionEntry): void {
 		this.inMemoryEntries.push(entry);
-		appendFileSync(this.contextFile, JSON.stringify(entry) + "\n");
+		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
 	}
 
 	/** Load session with compaction support */
@@ -587,7 +587,6 @@ export function syncLogToContext(channelDir: string, excludeAfterTs?: string): n
 	if (logMessages.length === 0) return 0;
 
 	// Read existing timestamps from context.jsonl
-	const existingTs = new Set<string>();
 	if (existsSync(contextFile)) {
 		const contextContent = readFileSync(contextFile, "utf-8");
 		const contextLines = contextContent.trim().split("\n").filter(Boolean);
@@ -656,7 +655,7 @@ export function syncLogToContext(channelDir: string, excludeAfterTs?: string): n
 			mkdirSync(channelDir, { recursive: true });
 		}
 
-		appendFileSync(contextFile, JSON.stringify(entry) + "\n");
+		appendFileSync(contextFile, `${JSON.stringify(entry)}\n`);
 		existingMessages.add(content); // Track to avoid duplicates within this sync
 		syncedCount++;
 	}

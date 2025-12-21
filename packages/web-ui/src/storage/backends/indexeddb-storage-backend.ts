@@ -87,7 +87,7 @@ export class IndexedDBStorageBackend implements StorageBackend {
 
 		if (prefix) {
 			// Use IDBKeyRange for efficient prefix filtering
-			const range = IDBKeyRange.bound(prefix, prefix + "\uffff", false, false);
+			const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`, false, false);
 			const keys = await this.promisifyRequest(store.getAllKeys(range));
 			return keys.map((k) => String(k));
 		} else {

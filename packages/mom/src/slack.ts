@@ -220,7 +220,7 @@ export class SlackBot {
 	logToFile(channel: string, entry: object): void {
 		const dir = join(this.workingDir, channel);
 		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-		appendFileSync(join(dir, "log.jsonl"), JSON.stringify(entry) + "\n");
+		appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
 	}
 
 	/**

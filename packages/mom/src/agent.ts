@@ -20,26 +20,6 @@ import { createMomTools, setUploadFunction } from "./tools/index.js";
 // Hardcoded model for now - TODO: make configurable (issue #63)
 const model = getModel("anthropic", "claude-sonnet-4-5");
 
-/**
- * Convert Date.now() to Slack timestamp format (seconds.microseconds)
- * Uses a monotonic counter to ensure ordering even within the same millisecond
- */
-let lastTsMs = 0;
-let tsCounter = 0;
-
-function toSlackTs(): string {
-	const now = Date.now();
-	if (now === lastTsMs) {
-		tsCounter++;
-	} else {
-		lastTsMs = now;
-		tsCounter = 0;
-	}
-	const seconds = Math.floor(now / 1000);
-	const micros = (now % 1000) * 1000 + tsCounter;
-	return `${seconds}.${micros.toString().padStart(6, "0")}`;
-}
-
 export interface PendingMessage {
 	userName: string;
 	text: string;
@@ -85,7 +65,7 @@ function getMemory(channelDir: string): string {
 		try {
 			const content = readFileSync(workspaceMemoryPath, "utf-8").trim();
 			if (content) {
-				parts.push("### Global Workspace Memory\n" + content);
+				parts.push(`### Global Workspace Memory\n${content}`);
 			}
 		} catch (error) {
 			log.logWarning("Failed to read workspace memory", `${workspaceMemoryPath}: ${error}`);
@@ -98,7 +78,7 @@ function getMemory(channelDir: string): string {
 		try {
 			const content = readFileSync(channelMemoryPath, "utf-8").trim();
 			if (content) {
-				parts.push("### Channel-Specific Memory\n" + content);
+				parts.push(`### Channel-Specific Memory\n${content}`);
 			}
 		} catch (error) {
 			log.logWarning("Failed to read channel memory", `${channelMemoryPath}: ${error}`);
@@ -340,7 +320,7 @@ Each tool requires a "label" parameter (shown to user).
 
 function truncate(text: string, maxLen: number): string {
 	if (text.length <= maxLen) return text;
-	return text.substring(0, maxLen - 3) + "...";
+	return `${text.substring(0, maxLen - 3)}...`;
 }
 
 function extractToolResultText(result: unknown): string {
@@ -530,8 +510,8 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			let threadMessage = `*${agentEvent.isError ? "✗" : "✓"} ${agentEvent.toolName}*`;
 			if (label) threadMessage += `: ${label}`;
 			threadMessage += ` (${duration}s)\n`;
-			if (argsFormatted) threadMessage += "```\n" + argsFormatted + "\n```\n";
-			threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
+			if (argsFormatted) threadMessage += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
+			threadMessage += `*Result:*\n\`\`\`\n${resultStr}\n\`\`\``;
 
 			queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
 
@@ -804,7 +784,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 					try {
 						const mainText =
 							finalText.length > SLACK_MAX_LENGTH
-								? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+								? `${finalText.substring(0, SLACK_MAX_LENGTH - 50)}\n\n_(see thread for full response)_`
 								: finalText;
 						await ctx.replaceMessage(mainText);
 					} catch (err) {

@@ -27,7 +27,7 @@ function formatContext(ctx: LogContext): string {
 
 function truncate(text: string, maxLen: number): string {
 	if (text.length <= maxLen) return text;
-	return text.substring(0, maxLen) + `\n(truncated at ${maxLen} chars)`;
+	return `${text.substring(0, maxLen)}\n(truncated at ${maxLen} chars)`;
 }
 
 function formatToolArgs(args: Record<string, unknown>): string {
@@ -200,9 +200,9 @@ export function logUsageSummary(
 ): string {
 	const formatTokens = (count: number): string => {
 		if (count < 1000) return count.toString();
-		if (count < 10000) return (count / 1000).toFixed(1) + "k";
-		if (count < 1000000) return Math.round(count / 1000) + "k";
-		return (count / 1000000).toFixed(1) + "M";
+		if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+		if (count < 1000000) return `${Math.round(count / 1000)}k`;
+		return `${(count / 1000000).toFixed(1)}M`;
 	};
 
 	const lines: string[] = [];
