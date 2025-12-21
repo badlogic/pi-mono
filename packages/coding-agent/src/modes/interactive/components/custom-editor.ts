@@ -1,4 +1,14 @@
-import { Editor, isCtrlC, isCtrlD, isCtrlO, isCtrlP, isCtrlT, isEscape, isShiftTab } from "@mariozechner/pi-tui";
+import {
+	Editor,
+	isCtrlC,
+	isCtrlD,
+	isCtrlG,
+	isCtrlO,
+	isCtrlP,
+	isCtrlT,
+	isEscape,
+	isShiftTab,
+} from "@mariozechner/pi-tui";
 
 /**
  * Custom editor that handles Escape and Ctrl+C keys for coding-agent
@@ -11,8 +21,15 @@ export class CustomEditor extends Editor {
 	public onCtrlP?: () => void;
 	public onCtrlO?: () => void;
 	public onCtrlT?: () => void;
+	public onCtrlG?: () => void;
 
 	handleInput(data: string): void {
+		// Intercept Ctrl+G for external editor
+		if (isCtrlG(data) && this.onCtrlG) {
+			this.onCtrlG();
+			return;
+		}
+
 		// Intercept Ctrl+T for thinking block visibility toggle
 		if (isCtrlT(data) && this.onCtrlT) {
 			this.onCtrlT();
