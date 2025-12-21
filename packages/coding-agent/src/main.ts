@@ -19,9 +19,9 @@ import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hoo
 import { messageTransformer } from "./core/messages.js";
 import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
 import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
+import { discoverSlashCommands } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { loadSlashCommands } from "./core/slash-commands.js";
 import { buildSystemPrompt } from "./core/system-prompt.js";
 import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
@@ -435,7 +435,7 @@ export async function main(args: string[]) {
 	}
 
 	// Load file commands for slash command expansion
-	const fileCommands = loadSlashCommands();
+	const fileCommands = discoverSlashCommands();
 
 	// Create session
 	const session = new AgentSession({
