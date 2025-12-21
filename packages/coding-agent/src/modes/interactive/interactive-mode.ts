@@ -1167,8 +1167,7 @@ export class InteractiveMode {
 		// Set up handler to restore TUI when resumed
 		process.once("SIGCONT", () => {
 			this.ui.start();
-			this.ui.resetRenderState();
-			this.ui.requestRender();
+			this.ui.requestRender(true);
 		});
 
 		// Stop the TUI (restore terminal to normal mode)
