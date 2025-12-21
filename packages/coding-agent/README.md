@@ -226,6 +226,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Escape | Cancel autocomplete / abort streaming |
 | Ctrl+C | Clear editor (first) / exit (second) |
 | Ctrl+D | Exit (when editor is empty) |
+| Ctrl+Z | Suspend to background |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P | Cycle models (scoped by `--models`) |
 | Ctrl+O | Toggle tool output expansion |
