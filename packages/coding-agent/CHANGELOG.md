@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **AgentSession cwd override**: Added `cwd` to `AgentSessionConfig` so programmatic users can override the project root used for session paths and headers.
+
 ## [0.25.2] - 2025-12-21
 
 ### Fixed

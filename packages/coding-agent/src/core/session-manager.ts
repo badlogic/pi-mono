@@ -1,7 +1,7 @@
 import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { basename, isAbsolute, join, resolve } from "path";
 import { getAgentDir } from "../config.js";
 
 function uuidv4(): string {
@@ -190,13 +190,16 @@ export class SessionManager {
 	private sessionId!: string;
 	private sessionFile!: string;
 	private sessionDir: string;
+	private cwdOverride?: string;
 	private enabled: boolean = true;
 	private sessionInitialized: boolean = false;
 	private pendingEntries: SessionEntry[] = [];
 	// In-memory entries for --no-session mode (when enabled=false)
 	private inMemoryEntries: SessionEntry[] = [];
+	private hasCustomSessionPath: boolean;
 
 	constructor(continueSession: boolean = false, customSessionPath?: string) {
+		this.hasCustomSessionPath = Boolean(customSessionPath);
 		this.sessionDir = this.getSessionDirectory();
 
 		if (customSessionPath) {
@@ -241,7 +244,7 @@ export class SessionManager {
 	}
 
 	private getSessionDirectory(): string {
-		const cwd = process.cwd();
+		const cwd = this.getSessionCwd();
 		// Replace all path separators and colons (for Windows drive letters) with dashes
 		const safePath = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
 
@@ -257,6 +260,44 @@ export class SessionManager {
 		this.sessionId = uuidv4();
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
+	}
+
+	setSessionCwd(cwd: string): void {
+		const trimmed = cwd.trim();
+		if (!trimmed) {
+			throw new Error("custom session cwd must be a non-empty absolute path");
+		}
+		if (!isAbsolute(trimmed)) {
+			throw new Error(`custom session cwd must be an absolute path: ${cwd}`);
+		}
+		// When using a custom session path, cwd can be set anytime (it's only used for tools).
+		// When deriving session path from cwd, we can't change it after initialization.
+		if (this.sessionInitialized && !this.hasCustomSessionPath) {
+			throw new Error("Cannot set custom session cwd after session is initialized");
+		}
+
+		const resolved = resolve(trimmed);
+		if (this.cwdOverride === resolved) {
+			return;
+		}
+
+		this.cwdOverride = resolved;
+
+		// Only update session directory if not using custom path
+		if (!this.hasCustomSessionPath) {
+			this.sessionDir = this.getSessionDirectory();
+
+			const fileName = this.sessionFile ? basename(this.sessionFile) : "";
+			if (fileName) {
+				this.sessionFile = join(this.sessionDir, fileName);
+			} else {
+				this.initNewSession();
+			}
+		}
+	}
+
+	private getSessionCwd(): string {
+		return this.cwdOverride ?? process.cwd();
 	}
 
 	/** Reset to a fresh session. Clears pending entries and starts a new session file. */
@@ -310,7 +351,7 @@ export class SessionManager {
 			type: "session",
 			id: this.sessionId,
 			timestamp: new Date().toISOString(),
-			cwd: process.cwd(),
+			cwd: this.getSessionCwd(),
 			provider: state.model.provider,
 			modelId: state.model.id,
 			thinkingLevel: state.thinkingLevel,
@@ -577,6 +618,7 @@ export class SessionManager {
 	 * Set the session file to an existing session
 	 */
 	setSessionFile(path: string): void {
+		this.hasCustomSessionPath = true;
 		this.sessionFile = path;
 		this.loadSessionId();
 		// Mark as initialized since we're loading an existing session
@@ -619,7 +661,7 @@ export class SessionManager {
 			type: "session",
 			id: newSessionId,
 			timestamp: new Date().toISOString(),
-			cwd: process.cwd(),
+			cwd: this.getSessionCwd(),
 			provider: state.model.provider,
 			modelId: state.model.id,
 			thinkingLevel: state.thinkingLevel,

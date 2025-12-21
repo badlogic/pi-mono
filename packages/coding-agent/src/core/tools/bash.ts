@@ -6,6 +6,7 @@ import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { getShellConfig, killProcessTree } from "../../utils/shell.js";
+import { getToolCwd } from "./context.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -40,6 +41,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
 		return new Promise((resolve, reject) => {
 			const { shell, args } = getShellConfig();
 			const child = spawn(shell, [...args, command], {
+				cwd: getToolCwd(),
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
 			});

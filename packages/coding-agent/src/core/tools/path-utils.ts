@@ -1,5 +1,7 @@
 import { accessSync, constants } from "node:fs";
 import * as os from "node:os";
+import { resolve } from "node:path";
+import { getToolCwd } from "./context.js";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const NARROW_NO_BREAK_SPACE = "\u202F";
@@ -29,7 +31,8 @@ export function expandPath(filePath: string): string {
 	if (normalized.startsWith("~/")) {
 		return os.homedir() + normalized.slice(1);
 	}
-	return normalized;
+	// Resolve relative paths against tool cwd
+	return resolve(getToolCwd(), normalized);
 }
 
 export function resolveReadPath(filePath: string): string {

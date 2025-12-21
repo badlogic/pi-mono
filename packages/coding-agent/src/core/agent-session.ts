@@ -27,6 +27,7 @@ import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
+import { setToolCwd } from "./tools/index.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -47,6 +48,8 @@ export interface AgentSessionConfig {
 	agent: Agent;
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
+	/** Absolute project root override for session paths and headers */
+	cwd?: string;
 	/** Models to cycle through with Ctrl+P (from --models flag) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 	/** File-based slash commands for expansion */
@@ -151,6 +154,11 @@ export class AgentSession {
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
+		if (config.cwd) {
+			this.sessionManager.setSessionCwd(config.cwd);
+			// Also set the tool context cwd so tools run in the right directory
+			setToolCwd(config.cwd);
+		}
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];

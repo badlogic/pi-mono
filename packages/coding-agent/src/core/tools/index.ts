@@ -1,4 +1,5 @@
 export { type BashToolDetails, bashTool } from "./bash.js";
+export { clearToolCwd, getToolCwd, setToolCwd } from "./context.js";
 export { editTool } from "./edit.js";
 export { type FindToolDetails, findTool } from "./find.js";
 export { type GrepToolDetails, grepTool } from "./grep.js";
