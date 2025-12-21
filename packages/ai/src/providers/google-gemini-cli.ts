@@ -4,7 +4,7 @@
  * Uses the Cloud Code Assist API endpoint to access Gemini and Claude models.
  */
 
-import type { Content, ThinkingConfig } from "@google/genai";
+import type { Content, ThinkingConfig, ThinkingLevel } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -26,6 +26,7 @@ export interface GoogleGeminiCliOptions extends StreamOptions {
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number;
+		level?: ThinkingLevel; // For Gemini 3 models
 	};
 	projectId?: string;
 }
@@ -424,7 +425,10 @@ function buildRequest(
 		generationConfig.thinkingConfig = {
 			includeThoughts: true,
 		};
-		if (options.thinking.budgetTokens !== undefined) {
+		// Gemini 3 models use thinkingLevel, older models use thinkingBudget
+		if (options.thinking.level !== undefined) {
+			generationConfig.thinkingConfig.thinkingLevel = options.thinking.level;
+		} else if (options.thinking.budgetTokens !== undefined) {
 			generationConfig.thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}
 	}

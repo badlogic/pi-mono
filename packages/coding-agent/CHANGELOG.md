@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Gemini 3 preview models**: Added `gemini-3-pro-preview` and `gemini-3-flash-preview` to the google-gemini-cli provider.
+
 ## [0.25.2] - 2025-12-21
 
 ### Fixed

@@ -237,12 +237,24 @@ function mapOptionsForApi<TApi extends Api>(
 		}
 
 		case "google-gemini-cli": {
-			// Cloud Code Assist uses thinking budget tokens like Gemini 2.5
 			if (!options?.reasoning) {
 				return { ...base, thinking: { enabled: false } } satisfies GoogleGeminiCliOptions;
 			}
 
 			const effort = clampReasoning(options.reasoning)!;
+
+			// Gemini 3 models use thinkingLevel instead of thinkingBudget
+			if (model.id.includes("3-pro") || model.id.includes("3-flash")) {
+				return {
+					...base,
+					thinking: {
+						enabled: true,
+						level: getGeminiCliThinkingLevel(effort, model.id),
+					},
+				} satisfies GoogleGeminiCliOptions;
+			}
+
+			// Gemini 2.x models use thinkingBudget
 			const budgets: Record<ClampedReasoningEffort, number> = {
 				minimal: 1024,
 				low: 2048,
@@ -281,6 +293,31 @@ function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
 
 function getGemini3ThinkingLevel(effort: ClampedReasoningEffort, model: Model<"google-generative-ai">): ThinkingLevel {
 	if (isGemini3ProModel(model)) {
+		// Gemini 3 Pro only supports LOW/HIGH (for now)
+		switch (effort) {
+			case "minimal":
+			case "low":
+				return ThinkingLevel.LOW;
+			case "medium":
+			case "high":
+				return ThinkingLevel.HIGH;
+		}
+	}
+	// Gemini 3 Flash supports all four levels
+	switch (effort) {
+		case "minimal":
+			return ThinkingLevel.MINIMAL;
+		case "low":
+			return ThinkingLevel.LOW;
+		case "medium":
+			return ThinkingLevel.MEDIUM;
+		case "high":
+			return ThinkingLevel.HIGH;
+	}
+}
+
+function getGeminiCliThinkingLevel(effort: ClampedReasoningEffort, modelId: string): ThinkingLevel {
+	if (modelId.includes("3-pro")) {
 		// Gemini 3 Pro only supports LOW/HIGH (for now)
 		switch (effort) {
 			case "minimal":
