@@ -4,7 +4,7 @@ import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-import { highlight } from "cli-highlight";
+import { highlight, supportsLanguage } from "cli-highlight";
 import { getCustomThemesDir, getThemesDir } from "../../../config.js";
 
 // ============================================================================
@@ -673,8 +673,10 @@ function getCliHighlightTheme(t: Theme): CliHighlightTheme {
  * Returns array of highlighted lines.
  */
 export function highlightCode(code: string, lang?: string): string[] {
+	// Validate language before highlighting to avoid stderr spam from cli-highlight
+	const validLang = lang && supportsLanguage(lang) ? lang : undefined;
 	const opts = {
-		language: lang,
+		language: validLang,
 		ignoreIllegals: true,
 		theme: getCliHighlightTheme(theme),
 	};
@@ -773,8 +775,10 @@ export function getMarkdownTheme(): MarkdownTheme {
 		underline: (text: string) => theme.underline(text),
 		strikethrough: (text: string) => chalk.strikethrough(text),
 		highlightCode: (code: string, lang?: string): string[] => {
+			// Validate language before highlighting to avoid stderr spam from cli-highlight
+			const validLang = lang && supportsLanguage(lang) ? lang : undefined;
 			const opts = {
-				language: lang,
+				language: validLang,
 				ignoreIllegals: true,
 				theme: getCliHighlightTheme(theme),
 			};

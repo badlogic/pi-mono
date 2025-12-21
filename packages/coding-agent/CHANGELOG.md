@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.25.4] - 2025-12-22
+
+### Fixed
+
+- **Syntax highlighting stderr spam**: Fixed cli-highlight logging errors to stderr when markdown contains malformed code fences (e.g., missing newlines around closing backticks). Now validates language identifiers before highlighting and falls back silently to plain text. ([#274](https://github.com/badlogic/pi-mono/issues/274))
+
 ## [0.25.3] - 2025-12-21
 
 ### Added
