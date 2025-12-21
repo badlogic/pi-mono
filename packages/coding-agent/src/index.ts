@@ -89,6 +89,7 @@ export {
 	type BuildSystemPromptOptions,
 	buildSystemPrompt,
 	type CreateAgentSessionOptions,
+	type CreateAgentSessionResult,
 	// Factory
 	createAgentSession,
 	// Helpers

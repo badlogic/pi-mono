@@ -1,8 +1,11 @@
 /**
- * Main entry point for the coding agent
+ * Main entry point for the coding agent CLI.
+ *
+ * This file handles CLI argument parsing and translates them into
+ * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { setOAuthStorage, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -12,17 +15,12 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getModelsPath, getOAuthPath, VERSION } from "./config.js";
-import { AgentSession } from "./core/agent-session.js";
-import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./core/custom-tools/index.js";
+import type { AgentSession } from "./core/agent-session.js";
+import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
-import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hooks/index.js";
-import { messageTransformer } from "./core/messages.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
-import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
-import { discoverSlashCommands } from "./core/sdk.js";
-import { SessionManager } from "./core/session-manager.js";
+import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
+import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { buildSystemPrompt } from "./core/system-prompt.js";
 import { allTools, codingTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
@@ -70,7 +68,6 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 
 		return null;
 	} catch {
-		// Silently fail - don't disrupt the user experience
 		return null;
 	}
 }
@@ -80,7 +77,7 @@ async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
 	changelogMarkdown: string | null,
-	modelFallbackMessage: string | null,
+	modelFallbackMessage: string | undefined,
 	versionCheckPromise: Promise<string | null>,
 	initialMessages: string[],
 	customTools: LoadedCustomTool[],
@@ -91,25 +88,20 @@ async function runInteractiveMode(
 ): Promise<void> {
 	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
 
-	// Initialize TUI (subscribes to agent events internally)
 	await mode.init();
 
-	// Handle version check result when it completes (don't block)
 	versionCheckPromise.then((newVersion) => {
 		if (newVersion) {
 			mode.showNewVersionNotification(newVersion);
 		}
 	});
 
-	// Render any existing messages (from --continue mode)
 	mode.renderInitialMessages(session.state);
 
-	// Show model fallback warning at the end of the chat if applicable
 	if (modelFallbackMessage) {
 		mode.showWarning(modelFallbackMessage);
 	}
 
-	// Process initial message with attachments if provided (from @file args)
 	if (initialMessage) {
 		try {
 			await session.prompt(initialMessage, { attachments: initialAttachments });
@@ -119,7 +111,6 @@ async function runInteractiveMode(
 		}
 	}
 
-	// Process remaining initial messages if provided (from CLI args)
 	for (const message of initialMessages) {
 		try {
 			await session.prompt(message);
@@ -129,11 +120,8 @@ async function runInteractiveMode(
 		}
 	}
 
-	// Interactive loop
 	while (true) {
 		const userInput = await mode.getUserInput();
-
-		// Process the message
 		try {
 			await session.prompt(userInput);
 		} catch (error: unknown) {
@@ -154,11 +142,10 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 
 	const { textContent, imageAttachments } = await processFileArguments(parsed.fileArgs);
 
-	// Combine file content with first plain text message (if any)
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
 		initialMessage = textContent + parsed.messages[0];
-		parsed.messages.shift(); // Remove first message as it's been combined
+		parsed.messages.shift();
 	} else {
 		initialMessage = textContent;
 	}
@@ -167,386 +154,6 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 		initialMessage,
 		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
 	};
-}
-
-export async function main(args: string[]) {
-	// Configure OAuth storage to use the coding-agent's configurable path
-	// This must happen before any OAuth operations
-	configureOAuthStorage();
-
-	const parsed = parseArgs(args);
-
-	if (parsed.version) {
-		console.log(VERSION);
-		return;
-	}
-
-	if (parsed.help) {
-		printHelp();
-		return;
-	}
-
-	// Handle --list-models flag: list available models and exit
-	if (parsed.listModels !== undefined) {
-		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(searchPattern);
-		return;
-	}
-
-	// Handle --export flag: convert session file to HTML and exit
-	if (parsed.export) {
-		try {
-			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			const result = exportFromFile(parsed.export, outputPath);
-			console.log(`Exported to: ${result}`);
-			return;
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Failed to export session";
-			console.error(chalk.red(`Error: ${message}`));
-			process.exit(1);
-		}
-	}
-
-	// Validate: RPC mode doesn't support @file arguments
-	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
-		process.exit(1);
-	}
-
-	// Process @file arguments
-	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
-
-	// Determine if we're in interactive mode (needed for theme watcher)
-	const isInteractive = !parsed.print && parsed.mode === undefined;
-
-	// Initialize theme (before any TUI rendering)
-	const settingsManager = new SettingsManager();
-	const themeName = settingsManager.getTheme();
-	initTheme(themeName, isInteractive);
-
-	// Setup session manager
-	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
-
-	if (parsed.noSession) {
-		sessionManager.disable();
-	}
-
-	// Handle --resume flag: show session selector
-	if (parsed.resume) {
-		const selectedSession = await selectSession(sessionManager);
-		if (!selectedSession) {
-			console.log(chalk.dim("No session selected"));
-			return;
-		}
-		sessionManager.setSessionFile(selectedSession);
-	}
-
-	// Resolve model scope early if provided
-	let scopedModels: ScopedModel[] = [];
-	if (parsed.models && parsed.models.length > 0) {
-		scopedModels = await resolveModelScope(parsed.models);
-	}
-
-	// Determine mode and output behavior
-	const mode = parsed.mode || "text";
-	const shouldPrintMessages = isInteractive;
-
-	// Find initial model
-	let initialModel = await findInitialModelForSession(parsed, scopedModels, settingsManager);
-	let initialThinking: ThinkingLevel = "off";
-
-	// Get thinking level from scoped models if applicable
-	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		initialThinking = scopedModels[0].thinkingLevel;
-	} else {
-		// Try saved thinking level
-		const savedThinking = settingsManager.getDefaultThinkingLevel();
-		if (savedThinking) {
-			initialThinking = savedThinking;
-		}
-	}
-
-	// Non-interactive mode: fail early if no model available
-	if (!isInteractive && !initialModel) {
-		console.error(chalk.red("No models available."));
-		console.error(chalk.yellow("\nSet an API key environment variable:"));
-		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
-		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
-		process.exit(1);
-	}
-
-	// Non-interactive mode: validate API key exists
-	if (!isInteractive && initialModel) {
-		const apiKey = parsed.apiKey || (await getApiKeyForModel(initialModel));
-		if (!apiKey) {
-			console.error(chalk.red(`No API key found for ${initialModel.provider}`));
-			process.exit(1);
-		}
-	}
-
-	// Build system prompt
-	const skillsSettings = settingsManager.getSkillsSettings();
-	if (parsed.noSkills) {
-		skillsSettings.enabled = false;
-	}
-	if (parsed.skills && parsed.skills.length > 0) {
-		skillsSettings.includeSkills = parsed.skills;
-	}
-	const systemPrompt = buildSystemPrompt({
-		customPrompt: parsed.systemPrompt,
-		selectedTools: parsed.tools,
-		appendSystemPrompt: parsed.appendSystemPrompt,
-		skillsSettings,
-	});
-
-	// Handle session restoration
-	let modelFallbackMessage: string | null = null;
-
-	if (parsed.continue || parsed.resume || parsed.session) {
-		const savedModel = sessionManager.loadModel();
-		if (savedModel) {
-			const result = await restoreModelFromSession(
-				savedModel.provider,
-				savedModel.modelId,
-				initialModel,
-				shouldPrintMessages,
-			);
-
-			if (result.model) {
-				initialModel = result.model;
-			}
-			modelFallbackMessage = result.fallbackMessage;
-		}
-
-		// Load and restore thinking level
-		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
-		if (thinkingLevel) {
-			initialThinking = thinkingLevel;
-			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
-			}
-		}
-	}
-
-	// CLI --thinking flag takes highest priority
-	if (parsed.thinking) {
-		initialThinking = parsed.thinking;
-	}
-
-	// Clamp thinking level to model capabilities
-	if (initialModel) {
-		if (!initialModel.reasoning) {
-			initialThinking = "off";
-		} else if (initialThinking === "xhigh" && !supportsXhigh(initialModel)) {
-			initialThinking = "high";
-		}
-	}
-
-	// Determine which tools to use
-	let selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
-
-	// Discover and load hooks from:
-	// 1. ~/.pi/agent/hooks/*.ts (global)
-	// 2. cwd/.pi/hooks/*.ts (project-local)
-	// 3. Explicit paths in settings.json
-	// 4. CLI --hook flags
-	let hookRunner: HookRunner | null = null;
-	const cwd = process.cwd();
-	const configuredHookPaths = [...settingsManager.getHookPaths(), ...(parsed.hooks ?? [])];
-	const { hooks, errors } = await discoverAndLoadHooks(configuredHookPaths, cwd);
-
-	// Report hook loading errors
-	for (const { path, error } of errors) {
-		console.error(chalk.red(`Failed to load hook "${path}": ${error}`));
-	}
-
-	if (hooks.length > 0) {
-		const timeout = settingsManager.getHookTimeout();
-		hookRunner = new HookRunner(hooks, cwd, timeout);
-	}
-
-	// Discover and load custom tools from:
-	// 1. ~/.pi/agent/tools/*.ts (global)
-	// 2. cwd/.pi/tools/*.ts (project-local)
-	// 3. Explicit paths in settings.json
-	// 4. CLI --tool flags
-	const configuredToolPaths = [...settingsManager.getCustomToolPaths(), ...(parsed.customTools ?? [])];
-	const builtInToolNames = Object.keys(allTools);
-	const {
-		tools: loadedCustomTools,
-		errors: toolErrors,
-		setUIContext: setToolUIContext,
-	} = await discoverAndLoadCustomTools(configuredToolPaths, cwd, builtInToolNames);
-
-	// Report custom tool loading errors
-	for (const { path, error } of toolErrors) {
-		console.error(chalk.red(`Failed to load custom tool "${path}": ${error}`));
-	}
-
-	// Add custom tools to selected tools
-	if (loadedCustomTools.length > 0) {
-		const customToolInstances = loadedCustomTools.map((lt) => lt.tool);
-		selectedTools = [...selectedTools, ...customToolInstances] as typeof selectedTools;
-	}
-
-	// Wrap tools with hook callbacks (built-in and custom)
-	if (hookRunner) {
-		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
-	}
-
-	// Create agent
-	const agent = new Agent({
-		initialState: {
-			systemPrompt,
-			model: initialModel as any, // Can be null in interactive mode
-			thinkingLevel: initialThinking,
-			tools: selectedTools,
-		},
-		messageTransformer,
-		queueMode: settingsManager.getQueueMode(),
-		transport: new ProviderTransport({
-			getApiKey: async () => {
-				const currentModel = agent.state.model;
-				if (!currentModel) {
-					throw new Error("No model selected");
-				}
-
-				if (parsed.apiKey) {
-					return parsed.apiKey;
-				}
-
-				const key = await getApiKeyForModel(currentModel);
-				if (!key) {
-					throw new Error(
-						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ${getModelsPath()}`,
-					);
-				}
-				return key;
-			},
-		}),
-	});
-
-	// Load previous messages if continuing, resuming, or using --session
-	if (parsed.continue || parsed.resume || parsed.session) {
-		const messages = sessionManager.loadMessages();
-		if (messages.length > 0) {
-			agent.replaceMessages(messages);
-		}
-	}
-
-	// Load file commands for slash command expansion
-	const fileCommands = discoverSlashCommands();
-
-	// Create session
-	const session = new AgentSession({
-		agent,
-		sessionManager,
-		settingsManager,
-		scopedModels,
-		fileCommands,
-		hookRunner,
-		customTools: loadedCustomTools,
-		skillsSettings,
-	});
-
-	// Route to appropriate mode
-	if (mode === "rpc") {
-		await runRpcMode(session);
-	} else if (isInteractive) {
-		// Check for new version in the background
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
-
-		// Check if we should show changelog
-		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
-
-		// Show model scope if provided
-		if (scopedModels.length > 0) {
-			const modelList = scopedModels
-				.map((sm) => {
-					const thinkingStr = sm.thinkingLevel !== "off" ? `:${sm.thinkingLevel}` : "";
-					return `${sm.model.id}${thinkingStr}`;
-				})
-				.join(", ");
-			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
-		}
-
-		// Ensure fd tool is available for file autocomplete
-		const fdPath = await ensureTool("fd");
-
-		await runInteractiveMode(
-			session,
-			VERSION,
-			changelogMarkdown,
-			modelFallbackMessage,
-			versionCheckPromise,
-			parsed.messages,
-			loadedCustomTools,
-			setToolUIContext,
-			initialMessage,
-			initialAttachments,
-			fdPath,
-		);
-	} else {
-		// Non-interactive mode (--print flag or --mode flag)
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
-		// Clean up and exit (file watchers keep process alive)
-		stopThemeWatcher();
-		// Wait for stdout to fully flush before exiting
-		if (process.stdout.writableLength > 0) {
-			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
-		}
-		process.exit(0);
-	}
-}
-
-/** Find initial model based on CLI args, scoped models, settings, or available models */
-async function findInitialModelForSession(parsed: Args, scopedModels: ScopedModel[], settingsManager: SettingsManager) {
-	// 1. CLI args take priority
-	if (parsed.provider && parsed.model) {
-		const { model, error } = findModel(parsed.provider, parsed.model);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-		if (!model) {
-			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
-			process.exit(1);
-		}
-		return model;
-	}
-
-	// 2. Use first model from scoped models (skip if continuing/resuming)
-	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		return scopedModels[0].model;
-	}
-
-	// 3. Try saved default from settings
-	const defaultProvider = settingsManager.getDefaultProvider();
-	const defaultModelId = settingsManager.getDefaultModel();
-	if (defaultProvider && defaultModelId) {
-		const { model, error } = findModel(defaultProvider, defaultModelId);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-		if (model) {
-			return model;
-		}
-	}
-
-	// 4. Try first available model with valid API key
-	const { models: availableModels, error } = await getAvailableModels();
-
-	if (error) {
-		console.error(chalk.red(error));
-		process.exit(1);
-	}
-
-	if (availableModels.length > 0) {
-		return availableModels[0];
-	}
-
-	return null;
 }
 
 /** Get changelog markdown to display (only for new sessions with updates) */
@@ -560,13 +167,11 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 	const entries = parseChangelog(changelogPath);
 
 	if (!lastVersion) {
-		// First run - show all entries
 		if (entries.length > 0) {
 			settingsManager.setLastChangelogVersion(VERSION);
 			return entries.map((e) => e.content).join("\n\n");
 		}
 	} else {
-		// Check for new entries since last version
 		const newEntries = getNewEntries(entries, lastVersion);
 		if (newEntries.length > 0) {
 			settingsManager.setLastChangelogVersion(VERSION);
@@ -575,4 +180,246 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 	}
 
 	return null;
+}
+
+/** Build CreateAgentSessionOptions from CLI args */
+async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): Promise<CreateAgentSessionOptions> {
+	const options: CreateAgentSessionOptions = {};
+
+	// Model from CLI
+	if (parsed.provider && parsed.model) {
+		// Will be resolved by SDK
+		// For now, we need to find it ourselves since SDK expects Model object
+		const { findModel } = await import("./core/model-config.js");
+		const { model, error } = findModel(parsed.provider, parsed.model);
+		if (error) {
+			console.error(chalk.red(error));
+			process.exit(1);
+		}
+		if (!model) {
+			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
+			process.exit(1);
+		}
+		options.model = model;
+	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		// Use first scoped model
+		options.model = scopedModels[0].model;
+	}
+
+	// Thinking level
+	if (parsed.thinking) {
+		options.thinkingLevel = parsed.thinking;
+	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		options.thinkingLevel = scopedModels[0].thinkingLevel;
+	}
+
+	// Scoped models for Ctrl+P cycling
+	if (scopedModels.length > 0) {
+		options.scopedModels = scopedModels;
+	}
+
+	// API key from CLI
+	if (parsed.apiKey) {
+		options.getApiKey = async () => parsed.apiKey!;
+	}
+
+	// System prompt
+	if (parsed.systemPrompt && parsed.appendSystemPrompt) {
+		options.systemPrompt = (defaultPrompt) => {
+			// Custom prompt with append
+			return parsed.systemPrompt + "\n\n" + parsed.appendSystemPrompt;
+		};
+	} else if (parsed.systemPrompt) {
+		options.systemPrompt = parsed.systemPrompt;
+	} else if (parsed.appendSystemPrompt) {
+		options.systemPrompt = (defaultPrompt) => defaultPrompt + "\n\n" + parsed.appendSystemPrompt;
+	}
+
+	// Tools
+	if (parsed.tools) {
+		options.tools = parsed.tools.map((name) => allTools[name]);
+	}
+
+	// Skills
+	if (parsed.noSkills) {
+		options.skills = [];
+	}
+
+	// Additional hook paths from CLI
+	if (parsed.hooks && parsed.hooks.length > 0) {
+		options.additionalHookPaths = parsed.hooks;
+	}
+
+	// Additional custom tool paths from CLI
+	if (parsed.customTools && parsed.customTools.length > 0) {
+		options.additionalCustomToolPaths = parsed.customTools;
+	}
+
+	// Session handling
+	if (parsed.noSession) {
+		options.sessionFile = false;
+	} else if (parsed.session) {
+		options.sessionFile = parsed.session;
+	}
+
+	// Continue session
+	if (parsed.continue && !parsed.resume) {
+		options.continueSession = true;
+	}
+
+	return options;
+}
+
+export async function main(args: string[]) {
+	// Configure OAuth storage first
+	configureOAuthStorage();
+
+	const parsed = parseArgs(args);
+
+	// === Early exits ===
+
+	if (parsed.version) {
+		console.log(VERSION);
+		return;
+	}
+
+	if (parsed.help) {
+		printHelp();
+		return;
+	}
+
+	if (parsed.listModels !== undefined) {
+		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+		await listModels(searchPattern);
+		return;
+	}
+
+	if (parsed.export) {
+		try {
+			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
+			const result = exportFromFile(parsed.export, outputPath);
+			console.log(`Exported to: ${result}`);
+			return;
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Failed to export session";
+			console.error(chalk.red(`Error: ${message}`));
+			process.exit(1);
+		}
+	}
+
+	// === Validation ===
+
+	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
+		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+		process.exit(1);
+	}
+
+	// === Prepare inputs ===
+
+	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
+	const isInteractive = !parsed.print && parsed.mode === undefined;
+	const mode = parsed.mode || "text";
+
+	// Initialize theme early
+	const settingsManager = new SettingsManager();
+	initTheme(settingsManager.getTheme(), isInteractive);
+
+	// Resolve scoped models from --models flag
+	let scopedModels: ScopedModel[] = [];
+	if (parsed.models && parsed.models.length > 0) {
+		scopedModels = await resolveModelScope(parsed.models);
+	}
+
+	// Handle --resume: show session picker
+	let sessionFileFromResume: string | undefined;
+	if (parsed.resume) {
+		const { SessionManager } = await import("./core/session-manager.js");
+		const tempSessionManager = new SessionManager(false, undefined);
+		const selectedSession = await selectSession(tempSessionManager);
+		if (!selectedSession) {
+			console.log(chalk.dim("No session selected"));
+			return;
+		}
+		sessionFileFromResume = selectedSession;
+	}
+
+	// === Build session options ===
+
+	const sessionOptions = await buildSessionOptions(parsed, scopedModels);
+
+	// Apply resume session file
+	if (sessionFileFromResume) {
+		sessionOptions.sessionFile = sessionFileFromResume;
+		sessionOptions.restoreFromSession = true;
+	}
+
+	// === Create session ===
+
+	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
+
+	// === Validate for non-interactive mode ===
+
+	if (!isInteractive && !session.model) {
+		console.error(chalk.red("No models available."));
+		console.error(chalk.yellow("\nSet an API key environment variable:"));
+		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
+		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
+		process.exit(1);
+	}
+
+	// Clamp thinking level to model capabilities (for CLI override case)
+	if (session.model && parsed.thinking) {
+		let effectiveThinking = parsed.thinking;
+		if (!session.model.reasoning) {
+			effectiveThinking = "off";
+		} else if (effectiveThinking === "xhigh" && !supportsXhigh(session.model)) {
+			effectiveThinking = "high";
+		}
+		if (effectiveThinking !== session.thinkingLevel) {
+			session.setThinkingLevel(effectiveThinking);
+		}
+	}
+
+	// === Route to mode ===
+
+	if (mode === "rpc") {
+		await runRpcMode(session);
+	} else if (isInteractive) {
+		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
+		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
+
+		// Show model scope if provided
+		if (scopedModels.length > 0) {
+			const modelList = scopedModels
+				.map((sm) => {
+					const thinkingStr = sm.thinkingLevel !== "off" ? `:${sm.thinkingLevel}` : "";
+					return `${sm.model.id}${thinkingStr}`;
+				})
+				.join(", ");
+			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
+		}
+
+		const fdPath = await ensureTool("fd");
+
+		await runInteractiveMode(
+			session,
+			VERSION,
+			changelogMarkdown,
+			modelFallbackMessage,
+			versionCheckPromise,
+			parsed.messages,
+			customToolsResult.tools,
+			customToolsResult.setUIContext,
+			initialMessage,
+			initialAttachments,
+			fdPath,
+		);
+	} else {
+		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
+		stopThemeWatcher();
+		if (process.stdout.writableLength > 0) {
+			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
+		}
+		process.exit(0);
+	}
 }

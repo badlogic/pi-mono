@@ -82,6 +82,8 @@ export interface CreateAgentSessionOptions {
 	model?: Model<any>;
 	/** Thinking level. Default: from settings, else 'off' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
+	/** Models available for cycling (Ctrl+P in interactive mode) */
+	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 
 	// === API Key ===
 	/** API key resolver. Default: defaultGetApiKey() */
@@ -94,12 +96,16 @@ export interface CreateAgentSessionOptions {
 	// === Tools ===
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
-	/** Custom tools. Default: discovered from cwd/.pi/tools/ + agentDir/tools/ */
+	/** Custom tools (replaces discovery). */
 	customTools?: Array<{ path?: string; tool: CustomAgentTool }>;
+	/** Additional custom tool paths to load (merged with discovery). */
+	additionalCustomToolPaths?: string[];
 
 	// === Hooks ===
-	/** Hooks. Default: discovered from cwd/.pi/hooks/ + agentDir/hooks/ */
+	/** Hooks (replaces discovery). */
 	hooks?: Array<{ path?: string; factory: HookFactory }>;
+	/** Additional hook paths to load (merged with discovery). */
+	additionalHookPaths?: string[];
 
 	// === Context ===
 	/** Skills. Default: discovered from multiple locations */
@@ -112,10 +118,27 @@ export interface CreateAgentSessionOptions {
 	// === Session ===
 	/** Session file path, or false to disable persistence. Default: auto in agentDir/sessions/ */
 	sessionFile?: string | false;
+	/** Continue most recent session for cwd. */
+	continueSession?: boolean;
+	/** Restore model/thinking from session (default: true when continuing). */
+	restoreFromSession?: boolean;
 
 	// === Settings ===
 	/** Settings overrides (merged with agentDir/settings.json) */
 	settings?: Partial<Settings>;
+}
+
+/** Result from createAgentSession */
+export interface CreateAgentSessionResult {
+	/** The created session */
+	session: AgentSession;
+	/** Custom tools result (for UI context setup in interactive mode) */
+	customToolsResult: {
+		tools: LoadedCustomTool[];
+		setUIContext: (uiContext: any, hasUI: boolean) => void;
+	};
+	/** Warning if session was restored with a different model than saved */
+	modelFallbackMessage?: string;
 }
 
 // ============================================================================
@@ -394,16 +417,21 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
  * @example
  * ```typescript
  * // Minimal - uses defaults
- * const session = await createAgentSession();
+ * const { session } = await createAgentSession();
  *
  * // With explicit model
- * const session = await createAgentSession({
+ * const { session } = await createAgentSession({
  *   model: findModel('anthropic', 'claude-sonnet-4-20250514'),
  *   thinkingLevel: 'high',
  * });
  *
+ * // Continue previous session
+ * const { session, modelFallbackMessage } = await createAgentSession({
+ *   continueSession: true,
+ * });
+ *
  * // Full control
- * const session = await createAgentSession({
+ * const { session } = await createAgentSession({
  *   model: myModel,
  *   getApiKey: async () => process.env.MY_KEY,
  *   systemPrompt: 'You are helpful.',
@@ -414,48 +442,90 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
  * });
  * ```
  */
-export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<AgentSession> {
+export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
 
 	// === Settings ===
 	const settingsManager = new SettingsManager(agentDir);
 
+	// === Session Manager ===
+	const sessionManager = new SessionManager(options.continueSession ?? false, undefined);
+	if (options.sessionFile === false) {
+		sessionManager.disable();
+	} else if (typeof options.sessionFile === "string") {
+		sessionManager.setSessionFile(options.sessionFile);
+	}
+
 	// === Model Resolution ===
 	let model = options.model;
+	let modelFallbackMessage: string | undefined;
+	const shouldRestoreFromSession = options.restoreFromSession ?? (options.continueSession || options.sessionFile);
+
+	// If continuing/restoring, try to get model from session first
+	if (!model && shouldRestoreFromSession) {
+		const savedModel = sessionManager.loadModel();
+		if (savedModel) {
+			const restoredModel = findModel(savedModel.provider, savedModel.modelId);
+			if (restoredModel) {
+				const key = await getApiKeyForModel(restoredModel);
+				if (key) {
+					model = restoredModel;
+				}
+			}
+			// If we couldn't restore, we'll fall back below and set fallback message
+			if (!model) {
+				modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId}`;
+			}
+		}
+	}
+
+	// If still no model, try settings default
 	if (!model) {
-		// Try settings default
 		const defaultProvider = settingsManager.getDefaultProvider();
 		const defaultModelId = settingsManager.getDefaultModel();
 		if (defaultProvider && defaultModelId) {
-			model = findModel(defaultProvider, defaultModelId) ?? undefined;
-			// Verify it has an API key
-			if (model) {
-				const key = await getApiKeyForModel(model);
-				if (!key) {
-					model = undefined;
+			const settingsModel = findModel(defaultProvider, defaultModelId);
+			if (settingsModel) {
+				const key = await getApiKeyForModel(settingsModel);
+				if (key) {
+					model = settingsModel;
 				}
 			}
 		}
+	}
 
-		// Fall back to first available
-		if (!model) {
-			const available = await discoverAvailableModels();
-			if (available.length === 0) {
-				throw new Error(
-					"No models available. Set an API key environment variable " +
-						"(ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or provide a model explicitly.",
-				);
-			}
-			model = available[0];
+	// Fall back to first available
+	if (!model) {
+		const available = await discoverAvailableModels();
+		if (available.length === 0) {
+			throw new Error(
+				"No models available. Set an API key environment variable " +
+					"(ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or provide a model explicitly.",
+			);
+		}
+		model = available[0];
+		if (modelFallbackMessage) {
+			modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
 		}
 	}
 
 	// === Thinking Level Resolution ===
 	let thinkingLevel = options.thinkingLevel;
+
+	// If continuing/restoring, try to get thinking level from session
+	if (thinkingLevel === undefined && shouldRestoreFromSession) {
+		const savedThinking = sessionManager.loadThinkingLevel();
+		if (savedThinking) {
+			thinkingLevel = savedThinking as ThinkingLevel;
+		}
+	}
+
+	// Fall back to settings default
 	if (thinkingLevel === undefined) {
 		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
 	}
+
 	// Clamp to model capabilities
 	if (!model.reasoning) {
 		thinkingLevel = "off";
@@ -487,13 +557,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			setUIContext: () => {},
 		};
 	} else {
-		// Discover custom tools
-		const result = await discoverAndLoadCustomTools(
-			settingsManager.getCustomToolPaths(),
-			cwd,
-			Object.keys(allTools),
-			agentDir,
-		);
+		// Discover custom tools, merging with additional paths
+		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
+		const result = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
 		for (const { path, error } of result.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
 		}
@@ -508,8 +574,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			hookRunner = new HookRunner(loadedHooks, cwd, settingsManager.getHookTimeout());
 		}
 	} else {
-		// Discover hooks
-		const { hooks, errors } = await discoverAndLoadHooks(settingsManager.getHookPaths(), cwd, agentDir);
+		// Discover hooks, merging with additional paths
+		const configuredPaths = [...settingsManager.getHookPaths(), ...(options.additionalHookPaths ?? [])];
+		const { hooks, errors } = await discoverAndLoadHooks(configuredPaths, cwd, agentDir);
 		for (const { path, error } of errors) {
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
@@ -544,15 +611,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// === Slash Commands ===
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 
-	// === Session Manager ===
-	const sessionManager = new SessionManager(false, undefined);
-	if (options.sessionFile === false) {
-		sessionManager.disable();
-	} else if (typeof options.sessionFile === "string") {
-		sessionManager.setSessionFile(options.sessionFile);
-	}
-	// If undefined, SessionManager uses auto-detection based on cwd
-
 	// === Create Agent ===
 	const agent = new Agent({
 		initialState: {
@@ -578,16 +636,29 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}),
 	});
 
+	// === Load messages if continuing session ===
+	if (shouldRestoreFromSession) {
+		const messages = sessionManager.loadMessages();
+		if (messages.length > 0) {
+			agent.replaceMessages(messages);
+		}
+	}
+
 	// === Create Session ===
 	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,
+		scopedModels: options.scopedModels,
 		fileCommands: slashCommands,
 		hookRunner,
 		customTools: customToolsResult.tools,
 		skillsSettings: settingsManager.getSkillsSettings(),
 	});
 
-	return session;
+	return {
+		session,
+		customToolsResult,
+		modelFallbackMessage,
+	};
 }
