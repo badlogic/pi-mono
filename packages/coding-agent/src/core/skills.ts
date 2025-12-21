@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME } from "../config.js";
+import type { SkillsSettings } from "./settings-manager.js";
 
 /**
  * Standard frontmatter fields per Agent Skills spec.
@@ -315,7 +316,17 @@ function escapeXml(str: string): string {
  * Load skills from all configured locations.
  * Returns skills and any validation warnings.
  */
-export function loadSkills(): LoadSkillsResult {
+export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
+	const {
+		enableCodexUser = true,
+		enableClaudeUser = true,
+		enableClaudeProject = true,
+		enablePiUser = true,
+		enablePiProject = true,
+		customDirectories = [],
+		ignoredSkills = [],
+	} = options;
+
 	const skillMap = new Map<string, Skill>();
 	const allWarnings: SkillWarning[] = [];
 	const collisionWarnings: SkillWarning[] = [];
@@ -323,6 +334,9 @@ export function loadSkills(): LoadSkillsResult {
 	function addSkills(result: LoadSkillsResult) {
 		allWarnings.push(...result.warnings);
 		for (const skill of result.skills) {
+			if (ignoredSkills.includes(skill.name)) {
+				continue;
+			}
 			const existing = skillMap.get(skill.name);
 			if (existing) {
 				collisionWarnings.push({
@@ -335,23 +349,24 @@ export function loadSkills(): LoadSkillsResult {
 		}
 	}
 
-	// Codex: recursive
-	const codexUserDir = join(homedir(), ".codex", "skills");
-	addSkills(loadSkillsFromDirInternal(codexUserDir, "codex-user", "recursive"));
-
-	// Claude: single level only
-	const claudeUserDir = join(homedir(), ".claude", "skills");
-	addSkills(loadSkillsFromDirInternal(claudeUserDir, "claude-user", "claude"));
-
-	const claudeProjectDir = resolve(process.cwd(), ".claude", "skills");
-	addSkills(loadSkillsFromDirInternal(claudeProjectDir, "claude-project", "claude"));
-
-	// Pi: recursive
-	const globalSkillsDir = join(homedir(), CONFIG_DIR_NAME, "agent", "skills");
-	addSkills(loadSkillsFromDirInternal(globalSkillsDir, "user", "recursive"));
-
-	const projectSkillsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "skills");
-	addSkills(loadSkillsFromDirInternal(projectSkillsDir, "project", "recursive"));
+	if (enableCodexUser) {
+		addSkills(loadSkillsFromDirInternal(join(homedir(), ".codex", "skills"), "codex-user", "recursive"));
+	}
+	if (enableClaudeUser) {
+		addSkills(loadSkillsFromDirInternal(join(homedir(), ".claude", "skills"), "claude-user", "claude"));
+	}
+	if (enableClaudeProject) {
+		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), ".claude", "skills"), "claude-project", "claude"));
+	}
+	if (enablePiUser) {
+		addSkills(loadSkillsFromDirInternal(join(homedir(), CONFIG_DIR_NAME, "agent", "skills"), "user", "recursive"));
+	}
+	if (enablePiProject) {
+		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), CONFIG_DIR_NAME, "skills"), "project", "recursive"));
+	}
+	for (const customDir of customDirectories) {
+		addSkills(loadSkillsFromDirInternal(customDir.replace(/^~(?=$|[\\/])/, homedir()), "custom", "recursive"));
+	}
 
 	return {
 		skills: Array.from(skillMap.values()),

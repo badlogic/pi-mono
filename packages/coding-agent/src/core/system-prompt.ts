@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
+import type { SkillsSettings } from "./settings-manager.js";
 import { formatSkillsForPrompt, loadSkills } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
 
@@ -109,12 +110,12 @@ export interface BuildSystemPromptOptions {
 	customPrompt?: string;
 	selectedTools?: ToolName[];
 	appendSystemPrompt?: string;
-	skillsEnabled?: boolean;
+	skillsSettings?: SkillsSettings;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
-	const { customPrompt, selectedTools, appendSystemPrompt, skillsEnabled = true } = options;
+	const { customPrompt, selectedTools, appendSystemPrompt, skillsSettings } = options;
 	const resolvedCustomPrompt = resolvePromptInput(customPrompt, "system prompt");
 	const resolvedAppendPrompt = resolvePromptInput(appendSystemPrompt, "append system prompt");
 
@@ -151,8 +152,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 		// Append skills section (only if read tool is available)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (skillsEnabled && customPromptHasRead) {
-			const { skills } = loadSkills();
+		if (skillsSettings?.enabled !== false && customPromptHasRead) {
+			const { skills } = loadSkills(skillsSettings ?? {});
 			prompt += formatSkillsForPrompt(skills);
 		}
 
@@ -257,8 +258,8 @@ Documentation:
 	}
 
 	// Append skills section (only if read tool is available)
-	if (skillsEnabled && hasRead) {
-		const { skills } = loadSkills();
+	if (skillsSettings?.enabled !== false && hasRead) {
+		const { skills } = loadSkills(skillsSettings ?? {});
 		prompt += formatSkillsForPrompt(skills);
 	}
 

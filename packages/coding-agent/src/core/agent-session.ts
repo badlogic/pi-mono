@@ -25,7 +25,7 @@ import type { BranchEventResult, HookRunner, TurnEndEvent, TurnStartEvent } from
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
-import type { SettingsManager } from "./settings-manager.js";
+import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
 /** Session-specific events that extend the core AgentEvent */
@@ -55,6 +55,7 @@ export interface AgentSessionConfig {
 	hookRunner?: HookRunner | null;
 	/** Custom tools for session lifecycle events */
 	customTools?: LoadedCustomTool[];
+	skillsSettings?: Required<SkillsSettings>;
 }
 
 /** Options for AgentSession.prompt() */
@@ -148,6 +149,8 @@ export class AgentSession {
 	// Custom tools for session lifecycle
 	private _customTools: LoadedCustomTool[] = [];
 
+	private _skillsSettings: Required<SkillsSettings> | undefined;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -156,6 +159,7 @@ export class AgentSession {
 		this._fileCommands = config.fileCommands ?? [];
 		this._hookRunner = config.hookRunner ?? null;
 		this._customTools = config.customTools ?? [];
+		this._skillsSettings = config.skillsSettings;
 	}
 
 	// =========================================================================
@@ -483,6 +487,10 @@ export class AgentSession {
 	/** Get queued messages (read-only) */
 	getQueuedMessages(): readonly string[] {
 		return this._queuedMessages;
+	}
+
+	get skillsSettings(): Required<SkillsSettings> | undefined {
+		return this._skillsSettings;
 	}
 
 	/**

@@ -104,6 +104,7 @@ export {
 	type RetrySettings,
 	type Settings,
 	SettingsManager,
+	type SkillsSettings,
 } from "./core/settings-manager.js";
 // Skills
 export {

@@ -16,6 +16,13 @@ export interface RetrySettings {
 
 export interface SkillsSettings {
 	enabled?: boolean; // default: true
+	enableCodexUser?: boolean; // default: true
+	enableClaudeUser?: boolean; // default: true
+	enableClaudeProject?: boolean; // default: true
+	enablePiUser?: boolean; // default: true
+	enablePiProject?: boolean; // default: true
+	customDirectories?: string[]; // default: []
+	ignoredSkills?: string[]; // default: []
 }
 
 export interface TerminalSettings {
@@ -251,6 +258,19 @@ export class SettingsManager {
 		}
 		this.settings.skills.enabled = enabled;
 		this.save();
+	}
+
+	getSkillsSettings(): Required<SkillsSettings> {
+		return {
+			enabled: this.settings.skills?.enabled ?? true,
+			enableCodexUser: this.settings.skills?.enableCodexUser ?? true,
+			enableClaudeUser: this.settings.skills?.enableClaudeUser ?? true,
+			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
+			enablePiUser: this.settings.skills?.enablePiUser ?? true,
+			enablePiProject: this.settings.skills?.enablePiProject ?? true,
+			customDirectories: this.settings.skills?.customDirectories ?? [],
+			ignoredSkills: this.settings.skills?.ignoredSkills ?? [],
+		};
 	}
 
 	getShowImages(): boolean {

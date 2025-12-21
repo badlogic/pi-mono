@@ -285,12 +285,15 @@ export async function main(args: string[]) {
 	}
 
 	// Build system prompt
-	const skillsEnabled = !parsed.noSkills && settingsManager.getSkillsEnabled();
+	const skillsSettings = settingsManager.getSkillsSettings();
+	if (parsed.noSkills) {
+		skillsSettings.enabled = false;
+	}
 	const systemPrompt = buildSystemPrompt({
 		customPrompt: parsed.systemPrompt,
 		selectedTools: parsed.tools,
 		appendSystemPrompt: parsed.appendSystemPrompt,
-		skillsEnabled,
+		skillsSettings,
 	});
 
 	// Handle session restoration
@@ -440,6 +443,7 @@ export async function main(args: string[]) {
 		fileCommands,
 		hookRunner,
 		customTools: loadedCustomTools,
+		skillsSettings,
 	});
 
 	// Route to appropriate mode
