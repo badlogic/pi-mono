@@ -750,6 +750,20 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("Google Gemini CLI Provider (gemini-3-flash-preview with thinkingLevel)", () => {
+		const llm = getModel("google-gemini-cli", "gemini-3-flash-preview");
+
+		it.skipIf(!geminiCliToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.LOW } });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
+		});
+	});
+
 	describe("Google Antigravity Provider (gemini-3-flash)", () => {
 		const llm = getModel("google-antigravity", "gemini-3-flash");
 
@@ -765,22 +779,35 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm, { apiKey: antigravityToken });
 		});
 
-		it.skipIf(!antigravityToken)("should handle thinking", { retry: 3 }, async () => {
-			// gemini-3-flash has reasoning: false, use gemini-3-pro-high for thinking
-			const thinkingModel = getModel("google-antigravity", "gemini-3-pro-high");
-			await handleThinking(thinkingModel, {
+		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			// gemini-3-flash supports all four levels: MINIMAL, LOW, MEDIUM, HIGH
+			await handleThinking(llm, {
 				apiKey: antigravityToken,
-				thinking: { enabled: true, budgetTokens: 1024 },
+				thinking: { enabled: true, level: ThinkingLevel.LOW },
 			});
 		});
 
 		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const thinkingModel = getModel("google-antigravity", "gemini-3-pro-high");
-			await multiTurn(thinkingModel, { apiKey: antigravityToken, thinking: { enabled: true, budgetTokens: 2048 } });
+			const { ThinkingLevel } = await import("@google/genai");
+			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
 		});
 
 		it.skipIf(!antigravityToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm, { apiKey: antigravityToken });
+		});
+	});
+
+	describe("Google Antigravity Provider (gemini-3-pro-high with thinkingLevel)", () => {
+		const llm = getModel("google-antigravity", "gemini-3-pro-high");
+
+		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel HIGH", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			// gemini-3-pro only supports LOW/HIGH
+			await handleThinking(llm, {
+				apiKey: antigravityToken,
+				thinking: { enabled: true, level: ThinkingLevel.HIGH },
+			});
 		});
 	});
 
