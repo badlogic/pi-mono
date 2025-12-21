@@ -1245,7 +1245,7 @@ export class Editor implements Component {
 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
 
 		// Check if we're in a slash command context
-		if (beforeCursor.trimStart().startsWith("/")) {
+		if (beforeCursor.trimStart().startsWith("/") && !beforeCursor.trimStart().includes(" ")) {
 			this.handleSlashCommandCompletion();
 		} else {
 			this.forceFileAutocomplete();
@@ -1253,8 +1253,6 @@ export class Editor implements Component {
 	}
 
 	private handleSlashCommandCompletion(): void {
-		// For now, fall back to regular autocomplete (slash commands)
-		// This can be extended later to handle command-specific argument completion
 		this.tryTriggerAutocomplete(true);
 	}
 

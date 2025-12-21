@@ -1,5 +1,5 @@
 import { spawnSync } from "child_process";
-import { readdirSync } from "fs";
+import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
 
@@ -197,8 +197,10 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const beforePrefix = currentLine.slice(0, cursorCol - prefix.length);
 		const afterCursor = currentLine.slice(cursorCol);
 
-		// Check if we're completing a slash command (prefix starts with "/")
-		if (prefix.startsWith("/")) {
+		// Check if we're completing a slash command (prefix starts with "/" but NOT a file path)
+		// Slash commands are at the start of the line and don't contain path separators after the first /
+		const isSlashCommand = prefix.startsWith("/") && beforePrefix.trim() === "" && !prefix.slice(1).includes("/");
+		if (isSlashCommand) {
 			// This is a command name completion
 			const newLine = beforePrefix + "/" + item.value + " " + afterCursor;
 			const newLines = [...lines];
@@ -367,7 +369,16 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					continue;
 				}
 
-				const isDirectory = entry.isDirectory();
+				// Check if entry is a directory (or a symlink pointing to a directory)
+				let isDirectory = entry.isDirectory();
+				if (!isDirectory && entry.isSymbolicLink()) {
+					try {
+						const fullPath = join(searchDir, entry.name);
+						isDirectory = statSync(fullPath).isDirectory();
+					} catch {
+						// Broken symlink or permission error - treat as file
+					}
+				}
 
 				let relativePath: string;
 				const name = entry.name;
