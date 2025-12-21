@@ -23,10 +23,19 @@ import { convertMessages, convertTools, mapStopReasonString, mapToolChoice } fro
 
 export interface GoogleGeminiCliOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
+	/**
+	 * Thinking/reasoning configuration.
+	 * - Gemini 2.x models: use `budgetTokens` to set the thinking budget
+	 * - Gemini 3 models (gemini-3-pro-*, gemini-3-flash-*): use `level` instead
+	 *
+	 * When using `streamSimple`, this is handled automatically based on the model.
+	 */
 	thinking?: {
 		enabled: boolean;
+		/** Thinking budget in tokens. Use for Gemini 2.x models. */
 		budgetTokens?: number;
-		level?: ThinkingLevel; // For Gemini 3 models
+		/** Thinking level. Use for Gemini 3 models (LOW/HIGH for Pro, MINIMAL/LOW/MEDIUM/HIGH for Flash). */
+		level?: ThinkingLevel;
 	};
 	projectId?: string;
 }

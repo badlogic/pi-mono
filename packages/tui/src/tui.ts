@@ -118,7 +118,12 @@ export class TUI extends Container {
 		this.terminal.stop();
 	}
 
-	requestRender(): void {
+	requestRender(force = false): void {
+		if (force) {
+			this.previousLines = [];
+			this.previousWidth = 0;
+			this.cursorRow = 0;
+		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
 		process.nextTick(() => {

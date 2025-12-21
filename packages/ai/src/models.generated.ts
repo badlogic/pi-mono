@@ -6019,9 +6019,9 @@ export const MODELS = {
 			contextWindow: 32768,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku": {
-			id: "anthropic/claude-3.5-haiku",
-			name: "Anthropic: Claude 3.5 Haiku",
+		"anthropic/claude-3.5-haiku-20241022": {
+			id: "anthropic/claude-3.5-haiku-20241022",
+			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6036,9 +6036,9 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku-20241022": {
-			id: "anthropic/claude-3.5-haiku-20241022",
-			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+		"anthropic/claude-3.5-haiku": {
+			id: "anthropic/claude-3.5-haiku",
+			name: "Anthropic: Claude 3.5 Haiku",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6274,23 +6274,6 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3.1-405b-instruct": {
-			id: "meta-llama/llama-3.1-405b-instruct",
-			name: "Meta: Llama 3.1 405B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 3.5,
-				output: 3.5,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 130815,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-8b-instruct": {
 			id: "meta-llama/llama-3.1-8b-instruct",
 			name: "Meta: Llama 3.1 8B Instruct",
@@ -6307,6 +6290,23 @@ export const MODELS = {
 			},
 			contextWindow: 131072,
 			maxTokens: 16384,
+		} satisfies Model<"openai-completions">,
+		"meta-llama/llama-3.1-405b-instruct": {
+			id: "meta-llama/llama-3.1-405b-instruct",
+			name: "Meta: Llama 3.1 405B Instruct",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 3.5,
+				output: 3.5,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 130815,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-70b-instruct": {
 			id: "meta-llama/llama-3.1-70b-instruct",

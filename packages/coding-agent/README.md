@@ -226,10 +226,12 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Escape | Cancel autocomplete / abort streaming |
 | Ctrl+C | Clear editor (first) / exit (second) |
 | Ctrl+D | Exit (when editor is empty) |
+| Ctrl+Z | Suspend to background (use `fg` in shell to resume) |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P | Cycle models (scoped by `--models`) |
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
+| Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
 
 ### Bash Mode
 
@@ -715,7 +717,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |

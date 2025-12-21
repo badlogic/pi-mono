@@ -6,15 +6,6 @@
 		},
 		{
 			"path": "../../moms"
-		},
-		{
-			"path": "../../.pi/agent"
-		},
-		{
-			"path": "../pi-skills"
-		},
-		{
-			"path": "../sitegeist"
 		}
 	],
 	"settings": {}
