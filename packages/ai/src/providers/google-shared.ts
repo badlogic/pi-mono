@@ -86,9 +86,6 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				parts,
 			});
 		} else if (msg.role === "toolResult") {
-			// Build parts array with functionResponse and/or images
-			const parts: Part[] = [];
-
 			// Extract text and image content
 			const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
 			const textResult = textContent.map((c) => c.text).join("\n");
@@ -96,40 +93,51 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				? msg.content.filter((c): c is ImageContent => c.type === "image")
 				: [];
 
-			// Always add functionResponse with text result (or placeholder if only images)
 			const hasText = textResult.length > 0;
 			const hasImages = imageContent.length > 0;
+
+			// Gemini 3 supports multimodal function responses with images nested inside functionResponse.parts
+			// See: https://ai.google.dev/gemini-api/docs/function-calling#multimodal
+			// Older models don't support this, so we put images in a separate user message.
+			const supportsMultimodalFunctionResponse = model.id.includes("gemini-3");
 
 			// Use "output" key for success, "error" key for errors as per SDK documentation
 			const responseValue = hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "";
 
-			parts.push({
+			const imageParts: Part[] = imageContent.map((imageBlock) => ({
+				inlineData: {
+					mimeType: imageBlock.mimeType,
+					data: imageBlock.data,
+				},
+			}));
+
+			const functionResponsePart: Part = {
 				functionResponse: {
 					id: msg.toolCallId,
 					name: msg.toolName,
 					response: msg.isError ? { error: responseValue } : { output: responseValue },
+					// Nest images inside functionResponse.parts for Gemini 3
+					...(hasImages && supportsMultimodalFunctionResponse && { parts: imageParts }),
 				},
-			});
-
-			// Add any images as inlineData parts
-			for (const imageBlock of imageContent) {
-				parts.push({
-					inlineData: {
-						mimeType: imageBlock.mimeType,
-						data: imageBlock.data,
-					},
-				});
-			}
+			};
 
 			// Cloud Code Assist API requires all function responses to be in a single user turn.
 			// Check if the last content is already a user turn with function responses and merge.
 			const lastContent = contents[contents.length - 1];
 			if (lastContent?.role === "user" && lastContent.parts?.some((p) => p.functionResponse)) {
-				lastContent.parts.push(...parts);
+				lastContent.parts.push(functionResponsePart);
 			} else {
 				contents.push({
 					role: "user",
-					parts,
+					parts: [functionResponsePart],
+				});
+			}
+
+			// For older models, add images in a separate user message
+			if (hasImages && !supportsMultimodalFunctionResponse) {
+				contents.push({
+					role: "user",
+					parts: [{ text: "Tool result image:" }, ...imageParts],
 				});
 			}
 		}
