@@ -733,6 +733,7 @@ pi [options] [@files...] [messages...]
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--hook <path>` | Load a hook file (can be used multiple times) |
 | `--no-skills` | Disable skills discovery and loading |
+| `--skills <patterns>` | Comma-separated glob patterns to filter skills (e.g., `git-*,docker`) |
 | `--export <file> [output]` | Export session to HTML |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |

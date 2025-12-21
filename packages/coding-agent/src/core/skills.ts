@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
+import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME } from "../config.js";
@@ -325,16 +326,34 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 		enablePiProject = true,
 		customDirectories = [],
 		ignoredSkills = [],
+		includeSkills = [],
 	} = options;
 
 	const skillMap = new Map<string, Skill>();
 	const allWarnings: SkillWarning[] = [];
 	const collisionWarnings: SkillWarning[] = [];
 
+	// Check if skill name matches any of the include patterns
+	function matchesIncludePatterns(name: string): boolean {
+		if (includeSkills.length === 0) return true; // No filter = include all
+		return includeSkills.some((pattern) => minimatch(name, pattern));
+	}
+
+	// Check if skill name matches any of the ignore patterns
+	function matchesIgnorePatterns(name: string): boolean {
+		if (ignoredSkills.length === 0) return false;
+		return ignoredSkills.some((pattern) => minimatch(name, pattern));
+	}
+
 	function addSkills(result: LoadSkillsResult) {
 		allWarnings.push(...result.warnings);
 		for (const skill of result.skills) {
-			if (ignoredSkills.includes(skill.name)) {
+			// Apply ignore filter (glob patterns) - takes precedence over include
+			if (matchesIgnorePatterns(skill.name)) {
+				continue;
+			}
+			// Apply include filter (glob patterns)
+			if (!matchesIncludePatterns(skill.name)) {
 				continue;
 			}
 			const existing = skillMap.get(skill.name);

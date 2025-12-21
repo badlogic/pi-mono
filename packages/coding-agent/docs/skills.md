@@ -159,7 +159,8 @@ Configure skill loading in `~/.pi/agent/settings.json`:
     "enablePiUser": true,
     "enablePiProject": true,
     "customDirectories": ["~/my-skills-repo"],
-    "ignoredSkills": ["deprecated-skill"]
+    "ignoredSkills": ["deprecated-skill"],
+    "includeSkills": ["git-*", "docker"]
   }
 }
 ```
@@ -173,7 +174,27 @@ Configure skill loading in `~/.pi/agent/settings.json`:
 | `enablePiUser` | `true` | Load from `~/.pi/agent/skills/` |
 | `enablePiProject` | `true` | Load from `<cwd>/.pi/skills/` |
 | `customDirectories` | `[]` | Additional directories to scan (supports `~` expansion) |
-| `ignoredSkills` | `[]` | Skill names to exclude |
+| `ignoredSkills` | `[]` | Glob patterns to exclude (e.g., `["deprecated-*", "test-skill"]`) |
+| `includeSkills` | `[]` | Glob patterns to include (empty = all; e.g., `["git-*", "docker"]`) |
+
+**Note:** `ignoredSkills` takes precedence over both `includeSkills` in settings and the `--skills` CLI flag. A skill matching any ignore pattern will be excluded regardless of include patterns.
+
+### CLI Filtering
+
+Use `--skills` to filter skills for a specific invocation:
+
+```bash
+# Only load specific skills
+pi --skills git,docker
+
+# Glob patterns
+pi --skills "git-*,docker-*"
+
+# All skills matching a prefix
+pi --skills "aws-*"
+```
+
+This overrides the `includeSkills` setting for the current session.
 
 ## How Skills Work
 

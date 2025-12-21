@@ -30,6 +30,7 @@ export interface Args {
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
+	skills?: string[];
 	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
@@ -115,6 +116,9 @@ export function parseArgs(args: string[]): Args {
 			result.customTools.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
+		} else if (arg === "--skills" && i + 1 < args.length) {
+			// Comma-separated glob patterns for skill filtering
+			result.skills = args[++i].split(",").map((s) => s.trim());
 		} else if (arg === "--list-models") {
 			// Check if next arg is a search pattern (not a flag or file arg)
 			if (i + 1 < args.length && !args[i + 1].startsWith("-") && !args[i + 1].startsWith("@")) {
@@ -157,6 +161,7 @@ ${chalk.bold("Options:")}
   --hook <path>                  Load a hook file (can be used multiple times)
   --tool <path>                  Load a custom tool file (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
+  --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --help, -h                     Show this help

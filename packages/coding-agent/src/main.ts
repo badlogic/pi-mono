@@ -289,6 +289,9 @@ export async function main(args: string[]) {
 	if (parsed.noSkills) {
 		skillsSettings.enabled = false;
 	}
+	if (parsed.skills && parsed.skills.length > 0) {
+		skillsSettings.includeSkills = parsed.skills;
+	}
 	const systemPrompt = buildSystemPrompt({
 		customPrompt: parsed.systemPrompt,
 		selectedTools: parsed.tools,

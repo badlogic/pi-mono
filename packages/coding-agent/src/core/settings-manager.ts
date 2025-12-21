@@ -22,7 +22,8 @@ export interface SkillsSettings {
 	enablePiUser?: boolean; // default: true
 	enablePiProject?: boolean; // default: true
 	customDirectories?: string[]; // default: []
-	ignoredSkills?: string[]; // default: []
+	ignoredSkills?: string[]; // default: [] (glob patterns to exclude; takes precedence over includeSkills)
+	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
 }
 
 export interface TerminalSettings {
@@ -270,6 +271,7 @@ export class SettingsManager {
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
 			customDirectories: this.settings.skills?.customDirectories ?? [],
 			ignoredSkills: this.settings.skills?.ignoredSkills ?? [],
+			includeSkills: this.settings.skills?.includeSkills ?? [],
 		};
 	}
 
