@@ -4,6 +4,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
@@ -23,7 +24,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec } from "child_process";
+import { exec, spawnSync } from "child_process";
 import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
@@ -579,6 +580,7 @@ export class InteractiveMode {
 		this.editor.onCtrlP = () => this.cycleModel();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
+		this.editor.onCtrlG = () => this.openExternalEditor();
 
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1225,6 +1227,52 @@ export class InteractiveMode {
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
+	private openExternalEditor(): void {
+		// Determine editor (respect $VISUAL, then $EDITOR)
+		const editorCmd = process.env.VISUAL || process.env.EDITOR;
+		if (!editorCmd) {
+			this.showWarning("No editor configured. Set $VISUAL or $EDITOR environment variable.");
+			return;
+		}
+
+		const currentText = this.editor.getText();
+		const tmpFile = path.join(os.tmpdir(), `pi-editor-${Date.now()}.pi.md`);
+
+		try {
+			// Write current content to temp file
+			fs.writeFileSync(tmpFile, currentText, "utf-8");
+
+			// Stop TUI to release terminal
+			this.ui.stop();
+
+			// Split by space to support editor arguments (e.g., "code --wait")
+			const [editor, ...editorArgs] = editorCmd.split(" ");
+
+			// Spawn editor synchronously with inherited stdio for interactive editing
+			const result = spawnSync(editor, [...editorArgs, tmpFile], {
+				stdio: "inherit",
+			});
+
+			// On successful exit (status 0), replace editor content
+			if (result.status === 0) {
+				const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
+				this.editor.setText(newContent);
+			}
+			// On non-zero exit, keep original text (no action needed)
+		} finally {
+			// Clean up temp file
+			try {
+				fs.unlinkSync(tmpFile);
+			} catch {
+				// Ignore cleanup errors
+			}
+
+			// Restart TUI
+			this.ui.start();
+			this.ui.requestRender();
+		}
+	}
+
 	// =========================================================================
 	// UI helpers
 	// =========================================================================
@@ -1703,6 +1751,7 @@ export class InteractiveMode {
 | \`Ctrl+P\` | Cycle models |
 | \`Ctrl+O\` | Toggle tool output expansion |
 | \`Ctrl+T\` | Toggle thinking block visibility |
+| \`Ctrl+G\` | Edit message in external editor |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 `;

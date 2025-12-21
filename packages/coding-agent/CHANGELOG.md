@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **External editor support**: Press `Ctrl+G` to edit your message in an external editor. Uses `$VISUAL` or `$EDITOR` environment variable. On successful save, the message is replaced; on cancel, the original is kept. ([#266](https://github.com/badlogic/pi-mono/pull/266) by [@aliou](https://github.com/aliou))
+
 ## [0.25.2] - 2025-12-21
 
 ### Fixed

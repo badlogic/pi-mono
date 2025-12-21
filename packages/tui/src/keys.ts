@@ -28,6 +28,7 @@ const CODEPOINTS = {
 	c: 99,
 	d: 100,
 	e: 101,
+	g: 103,
 	k: 107,
 	o: 111,
 	p: 112,
@@ -160,6 +161,7 @@ export const Keys = {
 	CTRL_C: kittySequence(CODEPOINTS.c, MODIFIERS.ctrl),
 	CTRL_D: kittySequence(CODEPOINTS.d, MODIFIERS.ctrl),
 	CTRL_E: kittySequence(CODEPOINTS.e, MODIFIERS.ctrl),
+	CTRL_G: kittySequence(CODEPOINTS.g, MODIFIERS.ctrl),
 	CTRL_K: kittySequence(CODEPOINTS.k, MODIFIERS.ctrl),
 	CTRL_O: kittySequence(CODEPOINTS.o, MODIFIERS.ctrl),
 	CTRL_P: kittySequence(CODEPOINTS.p, MODIFIERS.ctrl),
@@ -214,6 +216,7 @@ const RAW = {
 	CTRL_C: "\x03",
 	CTRL_D: "\x04",
 	CTRL_E: "\x05",
+	CTRL_G: "\x07",
 	CTRL_K: "\x0b",
 	CTRL_O: "\x0f",
 	CTRL_P: "\x10",
@@ -254,6 +257,14 @@ export function isCtrlD(data: string): boolean {
  */
 export function isCtrlE(data: string): boolean {
 	return data === RAW.CTRL_E || data === Keys.CTRL_E || matchesKittySequence(data, CODEPOINTS.e, MODIFIERS.ctrl);
+}
+
+/**
+ * Check if input matches Ctrl+G (raw byte or Kitty protocol).
+ * Ignores lock key bits.
+ */
+export function isCtrlG(data: string): boolean {
+	return data === RAW.CTRL_G || data === Keys.CTRL_G || matchesKittySequence(data, CODEPOINTS.g, MODIFIERS.ctrl);
 }
 
 /**

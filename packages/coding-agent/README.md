@@ -230,6 +230,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Ctrl+P | Cycle models (scoped by `--models`) |
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
+| Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
 
 ### Bash Mode
 
