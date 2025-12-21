@@ -118,6 +118,16 @@ export class TUI extends Container {
 		this.terminal.stop();
 	}
 
+	/**
+	 * Reset render state to force a full re-render on next requestRender().
+	 * Call this after resuming from suspend (SIGTSTP).
+	 */
+	resetRenderState(): void {
+		this.previousLines = [];
+		this.previousWidth = 0;
+		this.cursorRow = 0;
+	}
+
 	requestRender(): void {
 		if (this.renderRequested) return;
 		this.renderRequested = true;

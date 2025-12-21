@@ -35,6 +35,7 @@ const CODEPOINTS = {
 	t: 116,
 	u: 117,
 	w: 119,
+	z: 122,
 
 	// Special keys
 	escape: 27,
@@ -168,6 +169,7 @@ export const Keys = {
 	CTRL_T: kittySequence(CODEPOINTS.t, MODIFIERS.ctrl),
 	CTRL_U: kittySequence(CODEPOINTS.u, MODIFIERS.ctrl),
 	CTRL_W: kittySequence(CODEPOINTS.w, MODIFIERS.ctrl),
+	CTRL_Z: kittySequence(CODEPOINTS.z, MODIFIERS.ctrl),
 
 	// Enter combinations
 	SHIFT_ENTER: kittySequence(CODEPOINTS.enter, MODIFIERS.shift),
@@ -223,6 +225,7 @@ const RAW = {
 	CTRL_T: "\x14",
 	CTRL_U: "\x15",
 	CTRL_W: "\x17",
+	CTRL_Z: "\x1a",
 	ALT_BACKSPACE: "\x1b\x7f",
 	SHIFT_TAB: "\x1b[Z",
 } as const;
@@ -320,6 +323,14 @@ export function isCtrlU(data: string): boolean {
  */
 export function isCtrlW(data: string): boolean {
 	return data === RAW.CTRL_W || data === Keys.CTRL_W || matchesKittySequence(data, CODEPOINTS.w, MODIFIERS.ctrl);
+}
+
+/**
+ * Check if input matches Ctrl+Z (raw byte or Kitty protocol).
+ * Ignores lock key bits.
+ */
+export function isCtrlZ(data: string): boolean {
+	return data === RAW.CTRL_Z || data === Keys.CTRL_Z || matchesKittySequence(data, CODEPOINTS.z, MODIFIERS.ctrl);
 }
 
 /**
