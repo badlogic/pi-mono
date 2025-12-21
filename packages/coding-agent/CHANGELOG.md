@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.25.3] - 2025-12-21
+
 ### Added
 
 - **Gemini 3 preview models**: Added `gemini-3-pro-preview` and `gemini-3-flash-preview` to the google-gemini-cli provider. ([#264](https://github.com/badlogic/pi-mono/pull/264) by [@LukeFost](https://github.com/LukeFost))
