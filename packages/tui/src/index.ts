@@ -33,6 +33,7 @@ export {
 	isCtrlC,
 	isCtrlD,
 	isCtrlE,
+	isCtrlG,
 	isCtrlK,
 	isCtrlLeft,
 	isCtrlO,
