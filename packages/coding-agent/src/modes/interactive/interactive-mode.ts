@@ -314,18 +314,23 @@ export class InteractiveMode {
 		}
 
 		// Show loaded skills
-		const { skills, warnings: skillWarnings } = loadSkills();
-		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		const skillsSettings = this.session.skillsSettings;
+		if (skillsSettings?.enabled !== false) {
+			const { skills, warnings: skillWarnings } = loadSkills(skillsSettings ?? {});
+			if (skills.length > 0) {
+				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show skill warnings if any
-		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+			// Show skill warnings if any
+			if (skillWarnings.length > 0) {
+				const warningList = skillWarnings
+					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
+					.join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		// Show loaded custom tools

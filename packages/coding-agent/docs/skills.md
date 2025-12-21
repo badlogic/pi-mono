@@ -145,6 +145,36 @@ Skills are discovered from these locations (later wins on name collision):
 4. `~/.pi/agent/skills/**/SKILL.md` (Pi user, recursive)
 5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project, recursive)
 
+## Configuration
+
+Configure skill loading in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "skills": {
+    "enabled": true,
+    "enableCodexUser": true,
+    "enableClaudeUser": true,
+    "enableClaudeProject": true,
+    "enablePiUser": true,
+    "enablePiProject": true,
+    "customDirectories": ["~/my-skills-repo"],
+    "ignoredSkills": ["deprecated-skill"]
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Master toggle for all skills |
+| `enableCodexUser` | `true` | Load from `~/.codex/skills/` |
+| `enableClaudeUser` | `true` | Load from `~/.claude/skills/` |
+| `enableClaudeProject` | `true` | Load from `<cwd>/.claude/skills/` |
+| `enablePiUser` | `true` | Load from `~/.pi/agent/skills/` |
+| `enablePiProject` | `true` | Load from `<cwd>/.pi/skills/` |
+| `customDirectories` | `[]` | Additional directories to scan (supports `~` expansion) |
+| `ignoredSkills` | `[]` | Skill names to exclude |
+
 ## How Skills Work
 
 1. At startup, pi scans skill locations and extracts names + descriptions
@@ -233,3 +263,5 @@ Settings (`~/.pi/agent/settings.json`):
   }
 }
 ```
+
+Use the granular `enable*` flags to disable individual sources (e.g., `enableClaudeUser: false` to skip `~/.claude/skills`).

@@ -1,6 +1,7 @@
+import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
-import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
+import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
@@ -227,6 +228,66 @@ describe("skills", () => {
 			expect(result).toContain("<name>skill-one</name>");
 			expect(result).toContain("<name>skill-two</name>");
 			expect((result.match(/<skill>/g) || []).length).toBe(2);
+		});
+	});
+
+	describe("loadSkills with options", () => {
+		it("should load from customDirectories only when built-ins disabled", () => {
+			const { skills } = loadSkills({
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+				customDirectories: [fixturesDir],
+			});
+			expect(skills.length).toBeGreaterThan(0);
+			expect(skills.every((s) => s.source === "custom")).toBe(true);
+		});
+
+		it("should filter out ignoredSkills", () => {
+			const { skills } = loadSkills({
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+				customDirectories: [join(fixturesDir, "valid-skill")],
+				ignoredSkills: ["valid-skill"],
+			});
+			expect(skills).toHaveLength(0);
+		});
+
+		it("should expand ~ in customDirectories", () => {
+			const homeSkillsDir = join(homedir(), ".pi/agent/skills");
+			const { skills: withTilde } = loadSkills({
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+				customDirectories: ["~/.pi/agent/skills"],
+			});
+			const { skills: withoutTilde } = loadSkills({
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+				customDirectories: [homeSkillsDir],
+			});
+			expect(withTilde.length).toBe(withoutTilde.length);
+		});
+
+		it("should return empty when all sources disabled and no custom dirs", () => {
+			const { skills } = loadSkills({
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+			});
+			expect(skills).toHaveLength(0);
 		});
 	});
 
