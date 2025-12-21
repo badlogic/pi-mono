@@ -165,20 +165,31 @@ function loadCommandsFromDir(dir: string, source: "user" | "project", subdir: st
 	return commands;
 }
 
+export interface LoadSlashCommandsOptions {
+	/** Working directory for project-local commands. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory for global commands. Default: from getCommandsDir() */
+	agentDir?: string;
+}
+
 /**
  * Load all custom slash commands from:
- * 1. Global: ~/{CONFIG_DIR_NAME}/agent/commands/
- * 2. Project: ./{CONFIG_DIR_NAME}/commands/
+ * 1. Global: agentDir/commands/
+ * 2. Project: cwd/{CONFIG_DIR_NAME}/commands/
  */
-export function loadSlashCommands(): FileSlashCommand[] {
+export function loadSlashCommands(options: LoadSlashCommandsOptions = {}): FileSlashCommand[] {
+	const resolvedCwd = options.cwd ?? process.cwd();
+	const resolvedAgentDir = options.agentDir ?? getCommandsDir();
+
 	const commands: FileSlashCommand[] = [];
 
-	// 1. Load global commands from ~/{CONFIG_DIR_NAME}/agent/commands/
-	const globalCommandsDir = getCommandsDir();
+	// 1. Load global commands from agentDir/commands/
+	// Note: if agentDir is provided, it should be the agent dir, not the commands dir
+	const globalCommandsDir = options.agentDir ? join(options.agentDir, "commands") : resolvedAgentDir;
 	commands.push(...loadCommandsFromDir(globalCommandsDir, "user"));
 
-	// 2. Load project commands from ./{CONFIG_DIR_NAME}/commands/
-	const projectCommandsDir = resolve(process.cwd(), CONFIG_DIR_NAME, "commands");
+	// 2. Load project commands from cwd/{CONFIG_DIR_NAME}/commands/
+	const projectCommandsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "commands");
 	commands.push(...loadCommandsFromDir(projectCommandsDir, "project"));
 
 	return commands;

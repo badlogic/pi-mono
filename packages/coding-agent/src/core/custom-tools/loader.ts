@@ -303,7 +303,7 @@ function discoverToolsInDir(dir: string): string[] {
 
 /**
  * Discover and load tools from standard locations:
- * 1. ~/.pi/agent/tools/*.ts (global)
+ * 1. agentDir/tools/*.ts (global)
  * 2. cwd/.pi/tools/*.ts (project-local)
  *
  * Plus any explicitly configured paths from settings or CLI.
@@ -311,12 +311,15 @@ function discoverToolsInDir(dir: string): string[] {
  * @param configuredPaths - Explicit paths from settings.json and CLI --tool flags
  * @param cwd - Current working directory
  * @param builtInToolNames - Names of built-in tools to check for conflicts
+ * @param agentDir - Agent config directory. Default: from getAgentDir()
  */
 export async function discoverAndLoadCustomTools(
 	configuredPaths: string[],
 	cwd: string,
 	builtInToolNames: string[],
+	agentDir?: string,
 ): Promise<CustomToolsLoadResult> {
+	const resolvedAgentDir = agentDir ?? getAgentDir();
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
@@ -331,8 +334,8 @@ export async function discoverAndLoadCustomTools(
 		}
 	};
 
-	// 1. Global tools: ~/.pi/agent/tools/
-	const globalToolsDir = path.join(getAgentDir(), "tools");
+	// 1. Global tools: agentDir/tools/
+	const globalToolsDir = path.join(resolvedAgentDir, "tools");
 	addPaths(discoverToolsInDir(globalToolsDir));
 
 	// 2. Project-local tools: cwd/.pi/tools/

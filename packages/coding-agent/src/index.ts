@@ -83,6 +83,29 @@ export {
 	type OAuthPrompt,
 	type OAuthProvider,
 } from "./core/oauth/index.js";
+// SDK for programmatic usage
+export {
+	allBuiltInTools,
+	type BuildSystemPromptOptions,
+	buildSystemPrompt,
+	type CreateAgentSessionOptions,
+	// Factory
+	createAgentSession,
+	// Helpers
+	defaultGetApiKey,
+	discoverAvailableModels,
+	discoverContextFiles,
+	discoverCustomTools,
+	discoverHooks,
+	// Discovery
+	discoverModels,
+	discoverSkills,
+	discoverSlashCommands,
+	findModel as findModelByProviderAndId,
+	loadSettings,
+	// Tools
+	readOnlyTools,
+} from "./core/sdk.js";
 export {
 	type CompactionEntry,
 	createSummaryMessage,
