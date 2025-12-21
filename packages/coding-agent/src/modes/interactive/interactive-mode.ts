@@ -213,6 +213,9 @@ export class InteractiveMode {
 			theme.fg("dim", "ctrl+d") +
 			theme.fg("muted", " to exit (empty)") +
 			"\n" +
+			theme.fg("dim", "ctrl+z") +
+			theme.fg("muted", " to suspend") +
+			"\n" +
 			theme.fg("dim", "ctrl+k") +
 			theme.fg("muted", " to delete line") +
 			"\n" +
@@ -576,6 +579,7 @@ export class InteractiveMode {
 
 		this.editor.onCtrlC = () => this.handleCtrlC();
 		this.editor.onCtrlD = () => this.handleCtrlD();
+		this.editor.onCtrlZ = () => this.handleCtrlZ();
 		this.editor.onShiftTab = () => this.cycleThinkingLevel();
 		this.editor.onCtrlP = () => this.cycleModel();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
@@ -1157,6 +1161,20 @@ export class InteractiveMode {
 		// Only called when editor is empty (enforced by CustomEditor)
 		this.stop();
 		process.exit(0);
+	}
+
+	private handleCtrlZ(): void {
+		// Set up handler to restore TUI when resumed
+		process.once("SIGCONT", () => {
+			this.ui.start();
+			this.ui.requestRender(true);
+		});
+
+		// Stop the TUI (restore terminal to normal mode)
+		this.ui.stop();
+
+		// Send SIGTSTP to process group (pid=0 means all processes in group)
+		process.kill(0, "SIGTSTP");
 	}
 
 	private updateEditorBorderColor(): void {
@@ -1747,6 +1765,7 @@ export class InteractiveMode {
 | \`Escape\` | Cancel autocomplete / abort streaming |
 | \`Ctrl+C\` | Clear editor (first) / exit (second) |
 | \`Ctrl+D\` | Exit (when editor is empty) |
+| \`Ctrl+Z\` | Suspend to background |
 | \`Shift+Tab\` | Cycle thinking level |
 | \`Ctrl+P\` | Cycle models |
 | \`Ctrl+O\` | Toggle tool output expansion |
