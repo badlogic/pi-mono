@@ -5,7 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import type { Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Attachment } from "@mariozechner/pi-agent-core";
 import { setOAuthStorage, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -18,10 +18,12 @@ import { getModelsPath, getOAuthPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
+import { findModel } from "./core/model-config.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
+import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { allTools, codingTools } from "./core/tools/index.js";
+import { allTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
@@ -188,9 +190,6 @@ async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): P
 
 	// Model from CLI
 	if (parsed.provider && parsed.model) {
-		// Will be resolved by SDK
-		// For now, we need to find it ourselves since SDK expects Model object
-		const { findModel } = await import("./core/model-config.js");
 		const { model, error } = findModel(parsed.provider, parsed.model);
 		if (error) {
 			console.error(chalk.red(error));
@@ -333,7 +332,6 @@ export async function main(args: string[]) {
 	// Handle --resume: show session picker
 	let sessionFileFromResume: string | undefined;
 	if (parsed.resume) {
-		const { SessionManager } = await import("./core/session-manager.js");
 		const tempSessionManager = new SessionManager(false, undefined);
 		const selectedSession = await selectSession(tempSessionManager);
 		if (!selectedSession) {
