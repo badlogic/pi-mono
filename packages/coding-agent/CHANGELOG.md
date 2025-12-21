@@ -8,7 +8,7 @@
 
 - **Gemini image reading broken**: Fixed the `read` tool returning images causing flaky/broken responses with Gemini models. Images in tool results are now properly formatted per the Gemini API spec.
 
-- **Tab completion for absolute paths**: Fixed tab completion for absolute paths like `/tmp` producing `//tmp`. Also fixed inability to continue tabbing through subdirectories after completing an absolute path.
+- **Tab completion for absolute paths**: Fixed tab completion producing `//tmp` instead of `/tmp/`. Also fixed symlinks to directories (like `/tmp`) not getting a trailing slash, which prevented continuing to tab through subdirectories.
 
 ## [0.25.0] - 2025-12-20
 
