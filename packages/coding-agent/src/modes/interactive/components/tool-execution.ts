@@ -44,6 +44,7 @@ export class ToolExecutionComponent extends Container {
 	private contentBox?: Box; // Only used for custom tools
 	private contentText: Text; // For built-in tools (with its own padding/bg)
 	private imageComponents: Image[] = [];
+	private imageSpacers: Spacer[] = [];
 	private toolName: string;
 	private args: any;
 	private expanded = false;
@@ -173,6 +174,10 @@ export class ToolExecutionComponent extends Container {
 			this.removeChild(img);
 		}
 		this.imageComponents = [];
+		for (const spacer of this.imageSpacers) {
+			this.removeChild(spacer);
+		}
+		this.imageSpacers = [];
 
 		if (this.result) {
 			const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
@@ -180,7 +185,9 @@ export class ToolExecutionComponent extends Container {
 
 			for (const img of imageBlocks) {
 				if (caps.images && this.showImages && img.data && img.mimeType) {
-					this.addChild(new Spacer(1));
+					const spacer = new Spacer(1);
+					this.addChild(spacer);
+					this.imageSpacers.push(spacer);
 					const imageComponent = new Image(
 						img.data,
 						img.mimeType,

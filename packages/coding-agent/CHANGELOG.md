@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.25.2] - 2025-12-21
+
+### Fixed
+
+- **Image shifting in tool output**: Fixed an issue where images in tool output would shift down (due to accumulating spacers) each time the tool output was expanded or collapsed via Ctrl+O.
+
 ## [0.25.1] - 2025-12-21
 
 ### Fixed
