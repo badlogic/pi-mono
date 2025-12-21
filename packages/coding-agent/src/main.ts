@@ -224,14 +224,11 @@ async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): P
 
 	// System prompt
 	if (parsed.systemPrompt && parsed.appendSystemPrompt) {
-		options.systemPrompt = (defaultPrompt) => {
-			// Custom prompt with append
-			return parsed.systemPrompt + "\n\n" + parsed.appendSystemPrompt;
-		};
+		options.systemPrompt = `${parsed.systemPrompt}\n\n${parsed.appendSystemPrompt}`;
 	} else if (parsed.systemPrompt) {
 		options.systemPrompt = parsed.systemPrompt;
 	} else if (parsed.appendSystemPrompt) {
-		options.systemPrompt = (defaultPrompt) => defaultPrompt + "\n\n" + parsed.appendSystemPrompt;
+		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${parsed.appendSystemPrompt}`;
 	}
 
 	// Tools
