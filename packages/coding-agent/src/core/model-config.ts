@@ -98,7 +98,7 @@ export function resolveApiKey(keyConfig: string): string | undefined {
  * Load custom models from models.json in agent config dir
  * Returns { models, error } - either models array or error message
  */
-function loadCustomModels(agentDir: string): { models: Model<Api>[]; error: string | null } {
+function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api>[]; error: string | null } {
 	const configPath = join(agentDir, "models.json");
 	if (!existsSync(configPath)) {
 		return { models: [], error: null };
