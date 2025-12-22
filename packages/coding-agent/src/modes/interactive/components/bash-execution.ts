@@ -12,6 +12,7 @@ import {
 } from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
 const PREVIEW_LINES = 20;
@@ -134,15 +135,15 @@ export class BashExecutionComponent extends Container {
 				const displayText = availableLines.map((line) => theme.fg("muted", line)).join("\n");
 				this.contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
 			} else {
-				// Render preview lines, then cap at PREVIEW_LINES visual lines
-				const tempText = new Text(
-					`\n${previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n")}`,
-					1,
-					0,
+				// Use shared visual truncation utility
+				const styledOutput = previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n");
+				const { visualLines } = truncateToVisualLines(
+					`\n${styledOutput}`,
+					PREVIEW_LINES,
+					this.ui.terminal.columns,
+					1, // padding
 				);
-				const visualLines = tempText.render(this.ui.terminal.columns);
-				const truncatedVisualLines = visualLines.slice(-PREVIEW_LINES);
-				this.contentContainer.addChild({ render: () => truncatedVisualLines, invalidate: () => {} });
+				this.contentContainer.addChild({ render: () => visualLines, invalidate: () => {} });
 			}
 		}
 

@@ -815,6 +815,7 @@ export class InteractiveMode {
 										showImages: this.settingsManager.getShowImages(),
 									},
 									this.customTools.get(content.name)?.tool,
+									this.ui,
 								);
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
@@ -862,6 +863,7 @@ export class InteractiveMode {
 							showImages: this.settingsManager.getShowImages(),
 						},
 						this.customTools.get(event.toolName)?.tool,
+						this.ui,
 					);
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
@@ -1101,6 +1103,7 @@ export class InteractiveMode {
 								showImages: this.settingsManager.getShowImages(),
 							},
 							this.customTools.get(content.name)?.tool,
+							this.ui,
 						);
 						this.chatContainer.addChild(component);
 

@@ -8,12 +8,17 @@ import {
 	imageFallback,
 	Spacer,
 	Text,
+	type TUI,
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
+import { truncateToVisualLines } from "./visual-truncate.js";
+
+// Preview line limit for bash when not expanded
+const BASH_PREVIEW_LINES = 5;
 
 /**
  * Convert absolute path to tilde notation if it's in home directory
@@ -41,7 +46,7 @@ export interface ToolExecutionOptions {
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private contentBox?: Box; // Only used for custom tools
+	private contentBox: Box; // Used for custom tools and bash visual truncation
 	private contentText: Text; // For built-in tools (with its own padding/bg)
 	private imageComponents: Image[] = [];
 	private imageSpacers: Spacer[] = [];
@@ -51,29 +56,36 @@ export class ToolExecutionComponent extends Container {
 	private showImages: boolean;
 	private isPartial = true;
 	private customTool?: CustomAgentTool;
+	private ui: TUI;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
 		details?: any;
 	};
 
-	constructor(toolName: string, args: any, options: ToolExecutionOptions = {}, customTool?: CustomAgentTool) {
+	constructor(
+		toolName: string,
+		args: any,
+		options: ToolExecutionOptions = {},
+		customTool: CustomAgentTool | undefined,
+		ui: TUI,
+	) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
 		this.showImages = options.showImages ?? true;
 		this.customTool = customTool;
+		this.ui = ui;
 
 		this.addChild(new Spacer(1));
 
-		if (customTool) {
-			// Custom tools use Box for flexible component rendering
-			this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		// Always create both - contentBox for custom tools/bash, contentText for other built-ins
+		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+
+		if (customTool || toolName === "bash") {
 			this.addChild(this.contentBox);
-			this.contentText = new Text("", 0, 0); // Fallback only
 		} else {
-			// Built-in tools use Text directly (has caching, better perf)
-			this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 			this.addChild(this.contentText);
 		}
 
@@ -117,7 +129,7 @@ export class ToolExecutionComponent extends Container {
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
 		// Check for custom tool rendering
-		if (this.customTool && this.contentBox) {
+		if (this.customTool) {
 			// Custom tools use Box for flexible component rendering
 			this.contentBox.setBgFn(bgFn);
 			this.contentBox.clear();
@@ -163,8 +175,13 @@ export class ToolExecutionComponent extends Container {
 					this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
 				}
 			}
+		} else if (this.toolName === "bash") {
+			// Bash uses Box with visual line truncation
+			this.contentBox.setBgFn(bgFn);
+			this.contentBox.clear();
+			this.renderBashContent();
 		} else {
-			// Built-in tools: use Text directly with caching
+			// Other built-in tools: use Text directly with caching
 			this.contentText.setCustomBgFn(bgFn);
 			this.contentText.setText(this.formatToolExecution());
 		}
@@ -201,6 +218,75 @@ export class ToolExecutionComponent extends Container {
 		}
 	}
 
+	/**
+	 * Render bash content using visual line truncation (like bash-execution.ts)
+	 */
+	private renderBashContent(): void {
+		const command = this.args?.command || "";
+
+		// Header
+		this.contentBox.addChild(
+			new Text(theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`)), 0, 0),
+		);
+
+		if (this.result) {
+			const output = this.getTextOutput().trim();
+
+			if (output) {
+				// Style each line for the output
+				const styledOutput = output
+					.split("\n")
+					.map((line) => theme.fg("toolOutput", line))
+					.join("\n");
+
+				if (this.expanded) {
+					// Show all lines when expanded
+					this.contentBox.addChild(new Text(`\n${styledOutput}`, 0, 0));
+				} else {
+					// Use visual line truncation when collapsed
+					// Box has paddingX=1, so content width = terminal.columns - 2
+					const { visualLines, skippedCount } = truncateToVisualLines(
+						`\n${styledOutput}`,
+						BASH_PREVIEW_LINES,
+						this.ui.terminal.columns - 2,
+					);
+
+					if (skippedCount > 0) {
+						this.contentBox.addChild(
+							new Text(theme.fg("toolOutput", `\n... (${skippedCount} earlier lines)`), 0, 0),
+						);
+					}
+
+					// Add pre-rendered visual lines as a raw component
+					this.contentBox.addChild({
+						render: () => visualLines,
+						invalidate: () => {},
+					});
+				}
+			}
+
+			// Truncation warnings
+			const truncation = this.result.details?.truncation;
+			const fullOutputPath = this.result.details?.fullOutputPath;
+			if (truncation?.truncated || fullOutputPath) {
+				const warnings: string[] = [];
+				if (fullOutputPath) {
+					warnings.push(`Full output: ${fullOutputPath}`);
+				}
+				if (truncation?.truncated) {
+					if (truncation.truncatedBy === "lines") {
+						warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
+					} else {
+						warnings.push(
+							`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+						);
+					}
+				}
+				this.contentBox.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
+			}
+		}
+	}
+
 	private getTextOutput(): string {
 		if (!this.result) return "";
 
@@ -233,46 +319,7 @@ export class ToolExecutionComponent extends Container {
 	private formatToolExecution(): string {
 		let text = "";
 
-		if (this.toolName === "bash") {
-			const command = this.args?.command || "";
-			text = theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`));
-
-			if (this.result) {
-				const output = this.getTextOutput().trim();
-				if (output) {
-					const lines = output.split("\n");
-					const maxLines = this.expanded ? lines.length : 5;
-					const skipped = Math.max(0, lines.length - maxLines);
-					const displayLines = lines.slice(-maxLines);
-
-					if (skipped > 0) {
-						text += theme.fg("toolOutput", `\n\n... (${skipped} earlier lines)`);
-					}
-					text +=
-						(skipped > 0 ? "\n" : "\n\n") +
-						displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n");
-				}
-
-				const truncation = this.result.details?.truncation;
-				const fullOutputPath = this.result.details?.fullOutputPath;
-				if (truncation?.truncated || fullOutputPath) {
-					const warnings: string[] = [];
-					if (fullOutputPath) {
-						warnings.push(`Full output: ${fullOutputPath}`);
-					}
-					if (truncation?.truncated) {
-						if (truncation.truncatedBy === "lines") {
-							warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
-						} else {
-							warnings.push(
-								`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
-							);
-						}
-					}
-					text += `\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`;
-				}
-			}
-		} else if (this.toolName === "read") {
+		if (this.toolName === "read") {
 			const path = shortenPath(this.args?.file_path || this.args?.path || "");
 			const offset = this.args?.offset;
 			const limit = this.args?.limit;
