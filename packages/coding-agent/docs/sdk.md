@@ -500,24 +500,47 @@ const { session } = await createAgentSession({
 });
 ```
 
-### Settings
+### Settings Management
 
 ```typescript
-import { createAgentSession, loadSettings } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SettingsManager, SessionManager } from "@mariozechner/pi-coding-agent";
 
-// Load current settings
-const settings = loadSettings();
-
-// Override specific settings
+// Default: loads from files (global + project merged)
 const { session } = await createAgentSession({
-  settings: {
-    compaction: { enabled: false },
-    retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
-    terminal: { showImages: true },
-    hideThinkingBlock: true,
-  },
+  settingsManager: SettingsManager.create(),
+});
+
+// With overrides
+const settingsManager = SettingsManager.create();
+settingsManager.applyOverrides({
+  compaction: { enabled: false },
+  retry: { enabled: true, maxRetries: 5 },
+});
+const { session } = await createAgentSession({ settingsManager });
+
+// In-memory (no file I/O, for testing)
+const { session } = await createAgentSession({
+  settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+  sessionManager: SessionManager.inMemory(),
+});
+
+// Custom directories
+const { session } = await createAgentSession({
+  settingsManager: SettingsManager.create("/custom/cwd", "/custom/agent"),
 });
 ```
+
+**Static factories:**
+- `SettingsManager.create(cwd?, agentDir?)` - Load from files
+- `SettingsManager.inMemory(settings?)` - No file I/O
+
+**Project-specific settings:**
+
+Settings load from two locations and merge:
+1. Global: `~/.pi/agent/settings.json`
+2. Project: `<cwd>/.pi/settings.json`
+
+Project overrides global. Nested objects merge keys. Setters only modify global (project is read-only for version control).
 
 ## Discovery Functions
 
