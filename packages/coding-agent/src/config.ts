@@ -117,9 +117,14 @@ export function getOAuthPath(): string {
 	return join(getAgentDir(), "oauth.json");
 }
 
-/** Get path to settings.json */
+/** Get path to global settings.json (~/.pi/agent/settings.json) */
 export function getSettingsPath(): string {
 	return join(getAgentDir(), "settings.json");
+}
+
+/** Get path to project-level settings.json (<cwd>/.pi/settings.json) */
+export function getProjectSettingsPath(cwd: string = process.cwd()): string {
+	return join(cwd, CONFIG_DIR_NAME, "settings.json");
 }
 
 /** Get path to tools directory */
