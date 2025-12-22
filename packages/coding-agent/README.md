@@ -652,7 +652,14 @@ export default factory;
 
 ### Settings File
 
-`~/.pi/agent/settings.json` stores persistent preferences:
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
 
 ```json
 {
@@ -847,7 +854,8 @@ The SDK provides full control over:
 - Tools (built-in subsets, custom tools)
 - Hooks (inline or discovered)
 - Skills, context files, slash commands
-- Session persistence
+- Session persistence (`SessionManager`)
+- Settings (`SettingsManager`)
 - API key resolution and OAuth
 
 **Philosophy:** "Omit to discover, provide to override." Omit an option and pi discovers from standard locations. Provide an option and your value is used.
