@@ -17,7 +17,6 @@ import {
 	loadSessionFromEntries,
 	type ModelChangeEntry,
 	type SessionEntry,
-	type SessionHeader,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
 } from "@mariozechner/pi-coding-agent";
