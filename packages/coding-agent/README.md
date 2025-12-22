@@ -657,7 +657,7 @@ Settings are loaded from two locations and merged:
 1. **Global:** `~/.pi/agent/settings.json` - user preferences
 2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
 
-Project settings override global settings. For nested objects, individual keys merge.
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
 
 Global `~/.pi/agent/settings.json` stores persistent preferences:
 
