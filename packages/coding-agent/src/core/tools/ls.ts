@@ -2,7 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";
-import { expandPath } from "./path-utils.js";
+import { resolveToCwd } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 const lsSchema = Type.Object({
@@ -17,115 +17,124 @@ export interface LsToolDetails {
 	entryLimitReached?: number;
 }
 
-export const lsTool: AgentTool<typeof lsSchema> = {
-	name: "ls",
-	label: "ls",
-	description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
-	parameters: lsSchema,
-	execute: async (_toolCallId: string, { path, limit }: { path?: string; limit?: number }, signal?: AbortSignal) => {
-		return new Promise((resolve, reject) => {
-			if (signal?.aborted) {
-				reject(new Error("Operation aborted"));
-				return;
-			}
-
-			const onAbort = () => reject(new Error("Operation aborted"));
-			signal?.addEventListener("abort", onAbort, { once: true });
-
-			try {
-				const dirPath = nodePath.resolve(expandPath(path || "."));
-				const effectiveLimit = limit ?? DEFAULT_LIMIT;
-
-				// Check if path exists
-				if (!existsSync(dirPath)) {
-					reject(new Error(`Path not found: ${dirPath}`));
+export function createLsTool(cwd: string): AgentTool<typeof lsSchema> {
+	return {
+		name: "ls",
+		label: "ls",
+		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		parameters: lsSchema,
+		execute: async (
+			_toolCallId: string,
+			{ path, limit }: { path?: string; limit?: number },
+			signal?: AbortSignal,
+		) => {
+			return new Promise((resolve, reject) => {
+				if (signal?.aborted) {
+					reject(new Error("Operation aborted"));
 					return;
 				}
 
-				// Check if path is a directory
-				const stat = statSync(dirPath);
-				if (!stat.isDirectory()) {
-					reject(new Error(`Not a directory: ${dirPath}`));
-					return;
-				}
+				const onAbort = () => reject(new Error("Operation aborted"));
+				signal?.addEventListener("abort", onAbort, { once: true });
 
-				// Read directory entries
-				let entries: string[];
 				try {
-					entries = readdirSync(dirPath);
-				} catch (e: any) {
-					reject(new Error(`Cannot read directory: ${e.message}`));
-					return;
-				}
+					const dirPath = resolveToCwd(path || ".", cwd);
+					const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
-				// Sort alphabetically (case-insensitive)
-				entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-				// Format entries with directory indicators
-				const results: string[] = [];
-				let entryLimitReached = false;
-
-				for (const entry of entries) {
-					if (results.length >= effectiveLimit) {
-						entryLimitReached = true;
-						break;
+					// Check if path exists
+					if (!existsSync(dirPath)) {
+						reject(new Error(`Path not found: ${dirPath}`));
+						return;
 					}
 
-					const fullPath = nodePath.join(dirPath, entry);
-					let suffix = "";
+					// Check if path is a directory
+					const stat = statSync(dirPath);
+					if (!stat.isDirectory()) {
+						reject(new Error(`Not a directory: ${dirPath}`));
+						return;
+					}
 
+					// Read directory entries
+					let entries: string[];
 					try {
-						const entryStat = statSync(fullPath);
-						if (entryStat.isDirectory()) {
-							suffix = "/";
-						}
-					} catch {
-						// Skip entries we can't stat
-						continue;
+						entries = readdirSync(dirPath);
+					} catch (e: any) {
+						reject(new Error(`Cannot read directory: ${e.message}`));
+						return;
 					}
 
-					results.push(entry + suffix);
+					// Sort alphabetically (case-insensitive)
+					entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+					// Format entries with directory indicators
+					const results: string[] = [];
+					let entryLimitReached = false;
+
+					for (const entry of entries) {
+						if (results.length >= effectiveLimit) {
+							entryLimitReached = true;
+							break;
+						}
+
+						const fullPath = nodePath.join(dirPath, entry);
+						let suffix = "";
+
+						try {
+							const entryStat = statSync(fullPath);
+							if (entryStat.isDirectory()) {
+								suffix = "/";
+							}
+						} catch {
+							// Skip entries we can't stat
+							continue;
+						}
+
+						results.push(entry + suffix);
+					}
+
+					signal?.removeEventListener("abort", onAbort);
+
+					if (results.length === 0) {
+						resolve({ content: [{ type: "text", text: "(empty directory)" }], details: undefined });
+						return;
+					}
+
+					// Apply byte truncation (no line limit since we already have entry limit)
+					const rawOutput = results.join("\n");
+					const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+
+					let output = truncation.content;
+					const details: LsToolDetails = {};
+
+					// Build notices
+					const notices: string[] = [];
+
+					if (entryLimitReached) {
+						notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
+						details.entryLimitReached = effectiveLimit;
+					}
+
+					if (truncation.truncated) {
+						notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+						details.truncation = truncation;
+					}
+
+					if (notices.length > 0) {
+						output += `\n\n[${notices.join(". ")}]`;
+					}
+
+					resolve({
+						content: [{ type: "text", text: output }],
+						details: Object.keys(details).length > 0 ? details : undefined,
+					});
+				} catch (e: any) {
+					signal?.removeEventListener("abort", onAbort);
+					reject(e);
 				}
+			});
+		},
+	};
+}
 
-				signal?.removeEventListener("abort", onAbort);
-
-				if (results.length === 0) {
-					resolve({ content: [{ type: "text", text: "(empty directory)" }], details: undefined });
-					return;
-				}
-
-				// Apply byte truncation (no line limit since we already have entry limit)
-				const rawOutput = results.join("\n");
-				const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-
-				let output = truncation.content;
-				const details: LsToolDetails = {};
-
-				// Build notices
-				const notices: string[] = [];
-
-				if (entryLimitReached) {
-					notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
-					details.entryLimitReached = effectiveLimit;
-				}
-
-				if (truncation.truncated) {
-					notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-					details.truncation = truncation;
-				}
-
-				if (notices.length > 0) {
-					output += `\n\n[${notices.join(". ")}]`;
-				}
-
-				resolve({
-					content: [{ type: "text", text: output }],
-					details: Object.keys(details).length > 0 ? details : undefined,
-				});
-			} catch (e: any) {
-				signal?.removeEventListener("abort", onAbort);
-				reject(e);
-			}
-		});
-	},
-};
+/** Default ls tool using process.cwd() - for backwards compatibility */
+export const lsTool = createLsTool(process.cwd());

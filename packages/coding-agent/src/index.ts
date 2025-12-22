@@ -93,6 +93,16 @@ export {
 	configureOAuthStorage,
 	// Factory
 	createAgentSession,
+	createBashTool,
+	// Tool factories (for custom cwd)
+	createCodingTools,
+	createEditTool,
+	createFindTool,
+	createGrepTool,
+	createLsTool,
+	createReadOnlyTools,
+	createReadTool,
+	createWriteTool,
 	// Helpers
 	defaultGetApiKey,
 	discoverAvailableModels,
@@ -106,7 +116,7 @@ export {
 	type FileSlashCommand,
 	findModel as findModelByProviderAndId,
 	loadSettings,
-	// Tools
+	// Pre-built tools (use process.cwd())
 	readOnlyTools,
 } from "./core/sdk.js";
 export {

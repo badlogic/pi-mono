@@ -21,7 +21,7 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 
 	for (const fileArg of fileArgs) {
 		// Expand and resolve path (handles ~ expansion and macOS screenshot Unicode spaces)
-		const absolutePath = resolve(resolveReadPath(fileArg));
+		const absolutePath = resolve(resolveReadPath(fileArg, process.cwd()));
 
 		// Check if file exists
 		try {

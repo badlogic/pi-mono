@@ -1,5 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import * as os from "node:os";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const NARROW_NO_BREAK_SPACE = "\u202F";
@@ -32,17 +33,29 @@ export function expandPath(filePath: string): string {
 	return normalized;
 }
 
-export function resolveReadPath(filePath: string): string {
+/**
+ * Resolve a path relative to the given cwd.
+ * Handles ~ expansion and absolute paths.
+ */
+export function resolveToCwd(filePath: string, cwd: string): string {
 	const expanded = expandPath(filePath);
-
-	if (fileExists(expanded)) {
+	if (isAbsolute(expanded)) {
 		return expanded;
 	}
+	return resolvePath(cwd, expanded);
+}
 
-	const macOSVariant = tryMacOSScreenshotPath(expanded);
-	if (macOSVariant !== expanded && fileExists(macOSVariant)) {
+export function resolveReadPath(filePath: string, cwd: string): string {
+	const resolved = resolveToCwd(filePath, cwd);
+
+	if (fileExists(resolved)) {
+		return resolved;
+	}
+
+	const macOSVariant = tryMacOSScreenshotPath(resolved);
+	if (macOSVariant !== resolved && fileExists(macOSVariant)) {
 		return macOSVariant;
 	}
 
-	return expanded;
+	return resolved;
 }

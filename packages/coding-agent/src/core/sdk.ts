@@ -58,6 +58,15 @@ import {
 	allTools,
 	bashTool,
 	codingTools,
+	createBashTool,
+	createCodingTools,
+	createEditTool,
+	createFindTool,
+	createGrepTool,
+	createLsTool,
+	createReadOnlyTools,
+	createReadTool,
+	createWriteTool,
 	editTool,
 	findTool,
 	grepTool,
@@ -138,6 +147,7 @@ export type { FileSlashCommand } from "./slash-commands.js";
 export type { Tool } from "./tools/index.js";
 
 export {
+	// Pre-built tools (use process.cwd())
 	readTool,
 	bashTool,
 	editTool,
@@ -148,6 +158,16 @@ export {
 	codingTools,
 	readOnlyTools,
 	allTools as allBuiltInTools,
+	// Tool factories (for custom cwd)
+	createCodingTools,
+	createReadOnlyTools,
+	createReadTool,
+	createBashTool,
+	createEditTool,
+	createWriteTool,
+	createGrepTool,
+	createFindTool,
+	createLsTool,
 };
 
 // Helper Functions
@@ -526,7 +546,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 
-	const builtInTools = options.tools ?? codingTools;
+	const builtInTools = options.tools ?? createCodingTools(cwd);
 
 	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
 	if (options.customTools !== undefined) {

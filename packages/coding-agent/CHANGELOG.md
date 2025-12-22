@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **SDK tools respect cwd**: Core tools (bash, read, edit, write, grep, find, ls) now properly use the `cwd` option from `createAgentSession()`. Added tool factory functions (`createBashTool`, `createReadTool`, etc.) for SDK users who specify custom `cwd` with explicit tools. ([#279](https://github.com/badlogic/pi-mono/issues/279))
+
 ## [0.26.0] - 2025-12-22
 
 ### Added

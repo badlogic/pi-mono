@@ -3,6 +3,10 @@
  *
  * Replace everything - no discovery, explicit configuration.
  * Still uses OAuth from ~/.pi/agent for convenience.
+ *
+ * IMPORTANT: When providing `tools` with a custom `cwd`, use the tool factory
+ * functions (createReadTool, createBashTool, etc.) to ensure tools resolve
+ * paths relative to your cwd.
  */
 
 import { Type } from "@sinclair/typebox";
@@ -13,8 +17,8 @@ import {
 	findModel,
 	SessionManager,
 	SettingsManager,
-	readTool,
-	bashTool,
+	createReadTool,
+	createBashTool,
 	type HookFactory,
 	type CustomAgentTool,
 } from "../../src/index.js";
@@ -60,8 +64,11 @@ const settingsManager = SettingsManager.inMemory({
 	retry: { enabled: true, maxRetries: 2 },
 });
 
+// When using a custom cwd with explicit tools, use the factory functions
+const cwd = process.cwd();
+
 const { session } = await createAgentSession({
-	cwd: process.cwd(),
+	cwd,
 	agentDir: "/tmp/my-agent",
 
 	model,
@@ -71,7 +78,8 @@ const { session } = await createAgentSession({
 	systemPrompt: `You are a minimal assistant.
 Available: read, bash, status. Be concise.`,
 
-	tools: [readTool, bashTool],
+	// Use factory functions with the same cwd to ensure path resolution works correctly
+	tools: [createReadTool(cwd), createBashTool(cwd)],
 	customTools: [{ tool: statusTool }],
 	hooks: [{ factory: auditHook }],
 	skills: [],

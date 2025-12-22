@@ -2,6 +2,10 @@
  * Tools Configuration
  *
  * Use built-in tool sets, individual tools, or add custom tools.
+ *
+ * IMPORTANT: When using a custom `cwd`, you must use the tool factory functions
+ * (createCodingTools, createReadOnlyTools, createReadTool, etc.) to ensure
+ * tools resolve paths relative to your cwd, not process.cwd().
  */
 
 import { Type } from "@sinclair/typebox";
@@ -9,27 +13,49 @@ import {
 	createAgentSession,
 	discoverCustomTools,
 	SessionManager,
-	codingTools, // read, bash, edit, write (default)
-	readOnlyTools, // read, bash
+	codingTools, // read, bash, edit, write - uses process.cwd()
+	readOnlyTools, // read, grep, find, ls - uses process.cwd()
+	createCodingTools, // Factory: creates tools for specific cwd
+	createReadOnlyTools, // Factory: creates tools for specific cwd
+	createReadTool,
+	createBashTool,
+	createGrepTool,
 	readTool,
 	bashTool,
 	grepTool,
 	type CustomAgentTool,
 } from "../../src/index.js";
 
-// Read-only mode (no edit/write)
+// Read-only mode (no edit/write) - uses process.cwd()
 const { session: readOnly } = await createAgentSession({
 	tools: readOnlyTools,
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Read-only session created");
 
-// Custom tool selection
+// Custom tool selection - uses process.cwd()
 const { session: custom } = await createAgentSession({
 	tools: [readTool, bashTool, grepTool],
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Custom tools session created");
+
+// With custom cwd - MUST use factory functions!
+const customCwd = "/path/to/project";
+const { session: customCwdSession } = await createAgentSession({
+	cwd: customCwd,
+	tools: createCodingTools(customCwd), // Tools resolve paths relative to customCwd
+	sessionManager: SessionManager.inMemory(),
+});
+console.log("Custom cwd session created");
+
+// Or pick specific tools for custom cwd
+const { session: specificTools } = await createAgentSession({
+	cwd: customCwd,
+	tools: [createReadTool(customCwd), createBashTool(customCwd), createGrepTool(customCwd)],
+	sessionManager: SessionManager.inMemory(),
+});
+console.log("Specific tools with custom cwd session created");
 
 // Inline custom tool (needs TypeBox schema)
 const weatherTool: CustomAgentTool = {

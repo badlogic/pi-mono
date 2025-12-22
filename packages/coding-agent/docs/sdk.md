@@ -307,7 +307,7 @@ const { session } = await createAgentSession({
 ```typescript
 import {
   codingTools,   // read, bash, edit, write (default)
-  readOnlyTools, // read, bash
+  readOnlyTools, // read, grep, find, ls
   readTool, bashTool, editTool, writeTool,
   grepTool, findTool, lsTool,
 } from "@mariozechner/pi-coding-agent";
@@ -322,6 +322,45 @@ const { session } = await createAgentSession({
   tools: [readTool, bashTool, grepTool],
 });
 ```
+
+#### Tools with Custom cwd
+
+**Important:** The pre-built tool instances (`readTool`, `bashTool`, etc.) use `process.cwd()` for path resolution. When you specify a custom `cwd` AND provide explicit `tools`, you must use the tool factory functions to ensure paths resolve correctly:
+
+```typescript
+import {
+  createCodingTools,    // Creates [read, bash, edit, write] for specific cwd
+  createReadOnlyTools,  // Creates [read, grep, find, ls] for specific cwd
+  createReadTool,
+  createBashTool,
+  createEditTool,
+  createWriteTool,
+  createGrepTool,
+  createFindTool,
+  createLsTool,
+} from "@mariozechner/pi-coding-agent";
+
+const cwd = "/path/to/project";
+
+// Use factory for tool sets
+const { session } = await createAgentSession({
+  cwd,
+  tools: createCodingTools(cwd),  // Tools resolve paths relative to cwd
+});
+
+// Or pick specific tools
+const { session } = await createAgentSession({
+  cwd,
+  tools: [createReadTool(cwd), createBashTool(cwd), createGrepTool(cwd)],
+});
+```
+
+**When you don't need factories:**
+- If you omit `tools`, pi automatically creates them with the correct `cwd`
+- If you use `process.cwd()` as your `cwd`, the pre-built instances work fine
+
+**When you must use factories:**
+- When you specify both `cwd` (different from `process.cwd()`) AND `tools`
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
@@ -788,11 +827,17 @@ buildSystemPrompt
 SessionManager
 SettingsManager
 
-// Built-in tools
+// Built-in tools (use process.cwd())
 codingTools
 readOnlyTools
 readTool, bashTool, editTool, writeTool
 grepTool, findTool, lsTool
+
+// Tool factories (for custom cwd)
+createCodingTools
+createReadOnlyTools
+createReadTool, createBashTool, createEditTool, createWriteTool
+createGrepTool, createFindTool, createLsTool
 
 // Types
 type CreateAgentSessionOptions
