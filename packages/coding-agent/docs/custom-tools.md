@@ -192,7 +192,7 @@ interface ToolSessionEvent {
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `switch`: User switched to a different session (`/session`)
+- `switch`: User switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
 - `clear`: User cleared the session (`/clear`)
 
