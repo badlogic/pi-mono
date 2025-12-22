@@ -1972,6 +1972,23 @@ export const MODELS = {
 		} satisfies Model<"openai-completions">,
 	},
 	"zai": {
+		"glm-4.7": {
+			id: "glm-4.7",
+			name: "GLM-4.7",
+			api: "anthropic-messages",
+			provider: "zai",
+			baseUrl: "https://api.z.ai/api/anthropic",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.6,
+				output: 2.2,
+				cacheRead: 0.11,
+				cacheWrite: 0,
+			},
+			contextWindow: 204800,
+			maxTokens: 131072,
+		} satisfies Model<"anthropic-messages">,
 		"glm-4.5-flash": {
 			id: "glm-4.5-flash",
 			name: "GLM-4.5-Flash",
@@ -6019,9 +6036,9 @@ export const MODELS = {
 			contextWindow: 32768,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku-20241022": {
-			id: "anthropic/claude-3.5-haiku-20241022",
-			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
+		"anthropic/claude-3.5-haiku": {
+			id: "anthropic/claude-3.5-haiku",
+			name: "Anthropic: Claude 3.5 Haiku",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6036,9 +6053,9 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3.5-haiku": {
-			id: "anthropic/claude-3.5-haiku",
-			name: "Anthropic: Claude 3.5 Haiku",
+		"anthropic/claude-3.5-haiku-20241022": {
+			id: "anthropic/claude-3.5-haiku-20241022",
+			name: "Anthropic: Claude 3.5 Haiku (2024-10-22)",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -6274,23 +6291,6 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3.1-8b-instruct": {
-			id: "meta-llama/llama-3.1-8b-instruct",
-			name: "Meta: Llama 3.1 8B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 0.02,
-				output: 0.03,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 131072,
-			maxTokens: 16384,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-405b-instruct": {
 			id: "meta-llama/llama-3.1-405b-instruct",
 			name: "Meta: Llama 3.1 405B Instruct",
@@ -6307,6 +6307,23 @@ export const MODELS = {
 			},
 			contextWindow: 130815,
 			maxTokens: 4096,
+		} satisfies Model<"openai-completions">,
+		"meta-llama/llama-3.1-8b-instruct": {
+			id: "meta-llama/llama-3.1-8b-instruct",
+			name: "Meta: Llama 3.1 8B Instruct",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.02,
+				output: 0.03,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 131072,
+			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-70b-instruct": {
 			id: "meta-llama/llama-3.1-70b-instruct",

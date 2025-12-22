@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.27.0] - 2025-12-22
 
 ### Breaking
