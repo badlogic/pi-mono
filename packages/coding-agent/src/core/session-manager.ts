@@ -212,6 +212,7 @@ export class SessionManager {
 	private sessionDir: string;
 	private cwd: string;
 	private persist: boolean;
+	private flushed: boolean = false;
 	private inMemoryEntries: SessionEntry[] = [];
 
 	private constructor(cwd: string, agentDir: string, sessionFile: string | null, persist: boolean) {
@@ -236,9 +237,11 @@ export class SessionManager {
 			this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
 			const header = this.inMemoryEntries.find((e) => e.type === "session");
 			this.sessionId = header ? (header as SessionHeader).id : uuidv4();
+			this.flushed = true;
 		} else {
 			this.sessionId = uuidv4();
 			this.inMemoryEntries = [];
+			this.flushed = false;
 			const entry: SessionHeader = {
 				type: "session",
 				id: this.sessionId,
@@ -266,14 +269,32 @@ export class SessionManager {
 	}
 
 	reset(): void {
-		this.inMemoryEntries = [];
 		this.sessionId = uuidv4();
+		this.flushed = false;
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
+		this.inMemoryEntries = [
+			{
+				type: "session",
+				id: this.sessionId,
+				timestamp: new Date().toISOString(),
+				cwd: this.cwd,
+			},
+		];
 	}
 
 	_persist(entry: SessionEntry): void {
-		if (this.persist && this.inMemoryEntries.some((e) => e.type === "message" && e.message.role === "assistant")) {
+		if (!this.persist) return;
+
+		const hasAssistant = this.inMemoryEntries.some((e) => e.type === "message" && e.message.role === "assistant");
+		if (!hasAssistant) return;
+
+		if (!this.flushed) {
+			for (const e of this.inMemoryEntries) {
+				appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
+			}
+			this.flushed = true;
+		} else {
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 		}
 	}
