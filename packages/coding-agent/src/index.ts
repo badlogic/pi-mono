@@ -103,6 +103,7 @@ export {
 	discoverModels,
 	discoverSkills,
 	discoverSlashCommands,
+	type FileSlashCommand,
 	findModel as findModelByProviderAndId,
 	loadSettings,
 	// Tools
