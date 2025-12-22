@@ -12,6 +12,7 @@ import {
 	defaultGetApiKey,
 	findModel,
 	SessionManager,
+	SettingsManager,
 	readTool,
 	bashTool,
 	type HookFactory,
@@ -53,6 +54,12 @@ const statusTool: CustomAgentTool = {
 const { model } = findModel("anthropic", "claude-sonnet-4-20250514");
 if (!model) throw new Error("Model not found");
 
+// In-memory settings with overrides
+const settingsManager = SettingsManager.inMemory({
+	compaction: { enabled: false },
+	retry: { enabled: true, maxRetries: 2 },
+});
+
 const { session } = await createAgentSession({
 	cwd: process.cwd(),
 	agentDir: "/tmp/my-agent",
@@ -71,7 +78,7 @@ Available: read, bash, status. Be concise.`,
 	contextFiles: [],
 	slashCommands: [],
 	sessionManager: SessionManager.inMemory(),
-	settings: { compaction: { enabled: false } },
+	settingsManager,
 });
 
 session.subscribe((event) => {

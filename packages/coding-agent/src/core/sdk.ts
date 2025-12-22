@@ -111,8 +111,8 @@ export interface CreateAgentSessionOptions {
 	/** Session manager. Default: SessionManager.create(cwd) */
 	sessionManager?: SessionManager;
 
-	/** Settings overrides (merged with agentDir/settings.json) */
-	settings?: Partial<Settings>;
+	/** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
+	settingsManager?: SettingsManager;
 }
 
 /** Result from createAgentSession */
@@ -338,10 +338,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 // Settings
 
 /**
- * Load settings from agentDir/settings.json.
+ * Load settings from agentDir/settings.json merged with cwd/.pi/settings.json.
  */
-export function loadSettings(agentDir?: string): Settings {
-	const manager = new SettingsManager(agentDir ?? getDefaultAgentDir());
+export function loadSettings(cwd?: string, agentDir?: string): Settings {
+	const manager = SettingsManager.create(cwd ?? process.cwd(), agentDir ?? getDefaultAgentDir());
 	return {
 		defaultProvider: manager.getDefaultProvider(),
 		defaultModel: manager.getDefaultModel(),
@@ -449,8 +449,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Configure OAuth storage for this agentDir
 	configureOAuthStorage(agentDir);
 
-	const settingsManager = new SettingsManager(agentDir);
-	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
+	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, agentDir);
 
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.loadSession();

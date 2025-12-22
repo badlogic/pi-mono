@@ -57,7 +57,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		});
 
 		sessionManager = noSession ? SessionManager.inMemory() : SessionManager.create(tempDir);
-		const settingsManager = new SettingsManager(tempDir);
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
 
 		session = new AgentSession({
 			agent,

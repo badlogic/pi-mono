@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { getAgentDir } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -49,39 +49,118 @@ export interface Settings {
 	terminal?: TerminalSettings;
 }
 
-export class SettingsManager {
-	private settingsPath: string;
-	private settings: Settings;
+/** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
+function deepMergeSettings(base: Settings, overrides: Settings): Settings {
+	const result: Settings = { ...base };
 
-	constructor(baseDir?: string) {
-		const dir = baseDir || getAgentDir();
-		this.settingsPath = join(dir, "settings.json");
-		this.settings = this.load();
+	for (const key of Object.keys(overrides) as (keyof Settings)[]) {
+		const overrideValue = overrides[key];
+		const baseValue = base[key];
+
+		if (overrideValue === undefined) {
+			continue;
+		}
+
+		// For nested objects, merge recursively
+		if (
+			typeof overrideValue === "object" &&
+			overrideValue !== null &&
+			!Array.isArray(overrideValue) &&
+			typeof baseValue === "object" &&
+			baseValue !== null &&
+			!Array.isArray(baseValue)
+		) {
+			(result as Record<string, unknown>)[key] = { ...baseValue, ...overrideValue };
+		} else {
+			// For primitives and arrays, override value wins
+			(result as Record<string, unknown>)[key] = overrideValue;
+		}
 	}
 
-	private load(): Settings {
-		if (!existsSync(this.settingsPath)) {
+	return result;
+}
+
+export class SettingsManager {
+	private settingsPath: string | null;
+	private projectSettingsPath: string | null;
+	private globalSettings: Settings;
+	private settings: Settings;
+	private persist: boolean;
+
+	private constructor(
+		settingsPath: string | null,
+		projectSettingsPath: string | null,
+		initialSettings: Settings,
+		persist: boolean,
+	) {
+		this.settingsPath = settingsPath;
+		this.projectSettingsPath = projectSettingsPath;
+		this.persist = persist;
+		this.globalSettings = initialSettings;
+		const projectSettings = this.loadProjectSettings();
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
+	/** Create a SettingsManager that loads from files */
+	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
+		const settingsPath = join(agentDir, "settings.json");
+		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		const globalSettings = SettingsManager.loadFromFile(settingsPath);
+		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true);
+	}
+
+	/** Create an in-memory SettingsManager (no file I/O) */
+	static inMemory(settings: Partial<Settings> = {}): SettingsManager {
+		return new SettingsManager(null, null, settings, false);
+	}
+
+	private static loadFromFile(path: string): Settings {
+		if (!existsSync(path)) {
+			return {};
+		}
+		try {
+			const content = readFileSync(path, "utf-8");
+			return JSON.parse(content);
+		} catch (error) {
+			console.error(`Warning: Could not read settings file ${path}: ${error}`);
+			return {};
+		}
+	}
+
+	private loadProjectSettings(): Settings {
+		if (!this.projectSettingsPath || !existsSync(this.projectSettingsPath)) {
 			return {};
 		}
 
 		try {
-			const content = readFileSync(this.settingsPath, "utf-8");
+			const content = readFileSync(this.projectSettingsPath, "utf-8");
 			return JSON.parse(content);
 		} catch (error) {
-			console.error(`Warning: Could not read settings file: ${error}`);
+			console.error(`Warning: Could not read project settings file: ${error}`);
 			return {};
 		}
+	}
+
+	/** Apply additional overrides on top of current settings */
+	applyOverrides(overrides: Partial<Settings>): void {
+		this.settings = deepMergeSettings(this.settings, overrides);
 	}
 
 	private save(): void {
+		if (!this.persist || !this.settingsPath) return;
+
 		try {
-			// Ensure directory exists
 			const dir = dirname(this.settingsPath);
 			if (!existsSync(dir)) {
 				mkdirSync(dir, { recursive: true });
 			}
 
-			writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
+			// Save only global settings (project settings are read-only)
+			writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
+
+			// Re-merge project settings into active settings
+			const projectSettings = this.loadProjectSettings();
+			this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 		} catch (error) {
 			console.error(`Warning: Could not save settings file: ${error}`);
 		}
@@ -92,7 +171,7 @@ export class SettingsManager {
 	}
 
 	setLastChangelogVersion(version: string): void {
-		this.settings.lastChangelogVersion = version;
+		this.globalSettings.lastChangelogVersion = version;
 		this.save();
 	}
 
@@ -105,18 +184,18 @@ export class SettingsManager {
 	}
 
 	setDefaultProvider(provider: string): void {
-		this.settings.defaultProvider = provider;
+		this.globalSettings.defaultProvider = provider;
 		this.save();
 	}
 
 	setDefaultModel(modelId: string): void {
-		this.settings.defaultModel = modelId;
+		this.globalSettings.defaultModel = modelId;
 		this.save();
 	}
 
 	setDefaultModelAndProvider(provider: string, modelId: string): void {
-		this.settings.defaultProvider = provider;
-		this.settings.defaultModel = modelId;
+		this.globalSettings.defaultProvider = provider;
+		this.globalSettings.defaultModel = modelId;
 		this.save();
 	}
 
@@ -125,7 +204,7 @@ export class SettingsManager {
 	}
 
 	setQueueMode(mode: "all" | "one-at-a-time"): void {
-		this.settings.queueMode = mode;
+		this.globalSettings.queueMode = mode;
 		this.save();
 	}
 
@@ -134,7 +213,7 @@ export class SettingsManager {
 	}
 
 	setTheme(theme: string): void {
-		this.settings.theme = theme;
+		this.globalSettings.theme = theme;
 		this.save();
 	}
 
@@ -143,7 +222,7 @@ export class SettingsManager {
 	}
 
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
-		this.settings.defaultThinkingLevel = level;
+		this.globalSettings.defaultThinkingLevel = level;
 		this.save();
 	}
 
@@ -152,10 +231,10 @@ export class SettingsManager {
 	}
 
 	setCompactionEnabled(enabled: boolean): void {
-		if (!this.settings.compaction) {
-			this.settings.compaction = {};
+		if (!this.globalSettings.compaction) {
+			this.globalSettings.compaction = {};
 		}
-		this.settings.compaction.enabled = enabled;
+		this.globalSettings.compaction.enabled = enabled;
 		this.save();
 	}
 
@@ -180,10 +259,10 @@ export class SettingsManager {
 	}
 
 	setRetryEnabled(enabled: boolean): void {
-		if (!this.settings.retry) {
-			this.settings.retry = {};
+		if (!this.globalSettings.retry) {
+			this.globalSettings.retry = {};
 		}
-		this.settings.retry.enabled = enabled;
+		this.globalSettings.retry.enabled = enabled;
 		this.save();
 	}
 
@@ -200,7 +279,7 @@ export class SettingsManager {
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
-		this.settings.hideThinkingBlock = hide;
+		this.globalSettings.hideThinkingBlock = hide;
 		this.save();
 	}
 
@@ -209,7 +288,7 @@ export class SettingsManager {
 	}
 
 	setShellPath(path: string | undefined): void {
-		this.settings.shellPath = path;
+		this.globalSettings.shellPath = path;
 		this.save();
 	}
 
@@ -218,7 +297,7 @@ export class SettingsManager {
 	}
 
 	setCollapseChangelog(collapse: boolean): void {
-		this.settings.collapseChangelog = collapse;
+		this.globalSettings.collapseChangelog = collapse;
 		this.save();
 	}
 
@@ -227,7 +306,7 @@ export class SettingsManager {
 	}
 
 	setHookPaths(paths: string[]): void {
-		this.settings.hooks = paths;
+		this.globalSettings.hooks = paths;
 		this.save();
 	}
 
@@ -236,7 +315,7 @@ export class SettingsManager {
 	}
 
 	setHookTimeout(timeout: number): void {
-		this.settings.hookTimeout = timeout;
+		this.globalSettings.hookTimeout = timeout;
 		this.save();
 	}
 
@@ -245,7 +324,7 @@ export class SettingsManager {
 	}
 
 	setCustomToolPaths(paths: string[]): void {
-		this.settings.customTools = paths;
+		this.globalSettings.customTools = paths;
 		this.save();
 	}
 
@@ -254,10 +333,10 @@ export class SettingsManager {
 	}
 
 	setSkillsEnabled(enabled: boolean): void {
-		if (!this.settings.skills) {
-			this.settings.skills = {};
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
 		}
-		this.settings.skills.enabled = enabled;
+		this.globalSettings.skills.enabled = enabled;
 		this.save();
 	}
 
@@ -280,10 +359,10 @@ export class SettingsManager {
 	}
 
 	setShowImages(show: boolean): void {
-		if (!this.settings.terminal) {
-			this.settings.terminal = {};
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
 		}
-		this.settings.terminal.showImages = show;
+		this.globalSettings.terminal.showImages = show;
 		this.save();
 	}
 }

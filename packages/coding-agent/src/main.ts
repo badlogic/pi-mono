@@ -288,7 +288,7 @@ export async function main(args: string[]) {
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 
-	const settingsManager = new SettingsManager();
+	const settingsManager = SettingsManager.create(cwd);
 	initTheme(settingsManager.getTheme(), isInteractive);
 
 	let scopedModels: ScopedModel[] = [];
