@@ -11,27 +11,17 @@ import {
 	Text,
 	truncateToWidth,
 } from "@mariozechner/pi-tui";
-import type { SessionManager } from "../../../core/session-manager.js";
+import type { SessionInfo } from "../../../core/session-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-
-interface SessionItem {
-	path: string;
-	id: string;
-	created: Date;
-	modified: Date;
-	messageCount: number;
-	firstMessage: string;
-	allMessagesText: string;
-}
 
 /**
  * Custom session list component with multi-line items and search
  */
 class SessionList implements Component {
-	private allSessions: SessionItem[] = [];
-	private filteredSessions: SessionItem[] = [];
+	private allSessions: SessionInfo[] = [];
+	private filteredSessions: SessionInfo[] = [];
 	private selectedIndex: number = 0;
 	private searchInput: Input;
 	public onSelect?: (sessionPath: string) => void;
@@ -39,7 +29,7 @@ class SessionList implements Component {
 	public onExit: () => void = () => {};
 	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
-	constructor(sessions: SessionItem[]) {
+	constructor(sessions: SessionInfo[]) {
 		this.allSessions = sessions;
 		this.filteredSessions = sessions;
 		this.searchInput = new Input();
@@ -176,15 +166,12 @@ export class SessionSelectorComponent extends Container {
 	private sessionList: SessionList;
 
 	constructor(
-		sessionManager: SessionManager,
+		sessions: SessionInfo[],
 		onSelect: (sessionPath: string) => void,
 		onCancel: () => void,
 		onExit: () => void,
 	) {
 		super();
-
-		// Load all sessions
-		const sessions = sessionManager.loadAllSessions();
 
 		// Add header
 		this.addChild(new Spacer(1));

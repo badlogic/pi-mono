@@ -32,7 +32,12 @@ import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import { invalidateOAuthCache } from "../../core/model-config.js";
 import { listOAuthProviders, login, logout, type OAuthProvider } from "../../core/oauth/index.js";
-import { getLatestCompactionEntry, SUMMARY_PREFIX, SUMMARY_SUFFIX } from "../../core/session-manager.js";
+import {
+	getLatestCompactionEntry,
+	SessionManager,
+	SUMMARY_PREFIX,
+	SUMMARY_SUFFIX,
+} from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -1513,8 +1518,9 @@ export class InteractiveMode {
 
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
+			const sessions = SessionManager.list(this.sessionManager.getCwd());
 			const selector = new SessionSelectorComponent(
-				this.sessionManager,
+				sessions,
 				async (sessionPath) => {
 					done();
 					await this.handleResumeSession(sessionPath);

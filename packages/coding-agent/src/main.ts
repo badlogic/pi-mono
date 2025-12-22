@@ -29,7 +29,6 @@ import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js"
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
-/** Configure OAuth storage to use the coding-agent's configurable path */
 function configureOAuthStorage(): void {
 	const oauthPath = getOAuthPath();
 
@@ -55,7 +54,6 @@ function configureOAuthStorage(): void {
 	});
 }
 
-/** Check npm registry for new version (non-blocking) */
 async function checkForNewVersion(currentVersion: string): Promise<string | null> {
 	try {
 		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
@@ -74,7 +72,6 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 	}
 }
 
-/** Run interactive mode with TUI */
 async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
@@ -133,7 +130,6 @@ async function runInteractiveMode(
 	}
 }
 
-/** Prepare initial message from @file arguments */
 async function prepareInitialMessage(parsed: Args): Promise<{
 	initialMessage?: string;
 	initialAttachments?: Attachment[];
@@ -158,7 +154,6 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 	};
 }
 
-/** Get changelog markdown to display (only for new sessions with updates) */
 function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | null {
 	if (parsed.continue || parsed.resume) {
 		return null;
@@ -184,9 +179,31 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 	return null;
 }
 
-/** Build CreateAgentSessionOptions from CLI args */
-async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): Promise<CreateAgentSessionOptions> {
+function createSessionManager(parsed: Args, cwd: string): SessionManager | null {
+	if (parsed.noSession) {
+		return SessionManager.inMemory();
+	}
+	if (parsed.session) {
+		return SessionManager.open(parsed.session);
+	}
+	if (parsed.continue) {
+		return SessionManager.continueRecent(cwd);
+	}
+	// --resume is handled separately (needs picker UI)
+	// Default case (new session) returns null, SDK will create one
+	return null;
+}
+
+function buildSessionOptions(
+	parsed: Args,
+	scopedModels: ScopedModel[],
+	sessionManager: SessionManager | null,
+): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
+
+	if (sessionManager) {
+		options.sessionManager = sessionManager;
+	}
 
 	// Model from CLI
 	if (parsed.provider && parsed.model) {
@@ -201,7 +218,6 @@ async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): P
 		}
 		options.model = model;
 	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		// Use first scoped model
 		options.model = scopedModels[0].model;
 	}
 
@@ -251,23 +267,10 @@ async function buildSessionOptions(parsed: Args, scopedModels: ScopedModel[]): P
 		options.additionalCustomToolPaths = parsed.customTools;
 	}
 
-	// Session handling
-	if (parsed.noSession) {
-		options.sessionFile = false;
-	} else if (parsed.session) {
-		options.sessionFile = parsed.session;
-	}
-
-	// Continue session
-	if (parsed.continue && !parsed.resume) {
-		options.continueSession = true;
-	}
-
 	return options;
 }
 
 export async function main(args: string[]) {
-	// Configure OAuth storage first
 	configureOAuthStorage();
 
 	const parsed = parseArgs(args);
@@ -306,40 +309,38 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
+	const cwd = process.cwd();
 	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 
-	// Initialize theme early
 	const settingsManager = new SettingsManager();
 	initTheme(settingsManager.getTheme(), isInteractive);
 
-	// Resolve scoped models from --models flag
 	let scopedModels: ScopedModel[] = [];
 	if (parsed.models && parsed.models.length > 0) {
 		scopedModels = await resolveModelScope(parsed.models);
 	}
 
+	// Create session manager based on CLI flags
+	let sessionManager = createSessionManager(parsed, cwd);
+
 	// Handle --resume: show session picker
-	let sessionFileFromResume: string | undefined;
 	if (parsed.resume) {
-		const tempSessionManager = new SessionManager(false, undefined);
-		const selectedSession = await selectSession(tempSessionManager);
-		if (!selectedSession) {
+		const sessions = SessionManager.list(cwd);
+		if (sessions.length === 0) {
+			console.log(chalk.dim("No sessions found"));
+			return;
+		}
+		const selectedPath = await selectSession(sessions);
+		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
 			return;
 		}
-		sessionFileFromResume = selectedSession;
+		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = await buildSessionOptions(parsed, scopedModels);
-
-	// Apply resume session file
-	if (sessionFileFromResume) {
-		sessionOptions.sessionFile = sessionFileFromResume;
-		sessionOptions.restoreFromSession = true;
-	}
-
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager);
 	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
 
 	if (!isInteractive && !session.model) {
@@ -369,7 +370,6 @@ export async function main(args: string[]) {
 		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
 		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
 
-		// Show model scope if provided
 		if (scopedModels.length > 0) {
 			const modelList = scopedModels
 				.map((sm) => {

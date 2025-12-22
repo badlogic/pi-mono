@@ -117,6 +117,7 @@ export {
 	parseSessionEntries,
 	type SessionEntry,
 	type SessionHeader,
+	type SessionInfo,
 	SessionManager,
 	type SessionMessageEntry,
 	SUMMARY_PREFIX,

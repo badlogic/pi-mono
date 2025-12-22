@@ -106,12 +106,8 @@ export interface CreateAgentSessionOptions {
 	/** Slash commands. Default: discovered from cwd/.pi/commands/ + agentDir/commands/ */
 	slashCommands?: FileSlashCommand[];
 
-	/** Session file path, or false to disable persistence. Default: auto in agentDir/sessions/ */
-	sessionFile?: string | false;
-	/** Continue most recent session for cwd. */
-	continueSession?: boolean;
-	/** Restore model/thinking from session (default: true when continuing). */
-	restoreFromSession?: boolean;
+	/** Session manager. Default: SessionManager.create(cwd) */
+	sessionManager?: SessionManager;
 
 	/** Settings overrides (merged with agentDir/settings.json) */
 	settings?: Partial<Settings>;
@@ -411,7 +407,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
  *   tools: [readTool, bashTool],
  *   hooks: [],
  *   skills: [],
- *   sessionFile: false,
+ *   sessionManager: SessionManager.inMemory(),
  * });
  * ```
  */
@@ -420,33 +416,26 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
 
 	const settingsManager = new SettingsManager(agentDir);
+	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
 
-	const sessionManager = new SessionManager(options.continueSession ?? false, undefined);
-	if (options.sessionFile === false) {
-		sessionManager.disable();
-	} else if (typeof options.sessionFile === "string") {
-		sessionManager.setSessionFile(options.sessionFile);
-	}
+	// Check if session has existing data to restore
+	const existingSession = sessionManager.loadSession();
+	const hasExistingSession = existingSession.messages.length > 0;
 
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
-	const shouldRestoreFromSession = options.restoreFromSession ?? (options.continueSession || options.sessionFile);
 
-	// If continuing/restoring, try to get model from session first
-	if (!model && shouldRestoreFromSession) {
-		const savedModel = sessionManager.loadModel();
-		if (savedModel) {
-			const restoredModel = findModel(savedModel.provider, savedModel.modelId);
-			if (restoredModel) {
-				const key = await getApiKeyForModel(restoredModel);
-				if (key) {
-					model = restoredModel;
-				}
+	// If session has data, try to restore model from it
+	if (!model && hasExistingSession && existingSession.model) {
+		const restoredModel = findModel(existingSession.model.provider, existingSession.model.modelId);
+		if (restoredModel) {
+			const key = await getApiKeyForModel(restoredModel);
+			if (key) {
+				model = restoredModel;
 			}
-			// If we couldn't restore, we'll fall back below and set fallback message
-			if (!model) {
-				modelFallbackMessage = `Could not restore model ${savedModel.provider}/${savedModel.modelId}`;
-			}
+		}
+		if (!model) {
+			modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
 		}
 	}
 
@@ -482,12 +471,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	let thinkingLevel = options.thinkingLevel;
 
-	// If continuing/restoring, try to get thinking level from session
-	if (thinkingLevel === undefined && shouldRestoreFromSession) {
-		const savedThinking = sessionManager.loadThinkingLevel();
-		if (savedThinking) {
-			thinkingLevel = savedThinking as ThinkingLevel;
-		}
+	// If session has data, restore thinking level from it
+	if (thinkingLevel === undefined && hasExistingSession) {
+		thinkingLevel = existingSession.thinkingLevel as ThinkingLevel;
 	}
 
 	// Fall back to settings default
@@ -595,11 +581,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}),
 	});
 
-	if (shouldRestoreFromSession) {
-		const messages = sessionManager.loadMessages();
-		if (messages.length > 0) {
-			agent.replaceMessages(messages);
-		}
+	// Restore messages if session has existing data
+	if (hasExistingSession) {
+		agent.replaceMessages(existingSession.messages);
 	}
 
 	const session = new AgentSession({
