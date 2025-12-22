@@ -177,6 +177,18 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const suggestions = this.getFileSuggestions(pathMatch);
 			if (suggestions.length === 0) return null;
 
+			// Check if we have an exact match that is a directory
+			// In that case, we might want to return suggestions for the directory content instead
+			// But only if the prefix ends with /
+			if (suggestions.length === 1 && suggestions[0]?.value === pathMatch && !pathMatch.endsWith("/")) {
+				// Exact match found (e.g. user typed "src" and "src/" is the only match)
+				// We still return it so user can select it and add /
+				return {
+					items: suggestions,
+					prefix: pathMatch,
+				};
+			}
+
 			return {
 				items: suggestions,
 				prefix: pathMatch,
@@ -434,15 +446,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 				suggestions.push({
 					value: isDirectory ? `${relativePath}/` : relativePath,
-					label: name,
-					description: isDirectory ? "directory" : "file",
+					label: name + (isDirectory ? "/" : ""),
 				});
 			}
 
 			// Sort directories first, then alphabetically
 			suggestions.sort((a, b) => {
-				const aIsDir = a.description === "directory";
-				const bIsDir = b.description === "directory";
+				const aIsDir = a.value.endsWith("/");
+				const bIsDir = b.value.endsWith("/");
 				if (aIsDir && !bIsDir) return -1;
 				if (!aIsDir && bIsDir) return 1;
 				return a.label.localeCompare(b.label);
