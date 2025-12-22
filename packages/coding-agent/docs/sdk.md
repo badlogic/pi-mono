@@ -254,6 +254,8 @@ If no model is provided:
 2. Uses default from settings
 3. Falls back to first available model
 
+> See [examples/sdk/02-custom-model.ts](../examples/sdk/02-custom-model.ts)
+
 ### API Keys
 
 ```typescript
@@ -282,6 +284,8 @@ const { session } = await createAgentSession({
 });
 ```
 
+> See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
+
 ### System Prompt
 
 ```typescript
@@ -295,6 +299,8 @@ const { session } = await createAgentSession({
   },
 });
 ```
+
+> See [examples/sdk/03-custom-prompt.ts](../examples/sdk/03-custom-prompt.ts)
 
 ### Tools
 
@@ -316,6 +322,8 @@ const { session } = await createAgentSession({
   tools: [readTool, bashTool, grepTool],
 });
 ```
+
+> See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
 ### Custom Tools
 
@@ -353,6 +361,8 @@ const { session } = await createAgentSession({
   additionalCustomToolPaths: ["/extra/tools"],
 });
 ```
+
+> See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
 ### Hooks
 
@@ -397,6 +407,8 @@ const { session } = await createAgentSession({
 });
 ```
 
+> See [examples/sdk/06-hooks.ts](../examples/sdk/06-hooks.ts)
+
 ### Skills
 
 ```typescript
@@ -431,6 +443,8 @@ const skills = discoverSkills(process.cwd(), undefined, {
 });
 ```
 
+> See [examples/sdk/04-skills.ts](../examples/sdk/04-skills.ts)
+
 ### Context Files
 
 ```typescript
@@ -456,6 +470,8 @@ const { session } = await createAgentSession({
 });
 ```
 
+> See [examples/sdk/07-context-files.ts](../examples/sdk/07-context-files.ts)
+
 ### Slash Commands
 
 ```typescript
@@ -474,6 +490,8 @@ const { session } = await createAgentSession({
   slashCommands: [...discovered, customCommand],
 });
 ```
+
+> See [examples/sdk/08-slash-commands.ts](../examples/sdk/08-slash-commands.ts)
 
 ### Session Management
 
@@ -516,6 +534,8 @@ const { session } = await createAgentSession({
 });
 ```
 
+> See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts)
+
 ### Settings Management
 
 ```typescript
@@ -557,6 +577,8 @@ Settings load from two locations and merge:
 2. Project: `<cwd>/.pi/settings.json`
 
 Project overrides global. Nested objects merge keys. Setters only modify global (project is read-only for version control).
+
+> See [examples/sdk/10-settings.ts](../examples/sdk/10-settings.ts)
 
 ## Discovery Functions
 
