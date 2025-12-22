@@ -2,7 +2,7 @@ import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir } from "../config.js";
+import { getAgentDir as getDefaultAgentDir } from "../config.js";
 
 function uuidv4(): string {
 	const bytes = randomBytes(16);
@@ -165,10 +165,9 @@ export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 	return { messages, thinkingLevel, model };
 }
 
-function getSessionDirectory(cwd: string): string {
+function getSessionDirectory(cwd: string, agentDir: string): string {
 	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-	const configDir = getAgentDir();
-	const sessionDir = join(configDir, "sessions", safePath);
+	const sessionDir = join(agentDir, "sessions", safePath);
 	if (!existsSync(sessionDir)) {
 		mkdirSync(sessionDir, { recursive: true });
 	}
@@ -238,9 +237,9 @@ export class SessionManager {
 	private pendingEntries: SessionEntry[] = [];
 	private inMemoryEntries: SessionEntry[] = [];
 
-	private constructor(cwd: string, sessionFile: string | null, enabled: boolean) {
+	private constructor(cwd: string, agentDir: string, sessionFile: string | null, enabled: boolean) {
 		this.cwd = cwd;
-		this.sessionDir = getSessionDirectory(cwd);
+		this.sessionDir = getSessionDirectory(cwd, agentDir);
 		this.enabled = enabled;
 
 		if (sessionFile) {
@@ -259,37 +258,37 @@ export class SessionManager {
 	}
 
 	/** Create a new session for the given directory */
-	static create(cwd: string): SessionManager {
-		return new SessionManager(cwd, null, true);
+	static create(cwd: string, agentDir: string = getDefaultAgentDir()): SessionManager {
+		return new SessionManager(cwd, agentDir, null, true);
 	}
 
 	/** Open a specific session file */
-	static open(path: string): SessionManager {
+	static open(path: string, agentDir: string = getDefaultAgentDir()): SessionManager {
 		// Extract cwd from session header if possible, otherwise use process.cwd()
 		const entries = loadEntriesFromFile(path);
 		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 		const cwd = header?.cwd ?? process.cwd();
-		return new SessionManager(cwd, path, true);
+		return new SessionManager(cwd, agentDir, path, true);
 	}
 
 	/** Continue the most recent session for the given directory, or create new if none */
-	static continueRecent(cwd: string): SessionManager {
-		const sessionDir = getSessionDirectory(cwd);
+	static continueRecent(cwd: string, agentDir: string = getDefaultAgentDir()): SessionManager {
+		const sessionDir = getSessionDirectory(cwd, agentDir);
 		const mostRecent = findMostRecentSession(sessionDir);
 		if (mostRecent) {
-			return new SessionManager(cwd, mostRecent, true);
+			return new SessionManager(cwd, agentDir, mostRecent, true);
 		}
-		return new SessionManager(cwd, null, true);
+		return new SessionManager(cwd, agentDir, null, true);
 	}
 
 	/** Create an in-memory session (no file persistence) */
 	static inMemory(): SessionManager {
-		return new SessionManager(process.cwd(), null, false);
+		return new SessionManager(process.cwd(), getDefaultAgentDir(), null, false);
 	}
 
 	/** List all sessions for a directory */
-	static list(cwd: string): SessionInfo[] {
-		const sessionDir = getSessionDirectory(cwd);
+	static list(cwd: string, agentDir: string = getDefaultAgentDir()): SessionInfo[] {
+		const sessionDir = getSessionDirectory(cwd, agentDir);
 		const sessions: SessionInfo[] = [];
 
 		try {
