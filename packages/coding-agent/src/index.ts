@@ -85,11 +85,12 @@ export {
 } from "./core/oauth/index.js";
 // SDK for programmatic usage
 export {
-	allBuiltInTools,
 	type BuildSystemPromptOptions,
 	buildSystemPrompt,
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
+	// Configuration
+	configureOAuthStorage,
 	// Factory
 	createAgentSession,
 	// Helpers

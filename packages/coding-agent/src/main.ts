@@ -6,21 +6,20 @@
  */
 
 import type { Attachment } from "@mariozechner/pi-agent-core";
-import { setOAuthStorage, supportsXhigh } from "@mariozechner/pi-ai";
+import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { existsSync, readFileSync } from "fs";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getModelsPath, getOAuthPath, VERSION } from "./config.js";
+import { getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
 import { findModel } from "./core/model-config.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
-import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
+import { type CreateAgentSessionOptions, configureOAuthStorage, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { allTools } from "./core/tools/index.js";
@@ -28,31 +27,6 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
-
-function configureOAuthStorage(): void {
-	const oauthPath = getOAuthPath();
-
-	setOAuthStorage({
-		load: () => {
-			if (!existsSync(oauthPath)) {
-				return {};
-			}
-			try {
-				return JSON.parse(readFileSync(oauthPath, "utf-8"));
-			} catch {
-				return {};
-			}
-		},
-		save: (storage) => {
-			const dir = dirname(oauthPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true, mode: 0o700 });
-			}
-			writeFileSync(oauthPath, JSON.stringify(storage, null, 2), "utf-8");
-			chmodSync(oauthPath, 0o600);
-		},
-	});
-}
 
 async function checkForNewVersion(currentVersion: string): Promise<string | null> {
 	try {

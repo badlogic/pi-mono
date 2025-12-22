@@ -30,7 +30,9 @@
  */
 
 import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import { type Model, setOAuthStorage } from "@mariozechner/pi-ai";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./custom-tools/index.js";
@@ -154,14 +156,42 @@ function getDefaultAgentDir(): string {
 	return getAgentDir();
 }
 
+/**
+ * Configure OAuth storage to use the specified agent directory.
+ * Must be called before using OAuth-based authentication.
+ */
+export function configureOAuthStorage(agentDir: string = getDefaultAgentDir()): void {
+	const oauthPath = join(agentDir, "oauth.json");
+
+	setOAuthStorage({
+		load: () => {
+			if (!existsSync(oauthPath)) {
+				return {};
+			}
+			try {
+				return JSON.parse(readFileSync(oauthPath, "utf-8"));
+			} catch {
+				return {};
+			}
+		},
+		save: (storage) => {
+			const dir = dirname(oauthPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true, mode: 0o700 });
+			}
+			writeFileSync(oauthPath, JSON.stringify(storage, null, 2), "utf-8");
+			chmodSync(oauthPath, 0o600);
+		},
+	});
+}
+
 // Discovery Functions
 
 /**
  * Get all models (built-in + custom from models.json).
- * Note: Uses default agentDir for models.json location.
  */
-export function discoverModels(): Model<any>[] {
-	const { models, error } = loadAndMergeModels();
+export function discoverModels(agentDir: string = getDefaultAgentDir()): Model<any>[] {
+	const { models, error } = loadAndMergeModels(agentDir);
 	if (error) {
 		throw new Error(error);
 	}
@@ -170,10 +200,9 @@ export function discoverModels(): Model<any>[] {
 
 /**
  * Get models that have valid API keys available.
- * Note: Uses default agentDir for models.json and oauth.json location.
  */
-export async function discoverAvailableModels(): Promise<Model<any>[]> {
-	const { models, error } = await getAvailableModels();
+export async function discoverAvailableModels(agentDir: string = getDefaultAgentDir()): Promise<Model<any>[]> {
+	const { models, error } = await getAvailableModels(agentDir);
 	if (error) {
 		throw new Error(error);
 	}
@@ -182,11 +211,14 @@ export async function discoverAvailableModels(): Promise<Model<any>[]> {
 
 /**
  * Find a model by provider and ID.
- * Note: Uses default agentDir for models.json location.
  * @returns The model, or null if not found
  */
-export function findModel(provider: string, modelId: string): Model<any> | null {
-	const { model, error } = findModelInternal(provider, modelId);
+export function findModel(
+	provider: string,
+	modelId: string,
+	agentDir: string = getDefaultAgentDir(),
+): Model<any> | null {
+	const { model, error } = findModelInternal(provider, modelId, agentDir);
 	if (error) {
 		throw new Error(error);
 	}
@@ -276,7 +308,6 @@ export function discoverSlashCommands(cwd?: string, agentDir?: string): FileSlas
 /**
  * Create the default API key resolver.
  * Checks custom providers (models.json), OAuth, and environment variables.
- * Note: Uses default agentDir for models.json and oauth.json location.
  */
 export function defaultGetApiKey(): (model: Model<any>) => Promise<string | undefined> {
 	return getApiKeyForModel;
@@ -414,6 +445,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
+
+	// Configure OAuth storage for this agentDir
+	configureOAuthStorage(agentDir);
 
 	const settingsManager = new SettingsManager(agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
