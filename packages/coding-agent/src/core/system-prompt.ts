@@ -242,7 +242,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// Read before edit guideline
 	if (hasRead && hasEdit) {
-		guidelinesList.push("Use read to examine files before editing");
+		guidelinesList.push("Use read to examine files before editing. You must use this tool instead of cat or sed.");
 	}
 
 	// Edit guideline

@@ -117,51 +117,55 @@ user sends another prompt ◄─────────────────
 
 user branches (/branch)
   │
-  ├─► branch (BEFORE branch, can control)
-  └─► session (reason: "switch", AFTER branch)
+  ├─► session (reason: "before_branch", can cancel)
+  └─► session (reason: "branch", AFTER branch)
 
 user switches session (/session)
   │
-  └─► session (reason: "switch")
+  ├─► session (reason: "before_switch", can cancel)
+  └─► session (reason: "switch", AFTER switch)
 
 user clears session (/clear)
   │
-  └─► session (reason: "clear")
+  ├─► session (reason: "before_clear", can cancel)
+  └─► session (reason: "clear", AFTER clear)
+
+user exits (double Ctrl+C or Ctrl+D)
+  │
+  └─► session (reason: "shutdown")
 ```
 
 A **turn** is one LLM response plus any tool calls. Complex tasks loop through multiple turns until the LLM responds without calling tools.
 
 ### session
 
-Fired on startup and when session changes.
+Fired on session lifecycle events. The `before_*` variants fire before the action and can be cancelled by returning `{ cancel: true }`.
 
 ```typescript
 pi.on("session", async (event, ctx) => {
   // event.entries: SessionEntry[] - all session entries
   // event.sessionFile: string | null - current session file (null with --no-session)
   // event.previousSessionFile: string | null - previous session file
-  // event.reason: "start" | "switch" | "clear"
+  // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" | 
+  //               "before_branch" | "branch" | "shutdown"
+  // event.targetTurnIndex: number - only for "before_branch" and "branch"
+
+  // Cancel a before_* action:
+  if (event.reason === "before_clear") {
+    return { cancel: true };
+  }
+  // No return needed if not cancelling
 });
 ```
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `switch`: User switched sessions (`/session`) or branched (`/branch`)
-- `clear`: User cleared the session (`/clear`)
+- `before_switch` / `switch`: User switched sessions (`/session`)
+- `before_clear` / `clear`: User cleared the session (`/clear`)
+- `before_branch` / `branch`: User branched the session (`/branch`)
+- `shutdown`: Process is exiting (double Ctrl+C, Ctrl+D, or SIGTERM)
 
-### branch
-
-Fired BEFORE a branch happens. Can control branch behavior.
-
-```typescript
-pi.on("branch", async (event, ctx) => {
-  // event.targetTurnIndex: number
-  // event.entries: SessionEntry[]
-  return { skipConversationRestore: true }; // or undefined
-});
-```
-
-Note: After branch completes, a `session` event fires with `reason: "switch"`.
+For `before_branch` and `branch` events, `event.targetTurnIndex` contains the entry index being branched from.
 
 ### agent_start / agent_end
 
@@ -544,9 +548,12 @@ export default function (pi: HookAPI) {
     }
   });
 
-  pi.on("branch", async (event, ctx) => {
+  pi.on("session", async (event, ctx) => {
+    // Only handle before_branch events
+    if (event.reason !== "before_branch") return;
+
     const ref = checkpoints.get(event.targetTurnIndex);
-    if (!ref) return undefined;
+    if (!ref) return;
 
     const choice = await ctx.ui.select("Restore code state?", [
       "Yes, restore code to that point",
@@ -557,8 +564,6 @@ export default function (pi: HookAPI) {
       await ctx.exec("git", ["stash", "apply", ref]);
       ctx.ui.notify("Code restored to checkpoint", "info");
     }
-
-    return undefined;
   });
 
   pi.on("agent_end", async () => {
@@ -712,17 +717,26 @@ User sends prompt:
 
 Branch:
   -> AgentSession.branch()
-     -> hookRunner.emit({ type: "branch", ... })  # BEFORE branch
-     -> [branch happens]
-     -> hookRunner.emit({ type: "session", reason: "switch", ... })  # AFTER
+     -> hookRunner.emit({ type: "session", reason: "before_branch", ... })  # can cancel
+     -> [if not cancelled: branch happens]
+     -> hookRunner.emit({ type: "session", reason: "branch", ... })
 
 Session switch:
   -> AgentSession.switchSession()
+     -> hookRunner.emit({ type: "session", reason: "before_switch", ... })  # can cancel
+     -> [if not cancelled: switch happens]
      -> hookRunner.emit({ type: "session", reason: "switch", ... })
 
 Clear:
   -> AgentSession.reset()
+     -> hookRunner.emit({ type: "session", reason: "before_clear", ... })  # can cancel
+     -> [if not cancelled: clear happens]
      -> hookRunner.emit({ type: "session", reason: "clear", ... })
+
+Shutdown (interactive mode):
+  -> handleCtrlC() or handleCtrlD()
+     -> hookRunner.emit({ type: "session", reason: "shutdown", ... })
+     -> process.exit(0)
 ```
 
 ## UI Context by Mode

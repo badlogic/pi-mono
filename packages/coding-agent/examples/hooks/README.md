@@ -16,6 +16,15 @@ Blocks writes to protected paths (.env, .git/, node_modules/).
 ### file-trigger.ts
 Watches a trigger file and injects its contents into the conversation. Useful for external systems (CI, file watchers, webhooks) to send messages to the agent.
 
+### confirm-destructive.ts
+Prompts for confirmation before destructive session actions (clear, switch, branch). Demonstrates how to cancel `before_*` session events.
+
+### dirty-repo-guard.ts
+Prevents session changes when there are uncommitted git changes. Blocks clear/switch/branch until you commit.
+
+### auto-commit-on-exit.ts
+Automatically commits changes when the agent exits (shutdown event). Uses the last assistant message to generate a commit message.
+
 ## Usage
 
 ```bash
@@ -38,8 +47,16 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session", async (event, ctx) => {
-    // event.reason: "start" | "switch" | "clear"
+    // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" |
+    //               "before_branch" | "branch" | "shutdown"
+    // event.targetTurnIndex: number (only for before_branch/branch)
     // ctx.ui, ctx.exec, ctx.cwd, ctx.sessionFile, ctx.hasUI
+
+    // Cancel before_* actions:
+    if (event.reason === "before_clear") {
+      return { cancel: true };
+    }
+    return undefined;
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -58,8 +75,7 @@ export default function (pi: HookAPI) {
 ```
 
 **Available events:**
-- `session` - startup, session switch, clear
-- `branch` - before branching (can skip conversation restore)
+- `session` - lifecycle events with before/after variants (can cancel before_* actions)
 - `agent_start` / `agent_end` - per user prompt
 - `turn_start` / `turn_end` - per LLM turn
 - `tool_call` - before tool execution (can block)

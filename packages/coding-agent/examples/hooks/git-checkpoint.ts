@@ -19,13 +19,16 @@ export default function (pi: HookAPI) {
 		}
 	});
 
-	pi.on("branch", async (event, ctx) => {
+	pi.on("session", async (event, ctx) => {
+		// Only handle before_branch events
+		if (event.reason !== "before_branch") return;
+
 		const ref = checkpoints.get(event.targetTurnIndex);
-		if (!ref) return undefined;
+		if (!ref) return;
 
 		if (!ctx.hasUI) {
 			// In non-interactive mode, don't restore automatically
-			return undefined;
+			return;
 		}
 
 		const choice = await ctx.ui.select("Restore code state?", [
@@ -37,8 +40,6 @@ export default function (pi: HookAPI) {
 			await ctx.exec("git", ["stash", "apply", ref]);
 			ctx.ui.notify("Code restored to checkpoint", "info");
 		}
-
-		return undefined;
 	});
 
 	pi.on("agent_end", async () => {

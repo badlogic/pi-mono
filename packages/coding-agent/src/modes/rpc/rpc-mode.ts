@@ -205,8 +205,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "reset": {
-				await session.reset();
-				return success(id, "reset");
+				const cancelled = !(await session.reset());
+				return success(id, "reset", { cancelled });
 			}
 
 			// =================================================================
@@ -339,13 +339,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "switch_session": {
-				await session.switchSession(command.sessionPath);
-				return success(id, "switch_session");
+				const cancelled = !(await session.switchSession(command.sessionPath));
+				return success(id, "switch_session", { cancelled });
 			}
 
 			case "branch": {
 				const result = await session.branch(command.entryIndex);
-				return success(id, "branch", { text: result.selectedText, skipped: result.skipped });
+				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });
 			}
 
 			case "get_branch_messages": {

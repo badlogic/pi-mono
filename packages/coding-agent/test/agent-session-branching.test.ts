@@ -86,7 +86,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		// Branch from the first message
 		const result = await session.branch(userMessages[0].entryIndex);
 		expect(result.selectedText).toBe("Say hello");
-		expect(result.skipped).toBe(false);
+		expect(result.cancelled).toBe(false);
 
 		// After branching, conversation should be empty (branched before the first message)
 		expect(session.messages.length).toBe(0);
@@ -116,7 +116,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		// Branch from the first message
 		const result = await session.branch(userMessages[0].entryIndex);
 		expect(result.selectedText).toBe("Say hi");
-		expect(result.skipped).toBe(false);
+		expect(result.cancelled).toBe(false);
 
 		// After branching, conversation should be empty
 		expect(session.messages.length).toBe(0);

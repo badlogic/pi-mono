@@ -1162,8 +1162,7 @@ export class InteractiveMode {
 	private handleCtrlC(): void {
 		const now = Date.now();
 		if (now - this.lastSigintTime < 500) {
-			this.stop();
-			process.exit(0);
+			void this.shutdown();
 		} else {
 			this.clearEditor();
 			this.lastSigintTime = now;
@@ -1172,6 +1171,27 @@ export class InteractiveMode {
 
 	private handleCtrlD(): void {
 		// Only called when editor is empty (enforced by CustomEditor)
+		void this.shutdown();
+	}
+
+	/**
+	 * Gracefully shutdown the agent.
+	 * Emits shutdown event to hooks, then exits.
+	 */
+	private async shutdown(): Promise<void> {
+		// Emit shutdown event to hooks
+		const hookRunner = this.session.hookRunner;
+		if (hookRunner?.hasHandlers("session")) {
+			const entries = this.sessionManager.loadEntries();
+			await hookRunner.emit({
+				type: "session",
+				entries,
+				sessionFile: this.session.sessionFile,
+				previousSessionFile: null,
+				reason: "shutdown",
+			});
+		}
+
 		this.stop();
 		process.exit(0);
 	}
@@ -1496,8 +1516,8 @@ export class InteractiveMode {
 				userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
 				async (entryIndex) => {
 					const result = await this.session.branch(entryIndex);
-					if (result.skipped) {
-						// Hook requested to skip conversation restore
+					if (result.cancelled) {
+						// Hook cancelled the branch
 						done();
 						this.ui.requestRender();
 						return;
@@ -1533,8 +1553,7 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				},
 				() => {
-					this.stop();
-					process.exit(0);
+					void this.shutdown();
 				},
 			);
 			return { component: selector, focus: selector.getSessionList() };

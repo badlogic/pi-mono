@@ -5,13 +5,13 @@
 import { spawn } from "node:child_process";
 import type { LoadedHook, SendHandler } from "./loader.js";
 import type {
-	BranchEventResult,
 	ExecOptions,
 	ExecResult,
 	HookError,
 	HookEvent,
 	HookEventContext,
 	HookUIContext,
+	SessionEventResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -217,11 +217,11 @@ export class HookRunner {
 
 	/**
 	 * Emit an event to all hooks.
-	 * Returns the result from branch/tool_result events (if any handler returns one).
+	 * Returns the result from session/tool_result events (if any handler returns one).
 	 */
-	async emit(event: HookEvent): Promise<BranchEventResult | ToolResultEventResult | undefined> {
+	async emit(event: HookEvent): Promise<SessionEventResult | ToolResultEventResult | undefined> {
 		const ctx = this.createContext();
-		let result: BranchEventResult | ToolResultEventResult | undefined;
+		let result: SessionEventResult | ToolResultEventResult | undefined;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get(event.type);
@@ -233,9 +233,13 @@ export class HookRunner {
 					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
 					timeout.clear();
 
-					// For branch events, capture the result
-					if (event.type === "branch" && handlerResult) {
-						result = handlerResult as BranchEventResult;
+					// For session events, capture the result (for before_* cancellation)
+					if (event.type === "session" && handlerResult) {
+						result = handlerResult as SessionEventResult;
+						// If cancelled, stop processing further hooks
+						if (result.cancel) {
+							return result;
+						}
 					}
 
 					// For tool_result events, capture the result

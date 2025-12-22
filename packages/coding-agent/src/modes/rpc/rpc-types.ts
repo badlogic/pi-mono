@@ -86,7 +86,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "prompt"; success: true }
 	| { id?: string; type: "response"; command: "queue_message"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }
-	| { id?: string; type: "response"; command: "reset"; success: true }
+	| { id?: string; type: "response"; command: "reset"; success: true; data: { cancelled: boolean } }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -142,8 +142,8 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
-	| { id?: string; type: "response"; command: "switch_session"; success: true }
-	| { id?: string; type: "response"; command: "branch"; success: true; data: { text: string } }
+	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "branch"; success: true; data: { text: string; cancelled: boolean } }
 	| {
 			id?: string;
 			type: "response";

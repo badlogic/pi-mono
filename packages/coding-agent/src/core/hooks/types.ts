@@ -90,11 +90,9 @@ export interface HookEventContext {
 // ============================================================================
 
 /**
- * Event data for session event.
- * Fired on startup and when session changes (switch or clear).
- * Note: branch has its own event that fires BEFORE the branch happens.
+ * Base fields shared by all session events.
  */
-export interface SessionEvent {
+interface SessionEventBase {
 	type: "session";
 	/** All session entries (including pre-compaction history) */
 	entries: SessionEntry[];
@@ -102,9 +100,31 @@ export interface SessionEvent {
 	sessionFile: string | null;
 	/** Previous session file path, or null for "start" and "clear" */
 	previousSessionFile: string | null;
-	/** Reason for the session event */
-	reason: "start" | "switch" | "clear";
 }
+
+/**
+ * Event data for session events.
+ * Discriminated union based on reason.
+ *
+ * Lifecycle:
+ * - start: Initial session load
+ * - before_switch / switch: Session switch (e.g., /session command)
+ * - before_clear / clear: Session clear (e.g., /clear command)
+ * - before_branch / branch: Session branch (e.g., /branch command)
+ * - shutdown: Process exit (SIGINT/SIGTERM)
+ *
+ * "before_*" events fire before the action and can be cancelled via SessionEventResult.
+ * Other events fire after the action completes.
+ */
+export type SessionEvent =
+	| (SessionEventBase & {
+			reason: "start" | "switch" | "clear" | "before_switch" | "before_clear" | "shutdown";
+	  })
+	| (SessionEventBase & {
+			reason: "branch" | "before_branch";
+			/** Index of the turn to branch from */
+			targetTurnIndex: number;
+	  });
 
 /**
  * Event data for agent_start event.
@@ -257,17 +277,6 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 }
 
 /**
- * Event data for branch event.
- */
-export interface BranchEvent {
-	type: "branch";
-	/** Index of the turn to branch from */
-	targetTurnIndex: number;
-	/** Full session history */
-	entries: SessionEntry[];
-}
-
-/**
  * Union of all hook event types.
  */
 export type HookEvent =
@@ -277,8 +286,7 @@ export type HookEvent =
 	| TurnStartEvent
 	| TurnEndEvent
 	| ToolCallEvent
-	| ToolResultEvent
-	| BranchEvent;
+	| ToolResultEvent;
 
 // ============================================================================
 // Event Results
@@ -309,12 +317,12 @@ export interface ToolResultEventResult {
 }
 
 /**
- * Return type for branch event handlers.
- * Allows hooks to control branch behavior.
+ * Return type for session event handlers.
+ * Allows hooks to cancel "before_*" actions.
  */
-export interface BranchEventResult {
-	/** If true, skip restoring the conversation (only restore code) */
-	skipConversationRestore?: boolean;
+export interface SessionEventResult {
+	/** If true, cancel the pending action (switch, clear, or branch) */
+	cancel?: boolean;
 }
 
 // ============================================================================
@@ -331,14 +339,14 @@ export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Prom
  * Hooks use pi.on() to subscribe to events and pi.send() to inject messages.
  */
 export interface HookAPI {
-	on(event: "session", handler: HookHandler<SessionEvent>): void;
+	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
+	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult | undefined>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult | undefined>): void;
-	on(event: "branch", handler: HookHandler<BranchEvent, BranchEventResult | undefined>): void;
 
 	/**
 	 * Send a message to the agent.

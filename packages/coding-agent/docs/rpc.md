@@ -78,7 +78,7 @@ Response:
 
 #### reset
 
-Clear context and start a fresh session.
+Clear context and start a fresh session. Can be cancelled by a `before_clear` hook.
 
 ```json
 {"type": "reset"}
@@ -86,7 +86,12 @@ Clear context and start a fresh session.
 
 Response:
 ```json
-{"type": "response", "command": "reset", "success": true}
+{"type": "response", "command": "reset", "success": true, "data": {"cancelled": false}}
+```
+
+If a hook cancelled the reset:
+```json
+{"type": "response", "command": "reset", "success": true, "data": {"cancelled": true}}
 ```
 
 ### State
@@ -465,7 +470,7 @@ Response:
 
 #### switch_session
 
-Load a different session file.
+Load a different session file. Can be cancelled by a `before_switch` hook.
 
 ```json
 {"type": "switch_session", "sessionPath": "/path/to/session.jsonl"}
@@ -473,12 +478,17 @@ Load a different session file.
 
 Response:
 ```json
-{"type": "response", "command": "switch_session", "success": true}
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
+```
+
+If a hook cancelled the switch:
+```json
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
 
 #### branch
 
-Create a new branch from a previous user message. Returns the text of the message being branched from.
+Create a new branch from a previous user message. Can be cancelled by a `before_branch` hook. Returns the text of the message being branched from.
 
 ```json
 {"type": "branch", "entryIndex": 2}
@@ -490,7 +500,17 @@ Response:
   "type": "response",
   "command": "branch",
   "success": true,
-  "data": {"text": "The original prompt text..."}
+  "data": {"text": "The original prompt text...", "cancelled": false}
+}
+```
+
+If a hook cancelled the branch:
+```json
+{
+  "type": "response",
+  "command": "branch",
+  "success": true,
+  "data": {"text": "The original prompt text...", "cancelled": true}
 }
 ```
 

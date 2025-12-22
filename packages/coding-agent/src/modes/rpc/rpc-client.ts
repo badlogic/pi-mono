@@ -186,9 +186,11 @@ export class RpcClient {
 
 	/**
 	 * Reset session (clear all messages).
+	 * @returns Object with `cancelled: true` if a hook cancelled the reset
 	 */
-	async reset(): Promise<void> {
-		await this.send({ type: "reset" });
+	async reset(): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "reset" });
+		return this.getData(response);
 	}
 
 	/**
@@ -311,15 +313,18 @@ export class RpcClient {
 
 	/**
 	 * Switch to a different session file.
+	 * @returns Object with `cancelled: true` if a hook cancelled the switch
 	 */
-	async switchSession(sessionPath: string): Promise<void> {
-		await this.send({ type: "switch_session", sessionPath });
+	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "switch_session", sessionPath });
+		return this.getData(response);
 	}
 
 	/**
 	 * Branch from a specific message.
+	 * @returns Object with `text` (the message text) and `cancelled` (if hook cancelled)
 	 */
-	async branch(entryIndex: number): Promise<{ text: string }> {
+	async branch(entryIndex: number): Promise<{ text: string; cancelled: boolean }> {
 		const response = await this.send({ type: "branch", entryIndex });
 		return this.getData(response);
 	}

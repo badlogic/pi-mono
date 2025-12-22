@@ -21,7 +21,7 @@ import { type BashResult, executeBash as executeBashCommand } from "./bash-execu
 import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
-import type { BranchEventResult, HookRunner, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
+import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
 import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
@@ -501,9 +501,26 @@ export class AgentSession {
 	 * Reset agent and session to start fresh.
 	 * Clears all messages and starts a new session.
 	 * Listeners are preserved and will continue receiving events.
+	 * @returns true if reset completed, false if cancelled by hook
 	 */
-	async reset(): Promise<void> {
+	async reset(): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
+		const entries = this.sessionManager.loadEntries();
+
+		// Emit before_clear event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session")) {
+			const result = (await this._hookRunner.emit({
+				type: "session",
+				entries,
+				sessionFile: this.sessionFile,
+				previousSessionFile: null,
+				reason: "before_clear",
+			})) as SessionEventResult | undefined;
+
+			if (result?.cancel) {
+				return false;
+			}
+		}
 
 		this._disconnectFromAgent();
 		await this.abort();
@@ -526,6 +543,7 @@ export class AgentSession {
 
 		// Emit session event to custom tools
 		await this._emitToolSessionEvent("clear", previousSessionFile);
+		return true;
 	}
 
 	// =========================================================================
@@ -1142,9 +1160,26 @@ export class AgentSession {
 	 * Switch to a different session file.
 	 * Aborts current operation, loads messages, restores model/thinking.
 	 * Listeners are preserved and will continue receiving events.
+	 * @returns true if switch completed, false if cancelled by hook
 	 */
-	async switchSession(sessionPath: string): Promise<void> {
+	async switchSession(sessionPath: string): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
+		const oldEntries = this.sessionManager.loadEntries();
+
+		// Emit before_switch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session")) {
+			const result = (await this._hookRunner.emit({
+				type: "session",
+				entries: oldEntries,
+				sessionFile: this.sessionFile,
+				previousSessionFile: null,
+				reason: "before_switch",
+			})) as SessionEventResult | undefined;
+
+			if (result?.cancel) {
+				return false;
+			}
+		}
 
 		this._disconnectFromAgent();
 		await this.abort();
@@ -1191,18 +1226,19 @@ export class AgentSession {
 		}
 
 		this._reconnectToAgent();
+		return true;
 	}
 
 	/**
 	 * Create a branch from a specific entry index.
-	 * Emits branch event to hooks, which can control the branch behavior.
+	 * Emits before_branch/branch session events to hooks.
 	 *
 	 * @param entryIndex Index into session entries to branch from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
-	 *   - skipped: True if a hook requested to skip conversation restore
+	 *   - cancelled: True if a hook cancelled the branch
 	 */
-	async branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }> {
+	async branch(entryIndex: number): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
 		const entries = this.sessionManager.loadEntries();
 		const selectedEntry = entries[entryIndex];
@@ -1213,19 +1249,20 @@ export class AgentSession {
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
 
-		// Emit branch event to hooks
-		let hookResult: BranchEventResult | undefined;
-		if (this._hookRunner?.hasHandlers("branch")) {
-			hookResult = (await this._hookRunner.emit({
-				type: "branch",
-				targetTurnIndex: entryIndex,
+		// Emit before_branch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session")) {
+			const result = (await this._hookRunner.emit({
+				type: "session",
 				entries,
-			})) as BranchEventResult | undefined;
-		}
+				sessionFile: this.sessionFile,
+				previousSessionFile: null,
+				reason: "before_branch",
+				targetTurnIndex: entryIndex,
+			})) as SessionEventResult | undefined;
 
-		// If hook says skip conversation restore, don't branch
-		if (hookResult?.skipConversationRestore) {
-			return { selectedText, skipped: true };
+			if (result?.cancel) {
+				return { selectedText, cancelled: true };
+			}
 		}
 
 		// Create branched session (returns null in --no-session mode)
@@ -1240,7 +1277,7 @@ export class AgentSession {
 		const newEntries = this.sessionManager.loadEntries();
 		const loaded = loadSessionFromEntries(newEntries);
 
-		// Emit session event to hooks (in --no-session mode, both files are null)
+		// Emit branch event to hooks (after branch completes)
 		if (this._hookRunner) {
 			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
@@ -1248,7 +1285,8 @@ export class AgentSession {
 				entries: newEntries,
 				sessionFile: newSessionFile,
 				previousSessionFile,
-				reason: "switch",
+				reason: "branch",
+				targetTurnIndex: entryIndex,
 			});
 		}
 
@@ -1257,7 +1295,7 @@ export class AgentSession {
 
 		this.agent.replaceMessages(loaded.messages);
 
-		return { selectedText, skipped: false };
+		return { selectedText, cancelled: false };
 	}
 
 	/**

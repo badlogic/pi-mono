@@ -1,0 +1,50 @@
+/**
+ * Auto-Commit on Exit Hook
+ *
+ * Automatically commits changes when the agent exits.
+ * Uses the last assistant message to generate a commit message.
+ */
+
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+
+export default function (pi: HookAPI) {
+	pi.on("session", async (event, ctx) => {
+		if (event.reason !== "shutdown") return;
+
+		// Check for uncommitted changes
+		const { stdout: status, code } = await ctx.exec("git", ["status", "--porcelain"]);
+
+		if (code !== 0 || status.trim().length === 0) {
+			// Not a git repo or no changes
+			return;
+		}
+
+		// Find the last assistant message for commit context
+		let lastAssistantText = "";
+		for (let i = event.entries.length - 1; i >= 0; i--) {
+			const entry = event.entries[i];
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const content = entry.message.content;
+				if (Array.isArray(content)) {
+					lastAssistantText = content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n");
+				}
+				break;
+			}
+		}
+
+		// Generate a simple commit message
+		const firstLine = lastAssistantText.split("\n")[0] || "Work in progress";
+		const commitMessage = `[pi] ${firstLine.slice(0, 50)}${firstLine.length > 50 ? "..." : ""}`;
+
+		// Stage and commit
+		await ctx.exec("git", ["add", "-A"]);
+		const { code: commitCode } = await ctx.exec("git", ["commit", "-m", commitMessage]);
+
+		if (commitCode === 0 && ctx.hasUI) {
+			ctx.ui.notify(`Auto-committed: ${commitMessage}`, "info");
+		}
+	});
+}
