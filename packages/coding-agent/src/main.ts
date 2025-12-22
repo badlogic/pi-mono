@@ -8,7 +8,7 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-import { existsSync, readFileSync } from "fs";
+
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
