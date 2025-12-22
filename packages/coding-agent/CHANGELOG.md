@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2025-12-22
+
 ### Added
 
 - **SDK for programmatic usage**: New `createAgentSession()` factory with full control over model, tools, hooks, skills, session persistence, and settings. Philosophy: "omit to discover, provide to override". Includes 12 examples and comprehensive documentation. ([#272](https://github.com/badlogic/pi-mono/issues/272))
