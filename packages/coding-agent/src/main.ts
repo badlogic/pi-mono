@@ -23,6 +23,7 @@ import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, configureOAuthStorage, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
@@ -246,9 +247,12 @@ function buildSessionOptions(
 }
 
 export async function main(args: string[]) {
+	time("start");
 	configureOAuthStorage();
+	time("configureOAuthStorage");
 
 	const parsed = parseArgs(args);
+	time("parseArgs");
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -286,28 +290,35 @@ export async function main(args: string[]) {
 
 	const cwd = process.cwd();
 	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
+	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 
 	const settingsManager = SettingsManager.create(cwd);
+	time("SettingsManager.create");
 	initTheme(settingsManager.getTheme(), isInteractive);
+	time("initTheme");
 
 	let scopedModels: ScopedModel[] = [];
 	if (parsed.models && parsed.models.length > 0) {
 		scopedModels = await resolveModelScope(parsed.models);
+		time("resolveModelScope");
 	}
 
 	// Create session manager based on CLI flags
 	let sessionManager = createSessionManager(parsed, cwd);
+	time("createSessionManager");
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
 		const sessions = SessionManager.list(cwd);
+		time("SessionManager.list");
 		if (sessions.length === 0) {
 			console.log(chalk.dim("No sessions found"));
 			return;
 		}
 		const selectedPath = await selectSession(sessions);
+		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
 			return;
@@ -316,7 +327,9 @@ export async function main(args: string[]) {
 	}
 
 	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager);
+	time("buildSessionOptions");
 	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
+	time("createAgentSession");
 
 	if (!isInteractive && !session.model) {
 		console.error(chalk.red("No models available."));
@@ -356,7 +369,9 @@ export async function main(args: string[]) {
 		}
 
 		const fdPath = await ensureTool("fd");
+		time("ensureTool(fd)");
 
+		printTimings();
 		await runInteractiveMode(
 			session,
 			VERSION,

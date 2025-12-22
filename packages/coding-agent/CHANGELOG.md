@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.27.1] - 2025-12-22
+
+### Fixed
+
+- **Skill discovery performance**: Skip `node_modules` directories when recursively scanning for skills. Fixes ~60ms startup delay when skill directories contain npm dependencies.
+
+### Added
+
+- **Startup timing instrumentation**: Set `PI_TIMING=1` to see startup performance breakdown (interactive mode only).
+
 ## [0.27.0] - 2025-12-22
 
 ### Breaking

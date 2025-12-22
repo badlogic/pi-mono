@@ -182,6 +182,11 @@ function loadSkillsFromDirInternal(dir: string, source: string, format: SkillFor
 				continue;
 			}
 
+			// Skip node_modules to avoid scanning dependencies
+			if (entry.name === "node_modules") {
+				continue;
+			}
+
 			if (entry.isSymbolicLink()) {
 				continue;
 			}

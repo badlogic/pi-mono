@@ -54,6 +54,7 @@ import {
 	buildSystemPrompt as buildSystemPromptInternal,
 	loadProjectContextFiles as loadContextFilesInternal,
 } from "./system-prompt.js";
+import { time } from "./timings.js";
 import {
 	allTools,
 	bashTool,
@@ -468,12 +469,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Configure OAuth storage for this agentDir
 	configureOAuthStorage(agentDir);
+	time("configureOAuthStorage");
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+	time("settingsManager");
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, agentDir);
+	time("sessionManager");
 
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.loadSession();
+	time("loadSession");
 	const hasExistingSession = existingSession.messages.length > 0;
 
 	let model = options.model;
@@ -511,6 +516,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Fall back to first available
 	if (!model) {
 		const available = await discoverAvailableModels();
+		time("discoverAvailableModels");
 		if (available.length === 0) {
 			throw new Error(
 				"No models available. Set an API key environment variable " +
@@ -543,10 +549,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const getApiKey = options.getApiKey ?? defaultGetApiKey();
 
 	const skills = options.skills ?? discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
+	time("discoverSkills");
 
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
+	time("discoverContextFiles");
 
 	const builtInTools = options.tools ?? createCodingTools(cwd);
+	time("createCodingTools");
 
 	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
 	if (options.customTools !== undefined) {
@@ -564,6 +573,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// Discover custom tools, merging with additional paths
 		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
 		const result = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
+		time("discoverAndLoadCustomTools");
 		for (const { path, error } of result.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
 		}
@@ -580,6 +590,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// Discover hooks, merging with additional paths
 		const configuredPaths = [...settingsManager.getHookPaths(), ...(options.additionalHookPaths ?? [])];
 		const { hooks, errors } = await discoverAndLoadHooks(configuredPaths, cwd, agentDir);
+		time("discoverAndLoadHooks");
 		for (const { path, error } of errors) {
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
@@ -589,6 +600,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
+	time("combineTools");
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
 	}
@@ -600,6 +612,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		skills,
 		contextFiles,
 	});
+	time("buildSystemPrompt");
 
 	if (options.systemPrompt === undefined) {
 		systemPrompt = defaultPrompt;
@@ -610,6 +623,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
+	time("discoverSlashCommands");
 
 	const agent = new Agent({
 		initialState: {
@@ -634,6 +648,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			},
 		}),
 	});
+	time("createAgent");
 
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
@@ -650,6 +665,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customTools: customToolsResult.tools,
 		skillsSettings: settingsManager.getSkillsSettings(),
 	});
+	time("createAgentSession");
 
 	return {
 		session,
