@@ -1,4 +1,4 @@
-import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AppMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
