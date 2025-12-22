@@ -10,7 +10,7 @@
  * - MomSettingsManager: Simple settings for mom (compaction, retry, model preferences)
  */
 
-import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AppMessage } from "@mariozechner/pi-agent-core";
 import {
 	type CompactionEntry,
 	type LoadedSession,
@@ -71,14 +71,14 @@ export class MomSessionManager {
 			// New session - write header immediately
 			this.sessionId = uuidv4();
 			if (initialModel) {
-				this.writeSessionHeader(initialModel);
+				this.writeSessionHeader();
 			}
 		}
 		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
 	}
 
 	/** Write session header to file (called on new session creation) */
-	private writeSessionHeader(model: { provider: string; id: string; thinkingLevel?: string }): void {
+	private writeSessionHeader(): void {
 		this.sessionInitialized = true;
 
 		const entry: SessionHeader = {
@@ -86,9 +86,6 @@ export class MomSessionManager {
 			id: this.sessionId,
 			timestamp: new Date().toISOString(),
 			cwd: this.channelDir,
-			provider: model.provider,
-			modelId: model.id,
-			thinkingLevel: model.thinkingLevel || "off",
 		};
 
 		this.inMemoryEntries.push(entry);
@@ -249,7 +246,7 @@ export class MomSessionManager {
 	}
 
 	/** Initialize session with header if not already done */
-	startSession(state: AgentState): void {
+	startSession(): void {
 		if (this.sessionInitialized) return;
 		this.sessionInitialized = true;
 
@@ -258,9 +255,6 @@ export class MomSessionManager {
 			id: this.sessionId,
 			timestamp: new Date().toISOString(),
 			cwd: this.channelDir,
-			provider: state.model?.provider || "unknown",
-			modelId: state.model?.id || "unknown",
-			thinkingLevel: state.thinkingLevel,
 		};
 
 		this.inMemoryEntries.push(entry);
@@ -370,7 +364,7 @@ export class MomSessionManager {
 	}
 
 	// Compatibility methods for AgentSession
-	isEnabled(): boolean {
+	isPersisted(): boolean {
 		return true;
 	}
 

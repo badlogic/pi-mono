@@ -234,9 +234,6 @@ describe("loadSessionFromEntries", () => {
 				id: "1",
 				timestamp: "",
 				cwd: "",
-				provider: "anthropic",
-				modelId: "claude",
-				thinkingLevel: "off",
 			},
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
@@ -247,7 +244,7 @@ describe("loadSessionFromEntries", () => {
 		const loaded = loadSessionFromEntries(entries);
 		expect(loaded.messages.length).toBe(4);
 		expect(loaded.thinkingLevel).toBe("off");
-		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude" });
+		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
 	});
 
 	it("should handle single compaction", () => {
@@ -258,9 +255,6 @@ describe("loadSessionFromEntries", () => {
 				id: "1",
 				timestamp: "",
 				cwd: "",
-				provider: "anthropic",
-				modelId: "claude",
-				thinkingLevel: "off",
 			},
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
@@ -286,9 +280,6 @@ describe("loadSessionFromEntries", () => {
 				id: "1",
 				timestamp: "",
 				cwd: "",
-				provider: "anthropic",
-				modelId: "claude",
-				thinkingLevel: "off",
 			},
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
@@ -316,9 +307,6 @@ describe("loadSessionFromEntries", () => {
 				id: "1",
 				timestamp: "",
 				cwd: "",
-				provider: "anthropic",
-				modelId: "claude",
-				thinkingLevel: "off",
 			},
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
@@ -341,9 +329,6 @@ describe("loadSessionFromEntries", () => {
 				id: "1",
 				timestamp: "",
 				cwd: "",
-				provider: "anthropic",
-				modelId: "claude",
-				thinkingLevel: "off",
 			},
 			createMessageEntry(createUserMessage("1")),
 			{ type: "model_change", timestamp: "", provider: "openai", modelId: "gpt-4" },
@@ -352,7 +337,8 @@ describe("loadSessionFromEntries", () => {
 		];
 
 		const loaded = loadSessionFromEntries(entries);
-		expect(loaded.model).toEqual({ provider: "openai", modelId: "gpt-4" });
+		// model_change is later overwritten by assistant message's model info
+		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
 		expect(loaded.thinkingLevel).toBe("high");
 	});
 });

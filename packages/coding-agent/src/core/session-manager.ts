@@ -17,9 +17,6 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	provider: string;
-	modelId: string;
-	thinkingLevel: string;
 	branchedFrom?: string;
 }
 
@@ -120,13 +117,12 @@ export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
 	let model: { provider: string; modelId: string } | null = null;
 
 	for (const entry of entries) {
-		if (entry.type === "session") {
-			thinkingLevel = entry.thinkingLevel;
-			model = { provider: entry.provider, modelId: entry.modelId };
-		} else if (entry.type === "thinking_level_change") {
+		if (entry.type === "thinking_level_change") {
 			thinkingLevel = entry.thinkingLevel;
 		} else if (entry.type === "model_change") {
 			model = { provider: entry.provider, modelId: entry.modelId };
+		} else if (entry.type === "message" && entry.message.role === "assistant") {
+			model = { provider: entry.message.provider, modelId: entry.message.model };
 		}
 	}
 
@@ -194,23 +190,6 @@ function loadEntriesFromFile(filePath: string): SessionEntry[] {
 	return entries;
 }
 
-function extractSessionIdFromFile(filePath: string): string | null {
-	if (!existsSync(filePath)) return null;
-
-	const lines = readFileSync(filePath, "utf8").trim().split("\n");
-	for (const line of lines) {
-		try {
-			const entry = JSON.parse(line);
-			if (entry.type === "session") {
-				return entry.id;
-			}
-		} catch {
-			// Skip malformed lines
-		}
-	}
-	return null;
-}
-
 function findMostRecentSession(sessionDir: string): string | null {
 	try {
 		const files = readdirSync(sessionDir)
@@ -228,33 +207,168 @@ function findMostRecentSession(sessionDir: string): string | null {
 }
 
 export class SessionManager {
-	private sessionId: string;
-	private sessionFile: string;
+	private sessionId: string = "";
+	private sessionFile: string = "";
 	private sessionDir: string;
 	private cwd: string;
-	private enabled: boolean;
-	private sessionInitialized: boolean;
-	private pendingEntries: SessionEntry[] = [];
+	private persist: boolean;
 	private inMemoryEntries: SessionEntry[] = [];
 
-	private constructor(cwd: string, agentDir: string, sessionFile: string | null, enabled: boolean) {
+	private constructor(cwd: string, agentDir: string, sessionFile: string | null, persist: boolean) {
 		this.cwd = cwd;
 		this.sessionDir = getSessionDirectory(cwd, agentDir);
-		this.enabled = enabled;
+		this.persist = persist;
 
 		if (sessionFile) {
-			this.sessionFile = resolve(sessionFile);
-			this.sessionId = extractSessionIdFromFile(this.sessionFile) ?? uuidv4();
-			this.sessionInitialized = existsSync(this.sessionFile);
-			if (this.sessionInitialized) {
-				this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
-			}
+			this.setSessionFile(sessionFile);
 		} else {
 			this.sessionId = uuidv4();
 			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-			this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
-			this.sessionInitialized = false;
+			const sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
+			this.setSessionFile(sessionFile);
 		}
+	}
+
+	/** Switch to a different session file (used for resume and branching) */
+	setSessionFile(sessionFile: string): void {
+		this.sessionFile = resolve(sessionFile);
+		if (existsSync(this.sessionFile)) {
+			this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
+			const header = this.inMemoryEntries.find((e) => e.type === "session");
+			this.sessionId = header ? (header as SessionHeader).id : uuidv4();
+		} else {
+			this.sessionId = uuidv4();
+			this.inMemoryEntries = [];
+			const entry: SessionHeader = {
+				type: "session",
+				id: this.sessionId,
+				timestamp: new Date().toISOString(),
+				cwd: this.cwd,
+			};
+			this.inMemoryEntries.push(entry);
+		}
+	}
+
+	isPersisted(): boolean {
+		return this.persist;
+	}
+
+	getCwd(): string {
+		return this.cwd;
+	}
+
+	getSessionId(): string {
+		return this.sessionId;
+	}
+
+	getSessionFile(): string {
+		return this.sessionFile;
+	}
+
+	reset(): void {
+		this.inMemoryEntries = [];
+		this.sessionId = uuidv4();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
+	}
+
+	_persist(entry: SessionEntry): void {
+		if (this.persist && this.inMemoryEntries.some((e) => e.type === "message" && e.message.role === "assistant")) {
+			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+		}
+	}
+
+	saveMessage(message: any): void {
+		const entry: SessionMessageEntry = {
+			type: "message",
+			timestamp: new Date().toISOString(),
+			message,
+		};
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	saveThinkingLevelChange(thinkingLevel: string): void {
+		const entry: ThinkingLevelChangeEntry = {
+			type: "thinking_level_change",
+			timestamp: new Date().toISOString(),
+			thinkingLevel,
+		};
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	saveModelChange(provider: string, modelId: string): void {
+		const entry: ModelChangeEntry = {
+			type: "model_change",
+			timestamp: new Date().toISOString(),
+			provider,
+			modelId,
+		};
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	saveCompaction(entry: CompactionEntry): void {
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	loadSession(): LoadedSession {
+		const entries = this.loadEntries();
+		return loadSessionFromEntries(entries);
+	}
+
+	loadMessages(): AppMessage[] {
+		return this.loadSession().messages;
+	}
+
+	loadThinkingLevel(): string {
+		return this.loadSession().thinkingLevel;
+	}
+
+	loadModel(): { provider: string; modelId: string } | null {
+		return this.loadSession().model;
+	}
+
+	loadEntries(): SessionEntry[] {
+		if (this.inMemoryEntries.length > 0) {
+			return [...this.inMemoryEntries];
+		} else {
+			return loadEntriesFromFile(this.sessionFile);
+		}
+	}
+
+	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string | null {
+		const newSessionId = uuidv4();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
+
+		const newEntries: SessionEntry[] = [];
+		for (let i = 0; i < branchBeforeIndex; i++) {
+			const entry = entries[i];
+
+			if (entry.type === "session") {
+				newEntries.push({
+					...entry,
+					id: newSessionId,
+					timestamp: new Date().toISOString(),
+					branchedFrom: this.persist ? this.sessionFile : undefined,
+				});
+			} else {
+				newEntries.push(entry);
+			}
+		}
+
+		if (this.persist) {
+			for (const entry of newEntries) {
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+			return newSessionFile;
+		}
+		this.inMemoryEntries = newEntries;
+		this.sessionId = newSessionId;
+		return null;
 	}
 
 	/** Create a new session for the given directory */
@@ -360,227 +474,5 @@ export class SessionManager {
 		}
 
 		return sessions;
-	}
-
-	isEnabled(): boolean {
-		return this.enabled;
-	}
-
-	getCwd(): string {
-		return this.cwd;
-	}
-
-	getSessionId(): string {
-		return this.sessionId;
-	}
-
-	getSessionFile(): string {
-		return this.sessionFile;
-	}
-
-	/** Switch to a different session file (used for resume and branching) */
-	setSessionFile(path: string): void {
-		this.sessionFile = resolve(path);
-		this.sessionId = extractSessionIdFromFile(this.sessionFile) ?? uuidv4();
-		this.sessionInitialized = existsSync(this.sessionFile);
-		if (this.sessionInitialized) {
-			this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
-		} else {
-			this.inMemoryEntries = [];
-		}
-		this.pendingEntries = [];
-	}
-
-	reset(): void {
-		this.pendingEntries = [];
-		this.inMemoryEntries = [];
-		this.sessionInitialized = false;
-		this.sessionId = uuidv4();
-		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		this.sessionFile = join(this.sessionDir, `${timestamp}_${this.sessionId}.jsonl`);
-	}
-
-	startSession(state: AgentState): void {
-		if (this.sessionInitialized) return;
-		this.sessionInitialized = true;
-
-		const entry: SessionHeader = {
-			type: "session",
-			id: this.sessionId,
-			timestamp: new Date().toISOString(),
-			cwd: this.cwd,
-			provider: state.model.provider,
-			modelId: state.model.id,
-			thinkingLevel: state.thinkingLevel,
-		};
-
-		this.inMemoryEntries.push(entry);
-		for (const pending of this.pendingEntries) {
-			this.inMemoryEntries.push(pending);
-		}
-		this.pendingEntries = [];
-
-		if (this.enabled) {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-			for (const memEntry of this.inMemoryEntries.slice(1)) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(memEntry)}\n`);
-			}
-		}
-	}
-
-	saveMessage(message: any): void {
-		const entry: SessionMessageEntry = {
-			type: "message",
-			timestamp: new Date().toISOString(),
-			message,
-		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			if (this.enabled) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-			}
-		}
-	}
-
-	saveThinkingLevelChange(thinkingLevel: string): void {
-		const entry: ThinkingLevelChangeEntry = {
-			type: "thinking_level_change",
-			timestamp: new Date().toISOString(),
-			thinkingLevel,
-		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			if (this.enabled) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-			}
-		}
-	}
-
-	saveModelChange(provider: string, modelId: string): void {
-		const entry: ModelChangeEntry = {
-			type: "model_change",
-			timestamp: new Date().toISOString(),
-			provider,
-			modelId,
-		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			if (this.enabled) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-			}
-		}
-	}
-
-	saveCompaction(entry: CompactionEntry): void {
-		this.inMemoryEntries.push(entry);
-		if (this.enabled) {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-		}
-	}
-
-	loadSession(): LoadedSession {
-		const entries = this.loadEntries();
-		return loadSessionFromEntries(entries);
-	}
-
-	loadMessages(): AppMessage[] {
-		return this.loadSession().messages;
-	}
-
-	loadThinkingLevel(): string {
-		return this.loadSession().thinkingLevel;
-	}
-
-	loadModel(): { provider: string; modelId: string } | null {
-		return this.loadSession().model;
-	}
-
-	loadEntries(): SessionEntry[] {
-		if (this.enabled && existsSync(this.sessionFile)) {
-			return loadEntriesFromFile(this.sessionFile);
-		}
-		return [...this.inMemoryEntries];
-	}
-
-	shouldInitializeSession(messages: any[]): boolean {
-		if (this.sessionInitialized) return false;
-
-		const userMessages = messages.filter((m) => m.role === "user");
-		const assistantMessages = messages.filter((m) => m.role === "assistant");
-
-		return userMessages.length >= 1 && assistantMessages.length >= 1;
-	}
-
-	createBranchedSession(state: any, branchFromIndex: number): string {
-		const newSessionId = uuidv4();
-		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
-
-		const entry: SessionHeader = {
-			type: "session",
-			id: newSessionId,
-			timestamp: new Date().toISOString(),
-			cwd: this.cwd,
-			provider: state.model.provider,
-			modelId: state.model.id,
-			thinkingLevel: state.thinkingLevel,
-			branchedFrom: this.sessionFile,
-		};
-		appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
-
-		if (branchFromIndex >= 0) {
-			const messagesToWrite = state.messages.slice(0, branchFromIndex + 1);
-			for (const message of messagesToWrite) {
-				const messageEntry: SessionMessageEntry = {
-					type: "message",
-					timestamp: new Date().toISOString(),
-					message,
-				};
-				appendFileSync(newSessionFile, `${JSON.stringify(messageEntry)}\n`);
-			}
-		}
-
-		return newSessionFile;
-	}
-
-	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string | null {
-		const newSessionId = uuidv4();
-		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
-
-		const newEntries: SessionEntry[] = [];
-		for (let i = 0; i < branchBeforeIndex; i++) {
-			const entry = entries[i];
-
-			if (entry.type === "session") {
-				newEntries.push({
-					...entry,
-					id: newSessionId,
-					timestamp: new Date().toISOString(),
-					branchedFrom: this.enabled ? this.sessionFile : undefined,
-				});
-			} else {
-				newEntries.push(entry);
-			}
-		}
-
-		if (this.enabled) {
-			for (const entry of newEntries) {
-				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
-			}
-			return newSessionFile;
-		}
-		this.inMemoryEntries = newEntries;
-		this.sessionId = newSessionId;
-		return null;
 	}
 }

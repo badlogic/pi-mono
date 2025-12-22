@@ -202,11 +202,6 @@ export class AgentSession {
 		if (event.type === "message_end") {
 			this.sessionManager.saveMessage(event.message);
 
-			// Initialize session after first user+assistant exchange
-			if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
-				this.sessionManager.startSession(this.agent.state);
-			}
-
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
@@ -389,7 +384,7 @@ export class AgentSession {
 
 	/** Current session file path, or null if sessions are disabled */
 	get sessionFile(): string | null {
-		return this.sessionManager.isEnabled() ? this.sessionManager.getSessionFile() : null;
+		return this.sessionManager.isPersisted() ? this.sessionManager.getSessionFile() : null;
 	}
 
 	/** Current session ID */
@@ -1096,11 +1091,6 @@ export class AgentSession {
 
 				// Save to session
 				this.sessionManager.saveMessage(bashMessage);
-
-				// Initialize session if needed
-				if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
-					this.sessionManager.startSession(this.agent.state);
-				}
 			}
 
 			return result;
@@ -1139,11 +1129,6 @@ export class AgentSession {
 
 			// Save to session
 			this.sessionManager.saveMessage(bashMessage);
-		}
-
-		// Initialize session if needed
-		if (this.sessionManager.shouldInitializeSession(this.agent.state.messages)) {
-			this.sessionManager.startSession(this.agent.state);
 		}
 
 		this._pendingBashMessages = [];
