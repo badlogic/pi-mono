@@ -272,8 +272,6 @@ export async function main(args: string[]) {
 
 	const parsed = parseArgs(args);
 
-	// === Early exits ===
-
 	if (parsed.version) {
 		console.log(VERSION);
 		return;
@@ -303,14 +301,10 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// === Validation ===
-
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
 		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
 		process.exit(1);
 	}
-
-	// === Prepare inputs ===
 
 	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
 	const isInteractive = !parsed.print && parsed.mode === undefined;
@@ -338,8 +332,6 @@ export async function main(args: string[]) {
 		sessionFileFromResume = selectedSession;
 	}
 
-	// === Build session options ===
-
 	const sessionOptions = await buildSessionOptions(parsed, scopedModels);
 
 	// Apply resume session file
@@ -348,11 +340,7 @@ export async function main(args: string[]) {
 		sessionOptions.restoreFromSession = true;
 	}
 
-	// === Create session ===
-
 	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
-
-	// === Validate for non-interactive mode ===
 
 	if (!isInteractive && !session.model) {
 		console.error(chalk.red("No models available."));
@@ -374,8 +362,6 @@ export async function main(args: string[]) {
 			session.setThinkingLevel(effectiveThinking);
 		}
 	}
-
-	// === Route to mode ===
 
 	if (mode === "rpc") {
 		await runRpcMode(session);

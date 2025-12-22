@@ -66,18 +66,14 @@ import {
 	writeTool,
 } from "./tools/index.js";
 
-// ============================================================================
 // Types
-// ============================================================================
 
 export interface CreateAgentSessionOptions {
-	// === Environment ===
 	/** Working directory for project-local discovery. Default: process.cwd() */
 	cwd?: string;
 	/** Global config directory. Default: ~/.pi/agent */
 	agentDir?: string;
 
-	// === Model & Thinking ===
 	/** Model to use. Default: from settings, else first available */
 	model?: Model<any>;
 	/** Thinking level. Default: from settings, else 'off' (clamped to model capabilities) */
@@ -85,15 +81,12 @@ export interface CreateAgentSessionOptions {
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 
-	// === API Key ===
 	/** API key resolver. Default: defaultGetApiKey() */
 	getApiKey?: (model: Model<any>) => Promise<string | undefined>;
 
-	// === System Prompt ===
 	/** System prompt. String replaces default, function receives default and returns final. */
 	systemPrompt?: string | ((defaultPrompt: string) => string);
 
-	// === Tools ===
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools (replaces discovery). */
@@ -101,13 +94,11 @@ export interface CreateAgentSessionOptions {
 	/** Additional custom tool paths to load (merged with discovery). */
 	additionalCustomToolPaths?: string[];
 
-	// === Hooks ===
 	/** Hooks (replaces discovery). */
 	hooks?: Array<{ path?: string; factory: HookFactory }>;
 	/** Additional hook paths to load (merged with discovery). */
 	additionalHookPaths?: string[];
 
-	// === Context ===
 	/** Skills. Default: discovered from multiple locations */
 	skills?: Skill[];
 	/** Context files (AGENTS.md content). Default: discovered walking up from cwd */
@@ -115,7 +106,6 @@ export interface CreateAgentSessionOptions {
 	/** Slash commands. Default: discovered from cwd/.pi/commands/ + agentDir/commands/ */
 	slashCommands?: FileSlashCommand[];
 
-	// === Session ===
 	/** Session file path, or false to disable persistence. Default: auto in agentDir/sessions/ */
 	sessionFile?: string | false;
 	/** Continue most recent session for cwd. */
@@ -123,7 +113,6 @@ export interface CreateAgentSessionOptions {
 	/** Restore model/thinking from session (default: true when continuing). */
 	restoreFromSession?: boolean;
 
-	// === Settings ===
 	/** Settings overrides (merged with agentDir/settings.json) */
 	settings?: Partial<Settings>;
 }
@@ -141,9 +130,7 @@ export interface CreateAgentSessionResult {
 	modelFallbackMessage?: string;
 }
 
-// ============================================================================
 // Re-exports
-// ============================================================================
 
 export type { CustomAgentTool } from "./custom-tools/types.js";
 export type { HookAPI, HookFactory } from "./hooks/types.js";
@@ -165,17 +152,13 @@ export {
 	allTools as allBuiltInTools,
 };
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 function getDefaultAgentDir(): string {
 	return getAgentDir();
 }
 
-// ============================================================================
 // Discovery Functions
-// ============================================================================
 
 /**
  * Get all models (built-in + custom from models.json).
@@ -292,9 +275,7 @@ export function discoverSlashCommands(cwd?: string, agentDir?: string): FileSlas
 	});
 }
 
-// ============================================================================
 // API Key Helpers
-// ============================================================================
 
 /**
  * Create the default API key resolver.
@@ -305,9 +286,7 @@ export function defaultGetApiKey(): (model: Model<any>) => Promise<string | unde
 	return getApiKeyForModel;
 }
 
-// ============================================================================
 // System Prompt
-// ============================================================================
 
 export interface BuildSystemPromptOptions {
 	tools?: Tool[];
@@ -329,9 +308,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	});
 }
 
-// ============================================================================
 // Settings
-// ============================================================================
 
 /**
  * Load settings from agentDir/settings.json.
@@ -357,9 +334,7 @@ export function loadSettings(agentDir?: string): Settings {
 	};
 }
 
-// ============================================================================
 // Internal Helpers
-// ============================================================================
 
 /**
  * Create a HookFactory from a LoadedHook.
@@ -407,9 +382,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 	});
 }
 
-// ============================================================================
 // Factory
-// ============================================================================
 
 /**
  * Create an AgentSession with the specified options.
@@ -446,10 +419,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
 
-	// === Settings ===
 	const settingsManager = new SettingsManager(agentDir);
 
-	// === Session Manager ===
 	const sessionManager = new SessionManager(options.continueSession ?? false, undefined);
 	if (options.sessionFile === false) {
 		sessionManager.disable();
@@ -457,7 +428,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.setSessionFile(options.sessionFile);
 	}
 
-	// === Model Resolution ===
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
 	const shouldRestoreFromSession = options.restoreFromSession ?? (options.continueSession || options.sessionFile);
@@ -510,7 +480,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// === Thinking Level Resolution ===
 	let thinkingLevel = options.thinkingLevel;
 
 	// If continuing/restoring, try to get thinking level from session
@@ -531,19 +500,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	// === API Key Resolver ===
 	const getApiKey = options.getApiKey ?? defaultGetApiKey();
 
-	// === Skills ===
 	const skills = options.skills ?? discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
 
-	// === Context Files ===
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 
-	// === Tools ===
 	const builtInTools = options.tools ?? codingTools;
 
-	// === Custom Tools ===
 	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
 	if (options.customTools !== undefined) {
 		// Use provided custom tools
@@ -566,7 +530,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customToolsResult = result;
 	}
 
-	// === Hooks ===
 	let hookRunner: HookRunner | null = null;
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
@@ -585,13 +548,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// === Combine and wrap tools ===
 	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
 	}
 
-	// === System Prompt ===
 	let systemPrompt: string;
 	const defaultPrompt = buildSystemPromptInternal({
 		cwd,
@@ -608,10 +569,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		systemPrompt = options.systemPrompt(defaultPrompt);
 	}
 
-	// === Slash Commands ===
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 
-	// === Create Agent ===
 	const agent = new Agent({
 		initialState: {
 			systemPrompt,
@@ -636,7 +595,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}),
 	});
 
-	// === Load messages if continuing session ===
 	if (shouldRestoreFromSession) {
 		const messages = sessionManager.loadMessages();
 		if (messages.length > 0) {
@@ -644,7 +602,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// === Create Session ===
 	const session = new AgentSession({
 		agent,
 		sessionManager,
