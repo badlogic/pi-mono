@@ -79,18 +79,32 @@ interface AgentSession {
   sessionId: string;
   
   // Model control
-  setModel(model: Model, thinkingLevel?: ThinkingLevel): void;
+  setModel(model: Model): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): void;
+  cycleModel(): Promise<ModelCycleResult | null>;
+  cycleThinkingLevel(): ThinkingLevel | null;
   
-  // Access underlying agent
+  // State access
   agent: Agent;
+  model: Model | null;
+  thinkingLevel: ThinkingLevel;
+  messages: AppMessage[];
+  isStreaming: boolean;
   
   // Session management
-  reset(): void;
-  branch(targetTurnIndex: number): Promise<void>;
+  reset(): Promise<void>;
+  branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }>;
+  switchSession(sessionPath: string): Promise<void>;
+  
+  // Compaction
+  compact(customInstructions?: string): Promise<CompactionResult>;
+  abortCompaction(): void;
   
   // Abort current operation
-  abort(): void;
+  abort(): Promise<void>;
+  
+  // Cleanup
+  dispose(): void;
 }
 ```
 
@@ -215,15 +229,17 @@ const { session } = await createAgentSession({
 ```typescript
 import { findModel, discoverAvailableModels } from "@mariozechner/pi-coding-agent";
 
-// Find specific model
-const { model } = findModel("anthropic", "claude-sonnet-4-20250514");
+// Find specific model (returns { model, error })
+const { model, error } = findModel("anthropic", "claude-sonnet-4-20250514");
+if (error) throw new Error(error);
+if (!model) throw new Error("Model not found");
 
 // Or get all models with valid API keys
 const available = await discoverAvailableModels();
 
 const { session } = await createAgentSession({
   model: model,
-  thinkingLevel: "medium", // off, low, medium, high
+  thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh
   
   // Models for cycling (Ctrl+P in interactive mode)
   scopedModels: [
@@ -580,8 +596,8 @@ const contextFiles = discoverContextFiles(cwd, agentDir);
 // Slash commands
 const commands = discoverSlashCommands(cwd, agentDir);
 
-// Settings
-const settings = loadSettings(agentDir);
+// Settings (global + project merged)
+const settings = loadSettings(cwd, agentDir);
 
 // Build system prompt manually
 const prompt = buildSystemPrompt({
@@ -622,6 +638,7 @@ import {
   defaultGetApiKey,
   findModel,
   SessionManager,
+  SettingsManager,
   readTool,
   bashTool,
   type HookFactory,
@@ -660,8 +677,15 @@ const statusTool: CustomAgentTool = {
   }),
 };
 
-const { model } = findModel("anthropic", "claude-sonnet-4-20250514");
+const { model, error } = findModel("anthropic", "claude-sonnet-4-20250514");
+if (error) throw new Error(error);
 if (!model) throw new Error("Model not found");
+
+// In-memory settings with overrides
+const settingsManager = SettingsManager.inMemory({
+  compaction: { enabled: false },
+  retry: { enabled: true, maxRetries: 2 },
+});
 
 const { session } = await createAgentSession({
   cwd: process.cwd(),
@@ -681,11 +705,7 @@ const { session } = await createAgentSession({
   slashCommands: [],
   
   sessionManager: SessionManager.inMemory(),
-  
-  settings: {
-    compaction: { enabled: false },
-    retry: { enabled: true, maxRetries: 2 },
-  },
+  settingsManager,
 });
 
 session.subscribe((event) => {
@@ -744,6 +764,7 @@ buildSystemPrompt
 
 // Session management
 SessionManager
+SettingsManager
 
 // Built-in tools
 codingTools

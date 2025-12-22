@@ -17,6 +17,7 @@ import { getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
+import type { HookUIContext } from "./core/index.js";
 import { findModel } from "./core/model-config.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, configureOAuthStorage, createAgentSession } from "./core/sdk.js";
@@ -54,7 +55,7 @@ async function runInteractiveMode(
 	versionCheckPromise: Promise<string | null>,
 	initialMessages: string[],
 	customTools: LoadedCustomTool[],
-	setToolUIContext: (uiContext: import("./core/hooks/types.js").HookUIContext, hasUI: boolean) => void,
+	setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
 	initialAttachments?: Attachment[],
 	fdPath: string | null = null,
