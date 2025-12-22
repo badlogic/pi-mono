@@ -10,14 +10,13 @@
  * - MomSettingsManager: Simple settings for mom (compaction, retry, model preferences)
  */
 
-import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AppMessage } from "@mariozechner/pi-agent-core";
 import {
 	type CompactionEntry,
 	type LoadedSession,
 	loadSessionFromEntries,
 	type ModelChangeEntry,
 	type SessionEntry,
-	type SessionHeader,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
 } from "@mariozechner/pi-coding-agent";
@@ -48,11 +47,10 @@ export class MomSessionManager {
 	private contextFile: string;
 	private logFile: string;
 	private channelDir: string;
-	private sessionInitialized: boolean = false;
+	private flushed: boolean = false;
 	private inMemoryEntries: SessionEntry[] = [];
-	private pendingEntries: SessionEntry[] = [];
 
-	constructor(channelDir: string, initialModel?: { provider: string; id: string; thinkingLevel?: string }) {
+	constructor(channelDir: string) {
 		this.channelDir = channelDir;
 		this.contextFile = join(channelDir, "context.jsonl");
 		this.logFile = join(channelDir, "log.jsonl");
@@ -66,33 +64,33 @@ export class MomSessionManager {
 		if (existsSync(this.contextFile)) {
 			this.inMemoryEntries = this.loadEntriesFromFile();
 			this.sessionId = this.extractSessionId() || uuidv4();
-			this.sessionInitialized = this.inMemoryEntries.length > 0;
+			this.flushed = true;
 		} else {
-			// New session - write header immediately
 			this.sessionId = uuidv4();
-			if (initialModel) {
-				this.writeSessionHeader(initialModel);
-			}
+			this.inMemoryEntries = [
+				{
+					type: "session",
+					id: this.sessionId,
+					timestamp: new Date().toISOString(),
+					cwd: this.channelDir,
+				},
+			];
 		}
 		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
 	}
 
-	/** Write session header to file (called on new session creation) */
-	private writeSessionHeader(model: { provider: string; id: string; thinkingLevel?: string }): void {
-		this.sessionInitialized = true;
+	private _persist(entry: SessionEntry): void {
+		const hasAssistant = this.inMemoryEntries.some((e) => e.type === "message" && e.message.role === "assistant");
+		if (!hasAssistant) return;
 
-		const entry: SessionHeader = {
-			type: "session",
-			id: this.sessionId,
-			timestamp: new Date().toISOString(),
-			cwd: this.channelDir,
-			provider: model.provider,
-			modelId: model.id,
-			thinkingLevel: model.thinkingLevel || "off",
-		};
-
-		this.inMemoryEntries.push(entry);
-		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
+		if (!this.flushed) {
+			for (const e of this.inMemoryEntries) {
+				appendFileSync(this.contextFile, `${JSON.stringify(e)}\n`);
+			}
+			this.flushed = true;
+		} else {
+			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
+		}
 	}
 
 	/**
@@ -248,47 +246,14 @@ export class MomSessionManager {
 		return entries;
 	}
 
-	/** Initialize session with header if not already done */
-	startSession(state: AgentState): void {
-		if (this.sessionInitialized) return;
-		this.sessionInitialized = true;
-
-		const entry: SessionHeader = {
-			type: "session",
-			id: this.sessionId,
-			timestamp: new Date().toISOString(),
-			cwd: this.channelDir,
-			provider: state.model?.provider || "unknown",
-			modelId: state.model?.id || "unknown",
-			thinkingLevel: state.thinkingLevel,
-		};
-
-		this.inMemoryEntries.push(entry);
-		for (const pending of this.pendingEntries) {
-			this.inMemoryEntries.push(pending);
-		}
-		this.pendingEntries = [];
-
-		// Write to file
-		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
-		for (const memEntry of this.inMemoryEntries.slice(1)) {
-			appendFileSync(this.contextFile, `${JSON.stringify(memEntry)}\n`);
-		}
-	}
-
 	saveMessage(message: AppMessage): void {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			timestamp: new Date().toISOString(),
 			message,
 		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
-		}
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
@@ -297,13 +262,8 @@ export class MomSessionManager {
 			timestamp: new Date().toISOString(),
 			thinkingLevel,
 		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
-		}
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
 	}
 
 	saveModelChange(provider: string, modelId: string): void {
@@ -313,18 +273,13 @@ export class MomSessionManager {
 			provider,
 			modelId,
 		};
-
-		if (!this.sessionInitialized) {
-			this.pendingEntries.push(entry);
-		} else {
-			this.inMemoryEntries.push(entry);
-			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
-		}
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
 	}
 
 	saveCompaction(entry: CompactionEntry): void {
 		this.inMemoryEntries.push(entry);
-		appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
+		this._persist(entry);
 	}
 
 	/** Load session with compaction support */
@@ -349,20 +304,18 @@ export class MomSessionManager {
 		return this.contextFile;
 	}
 
-	/** Check if session should be initialized */
-	shouldInitializeSession(messages: AppMessage[]): boolean {
-		if (this.sessionInitialized) return false;
-		const userMessages = messages.filter((m) => m.role === "user");
-		const assistantMessages = messages.filter((m) => m.role === "assistant");
-		return userMessages.length >= 1 && assistantMessages.length >= 1;
-	}
-
 	/** Reset session (clears context.jsonl) */
 	reset(): void {
-		this.pendingEntries = [];
-		this.inMemoryEntries = [];
-		this.sessionInitialized = false;
 		this.sessionId = uuidv4();
+		this.flushed = false;
+		this.inMemoryEntries = [
+			{
+				type: "session",
+				id: this.sessionId,
+				timestamp: new Date().toISOString(),
+				cwd: this.channelDir,
+			},
+		];
 		// Truncate the context file
 		if (existsSync(this.contextFile)) {
 			writeFileSync(this.contextFile, "");
@@ -370,7 +323,7 @@ export class MomSessionManager {
 	}
 
 	// Compatibility methods for AgentSession
-	isEnabled(): boolean {
+	isPersisted(): boolean {
 		return true;
 	}
 

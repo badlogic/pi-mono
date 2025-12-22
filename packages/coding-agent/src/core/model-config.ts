@@ -15,7 +15,8 @@ import {
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
-import { getModelsPath } from "../config.js";
+import { join } from "path";
+import { getAgentDir } from "../config.js";
 import { getOAuthToken, type OAuthProvider, refreshToken } from "./oauth/index.js";
 
 // Handle both default and named exports
@@ -97,8 +98,8 @@ export function resolveApiKey(keyConfig: string): string | undefined {
  * Load custom models from models.json in agent config dir
  * Returns { models, error } - either models array or error message
  */
-function loadCustomModels(): { models: Model<Api>[]; error: string | null } {
-	const configPath = getModelsPath();
+function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api>[]; error: string | null } {
+	const configPath = join(agentDir, "models.json");
 	if (!existsSync(configPath)) {
 		return { models: [], error: null };
 	}
@@ -232,7 +233,7 @@ function parseModels(config: ModelsConfig): Model<Api>[] {
  * Get all models (built-in + custom), freshly loaded
  * Returns { models, error } - either models array or error message
  */
-export function loadAndMergeModels(): { models: Model<Api>[]; error: string | null } {
+export function loadAndMergeModels(agentDir: string = getAgentDir()): { models: Model<Api>[]; error: string | null } {
 	const builtInModels: Model<Api>[] = [];
 	const providers = getProviders();
 
@@ -243,7 +244,7 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 	}
 
 	// Load custom models
-	const { models: customModels, error } = loadCustomModels();
+	const { models: customModels, error } = loadCustomModels(agentDir);
 
 	if (error) {
 		return { models: [], error };
@@ -267,7 +268,8 @@ export function loadAndMergeModels(): { models: Model<Api>[]; error: string | nu
 
 /**
  * Get API key for a model (checks custom providers first, then built-in)
- * Now async to support OAuth token refresh
+ * Now async to support OAuth token refresh.
+ * Note: OAuth storage location is configured globally via setOAuthStorage.
  */
 export async function getApiKeyForModel(model: Model<Api>): Promise<string | undefined> {
 	// For custom providers, check their apiKey config
@@ -357,26 +359,17 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
  * Get only models that have valid API keys available
  * Returns { models, error } - either models array or error message
  */
-export async function getAvailableModels(): Promise<{ models: Model<Api>[]; error: string | null }> {
-	const { models: allModels, error } = loadAndMergeModels();
+export async function getAvailableModels(
+	agentDir: string = getAgentDir(),
+): Promise<{ models: Model<Api>[]; error: string | null }> {
+	const { models: allModels, error } = loadAndMergeModels(agentDir);
 
 	if (error) {
 		return { models: [], error };
 	}
 
 	const availableModels: Model<Api>[] = [];
-	const copilotCreds = loadOAuthCredentials("github-copilot");
-	const hasCopilotEnv = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
-	const hasCopilot = !!copilotCreds || hasCopilotEnv;
-
 	for (const model of allModels) {
-		if (model.provider === "github-copilot") {
-			if (hasCopilot) {
-				availableModels.push(model);
-			}
-			continue;
-		}
-
 		const apiKey = await getApiKeyForModel(model);
 		if (apiKey) {
 			availableModels.push(model);
@@ -390,8 +383,12 @@ export async function getAvailableModels(): Promise<{ models: Model<Api>[]; erro
  * Find a specific model by provider and ID
  * Returns { model, error } - either model or error message
  */
-export function findModel(provider: string, modelId: string): { model: Model<Api> | null; error: string | null } {
-	const { models: allModels, error } = loadAndMergeModels();
+export function findModel(
+	provider: string,
+	modelId: string,
+	agentDir: string = getAgentDir(),
+): { model: Model<Api> | null; error: string | null } {
+	const { models: allModels, error } = loadAndMergeModels(agentDir);
 
 	if (error) {
 		return { model: null, error };

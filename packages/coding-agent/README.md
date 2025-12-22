@@ -33,6 +33,9 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
+  - [SDK](#sdk)
+  - [RPC Mode](#rpc-mode)
+  - [HTML Export](#html-export)
 - [Philosophy](#philosophy)
 - [Development](#development)
 - [License](#license)
@@ -649,7 +652,14 @@ export default factory;
 
 ### Settings File
 
-`~/.pi/agent/settings.json` stores persistent preferences:
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
 
 ```json
 {
@@ -818,9 +828,43 @@ For adding new tools, see [Custom Tools](#custom-tools) in the Configuration sec
 
 ## Programmatic Usage
 
+### SDK
+
+For embedding pi in Node.js/TypeScript applications, use the SDK:
+
+```typescript
+import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({
+  sessionManager: SessionManager.inMemory(),
+});
+
+session.subscribe((event) => {
+  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+    process.stdout.write(event.assistantMessageEvent.delta);
+  }
+});
+
+await session.prompt("What files are in the current directory?");
+```
+
+The SDK provides full control over:
+- Model selection and thinking level
+- System prompt (replace or modify)
+- Tools (built-in subsets, custom tools)
+- Hooks (inline or discovered)
+- Skills, context files, slash commands
+- Session persistence (`SessionManager`)
+- Settings (`SettingsManager`)
+- API key resolution and OAuth
+
+**Philosophy:** "Omit to discover, provide to override." Omit an option and pi discovers from standard locations. Provide an option and your value is used.
+
+> See [SDK Documentation](docs/sdk.md) for the full API reference. See [examples/sdk/](examples/sdk/) for working examples from minimal to full control.
+
 ### RPC Mode
 
-For embedding pi in other applications:
+For embedding pi from other languages or with process isolation:
 
 ```bash
 pi --mode rpc --no-session
@@ -832,9 +876,7 @@ Send JSON commands on stdin:
 {"type":"abort"}
 ```
 
-See [RPC documentation](docs/rpc.md) for full protocol.
-
-**Node.js/TypeScript:** Consider using `AgentSession` directly from `@mariozechner/pi-coding-agent` instead of subprocess. See [`src/core/agent-session.ts`](src/core/agent-session.ts) and [`src/modes/rpc/rpc-client.ts`](src/modes/rpc/rpc-client.ts).
+> See [RPC Documentation](docs/rpc.md) for the full protocol.
 
 ### HTML Export
 

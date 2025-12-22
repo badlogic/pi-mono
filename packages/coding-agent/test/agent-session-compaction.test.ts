@@ -60,8 +60,8 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 			},
 		});
 
-		sessionManager = new SessionManager(false);
-		const settingsManager = new SettingsManager(tempDir);
+		sessionManager = SessionManager.create(tempDir);
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
 
 		session = new AgentSession({
 			agent,
@@ -174,11 +174,10 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 			},
 		});
 
-		// Create session manager and disable file persistence
-		const noSessionManager = new SessionManager(false);
-		noSessionManager.disable();
+		// Create in-memory session manager
+		const noSessionManager = SessionManager.inMemory();
 
-		const settingsManager = new SettingsManager(tempDir);
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
 
 		const noSessionSession = new AgentSession({
 			agent,

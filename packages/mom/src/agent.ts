@@ -411,12 +411,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
 
 	// Create session manager and settings manager
-	// Pass model info so new sessions get a header written immediately
-	const sessionManager = new MomSessionManager(channelDir, {
-		provider: model.provider,
-		id: model.id,
-		thinkingLevel: "off",
-	});
+	const sessionManager = new MomSessionManager(channelDir);
 	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
 
 	// Create agent

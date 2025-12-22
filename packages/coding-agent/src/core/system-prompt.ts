@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
 import type { SkillsSettings } from "./settings-manager.js";
-import { formatSkillsForPrompt, loadSkills } from "./skills.js";
+import { formatSkillsForPrompt, loadSkills, type Skill } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */
@@ -58,29 +58,39 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	return null;
 }
 
+export interface LoadContextFilesOptions {
+	/** Working directory to start walking up from. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory for global context. Default: from getAgentDir() */
+	agentDir?: string;
+}
+
 /**
  * Load all project context files in order:
- * 1. Global: ~/{CONFIG_DIR_NAME}/agent/AGENTS.md or CLAUDE.md
+ * 1. Global: agentDir/AGENTS.md or CLAUDE.md
  * 2. Parent directories (top-most first) down to cwd
  * Each returns {path, content} for separate messages
  */
-export function loadProjectContextFiles(): Array<{ path: string; content: string }> {
+export function loadProjectContextFiles(
+	options: LoadContextFilesOptions = {},
+): Array<{ path: string; content: string }> {
+	const resolvedCwd = options.cwd ?? process.cwd();
+	const resolvedAgentDir = options.agentDir ?? getAgentDir();
+
 	const contextFiles: Array<{ path: string; content: string }> = [];
 	const seenPaths = new Set<string>();
 
-	// 1. Load global context from ~/{CONFIG_DIR_NAME}/agent/
-	const globalContextDir = getAgentDir();
-	const globalContext = loadContextFileFromDir(globalContextDir);
+	// 1. Load global context from agentDir
+	const globalContext = loadContextFileFromDir(resolvedAgentDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);
 		seenPaths.add(globalContext.path);
 	}
 
 	// 2. Walk up from cwd to root, collecting all context files
-	const cwd = process.cwd();
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
-	let currentDir = cwd;
+	let currentDir = resolvedCwd;
 	const root = resolve("/");
 
 	while (true) {
@@ -107,15 +117,37 @@ export function loadProjectContextFiles(): Array<{ path: string; content: string
 }
 
 export interface BuildSystemPromptOptions {
+	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
+	/** Tools to include in prompt. Default: [read, bash, edit, write] */
 	selectedTools?: ToolName[];
+	/** Text to append to system prompt. */
 	appendSystemPrompt?: string;
+	/** Skills settings for discovery. */
 	skillsSettings?: SkillsSettings;
+	/** Working directory. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory. Default: from getAgentDir() */
+	agentDir?: string;
+	/** Pre-loaded context files (skips discovery if provided). */
+	contextFiles?: Array<{ path: string; content: string }>;
+	/** Pre-loaded skills (skips discovery if provided). */
+	skills?: Skill[];
 }
 
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
-	const { customPrompt, selectedTools, appendSystemPrompt, skillsSettings } = options;
+	const {
+		customPrompt,
+		selectedTools,
+		appendSystemPrompt,
+		skillsSettings,
+		cwd,
+		agentDir,
+		contextFiles: providedContextFiles,
+		skills: providedSkills,
+	} = options;
+	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedCustomPrompt = resolvePromptInput(customPrompt, "system prompt");
 	const resolvedAppendPrompt = resolvePromptInput(appendSystemPrompt, "append system prompt");
 
@@ -133,6 +165,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const appendSection = resolvedAppendPrompt ? `\n\n${resolvedAppendPrompt}` : "";
 
+	// Resolve context files: use provided or discover
+	const contextFiles = providedContextFiles ?? loadProjectContextFiles({ cwd: resolvedCwd, agentDir });
+
+	// Resolve skills: use provided or discover
+	const skills =
+		providedSkills ??
+		(skillsSettings?.enabled !== false ? loadSkills({ ...skillsSettings, cwd: resolvedCwd, agentDir }).skills : []);
+
 	if (resolvedCustomPrompt) {
 		let prompt = resolvedCustomPrompt;
 
@@ -141,7 +181,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 
 		// Append project context files
-		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
 			prompt += "\n\n# Project Context\n\n";
 			prompt += "The following project context files have been loaded:\n\n";
@@ -152,14 +191,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 		// Append skills section (only if read tool is available)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (skillsSettings?.enabled !== false && customPromptHasRead) {
-			const { skills } = loadSkills(skillsSettings ?? {});
+		if (customPromptHasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
 		// Add date/time and working directory last
 		prompt += `\nCurrent date and time: ${dateTime}`;
-		prompt += `\nCurrent working directory: ${process.cwd()}`;
+		prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 		return prompt;
 	}
@@ -248,7 +286,6 @@ Documentation:
 	}
 
 	// Append project context files
-	const contextFiles = loadProjectContextFiles();
 	if (contextFiles.length > 0) {
 		prompt += "\n\n# Project Context\n\n";
 		prompt += "The following project context files have been loaded:\n\n";
@@ -258,14 +295,13 @@ Documentation:
 	}
 
 	// Append skills section (only if read tool is available)
-	if (skillsSettings?.enabled !== false && hasRead) {
-		const { skills } = loadSkills(skillsSettings ?? {});
+	if (hasRead && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
 	}
 
 	// Add date/time and working directory last
 	prompt += `\nCurrent date and time: ${dateTime}`;
-	prompt += `\nCurrent working directory: ${process.cwd()}`;
+	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 	return prompt;
 }

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import type { SkillsSettings } from "./settings-manager.js";
 
 /**
@@ -313,12 +313,21 @@ function escapeXml(str: string): string {
 		.replace(/'/g, "&apos;");
 }
 
+export interface LoadSkillsOptions extends SkillsSettings {
+	/** Working directory for project-local skills. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory for global skills. Default: ~/.pi/agent */
+	agentDir?: string;
+}
+
 /**
  * Load skills from all configured locations.
  * Returns skills and any validation warnings.
  */
-export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
+export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 	const {
+		cwd = process.cwd(),
+		agentDir,
 		enableCodexUser = true,
 		enableClaudeUser = true,
 		enableClaudeProject = true,
@@ -328,6 +337,9 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 		ignoredSkills = [],
 		includeSkills = [],
 	} = options;
+
+	// Resolve agentDir - if not provided, use default from config
+	const resolvedAgentDir = agentDir ?? getAgentDir();
 
 	const skillMap = new Map<string, Skill>();
 	const allWarnings: SkillWarning[] = [];
@@ -375,13 +387,13 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 		addSkills(loadSkillsFromDirInternal(join(homedir(), ".claude", "skills"), "claude-user", "claude"));
 	}
 	if (enableClaudeProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), ".claude", "skills"), "claude-project", "claude"));
+		addSkills(loadSkillsFromDirInternal(resolve(cwd, ".claude", "skills"), "claude-project", "claude"));
 	}
 	if (enablePiUser) {
-		addSkills(loadSkillsFromDirInternal(join(homedir(), CONFIG_DIR_NAME, "agent", "skills"), "user", "recursive"));
+		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", "recursive"));
 	}
 	if (enablePiProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), CONFIG_DIR_NAME, "skills"), "project", "recursive"));
+		addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", "recursive"));
 	}
 	for (const customDir of customDirectories) {
 		addSkills(loadSkillsFromDirInternal(customDir.replace(/^~(?=$|[\\/])/, homedir()), "custom", "recursive"));

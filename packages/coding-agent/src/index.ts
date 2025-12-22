@@ -83,6 +83,32 @@ export {
 	type OAuthPrompt,
 	type OAuthProvider,
 } from "./core/oauth/index.js";
+// SDK for programmatic usage
+export {
+	type BuildSystemPromptOptions,
+	buildSystemPrompt,
+	type CreateAgentSessionOptions,
+	type CreateAgentSessionResult,
+	// Configuration
+	configureOAuthStorage,
+	// Factory
+	createAgentSession,
+	// Helpers
+	defaultGetApiKey,
+	discoverAvailableModels,
+	discoverContextFiles,
+	discoverCustomTools,
+	discoverHooks,
+	// Discovery
+	discoverModels,
+	discoverSkills,
+	discoverSlashCommands,
+	type FileSlashCommand,
+	findModel as findModelByProviderAndId,
+	loadSettings,
+	// Tools
+	readOnlyTools,
+} from "./core/sdk.js";
 export {
 	type CompactionEntry,
 	createSummaryMessage,
@@ -93,6 +119,7 @@ export {
 	parseSessionEntries,
 	type SessionEntry,
 	type SessionHeader,
+	type SessionInfo,
 	SessionManager,
 	type SessionMessageEntry,
 	SUMMARY_PREFIX,
