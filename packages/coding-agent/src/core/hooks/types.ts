@@ -323,6 +323,8 @@ export interface ToolResultEventResult {
 export interface SessionEventResult {
 	/** If true, cancel the pending action (switch, clear, or branch) */
 	cancel?: boolean;
+	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
+	skipConversationRestore?: boolean;
 }
 
 // ============================================================================

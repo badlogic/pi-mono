@@ -1249,6 +1249,8 @@ export class AgentSession {
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
 
+		let skipConversationRestore = false;
+
 		// Emit before_branch event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
@@ -1263,6 +1265,7 @@ export class AgentSession {
 			if (result?.cancel) {
 				return { selectedText, cancelled: true };
 			}
+			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
 		// Create branched session (returns null in --no-session mode)
@@ -1293,7 +1296,9 @@ export class AgentSession {
 		// Emit session event to custom tools (with reason "branch")
 		await this._emitToolSessionEvent("branch", previousSessionFile);
 
-		this.agent.replaceMessages(loaded.messages);
+		if (!skipConversationRestore) {
+			this.agent.replaceMessages(loaded.messages);
+		}
 
 		return { selectedText, cancelled: false };
 	}

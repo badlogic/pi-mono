@@ -154,7 +154,12 @@ pi.on("session", async (event, ctx) => {
   if (event.reason === "before_clear") {
     return { cancel: true };
   }
-  // No return needed if not cancelling
+
+  // For before_branch only: create branch but skip conversation restore
+  // (useful for checkpoint hooks that restore files separately)
+  if (event.reason === "before_branch") {
+    return { skipConversationRestore: true };
+  }
 });
 ```
 
