@@ -215,15 +215,6 @@ function discoverHooksInDir(dir: string): string[] {
 	}
 }
 
-export interface DiscoverAndLoadHooksOptions {
-	/** Explicit paths from settings.json or CLI */
-	configuredPaths?: string[];
-	/** Current working directory */
-	cwd?: string;
-	/** Agent config directory. Default: from getAgentDir() */
-	agentDir?: string;
-}
-
 /**
  * Discover and load hooks from standard locations:
  * 1. agentDir/hooks/*.ts (global)
@@ -234,9 +225,8 @@ export interface DiscoverAndLoadHooksOptions {
 export async function discoverAndLoadHooks(
 	configuredPaths: string[],
 	cwd: string,
-	agentDir?: string,
+	agentDir: string = getAgentDir(),
 ): Promise<LoadHooksResult> {
-	const resolvedAgentDir = agentDir ?? getAgentDir();
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
@@ -252,7 +242,7 @@ export async function discoverAndLoadHooks(
 	};
 
 	// 1. Global hooks: agentDir/hooks/
-	const globalHooksDir = path.join(resolvedAgentDir, "hooks");
+	const globalHooksDir = path.join(agentDir, "hooks");
 	addPaths(discoverHooksInDir(globalHooksDir));
 
 	// 2. Project-local hooks: cwd/.pi/hooks/

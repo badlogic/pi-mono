@@ -317,9 +317,8 @@ export async function discoverAndLoadCustomTools(
 	configuredPaths: string[],
 	cwd: string,
 	builtInToolNames: string[],
-	agentDir?: string,
+	agentDir: string = getAgentDir(),
 ): Promise<CustomToolsLoadResult> {
-	const resolvedAgentDir = agentDir ?? getAgentDir();
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
@@ -335,7 +334,7 @@ export async function discoverAndLoadCustomTools(
 	};
 
 	// 1. Global tools: agentDir/tools/
-	const globalToolsDir = path.join(resolvedAgentDir, "tools");
+	const globalToolsDir = path.join(agentDir, "tools");
 	addPaths(discoverToolsInDir(globalToolsDir));
 
 	// 2. Project-local tools: cwd/.pi/tools/

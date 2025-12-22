@@ -369,18 +369,7 @@ export async function getAvailableModels(
 	}
 
 	const availableModels: Model<Api>[] = [];
-	const copilotCreds = loadOAuthCredentials("github-copilot");
-	const hasCopilotEnv = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
-	const hasCopilot = !!copilotCreds || hasCopilotEnv;
-
 	for (const model of allModels) {
-		if (model.provider === "github-copilot") {
-			if (hasCopilot) {
-				availableModels.push(model);
-			}
-			continue;
-		}
-
 		const apiKey = await getApiKeyForModel(model);
 		if (apiKey) {
 			availableModels.push(model);
