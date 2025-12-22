@@ -322,6 +322,49 @@ export async function generateSummary(
 }
 
 // ============================================================================
+// Compaction Preparation (for hooks)
+// ============================================================================
+
+export interface CompactionPreparation {
+	cutPoint: CutPointResult;
+	messagesToSummarize: AppMessage[];
+	tokensBefore: number;
+	boundaryStart: number;
+}
+
+export function prepareCompaction(entries: SessionEntry[], settings: CompactionSettings): CompactionPreparation | null {
+	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
+		return null;
+	}
+
+	let prevCompactionIndex = -1;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		if (entries[i].type === "compaction") {
+			prevCompactionIndex = i;
+			break;
+		}
+	}
+	const boundaryStart = prevCompactionIndex + 1;
+	const boundaryEnd = entries.length;
+
+	const lastUsage = getLastAssistantUsage(entries);
+	const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
+
+	const cutPoint = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+
+	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+	const messagesToSummarize: AppMessage[] = [];
+	for (let i = boundaryStart; i < historyEnd; i++) {
+		const entry = entries[i];
+		if (entry.type === "message") {
+			messagesToSummarize.push(entry.message);
+		}
+	}
+
+	return { cutPoint, messagesToSummarize, tokensBefore, boundaryStart };
+}
+
+// ============================================================================
 // Main compaction function
 // ============================================================================
 
