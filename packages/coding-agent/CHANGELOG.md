@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.27.2] - 2025-12-23
+
+### Added
+
+- **Skip conversation restore on branch**: Hooks can return `{ skipConversationRestore: true }` from `before_branch` to create the branched session file without restoring conversation messages. Useful for checkpoint hooks that restore files separately. ([#286](https://github.com/badlogic/pi-mono/pull/286) by [@nicobarray](https://github.com/nicobarray))
+
 ## [0.27.1] - 2025-12-22
 
 ### Fixed
