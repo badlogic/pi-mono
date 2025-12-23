@@ -203,6 +203,7 @@ async function runSingleAgent(
 	agents: AgentConfig[],
 	agentName: string,
 	task: string,
+	cwd: string | undefined,
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
@@ -263,7 +264,7 @@ async function runSingleAgent(
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const proc = spawn("pi", args, { cwd: pi.cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+			const proc = spawn("pi", args, { cwd: cwd ?? pi.cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
 			let buffer = "";
 
 			const processLine = (line: string) => {
@@ -338,11 +339,13 @@ async function runSingleAgent(
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
+	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
+	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
@@ -357,6 +360,7 @@ const SubagentParams = Type.Object({
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true })),
+	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
 const factory: CustomToolFactory = (pi) => {
@@ -441,7 +445,7 @@ const factory: CustomToolFactory = (pi) => {
 						}
 					} : undefined;
 					
-					const result = await runSingleAgent(pi, agents, step.agent, taskWithContext, i + 1, signal, chainUpdate, makeDetails("chain"));
+					const result = await runSingleAgent(pi, agents, step.agent, taskWithContext, step.cwd, i + 1, signal, chainUpdate, makeDetails("chain"));
 					results.push(result);
 					
 					const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
@@ -486,7 +490,7 @@ const factory: CustomToolFactory = (pi) => {
 				
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
 					const result = await runSingleAgent(
-						pi, agents, t.agent, t.task, undefined, signal,
+						pi, agents, t.agent, t.task, t.cwd, undefined, signal,
 						// Per-task update callback
 						(partial) => {
 							if (partial.details?.results[0]) {
@@ -511,7 +515,7 @@ const factory: CustomToolFactory = (pi) => {
 			}
 
 			if (params.agent && params.task) {
-				const result = await runSingleAgent(pi, agents, params.agent, params.task, undefined, signal, onUpdate, makeDetails("single"));
+				const result = await runSingleAgent(pi, agents, params.agent, params.task, params.cwd, undefined, signal, onUpdate, makeDetails("single"));
 				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
 				if (isError) {
 					const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
