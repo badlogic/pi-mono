@@ -23,6 +23,7 @@ import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, configureOAuthStorage, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
@@ -177,6 +178,9 @@ function buildSessionOptions(
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
+	const resolvedSystemPrompt = resolvePromptInput(parsed.systemPrompt, "system prompt");
+	const resolvedAppendPrompt = resolvePromptInput(parsed.appendSystemPrompt, "append system prompt");
+
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
 	}
@@ -215,12 +219,12 @@ function buildSessionOptions(
 	}
 
 	// System prompt
-	if (parsed.systemPrompt && parsed.appendSystemPrompt) {
-		options.systemPrompt = `${parsed.systemPrompt}\n\n${parsed.appendSystemPrompt}`;
-	} else if (parsed.systemPrompt) {
-		options.systemPrompt = parsed.systemPrompt;
-	} else if (parsed.appendSystemPrompt) {
-		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${parsed.appendSystemPrompt}`;
+	if (resolvedSystemPrompt && resolvedAppendPrompt) {
+		options.systemPrompt = `${resolvedSystemPrompt}\n\n${resolvedAppendPrompt}`;
+	} else if (resolvedSystemPrompt) {
+		options.systemPrompt = resolvedSystemPrompt;
+	} else if (resolvedAppendPrompt) {
+		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${resolvedAppendPrompt}`;
 	}
 
 	// Tools
