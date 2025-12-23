@@ -22,7 +22,7 @@ const toolDescriptions: Record<ToolName, string> = {
 };
 
 /** Resolve input as file path or literal string */
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+export function resolvePromptInput(input: string | undefined, description: string): string | undefined {
 	if (!input) {
 		return undefined;
 	}
