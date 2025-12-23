@@ -236,6 +236,9 @@ export class InteractiveMode {
 			theme.fg("dim", "ctrl+t") +
 			theme.fg("muted", " to toggle thinking") +
 			"\n" +
+			theme.fg("dim", "ctrl+g") +
+			theme.fg("muted", " for external editor") +
+			"\n" +
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
 			"\n" +

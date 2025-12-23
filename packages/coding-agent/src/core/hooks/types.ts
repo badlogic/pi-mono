@@ -108,7 +108,7 @@ interface SessionEventBase {
  *
  * Lifecycle:
  * - start: Initial session load
- * - before_switch / switch: Session switch (e.g., /session command)
+ * - before_switch / switch: Session switch (e.g., /resume command)
  * - before_clear / clear: Session clear (e.g., /clear command)
  * - before_branch / branch: Session branch (e.g., /branch command)
  * - shutdown: Process exit (SIGINT/SIGTERM)

@@ -120,7 +120,7 @@ user branches (/branch)
   ├─► session (reason: "before_branch", can cancel)
   └─► session (reason: "branch", AFTER branch)
 
-user switches session (/session)
+user switches session (/resume)
   │
   ├─► session (reason: "before_switch", can cancel)
   └─► session (reason: "switch", AFTER switch)
@@ -165,7 +165,7 @@ pi.on("session", async (event, ctx) => {
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `before_switch` / `switch`: User switched sessions (`/session`)
+- `before_switch` / `switch`: User switched sessions (`/resume`)
 - `before_clear` / `clear`: User cleared the session (`/clear`)
 - `before_branch` / `branch`: User branched the session (`/branch`)
 - `shutdown`: Process is exiting (double Ctrl+C, Ctrl+D, or SIGTERM)

@@ -901,7 +901,7 @@ Pi is opinionated about what it won't do. These are intentional design decisions
 
 **No plan mode.** Gather context in one session, write plans to file, start fresh for implementation.
 
-**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/custom-tools/todo.ts) with [custom tools](#custom-tools).
+**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/custom-tools/todo/) with [custom tools](#custom-tools).
 
 **No background bash.** Use tmux. Full observability, direct interaction.
 

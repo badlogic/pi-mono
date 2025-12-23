@@ -192,7 +192,7 @@ interface ToolSessionEvent {
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `switch`: User switched to a different session (`/session`)
+- `switch`: User switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
 - `clear`: User cleared the session (`/clear`)
 
@@ -400,12 +400,12 @@ const factory: CustomToolFactory = (pi) => {
 
 ## Examples
 
-See [`examples/custom-tools/todo.ts`](../examples/custom-tools/todo.ts) for a complete example with:
+See [`examples/custom-tools/todo/index.ts`](../examples/custom-tools/todo/index.ts) for a complete example with:
 - `onSession` for state reconstruction
 - Custom `renderCall` and `renderResult`
 - Proper branching support via details storage
 
 Test with:
 ```bash
-pi --tool packages/coding-agent/examples/custom-tools/todo.ts
+pi --tool packages/coding-agent/examples/custom-tools/todo/index.ts
 ```
