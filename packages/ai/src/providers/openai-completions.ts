@@ -247,6 +247,8 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 							if (currentBlock.type === "toolCall") {
 								if (toolCall.id) currentBlock.id = toolCall.id;
 								if (toolCall.function?.name) currentBlock.name = toolCall.function.name;
+								const thoughtSignature = (toolCall as any)?.extra_content?.google?.thought_signature;
+								if (thoughtSignature) currentBlock.thoughtSignature = thoughtSignature;
 								let delta = "";
 								if (toolCall.function?.arguments) {
 									delta = toolCall.function.arguments;
@@ -493,24 +495,32 @@ function convertMessages(
 
 			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
-				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: normalizeMistralToolId(tc.id, compat.requiresMistralToolIds),
-					type: "function" as const,
-					function: {
-						name: tc.name,
-						arguments: JSON.stringify(tc.arguments),
-					},
-				}));
-				const reasoningDetails = toolCalls
-					.filter((tc) => tc.thoughtSignature)
-					.map((tc) => {
-						try {
-							return JSON.parse(tc.thoughtSignature!);
-						} catch {
-							return null;
+				const reasoningDetails: any[] = [];
+				assistantMsg.tool_calls = toolCalls.map((tc) => {
+					const toolCall: OpenAI.Chat.Completions.ChatCompletionMessageToolCall = {
+						id: normalizeMistralToolId(tc.id, compat.requiresMistralToolIds),
+						type: "function",
+						function: {
+							name: tc.name,
+							arguments: JSON.stringify(tc.arguments),
+						},
+					};
+					if (tc.thoughtSignature) {
+						const parsed = (() => {
+							try {
+								return JSON.parse(tc.thoughtSignature);
+							} catch {
+								return null;
+							}
+						})();
+						if (parsed) {
+							reasoningDetails.push(parsed);
+						} else {
+							(toolCall as any).extra_content = { google: { thought_signature: tc.thoughtSignature } };
 						}
-					})
-					.filter(Boolean);
+					}
+					return toolCall;
+				});
 				if (reasoningDetails.length > 0) {
 					(assistantMsg as any).reasoning_details = reasoningDetails;
 				}
