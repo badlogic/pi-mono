@@ -112,7 +112,7 @@ interface SessionEventBase {
  * - before_switch / switch: Session switch (e.g., /resume command)
  * - before_clear / clear: Session clear (e.g., /clear command)
  * - before_branch / branch: Session branch (e.g., /branch command)
- * - before_compact: Before context compaction (can provide custom summary)
+ * - before_compact / compact: Before/after context compaction
  * - shutdown: Process exit (SIGINT/SIGTERM)
  *
  * "before_*" events fire before the action and can be cancelled via SessionEventResult.
@@ -135,6 +135,13 @@ export type SessionEvent =
 			customInstructions?: string;
 			model: Model<any>;
 			apiKey: string;
+	  })
+	| (SessionEventBase & {
+			reason: "compact";
+			compactionEntry: CompactionEntry;
+			tokensBefore: number;
+			/** Whether the compaction entry was provided by a hook */
+			fromHook: boolean;
 	  });
 
 /**

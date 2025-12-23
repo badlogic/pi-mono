@@ -757,6 +757,7 @@ export class AgentSession {
 			}
 
 			let compactionEntry: CompactionEntry | undefined;
+			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
 				const result = (await this._hookRunner.emit({
@@ -779,6 +780,7 @@ export class AgentSession {
 
 				if (result?.compactionEntry) {
 					compactionEntry = result.compactionEntry;
+					fromHook = true;
 				}
 			}
 
@@ -798,8 +800,22 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
-			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			const newEntries = this.sessionManager.loadEntries();
+			const loaded = loadSessionFromEntries(newEntries);
 			this.agent.replaceMessages(loaded.messages);
+
+			if (this._hookRunner) {
+				await this._hookRunner.emit({
+					type: "session",
+					entries: newEntries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "compact",
+					compactionEntry,
+					tokensBefore: compactionEntry.tokensBefore,
+					fromHook,
+				});
+			}
 
 			return {
 				tokensBefore: compactionEntry.tokensBefore,
@@ -891,6 +907,7 @@ export class AgentSession {
 			}
 
 			let compactionEntry: CompactionEntry | undefined;
+			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
 				const hookResult = (await this._hookRunner.emit({
@@ -914,6 +931,7 @@ export class AgentSession {
 
 				if (hookResult?.compactionEntry) {
 					compactionEntry = hookResult.compactionEntry;
+					fromHook = true;
 				}
 			}
 
@@ -933,8 +951,22 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
-			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			const newEntries = this.sessionManager.loadEntries();
+			const loaded = loadSessionFromEntries(newEntries);
 			this.agent.replaceMessages(loaded.messages);
+
+			if (this._hookRunner) {
+				await this._hookRunner.emit({
+					type: "session",
+					entries: newEntries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "compact",
+					compactionEntry,
+					tokensBefore: compactionEntry.tokensBefore,
+					fromHook,
+				});
+			}
 
 			const result: CompactionResult = {
 				tokensBefore: compactionEntry.tokensBefore,
