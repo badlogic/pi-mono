@@ -422,8 +422,7 @@ export class AgentSession {
 		if (!this.model) {
 			throw new Error(
 				"No model selected.\n\n" +
-					"Set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)\n" +
-					`or create ${getModelsPath()}\n\n` +
+					`Use /login, set an API key environment variable or create ${getModelsPath()}\n\n` +
 					"Then use /model to select a model.",
 			);
 		}

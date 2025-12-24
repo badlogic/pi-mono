@@ -517,15 +517,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (!model) {
 		const available = await discoverAvailableModels();
 		time("discoverAvailableModels");
-		if (available.length === 0) {
-			throw new Error(
-				"No models available. Set an API key environment variable " +
-					"(ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or provide a model explicitly.",
-			);
-		}
-		model = available[0];
-		if (modelFallbackMessage) {
-			modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
+		if (available.length > 0) {
+			model = available[0];
+			if (modelFallbackMessage) {
+				modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
+			}
+		} else {
+			// No models available - set message so user knows to /login or configure keys
+			modelFallbackMessage = "No models available. Use /login or set an API key environment variable.";
 		}
 	}
 
@@ -542,7 +541,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Clamp to model capabilities
-	if (!model.reasoning) {
+	if (!model || !model.reasoning) {
 		thinkingLevel = "off";
 	}
 
