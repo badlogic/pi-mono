@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
@@ -357,6 +357,7 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 	const resolvedAgentDir = agentDir ?? getAgentDir();
 
 	const skillMap = new Map<string, Skill>();
+	const realPathSet = new Set<string>();
 	const allWarnings: SkillWarning[] = [];
 	const collisionWarnings: SkillWarning[] = [];
 
@@ -383,6 +384,20 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 			if (!matchesIncludePatterns(skill.name)) {
 				continue;
 			}
+
+			// Resolve symlinks to detect duplicate files
+			let realPath: string;
+			try {
+				realPath = realpathSync(skill.filePath);
+			} catch {
+				realPath = skill.filePath;
+			}
+
+			// Skip silently if we've already loaded this exact file (via symlink)
+			if (realPathSet.has(realPath)) {
+				continue;
+			}
+
 			const existing = skillMap.get(skill.name);
 			if (existing) {
 				collisionWarnings.push({
@@ -391,6 +406,7 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 				});
 			} else {
 				skillMap.set(skill.name, skill);
+				realPathSet.add(realPath);
 			}
 		}
 	}
