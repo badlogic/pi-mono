@@ -188,31 +188,31 @@ When context exceeds the threshold, pi finds a "cut point" that keeps recent tur
 
 ```
 Legend:
-  H = header        U = user message      A = assistant message
-  T = tool result   C = compaction entry  B = bashExecution
+  hdr  = header           usr  = user message       ass = assistant message
+  tool = tool result      cmp  = compaction entry   bash = bashExecution
 ```
 
 ```
 Session entries (before compaction):
 
-  index:  0   1   2   3   4   5   6   7   8   9   10  11
-        ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
-        │ H │ C │ U │ A │ T │ A │ U │ A │ T │ T │ A │ T │
-        └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
-              ↑   └───────┬───────┘   └─────────┬─────────┘
-       previousSummary  messagesToSummarize   messagesToKeep
-                                 ↑
-                  cutPoint.firstKeptEntryIndex = 6
+  index:   0     1     2     3      4     5     6     7      8      9     10     11
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬─────┬──────┬──────┬─────┬──────┐
+        │ hdr │ cmp │ usr │ ass │ tool │ ass │ usr │ ass │ tool │ tool │ ass │ tool │
+        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴─────┴──────┴──────┴─────┴──────┘
+                ↑     └────────┬────────┘     └────────────┬────────────┘
+         previousSummary    messagesToSummarize         messagesToKeep
+                                       ↑
+                        cutPoint.firstKeptEntryIndex = 6
 
 After compaction (new entry appended):
 
-  index:  0   1   2   3   4   5   6   7   8   9   10  11  12
-        ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
-        │ H │ C │ U │ A │ T │ A │ U │ A │ T │ T │ A │ T │ C │
-        └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
-                └───────┬───────┘   └─────────┬─────────┘   ↑
-                     ignored              loaded      firstKeptEntryIndex = 6
-                   on reload            on reload     (stored in new C)
+  index:   0     1     2     3      4     5     6     7      8      9     10     11    12
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬─────┬──────┬──────┬─────┬──────┬─────┐
+        │ hdr │ cmp │ usr │ ass │ tool │ ass │ usr │ ass │ tool │ tool │ ass │ tool │ cmp │
+        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴─────┴──────┴──────┴─────┴──────┴─────┘
+                      └────────┬────────┘     └────────────┬────────────┘       ↑
+                           ignored                      loaded         firstKeptEntryIndex = 6
+                         on reload                    on reload        (stored in new cmp)
 ```
 
 The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`. The cut point is always a user, assistant, or bashExecution message (never a tool result, which must stay with its tool call).
@@ -220,11 +220,11 @@ The session file is append-only. When loading, the session loader finds the late
 ```
 What gets sent to the LLM as context:
 
-  ┌────────────────────────────────────────────────────────────┐
-  │ [system] [summary] [U idx 6] [A idx 7] [T idx 8] [T idx 9] [A idx 10] [T idx 11] │
-  └────────────────────────────────────────────────────────────┘
-                 ↑           └──────────────────┬──────────────────┘
-       from new C's summary         messages from firstKeptEntryIndex onwards
+  ┌──────────────────────────────────────────────────────────────────────────────────────┐
+  │ [system] [summary] [usr idx 6] [ass idx 7] [tool idx 8] [tool idx 9] [ass idx 10] [tool idx 11] │
+  └──────────────────────────────────────────────────────────────────────────────────────┘
+                 ↑              └──────────────────────┬──────────────────────┘
+       from new cmp's summary              messages from firstKeptEntryIndex onwards
 ```
 
 **Split turns:** When a single turn is too large, the cut point may land mid-turn at an assistant message. In this case `cutPoint.isSplitTurn = true`:
@@ -232,18 +232,18 @@ What gets sent to the LLM as context:
 ```
 Split turn example (one huge turn that exceeds keepRecentTokens):
 
-  index:  0   1   2   3   4   5   6   7   8   9
-        ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
-        │ H │ U │ A │ T │ A │ T │ T │ A │ T │ A │
-        └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
-            ↑                       ↑
-     turnStartIndex = 1    firstKeptEntryIndex = 7
-            │                       │ (must be U/A/B, not T)
-            └───── turn prefix ─────┘ (idx 1-6, summarized separately)
-                                    └── kept messages (idx 7-9)
+  index:   0     1     2      3     4      5      6     7      8     9
+        ┌─────┬─────┬─────┬──────┬─────┬──────┬──────┬─────┬──────┬─────┐
+        │ hdr │ usr │ ass │ tool │ ass │ tool │ tool │ ass │ tool │ ass │
+        └─────┴─────┴─────┴──────┴─────┴──────┴──────┴─────┴──────┴─────┘
+                ↑                                       ↑
+         turnStartIndex = 1                   firstKeptEntryIndex = 7
+                │                                       │ (must be usr/ass/bash, not tool)
+                └─────────── turn prefix ───────────────┘ (idx 1-6, summarized separately)
+                                                        └── kept messages (idx 7-9)
 
   messagesToSummarize = []  (no complete turns before this one)
-  messagesToKeep = [A idx 7, T idx 8, A idx 9]
+  messagesToKeep = [ass idx 7, tool idx 8, ass idx 9]
 
 The default compaction generates TWO summaries that get merged:
 1. History summary (previousSummary + messagesToSummarize)
