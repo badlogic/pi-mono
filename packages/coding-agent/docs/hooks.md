@@ -713,35 +713,9 @@ export default function (pi: HookAPI) {
 
 ### Custom Compaction
 
-Use a cheaper model for summarization, or implement your own compaction strategy.
+Use a different model for summarization, or implement your own compaction strategy.
 
-```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
-import type { CompactionEntry } from "@mariozechner/pi-coding-agent";
-
-export default function (pi: HookAPI) {
-  pi.on("session", async (event, ctx) => {
-    if (event.reason !== "before_compact") return;
-
-    // Example: Use a simpler summarization approach
-    const messages = event.messagesToSummarize;
-    const summary = messages
-      .filter((m) => m.role === "user")
-      .map((m) => `- ${typeof m.content === "string" ? m.content.slice(0, 100) : "[complex]"}`)
-      .join("\n");
-
-    const compactionEntry: CompactionEntry = {
-      type: "compaction",
-      timestamp: new Date().toISOString(),
-      summary: `User requests:\n${summary}`,
-      firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex,
-      tokensBefore: event.tokensBefore,
-    };
-
-    return { compactionEntry };
-  });
-}
-```
+See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) and the [Custom Compaction](#custom-compaction) section above for details.
 
 ## Mode Behavior
 
