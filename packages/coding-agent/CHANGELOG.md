@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.27.4] - 2025-12-24
+
+### Fixed
+
+- **Symlinked skill directories**: Skills in symlinked directories (e.g., `~/.pi/agent/skills/my-skills -> /path/to/skills`) are now correctly discovered and loaded.
+
 ## [0.27.3] - 2025-12-24
 
 ### Added

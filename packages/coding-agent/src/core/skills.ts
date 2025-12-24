@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
@@ -187,19 +187,29 @@ function loadSkillsFromDirInternal(dir: string, source: string, format: SkillFor
 				continue;
 			}
 
-			if (entry.isSymbolicLink()) {
-				continue;
-			}
-
 			const fullPath = join(dir, entry.name);
+
+			// For symlinks, check if they point to a directory and follow them
+			let isDirectory = entry.isDirectory();
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDirectory = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					// Broken symlink, skip it
+					continue;
+				}
+			}
 
 			if (format === "recursive") {
 				// Recursive format: scan directories, look for SKILL.md files
-				if (entry.isDirectory()) {
+				if (isDirectory) {
 					const subResult = loadSkillsFromDirInternal(fullPath, source, format);
 					skills.push(...subResult.skills);
 					warnings.push(...subResult.warnings);
-				} else if (entry.isFile() && entry.name === "SKILL.md") {
+				} else if (isFile && entry.name === "SKILL.md") {
 					const result = loadSkillFromFile(fullPath, source);
 					if (result.skill) {
 						skills.push(result.skill);
@@ -208,7 +218,7 @@ function loadSkillsFromDirInternal(dir: string, source: string, format: SkillFor
 				}
 			} else if (format === "claude") {
 				// Claude format: only one level deep, each directory must contain SKILL.md
-				if (!entry.isDirectory()) {
+				if (!isDirectory) {
 					continue;
 				}
 
