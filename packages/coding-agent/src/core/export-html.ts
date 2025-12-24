@@ -1,6 +1,7 @@
 import type { AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import hljs from "highlight.js";
 import { marked } from "marked";
 import { homedir } from "os";
 import * as path from "path";
@@ -322,17 +323,123 @@ function formatTimestamp(timestamp: number | string | undefined): string {
 	return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-/** Render markdown to HTML server-side with TUI-style code block formatting. */
+/** Highlight code using highlight.js. Returns HTML with syntax highlighting spans. */
+function highlightCode(code: string, lang?: string): string {
+	if (!lang) {
+		return escapeHtml(code);
+	}
+	try {
+		// Check if language is supported
+		if (hljs.getLanguage(lang)) {
+			return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+		}
+		// Try common aliases
+		const aliases: Record<string, string> = {
+			ts: "typescript",
+			js: "javascript",
+			py: "python",
+			rb: "ruby",
+			sh: "bash",
+			yml: "yaml",
+			md: "markdown",
+		};
+		const aliasedLang = aliases[lang];
+		if (aliasedLang && hljs.getLanguage(aliasedLang)) {
+			return hljs.highlight(code, { language: aliasedLang, ignoreIllegals: true }).value;
+		}
+	} catch {
+		// Fall through to escaped output
+	}
+	return escapeHtml(code);
+}
+
+/** Get language from file path extension. */
+function getLanguageFromPath(filePath: string): string | undefined {
+	const ext = filePath.split(".").pop()?.toLowerCase();
+	if (!ext) return undefined;
+
+	const extToLang: Record<string, string> = {
+		ts: "typescript",
+		tsx: "typescript",
+		js: "javascript",
+		jsx: "javascript",
+		mjs: "javascript",
+		cjs: "javascript",
+		py: "python",
+		rb: "ruby",
+		rs: "rust",
+		go: "go",
+		java: "java",
+		kt: "kotlin",
+		swift: "swift",
+		c: "c",
+		h: "c",
+		cpp: "cpp",
+		cc: "cpp",
+		cxx: "cpp",
+		hpp: "cpp",
+		cs: "csharp",
+		php: "php",
+		sh: "bash",
+		bash: "bash",
+		zsh: "bash",
+		fish: "bash",
+		ps1: "powershell",
+		sql: "sql",
+		html: "html",
+		htm: "html",
+		xml: "xml",
+		css: "css",
+		scss: "scss",
+		sass: "scss",
+		less: "less",
+		json: "json",
+		yaml: "yaml",
+		yml: "yaml",
+		toml: "toml",
+		ini: "ini",
+		md: "markdown",
+		markdown: "markdown",
+		dockerfile: "dockerfile",
+		makefile: "makefile",
+		cmake: "cmake",
+		lua: "lua",
+		r: "r",
+		scala: "scala",
+		clj: "clojure",
+		cljs: "clojure",
+		ex: "elixir",
+		exs: "elixir",
+		erl: "erlang",
+		hrl: "erlang",
+		hs: "haskell",
+		ml: "ocaml",
+		mli: "ocaml",
+		fs: "fsharp",
+		fsx: "fsharp",
+		vue: "vue",
+		svelte: "xml",
+		tf: "hcl",
+		hcl: "hcl",
+		proto: "protobuf",
+		graphql: "graphql",
+		gql: "graphql",
+	};
+
+	return extToLang[ext];
+}
+
+/** Render markdown to HTML server-side with TUI-style code block formatting and syntax highlighting. */
 function renderMarkdown(text: string): string {
 	// Custom renderer for code blocks to match TUI style
 	const renderer = new marked.Renderer();
 	renderer.code = ({ text: code, lang }: { text: string; lang?: string }) => {
 		const language = lang || "";
-		const escaped = escapeHtml(code);
+		const highlighted = highlightCode(code, lang);
 		return (
 			'<div class="code-block-wrapper">' +
 			`<div class="code-block-header">\`\`\`${language}</div>` +
-			`<pre><code>${escaped}</code></pre>` +
+			`<pre><code class="hljs">${highlighted}</code></pre>` +
 			'<div class="code-block-footer">```</div>' +
 			"</div>"
 		);
@@ -348,10 +455,32 @@ function renderMarkdown(text: string): string {
 	return marked.parse(text, { renderer }) as string;
 }
 
-function formatExpandableOutput(lines: string[], maxLines: number): string {
+function formatExpandableOutput(lines: string[], maxLines: number, lang?: string): string {
 	const displayLines = lines.slice(0, maxLines);
 	const remaining = lines.length - maxLines;
 
+	// If language is provided, highlight the entire code block
+	if (lang) {
+		const code = lines.join("\n");
+		const highlighted = highlightCode(code, lang);
+
+		if (remaining > 0) {
+			// For expandable, we need preview and full versions
+			const previewCode = displayLines.join("\n");
+			const previewHighlighted = highlightCode(previewCode, lang);
+
+			let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+			out += `<div class="output-preview"><pre><code class="hljs">${previewHighlighted}</code></pre>`;
+			out += `<div class="expand-hint">... (${remaining} more lines) - click to expand</div>`;
+			out += "</div>";
+			out += `<div class="output-full"><pre><code class="hljs">${highlighted}</code></pre></div></div>`;
+			return out;
+		}
+
+		return `<div class="tool-output"><pre><code class="hljs">${highlighted}</code></pre></div>`;
+	}
+
+	// No language - plain text output
 	if (remaining > 0) {
 		let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
 		out += '<div class="output-preview">';
@@ -601,12 +730,14 @@ function formatToolExecution(
 		}
 
 		case "read": {
-			const filePath = shortenPath((args?.file_path as string) || (args?.path as string) || "");
+			const filePath = (args?.file_path as string) || (args?.path as string) || "";
+			const shortenedPath = shortenPath(filePath);
 			const offset = args?.offset as number | undefined;
 			const limit = args?.limit as number | undefined;
+			const lang = getLanguageFromPath(filePath);
 
 			// Build path display with offset/limit suffix
-			let pathHtml = escapeHtml(filePath || "...");
+			let pathHtml = escapeHtml(shortenedPath || "...");
 			if (offset !== undefined || limit !== undefined) {
 				const startLine = offset ?? 1;
 				const endLine = limit !== undefined ? startLine + limit - 1 : "";
@@ -617,25 +748,27 @@ function formatToolExecution(
 			if (result) {
 				const output = getTextOutput();
 				if (output) {
-					html += formatExpandableOutput(output.split("\n"), 10);
+					html += formatExpandableOutput(output.split("\n"), 10, lang);
 				}
 			}
 			break;
 		}
 
 		case "write": {
-			const path = shortenPath((args?.file_path as string) || (args?.path as string) || "");
+			const filePath = (args?.file_path as string) || (args?.path as string) || "";
+			const shortenedPath = shortenPath(filePath);
 			const fileContent = (args?.content as string) || "";
 			const lines = fileContent ? fileContent.split("\n") : [];
+			const lang = getLanguageFromPath(filePath);
 
-			html = `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(path || "...")}</span>`;
+			html = `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(shortenedPath || "...")}</span>`;
 			if (lines.length > 10) {
 				html += ` <span class="line-count">(${lines.length} lines)</span>`;
 			}
 			html += "</div>";
 
 			if (fileContent) {
-				html += formatExpandableOutput(lines, 10);
+				html += formatExpandableOutput(lines, 10, lang);
 			}
 			if (result) {
 				const output = getTextOutput().trim();
@@ -1107,6 +1240,23 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
             max-width: 100%;
             border-radius: 4px;
         }
+
+        /* Syntax highlighting (highlight.js) */
+        .hljs { background: transparent; }
+        .hljs-comment, .hljs-quote { color: ${colors.syntaxComment}; }
+        .hljs-keyword, .hljs-selector-tag, .hljs-addition { color: ${colors.syntaxKeyword}; }
+        .hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: ${colors.syntaxNumber}; }
+        .hljs-string, .hljs-doctag, .hljs-regexp { color: ${colors.syntaxString}; }
+        .hljs-title, .hljs-section, .hljs-name, .hljs-selector-id, .hljs-selector-class { color: ${colors.syntaxFunction}; }
+        .hljs-type, .hljs-class, .hljs-built_in { color: ${colors.syntaxType}; }
+        .hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-params { color: ${colors.syntaxVariable}; }
+        .hljs-attribute { color: ${colors.syntaxVariable}; }
+        .hljs-meta { color: ${colors.syntaxKeyword}; }
+        .hljs-formula { background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.05); }
+        .hljs-deletion { color: ${colors.toolDiffRemoved}; }
+        .hljs-emphasis { font-style: italic; }
+        .hljs-strong { font-weight: bold; }
+        .hljs-link { color: ${colors.mdLink}; text-decoration: underline; }
 
         @media print { body { background: white; color: black; } .tool-execution { border: 1px solid #ddd; } }
     </style>
