@@ -180,12 +180,14 @@ For `before_branch` and `branch` events, `event.targetTurnIndex` contains the en
 
 For `before_compact` events, additional fields are available:
 - `event.cutPoint`: Where the context will be cut (`firstKeptEntryIndex`, `isSplitTurn`)
-- `event.messagesToSummarize`: Messages that will be summarized
+- `event.messagesToSummarize`: Messages that will be summarized and discarded
+- `event.messagesToKeep`: Messages that will be kept after the summary (recent turns)
 - `event.tokensBefore`: Current context token count
 - `event.model`: Model to use for summarization
-- `event.apiKey`: API key for the model
 - `event.resolveApiKey`: Function to resolve API key for any model (checks settings, OAuth, env vars)
 - `event.customInstructions`: Optional custom focus for summary (from `/compact` command)
+
+To get all messages since the last compaction: `[...event.messagesToSummarize, ...event.messagesToKeep]`
 
 Return `{ compactionEntry }` to provide a custom summary instead of the default. The `compactionEntry` must have: `type: "compaction"`, `timestamp`, `summary`, `firstKeptEntryIndex` (from `cutPoint`), `tokensBefore`.
 

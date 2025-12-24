@@ -3,8 +3,8 @@
  *
  * Replaces the default compaction behavior with a full summary of the entire context.
  * Instead of keeping the last 20k tokens of conversation turns, this hook:
- * 1. Summarizes ALL messages being compacted into a single comprehensive summary
- * 2. Discards all old turns completely
+ * 1. Summarizes ALL messages (both messagesToSummarize and messagesToKeep)
+ * 2. Discards all old turns completely, keeping only the summary
  *
  * This is useful when you want maximum context window space for new work
  * at the cost of losing exact conversation history.
@@ -21,9 +21,12 @@ export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		if (event.reason !== "before_compact") return;
 
-		const { messagesToSummarize, tokensBefore, model, resolveApiKey, cutPoint } = event;
+		const { messagesToSummarize, messagesToKeep, tokensBefore, model, resolveApiKey, entries } = event;
 
-		ctx.ui.notify(`Compacting ${tokensBefore.toLocaleString()} tokens with full summary...`, "info");
+		// Combine all messages for full summary
+		const allMessages = [...messagesToSummarize, ...messagesToKeep];
+
+		ctx.ui.notify(`Full compaction: summarizing ${allMessages.length} messages (${tokensBefore.toLocaleString()} tokens)...`, "info");
 
 		// Resolve API key for the model
 		const apiKey = await resolveApiKey(model);
@@ -33,7 +36,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Transform app messages to LLM-compatible format
-		const transformedMessages = messageTransformer(messagesToSummarize);
+		const transformedMessages = messageTransformer(allMessages);
 
 		// Build messages that ask for a comprehensive summary
 		const summaryMessages = [
@@ -43,7 +46,7 @@ export default function (pi: HookAPI) {
 				content: [
 					{
 						type: "text" as const,
-						text: `You are a conversation summarizer. Create a comprehensive summary of this conversation that captures:
+						text: `You are a conversation summarizer. Create a comprehensive summary of this entire conversation that captures:
 
 1. The main goals and objectives discussed
 2. Key decisions made and their rationale
@@ -52,7 +55,7 @@ export default function (pi: HookAPI) {
 5. Any blockers, issues, or open questions
 6. Next steps that were planned or suggested
 
-Be thorough but concise. The summary will replace the entire conversation history, so include all information needed to continue the work effectively.
+Be thorough but concise. The summary will replace the ENTIRE conversation history, so include all information needed to continue the work effectively.
 
 Format the summary as structured markdown with clear sections.`,
 					},
@@ -75,14 +78,14 @@ Format the summary as structured markdown with clear sections.`,
 				return; // Fall back to default compaction
 			}
 
-			// Return a compaction entry that discards ALL old messages
-			// firstKeptEntryIndex points to after all summarized content
+			// Return a compaction entry that discards ALL messages
+			// firstKeptEntryIndex points past all current entries
 			return {
 				compactionEntry: {
 					type: "compaction" as const,
 					timestamp: new Date().toISOString(),
 					summary,
-					firstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
+					firstKeptEntryIndex: entries.length,
 					tokensBefore,
 				},
 			};

@@ -15,17 +15,19 @@ describe("Documentation example", () => {
 
 				// After narrowing, these should all be accessible
 				const messages = event.messagesToSummarize;
+				const messagesToKeep = event.messagesToKeep;
 				const cutPoint = event.cutPoint;
 				const tokensBefore = event.tokensBefore;
 				const model = event.model;
-				const apiKey = event.apiKey;
+				const resolveApiKey = event.resolveApiKey;
 
 				// Verify types
 				expect(Array.isArray(messages)).toBe(true);
+				expect(Array.isArray(messagesToKeep)).toBe(true);
 				expect(typeof cutPoint.firstKeptEntryIndex).toBe("number");
 				expect(typeof tokensBefore).toBe("number");
 				expect(model).toBeDefined();
-				expect(typeof apiKey).toBe("string");
+				expect(typeof resolveApiKey).toBe("function");
 
 				const summary = messages
 					.filter((m) => m.role === "user")

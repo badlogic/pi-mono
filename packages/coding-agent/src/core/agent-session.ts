@@ -767,11 +767,11 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
-					messagesToSummarize: preparation.messagesToSummarize,
+					messagesToSummarize: [...preparation.messagesToSummarize],
+					messagesToKeep: [...preparation.messagesToKeep],
 					tokensBefore: preparation.tokensBefore,
 					customInstructions,
 					model: this.model,
-					apiKey,
 					resolveApiKey: this._resolveApiKey,
 				})) as SessionEventResult | undefined;
 
@@ -918,11 +918,11 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
-					messagesToSummarize: preparation.messagesToSummarize,
+					messagesToSummarize: [...preparation.messagesToSummarize],
+					messagesToKeep: [...preparation.messagesToKeep],
 					tokensBefore: preparation.tokensBefore,
 					customInstructions: undefined,
 					model: this.model,
-					apiKey,
 					resolveApiKey: this._resolveApiKey,
 				})) as SessionEventResult | undefined;
 

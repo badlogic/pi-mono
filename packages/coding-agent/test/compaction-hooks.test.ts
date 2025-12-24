@@ -129,9 +129,10 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			expect(beforeEvent.cutPoint).toBeDefined();
 			expect(beforeEvent.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
 			expect(beforeEvent.messagesToSummarize).toBeDefined();
+			expect(beforeEvent.messagesToKeep).toBeDefined();
 			expect(beforeEvent.tokensBefore).toBeGreaterThanOrEqual(0);
 			expect(beforeEvent.model).toBeDefined();
-			expect(beforeEvent.apiKey).toBeDefined();
+			expect(beforeEvent.resolveApiKey).toBeDefined();
 		}
 
 		const afterEvent = compactEvents[0];
@@ -336,14 +337,14 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		expect(event.cutPoint).toHaveProperty("turnStartIndex");
 
 		expect(Array.isArray(event.messagesToSummarize)).toBe(true);
+		expect(Array.isArray(event.messagesToKeep)).toBe(true);
 
 		expect(typeof event.tokensBefore).toBe("number");
 
 		expect(event.model).toHaveProperty("provider");
 		expect(event.model).toHaveProperty("id");
 
-		expect(typeof event.apiKey).toBe("string");
-		expect(event.apiKey.length).toBeGreaterThan(0);
+		expect(typeof event.resolveApiKey).toBe("function");
 
 		expect(Array.isArray(event.entries)).toBe(true);
 		expect(event.entries.length).toBeGreaterThan(0);

@@ -130,11 +130,13 @@ export type SessionEvent =
 	| (SessionEventBase & {
 			reason: "before_compact";
 			cutPoint: CutPointResult;
+			/** Messages that will be summarized and discarded */
 			messagesToSummarize: AppMessage[];
+			/** Messages that will be kept after the summary (recent turns) */
+			messagesToKeep: AppMessage[];
 			tokensBefore: number;
 			customInstructions?: string;
 			model: Model<any>;
-			apiKey: string;
 			/** Resolve API key for any model (checks settings, OAuth, env vars) */
 			resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
 	  })

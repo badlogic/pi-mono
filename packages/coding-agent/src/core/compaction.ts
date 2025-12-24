@@ -327,7 +327,10 @@ export async function generateSummary(
 
 export interface CompactionPreparation {
 	cutPoint: CutPointResult;
+	/** Messages that will be summarized and discarded */
 	messagesToSummarize: AppMessage[];
+	/** Messages that will be kept after the summary (recent turns) */
+	messagesToKeep: AppMessage[];
 	tokensBefore: number;
 	boundaryStart: number;
 }
@@ -353,6 +356,8 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 	const cutPoint = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+
+	// Messages to summarize (will be discarded after summary)
 	const messagesToSummarize: AppMessage[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const entry = entries[i];
@@ -361,7 +366,16 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 		}
 	}
 
-	return { cutPoint, messagesToSummarize, tokensBefore, boundaryStart };
+	// Messages to keep (recent turns, kept after summary)
+	const messagesToKeep: AppMessage[] = [];
+	for (let i = cutPoint.firstKeptEntryIndex; i < boundaryEnd; i++) {
+		const entry = entries[i];
+		if (entry.type === "message") {
+			messagesToKeep.push(entry.message);
+		}
+	}
+
+	return { cutPoint, messagesToSummarize, messagesToKeep, tokensBefore, boundaryStart };
 }
 
 // ============================================================================
