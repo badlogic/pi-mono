@@ -188,26 +188,28 @@ When context exceeds the threshold, pi finds a "cut point" that keeps ~20k token
 
 ```
 Session entries (before compaction):
-┌─────────────────────────────────────────────────────────────────┐
-│ [header] [prev compaction] [msg] [msg] [msg] [msg] [msg] [msg]  │
-│                   ↑          └─────┬─────┘   └───────┬───────┘  │
-│           previousSummary    messagesToSummarize  messagesToKeep│
-│                              (will be discarded)  (kept as-is)  │
-│                                         ↑                       │
-│                              cutPoint.firstKeptEntryIndex       │
-└─────────────────────────────────────────────────────────────────┘
 
-After compaction:
-┌─────────────────────────────────────────────────────────────────┐
-│ [header] [prev compaction] [NEW compaction] [msg] [msg] [msg]   │
-│                             └──────┬──────┘ └───────┬───────┘   │
-│                               summary of      messagesToKeep    │
-│                            messagesToSummarize  (unchanged)     │
-│                            + previousSummary                    │
-└─────────────────────────────────────────────────────────────────┘
+  index:  0        1               2     3     4     5     6     7
+        ┌────────┬───────────────┬─────┬─────┬─────┬─────┬─────┬─────┐
+        │ header │ prev compact  │ msg │ msg │ msg │ msg │ msg │ msg │
+        └────────┴───────────────┴─────┴─────┴─────┴─────┴─────┴─────┘
+                        ↑          └─────┬─────┘   └───────┬───────┘
+                 previousSummary   messagesToSummarize  messagesToKeep
+                                                  ↑
+                                   cutPoint.firstKeptEntryIndex = 5
+
+After compaction (new entry appended):
+
+  index:  0        1               2     3     4     5     6     7     8
+        ┌────────┬───────────────┬─────┬─────┬─────┬─────┬─────┬─────┬─────────────┐
+        │ header │ prev compact  │ msg │ msg │ msg │ msg │ msg │ msg │ NEW compact │
+        └────────┴───────────────┴─────┴─────┴─────┴─────┴─────┴─────┴─────────────┘
+                                  └─────┬─────┘   └───────┬───────┘         ↑
+                                     ignored           loaded        firstKeptEntryIndex = 5
+                                   on reload         on reload       (stored in this entry)
 ```
 
-The new compaction entry's `firstKeptEntryIndex` tells the session loader where to start reading messages after the summary.
+The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`.
 
 **Event fields:**
 
