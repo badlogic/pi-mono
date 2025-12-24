@@ -6,6 +6,7 @@ import {
 	type GoogleThinkingLevel,
 	streamGoogleGeminiCli,
 } from "./providers/google-gemini-cli.js";
+import { type GoogleVertexOptions, streamGoogleVertex } from "./providers/google-vertex.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
@@ -36,6 +37,14 @@ export function getEnvApiKey(provider: any): string | undefined {
 	// ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY
 	if (provider === "anthropic") {
 		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+	}
+
+	// Vertex AI doesn't use API keys.
+	// It relies on Google Cloud auth: `gcloud auth application-default login`.
+	// @google/genai library picks up and manages the auth automatically.
+	// Return a dummy value to maintain consistency.
+	if (provider === "google-vertex") {
+		return "vertex-ai-authenticated";
 	}
 
 	const envMap: Record<string, string> = {
@@ -84,6 +93,9 @@ export function stream<TApi extends Api>(
 				context,
 				providerOptions as GoogleGeminiCliOptions,
 			);
+
+		case "google-vertex":
+			return streamGoogleVertex(model as Model<"google-vertex">, context, providerOptions as GoogleVertexOptions);
 
 		default: {
 			// This should never be reached if all Api cases are handled
@@ -237,6 +249,44 @@ function mapOptionsForApi<TApi extends Api>(
 					budgetTokens: budgets[effort],
 				},
 			} satisfies GoogleGeminiCliOptions;
+		}
+
+		case "google-vertex": {
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, thinking: { enabled: false } } satisfies GoogleVertexOptions;
+			}
+
+			const vertexModel = model as Model<"google-vertex">;
+			const effort = clampReasoning(options.reasoning)!;
+
+			if (isGemini3ProModel(vertexModel as unknown as Model<"google-generative-ai">)) {
+				return {
+					...base,
+					thinking: {
+						enabled: true,
+						level: getGemini3ThinkingLevel(effort, vertexModel as unknown as Model<"google-generative-ai">),
+					},
+				} satisfies GoogleVertexOptions;
+			}
+
+			if (isGemini3FlashModel(vertexModel as unknown as Model<"google-generative-ai">)) {
+				return {
+					...base,
+					thinking: {
+						enabled: true,
+						level: getGemini3ThinkingLevel(effort, vertexModel as unknown as Model<"google-generative-ai">),
+					},
+				} satisfies GoogleVertexOptions;
+			}
+
+			return {
+				...base,
+				thinking: {
+					enabled: true,
+					budgetTokens: getGoogleBudget(vertexModel as unknown as Model<"google-generative-ai">, effort),
+				},
+			} satisfies GoogleVertexOptions;
 		}
 
 		default: {

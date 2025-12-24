@@ -9,6 +9,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenAI**
 - **Anthropic**
 - **Google**
+- **Vertex AI** (Gemini via Vertex AI)
 - **Mistral**
 - **Groq**
 - **Cerebras**
@@ -848,6 +849,10 @@ Several providers require OAuth authentication instead of static API keys:
 - **Google Gemini CLI** (Free Gemini 2.0/2.5 via Google Cloud Code Assist)
 - **Antigravity** (Free Gemini 3, Claude, GPT-OSS via Google Cloud)
 
+### Vertex AI (ADC)
+
+Vertex AI models use Application Default Credentials. Run `gcloud auth application-default login`, set `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`), and `GOOGLE_CLOUD_LOCATION`. You can also pass `project`/`location` in the call options.
+
 ### CLI Login
 
 The quickest way to authenticate:
@@ -871,11 +876,11 @@ import {
   loginGitHubCopilot,
   loginGeminiCli,
   loginAntigravity,
-  
+
   // Token management
   refreshOAuthToken,   // (provider, credentials) => new credentials
   getOAuthApiKey,      // (provider, credentialsMap) => { newCredentials, apiKey } | null
-  
+
   // Types
   type OAuthProvider,  // 'anthropic' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
   type OAuthCredentials,
