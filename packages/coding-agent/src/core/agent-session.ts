@@ -56,6 +56,8 @@ export interface AgentSessionConfig {
 	/** Custom tools for session lifecycle events */
 	customTools?: LoadedCustomTool[];
 	skillsSettings?: Required<SkillsSettings>;
+	/** Resolve API key for a model. Default: getApiKeyForModel */
+	resolveApiKey?: (model: Model<any>) => Promise<string | undefined>;
 }
 
 /** Options for AgentSession.prompt() */
@@ -151,6 +153,9 @@ export class AgentSession {
 
 	private _skillsSettings: Required<SkillsSettings> | undefined;
 
+	// API key resolver
+	private _resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -160,6 +165,7 @@ export class AgentSession {
 		this._hookRunner = config.hookRunner ?? null;
 		this._customTools = config.customTools ?? [];
 		this._skillsSettings = config.skillsSettings;
+		this._resolveApiKey = config.resolveApiKey ?? getApiKeyForModel;
 	}
 
 	// =========================================================================
@@ -428,7 +434,7 @@ export class AgentSession {
 		}
 
 		// Validate API key
-		const apiKey = await getApiKeyForModel(this.model);
+		const apiKey = await this._resolveApiKey(this.model);
 		if (!apiKey) {
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
@@ -555,7 +561,7 @@ export class AgentSession {
 	 * @throws Error if no API key available for the model
 	 */
 	async setModel(model: Model<any>): Promise<void> {
-		const apiKey = await getApiKeyForModel(model);
+		const apiKey = await this._resolveApiKey(model);
 		if (!apiKey) {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
@@ -593,7 +599,7 @@ export class AgentSession {
 		const next = this._scopedModels[nextIndex];
 
 		// Validate API key
-		const apiKey = await getApiKeyForModel(next.model);
+		const apiKey = await this._resolveApiKey(next.model);
 		if (!apiKey) {
 			throw new Error(`No API key for ${next.model.provider}/${next.model.id}`);
 		}
@@ -623,7 +629,7 @@ export class AgentSession {
 		const nextIndex = (currentIndex + 1) % availableModels.length;
 		const nextModel = availableModels[nextIndex];
 
-		const apiKey = await getApiKeyForModel(nextModel);
+		const apiKey = await this._resolveApiKey(nextModel);
 		if (!apiKey) {
 			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
 		}
@@ -740,7 +746,7 @@ export class AgentSession {
 				throw new Error("No model selected");
 			}
 
-			const apiKey = await getApiKeyForModel(this.model);
+			const apiKey = await this._resolveApiKey(this.model);
 			if (!apiKey) {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
@@ -840,7 +846,7 @@ export class AgentSession {
 				return;
 			}
 
-			const apiKey = await getApiKeyForModel(this.model);
+			const apiKey = await this._resolveApiKey(this.model);
 			if (!apiKey) {
 				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;

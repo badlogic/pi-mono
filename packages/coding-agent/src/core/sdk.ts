@@ -681,6 +681,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		hookRunner,
 		customTools: customToolsResult.tools,
 		skillsSettings: settingsManager.getSkillsSettings(),
+		resolveApiKey: getApiKey,
 	});
 	time("createAgentSession");
 
