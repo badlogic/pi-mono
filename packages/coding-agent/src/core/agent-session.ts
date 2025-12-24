@@ -1483,7 +1483,8 @@ export class AgentSession {
 	 * @returns Path to exported file
 	 */
 	exportToHtml(outputPath?: string): string {
-		return exportSessionToHtml(this.sessionManager, this.state, outputPath);
+		const themeName = this.settingsManager.getTheme();
+		return exportSessionToHtml(this.sessionManager, this.state, { outputPath, themeName });
 	}
 
 	// =========================================================================
