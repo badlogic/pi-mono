@@ -463,11 +463,12 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 				} else if (block.type === "thinking") {
 					if (block.thinking.trim().length === 0) continue;
 					// If thinking signature is missing/empty (e.g., from aborted stream),
-					// convert to text block to avoid API rejection
+					// convert to plain text block without <thinking> tags to avoid API rejection
+					// and prevent Claude from mimicking the tags in responses
 					if (!block.thinkingSignature || block.thinkingSignature.trim().length === 0) {
 						blocks.push({
 							type: "text",
-							text: sanitizeSurrogates(`<thinking>\n${block.thinking}\n</thinking>`),
+							text: sanitizeSurrogates(block.thinking),
 						});
 					} else {
 						blocks.push({
