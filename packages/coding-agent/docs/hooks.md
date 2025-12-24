@@ -184,7 +184,7 @@ The `before_compact` event lets you implement custom compaction strategies. Unde
 
 **How default compaction works:**
 
-When context exceeds the threshold, pi finds a "cut point" that keeps ~20k tokens of recent turns:
+When context exceeds the threshold, pi finds a "cut point" that keeps recent turns (configurable via `settings.json` `compaction.keepRecentTokens`, default 20k):
 
 ```
 Session entries (before compaction):
