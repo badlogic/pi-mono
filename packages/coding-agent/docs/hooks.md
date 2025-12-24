@@ -243,6 +243,8 @@ Split turn example (one huge turn that exceeds keepRecentTokens):
 The default compaction generates TWO summaries that get merged:
 1. History summary (previousSummary + messagesToSummarize)
 2. Turn prefix summary (messages from turnStartIndex to firstKeptEntryIndex)
+
+See [src/core/compaction.ts](../src/core/compaction.ts) for the full implementation.
 ```
 
 **Event fields:**
