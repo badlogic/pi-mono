@@ -106,7 +106,20 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 
 ### API Keys & OAuth
 
-Set the environment variable for your provider:
+**Option 1: Settings file** (recommended)
+
+Add API keys to `~/.pi/agent/settings.json`:
+
+```json
+{
+  "apiKeys": {
+    "anthropic": "sk-ant-...",
+    "openai": "sk-..."
+  }
+}
+```
+
+**Option 2: Environment variables**
 
 | Provider | Environment Variable |
 |----------|---------------------|
@@ -119,6 +132,8 @@ Set the environment variable for your provider:
 | xAI | `XAI_API_KEY` |
 | OpenRouter | `OPENROUTER_API_KEY` |
 | ZAI | `ZAI_API_KEY` |
+
+Settings file keys take priority over environment variables.
 
 **OAuth Providers:**
 
