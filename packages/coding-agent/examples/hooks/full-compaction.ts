@@ -21,9 +21,16 @@ export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		if (event.reason !== "before_compact") return;
 
-		const { messagesToSummarize, tokensBefore, model, apiKey, cutPoint } = event;
+		const { messagesToSummarize, tokensBefore, model, resolveApiKey, cutPoint } = event;
 
 		ctx.ui.notify(`Compacting ${tokensBefore.toLocaleString()} tokens with full summary...`, "info");
+
+		// Resolve API key for the model
+		const apiKey = await resolveApiKey(model);
+		if (!apiKey) {
+			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
+			return;
+		}
 
 		// Transform app messages to LLM-compatible format
 		const transformedMessages = messageTransformer(messagesToSummarize);
@@ -55,7 +62,7 @@ Format the summary as structured markdown with clear sections.`,
 		];
 
 		try {
-			// Use the same model and API key that would be used for compaction
+			// Use the same model with resolved API key
 			const response = await complete(model, { messages: summaryMessages }, { apiKey, maxTokens: 8192 });
 
 			const summary = response.content
