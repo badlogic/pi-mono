@@ -4,7 +4,8 @@
 
 ### Added
 
-- **Custom compaction hooks**: Added `before_compact` and `compact` session events for context compaction. `before_compact` fires before compaction with the cut point, messages to summarize, model, and API key; hooks can cancel or provide a custom `compactionEntry`. `compact` fires after with the final compaction entry and a `fromHook` flag. ([#281](https://github.com/badlogic/pi-mono/issues/281))
+- **HTML export syntax highlighting**: Code blocks in markdown and tool outputs (read, write) now have syntax highlighting using highlight.js with theme-aware colors matching the TUI.
+- **HTML export improvements**: Render markdown server-side using marked (tables, headings, code blocks, etc.), honor user's chosen theme (light/dark), add image rendering for user messages, and style code blocks with TUI-like language markers. ([@scutifer](https://github.com/scutifer))
 
 ## [0.27.4] - 2025-12-24
 
