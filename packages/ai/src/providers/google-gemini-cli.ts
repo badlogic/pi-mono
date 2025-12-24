@@ -19,6 +19,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { ThinkingTagExtractor } from "../utils/thinking-tag-extractor.js";
 import { convertMessages, convertTools, mapStopReasonString, mapToolChoice } from "./google-shared.js";
 
 export interface GoogleGeminiCliOptions extends StreamOptions {
@@ -198,9 +199,66 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 
 			stream.push({ type: "start", partial: output });
 
-			let currentBlock: TextContent | ThinkingContent | null = null;
+			const state: { currentBlock: TextContent | ThinkingContent | null } = { currentBlock: null };
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
+			const thinkingExtractor = new ThinkingTagExtractor();
+
+			// Helper to handle a text/thinking segment
+			const handleSegment = (content: string, isThinking: boolean, thoughtSignature?: string) => {
+				if (content.length === 0) return;
+
+				if (
+					!state.currentBlock ||
+					(isThinking && state.currentBlock.type !== "thinking") ||
+					(!isThinking && state.currentBlock.type !== "text")
+				) {
+					if (state.currentBlock) {
+						if (state.currentBlock.type === "text") {
+							stream.push({
+								type: "text_end",
+								contentIndex: blocks.length - 1,
+								content: state.currentBlock.text,
+								partial: output,
+							});
+						} else {
+							stream.push({
+								type: "thinking_end",
+								contentIndex: blockIndex(),
+								content: state.currentBlock.thinking,
+								partial: output,
+							});
+						}
+					}
+					if (isThinking) {
+						state.currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
+						output.content.push(state.currentBlock);
+						stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+					} else {
+						state.currentBlock = { type: "text", text: "" };
+						output.content.push(state.currentBlock);
+						stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+					}
+				}
+				if (state.currentBlock.type === "thinking") {
+					state.currentBlock.thinking += content;
+					state.currentBlock.thinkingSignature = thoughtSignature;
+					stream.push({
+						type: "thinking_delta",
+						contentIndex: blockIndex(),
+						delta: content,
+						partial: output,
+					});
+				} else {
+					state.currentBlock.text += content;
+					stream.push({
+						type: "text_delta",
+						contentIndex: blockIndex(),
+						delta: content,
+						partial: output,
+					});
+				}
+			};
 
 			// Read SSE stream
 			const reader = response.body.getReader();
@@ -236,77 +294,30 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					if (candidate?.content?.parts) {
 						for (const part of candidate.content.parts) {
 							if (part.text !== undefined) {
-								const isThinking = part.thought === true;
-								if (
-									!currentBlock ||
-									(isThinking && currentBlock.type !== "thinking") ||
-									(!isThinking && currentBlock.type !== "text")
-								) {
-									if (currentBlock) {
-										if (currentBlock.type === "text") {
-											stream.push({
-												type: "text_end",
-												contentIndex: blocks.length - 1,
-												content: currentBlock.text,
-												partial: output,
-											});
-										} else {
-											stream.push({
-												type: "thinking_end",
-												contentIndex: blockIndex(),
-												content: currentBlock.thinking,
-												partial: output,
-											});
-										}
-									}
-									if (isThinking) {
-										currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-										output.content.push(currentBlock);
-										stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
-									} else {
-										currentBlock = { type: "text", text: "" };
-										output.content.push(currentBlock);
-										stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
-									}
-								}
-								if (currentBlock.type === "thinking") {
-									currentBlock.thinking += part.text;
-									currentBlock.thinkingSignature = part.thoughtSignature;
-									stream.push({
-										type: "thinking_delta",
-										contentIndex: blockIndex(),
-										delta: part.text,
-										partial: output,
-									});
-								} else {
-									currentBlock.text += part.text;
-									stream.push({
-										type: "text_delta",
-										contentIndex: blockIndex(),
-										delta: part.text,
-										partial: output,
-									});
-								}
+								const extracted = thinkingExtractor.process(part.text, part.thought === true);
+								// Process thinking content first, then regular text
+								handleSegment(extracted.thinking, true, part.thoughtSignature);
+								handleSegment(extracted.text, false);
 							}
 
 							if (part.functionCall) {
-								if (currentBlock) {
-									if (currentBlock.type === "text") {
+								if (state.currentBlock) {
+									if (state.currentBlock.type === "text") {
 										stream.push({
 											type: "text_end",
 											contentIndex: blockIndex(),
-											content: currentBlock.text,
+											content: state.currentBlock.text,
 											partial: output,
 										});
 									} else {
 										stream.push({
 											type: "thinking_end",
 											contentIndex: blockIndex(),
-											content: currentBlock.thinking,
+											content: state.currentBlock.thinking,
 											partial: output,
 										});
 									}
-									currentBlock = null;
+									state.currentBlock = null;
 								}
 
 								const providedId = part.functionCall.id;
@@ -369,19 +380,19 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				}
 			}
 
-			if (currentBlock) {
-				if (currentBlock.type === "text") {
+			if (state.currentBlock) {
+				if (state.currentBlock.type === "text") {
 					stream.push({
 						type: "text_end",
 						contentIndex: blockIndex(),
-						content: currentBlock.text,
+						content: state.currentBlock.text,
 						partial: output,
 					});
 				} else {
 					stream.push({
 						type: "thinking_end",
 						contentIndex: blockIndex(),
-						content: currentBlock.thinking,
+						content: state.currentBlock.thinking,
 						partial: output,
 					});
 				}

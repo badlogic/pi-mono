@@ -26,6 +26,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { ThinkingTagExtractor } from "../utils/thinking-tag-extractor.js";
 import { transformMessages } from "./transorm-messages.js";
 
 /**
@@ -106,6 +107,8 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
+			const thinkingExtractor = new ThinkingTagExtractor();
+
 			const finishCurrentBlock = (block?: typeof currentBlock) => {
 				if (block) {
 					if (block.type === "text") {
@@ -132,6 +135,54 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 							partial: output,
 						});
 					}
+				}
+			};
+
+			// Helper to handle thinking content
+			const handleThinkingDelta = (delta: string, signature?: string) => {
+				if (delta.length === 0) return;
+
+				if (!currentBlock || currentBlock.type !== "thinking") {
+					finishCurrentBlock(currentBlock);
+					currentBlock = {
+						type: "thinking",
+						thinking: "",
+						thinkingSignature: signature,
+					};
+					output.content.push(currentBlock);
+					stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+				}
+
+				if (currentBlock.type === "thinking") {
+					currentBlock.thinking += delta;
+					stream.push({
+						type: "thinking_delta",
+						contentIndex: blockIndex(),
+						delta,
+						partial: output,
+					});
+				}
+			};
+
+			// Helper to handle text content
+			const handleTextDelta = (delta: string) => {
+				if (delta.length === 0) return;
+
+				if (!currentBlock || currentBlock.type !== "text") {
+					finishCurrentBlock(currentBlock);
+					currentBlock = { type: "text", text: "" };
+					output.content.push(currentBlock);
+					stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+				}
+
+				if (currentBlock.type === "text") {
+					currentBlock.text += delta;
+					stream.push({
+						type: "text_delta",
+						contentIndex: blockIndex(),
+						delta,
+						partial: output,
+					});
 				}
 			};
 
@@ -174,22 +225,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 						choice.delta.content !== undefined &&
 						choice.delta.content.length > 0
 					) {
-						if (!currentBlock || currentBlock.type !== "text") {
-							finishCurrentBlock(currentBlock);
-							currentBlock = { type: "text", text: "" };
-							output.content.push(currentBlock);
-							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
-						}
-
-						if (currentBlock.type === "text") {
-							currentBlock.text += choice.delta.content;
-							stream.push({
-								type: "text_delta",
-								contentIndex: blockIndex(),
-								delta: choice.delta.content,
-								partial: output,
-							});
-						}
+						// Extract any <thinking> tags leaked in regular content
+						const extracted = thinkingExtractor.process(choice.delta.content, false);
+						// Process thinking content first, then regular text
+						handleThinkingDelta(extracted.thinking, "extracted");
+						handleTextDelta(extracted.text);
 					}
 
 					// Some endpoints return reasoning in reasoning_content (llama.cpp),
@@ -201,27 +241,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 							(choice.delta as any)[field] !== undefined &&
 							(choice.delta as any)[field].length > 0
 						) {
-							if (!currentBlock || currentBlock.type !== "thinking") {
-								finishCurrentBlock(currentBlock);
-								currentBlock = {
-									type: "thinking",
-									thinking: "",
-									thinkingSignature: field,
-								};
-								output.content.push(currentBlock);
-								stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
-							}
-
-							if (currentBlock.type === "thinking") {
-								const delta = (choice.delta as any)[field];
-								currentBlock.thinking += delta;
-								stream.push({
-									type: "thinking_delta",
-									contentIndex: blockIndex(),
-									delta,
-									partial: output,
-								});
-							}
+							handleThinkingDelta((choice.delta as any)[field], field);
 						}
 					}
 
