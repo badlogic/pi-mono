@@ -178,20 +178,61 @@ pi.on("session", async (event, ctx) => {
 
 For `before_branch` and `branch` events, `event.targetTurnIndex` contains the entry index being branched from.
 
-For `before_compact` events, additional fields are available:
-- `event.cutPoint`: Where the context will be cut (`firstKeptEntryIndex`, `isSplitTurn`)
-- `event.messagesToSummarize`: Messages that will be summarized and discarded
-- `event.messagesToKeep`: Messages that will be kept after the summary (recent turns)
-- `event.tokensBefore`: Current context token count
-- `event.model`: Model to use for summarization
-- `event.resolveApiKey`: Function to resolve API key for any model (checks settings, OAuth, env vars)
-- `event.customInstructions`: Optional custom focus for summary (from `/compact` command)
+#### Custom Compaction
 
-To get all messages since the last compaction: `[...event.messagesToSummarize, ...event.messagesToKeep]`
+The `before_compact` event lets you implement custom compaction strategies. Understanding the data model:
 
-Return `{ compactionEntry }` to provide a custom summary instead of the default. The `compactionEntry` must have: `type: "compaction"`, `timestamp`, `summary`, `firstKeptEntryIndex` (from `cutPoint`), `tokensBefore`.
+**How default compaction works:**
+1. When context exceeds the threshold, pi finds a "cut point" that keeps ~20k tokens of recent turns
+2. Messages before the cut point are summarized and discarded
+3. Messages after the cut point are kept verbatim
+4. The summary + kept messages become the new context
 
-For `compact` events (after compaction):
+**Event fields:**
+
+| Field | Description |
+|-------|-------------|
+| `entries` | All session entries (header, messages, model changes, previous compactions). Use this for custom schemes that need full session history. |
+| `cutPoint` | Where default compaction would cut. `firstKeptEntryIndex` is the entry index where kept messages start. `isSplitTurn` indicates if cutting mid-turn. |
+| `messagesToSummarize` | Messages that will be summarized and discarded (before cut point). |
+| `messagesToKeep` | Messages that will be kept verbatim after the summary (after cut point). |
+| `tokensBefore` | Current context token count (why compaction triggered). |
+| `model` | Model to use for summarization. |
+| `resolveApiKey` | Function to resolve API key for any model: `await resolveApiKey(model)` |
+| `customInstructions` | Optional focus for summary (from `/compact <instructions>`). |
+
+**Common patterns:**
+
+```typescript
+// Get all messages since last compaction
+const allMessages = [...event.messagesToSummarize, ...event.messagesToKeep];
+
+// Default behavior: summarize old, keep recent
+return {
+  compactionEntry: {
+    type: "compaction",
+    timestamp: new Date().toISOString(),
+    summary: "Your custom summary...",
+    firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex, // keep recent turns
+    tokensBefore: event.tokensBefore,
+  }
+};
+
+// Full compaction: summarize everything, keep nothing
+return {
+  compactionEntry: {
+    type: "compaction",
+    timestamp: new Date().toISOString(),
+    summary: "Complete summary of all work...",
+    firstKeptEntryIndex: event.entries.length, // discard all messages
+    tokensBefore: event.tokensBefore,
+  }
+};
+```
+
+See [examples/hooks/full-compaction.ts](../examples/hooks/full-compaction.ts) for a complete example.
+
+**After compaction (`compact` event):**
 - `event.compactionEntry`: The saved compaction entry
 - `event.tokensBefore`: Token count before compaction
 - `event.fromHook`: Whether the compaction entry was provided by a hook
