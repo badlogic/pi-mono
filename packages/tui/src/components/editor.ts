@@ -700,7 +700,7 @@ export class Editor implements Component {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const charBeforeCursor = this.state.cursorCol > 0 ? currentLine[this.state.cursorCol - 1] : "";
 			if (charBeforeCursor && /\w/.test(charBeforeCursor)) {
-				filteredText = " " + filteredText;
+				filteredText = ` ${filteredText}`;
 			}
 		}
 
