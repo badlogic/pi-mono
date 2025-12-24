@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.3] - 2025-12-24
+
 ### Added
 
 - **API keys in settings.json**: Store API keys in `~/.pi/agent/settings.json` under the `apiKeys` field (e.g., `{ "apiKeys": { "anthropic": "sk-..." } }`). Settings keys take priority over environment variables. ([#295](https://github.com/badlogic/pi-mono/issues/295))
