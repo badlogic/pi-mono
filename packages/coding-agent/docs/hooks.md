@@ -183,10 +183,31 @@ For `before_branch` and `branch` events, `event.targetTurnIndex` contains the en
 The `before_compact` event lets you implement custom compaction strategies. Understanding the data model:
 
 **How default compaction works:**
-1. When context exceeds the threshold, pi finds a "cut point" that keeps ~20k tokens of recent turns
-2. Messages before the cut point are summarized and discarded
-3. Messages after the cut point are kept verbatim
-4. The summary + kept messages become the new context
+
+When context exceeds the threshold, pi finds a "cut point" that keeps ~20k tokens of recent turns:
+
+```
+Session entries (before compaction):
+┌─────────────────────────────────────────────────────────────────┐
+│ [header] [prev compaction] [msg] [msg] [msg] [msg] [msg] [msg]  │
+│                   ↑          └─────┬─────┘   └───────┬───────┘  │
+│           previousSummary    messagesToSummarize  messagesToKeep│
+│                              (will be discarded)  (kept as-is)  │
+│                                         ↑                       │
+│                              cutPoint.firstKeptEntryIndex       │
+└─────────────────────────────────────────────────────────────────┘
+
+After compaction:
+┌─────────────────────────────────────────────────────────────────┐
+│ [header] [prev compaction] [NEW compaction] [msg] [msg] [msg]   │
+│                             └──────┬──────┘ └───────┬───────┘   │
+│                               summary of      messagesToKeep    │
+│                            messagesToSummarize  (unchanged)     │
+│                            + previousSummary                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The new compaction entry's `firstKeptEntryIndex` tells the session loader where to start reading messages after the summary.
 
 **Event fields:**
 
