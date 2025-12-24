@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.9] - 2025-12-24
+
 ### Fixed
 
 - **Model selector and --list-models with settings.json API keys**: Models with API keys configured in settings.json (but not in environment variables) now properly appear in the /model selector and `--list-models` output. ([#295](https://github.com/badlogic/pi-mono/issues/295))
