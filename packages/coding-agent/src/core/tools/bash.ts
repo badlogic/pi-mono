@@ -44,6 +44,11 @@ export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
 					cwd,
 					detached: true,
 					stdio: ["ignore", "pipe", "pipe"],
+					env: {
+						...process.env,
+						GIT_EDITOR: "true",
+						GIT_SEQUENCE_EDITOR: "true",
+					},
 				});
 
 				// We'll stream to a temp file if output gets large
