@@ -130,6 +130,11 @@ user clears session (/clear)
   ├─► session (reason: "before_clear", can cancel)
   └─► session (reason: "clear", AFTER clear)
 
+context compaction (auto or /compact)
+  │
+  ├─► session (reason: "before_compact", can cancel or provide custom summary)
+  └─► session (reason: "compact", AFTER compaction)
+
 user exits (double Ctrl+C or Ctrl+D)
   │
   └─► session (reason: "shutdown")
@@ -147,7 +152,7 @@ pi.on("session", async (event, ctx) => {
   // event.sessionFile: string | null - current session file (null with --no-session)
   // event.previousSessionFile: string | null - previous session file
   // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" | 
-  //               "before_branch" | "branch" | "shutdown"
+  //               "before_branch" | "branch" | "before_compact" | "compact" | "shutdown"
   // event.targetTurnIndex: number - only for "before_branch" and "branch"
 
   // Cancel a before_* action:
@@ -168,9 +173,25 @@ pi.on("session", async (event, ctx) => {
 - `before_switch` / `switch`: User switched sessions (`/resume`)
 - `before_clear` / `clear`: User cleared the session (`/clear`)
 - `before_branch` / `branch`: User branched the session (`/branch`)
+- `before_compact` / `compact`: Context compaction (auto or `/compact`)
 - `shutdown`: Process is exiting (double Ctrl+C, Ctrl+D, or SIGTERM)
 
 For `before_branch` and `branch` events, `event.targetTurnIndex` contains the entry index being branched from.
+
+For `before_compact` events, additional fields are available:
+- `event.cutPoint`: Where the context will be cut (`firstKeptEntryIndex`, `isSplitTurn`)
+- `event.messagesToSummarize`: Messages that will be summarized
+- `event.tokensBefore`: Current context token count
+- `event.model`: Model to use for summarization
+- `event.apiKey`: API key for the model
+- `event.customInstructions`: Optional custom focus for summary (from `/compact` command)
+
+Return `{ compactionEntry }` to provide a custom summary instead of the default. The `compactionEntry` must have: `type: "compaction"`, `timestamp`, `summary`, `firstKeptEntryIndex` (from `cutPoint`), `tokensBefore`.
+
+For `compact` events (after compaction):
+- `event.compactionEntry`: The saved compaction entry
+- `event.tokensBefore`: Token count before compaction
+- `event.fromHook`: Whether the compaction entry was provided by a hook
 
 ### agent_start / agent_end
 
@@ -599,6 +620,38 @@ export default function (pi: HookAPI) {
     }
 
     return undefined;
+  });
+}
+```
+
+### Custom Compaction
+
+Use a cheaper model for summarization, or implement your own compaction strategy.
+
+```typescript
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { CompactionEntry } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: HookAPI) {
+  pi.on("session", async (event, ctx) => {
+    if (event.reason !== "before_compact") return;
+
+    // Example: Use a simpler summarization approach
+    const messages = event.messagesToSummarize;
+    const summary = messages
+      .filter((m) => m.role === "user")
+      .map((m) => `- ${typeof m.content === "string" ? m.content.slice(0, 100) : "[complex]"}`)
+      .join("\n");
+
+    const compactionEntry: CompactionEntry = {
+      type: "compaction",
+      timestamp: new Date().toISOString(),
+      summary: `User requests:\n${summary}`,
+      firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex,
+      tokensBefore: event.tokensBefore,
+    };
+
+    return { compactionEntry };
   });
 }
 ```

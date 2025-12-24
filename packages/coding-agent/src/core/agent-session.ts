@@ -18,13 +18,13 @@ import type { AssistantMessage, Message, Model, TextContent } from "@mariozechne
 import { isContextOverflow, supportsXhigh } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, shouldCompact } from "./compaction.js";
+import { calculateContextTokens, compact, prepareCompaction, shouldCompact } from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { loadSessionFromEntries, type SessionManager } from "./session-manager.js";
+import { type CompactionEntry, loadSessionFromEntries, type SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -734,11 +734,8 @@ export class AgentSession {
 	 * @param customInstructions Optional instructions for the compaction summary
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
-		// Abort any running operation
 		this._disconnectFromAgent();
 		await this.abort();
-
-		// Create abort controller
 		this._compactionAbortController = new AbortController();
 
 		try {
@@ -753,23 +750,72 @@ export class AgentSession {
 
 			const entries = this.sessionManager.loadEntries();
 			const settings = this.settingsManager.getCompactionSettings();
-			const compactionEntry = await compact(
-				entries,
-				this.model,
-				settings,
-				apiKey,
-				this._compactionAbortController.signal,
-				customInstructions,
-			);
+
+			const preparation = prepareCompaction(entries, settings);
+			if (!preparation) {
+				throw new Error("Already compacted");
+			}
+
+			let compactionEntry: CompactionEntry | undefined;
+			let fromHook = false;
+
+			if (this._hookRunner?.hasHandlers("session")) {
+				const result = (await this._hookRunner.emit({
+					type: "session",
+					entries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "before_compact",
+					cutPoint: preparation.cutPoint,
+					messagesToSummarize: preparation.messagesToSummarize,
+					tokensBefore: preparation.tokensBefore,
+					customInstructions,
+					model: this.model,
+					apiKey,
+				})) as SessionEventResult | undefined;
+
+				if (result?.cancel) {
+					throw new Error("Compaction cancelled");
+				}
+
+				if (result?.compactionEntry) {
+					compactionEntry = result.compactionEntry;
+					fromHook = true;
+				}
+			}
+
+			if (!compactionEntry) {
+				compactionEntry = await compact(
+					entries,
+					this.model,
+					settings,
+					apiKey,
+					this._compactionAbortController.signal,
+					customInstructions,
+				);
+			}
 
 			if (this._compactionAbortController.signal.aborted) {
 				throw new Error("Compaction cancelled");
 			}
 
-			// Save and reload
 			this.sessionManager.saveCompaction(compactionEntry);
-			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			const newEntries = this.sessionManager.loadEntries();
+			const loaded = loadSessionFromEntries(newEntries);
 			this.agent.replaceMessages(loaded.messages);
+
+			if (this._hookRunner) {
+				await this._hookRunner.emit({
+					type: "session",
+					entries: newEntries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "compact",
+					compactionEntry,
+					tokensBefore: compactionEntry.tokensBefore,
+					fromHook,
+				});
+			}
 
 			return {
 				tokensBefore: compactionEntry.tokensBefore,
@@ -853,13 +899,51 @@ export class AgentSession {
 			}
 
 			const entries = this.sessionManager.loadEntries();
-			const compactionEntry = await compact(
-				entries,
-				this.model,
-				settings,
-				apiKey,
-				this._autoCompactionAbortController.signal,
-			);
+
+			const preparation = prepareCompaction(entries, settings);
+			if (!preparation) {
+				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				return;
+			}
+
+			let compactionEntry: CompactionEntry | undefined;
+			let fromHook = false;
+
+			if (this._hookRunner?.hasHandlers("session")) {
+				const hookResult = (await this._hookRunner.emit({
+					type: "session",
+					entries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "before_compact",
+					cutPoint: preparation.cutPoint,
+					messagesToSummarize: preparation.messagesToSummarize,
+					tokensBefore: preparation.tokensBefore,
+					customInstructions: undefined,
+					model: this.model,
+					apiKey,
+				})) as SessionEventResult | undefined;
+
+				if (hookResult?.cancel) {
+					this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
+					return;
+				}
+
+				if (hookResult?.compactionEntry) {
+					compactionEntry = hookResult.compactionEntry;
+					fromHook = true;
+				}
+			}
+
+			if (!compactionEntry) {
+				compactionEntry = await compact(
+					entries,
+					this.model,
+					settings,
+					apiKey,
+					this._autoCompactionAbortController.signal,
+				);
+			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
 				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
@@ -867,8 +951,22 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
-			const loaded = loadSessionFromEntries(this.sessionManager.loadEntries());
+			const newEntries = this.sessionManager.loadEntries();
+			const loaded = loadSessionFromEntries(newEntries);
 			this.agent.replaceMessages(loaded.messages);
+
+			if (this._hookRunner) {
+				await this._hookRunner.emit({
+					type: "session",
+					entries: newEntries,
+					sessionFile: this.sessionFile,
+					previousSessionFile: null,
+					reason: "compact",
+					compactionEntry,
+					tokensBefore: compactionEntry.tokensBefore,
+					fromHook,
+				});
+			}
 
 			const result: CompactionResult = {
 				tokensBefore: compactionEntry.tokensBefore,
@@ -876,28 +974,20 @@ export class AgentSession {
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 
-			// Auto-retry if needed - use continue() since user message is already in context
 			if (willRetry) {
-				// Remove trailing error message from agent state (it's kept in session file for history)
-				// This is needed because continue() requires last message to be user or toolResult
 				const messages = this.agent.state.messages;
 				const lastMsg = messages[messages.length - 1];
 				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
 					this.agent.replaceMessages(messages.slice(0, -1));
 				}
 
-				// Use setTimeout to break out of the event handler chain
 				setTimeout(() => {
-					this.agent.continue().catch(() => {
-						// Retry failed - silently ignore, user can manually retry
-					});
+					this.agent.continue().catch(() => {});
 				}, 100);
 			}
 		} catch (error) {
-			// Compaction failed - emit end event without retry
 			this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 
-			// If this was overflow recovery and compaction failed, we have a hard stop
 			if (reason === "overflow") {
 				throw new Error(
 					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,

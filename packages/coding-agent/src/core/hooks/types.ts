@@ -6,8 +6,9 @@
  */
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { ImageContent, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { SessionEntry } from "../session-manager.js";
+import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { CutPointResult } from "../compaction.js";
+import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import type {
 	BashToolDetails,
 	FindToolDetails,
@@ -111,6 +112,7 @@ interface SessionEventBase {
  * - before_switch / switch: Session switch (e.g., /resume command)
  * - before_clear / clear: Session clear (e.g., /clear command)
  * - before_branch / branch: Session branch (e.g., /branch command)
+ * - before_compact / compact: Before/after context compaction
  * - shutdown: Process exit (SIGINT/SIGTERM)
  *
  * "before_*" events fire before the action and can be cancelled via SessionEventResult.
@@ -124,6 +126,22 @@ export type SessionEvent =
 			reason: "branch" | "before_branch";
 			/** Index of the turn to branch from */
 			targetTurnIndex: number;
+	  })
+	| (SessionEventBase & {
+			reason: "before_compact";
+			cutPoint: CutPointResult;
+			messagesToSummarize: AppMessage[];
+			tokensBefore: number;
+			customInstructions?: string;
+			model: Model<any>;
+			apiKey: string;
+	  })
+	| (SessionEventBase & {
+			reason: "compact";
+			compactionEntry: CompactionEntry;
+			tokensBefore: number;
+			/** Whether the compaction entry was provided by a hook */
+			fromHook: boolean;
 	  });
 
 /**
@@ -325,6 +343,8 @@ export interface SessionEventResult {
 	cancel?: boolean;
 	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
 	skipConversationRestore?: boolean;
+	/** Custom compaction entry (for before_compact event) */
+	compactionEntry?: CompactionEntry;
 }
 
 // ============================================================================

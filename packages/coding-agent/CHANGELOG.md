@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Custom compaction hooks**: Added `before_compact` and `compact` session events for context compaction. `before_compact` fires before compaction with the cut point, messages to summarize, model, and API key; hooks can cancel or provide a custom `compactionEntry`. `compact` fires after with the final compaction entry and a `fromHook` flag. ([#281](https://github.com/badlogic/pi-mono/issues/281))
+
 ## [0.27.4] - 2025-12-24
 
 ### Fixed
