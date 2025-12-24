@@ -151,7 +151,7 @@ pi.on("session", async (event, ctx) => {
   // event.entries: SessionEntry[] - all session entries
   // event.sessionFile: string | null - current session file (null with --no-session)
   // event.previousSessionFile: string | null - previous session file
-  // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" | 
+  // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" |
   //               "before_branch" | "branch" | "before_compact" | "compact" | "shutdown"
   // event.targetTurnIndex: number - only for "before_branch" and "branch"
 
@@ -195,24 +195,26 @@ Legend:
 ```
 Session entries (before compaction):
 
-  index:   0     1     2     3      4     5     6     7      8      9     10     11
-        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬─────┬──────┬──────┬─────┬──────┐
-        │ hdr │ cmp │ usr │ ass │ tool │ ass │ usr │ ass │ tool │ tool │ ass │ tool │
-        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴─────┴──────┴──────┴─────┴──────┘
-                ↑     └────────┬────────┘     └────────────┬────────────┘
-         previousSummary    messagesToSummarize         messagesToKeep
-                                       ↑
-                        cutPoint.firstKeptEntryIndex = 6
+  index:   0     1     2     3      4     5     6      7      8     9     10
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┬──────┐
+        │ hdr │ cmp │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool │
+        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴──────┘
+                ↑     └───────┬───────┘ └────────────┬────────────┘
+         previousSummary  messagesToSummarize     messagesToKeep
+                                   ↑
+                    cutPoint.firstKeptEntryIndex = 5
 
 After compaction (new entry appended):
 
-  index:   0     1     2     3      4     5     6     7      8      9     10     11    12
-        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬─────┬──────┬──────┬─────┬──────┬─────┐
-        │ hdr │ cmp │ usr │ ass │ tool │ ass │ usr │ ass │ tool │ tool │ ass │ tool │ cmp │
-        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴─────┴──────┴──────┴─────┴──────┴─────┘
-                      └────────┬────────┘     └────────────┬────────────┘       ↑
-                           ignored                      loaded         firstKeptEntryIndex = 6
-                         on reload                    on reload        (stored in new cmp)
+  index:   0     1     2     3      4     5     6      7      8     9     10    11
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┬──────┬─────┐
+        │ hdr │ cmp │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool │ cmp │
+        └─────┴─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴──────┴─────┘
+               └──────────┬───────────┘ └────────────────────────┬─────────────────┘
+                  not sent to LLM                           sent to LLM
+                                          ↑
+                                firstKeptEntryIndex = 5
+                                  (stored in new cmp)
 ```
 
 The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`. The cut point is always a user, assistant, or bashExecution message (never a tool result, which must stay with its tool call).
@@ -220,11 +222,13 @@ The session file is append-only. When loading, the session loader finds the late
 ```
 What gets sent to the LLM as context:
 
-  ┌──────────────────────────────────────────────────────────────────────────────────────┐
-  │ [system] [summary] [usr idx 6] [ass idx 7] [tool idx 8] [tool idx 9] [ass idx 10] [tool idx 11] │
-  └──────────────────────────────────────────────────────────────────────────────────────┘
-                 ↑              └──────────────────────┬──────────────────────┘
-       from new cmp's summary              messages from firstKeptEntryIndex onwards
+                       5     6      7      8     9     10
+  ┌────────┬─────────┬─────┬─────┬──────┬──────┬─────┬──────┐
+  │ system │ summary │ usr │ ass │ tool │ tool │ ass │ tool │
+  └────────┴─────────┴─────┴─────┴──────┴──────┴─────┴──────┘
+                 ↑      └─────────────────┬────────────────┘
+       from new cmp's              messages from
+           summary           firstKeptEntryIndex onwards
 ```
 
 **Split turns:** When a single turn is too large, the cut point may land mid-turn at an assistant message. In this case `cutPoint.isSplitTurn = true`:
@@ -265,37 +269,11 @@ See [src/core/compaction.ts](../src/core/compaction.ts) for the full implementat
 | `model` | Model to use for summarization. |
 | `resolveApiKey` | Function to resolve API key for any model: `await resolveApiKey(model)` |
 | `customInstructions` | Optional focus for summary (from `/compact <instructions>`). |
+| `signal` | AbortSignal for cancellation. Pass to LLM calls and check periodically. |
 
-**Common patterns:**
+Custom compaction hooks should honor the abort signal by passing it to `complete()` calls. This allows users to cancel compaction (e.g., via Ctrl+C during `/compact`).
 
-```typescript
-// Get all messages since last compaction
-const allMessages = [...event.messagesToSummarize, ...event.messagesToKeep];
-
-// Default behavior: summarize old, keep recent
-return {
-  compactionEntry: {
-    type: "compaction",
-    timestamp: new Date().toISOString(),
-    summary: "Your custom summary...",
-    firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex, // keep recent turns
-    tokensBefore: event.tokensBefore,
-  }
-};
-
-// Full compaction: summarize everything, keep nothing
-return {
-  compactionEntry: {
-    type: "compaction",
-    timestamp: new Date().toISOString(),
-    summary: "Complete summary of all work...",
-    firstKeptEntryIndex: event.entries.length, // discard all messages
-    tokensBefore: event.tokensBefore,
-  }
-};
-```
-
-See [examples/hooks/full-compaction.ts](../examples/hooks/full-compaction.ts) for a complete example.
+See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) for a complete example.
 
 **After compaction (`compact` event):**
 - `event.compactionEntry`: The saved compaction entry
@@ -367,7 +345,7 @@ pi.on("tool_result", async (event, ctx) => {
   // event.content: (TextContent | ImageContent)[]
   // event.details: tool-specific (see below)
   // event.isError: boolean
-  
+
   // Return modified content/details, or undefined to keep original
   return { content: [...], details: {...} };
 });
@@ -420,7 +398,7 @@ Common fields in details:
 Custom tools use `CustomToolResultEvent` with `details: unknown`. Create your own type guard to get full type safety:
 
 ```typescript
-import { 
+import {
   isBashToolResult,
   type CustomToolResultEvent,
   type HookAPI,
@@ -432,8 +410,8 @@ interface MyCustomToolDetails {
 }
 
 // Type guard that narrows both toolName and details
-function isMyCustomToolResult(e: ToolResultEvent): e is CustomToolResultEvent & { 
-  toolName: "my-custom-tool"; 
+function isMyCustomToolResult(e: ToolResultEvent): e is CustomToolResultEvent & {
+  toolName: "my-custom-tool";
   details: MyCustomToolDetails;
 } {
   return e.toolName === "my-custom-tool";
@@ -574,10 +552,10 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 export default function (pi: HookAPI) {
   pi.on("session", async (event, ctx) => {
     if (event.reason !== "start") return;
-    
+
     // Watch a trigger file
     const triggerFile = "/tmp/agent-trigger.txt";
-    
+
     fs.watch(triggerFile, () => {
       try {
         const content = fs.readFileSync(triggerFile, "utf-8").trim();
@@ -589,7 +567,7 @@ export default function (pi: HookAPI) {
         // File might not exist yet
       }
     });
-    
+
     ctx.ui.notify("Watching /tmp/agent-trigger.txt", "info");
   });
 }
@@ -606,7 +584,7 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 export default function (pi: HookAPI) {
   pi.on("session", async (event, ctx) => {
     if (event.reason !== "start") return;
-    
+
     const server = http.createServer((req, res) => {
       let body = "";
       req.on("data", chunk => body += chunk);
@@ -616,7 +594,7 @@ export default function (pi: HookAPI) {
         res.end("OK");
       });
     });
-    
+
     server.listen(3333, () => {
       ctx.ui.notify("Webhook listening on http://localhost:3333", "info");
     });
@@ -842,7 +820,7 @@ The `HookRunner` class manages hook execution:
 ```typescript
 class HookRunner {
   constructor(hooks: LoadedHook[], cwd: string, timeout?: number)
-  
+
   setUIContext(ctx: HookUIContext, hasUI: boolean): void
   setSessionFile(path: string | null): void
   onError(listener): () => void

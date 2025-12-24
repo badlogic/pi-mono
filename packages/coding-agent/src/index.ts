@@ -119,13 +119,13 @@ export {
 	readOnlyTools,
 } from "./core/sdk.js";
 export {
+	buildSessionContext,
 	type CompactionEntry,
 	createSummaryMessage,
 	getLatestCompactionEntry,
-	type LoadedSession,
-	loadSessionFromEntries,
 	type ModelChangeEntry,
 	parseSessionEntries,
+	type SessionContext as LoadedSession,
 	type SessionEntry,
 	type SessionHeader,
 	type SessionInfo,

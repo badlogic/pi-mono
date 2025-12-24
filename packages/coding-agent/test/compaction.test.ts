@@ -14,9 +14,9 @@ import {
 	shouldCompact,
 } from "../src/core/compaction.js";
 import {
+	buildSessionContext,
 	type CompactionEntry,
 	createSummaryMessage,
-	loadSessionFromEntries,
 	parseSessionEntries,
 	type SessionEntry,
 	type SessionMessageEntry,
@@ -226,7 +226,7 @@ describe("createSummaryMessage", () => {
 	});
 });
 
-describe("loadSessionFromEntries", () => {
+describe("buildSessionContext", () => {
 	it("should load all messages when no compaction", () => {
 		const entries: SessionEntry[] = [
 			{
@@ -241,7 +241,7 @@ describe("loadSessionFromEntries", () => {
 			createMessageEntry(createAssistantMessage("b")),
 		];
 
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		expect(loaded.messages.length).toBe(4);
 		expect(loaded.thinkingLevel).toBe("off");
 		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
@@ -265,7 +265,7 @@ describe("loadSessionFromEntries", () => {
 			createMessageEntry(createAssistantMessage("c")),
 		];
 
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		// summary + kept (u2,a2 from idx 3-4) + after (u3,a3 from idx 6-7) = 5
 		expect(loaded.messages.length).toBe(5);
 		expect(loaded.messages[0].role).toBe("user");
@@ -293,7 +293,7 @@ describe("loadSessionFromEntries", () => {
 			createMessageEntry(createAssistantMessage("d")),
 		];
 
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		// summary + kept from idx 6 (u3,c) + after (u4,d) = 5
 		expect(loaded.messages.length).toBe(5);
 		expect((loaded.messages[0] as any).content).toContain("Second summary");
@@ -316,7 +316,7 @@ describe("loadSessionFromEntries", () => {
 			createCompactionEntry("Second summary", 0), // index 0 is before compaction1, should still work
 		];
 
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		// Keeps from index 0, but compaction entries are skipped, so u1,a1,u2,b = 4 + summary = 5
 		// Actually index 0 is session header, so messages are u1,a1,u2,b
 		expect(loaded.messages.length).toBe(5); // summary + 4 messages
@@ -336,7 +336,7 @@ describe("loadSessionFromEntries", () => {
 			{ type: "thinking_level_change", timestamp: "", thinkingLevel: "high" },
 		];
 
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		// model_change is later overwritten by assistant message's model info
 		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
 		expect(loaded.thinkingLevel).toBe("high");
@@ -368,7 +368,7 @@ describe("Large session fixture", () => {
 
 	it("should load session correctly", () => {
 		const entries = loadLargeSessionEntries();
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 
 		expect(loaded.messages.length).toBeGreaterThan(100);
 		expect(loaded.model).not.toBeNull();
@@ -405,7 +405,7 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 
 	it("should produce valid session after compaction", async () => {
 		const entries = loadLargeSessionEntries();
-		const loaded = loadSessionFromEntries(entries);
+		const loaded = buildSessionContext(entries);
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
 		const compactionEvent = await compact(
@@ -417,7 +417,7 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 
 		// Simulate appending compaction to entries
 		const newEntries = [...entries, compactionEvent];
-		const reloaded = loadSessionFromEntries(newEntries);
+		const reloaded = buildSessionContext(newEntries);
 
 		// Should have summary + kept messages
 		expect(reloaded.messages.length).toBeLessThan(loaded.messages.length);

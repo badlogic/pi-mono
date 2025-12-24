@@ -11,6 +11,7 @@ import type {
 	HookEvent,
 	HookEventContext,
 	HookUIContext,
+	SessionEvent,
 	SessionEventResult,
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -229,9 +230,17 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-					timeout.clear();
+					// No timeout for before_compact events (like tool_call, they may take a while)
+					const isBeforeCompact = event.type === "session" && (event as SessionEvent).reason === "before_compact";
+					let handlerResult: unknown;
+
+					if (isBeforeCompact) {
+						handlerResult = await handler(event, ctx);
+					} else {
+						const timeout = createTimeout(this.timeout);
+						handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+						timeout.clear();
+					}
 
 					// For session events, capture the result (for before_* cancellation)
 					if (event.type === "session" && handlerResult) {

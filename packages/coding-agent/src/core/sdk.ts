@@ -496,7 +496,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	};
 
 	// Check if session has existing data to restore
-	const existingSession = sessionManager.loadSession();
+	const existingSession = sessionManager.buildSessionContext();
 	time("loadSession");
 	const hasExistingSession = existingSession.messages.length > 0;
 

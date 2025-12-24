@@ -380,8 +380,13 @@ export async function getAvailableModels(
 }
 
 /**
- * Find a specific model by provider and ID
- * Returns { model, error } - either model or error message
+ * Find a specific model by provider and ID.
+ *
+ * Searches models from:
+ * 1. Built-in models from @mariozechner/pi-ai
+ * 2. Custom models defined in ~/.pi/agent/models.json
+ *
+ * Returns { model, error } - either the model or an error message.
  */
 export function findModel(
 	provider: string,

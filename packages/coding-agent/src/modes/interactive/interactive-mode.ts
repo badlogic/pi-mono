@@ -351,7 +351,7 @@ export class InteractiveMode {
 		}
 
 		// Load session entries if any
-		const entries = this.session.sessionManager.loadEntries();
+		const entries = this.session.sessionManager.getEntries();
 
 		// Set TUI-based UI context for custom tools
 		const uiContext = this.createHookUIContext();
@@ -1067,7 +1067,7 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.loadEntries());
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getEntries());
 
 		for (const message of messages) {
 			if (isBashExecutionMessage(message)) {
@@ -1137,7 +1137,7 @@ export class InteractiveMode {
 		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
 
 		// Show compaction info if session was compacted
-		const entries = this.sessionManager.loadEntries();
+		const entries = this.sessionManager.getEntries();
 		const compactionCount = entries.filter((e) => e.type === "compaction").length;
 		if (compactionCount > 0) {
 			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
@@ -1185,7 +1185,7 @@ export class InteractiveMode {
 		// Emit shutdown event to hooks
 		const hookRunner = this.session.hookRunner;
 		if (hookRunner?.hasHandlers("session")) {
-			const entries = this.sessionManager.loadEntries();
+			const entries = this.sessionManager.getEntries();
 			await hookRunner.emit({
 				type: "session",
 				entries,
@@ -1924,7 +1924,7 @@ export class InteractiveMode {
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
-		const entries = this.sessionManager.loadEntries();
+		const entries = this.sessionManager.getEntries();
 		const messageCount = entries.filter((e) => e.type === "message").length;
 
 		if (messageCount < 2) {

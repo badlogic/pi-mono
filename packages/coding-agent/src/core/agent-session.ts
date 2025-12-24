@@ -24,7 +24,7 @@ import { exportSessionToHtml } from "./export-html.js";
 import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import { type CompactionEntry, loadSessionFromEntries, type SessionManager } from "./session-manager.js";
+import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -510,7 +510,7 @@ export class AgentSession {
 	 */
 	async reset(): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
-		const entries = this.sessionManager.loadEntries();
+		const entries = this.sessionManager.getEntries();
 
 		// Emit before_clear event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
@@ -748,7 +748,7 @@ export class AgentSession {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
 
-			const entries = this.sessionManager.loadEntries();
+			const entries = this.sessionManager.getEntries();
 			const settings = this.settingsManager.getCompactionSettings();
 
 			const preparation = prepareCompaction(entries, settings);
@@ -783,6 +783,7 @@ export class AgentSession {
 					customInstructions,
 					model: this.model,
 					resolveApiKey: this._resolveApiKey,
+					signal: this._compactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
 				if (result?.cancel) {
@@ -811,9 +812,9 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
-			const newEntries = this.sessionManager.loadEntries();
-			const loaded = loadSessionFromEntries(newEntries);
-			this.agent.replaceMessages(loaded.messages);
+			const newEntries = this.sessionManager.getEntries();
+			const sessionContext = this.sessionManager.buildSessionContext();
+			this.agent.replaceMessages(sessionContext.messages);
 
 			if (this._hookRunner) {
 				await this._hookRunner.emit({
@@ -909,7 +910,7 @@ export class AgentSession {
 				return;
 			}
 
-			const entries = this.sessionManager.loadEntries();
+			const entries = this.sessionManager.getEntries();
 
 			const preparation = prepareCompaction(entries, settings);
 			if (!preparation) {
@@ -944,6 +945,7 @@ export class AgentSession {
 					customInstructions: undefined,
 					model: this.model,
 					resolveApiKey: this._resolveApiKey,
+					signal: this._autoCompactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
 				if (hookResult?.cancel) {
@@ -973,9 +975,9 @@ export class AgentSession {
 			}
 
 			this.sessionManager.saveCompaction(compactionEntry);
-			const newEntries = this.sessionManager.loadEntries();
-			const loaded = loadSessionFromEntries(newEntries);
-			this.agent.replaceMessages(loaded.messages);
+			const newEntries = this.sessionManager.getEntries();
+			const sessionContext = this.sessionManager.buildSessionContext();
+			this.agent.replaceMessages(sessionContext.messages);
 
 			if (this._hookRunner) {
 				await this._hookRunner.emit({
@@ -1281,7 +1283,7 @@ export class AgentSession {
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
-		const oldEntries = this.sessionManager.loadEntries();
+		const oldEntries = this.sessionManager.getEntries();
 
 		// Emit before_switch event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
@@ -1306,8 +1308,8 @@ export class AgentSession {
 		this.sessionManager.setSessionFile(sessionPath);
 
 		// Reload messages
-		const entries = this.sessionManager.loadEntries();
-		const loaded = loadSessionFromEntries(entries);
+		const entries = this.sessionManager.getEntries();
+		const sessionContext = this.sessionManager.buildSessionContext();
 
 		// Emit session event to hooks
 		if (this._hookRunner) {
@@ -1324,22 +1326,22 @@ export class AgentSession {
 		// Emit session event to custom tools
 		await this._emitToolSessionEvent("switch", previousSessionFile);
 
-		this.agent.replaceMessages(loaded.messages);
+		this.agent.replaceMessages(sessionContext.messages);
 
 		// Restore model if saved
-		const savedModel = this.sessionManager.loadModel();
-		if (savedModel) {
+		if (sessionContext.model) {
 			const availableModels = (await getAvailableModels()).models;
-			const match = availableModels.find((m) => m.provider === savedModel.provider && m.id === savedModel.modelId);
+			const match = availableModels.find(
+				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
+			);
 			if (match) {
 				this.agent.setModel(match);
 			}
 		}
 
 		// Restore thinking level if saved (setThinkingLevel clamps to model capabilities)
-		const savedThinking = this.sessionManager.loadThinkingLevel();
-		if (savedThinking) {
-			this.setThinkingLevel(savedThinking as ThinkingLevel);
+		if (sessionContext.thinkingLevel) {
+			this.setThinkingLevel(sessionContext.thinkingLevel as ThinkingLevel);
 		}
 
 		this._reconnectToAgent();
@@ -1357,7 +1359,7 @@ export class AgentSession {
 	 */
 	async branch(entryIndex: number): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
-		const entries = this.sessionManager.loadEntries();
+		const entries = this.sessionManager.getEntries();
 		const selectedEntry = entries[entryIndex];
 
 		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
@@ -1394,8 +1396,8 @@ export class AgentSession {
 		}
 
 		// Reload messages from entries (works for both file and in-memory mode)
-		const newEntries = this.sessionManager.loadEntries();
-		const loaded = loadSessionFromEntries(newEntries);
+		const newEntries = this.sessionManager.getEntries();
+		const sessionContext = this.sessionManager.buildSessionContext();
 
 		// Emit branch event to hooks (after branch completes)
 		if (this._hookRunner) {
@@ -1414,7 +1416,7 @@ export class AgentSession {
 		await this._emitToolSessionEvent("branch", previousSessionFile);
 
 		if (!skipConversationRestore) {
-			this.agent.replaceMessages(loaded.messages);
+			this.agent.replaceMessages(sessionContext.messages);
 		}
 
 		return { selectedText, cancelled: false };
@@ -1424,7 +1426,7 @@ export class AgentSession {
 	 * Get all user messages from session for branch selector.
 	 */
 	getUserMessagesForBranching(): Array<{ entryIndex: number; text: string }> {
-		const entries = this.sessionManager.loadEntries();
+		const entries = this.sessionManager.getEntries();
 		const result: Array<{ entryIndex: number; text: string }> = [];
 
 		for (let i = 0; i < entries.length; i++) {
@@ -1570,7 +1572,7 @@ export class AgentSession {
 		previousSessionFile: string | null,
 	): Promise<void> {
 		const event: ToolSessionEvent = {
-			entries: this.sessionManager.loadEntries(),
+			entries: this.sessionManager.getEntries(),
 			sessionFile: this.sessionFile,
 			previousSessionFile,
 			reason,

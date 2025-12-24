@@ -1,41 +1,54 @@
 /**
- * Full Context Compaction Hook
+ * Custom Compaction Hook
  *
  * Replaces the default compaction behavior with a full summary of the entire context.
  * Instead of keeping the last 20k tokens of conversation turns, this hook:
- * 1. Summarizes ALL messages (both messagesToSummarize and messagesToKeep)
+ * 1. Summarizes ALL messages (both messagesToSummarize and messagesToKeep and previousSummary)
  * 2. Discards all old turns completely, keeping only the summary
  *
- * This is useful when you want maximum context window space for new work
- * at the cost of losing exact conversation history.
+ * This example also demonstrates using a different model (Gemini Flash) for summarization,
+ * which can be cheaper/faster than the main conversation model.
  *
  * Usage:
- *   pi --hook examples/hooks/full-compaction.ts
+ *   pi --hook examples/hooks/custom-compaction.ts
  */
 
 import { complete } from "@mariozechner/pi-ai";
-import { messageTransformer } from "@mariozechner/pi-coding-agent";
+import { findModel, messageTransformer } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		if (event.reason !== "before_compact") return;
 
-		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, model, resolveApiKey, entries } = event;
+		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		// Combine all messages for full summary
-		const allMessages = [...messagesToSummarize, ...messagesToKeep];
+		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, resolveApiKey, entries, signal } = event;
 
-		ctx.ui.notify(`Full compaction: summarizing ${allMessages.length} messages (${tokensBefore.toLocaleString()} tokens)...`, "info");
+		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
+		// findModel searches both built-in models and custom models from models.json
+		const { model, error } = findModel("google", "gemini-2.5-flash");
+		if (error || !model) {
+			ctx.ui.notify(`Could not find Gemini Flash model: ${error}, using default compaction`, "warning");
+			return;
+		}
 
-		// Resolve API key for the model
+		// Resolve API key for the summarization model
 		const apiKey = await resolveApiKey(model);
 		if (!apiKey) {
 			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
 			return;
 		}
 
-		// Transform app messages to LLM-compatible format
+		// Combine all messages for full summary
+		const allMessages = [...messagesToSummarize, ...messagesToKeep];
+
+		ctx.ui.notify(
+			`Custom compaction: summarizing ${allMessages.length} messages (${tokensBefore.toLocaleString()} tokens) with ${model.id}...`,
+			"info",
+		);
+
+		// Transform app messages to pi-ai package format
 		const transformedMessages = messageTransformer(allMessages);
 
 		// Include previous summary context if available
@@ -68,8 +81,8 @@ Format the summary as structured markdown with clear sections.`,
 		];
 
 		try {
-			// Use the same model with resolved API key
-			const response = await complete(model, { messages: summaryMessages }, { apiKey, maxTokens: 8192 });
+			// Pass signal to honor abort requests (e.g., user cancels compaction)
+			const response = await complete(model, { messages: summaryMessages }, { apiKey, maxTokens: 8192, signal });
 
 			const summary = response.content
 				.filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -77,8 +90,8 @@ Format the summary as structured markdown with clear sections.`,
 				.join("\n");
 
 			if (!summary.trim()) {
-				ctx.ui.notify("Compaction summary was empty, using default compaction", "warning");
-				return; // Fall back to default compaction
+				if (!signal.aborted) ctx.ui.notify("Compaction summary was empty, using default compaction", "warning");
+				return;
 			}
 
 			// Return a compaction entry that discards ALL messages

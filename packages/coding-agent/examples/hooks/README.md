@@ -25,7 +25,7 @@ Prevents session changes when there are uncommitted git changes. Blocks clear/sw
 ### auto-commit-on-exit.ts
 Automatically commits changes when the agent exits (shutdown event). Uses the last assistant message to generate a commit message.
 
-### full-compaction.ts
+### custom-compaction.ts
 Custom context compaction that summarizes the entire conversation instead of keeping recent turns. Uses the `before_compact` hook event to intercept compaction and generate a comprehensive summary using `complete()` from the AI package. Useful when you want maximum context window space at the cost of losing exact conversation history.
 
 ## Usage

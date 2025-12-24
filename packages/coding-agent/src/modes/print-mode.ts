@@ -28,7 +28,7 @@ export async function runPrintMode(
 	initialAttachments?: Attachment[],
 ): Promise<void> {
 	// Load entries once for session start events
-	const entries = session.sessionManager.loadEntries();
+	const entries = session.sessionManager.getEntries();
 
 	// Hook runner already has no-op UI context by default (set in main.ts)
 	// Set up hooks for print mode (no UI)

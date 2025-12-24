@@ -121,7 +121,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	});
 
 	// Load entries once for session start events
-	const entries = session.sessionManager.loadEntries();
+	const entries = session.sessionManager.getEntries();
 
 	// Set up hooks with RPC-based UI context
 	const hookRunner = session.hookRunner;

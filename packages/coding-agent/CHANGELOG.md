@@ -10,6 +10,11 @@
   - `resolveApiKey`: Function to resolve API keys for any model (checks settings, OAuth, env vars)
   - Removed `apiKey` string in favor of `resolveApiKey` for more flexibility
 
+- **SessionManager API cleanup**:
+  - Renamed `loadSessionFromEntries()` to `buildSessionContext()` (builds LLM context from entries, handling compaction)
+  - Renamed `loadEntries()` to `getEntries()` (returns defensive copy of all session entries)
+  - Added `buildSessionContext()` method to SessionManager
+
 ## [0.27.5] - 2025-12-24
 
 ### Added

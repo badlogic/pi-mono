@@ -141,7 +141,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		await session.compact();
 
 		// Load entries from session manager
-		const entries = sessionManager.loadEntries();
+		const entries = sessionManager.getEntries();
 
 		// Should have a compaction entry
 		const compactionEntries = entries.filter((e) => e.type === "compaction");
@@ -200,7 +200,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 			expect(result.summary.length).toBeGreaterThan(0);
 
 			// In-memory entries should have the compaction
-			const entries = noSessionManager.loadEntries();
+			const entries = noSessionManager.getEntries();
 			const compactionEntries = entries.filter((e) => e.type === "compaction");
 			expect(compactionEntries.length).toBe(1);
 		} finally {

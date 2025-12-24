@@ -12,9 +12,9 @@
 
 import type { AppMessage } from "@mariozechner/pi-agent-core";
 import {
+	buildSessionContext,
 	type CompactionEntry,
 	type LoadedSession,
-	loadSessionFromEntries,
 	type ModelChangeEntry,
 	type SessionEntry,
 	type SessionMessageEntry,
@@ -285,7 +285,7 @@ export class MomSessionManager {
 	/** Load session with compaction support */
 	loadSession(): LoadedSession {
 		const entries = this.loadEntries();
-		return loadSessionFromEntries(entries);
+		return buildSessionContext(entries);
 	}
 
 	loadEntries(): SessionEntry[] {

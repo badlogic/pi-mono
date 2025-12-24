@@ -141,6 +141,8 @@ export type SessionEvent =
 			model: Model<any>;
 			/** Resolve API key for any model (checks settings, OAuth, env vars) */
 			resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
+			/** Abort signal - hooks should pass this to LLM calls and check it periodically */
+			signal: AbortSignal;
 	  })
 	| (SessionEventBase & {
 			reason: "compact";

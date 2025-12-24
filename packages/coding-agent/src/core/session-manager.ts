@@ -54,7 +54,7 @@ export type SessionEntry =
 	| ModelChangeEntry
 	| CompactionEntry;
 
-export interface LoadedSession {
+export interface SessionContext {
 	messages: AppMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
@@ -78,6 +78,7 @@ export const SUMMARY_PREFIX = `The conversation history before this point was co
 export const SUMMARY_SUFFIX = `
 </summary>`;
 
+/** Exported for compaction.test.ts */
 export function createSummaryMessage(summary: string): AppMessage {
 	return {
 		role: "user",
@@ -86,6 +87,7 @@ export function createSummaryMessage(summary: string): AppMessage {
 	};
 }
 
+/** Exported for compaction.test.ts */
 export function parseSessionEntries(content: string): SessionEntry[] {
 	const entries: SessionEntry[] = [];
 	const lines = content.trim().split("\n");
@@ -112,7 +114,15 @@ export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEnt
 	return null;
 }
 
-export function loadSessionFromEntries(entries: SessionEntry[]): LoadedSession {
+/**
+ * Build the session context from entries. This is what gets sent to the LLM.
+ *
+ * If there's a compaction entry, returns the summary message plus messages
+ * from `firstKeptEntryIndex` onwards. Otherwise returns all messages.
+ *
+ * Also extracts the current thinking level and model from the entries.
+ */
+export function buildSessionContext(entries: SessionEntry[]): SessionContext {
 	let thinkingLevel = "off";
 	let model: { provider: string; modelId: string } | null = null;
 
@@ -299,7 +309,7 @@ export class SessionManager {
 		}
 	}
 
-	saveMessage(message: any): void {
+	saveMessage(message: AppMessage): void {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			timestamp: new Date().toISOString(),
@@ -335,29 +345,21 @@ export class SessionManager {
 		this._persist(entry);
 	}
 
-	loadSession(): LoadedSession {
-		const entries = this.loadEntries();
-		return loadSessionFromEntries(entries);
+	/**
+	 * Build the session context (what gets sent to the LLM).
+	 * If compacted, returns summary + kept messages. Otherwise all messages.
+	 * Includes thinking level and model.
+	 */
+	buildSessionContext(): SessionContext {
+		return buildSessionContext(this.getEntries());
 	}
 
-	loadMessages(): AppMessage[] {
-		return this.loadSession().messages;
-	}
-
-	loadThinkingLevel(): string {
-		return this.loadSession().thinkingLevel;
-	}
-
-	loadModel(): { provider: string; modelId: string } | null {
-		return this.loadSession().model;
-	}
-
-	loadEntries(): SessionEntry[] {
-		if (this.inMemoryEntries.length > 0) {
-			return [...this.inMemoryEntries];
-		} else {
-			return loadEntriesFromFile(this.sessionFile);
-		}
+	/**
+	 * Get all session entries. Returns a defensive copy.
+	 * Use buildSessionContext() if you need the messages for the LLM.
+	 */
+	getEntries(): SessionEntry[] {
+		return [...this.inMemoryEntries];
 	}
 
 	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string | null {
