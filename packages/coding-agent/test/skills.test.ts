@@ -1,6 +1,7 @@
+import { mkdirSync, rmSync, symlinkSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
@@ -417,6 +418,67 @@ describe("skills", () => {
 			expect(skillMap.get("calendar")?.source).toBe("first");
 			expect(collisionWarnings).toHaveLength(1);
 			expect(collisionWarnings[0].message).toContain("name collision");
+		});
+	});
+
+	describe("symlink deduplication", () => {
+		const symlinkFixturesDir = resolve(__dirname, "fixtures/skills-symlink");
+		const originalSkillDir = join(collisionFixturesDir, "first", "calendar");
+		const symlinkSkillDir = join(symlinkFixturesDir, "calendar");
+
+		beforeAll(() => {
+			// Create a symlink fixture that points to the same skill
+			mkdirSync(symlinkFixturesDir, { recursive: true });
+			try {
+				symlinkSync(originalSkillDir, symlinkSkillDir);
+			} catch {
+				// Symlink may already exist
+			}
+		});
+
+		afterAll(() => {
+			// Clean up symlink fixture
+			try {
+				rmSync(symlinkFixturesDir, { recursive: true });
+			} catch {
+				// Ignore cleanup errors
+			}
+		});
+
+		it("should silently skip duplicate skills loaded via symlinks", () => {
+			// Load from original directory
+			const first = loadSkillsFromDir({
+				dir: join(collisionFixturesDir, "first"),
+				source: "first",
+			});
+
+			// Load from symlink directory (points to same files)
+			const symlinked = loadSkillsFromDir({
+				dir: symlinkFixturesDir,
+				source: "symlinked",
+			});
+
+			expect(first.skills).toHaveLength(1);
+			expect(symlinked.skills).toHaveLength(1);
+
+			// Use loadSkills with custom directories to test deduplication
+			const result = loadSkills({
+				cwd: "/nonexistent", // Avoid loading project skills
+				enableCodexUser: false,
+				enableClaudeUser: false,
+				enableClaudeProject: false,
+				enablePiUser: false,
+				enablePiProject: false,
+				customDirectories: [join(collisionFixturesDir, "first"), symlinkFixturesDir],
+			});
+
+			// Should load only one skill (no duplicate)
+			expect(result.skills).toHaveLength(1);
+			expect(result.skills[0].name).toBe("calendar");
+
+			// Should NOT have a collision warning (symlink detected as same file)
+			const collisionWarnings = result.warnings.filter((w) => w.message.includes("name collision"));
+			expect(collisionWarnings).toHaveLength(0);
 		});
 	});
 });
