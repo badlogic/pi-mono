@@ -258,10 +258,16 @@ If no model is provided:
 
 ### API Keys
 
+API key resolution priority:
+1. `settings.json` apiKeys (e.g., `{ "apiKeys": { "anthropic": "sk-..." } }`)
+2. Custom providers from `models.json`
+3. OAuth credentials from `oauth.json`
+4. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
+
 ```typescript
 import { defaultGetApiKey, configureOAuthStorage } from "@mariozechner/pi-coding-agent";
 
-// Default: checks models.json, OAuth, environment variables
+// Default: checks settings.json, models.json, OAuth, environment variables
 const { session } = await createAgentSession();
 
 // Custom resolver
@@ -271,7 +277,7 @@ const { session } = await createAgentSession({
     if (model.provider === "anthropic") {
       return process.env.MY_ANTHROPIC_KEY;
     }
-    // Fall back to default
+    // Fall back to default (pass settingsManager for settings.json lookup)
     return defaultGetApiKey()(model);
   },
 });

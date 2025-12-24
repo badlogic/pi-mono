@@ -328,10 +328,22 @@ export function discoverSlashCommands(cwd?: string, agentDir?: string): FileSlas
 
 /**
  * Create the default API key resolver.
- * Checks custom providers (models.json), OAuth, and environment variables.
+ * Priority: settings.json apiKeys > custom providers (models.json) > OAuth > environment variables.
  */
-export function defaultGetApiKey(): (model: Model<any>) => Promise<string | undefined> {
-	return getApiKeyForModel;
+export function defaultGetApiKey(
+	settingsManager?: SettingsManager,
+): (model: Model<any>) => Promise<string | undefined> {
+	return async (model: Model<any>) => {
+		// Check settings.json apiKeys first
+		if (settingsManager) {
+			const settingsKey = settingsManager.getApiKey(model.provider);
+			if (settingsKey) {
+				return settingsKey;
+			}
+		}
+		// Fall back to existing resolution (custom providers, OAuth, env vars)
+		return getApiKeyForModel(model);
+	};
 }
 
 // System Prompt
@@ -476,6 +488,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, agentDir);
 	time("sessionManager");
 
+	// Helper to check API key availability (settings first, then OAuth/env vars)
+	const hasApiKey = async (m: Model<any>): Promise<boolean> => {
+		const settingsKey = settingsManager.getApiKey(m.provider);
+		if (settingsKey) return true;
+		return !!(await getApiKeyForModel(m));
+	};
+
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.loadSession();
 	time("loadSession");
@@ -487,11 +506,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// If session has data, try to restore model from it
 	if (!model && hasExistingSession && existingSession.model) {
 		const restoredModel = findModel(existingSession.model.provider, existingSession.model.modelId);
-		if (restoredModel) {
-			const key = await getApiKeyForModel(restoredModel);
-			if (key) {
-				model = restoredModel;
-			}
+		if (restoredModel && (await hasApiKey(restoredModel))) {
+			model = restoredModel;
 		}
 		if (!model) {
 			modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
@@ -504,21 +520,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const defaultModelId = settingsManager.getDefaultModel();
 		if (defaultProvider && defaultModelId) {
 			const settingsModel = findModel(defaultProvider, defaultModelId);
-			if (settingsModel) {
-				const key = await getApiKeyForModel(settingsModel);
-				if (key) {
-					model = settingsModel;
-				}
+			if (settingsModel && (await hasApiKey(settingsModel))) {
+				model = settingsModel;
 			}
 		}
 	}
 
-	// Fall back to first available
+	// Fall back to first available model with a valid API key
 	if (!model) {
-		const available = await discoverAvailableModels();
+		const allModels = discoverModels(agentDir);
+		for (const m of allModels) {
+			if (await hasApiKey(m)) {
+				model = m;
+				break;
+			}
+		}
 		time("discoverAvailableModels");
-		if (available.length > 0) {
-			model = available[0];
+		if (model) {
 			if (modelFallbackMessage) {
 				modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
 			}
@@ -545,7 +563,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	const getApiKey = options.getApiKey ?? defaultGetApiKey();
+	const getApiKey = options.getApiKey ?? defaultGetApiKey(settingsManager);
 
 	const skills = options.skills ?? discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
 	time("discoverSkills");
