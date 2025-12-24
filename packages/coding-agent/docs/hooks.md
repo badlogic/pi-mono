@@ -194,6 +194,7 @@ The `before_compact` event lets you implement custom compaction strategies. Unde
 |-------|-------------|
 | `entries` | All session entries (header, messages, model changes, previous compactions). Use this for custom schemes that need full session history. |
 | `cutPoint` | Where default compaction would cut. `firstKeptEntryIndex` is the entry index where kept messages start. `isSplitTurn` indicates if cutting mid-turn. |
+| `previousSummary` | Summary from the last compaction, if any. Include this in your summary to preserve accumulated context. |
 | `messagesToSummarize` | Messages that will be summarized and discarded (from after last compaction to cut point). |
 | `messagesToKeep` | Messages that will be kept verbatim after the summary (from cut point to end). |
 | `tokensBefore` | Current context token count (why compaction triggered). |

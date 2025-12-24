@@ -5,6 +5,7 @@
 ### Added
 
 - **Compaction hook improvements**: The `before_compact` session event now includes:
+  - `previousSummary`: Summary from the last compaction (if any), so hooks can preserve accumulated context
   - `messagesToKeep`: Messages that will be kept after the summary (recent turns), in addition to `messagesToSummarize`
   - `resolveApiKey`: Function to resolve API keys for any model (checks settings, OAuth, env vars)
   - Removed `apiKey` string in favor of `resolveApiKey` for more flexibility

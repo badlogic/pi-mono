@@ -21,7 +21,7 @@ export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		if (event.reason !== "before_compact") return;
 
-		const { messagesToSummarize, messagesToKeep, tokensBefore, model, resolveApiKey, entries } = event;
+		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, model, resolveApiKey, entries } = event;
 
 		// Combine all messages for full summary
 		const allMessages = [...messagesToSummarize, ...messagesToKeep];
@@ -38,6 +38,9 @@ export default function (pi: HookAPI) {
 		// Transform app messages to LLM-compatible format
 		const transformedMessages = messageTransformer(allMessages);
 
+		// Include previous summary context if available
+		const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";
+
 		// Build messages that ask for a comprehensive summary
 		const summaryMessages = [
 			...transformedMessages,
@@ -46,7 +49,7 @@ export default function (pi: HookAPI) {
 				content: [
 					{
 						type: "text" as const,
-						text: `You are a conversation summarizer. Create a comprehensive summary of this entire conversation that captures:
+						text: `You are a conversation summarizer. Create a comprehensive summary of this entire conversation that captures:${previousContext}
 
 1. The main goals and objectives discussed
 2. Key decisions made and their rationale

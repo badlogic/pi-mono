@@ -130,6 +130,8 @@ export type SessionEvent =
 	| (SessionEventBase & {
 			reason: "before_compact";
 			cutPoint: CutPointResult;
+			/** Summary from previous compaction, if any. Include this in your summary to preserve context. */
+			previousSummary?: string;
 			/** Messages that will be summarized and discarded */
 			messagesToSummarize: AppMessage[];
 			/** Messages that will be kept after the summary (recent turns) */

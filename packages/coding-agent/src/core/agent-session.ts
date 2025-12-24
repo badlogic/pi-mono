@@ -756,6 +756,15 @@ export class AgentSession {
 				throw new Error("Already compacted");
 			}
 
+			// Find previous compaction summary if any
+			let previousSummary: string | undefined;
+			for (let i = entries.length - 1; i >= 0; i--) {
+				if (entries[i].type === "compaction") {
+					previousSummary = (entries[i] as CompactionEntry).summary;
+					break;
+				}
+			}
+
 			let compactionEntry: CompactionEntry | undefined;
 			let fromHook = false;
 
@@ -767,6 +776,7 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
+					previousSummary,
 					messagesToSummarize: [...preparation.messagesToSummarize],
 					messagesToKeep: [...preparation.messagesToKeep],
 					tokensBefore: preparation.tokensBefore,
@@ -907,6 +917,15 @@ export class AgentSession {
 				return;
 			}
 
+			// Find previous compaction summary if any
+			let previousSummary: string | undefined;
+			for (let i = entries.length - 1; i >= 0; i--) {
+				if (entries[i].type === "compaction") {
+					previousSummary = (entries[i] as CompactionEntry).summary;
+					break;
+				}
+			}
+
 			let compactionEntry: CompactionEntry | undefined;
 			let fromHook = false;
 
@@ -918,6 +937,7 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
+					previousSummary,
 					messagesToSummarize: [...preparation.messagesToSummarize],
 					messagesToKeep: [...preparation.messagesToKeep],
 					tokensBefore: preparation.tokensBefore,
