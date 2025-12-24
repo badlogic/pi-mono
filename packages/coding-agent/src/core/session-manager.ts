@@ -17,7 +17,7 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	branchedFrom?: string;
+	parentSession?: string;
 }
 
 export interface SessionMessageEntry {
@@ -53,6 +53,11 @@ export type SessionEntry =
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
 	| CompactionEntry;
+
+export interface SpawnSessionOptions {
+	initialMessages?: AppMessage[];
+	parentSession?: string;
+}
 
 export interface SessionContext {
 	messages: AppMessage[];
@@ -376,7 +381,7 @@ export class SessionManager {
 					...entry,
 					id: newSessionId,
 					timestamp: new Date().toISOString(),
-					branchedFrom: this.persist ? this.sessionFile : undefined,
+					parentSession: this.persist ? this.sessionFile : undefined,
 				});
 			} else {
 				newEntries.push(entry);
@@ -389,6 +394,43 @@ export class SessionManager {
 			}
 			return newSessionFile;
 		}
+		this.inMemoryEntries = newEntries;
+		this.sessionId = newSessionId;
+		return null;
+	}
+
+	spawnSession(options: SpawnSessionOptions): string | null {
+		const newSessionId = uuidv4();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const newSessionFile = join(this.sessionDir, `${timestamp}_${newSessionId}.jsonl`);
+
+		const header: SessionHeader = {
+			type: "session",
+			id: newSessionId,
+			timestamp: new Date().toISOString(),
+			cwd: this.cwd,
+			parentSession: options.parentSession,
+		};
+
+		const newEntries: SessionEntry[] = [header];
+
+		if (options.initialMessages) {
+			for (const message of options.initialMessages) {
+				newEntries.push({
+					type: "message",
+					timestamp: new Date().toISOString(),
+					message,
+				});
+			}
+		}
+
+		if (this.persist) {
+			for (const entry of newEntries) {
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+			return newSessionFile;
+		}
+
 		this.inMemoryEntries = newEntries;
 		this.sessionId = newSessionId;
 		return null;

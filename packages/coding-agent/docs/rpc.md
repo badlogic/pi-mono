@@ -486,6 +486,45 @@ If a hook cancelled the switch:
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
 
+#### spawn_session
+
+Create a new session (optionally with initial messages) and switch to it. The old session remains accessible via `/resume`. Can be cancelled by a `before_switch` hook.
+
+```json
+{"type": "spawn_session", "options": {}}
+```
+
+With initial messages and source tracking:
+```json
+{
+  "type": "spawn_session",
+  "options": {
+    "initialMessages": [{"role": "user", "content": "Context...", "timestamp": 1234567890}],
+    "parentSession": "/path/to/source-session.jsonl"
+  }
+}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "spawn_session",
+  "success": true,
+  "data": {"cancelled": false, "sessionPath": "/path/to/new-session.jsonl"}
+}
+```
+
+If a hook cancelled the spawn:
+```json
+{
+  "type": "response",
+  "command": "spawn_session",
+  "success": true,
+  "data": {"cancelled": true, "sessionPath": null}
+}
+```
+
 #### branch
 
 Create a new branch from a previous user message. Can be cancelled by a `before_branch` hook. Returns the text of the message being branched from.

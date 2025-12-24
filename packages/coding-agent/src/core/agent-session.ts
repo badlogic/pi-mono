@@ -24,7 +24,7 @@ import { exportSessionToHtml } from "./export-html.js";
 import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import { getApiKeyForModel, getAvailableModels } from "./model-config.js";
-import type { CompactionEntry, SessionManager } from "./session-manager.js";
+import type { CompactionEntry, SessionManager, SpawnSessionOptions } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -1426,6 +1426,57 @@ export class AgentSession {
 		}
 
 		return { selectedText, cancelled: false };
+	}
+
+	async spawnSession(options: SpawnSessionOptions): Promise<{ cancelled: boolean; sessionPath: string | null }> {
+		const previousSessionFile = this.sessionFile;
+		const oldEntries = this.sessionManager.getEntries();
+
+		if (this._hookRunner?.hasHandlers("session")) {
+			const result = (await this._hookRunner.emit({
+				type: "session",
+				entries: oldEntries,
+				sessionFile: this.sessionFile,
+				previousSessionFile: null,
+				reason: "before_switch",
+			})) as SessionEventResult | undefined;
+
+			if (result?.cancel) {
+				return { cancelled: true, sessionPath: null };
+			}
+		}
+
+		this._disconnectFromAgent();
+		await this.abort();
+		this._queuedMessages = [];
+
+		const newPath = this.sessionManager.spawnSession(options);
+
+		if (newPath !== null) {
+			this.sessionManager.setSessionFile(newPath);
+		}
+
+		const entries = this.sessionManager.getEntries();
+		const sessionContext = this.sessionManager.buildSessionContext();
+
+		if (this._hookRunner) {
+			this._hookRunner.setSessionFile(newPath);
+			await this._hookRunner.emit({
+				type: "session",
+				entries,
+				sessionFile: newPath,
+				previousSessionFile,
+				reason: "switch",
+			});
+		}
+
+		await this._emitToolSessionEvent("switch", previousSessionFile);
+
+		this.agent.replaceMessages(sessionContext.messages);
+
+		this._reconnectToAgent();
+
+		return { cancelled: false, sessionPath: newPath };
 	}
 
 	/**

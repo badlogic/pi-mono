@@ -125,6 +125,11 @@ user switches session (/resume)
   ├─► session (reason: "before_switch", can cancel)
   └─► session (reason: "switch", AFTER switch)
 
+spawn new session (via SDK/RPC)
+  │
+  ├─► session (reason: "before_switch", can cancel)
+  └─► session (reason: "switch", AFTER spawn)
+
 user clears session (/clear)
   │
   ├─► session (reason: "before_clear", can cancel)

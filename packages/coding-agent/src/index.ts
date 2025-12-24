@@ -131,6 +131,7 @@ export {
 	type SessionInfo,
 	SessionManager,
 	type SessionMessageEntry,
+	type SpawnSessionOptions,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
 	type ThinkingLevelChangeEntry,

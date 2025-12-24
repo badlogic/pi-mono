@@ -9,6 +9,7 @@ import * as readline from "node:readline";
 import type { AgentEvent, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { SpawnSessionOptions } from "../../core/session-manager.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // ============================================================================
@@ -317,6 +318,11 @@ export class RpcClient {
 	 */
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "switch_session", sessionPath });
+		return this.getData(response);
+	}
+
+	async spawnSession(options: SpawnSessionOptions): Promise<{ cancelled: boolean; sessionPath: string | null }> {
+		const response = await this.send({ type: "spawn_session", options });
 		return this.getData(response);
 	}
 
