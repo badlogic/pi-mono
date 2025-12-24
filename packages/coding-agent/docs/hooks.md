@@ -211,6 +211,17 @@ After compaction (new entry appended):
 
 The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`.
 
+```
+What gets sent to the LLM as context:
+
+        ┌─────────────────────────────────────────────────────────────┐
+        │ [system prompt] [summary msg] [msg idx 5] [msg idx 6] [msg idx 7] │
+        └─────────────────────────────────────────────────────────────┘
+                               ↑              └───────────┬───────────┘
+                    from NEW compact's           messages from
+                         summary              firstKeptEntryIndex onwards
+```
+
 **Event fields:**
 
 | Field | Description |
