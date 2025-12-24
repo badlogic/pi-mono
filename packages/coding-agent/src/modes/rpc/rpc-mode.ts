@@ -343,6 +343,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "switch_session", { cancelled });
 			}
 
+			case "spawn_session": {
+				const result = await session.spawnSession(command.options);
+				return success(id, "spawn_session", result);
+			}
+
 			case "branch": {
 				const result = await session.branch(command.entryIndex);
 				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });

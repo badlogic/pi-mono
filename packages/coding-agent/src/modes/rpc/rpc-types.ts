@@ -9,6 +9,7 @@ import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-age
 import type { Model } from "@mariozechner/pi-ai";
 import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { SpawnSessionOptions } from "../../core/session-manager.js";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -52,6 +53,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
+	| { id?: string; type: "spawn_session"; options: SpawnSessionOptions }
 	| { id?: string; type: "branch"; entryIndex: number }
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
@@ -143,6 +145,13 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| {
+			id?: string;
+			type: "response";
+			command: "spawn_session";
+			success: true;
+			data: { cancelled: boolean; sessionPath: string | null };
+	  }
 	| { id?: string; type: "response"; command: "branch"; success: true; data: { text: string; cancelled: boolean } }
 	| {
 			id?: string;

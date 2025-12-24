@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`spawnSession()` API**: Create and switch to a new session without exiting pi. Optionally seed with initial messages and track lineage via `parentSession`. Old session stays accessible via `/resume`. Available via `AgentSession.spawnSession()`, `SessionManager.spawnSession()`, and RPC `spawn_session` command. ([#293](https://github.com/badlogic/pi-mono/pull/293) by [@nicobailon](https://github.com/nicobailon))
+- **Renamed `branchedFrom` to `parentSession`**: Session header field renamed for clarity. Applies to both branched sessions and spawned sessions. ([#293](https://github.com/badlogic/pi-mono/pull/293) by [@nicobailon](https://github.com/nicobailon))
+
 ### Fixed
 
 - **Duplicate skill warnings for symlinks**: Skills loaded via symlinks pointing to the same file are now silently deduplicated instead of showing name collision warnings. ([#304](https://github.com/badlogic/pi-mono/pull/304) by [@mitsuhiko](https://github.com/mitsuhiko))
