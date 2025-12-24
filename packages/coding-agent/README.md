@@ -114,24 +114,31 @@ Add API keys to `~/.pi/agent/settings.json`:
 {
   "apiKeys": {
     "anthropic": "sk-ant-...",
-    "openai": "sk-..."
+    "openai": "sk-...",
+    "google": "...",
+    "mistral": "...",
+    "groq": "...",
+    "cerebras": "...",
+    "xai": "...",
+    "openrouter": "...",
+    "zai": "..."
   }
 }
 ```
 
 **Option 2: Environment variables**
 
-| Provider | Environment Variable |
-|----------|---------------------|
-| Anthropic | `ANTHROPIC_API_KEY` |
-| OpenAI | `OPENAI_API_KEY` |
-| Google | `GEMINI_API_KEY` |
-| Mistral | `MISTRAL_API_KEY` |
-| Groq | `GROQ_API_KEY` |
-| Cerebras | `CEREBRAS_API_KEY` |
-| xAI | `XAI_API_KEY` |
-| OpenRouter | `OPENROUTER_API_KEY` |
-| ZAI | `ZAI_API_KEY` |
+| Provider | Settings Key | Environment Variable |
+|----------|--------------|---------------------|
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Google | `google` | `GEMINI_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
+| Groq | `groq` | `GROQ_API_KEY` |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
+| xAI | `xai` | `XAI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| ZAI | `zai` | `ZAI_API_KEY` |
 
 Settings file keys take priority over environment variables.
 

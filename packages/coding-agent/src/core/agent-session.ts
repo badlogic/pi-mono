@@ -428,7 +428,7 @@ export class AgentSession {
 		if (!this.model) {
 			throw new Error(
 				"No model selected.\n\n" +
-					`Use /login, set an API key environment variable or create ${getModelsPath()}\n\n` +
+					`Use /login, set an API key environment variable, or create ${getModelsPath()}\n\n` +
 					"Then use /model to select a model.",
 			);
 		}
@@ -438,7 +438,7 @@ export class AgentSession {
 		if (!apiKey) {
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
-					`Set the appropriate environment variable or update ${getModelsPath()}`,
+					`Use /login, set an API key environment variable, or create ${getModelsPath()}`,
 			);
 		}
 
