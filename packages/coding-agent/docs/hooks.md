@@ -222,6 +222,29 @@ What gets sent to the LLM as context:
                          summary              firstKeptEntryIndex onwards
 ```
 
+**Split turns:** When a single turn is too large, the cut point may land mid-turn (at an assistant message). In this case `cutPoint.isSplitTurn = true`:
+
+```
+Split turn example (one huge turn that exceeds keepRecentTokens):
+
+  index:  0        1      2      3      4      5      6      7      8      9
+        ┌────────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐
+        │ header │ user │ asst │ tool │ asst │ tool │ tool │ asst │ tool │ asst │
+        └────────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
+                    ↑                           ↑
+             turnStartIndex = 1         firstKeptEntryIndex = 7
+                    │                           │
+                    └────── turn prefix ────────┘ (idx 1-6, summarized separately)
+                                                └── kept messages (idx 7-9)
+
+  messagesToSummarize = []  (no complete turns before this one)
+  messagesToKeep = [msg idx 7, msg idx 8, msg idx 9]
+
+The default compaction generates TWO summaries that get merged:
+1. History summary (previousSummary + messagesToSummarize)
+2. Turn prefix summary (messages from turnStartIndex to firstKeptEntryIndex)
+```
+
 **Event fields:**
 
 | Field | Description |
