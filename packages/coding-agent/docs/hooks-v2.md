@@ -1,314 +1,385 @@
-# Hooks v2: Commands + Context Control
+# Hooks v2: Context Control + Commands
 
-Extends hooks with slash commands and context manipulation primitives.
+Issue: #289
 
-## Goals
+## Motivation
 
-1. Hooks can register slash commands (`/pop`, `/pr`, `/test`)
-2. Hooks can save custom session entries
-3. Hooks can transform context before it goes to LLM
-4. All handlers get unified baseline access to state
+Enable features like session stacking (`/pop`) as hooks, not core code. Core provides primitives, hooks implement features.
 
-Benchmark: `/pop` (session stacking) implementable entirely as a hook.
+## Primitives
 
-## API Extensions
+| Primitive | Purpose |
+|-----------|---------|
+| `ctx.saveEntry({type, ...})` | Persist custom entry to session |
+| `pi.on("context", handler)` | Transform messages before LLM |
+| `ctx.rebuildContext()` | Trigger context rebuild |
+| `pi.command(name, opts)` | Register slash command |
 
-### Commands
-
-```typescript
-pi.command("pop", {
-  description: "Pop to previous turn",
-  handler: async (ctx) => {
-    // ctx has full access (see Unified Context below)
-    const selected = await ctx.ui.select("Pop to:", options);
-    // ...
-    return { status: "Done" };       // show status
-    return "prompt text";            // send to agent
-    return;                          // do nothing
-  }
-});
-```
-
-### Custom Entries
-
-```typescript
-// Save arbitrary entry to session
-await ctx.saveEntry({
-  type: "stack_pop",  // custom type, ignored by core
-  backToIndex: 5,
-  summary: "...",
-  timestamp: Date.now()
-});
-```
-
-### Context Transform
-
-```typescript
-// Fires when building context for LLM
-pi.on("context", (event, ctx) => {
-  // event.entries: all session entries (including custom types)
-  // event.messages: core-computed messages (after compaction)
-  
-  // Return modified messages, or undefined to keep default
-  return { messages: transformed };
-});
-```
-
-Multiple `context` handlers chain: each receives previous handler's output.
-
-### Rebuild Trigger
-
-```typescript
-// Force context rebuild (after saving entries)
-await ctx.rebuildContext();
-```
-
-## Unified Context
-
-All handlers receive:
+## Extended HookEventContext
 
 ```typescript
 interface HookEventContext {
   // Existing
-  exec(cmd: string, args: string[], opts?): Promise<ExecResult>;
-  ui: { select, confirm, input, notify };
-  hasUI: boolean;
-  cwd: string;
-  sessionFile: string | null;
-  
-  // New: State (read-only)
+  exec, ui, hasUI, cwd, sessionFile
+
+  // State (read-only)
   model: Model<any> | null;
   thinkingLevel: ThinkingLevel;
   entries: readonly SessionEntry[];
-  messages: readonly AppMessage[];
-  
-  // New: Utilities
+
+  // Utilities
   findModel(provider: string, id: string): Model<any> | null;
   availableModels(): Promise<Model<any>[]>;
   resolveApiKey(model: Model<any>): Promise<string | undefined>;
-  
-  // New: Mutation (commands only? or all?)
+
+  // Mutation
   saveEntry(entry: { type: string; [k: string]: unknown }): Promise<void>;
   rebuildContext(): Promise<void>;
 }
+
+interface ContextMessage {
+  message: AppMessage;
+  entryIndex: number | null;  // null = synthetic
+}
+
+interface ContextEvent {
+  type: "context";
+  entries: readonly SessionEntry[];
+  messages: ContextMessage[];
+}
 ```
 
-Commands additionally get:
-- `args: string[]`, `argsRaw: string`
-- `setModel()`, `setThinkingLevel()` (state mutation)
+Commands also get: `args`, `argsRaw`, `signal`, `setModel()`, `setThinkingLevel()`.
 
-## Benchmark: Stacking as Hook
+## Stacking: Design
+
+### Entry Format
 
 ```typescript
+interface StackPopEntry {
+  type: "stack_pop";
+  backToIndex: number;
+  summary: string;
+  prePopSummary?: string;  // when crossing compaction
+  timestamp: number;
+}
+```
+
+### Crossing Compaction
+
+Entries are never deleted. Raw data always available.
+
+When `backToIndex < compaction.firstKeptEntryIndex`:
+1. Read raw entries `[0, backToIndex)` → summarize → `prePopSummary`
+2. Read raw entries `[backToIndex, now)` → summarize → `summary`
+
+### Context Algorithm: Later Wins
+
+Assign sequential IDs to ranges. On overlap, highest ID wins.
+
+```
+Compaction at 40: range [0, 30) id=0
+StackPop at 50, backTo=20, prePopSummary: ranges [0, 20) id=1, [20, 50) id=2
+
+Index 0-19: id=0 and id=1 cover → id=1 wins (prePopSummary)
+Index 20-29: id=0 and id=2 cover → id=2 wins (popSummary)
+Index 30-49: id=2 covers → id=2 (already emitted at 20)
+Index 50+: no coverage → include as messages
+```
+
+## Complex Scenario Trace
+
+```
+Initial: [msg1, msg2, msg3, msg4, msg5]
+         idx: 1,   2,    3,   4,    5
+
+Compaction triggers:
+  [msg1-5, compaction{firstKept:4, summary:C1}]
+  idx: 1-5,   6
+  Context: [C1, msg4, msg5]
+
+User continues:
+  [..., compaction, msg4, msg5, msg6, msg7]
+  idx:     6,        4*,   5*,   7,    8    (* kept from before)
+  
+User does /pop to msg2 (index 2):
+  - backTo=2 < firstKept=4 → crossing!
+  - prePopSummary: summarize raw [0,2) → P1
+  - summary: summarize raw [2,8) → S1
+  - save: stack_pop{backTo:2, summary:S1, prePopSummary:P1} at index 9
+
+  Ranges:
+    compaction [0,4) id=0
+    prePopSummary [0,2) id=1
+    popSummary [2,9) id=2
+
+  Context build:
+    idx 0: covered by id=0,1 → id=1 wins, emit P1
+    idx 1: covered by id=0,1 → id=1 (already emitted)
+    idx 2: covered by id=0,2 → id=2 wins, emit S1
+    idx 3-8: covered by id=0 or id=2 → id=2 (already emitted)
+    idx 9: stack_pop entry, skip
+    idx 10+: not covered, include as messages
+
+  Result: [P1, S1, msg10+]
+
+User continues, another compaction:
+  [..., stack_pop, msg10, msg11, msg12, compaction{firstKept:11, summary:C2}]
+  idx:     9,       10,    11,   12,       13
+
+  Ranges:
+    compaction@6 [0,4) id=0
+    prePopSummary [0,2) id=1
+    popSummary [2,9) id=2
+    compaction@13 [0,11) id=3  ← this now covers previous ranges!
+
+  Context build:
+    idx 0-10: covered by multiple, id=3 wins → emit C2 at idx 0
+    idx 11+: include as messages
+
+  Result: [C2, msg11, msg12]
+  
+  C2's summary text includes info from P1 and S1 (they were in context when C2 was generated).
+```
+
+The "later wins" rule naturally handles all cases.
+
+## Core Changes
+
+| File | Change |
+|------|--------|
+| `session-manager.ts` | `saveEntry()`, `buildSessionContext()` returns `ContextMessage[]` |
+| `hooks/types.ts` | `ContextEvent`, `ContextMessage`, extended context, command types |
+| `hooks/loader.ts` | Track commands |
+| `hooks/runner.ts` | `setStateCallbacks()`, `emitContext()`, command methods |
+| `agent-session.ts` | `saveEntry()`, `rebuildContext()`, state callbacks |
+| `interactive-mode.ts` | Command handling, autocomplete |
+
+## Stacking Hook: Complete Implementation
+
+```typescript
+import { complete } from "@mariozechner/pi-ai";
+import type { HookAPI, AppMessage, SessionEntry, ContextMessage } from "@mariozechner/pi-coding-agent/hooks";
+
 export default function(pi: HookAPI) {
-  // Command: /pop
   pi.command("pop", {
-    description: "Pop to previous turn, summarizing substack",
+    description: "Pop to previous turn, summarizing work",
     handler: async (ctx) => {
-      // 1. Build turn list from entries
-      const turns = ctx.entries
+      const entries = ctx.entries as SessionEntry[];
+      
+      // Get user turns
+      const turns = entries
         .map((e, i) => ({ e, i }))
-        .filter(({ e }) => e.type === "message" && e.message.role === "user")
-        .map(({ e, i }) => ({ index: i, text: e.message.content.slice(0, 50) }));
+        .filter(({ e }) => e.type === "message" && (e as any).message.role === "user")
+        .map(({ e, i }) => ({ idx: i, text: preview((e as any).message) }));
       
-      if (!turns.length) return { status: "No turns to pop" };
+      if (turns.length < 2) return { status: "Need at least 2 turns" };
       
-      // 2. User selects
-      const selected = await ctx.ui.select("Pop to:", turns.map(t => t.text));
+      // Select target (skip last turn - that's current)
+      const options = turns.slice(0, -1).map(t => `[${t.idx}] ${t.text}`);
+      const selected = ctx.args[0] 
+        ? options.find(o => o.startsWith(`[${ctx.args[0]}]`))
+        : await ctx.ui.select("Pop to:", options);
+      
       if (!selected) return;
-      const backTo = turns.find(t => t.text === selected)!.index;
+      const backTo = parseInt(selected.match(/\[(\d+)\]/)![1]);
       
-      // 3. Summarize entries from backTo to now
-      const toSummarize = ctx.entries.slice(backTo)
-        .filter(e => e.type === "message")
-        .map(e => e.message);
-      const summary = await generateSummary(toSummarize, ctx);
+      // Check compaction crossing
+      const compactions = entries.filter(e => e.type === "compaction") as any[];
+      const latestCompaction = compactions[compactions.length - 1];
+      const crossing = latestCompaction && backTo < latestCompaction.firstKeptEntryIndex;
       
-      // 4. Save custom entry
+      // Generate summaries
+      let prePopSummary: string | undefined;
+      if (crossing) {
+        ctx.ui.notify("Crossing compaction, generating pre-pop summary...", "info");
+        const preMsgs = getMessages(entries.slice(0, backTo));
+        prePopSummary = await summarize(preMsgs, ctx, "context before this work");
+      }
+      
+      const popMsgs = getMessages(entries.slice(backTo));
+      const summary = await summarize(popMsgs, ctx, "completed work");
+      
+      // Save and rebuild
       await ctx.saveEntry({
         type: "stack_pop",
         backToIndex: backTo,
         summary,
-        timestamp: Date.now()
+        prePopSummary,
       });
       
-      // 5. Rebuild
       await ctx.rebuildContext();
-      return { status: "Popped stack" };
+      return { status: `Popped to turn ${backTo}` };
     }
   });
-  
-  // Context transform: apply stack pops
+
   pi.on("context", (event, ctx) => {
-    const pops = event.entries.filter(e => e.type === "stack_pop");
-    if (!pops.length) return; // use default
+    const hasPops = event.entries.some(e => e.type === "stack_pop");
+    if (!hasPops) return;
     
-    // Build exclusion set
-    const excluded = new Set<number>();
-    const summaryAt = new Map<number, string>();
+    // Collect ranges with IDs
+    let rangeId = 0;
+    const ranges: Array<{from: number; to: number; summary: string; id: number}> = [];
     
-    for (const pop of pops) {
-      const popIdx = event.entries.indexOf(pop);
-      for (let i = pop.backToIndex; i <= popIdx; i++) excluded.add(i);
-      summaryAt.set(pop.backToIndex, pop.summary);
+    for (let i = 0; i < event.entries.length; i++) {
+      const e = event.entries[i] as any;
+      if (e.type === "compaction") {
+        ranges.push({ from: 0, to: e.firstKeptEntryIndex, summary: e.summary, id: rangeId++ });
+      }
+      if (e.type === "stack_pop") {
+        if (e.prePopSummary) {
+          ranges.push({ from: 0, to: e.backToIndex, summary: e.prePopSummary, id: rangeId++ });
+        }
+        ranges.push({ from: e.backToIndex, to: i, summary: e.summary, id: rangeId++ });
+      }
     }
     
-    // Build filtered messages
-    const messages: AppMessage[] = [];
+    // Build messages
+    const messages: ContextMessage[] = [];
+    const emitted = new Set<number>();
+    
     for (let i = 0; i < event.entries.length; i++) {
-      if (excluded.has(i)) continue;
+      const covering = ranges.filter(r => r.from <= i && i < r.to);
       
-      if (summaryAt.has(i)) {
-        messages.push({
-          role: "user",
-          content: `[Subtask completed]\n\n${summaryAt.get(i)}`,
-          timestamp: Date.now()
-        });
+      if (covering.length) {
+        const winner = covering.reduce((a, b) => a.id > b.id ? a : b);
+        if (i === winner.from && !emitted.has(winner.id)) {
+          messages.push({
+            message: { role: "user", content: `[Summary]\n\n${winner.summary}`, timestamp: Date.now() } as AppMessage,
+            entryIndex: null
+          });
+          emitted.add(winner.id);
+        }
+        continue;
       }
       
       const e = event.entries[i];
-      if (e.type === "message") messages.push(e.message);
+      if (e.type === "message") {
+        messages.push({ message: (e as any).message, entryIndex: i });
+      }
     }
     
     return { messages };
   });
 }
 
-async function generateSummary(messages, ctx) {
+function getMessages(entries: SessionEntry[]): AppMessage[] {
+  return entries.filter(e => e.type === "message").map(e => (e as any).message);
+}
+
+function preview(msg: AppMessage): string {
+  const text = typeof msg.content === "string" ? msg.content 
+    : (msg.content as any[]).filter(c => c.type === "text").map(c => c.text).join(" ");
+  return text.slice(0, 40) + (text.length > 40 ? "..." : "");
+}
+
+async function summarize(msgs: AppMessage[], ctx: any, purpose: string): Promise<string> {
   const apiKey = await ctx.resolveApiKey(ctx.model);
-  // Call LLM for summary...
+  const resp = await complete(ctx.model, {
+    messages: [...msgs, { role: "user", content: `Summarize as "${purpose}". Be concise.`, timestamp: Date.now() }]
+  }, { apiKey, maxTokens: 2000, signal: ctx.signal });
+  return resp.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
 }
 ```
 
-## Core Changes Required
+## Edge Cases
 
-### session-manager.ts
+### Session Resumed Without Hook
 
+User has stacking hook, does `/pop`, saves `stack_pop` entry. Later removes hook and resumes session.
+
+**What happens:**
+1. Core loads all entries (including `stack_pop`)
+2. Core's `buildSessionContext()` ignores unknown types, returns compaction + message entries
+3. `context` event fires, but no handler processes `stack_pop`
+4. Core's messages pass through unchanged
+
+**Result:** Messages that were "popped" return to context. The pop is effectively undone.
+
+**Why this is OK:**
+- Session file is intact, no data lost
+- If compaction happened after pop, the compaction summary captured the popped state
+- User removed the hook, so hook's behavior (hiding messages) is gone
+- User can re-add hook to restore stacking behavior
+
+**Mitigation:** Could warn on session load if unknown entry types found:
 ```typescript
-// Allow saving arbitrary entries
-saveEntry(entry: { type: string; [k: string]: unknown }): void {
-  if (!entry.type) throw new Error("Entry must have type");
-  this.inMemoryEntries.push(entry);
-  this._persist(entry);
-}
-
-// buildSessionContext ignores unknown types (existing behavior works)
-```
-
-### hooks/types.ts
-
-```typescript
-// New event
-interface ContextEvent {
-  type: "context";
-  entries: readonly SessionEntry[];
-  messages: AppMessage[];
-}
-
-// Extended base context (see Unified Context above)
-
-// Command types
-interface CommandOptions {
-  description?: string;
-  handler: (ctx: CommandContext) => Promise<CommandResult | void>;
-}
-
-type CommandResult = 
-  | string 
-  | { prompt: string; attachments?: Attachment[] }
-  | { status: string };
-```
-
-### hooks/loader.ts
-
-```typescript
-// Track registered commands
-interface LoadedHook {
-  path: string;
-  handlers: Map<string, Handler[]>;
-  commands: Map<string, CommandOptions>;  // NEW
-}
-
-// createHookAPI adds command() method
-```
-
-### hooks/runner.ts
-
-```typescript
-class HookRunner {
-  // State callbacks (set by AgentSession)
-  setStateCallbacks(cb: StateCallbacks): void;
-  
-  // Command invocation
-  getCommands(): Map<string, CommandOptions>;
-  invokeCommand(name: string, argsRaw: string): Promise<CommandResult | void>;
-  
-  // Context event with chaining
-  async emitContext(entries, messages): Promise<AppMessage[]> {
-    let result = messages;
-    for (const hook of this.hooks) {
-      const handlers = hook.handlers.get("context");
-      for (const h of handlers ?? []) {
-        const out = await h({ entries, messages: result }, this.createContext());
-        if (out?.messages) result = out.messages;
-      }
-    }
-    return result;
-  }
+// In session load
+const unknownTypes = entries
+  .map(e => e.type)
+  .filter(t => !knownTypes.has(t));
+if (unknownTypes.length) {
+  console.warn(`Session has entries of unknown types: ${unknownTypes.join(", ")}`);
 }
 ```
 
-### agent-session.ts
+### Hook Added to Existing Session
 
-```typescript
-// Expose saveEntry
-async saveEntry(entry): Promise<void> {
-  this.sessionManager.saveEntry(entry);
-}
+User has old session without stacking. Adds stacking hook, does `/pop`.
 
-// Rebuild context
-async rebuildContext(): Promise<void> {
-  const base = this.sessionManager.buildSessionContext();
-  const entries = this.sessionManager.getEntries();
-  const messages = await this._hookRunner.emitContext(entries, base.messages);
-  this.agent.replaceMessages(messages);
-}
+**What happens:**
+1. Hook saves `stack_pop` entry
+2. `context` event fires, hook processes it
+3. Works normally
 
-// Fire context event during normal context building too
-```
+No issue. Hook processes entries it recognizes, ignores others.
 
-### interactive-mode.ts
+### Multiple Hooks with Different Entry Types
 
-```typescript
-// In setupEditorSubmitHandler, check hook commands
-const commands = this.session.hookRunner?.getCommands();
-if (commands?.has(commandName)) {
-  const result = await this.session.invokeCommand(commandName, argsRaw);
-  // Handle result...
-  return;
-}
+Hook A handles `type_a` entries, Hook B handles `type_b` entries.
 
-// Add hook commands to autocomplete
-```
+**What happens:**
+1. `context` event chains through both hooks
+2. Each hook checks for its entry types, passes through if none found
+3. Each hook's transforms are applied in order
 
-## Open Questions
+**Best practice:** Hooks should:
+- Only process their own entry types
+- Return `undefined` (pass through) if no relevant entries
+- Use prefixed type names: `myhook_pop`, `myhook_prune`
 
-1. **Mutation in all handlers or commands only?**
-   - `saveEntry`/`rebuildContext` in all handlers = more power, more footguns
-   - Commands only = safer, but limits hook creativity
-   - Recommendation: start with commands only
+### Conflicting Hooks
 
-2. **Context event timing**
-   - Fire on every prompt? Or only when explicitly rebuilt?
-   - Need to fire on session load too
-   - Recommendation: fire whenever agent.replaceMessages is called
+Two hooks both try to handle the same entry type (e.g., both handle `compaction`).
 
-3. **Compaction interaction**
-   - Core compaction runs first, then `context` event
-   - Hooks can post-process compacted output
-   - Future: compaction itself could become a replaceable hook
+**What happens:**
+- Later hook (project > global) wins in the chain
+- Earlier hook's transform is overwritten
 
-4. **Multiple context handlers**
-   - Chain in load order (global → project)
-   - Each sees previous output
-   - No explicit priority system (KISS)
+**Mitigation:** 
+- Core entry types (`compaction`, `message`, etc.) should not be overridden by hooks
+- Hooks should use unique prefixed type names
+- Document which types are "reserved"
+
+### Session with Future Entry Types
+
+User downgrades pi version, session has entry types from newer version.
+
+**What happens:**
+- Same as "hook removed" - unknown types ignored
+- Core handles what it knows, hooks handle what they know
+
+**Session file is forward-compatible:** Unknown entries are preserved in file, just not processed.
+
+## Implementation Phases
+
+| Phase | Scope | LOC |
+|-------|-------|-----|
+| v2.0 | `saveEntry`, `context` event, `rebuildContext`, extended context | ~150 |
+| v2.1 | `pi.command()`, TUI integration, autocomplete | ~200 |
+| v2.2 | Example hooks, documentation | ~300 |
+
+## Implementation Order
+
+1. `ContextMessage` type, update `buildSessionContext()` return type
+2. `saveEntry()` in session-manager
+3. `context` event in runner with chaining
+4. State callbacks interface and wiring
+5. `rebuildContext()` in agent-session
+6. Manual test with simple hook
+7. Command registration in loader
+8. Command invocation in runner
+9. TUI command handling + autocomplete
+10. Stacking example hook
+11. Pruning example hook
+12. Update hooks.md

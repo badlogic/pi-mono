@@ -616,7 +616,9 @@ export class AgentSession {
 	}
 
 	private async _cycleAvailableModel(): Promise<ModelCycleResult | null> {
-		const { models: availableModels, error } = await getAvailableModels();
+		const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
+			this.settingsManager.getApiKey(provider),
+		);
 		if (error) throw new Error(`Failed to load models: ${error}`);
 		if (availableModels.length <= 1) return null;
 
@@ -648,7 +650,9 @@ export class AgentSession {
 	 * Get all available models with valid API keys.
 	 */
 	async getAvailableModels(): Promise<Model<any>[]> {
-		const { models, error } = await getAvailableModels();
+		const { models, error } = await getAvailableModels(undefined, (provider) =>
+			this.settingsManager.getApiKey(provider),
+		);
 		if (error) throw new Error(error);
 		return models;
 	}
@@ -1330,7 +1334,9 @@ export class AgentSession {
 
 		// Restore model if saved
 		if (sessionContext.model) {
-			const availableModels = (await getAvailableModels()).models;
+			const availableModels = (
+				await getAvailableModels(undefined, (provider) => this.settingsManager.getApiKey(provider))
+			).models;
 			const match = availableModels.find(
 				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
 			);

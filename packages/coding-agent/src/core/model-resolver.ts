@@ -167,9 +167,15 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
  * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
  * The algorithm tries to match the full pattern first, then progressively
  * strips colon-suffixes to find a match.
+ *
+ * @param patterns - Model patterns to resolve
+ * @param settingsManager - Optional settings manager for API key fallback from settings.json
  */
-export async function resolveModelScope(patterns: string[]): Promise<ScopedModel[]> {
-	const { models: availableModels, error } = await getAvailableModels();
+export async function resolveModelScope(patterns: string[], settingsManager?: SettingsManager): Promise<ScopedModel[]> {
+	const { models: availableModels, error } = await getAvailableModels(
+		undefined,
+		settingsManager ? (provider) => settingsManager.getApiKey(provider) : undefined,
+	);
 
 	if (error) {
 		console.warn(chalk.yellow(`Warning: Error loading models: ${error}`));
@@ -269,7 +275,9 @@ export async function findInitialModel(options: {
 	}
 
 	// 4. Try first available model with valid API key
-	const { models: availableModels, error } = await getAvailableModels();
+	const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
+		settingsManager.getApiKey(provider),
+	);
 
 	if (error) {
 		console.error(chalk.red(error));
@@ -302,6 +310,7 @@ export async function restoreModelFromSession(
 	savedModelId: string,
 	currentModel: Model<Api> | null,
 	shouldPrintMessages: boolean,
+	settingsManager?: SettingsManager,
 ): Promise<{ model: Model<Api> | null; fallbackMessage: string | null }> {
 	const { model: restoredModel, error } = findModel(savedProvider, savedModelId);
 
@@ -339,7 +348,10 @@ export async function restoreModelFromSession(
 	}
 
 	// Try to find any available model
-	const { models: availableModels, error: availableError } = await getAvailableModels();
+	const { models: availableModels, error: availableError } = await getAvailableModels(
+		undefined,
+		settingsManager ? (provider) => settingsManager.getApiKey(provider) : undefined,
+	);
 	if (availableError) {
 		console.error(chalk.red(availableError));
 		process.exit(1);

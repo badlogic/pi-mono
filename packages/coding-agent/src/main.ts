@@ -270,7 +270,8 @@ export async function main(args: string[]) {
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(searchPattern);
+		const settingsManager = SettingsManager.create(process.cwd());
+		await listModels(searchPattern, settingsManager);
 		return;
 	}
 
@@ -305,7 +306,7 @@ export async function main(args: string[]) {
 
 	let scopedModels: ScopedModel[] = [];
 	if (parsed.models && parsed.models.length > 0) {
-		scopedModels = await resolveModelScope(parsed.models);
+		scopedModels = await resolveModelScope(parsed.models, settingsManager);
 		time("resolveModelScope");
 	}
 

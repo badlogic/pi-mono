@@ -114,7 +114,10 @@ export class ModelSelectorComponent extends Container {
 			}));
 		} else {
 			// Load available models fresh (includes custom models from models.json)
-			const { models: availableModels, error } = await getAvailableModels();
+			// Pass settings manager's key resolver as fallback for settings.json apiKeys
+			const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
+				this.settingsManager.getApiKey(provider),
+			);
 
 			// If there's an error loading models.json, we'll show it via the "no models" path
 			// The error will be displayed to the user

@@ -358,9 +358,14 @@ export async function getApiKeyForModel(model: Model<Api>): Promise<string | und
 /**
  * Get only models that have valid API keys available
  * Returns { models, error } - either models array or error message
+ *
+ * @param agentDir - Agent config directory
+ * @param fallbackKeyResolver - Optional function to check for API keys not found by getApiKeyForModel
+ *                              (e.g., keys from settings.json)
  */
 export async function getAvailableModels(
 	agentDir: string = getAgentDir(),
+	fallbackKeyResolver?: (provider: string) => string | undefined,
 ): Promise<{ models: Model<Api>[]; error: string | null }> {
 	const { models: allModels, error } = loadAndMergeModels(agentDir);
 
@@ -370,7 +375,11 @@ export async function getAvailableModels(
 
 	const availableModels: Model<Api>[] = [];
 	for (const model of allModels) {
-		const apiKey = await getApiKeyForModel(model);
+		let apiKey = await getApiKeyForModel(model);
+		// Check fallback resolver if primary lookup failed
+		if (!apiKey && fallbackKeyResolver) {
+			apiKey = fallbackKeyResolver(model.provider);
+		}
 		if (apiKey) {
 			availableModels.push(model);
 		}
