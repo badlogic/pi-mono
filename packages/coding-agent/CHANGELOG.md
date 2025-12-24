@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+
+- **Duplicate skill warnings for symlinks**: Skills loaded via symlinks pointing to the same file are now silently deduplicated instead of showing name collision warnings. ([#304](https://github.com/badlogic/pi-mono/pull/304) by [@mitsuhiko](https://github.com/mitsuhiko))
 
 ## [0.27.9] - 2025-12-24
 
