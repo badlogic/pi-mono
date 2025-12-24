@@ -44,7 +44,7 @@ export function detectCapabilities(): TerminalCapabilities {
 		return { images: "kitty", trueColor: true, hyperlinks: true };
 	}
 
-	if (termProgram === "ghostty" || term.includes("ghostty")) {
+	if (termProgram === "ghostty" || term.includes("ghostty") || process.env.GHOSTTY_RESOURCES_DIR) {
 		return { images: "kitty", trueColor: true, hyperlinks: true };
 	}
 
