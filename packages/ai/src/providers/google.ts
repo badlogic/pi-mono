@@ -6,6 +6,7 @@ import {
 	type ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
+import { getApiKeyFromEnv } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -60,7 +61,8 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 		};
 
 		try {
-			const client = createClient(model, options?.apiKey);
+			const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider) || "";
+			const client = createClient(model, apiKey);
 			const params = buildParams(model, context, options);
 			const googleStream = await client.models.generateContentStream(params);
 
@@ -248,15 +250,6 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 };
 
 function createClient(model: Model<"google-generative-ai">, apiKey?: string): GoogleGenAI {
-	if (!apiKey) {
-		if (!process.env.GEMINI_API_KEY) {
-			throw new Error(
-				"Gemini API key is required. Set GEMINI_API_KEY environment variable or pass it as an argument.",
-			);
-		}
-		apiKey = process.env.GEMINI_API_KEY;
-	}
-
 	const httpOptions: { baseUrl?: string; apiVersion?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;

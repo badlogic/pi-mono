@@ -11,6 +11,7 @@ import type {
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import { calculateCost } from "../models.js";
+import { getApiKeyFromEnv } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -27,7 +28,6 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
 import { transformMessages } from "./transorm-messages.js";
 
 /** Fast deterministic hash to shorten long strings */
@@ -82,7 +82,8 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 
 		try {
 			// Create OpenAI client
-			const client = createClient(model, context, options?.apiKey);
+			const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider) || "";
+			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.responses.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });

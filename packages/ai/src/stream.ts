@@ -16,27 +16,14 @@ import type {
 	ReasoningEffort,
 	SimpleStreamOptions,
 } from "./types.js";
-import { getOAuthApiKey, getOAuthProviderForModelProvider } from "./utils/oauth/index.js";
-
-const apiKeys: Map<string, string> = new Map();
-
-export function setApiKey(provider: KnownProvider, key: string): void;
-export function setApiKey(provider: string, key: string): void;
-export function setApiKey(provider: any, key: string): void {
-	apiKeys.set(provider, key);
-}
 
 /**
  * Get API key from environment variables (sync).
  * Does NOT check OAuth credentials - use getApiKeyAsync for that.
  */
-export function getApiKey(provider: KnownProvider): string | undefined;
-export function getApiKey(provider: string): string | undefined;
-export function getApiKey(provider: any): string | undefined {
-	// Check explicit keys first
-	const key = apiKeys.get(provider);
-	if (key) return key;
-
+export function getApiKeyFromEnv(provider: KnownProvider): string | undefined;
+export function getApiKeyFromEnv(provider: string): string | undefined;
+export function getApiKeyFromEnv(provider: any): string | undefined {
 	// Fall back to environment variables
 	if (provider === "github-copilot") {
 		return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
@@ -58,39 +45,12 @@ export function getApiKey(provider: any): string | undefined {
 	return envVar ? process.env[envVar] : undefined;
 }
 
-/**
- * Resolve API key from OAuth credentials or environment (async).
- * Automatically refreshes expired OAuth tokens.
- *
- * Priority:
- * 1. Explicitly set keys (via setApiKey)
- * 2. OAuth credentials from ~/.pi/agent/oauth.json
- * 3. Environment variables
- */
-export async function resolveApiKey(provider: KnownProvider): Promise<string | undefined>;
-export async function resolveApiKey(provider: string): Promise<string | undefined>;
-export async function resolveApiKey(provider: any): Promise<string | undefined> {
-	// Check explicit keys first
-	const key = apiKeys.get(provider);
-	if (key) return key;
-
-	// Check OAuth credentials (auto-refresh if expired)
-	const oauthProvider = getOAuthProviderForModelProvider(provider);
-	if (oauthProvider) {
-		const oauthKey = await getOAuthApiKey(oauthProvider);
-		if (oauthKey) return oauthKey;
-	}
-
-	// Fall back to sync getApiKey for env vars
-	return getApiKey(provider);
-}
-
 export function stream<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKey(model.provider);
+	const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -139,7 +99,7 @@ export function streamSimple<TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKey(model.provider);
+	const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}

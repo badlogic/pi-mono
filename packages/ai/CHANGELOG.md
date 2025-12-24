@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## Breaking Changes
+- **setApiKey, resolveApiKey**: removed. You need to create your own api key storage/resolution
+- **getApiKey**: renamed to `getApiKeyFromEnv`. Given a provider, checks for the known env variable holding the API key.
+
 ## [0.27.7] - 2025-12-24
 
 ### Fixed
@@ -18,7 +22,7 @@
 
 - **Gemini multimodal tool results**: Fixed images in tool results causing flaky/broken responses with Gemini models. For Gemini 3, images are now nested inside `functionResponse.parts` per the [docs](https://ai.google.dev/gemini-api/docs/function-calling#multimodal). For older models (which don't support multimodal function responses), images are sent in a separate user message.
 
-- **Queued message steering**: When `getQueuedMessages` is provided, the agent loop now checks for queued user messages after each tool call and skips remaining tool calls in the current assistant message when a queued message arrives (emitting error tool results). 
+- **Queued message steering**: When `getQueuedMessages` is provided, the agent loop now checks for queued user messages after each tool call and skips remaining tool calls in the current assistant message when a queued message arrives (emitting error tool results).
 
 - **Double API version path in Google provider URL**: Fixed Gemini API calls returning 404 after baseUrl support was added. The SDK was appending its default apiVersion to baseUrl which already included the version path. ([#251](https://github.com/badlogic/pi-mono/pull/251) by [@shellfyred](https://github.com/shellfyred))
 

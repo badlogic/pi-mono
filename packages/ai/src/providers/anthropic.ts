@@ -5,7 +5,7 @@ import type {
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
 import { calculateCost } from "../models.js";
-import { getApiKey } from "../stream.js";
+import { getApiKeyFromEnv } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -114,7 +114,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 		};
 
 		try {
-			const apiKey = options?.apiKey ?? getApiKey(model.provider) ?? "";
+			const apiKey = options?.apiKey ?? getApiKeyFromEnv(model.provider) ?? "";
 			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
 			const params = buildParams(model, context, isOAuthToken, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
