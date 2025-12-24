@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+(nothing yet)
+
 ## [0.27.9] - 2025-12-24
 
 ### Fixed
