@@ -209,7 +209,7 @@ After compaction (new entry appended):
                                    on reload         on reload       (stored in this entry)
 ```
 
-The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`.
+The session file is append-only. When loading, the session loader finds the latest compaction entry, uses its summary, then loads messages starting from `firstKeptEntryIndex`. The cut point is always a user, assistant, or bashExecution message (never a tool result, which must stay with its tool call).
 
 ```
 What gets sent to the LLM as context:
@@ -222,7 +222,7 @@ What gets sent to the LLM as context:
                          summary              firstKeptEntryIndex onwards
 ```
 
-**Split turns:** When a single turn is too large, the cut point may land mid-turn (at an assistant message). In this case `cutPoint.isSplitTurn = true`:
+**Split turns:** When a single turn is too large, the cut point may land mid-turn at an assistant message. In this case `cutPoint.isSplitTurn = true`:
 
 ```
 Split turn example (one huge turn that exceeds keepRecentTokens):
@@ -231,11 +231,11 @@ Split turn example (one huge turn that exceeds keepRecentTokens):
         ┌────────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐
         │ header │ user │ asst │ tool │ asst │ tool │ tool │ asst │ tool │ asst │
         └────────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
-                    ↑                           ↑
-             turnStartIndex = 1         firstKeptEntryIndex = 7
-                    │                           │
-                    └────── turn prefix ────────┘ (idx 1-6, summarized separately)
-                                                └── kept messages (idx 7-9)
+                    ↑                                  ↑
+             turnStartIndex = 1              firstKeptEntryIndex = 7
+                    │                                  │ (must be user/asst/bash, not tool)
+                    └────────── turn prefix ───────────┘ (idx 1-6, summarized separately)
+                                                       └── kept messages (idx 7-9)
 
   messagesToSummarize = []  (no complete turns before this one)
   messagesToKeep = [msg idx 7, msg idx 8, msg idx 9]
