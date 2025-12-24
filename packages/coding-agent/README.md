@@ -711,7 +711,11 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   },
   "hooks": ["/path/to/hook.ts"],
   "hookTimeout": 30000,
-  "customTools": ["/path/to/tool.ts"]
+  "customTools": ["/path/to/tool.ts"],
+  "commandAliases": {
+    "new": "clear",
+    "b": "branch"
+  }
 }
 ```
 
@@ -736,6 +740,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `hooks` | Additional hook file paths | `[]` |
 | `hookTimeout` | Timeout for hook operations (ms) | `30000` |
 | `customTools` | Additional custom tool file paths | `[]` |
+| `commandAliases` | Slash command aliases (e.g., `{"new": "clear"}`) | `{}` |
 
 ---
 

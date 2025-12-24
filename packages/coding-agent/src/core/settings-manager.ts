@@ -48,6 +48,7 @@ export interface Settings {
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
 	apiKeys?: Record<string, string>; // provider -> API key (e.g., { "anthropic": "sk-..." })
+	commandAliases?: Record<string, string>; // alias -> original command (e.g., { "new": "clear" })
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -388,5 +389,9 @@ export class SettingsManager {
 
 	getApiKeys(): Record<string, string> {
 		return this.settings.apiKeys ?? {};
+	}
+
+	getCommandAliases(): Record<string, string> {
+		return this.settings.commandAliases ?? {};
 	}
 }

@@ -191,9 +191,16 @@ export class InteractiveMode {
 			description: cmd.description,
 		}));
 
+		// Add command aliases from settings
+		const commandAliases = this.settingsManager.getCommandAliases();
+		const aliasCommands: SlashCommand[] = Object.entries(commandAliases).map(([alias, target]) => ({
+			name: alias,
+			description: `alias for /${target}`,
+		}));
+
 		// Setup autocomplete
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...fileSlashCommands],
+			[...slashCommands, ...aliasCommands, ...fileSlashCommands],
 			process.cwd(),
 			fdPath,
 		);
@@ -612,6 +619,17 @@ export class InteractiveMode {
 		this.editor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
+
+			// Resolve command aliases
+			if (text.startsWith("/")) {
+				const spaceIndex = text.indexOf(" ");
+				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+				const args = spaceIndex === -1 ? "" : text.slice(spaceIndex);
+				const aliases = this.settingsManager.getCommandAliases();
+				if (commandName in aliases) {
+					text = `/${aliases[commandName]}${args}`;
+				}
+			}
 
 			// Handle slash commands
 			if (text === "/thinking") {
