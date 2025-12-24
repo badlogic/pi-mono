@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.5] - 2025-12-24
+
 ### Added
 
 - **HTML export syntax highlighting**: Code blocks in markdown and tool outputs (read, write) now have syntax highlighting using highlight.js with theme-aware colors matching the TUI.
