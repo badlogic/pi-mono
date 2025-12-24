@@ -85,6 +85,7 @@ export interface AnthropicOptions extends StreamOptions {
 	thinkingBudgetTokens?: number;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	preserveUnsignedThinking?: boolean;
 }
 
 export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
@@ -332,7 +333,7 @@ function buildParams(
 ): MessageCreateParamsStreaming {
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(context.messages, model),
+		messages: convertMessages(context.messages, model, options),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,
 	};
@@ -402,7 +403,11 @@ function sanitizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
-function convertMessages(messages: Message[], model: Model<"anthropic-messages">): MessageParam[] {
+function convertMessages(
+	messages: Message[],
+	model: Model<"anthropic-messages">,
+	options?: AnthropicOptions,
+): MessageParam[] {
 	const params: MessageParam[] = [];
 
 	// Transform messages for cross-provider compatibility
@@ -462,20 +467,25 @@ function convertMessages(messages: Message[], model: Model<"anthropic-messages">
 					});
 				} else if (block.type === "thinking") {
 					if (block.thinking.trim().length === 0) continue;
-					// If thinking signature is missing/empty (e.g., from aborted stream),
-					// convert to text block to avoid API rejection
+					// Unsigned thinking blocks (from aborted streams) are skipped by default.
+					// This matches Vercel AI SDK behavior which emits "unsupported reasoning metadata" warning.
+					// Preserving as literal <thinking> tags causes Claude to mimic them in responses.
 					if (!block.thinkingSignature || block.thinkingSignature.trim().length === 0) {
-						blocks.push({
-							type: "text",
-							text: sanitizeSurrogates(`<thinking>\n${block.thinking}\n</thinking>`),
-						});
-					} else {
-						blocks.push({
-							type: "thinking",
-							thinking: sanitizeSurrogates(block.thinking),
-							signature: block.thinkingSignature,
-						});
+						if (options?.preserveUnsignedThinking) {
+							blocks.push({
+								type: "text",
+								text: sanitizeSurrogates(`<thinking>\n${block.thinking}\n</thinking>`),
+							});
+						} else {
+							console.warn("[pi-ai] Skipping unsigned thinking block (aborted stream).");
+						}
+						continue;
 					}
+					blocks.push({
+						type: "thinking",
+						thinking: sanitizeSurrogates(block.thinking),
+						signature: block.thinkingSignature,
+					});
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",

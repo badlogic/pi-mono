@@ -57,6 +57,8 @@ export interface AgentOptions {
 	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
 	queueMode?: "all" | "one-at-a-time";
+	// Preserve unsigned thinking blocks as text (may cause tag leakage)
+	preserveUnsignedThinking?: boolean;
 }
 
 export class Agent {
@@ -77,6 +79,7 @@ export class Agent {
 	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
 	private queueMode: "all" | "one-at-a-time";
+	private preserveUnsignedThinking: boolean;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 
@@ -85,6 +88,7 @@ export class Agent {
 		this.transport = opts.transport;
 		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
 		this.queueMode = opts.queueMode || "one-at-a-time";
+		this.preserveUnsignedThinking = opts.preserveUnsignedThinking ?? false;
 	}
 
 	get state(): AgentState {
@@ -272,6 +276,7 @@ export class Agent {
 			tools: this._state.tools,
 			model,
 			reasoning,
+			preserveUnsignedThinking: this.preserveUnsignedThinking,
 			getQueuedMessages: async <T>() => {
 				if (this.queueMode === "one-at-a-time") {
 					if (this.messageQueue.length > 0) {

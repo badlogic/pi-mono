@@ -61,6 +61,7 @@ export interface StreamOptions {
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ReasoningEffort;
+	preserveUnsignedThinking?: boolean;
 }
 
 // Generic StreamFunction with typed options

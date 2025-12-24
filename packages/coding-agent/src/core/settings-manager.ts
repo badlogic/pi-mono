@@ -47,6 +47,7 @@ export interface Settings {
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
+	preserveUnsignedThinking?: boolean; // default: false - when true, aborted thinking blocks are kept as <thinking> text (may cause tag leakage)
 	apiKeys?: Record<string, string>; // provider -> API key (e.g., { "anthropic": "sk-..." })
 }
 
@@ -388,5 +389,9 @@ export class SettingsManager {
 
 	getApiKeys(): Record<string, string> {
 		return this.settings.apiKeys ?? {};
+	}
+
+	getPreserveUnsignedThinking(): boolean {
+		return this.settings.preserveUnsignedThinking ?? false;
 	}
 }

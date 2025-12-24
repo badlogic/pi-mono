@@ -8,6 +8,7 @@ export interface AgentRunConfig {
 	tools: AgentTool<any>[];
 	model: Model<any>;
 	reasoning?: ReasoningEffort;
+	preserveUnsignedThinking?: boolean;
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
 }
 

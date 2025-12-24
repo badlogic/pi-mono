@@ -176,7 +176,11 @@ function mapOptionsForApi<TApi extends Api>(
 		case "anthropic-messages": {
 			// Explicitly disable thinking when reasoning is not specified
 			if (!options?.reasoning) {
-				return { ...base, thinkingEnabled: false } satisfies AnthropicOptions;
+				return {
+					...base,
+					thinkingEnabled: false,
+					preserveUnsignedThinking: options?.preserveUnsignedThinking,
+				} satisfies AnthropicOptions;
 			}
 
 			const anthropicBudgets = {
@@ -190,6 +194,7 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				thinkingEnabled: true,
 				thinkingBudgetTokens: anthropicBudgets[clampReasoning(options.reasoning)!],
+				preserveUnsignedThinking: options?.preserveUnsignedThinking,
 			} satisfies AnthropicOptions;
 		}
 

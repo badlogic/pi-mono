@@ -361,6 +361,7 @@ export class AppTransport implements AgentTransport {
 		return {
 			model: cfg.model,
 			reasoning: cfg.reasoning,
+			preserveUnsignedThinking: cfg.preserveUnsignedThinking,
 			getQueuedMessages: cfg.getQueuedMessages,
 		};
 	}

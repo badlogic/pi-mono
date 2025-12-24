@@ -57,6 +57,7 @@ export class ProviderTransport implements AgentTransport {
 		return {
 			model,
 			reasoning: cfg.reasoning,
+			preserveUnsignedThinking: cfg.preserveUnsignedThinking,
 			// Resolve API key per assistant response (important for expiring OAuth tokens)
 			getApiKey: this.options.getApiKey,
 			getQueuedMessages: cfg.getQueuedMessages,

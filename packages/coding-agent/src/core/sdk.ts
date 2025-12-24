@@ -651,6 +651,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		messageTransformer,
 		queueMode: settingsManager.getQueueMode(),
+		preserveUnsignedThinking: settingsManager.getPreserveUnsignedThinking(),
 		transport: new ProviderTransport({
 			getApiKey: async () => {
 				const currentModel = agent.state.model;
