@@ -406,8 +406,30 @@ function wrapSingleLine(line: string, width: number): string[] {
 	return wrapped.length > 0 ? wrapped : [""];
 }
 
-// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
-const segmenter = new Intl.Segmenter();
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * Get the shared grapheme segmenter instance.
+ */
+export function getSegmenter(): Intl.Segmenter {
+	return segmenter;
+}
+
+const PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
+
+/**
+ * Check if a character is whitespace.
+ */
+export function isWhitespaceChar(char: string): boolean {
+	return /\s/.test(char);
+}
+
+/**
+ * Check if a character is punctuation.
+ */
+export function isPunctuationChar(char: string): boolean {
+	return PUNCTUATION_REGEX.test(char);
+}
 
 function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): string[] {
 	const lines: string[] = [];
