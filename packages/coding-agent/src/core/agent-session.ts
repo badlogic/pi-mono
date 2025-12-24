@@ -772,6 +772,7 @@ export class AgentSession {
 					customInstructions,
 					model: this.model,
 					apiKey,
+					resolveApiKey: this._resolveApiKey,
 				})) as SessionEventResult | undefined;
 
 				if (result?.cancel) {
@@ -922,6 +923,7 @@ export class AgentSession {
 					customInstructions: undefined,
 					model: this.model,
 					apiKey,
+					resolveApiKey: this._resolveApiKey,
 				})) as SessionEventResult | undefined;
 
 				if (hookResult?.cancel) {

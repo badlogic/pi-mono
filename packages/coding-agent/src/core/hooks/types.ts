@@ -135,6 +135,8 @@ export type SessionEvent =
 			customInstructions?: string;
 			model: Model<any>;
 			apiKey: string;
+			/** Resolve API key for any model (checks settings, OAuth, env vars) */
+			resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
 	  })
 	| (SessionEventBase & {
 			reason: "compact";

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Compaction hook `resolveApiKey`**: The `before_compact` session event now includes `resolveApiKey` function to resolve API keys for any model (checks settings, OAuth, env vars). Useful for hooks that need to call different models during custom compaction.
+
 ## [0.27.5] - 2025-12-24
 
 ### Added

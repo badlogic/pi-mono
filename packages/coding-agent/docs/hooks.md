@@ -184,6 +184,7 @@ For `before_compact` events, additional fields are available:
 - `event.tokensBefore`: Current context token count
 - `event.model`: Model to use for summarization
 - `event.apiKey`: API key for the model
+- `event.resolveApiKey`: Function to resolve API key for any model (checks settings, OAuth, env vars)
 - `event.customInstructions`: Optional custom focus for summary (from `/compact` command)
 
 Return `{ compactionEntry }` to provide a custom summary instead of the default. The `compactionEntry` must have: `type: "compaction"`, `timestamp`, `summary`, `firstKeptEntryIndex` (from `cutPoint`), `tokensBefore`.
