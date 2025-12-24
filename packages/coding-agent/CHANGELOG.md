@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.27.8] - 2025-12-24
+
+### Fixed
+
+- **API key priority**: OAuth tokens now take priority over settings.json API keys. Previously, an API key in settings.json would trump OAuth, causing users logged in with a plan (unlimited tokens) to be billed via PAYG instead.
+
 ## [0.27.7] - 2025-12-24
 
 ### Fixed

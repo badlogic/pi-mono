@@ -328,21 +328,25 @@ export function discoverSlashCommands(cwd?: string, agentDir?: string): FileSlas
 
 /**
  * Create the default API key resolver.
- * Priority: settings.json apiKeys > custom providers (models.json) > OAuth > environment variables.
+ * Priority: OAuth > custom providers (models.json) > environment variables > settings.json apiKeys.
+ *
+ * OAuth takes priority so users logged in with a plan (e.g. unlimited tokens) aren't
+ * accidentally billed via a PAYG API key sitting in settings.json.
  */
 export function defaultGetApiKey(
 	settingsManager?: SettingsManager,
 ): (model: Model<any>) => Promise<string | undefined> {
 	return async (model: Model<any>) => {
-		// Check settings.json apiKeys first
-		if (settingsManager) {
-			const settingsKey = settingsManager.getApiKey(model.provider);
-			if (settingsKey) {
-				return settingsKey;
-			}
+		// Check OAuth, custom providers, env vars first
+		const resolvedKey = await getApiKeyForModel(model);
+		if (resolvedKey) {
+			return resolvedKey;
 		}
-		// Fall back to existing resolution (custom providers, OAuth, env vars)
-		return getApiKeyForModel(model);
+		// Fall back to settings.json apiKeys
+		if (settingsManager) {
+			return settingsManager.getApiKey(model.provider);
+		}
+		return undefined;
 	};
 }
 
