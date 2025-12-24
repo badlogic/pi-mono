@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Vertex AI provider with ADC support, Gemini model catalog, and test coverage.
+
 ## [0.28.0] - 2025-12-25
 
 ### Breaking Changes

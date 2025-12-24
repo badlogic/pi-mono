@@ -7,7 +7,7 @@ import type { Context, ImageContent, Model, StopReason, TextContent, Tool } from
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transorm-messages.js";
 
-type GoogleApiType = "google-generative-ai" | "google-gemini-cli";
+type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vertex";
 
 /**
  * Convert internal messages to Gemini Content[] format.
@@ -73,6 +73,9 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 							args: block.arguments,
 						},
 					};
+					if (model.provider === "google-vertex" && part?.functionCall?.id) {
+						delete part.functionCall.id; // Vertex AI does not support 'id' in functionCall
+					}
 					if (block.thoughtSignature) {
 						part.thoughtSignature = block.thoughtSignature;
 					}
@@ -120,6 +123,10 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					...(hasImages && supportsMultimodalFunctionResponse && { parts: imageParts }),
 				},
 			};
+
+			if (model.provider === "google-vertex" && functionResponsePart.functionResponse?.id) {
+				delete functionResponsePart.functionResponse.id; // Vertex AI does not support 'id' in functionResponse
+			}
 
 			// Cloud Code Assist API requires all function responses to be in a single user turn.
 			// Check if the last content is already a user turn with function responses and merge.
