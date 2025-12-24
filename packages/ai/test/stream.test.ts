@@ -368,6 +368,46 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("Google Vertex Provider (gemini-3-flash-preview)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const vertexLocation = process.env.GOOGLE_CLOUD_LOCATION;
+		const isVertexConfigured = Boolean(vertexProject && vertexLocation);
+		const vertexOptions = { project: vertexProject, location: vertexLocation } as const;
+		const llm = getModel("google-vertex", "gemini-3-flash-preview");
+
+		it.skipIf(!isVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle thinking", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await handleThinking(llm, {
+				...vertexOptions,
+				thinking: { enabled: true, budgetTokens: 1024, level: ThinkingLevel.LOW },
+			});
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await multiTurn(llm, {
+				...vertexOptions,
+				thinking: { enabled: true, budgetTokens: 1024, level: ThinkingLevel.MEDIUM },
+			});
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, vertexOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
 		const llm: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
 
