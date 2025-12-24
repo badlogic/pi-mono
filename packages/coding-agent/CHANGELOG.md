@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **HTML export improvements**: Render markdown server-side using marked (tables, headings, code blocks, etc.), honor user's chosen theme (light/dark), add image rendering for user messages, and style code blocks with TUI-like language markers. ([@scutifer](https://github.com/scutifer))
+
 ## [0.27.4] - 2025-12-24
 
 ### Fixed
