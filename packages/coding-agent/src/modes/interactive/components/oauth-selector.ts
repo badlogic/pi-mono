@@ -1,6 +1,6 @@
-import { loadOAuthCredentials } from "@mariozechner/pi-ai";
+import { getOAuthProviders, type OAuthProviderInfo } from "@mariozechner/pi-ai";
 import { Container, isArrowDown, isArrowUp, isEnter, isEscape, Spacer, TruncatedText } from "@mariozechner/pi-tui";
-import { getOAuthProviders, type OAuthProviderInfo } from "../../../core/oauth/index.js";
+import type { AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -12,13 +12,20 @@ export class OAuthSelectorComponent extends Container {
 	private allProviders: OAuthProviderInfo[] = [];
 	private selectedIndex: number = 0;
 	private mode: "login" | "logout";
+	private authStorage: AuthStorage;
 	private onSelectCallback: (providerId: string) => void;
 	private onCancelCallback: () => void;
 
-	constructor(mode: "login" | "logout", onSelect: (providerId: string) => void, onCancel: () => void) {
+	constructor(
+		mode: "login" | "logout",
+		authStorage: AuthStorage,
+		onSelect: (providerId: string) => void,
+		onCancel: () => void,
+	) {
 		super();
 
 		this.mode = mode;
+		this.authStorage = authStorage;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
@@ -49,7 +56,6 @@ export class OAuthSelectorComponent extends Container {
 
 	private loadProviders(): void {
 		this.allProviders = getOAuthProviders();
-		this.allProviders = this.allProviders.filter((p) => p.available);
 	}
 
 	private updateList(): void {
@@ -63,8 +69,8 @@ export class OAuthSelectorComponent extends Container {
 			const isAvailable = provider.available;
 
 			// Check if user is logged in for this provider
-			const credentials = loadOAuthCredentials(provider.id);
-			const isLoggedIn = credentials !== null;
+			const credentials = this.authStorage.get(provider.id);
+			const isLoggedIn = credentials?.type === "oauth";
 			const statusIndicator = isLoggedIn ? theme.fg("success", " ✓ logged in") : "";
 
 			let line = "";

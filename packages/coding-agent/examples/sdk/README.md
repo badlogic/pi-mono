@@ -29,50 +29,63 @@ npx tsx examples/sdk/01-minimal.ts
 ## Quick Reference
 
 ```typescript
+import { getModel } from "@mariozechner/pi-ai";
 import {
+  AuthStorage,
   createAgentSession,
-  configureOAuthStorage,
+  discoverAuthStorage,
+  discoverModels,
   discoverSkills,
   discoverHooks,
   discoverCustomTools,
   discoverContextFiles,
   discoverSlashCommands,
-  discoverAvailableModels,
-  findModel,
-  defaultGetApiKey,
   loadSettings,
   buildSystemPrompt,
+  ModelRegistry,
   SessionManager,
   codingTools,
   readOnlyTools,
   readTool, bashTool, editTool, writeTool,
 } from "@mariozechner/pi-coding-agent";
 
+// Auth and models setup
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
+
 // Minimal
-const { session } = await createAgentSession();
+const { session } = await createAgentSession({ authStorage, modelRegistry });
 
 // Custom model
-const { model } = findModel("anthropic", "claude-sonnet-4-20250514");
-const { session } = await createAgentSession({ model, thinkingLevel: "high" });
+const model = getModel("anthropic", "claude-opus-4-5");
+const { session } = await createAgentSession({ model, thinkingLevel: "high", authStorage, modelRegistry });
 
 // Modify prompt
 const { session } = await createAgentSession({
   systemPrompt: (defaultPrompt) => defaultPrompt + "\n\nBe concise.",
+  authStorage,
+  modelRegistry,
 });
 
 // Read-only
-const { session } = await createAgentSession({ tools: readOnlyTools });
+const { session } = await createAgentSession({ tools: readOnlyTools, authStorage, modelRegistry });
 
 // In-memory
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
+  authStorage,
+  modelRegistry,
 });
 
 // Full control
-configureOAuthStorage(); // Use OAuth from ~/.pi/agent
+const customAuth = new AuthStorage("/my/app/auth.json");
+customAuth.setRuntimeApiKey("anthropic", process.env.MY_KEY!);
+const customRegistry = new ModelRegistry(customAuth);
+
 const { session } = await createAgentSession({
   model,
-  getApiKey: async (m) => process.env.MY_KEY,
+  authStorage: customAuth,
+  modelRegistry: customRegistry,
   systemPrompt: "You are helpful.",
   tools: [readTool, bashTool],
   customTools: [{ tool: myTool }],
@@ -81,7 +94,6 @@ const { session } = await createAgentSession({
   contextFiles: [],
   slashCommands: [],
   sessionManager: SessionManager.inMemory(),
-  settings: { compaction: { enabled: false } },
 });
 
 // Run prompts
@@ -97,11 +109,12 @@ await session.prompt("Hello");
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `authStorage` | `discoverAuthStorage()` | Credential storage |
+| `modelRegistry` | `discoverModels(authStorage)` | Model registry |
 | `cwd` | `process.cwd()` | Working directory |
 | `agentDir` | `~/.pi/agent` | Config directory |
 | `model` | From settings/first available | Model to use |
 | `thinkingLevel` | From settings/"off" | off, low, medium, high |
-| `getApiKey` | Built-in resolver | API key function |
 | `systemPrompt` | Discovered | String or `(default) => modified` |
 | `tools` | `codingTools` | Built-in tools |
 | `customTools` | Discovered | Replaces discovery |
@@ -112,7 +125,7 @@ await session.prompt("Hello");
 | `contextFiles` | Discovered | AGENTS.md files |
 | `slashCommands` | Discovered | File commands |
 | `sessionManager` | `SessionManager.create(cwd)` | Persistence |
-| `settings` | From agentDir | Overrides |
+| `settingsManager` | From agentDir | Settings overrides |
 
 ## Events
 

@@ -8,19 +8,20 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-
+import { join } from "path";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getModelsPath, VERSION } from "./config.js";
+import { getAgentDir, getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
+import { AuthStorage } from "./core/auth-storage.js";
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
 import type { HookUIContext } from "./core/index.js";
+import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
-import { findModel } from "./core/models-json.js";
-import { type CreateAgentSessionOptions, configureOAuthStorage, createAgentSession } from "./core/sdk.js";
+import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { resolvePromptInput } from "./core/system-prompt.js";
@@ -33,7 +34,7 @@ import { ensureTool } from "./utils/tools-manager.js";
 
 async function checkForNewVersion(currentVersion: string): Promise<string | null> {
 	try {
-		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
+		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi -coding-agent/latest");
 		if (!response.ok) return null;
 
 		const data = (await response.json()) as { version?: string };
@@ -54,6 +55,8 @@ async function runInteractiveMode(
 	version: string,
 	changelogMarkdown: string | null,
 	modelFallbackMessage: string | undefined,
+	modelsJsonError: string | null,
+	migratedProviders: string[],
 	versionCheckPromise: Promise<string | null>,
 	initialMessages: string[],
 	customTools: LoadedCustomTool[],
@@ -73,6 +76,14 @@ async function runInteractiveMode(
 	});
 
 	mode.renderInitialMessages(session.state);
+
+	if (migratedProviders.length > 0) {
+		mode.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
+	}
+
+	if (modelsJsonError) {
+		mode.showError(`models.json error: ${modelsJsonError}`);
+	}
 
 	if (modelFallbackMessage) {
 		mode.showWarning(modelFallbackMessage);
@@ -175,6 +186,7 @@ function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | null,
+	modelRegistry: ModelRegistry,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
@@ -187,11 +199,7 @@ function buildSessionOptions(
 
 	// Model from CLI
 	if (parsed.provider && parsed.model) {
-		const { model, error } = findModel(parsed.provider, parsed.model);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
+		const model = modelRegistry.find(parsed.provider, parsed.model);
 		if (!model) {
 			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
 			process.exit(1);
@@ -213,10 +221,8 @@ function buildSessionOptions(
 		options.scopedModels = scopedModels;
 	}
 
-	// API key from CLI
-	if (parsed.apiKey) {
-		options.getApiKey = async () => parsed.apiKey!;
-	}
+	// API key from CLI - set in authStorage
+	// (handled by caller before createAgentSession)
 
 	// System prompt
 	if (resolvedSystemPrompt && resolvedAppendPrompt) {
@@ -252,8 +258,15 @@ function buildSessionOptions(
 
 export async function main(args: string[]) {
 	time("start");
-	configureOAuthStorage();
-	time("configureOAuthStorage");
+
+	// Migrate legacy oauth.json and settings.json apiKeys to auth.json
+	const agentDir = getAgentDir();
+	const migratedProviders = AuthStorage.migrateLegacy(join(agentDir, "auth.json"), agentDir);
+
+	// Create AuthStorage and ModelRegistry upfront
+	const authStorage = discoverAuthStorage();
+	const modelRegistry = discoverModels(authStorage);
+	time("discoverModels");
 
 	const parsed = parseArgs(args);
 	time("parseArgs");
@@ -270,8 +283,7 @@ export async function main(args: string[]) {
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		const settingsManager = SettingsManager.create(process.cwd());
-		await listModels(searchPattern, settingsManager);
+		await listModels(modelRegistry, searchPattern);
 		return;
 	}
 
@@ -306,7 +318,7 @@ export async function main(args: string[]) {
 
 	let scopedModels: ScopedModel[] = [];
 	if (parsed.models && parsed.models.length > 0) {
-		scopedModels = await resolveModelScope(parsed.models, settingsManager);
+		scopedModels = await resolveModelScope(parsed.models, modelRegistry);
 		time("resolveModelScope");
 	}
 
@@ -331,7 +343,19 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager);
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry);
+	sessionOptions.authStorage = authStorage;
+	sessionOptions.modelRegistry = modelRegistry;
+
+	// Handle CLI --api-key as runtime override (not persisted)
+	if (parsed.apiKey) {
+		if (!sessionOptions.model) {
+			console.error(chalk.red("--api-key requires a model to be specified via --provider/--model or -m/--models"));
+			process.exit(1);
+		}
+		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+	}
+
 	time("buildSessionOptions");
 	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
 	time("createAgentSession");
@@ -382,6 +406,8 @@ export async function main(args: string[]) {
 			VERSION,
 			changelogMarkdown,
 			modelFallbackMessage,
+			modelRegistry.getError(),
+			migratedProviders,
 			versionCheckPromise,
 			parsed.messages,
 			customToolsResult.tools,

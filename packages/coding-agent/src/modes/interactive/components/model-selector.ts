@@ -10,7 +10,7 @@ import {
 	Text,
 	type TUI,
 } from "@mariozechner/pi-tui";
-import { getAvailableModels } from "../../../core/models-json.js";
+import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
@@ -38,6 +38,7 @@ export class ModelSelectorComponent extends Container {
 	private selectedIndex: number = 0;
 	private currentModel: Model<any> | null;
 	private settingsManager: SettingsManager;
+	private modelRegistry: ModelRegistry;
 	private onSelectCallback: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
 	private errorMessage: string | null = null;
@@ -48,6 +49,7 @@ export class ModelSelectorComponent extends Container {
 		tui: TUI,
 		currentModel: Model<any> | null,
 		settingsManager: SettingsManager,
+		modelRegistry: ModelRegistry,
 		scopedModels: ReadonlyArray<ScopedModelItem>,
 		onSelect: (model: Model<any>) => void,
 		onCancel: () => void,
@@ -57,6 +59,7 @@ export class ModelSelectorComponent extends Container {
 		this.tui = tui;
 		this.currentModel = currentModel;
 		this.settingsManager = settingsManager;
+		this.modelRegistry = modelRegistry;
 		this.scopedModels = scopedModels;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
@@ -113,26 +116,29 @@ export class ModelSelectorComponent extends Container {
 				model: scoped.model,
 			}));
 		} else {
-			// Load available models fresh (includes custom models from models.json)
-			// Pass settings manager's key resolver as fallback for settings.json apiKeys
-			const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
-				this.settingsManager.getApiKey(provider),
-			);
+			// Refresh to pick up any changes to models.json
+			this.modelRegistry.refresh();
 
-			// If there's an error loading models.json, we'll show it via the "no models" path
-			// The error will be displayed to the user
-			if (error) {
-				this.allModels = [];
-				this.filteredModels = [];
-				this.errorMessage = error;
-				return;
+			// Check for models.json errors
+			const loadError = this.modelRegistry.getError();
+			if (loadError) {
+				this.errorMessage = loadError;
 			}
 
-			models = availableModels.map((model) => ({
-				provider: model.provider,
-				id: model.id,
-				model,
-			}));
+			// Load available models (built-in models still work even if models.json failed)
+			try {
+				const availableModels = await this.modelRegistry.getAvailable();
+				models = availableModels.map((model: Model<any>) => ({
+					provider: model.provider,
+					id: model.id,
+					model,
+				}));
+			} catch (error) {
+				this.allModels = [];
+				this.filteredModels = [];
+				this.errorMessage = error instanceof Error ? error.message : String(error);
+				return;
+			}
 		}
 
 		// Sort: current model first, then by provider

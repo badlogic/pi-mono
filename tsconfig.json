@@ -28,5 +28,5 @@
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["packages/web-ui/**/*"]
+	"exclude": ["packages/web-ui/**/*", "**/dist/**"]
 }

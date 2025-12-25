@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -25,13 +25,11 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { exec, spawnSync } from "child_process";
-import { APP_NAME, getDebugLogPath, getOAuthPath } from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
-import { invalidateOAuthCache } from "../../core/models-json.js";
-import { listOAuthProviders, login, logout, type OAuthProvider } from "../../core/oauth/index.js";
 import {
 	getLatestCompactionEntry,
 	SessionManager,
@@ -154,7 +152,7 @@ export class InteractiveMode {
 		this.editor = new CustomEditor(getEditorTheme());
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
-		this.footer = new FooterComponent(session.state);
+		this.footer = new FooterComponent(session.state, session.modelRegistry);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Define slash commands for autocomplete
@@ -1484,6 +1482,7 @@ export class InteractiveMode {
 				this.ui,
 				this.session.model,
 				this.settingsManager,
+				this.session.modelRegistry,
 				this.session.scopedModels,
 				async (model) => {
 					try {
@@ -1588,7 +1587,10 @@ export class InteractiveMode {
 
 	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
 		if (mode === "logout") {
-			const loggedInProviders = listOAuthProviders();
+			const providers = this.session.modelRegistry.authStorage.list();
+			const loggedInProviders = providers.filter(
+				(p) => this.session.modelRegistry.authStorage.get(p)?.type === "oauth",
+			);
 			if (loggedInProviders.length === 0) {
 				this.showStatus("No OAuth providers logged in. Use /login first.");
 				return;
@@ -1598,6 +1600,7 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new OAuthSelectorComponent(
 				mode,
+				this.session.modelRegistry.authStorage,
 				async (providerId: string) => {
 					done();
 
@@ -1605,9 +1608,8 @@ export class InteractiveMode {
 						this.showStatus(`Logging in to ${providerId}...`);
 
 						try {
-							await login(
-								providerId as OAuthProvider,
-								(info) => {
+							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
+								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
 									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
 									this.chatContainer.addChild(new Text(theme.fg("accent", info.url), 1, 0));
@@ -1625,7 +1627,7 @@ export class InteractiveMode {
 												: "xdg-open";
 									exec(`${openCmd} "${info.url}"`);
 								},
-								async (prompt) => {
+								onPrompt: async (prompt: { message: string; placeholder?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
 									this.chatContainer.addChild(new Text(theme.fg("warning", prompt.message), 1, 0));
 									if (prompt.placeholder) {
@@ -1648,32 +1650,35 @@ export class InteractiveMode {
 										this.ui.requestRender();
 									});
 								},
-								(message) => {
+								onProgress: (message: string) => {
 									this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
 									this.ui.requestRender();
 								},
-							);
-
-							invalidateOAuthCache();
+							});
+							// Refresh models to pick up new baseUrl (e.g., github-copilot)
+							this.session.modelRegistry.refresh();
 							this.chatContainer.addChild(new Spacer(1));
 							this.chatContainer.addChild(
 								new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
 							);
-							this.chatContainer.addChild(new Text(theme.fg("dim", `Tokens saved to ${getOAuthPath()}`), 1, 0));
+							this.chatContainer.addChild(
+								new Text(theme.fg("dim", `Credentials saved to ${getAuthPath()}`), 1, 0),
+							);
 							this.ui.requestRender();
 						} catch (error: unknown) {
 							this.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
 						}
 					} else {
 						try {
-							await logout(providerId as OAuthProvider);
-							invalidateOAuthCache();
+							this.session.modelRegistry.authStorage.logout(providerId);
+							// Refresh models to reset baseUrl
+							this.session.modelRegistry.refresh();
 							this.chatContainer.addChild(new Spacer(1));
 							this.chatContainer.addChild(
 								new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
 							);
 							this.chatContainer.addChild(
-								new Text(theme.fg("dim", `Credentials removed from ${getOAuthPath()}`), 1, 0),
+								new Text(theme.fg("dim", `Credentials removed from ${getAuthPath()}`), 1, 0),
 							);
 							this.ui.requestRender();
 						} catch (error: unknown) {

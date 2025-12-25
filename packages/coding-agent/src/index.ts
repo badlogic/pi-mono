@@ -9,6 +9,8 @@ export {
 	type PromptOptions,
 	type SessionStats,
 } from "./core/agent-session.js";
+// Auth and model registry
+export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
 // Compaction
 export {
 	type CutPointResult,
@@ -72,24 +74,13 @@ export {
 	isWriteToolResult,
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
-// Model configuration and OAuth
-export { findModel, getApiKeyForModel, getAvailableModels } from "./core/models-json.js";
-export {
-	getOAuthProviders,
-	login,
-	logout,
-	type OAuthAuthInfo,
-	type OAuthPrompt,
-	type OAuthProvider,
-} from "./core/oauth/index.js";
+export { ModelRegistry } from "./core/model-registry.js";
 // SDK for programmatic usage
 export {
 	type BuildSystemPromptOptions,
 	buildSystemPrompt,
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
-	// Configuration
-	configureOAuthStorage,
 	// Factory
 	createAgentSession,
 	createBashTool,
@@ -102,18 +93,15 @@ export {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
-	// Helpers
-	defaultGetApiKey,
-	discoverAvailableModels,
+	// Discovery
+	discoverAuthStorage,
 	discoverContextFiles,
 	discoverCustomTools,
 	discoverHooks,
-	// Discovery
 	discoverModels,
 	discoverSkills,
 	discoverSlashCommands,
 	type FileSlashCommand,
-	findModel as findModelByProviderAndId,
 	loadSettings,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,

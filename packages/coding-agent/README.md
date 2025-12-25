@@ -106,29 +106,21 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 
 ### API Keys & OAuth
 
-**Option 1: Settings file** (recommended)
+**Option 1: Auth file** (recommended)
 
-Add API keys to `~/.pi/agent/settings.json`:
+Add API keys to `~/.pi/agent/auth.json`:
 
 ```json
 {
-  "apiKeys": {
-    "anthropic": "sk-ant-...",
-    "openai": "sk-...",
-    "google": "...",
-    "mistral": "...",
-    "groq": "...",
-    "cerebras": "...",
-    "xai": "...",
-    "openrouter": "...",
-    "zai": "..."
-  }
+  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
+  "openai": { "type": "api_key", "key": "sk-..." },
+  "google": { "type": "api_key", "key": "..." }
 }
 ```
 
 **Option 2: Environment variables**
 
-| Provider | Settings Key | Environment Variable |
+| Provider | Auth Key | Environment Variable |
 |----------|--------------|---------------------|
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
@@ -140,7 +132,7 @@ Add API keys to `~/.pi/agent/settings.json`:
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | ZAI | `zai` | `ZAI_API_KEY` |
 
-Settings file keys take priority over environment variables.
+Auth file keys take priority over environment variables.
 
 **OAuth Providers:**
 
@@ -158,6 +150,8 @@ pi
 /login  # Select provider, authorize in browser
 ```
 
+**Note:** `/login` replaces any existing API key for that provider with OAuth credentials in `auth.json`.
+
 **GitHub Copilot notes:**
 - Press Enter for github.com, or enter your GitHub Enterprise Server domain
 - If you get "model not supported" error, enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
@@ -167,7 +161,7 @@ pi
 - Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
 - Both are free with any Google account, subject to rate limits
 
-Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
+Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
 
 ### Quick Start
 
@@ -855,10 +849,15 @@ For adding new tools, see [Custom Tools](#custom-tools) in the Configuration sec
 For embedding pi in Node.js/TypeScript applications, use the SDK:
 
 ```typescript
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverAuthStorage, discoverModels, SessionManager } from "@mariozechner/pi-coding-agent";
+
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
+  authStorage,
+  modelRegistry,
 });
 
 session.subscribe((event) => {

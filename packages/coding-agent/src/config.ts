@@ -112,9 +112,9 @@ export function getModelsPath(): string {
 	return join(getAgentDir(), "models.json");
 }
 
-/** Get path to oauth.json */
-export function getOAuthPath(): string {
-	return join(getAgentDir(), "oauth.json");
+/** Get path to auth.json */
+export function getAuthPath(): string {
+	return join(getAgentDir(), "auth.json");
 }
 
 /** Get path to settings.json */

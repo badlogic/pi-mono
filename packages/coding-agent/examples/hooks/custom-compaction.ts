@@ -13,8 +13,8 @@
  *   pi --hook examples/hooks/custom-compaction.ts
  */
 
-import { complete } from "@mariozechner/pi-ai";
-import { findModel, messageTransformer } from "@mariozechner/pi-coding-agent";
+import { complete, getModel } from "@mariozechner/pi-ai";
+import { messageTransformer } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
@@ -27,10 +27,9 @@ export default function (pi: HookAPI) {
 			event;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
-		// findModel searches both built-in models and custom models from models.json
-		const { model, error } = findModel("google", "gemini-2.5-flash");
-		if (error || !model) {
-			ctx.ui.notify(`Could not find Gemini Flash model: ${error}, using default compaction`, "warning");
+		const model = getModel("google", "gemini-2.5-flash");
+		if (!model) {
+			ctx.ui.notify(`Could not find Gemini Flash model, using default compaction`, "warning");
 			return;
 		}
 

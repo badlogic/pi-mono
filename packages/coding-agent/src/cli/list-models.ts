@@ -3,8 +3,7 @@
  */
 
 import type { Api, Model } from "@mariozechner/pi-ai";
-import { getAvailableModels } from "../core/models-json.js";
-import type { SettingsManager } from "../core/settings-manager.js";
+import type { ModelRegistry } from "../core/model-registry.js";
 import { fuzzyFilter } from "../utils/fuzzy.js";
 
 /**
@@ -25,16 +24,8 @@ function formatTokenCount(count: number): string {
 /**
  * List available models, optionally filtered by search pattern
  */
-export async function listModels(searchPattern?: string, settingsManager?: SettingsManager): Promise<void> {
-	const { models, error } = await getAvailableModels(
-		undefined,
-		settingsManager ? (provider) => settingsManager.getApiKey(provider) : undefined,
-	);
-
-	if (error) {
-		console.error(error);
-		process.exit(1);
-	}
+export async function listModels(modelRegistry: ModelRegistry, searchPattern?: string): Promise<void> {
+	const models = await modelRegistry.getAvailable();
 
 	if (models.length === 0) {
 		console.log("No models available. Set API keys in environment variables.");

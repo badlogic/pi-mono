@@ -9,7 +9,9 @@ import { Agent, ProviderTransport } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
+import { AuthStorage } from "../src/core/auth-storage.js";
 import { HookRunner, type LoadedHook, type SessionEvent } from "../src/core/hooks/index.js";
+import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
@@ -83,6 +85,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		const sessionManager = SessionManager.create(tempDir);
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const modelRegistry = new ModelRegistry(authStorage);
 
 		hookRunner = new HookRunner(hooks, tempDir);
 		hookRunner.setUIContext(
@@ -101,6 +105,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			sessionManager,
 			settingsManager,
 			hookRunner,
+			modelRegistry,
 		});
 
 		return session;

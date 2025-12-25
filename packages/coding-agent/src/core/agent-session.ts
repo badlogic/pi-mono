@@ -23,7 +23,7 @@ import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custo
 import { exportSessionToHtml } from "./export-html.js";
 import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
-import { getApiKeyForModel, getAvailableModels } from "./models-json.js";
+import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
@@ -56,8 +56,8 @@ export interface AgentSessionConfig {
 	/** Custom tools for session lifecycle events */
 	customTools?: LoadedCustomTool[];
 	skillsSettings?: Required<SkillsSettings>;
-	/** Resolve API key for a model. Default: getApiKeyForModel */
-	resolveApiKey?: (model: Model<any>) => Promise<string | undefined>;
+	/** Model registry for API key resolution and model discovery */
+	modelRegistry: ModelRegistry;
 }
 
 /** Options for AgentSession.prompt() */
@@ -153,8 +153,8 @@ export class AgentSession {
 
 	private _skillsSettings: Required<SkillsSettings> | undefined;
 
-	// API key resolver
-	private _resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
+	// Model registry for API key resolution
+	private _modelRegistry: ModelRegistry;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -165,7 +165,12 @@ export class AgentSession {
 		this._hookRunner = config.hookRunner ?? null;
 		this._customTools = config.customTools ?? [];
 		this._skillsSettings = config.skillsSettings;
-		this._resolveApiKey = config.resolveApiKey ?? getApiKeyForModel;
+		this._modelRegistry = config.modelRegistry;
+	}
+
+	/** Model registry for API key resolution and model discovery */
+	get modelRegistry(): ModelRegistry {
+		return this._modelRegistry;
 	}
 
 	// =========================================================================
@@ -434,7 +439,7 @@ export class AgentSession {
 		}
 
 		// Validate API key
-		const apiKey = await this._resolveApiKey(this.model);
+		const apiKey = await this._modelRegistry.getApiKey(this.model);
 		if (!apiKey) {
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
@@ -561,7 +566,7 @@ export class AgentSession {
 	 * @throws Error if no API key available for the model
 	 */
 	async setModel(model: Model<any>): Promise<void> {
-		const apiKey = await this._resolveApiKey(model);
+		const apiKey = await this._modelRegistry.getApiKey(model);
 		if (!apiKey) {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
@@ -599,7 +604,7 @@ export class AgentSession {
 		const next = this._scopedModels[nextIndex];
 
 		// Validate API key
-		const apiKey = await this._resolveApiKey(next.model);
+		const apiKey = await this._modelRegistry.getApiKey(next.model);
 		if (!apiKey) {
 			throw new Error(`No API key for ${next.model.provider}/${next.model.id}`);
 		}
@@ -616,10 +621,7 @@ export class AgentSession {
 	}
 
 	private async _cycleAvailableModel(): Promise<ModelCycleResult | null> {
-		const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
-			this.settingsManager.getApiKey(provider),
-		);
-		if (error) throw new Error(`Failed to load models: ${error}`);
+		const availableModels = await this._modelRegistry.getAvailable();
 		if (availableModels.length <= 1) return null;
 
 		const currentModel = this.model;
@@ -631,7 +633,7 @@ export class AgentSession {
 		const nextIndex = (currentIndex + 1) % availableModels.length;
 		const nextModel = availableModels[nextIndex];
 
-		const apiKey = await this._resolveApiKey(nextModel);
+		const apiKey = await this._modelRegistry.getApiKey(nextModel);
 		if (!apiKey) {
 			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
 		}
@@ -650,11 +652,7 @@ export class AgentSession {
 	 * Get all available models with valid API keys.
 	 */
 	async getAvailableModels(): Promise<Model<any>[]> {
-		const { models, error } = await getAvailableModels(undefined, (provider) =>
-			this.settingsManager.getApiKey(provider),
-		);
-		if (error) throw new Error(error);
-		return models;
+		return this._modelRegistry.getAvailable();
 	}
 
 	// =========================================================================
@@ -747,7 +745,7 @@ export class AgentSession {
 				throw new Error("No model selected");
 			}
 
-			const apiKey = await this._resolveApiKey(this.model);
+			const apiKey = await this._modelRegistry.getApiKey(this.model);
 			if (!apiKey) {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
@@ -786,7 +784,7 @@ export class AgentSession {
 					tokensBefore: preparation.tokensBefore,
 					customInstructions,
 					model: this.model,
-					resolveApiKey: this._resolveApiKey,
+					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._compactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
@@ -908,7 +906,7 @@ export class AgentSession {
 				return;
 			}
 
-			const apiKey = await this._resolveApiKey(this.model);
+			const apiKey = await this._modelRegistry.getApiKey(this.model);
 			if (!apiKey) {
 				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
 				return;
@@ -948,7 +946,7 @@ export class AgentSession {
 					tokensBefore: preparation.tokensBefore,
 					customInstructions: undefined,
 					model: this.model,
-					resolveApiKey: this._resolveApiKey,
+					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._autoCompactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
@@ -1334,9 +1332,7 @@ export class AgentSession {
 
 		// Restore model if saved
 		if (sessionContext.model) {
-			const availableModels = (
-				await getAvailableModels(undefined, (provider) => this.settingsManager.getApiKey(provider))
-			).models;
+			const availableModels = await this._modelRegistry.getAvailable();
 			const match = availableModels.find(
 				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
 			);

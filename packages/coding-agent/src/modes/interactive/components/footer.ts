@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
 import { dirname, join } from "path";
-import { isModelUsingOAuth } from "../../../core/models-json.js";
+import type { ModelRegistry } from "../../../core/model-registry.js";
 import { theme } from "../theme/theme.js";
 
 /**
@@ -31,13 +31,15 @@ function findGitHeadPath(): string | null {
  */
 export class FooterComponent implements Component {
 	private state: AgentState;
+	private modelRegistry: ModelRegistry;
 	private cachedBranch: string | null | undefined = undefined; // undefined = not checked yet, null = not in git repo, string = branch name
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
 
-	constructor(state: AgentState) {
+	constructor(state: AgentState, modelRegistry: ModelRegistry) {
 		this.state = state;
+		this.modelRegistry = modelRegistry;
 	}
 
 	setAutoCompactEnabled(enabled: boolean): void {
@@ -207,7 +209,7 @@ export class FooterComponent implements Component {
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = this.state.model ? isModelUsingOAuth(this.state.model) : false;
+		const usingSubscription = this.state.model ? this.modelRegistry.isUsingOAuth(this.state.model) : false;
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);

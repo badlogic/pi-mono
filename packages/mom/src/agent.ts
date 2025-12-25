@@ -2,13 +2,16 @@ import { Agent, type AgentEvent, type Attachment, ProviderTransport } from "@mar
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
+	AuthStorage,
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
+	ModelRegistry,
 	messageTransformer,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
+import { homedir } from "os";
 import { join } from "path";
 import { MomSessionManager, MomSettingsManager } from "./context.js";
 import * as log from "./log.js";
@@ -435,11 +438,17 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
 	}
 
+	// Create AuthStorage and ModelRegistry for AgentSession
+	// Auth stored outside workspace so agent can't access it
+	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const modelRegistry = new ModelRegistry(authStorage);
+
 	// Create AgentSession wrapper
 	const session = new AgentSession({
 		agent,
 		sessionManager: sessionManager as any,
 		settingsManager: settingsManager as any,
+		modelRegistry,
 	});
 
 	// Mutable per-run state - event handler references this

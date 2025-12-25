@@ -1,40 +1,55 @@
 /**
  * API Keys and OAuth
  *
- * Configure API key resolution. Default checks: models.json, OAuth, env vars.
+ * Configure API key resolution via AuthStorage and ModelRegistry.
  */
 
-import { getAgentDir } from "../../src/config.js";
-import { configureOAuthStorage, createAgentSession, defaultGetApiKey, SessionManager } from "../../src/index.js";
+import {
+	AuthStorage,
+	createAgentSession,
+	discoverAuthStorage,
+	discoverModels,
+	ModelRegistry,
+	SessionManager,
+} from "../../src/index.js";
 
-// Default: uses env vars (ANTHROPIC_API_KEY, etc.), OAuth, and models.json
-await createAgentSession({
-	sessionManager: SessionManager.inMemory(),
-});
-console.log("Session with default API key resolution");
-
-// Custom resolver
-await createAgentSession({
-	getApiKey: async (model) => {
-		// Custom logic (secrets manager, database, etc.)
-		if (model.provider === "anthropic") {
-			return process.env.MY_ANTHROPIC_KEY;
-		}
-		// Fall back to default
-		return defaultGetApiKey()(model);
-	},
-	sessionManager: SessionManager.inMemory(),
-});
-console.log("Session with custom API key resolver");
-
-// Use OAuth from ~/.pi/agent while customizing everything else
-configureOAuthStorage(getAgentDir()); // Must call before createAgentSession
+// Default: discoverAuthStorage() uses ~/.pi/agent/auth.json
+// discoverModels() loads built-in + custom models from ~/.pi/agent/models.json
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
 
 await createAgentSession({
-	agentDir: "/tmp/custom-config", // Custom config location
-	// But OAuth tokens still come from ~/.pi/agent/oauth.json
-	systemPrompt: "You are helpful.",
-	skills: [],
 	sessionManager: SessionManager.inMemory(),
+	authStorage,
+	modelRegistry,
 });
-console.log("Session with OAuth from default location, custom config elsewhere");
+console.log("Session with default auth storage and model registry");
+
+// Custom auth storage location
+const customAuthStorage = new AuthStorage("/tmp/my-app/auth.json");
+const customModelRegistry = new ModelRegistry(customAuthStorage, "/tmp/my-app/models.json");
+
+await createAgentSession({
+	sessionManager: SessionManager.inMemory(),
+	authStorage: customAuthStorage,
+	modelRegistry: customModelRegistry,
+});
+console.log("Session with custom auth storage location");
+
+// Runtime API key override (not persisted to disk)
+authStorage.setRuntimeApiKey("anthropic", "sk-my-temp-key");
+await createAgentSession({
+	sessionManager: SessionManager.inMemory(),
+	authStorage,
+	modelRegistry,
+});
+console.log("Session with runtime API key override");
+
+// No models.json - only built-in models
+const simpleRegistry = new ModelRegistry(authStorage); // null = no models.json
+await createAgentSession({
+	sessionManager: SessionManager.inMemory(),
+	authStorage,
+	modelRegistry: simpleRegistry,
+});
+console.log("Session with only built-in models");

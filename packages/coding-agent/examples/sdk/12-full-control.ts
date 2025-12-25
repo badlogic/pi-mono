@@ -2,38 +2,36 @@
  * Full Control
  *
  * Replace everything - no discovery, explicit configuration.
- * Still uses OAuth from ~/.pi/agent for convenience.
  *
  * IMPORTANT: When providing `tools` with a custom `cwd`, use the tool factory
  * functions (createReadTool, createBashTool, etc.) to ensure tools resolve
  * paths relative to your cwd.
  */
 
+import { getModel } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { getAgentDir } from "../../src/config.js";
 import {
+	AuthStorage,
 	type CustomAgentTool,
-	configureOAuthStorage,
 	createAgentSession,
 	createBashTool,
 	createReadTool,
-	defaultGetApiKey,
-	findModel,
 	type HookFactory,
+	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "../../src/index.js";
 
-// Use OAuth from default location
-configureOAuthStorage(getAgentDir());
+// Custom auth storage location
+const authStorage = new AuthStorage("/tmp/my-agent/auth.json");
 
-// Custom API key with fallback
-const getApiKey = async (model: { provider: string }) => {
-	if (model.provider === "anthropic" && process.env.MY_ANTHROPIC_KEY) {
-		return process.env.MY_ANTHROPIC_KEY;
-	}
-	return defaultGetApiKey()(model as any);
-};
+// Runtime API key override (not persisted)
+if (process.env.MY_ANTHROPIC_KEY) {
+	authStorage.setRuntimeApiKey("anthropic", process.env.MY_ANTHROPIC_KEY);
+}
+
+// Model registry with no custom models.json
+const modelRegistry = new ModelRegistry(authStorage);
 
 // Inline hook
 const auditHook: HookFactory = (api) => {
@@ -55,7 +53,7 @@ const statusTool: CustomAgentTool = {
 	}),
 };
 
-const { model } = findModel("anthropic", "claude-sonnet-4-20250514");
+const model = getModel("anthropic", "claude-opus-4-5");
 if (!model) throw new Error("Model not found");
 
 // In-memory settings with overrides
@@ -73,7 +71,8 @@ const { session } = await createAgentSession({
 
 	model,
 	thinkingLevel: "off",
-	getApiKey,
+	authStorage,
+	modelRegistry,
 
 	systemPrompt: `You are a minimal assistant.
 Available: read, bash, status. Be concise.`,

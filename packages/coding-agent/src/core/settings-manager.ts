@@ -47,7 +47,6 @@ export interface Settings {
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
-	apiKeys?: Record<string, string>; // provider -> API key (e.g., { "anthropic": "sk-..." })
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -365,28 +364,5 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showImages = show;
 		this.save();
-	}
-
-	getApiKey(provider: string): string | undefined {
-		return this.settings.apiKeys?.[provider];
-	}
-
-	setApiKey(provider: string, key: string): void {
-		if (!this.globalSettings.apiKeys) {
-			this.globalSettings.apiKeys = {};
-		}
-		this.globalSettings.apiKeys[provider] = key;
-		this.save();
-	}
-
-	removeApiKey(provider: string): void {
-		if (this.globalSettings.apiKeys) {
-			delete this.globalSettings.apiKeys[provider];
-			this.save();
-		}
-	}
-
-	getApiKeys(): Record<string, string> {
-		return this.settings.apiKeys ?? {};
 	}
 }

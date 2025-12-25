@@ -6,8 +6,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { isValidThinkingLevel } from "../cli/args.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./models-json.js";
-import type { SettingsManager } from "./settings-manager.js";
+import type { ModelRegistry } from "./model-registry.js";
 
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
@@ -167,21 +166,9 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
  * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
  * The algorithm tries to match the full pattern first, then progressively
  * strips colon-suffixes to find a match.
- *
- * @param patterns - Model patterns to resolve
- * @param settingsManager - Optional settings manager for API key fallback from settings.json
  */
-export async function resolveModelScope(patterns: string[], settingsManager?: SettingsManager): Promise<ScopedModel[]> {
-	const { models: availableModels, error } = await getAvailableModels(
-		undefined,
-		settingsManager ? (provider) => settingsManager.getApiKey(provider) : undefined,
-	);
-
-	if (error) {
-		console.warn(chalk.yellow(`Warning: Error loading models: ${error}`));
-		return [];
-	}
-
+export async function resolveModelScope(patterns: string[], modelRegistry: ModelRegistry): Promise<ScopedModel[]> {
+	const availableModels = await modelRegistry.getAvailable();
 	const scopedModels: ScopedModel[] = [];
 
 	for (const pattern of patterns) {
@@ -224,20 +211,28 @@ export async function findInitialModel(options: {
 	cliModel?: string;
 	scopedModels: ScopedModel[];
 	isContinuing: boolean;
-	settingsManager: SettingsManager;
+	defaultProvider?: string;
+	defaultModelId?: string;
+	defaultThinkingLevel?: ThinkingLevel;
+	modelRegistry: ModelRegistry;
 }): Promise<InitialModelResult> {
-	const { cliProvider, cliModel, scopedModels, isContinuing, settingsManager } = options;
+	const {
+		cliProvider,
+		cliModel,
+		scopedModels,
+		isContinuing,
+		defaultProvider,
+		defaultModelId,
+		defaultThinkingLevel,
+		modelRegistry,
+	} = options;
 
 	let model: Model<Api> | null = null;
 	let thinkingLevel: ThinkingLevel = "off";
 
 	// 1. CLI args take priority
 	if (cliProvider && cliModel) {
-		const { model: found, error } = findModel(cliProvider, cliModel);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
+		const found = modelRegistry.find(cliProvider, cliModel);
 		if (!found) {
 			console.error(chalk.red(`Model ${cliProvider}/${cliModel} not found`));
 			process.exit(1);
@@ -255,34 +250,19 @@ export async function findInitialModel(options: {
 	}
 
 	// 3. Try saved default from settings
-	const defaultProvider = settingsManager.getDefaultProvider();
-	const defaultModelId = settingsManager.getDefaultModel();
 	if (defaultProvider && defaultModelId) {
-		const { model: found, error } = findModel(defaultProvider, defaultModelId);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
+		const found = modelRegistry.find(defaultProvider, defaultModelId);
 		if (found) {
 			model = found;
-			// Also load saved thinking level
-			const savedThinking = settingsManager.getDefaultThinkingLevel();
-			if (savedThinking) {
-				thinkingLevel = savedThinking;
+			if (defaultThinkingLevel) {
+				thinkingLevel = defaultThinkingLevel;
 			}
 			return { model, thinkingLevel, fallbackMessage: null };
 		}
 	}
 
 	// 4. Try first available model with valid API key
-	const { models: availableModels, error } = await getAvailableModels(undefined, (provider) =>
-		settingsManager.getApiKey(provider),
-	);
-
-	if (error) {
-		console.error(chalk.red(error));
-		process.exit(1);
-	}
+	const availableModels = await modelRegistry.getAvailable();
 
 	if (availableModels.length > 0) {
 		// Try to find a default model from known providers
@@ -310,17 +290,12 @@ export async function restoreModelFromSession(
 	savedModelId: string,
 	currentModel: Model<Api> | null,
 	shouldPrintMessages: boolean,
-	settingsManager?: SettingsManager,
+	modelRegistry: ModelRegistry,
 ): Promise<{ model: Model<Api> | null; fallbackMessage: string | null }> {
-	const { model: restoredModel, error } = findModel(savedProvider, savedModelId);
-
-	if (error) {
-		console.error(chalk.red(error));
-		process.exit(1);
-	}
+	const restoredModel = modelRegistry.find(savedProvider, savedModelId);
 
 	// Check if restored model exists and has a valid API key
-	const hasApiKey = restoredModel ? !!(await getApiKeyForModel(restoredModel)) : false;
+	const hasApiKey = restoredModel ? !!(await modelRegistry.getApiKey(restoredModel)) : false;
 
 	if (restoredModel && hasApiKey) {
 		if (shouldPrintMessages) {
@@ -348,14 +323,7 @@ export async function restoreModelFromSession(
 	}
 
 	// Try to find any available model
-	const { models: availableModels, error: availableError } = await getAvailableModels(
-		undefined,
-		settingsManager ? (provider) => settingsManager.getApiKey(provider) : undefined,
-	);
-	if (availableError) {
-		console.error(chalk.red(availableError));
-		process.exit(1);
-	}
+	const availableModels = await modelRegistry.getAvailable();
 
 	if (availableModels.length > 0) {
 		// Try to find a default model from known providers

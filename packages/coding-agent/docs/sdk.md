@@ -14,10 +14,16 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverAuthStorage, discoverModels, SessionManager } from "@mariozechner/pi-coding-agent";
+
+// Set up credential storage and model registry
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
+  authStorage,
+  modelRegistry,
 });
 
 session.subscribe((event) => {
@@ -220,32 +226,42 @@ const { session } = await createAgentSession({
 - Global commands (`commands/`)
 - Global context file (`AGENTS.md`)
 - Settings (`settings.json`)
-- Models (`models.json`)
-- OAuth tokens (`oauth.json`)
+- Custom models (`models.json`)
+- Credentials (`auth.json`)
 - Sessions (`sessions/`)
 
 ### Model
 
 ```typescript
-import { findModel, discoverAvailableModels } from "@mariozechner/pi-coding-agent";
+import { getModel } from "@mariozechner/pi-ai";
+import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
 
-// Find specific model (returns { model, error })
-const { model, error } = findModel("anthropic", "claude-sonnet-4-20250514");
-if (error) throw new Error(error);
-if (!model) throw new Error("Model not found");
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
 
-// Or get all models with valid API keys
-const available = await discoverAvailableModels();
+// Find specific built-in model (doesn't check if API key exists)
+const opus = getModel("anthropic", "claude-opus-4-5");
+if (!opus) throw new Error("Model not found");
+
+// Find any model by provider/id, including custom models from models.json
+// (doesn't check if API key exists)
+const customModel = modelRegistry.find("my-provider", "my-model");
+
+// Get only models that have valid API keys configured
+const available = await modelRegistry.getAvailable();
 
 const { session } = await createAgentSession({
-  model: model,
+  model: opus,
   thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh
   
   // Models for cycling (Ctrl+P in interactive mode)
   scopedModels: [
-    { model: sonnet, thinkingLevel: "high" },
+    { model: opus, thinkingLevel: "high" },
     { model: haiku, thinkingLevel: "off" },
   ],
+  
+  authStorage,
+  modelRegistry,
 });
 ```
 
@@ -256,38 +272,42 @@ If no model is provided:
 
 > See [examples/sdk/02-custom-model.ts](../examples/sdk/02-custom-model.ts)
 
-### API Keys
+### API Keys and OAuth
 
-API key resolution priority:
-1. `settings.json` apiKeys (e.g., `{ "apiKeys": { "anthropic": "sk-..." } }`)
-2. Custom providers from `models.json`
-3. OAuth credentials from `oauth.json`
-4. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
+API key resolution priority (handled by AuthStorage):
+1. Runtime overrides (via `setRuntimeApiKey`, not persisted)
+2. Stored credentials in `auth.json` (API keys or OAuth tokens)
+3. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
+4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { defaultGetApiKey, configureOAuthStorage } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry, discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
 
-// Default: checks settings.json, models.json, OAuth, environment variables
-const { session } = await createAgentSession();
+// Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
 
-// Custom resolver
 const { session } = await createAgentSession({
-  getApiKey: async (model) => {
-    // Custom logic (secrets manager, database, etc.)
-    if (model.provider === "anthropic") {
-      return process.env.MY_ANTHROPIC_KEY;
-    }
-    // Fall back to default (pass settingsManager for settings.json lookup)
-    return defaultGetApiKey()(model);
-  },
+  sessionManager: SessionManager.inMemory(),
+  authStorage,
+  modelRegistry,
 });
 
-// Use OAuth from ~/.pi/agent with custom agentDir for everything else
-configureOAuthStorage(); // Must call before createAgentSession
+// Runtime API key override (not persisted to disk)
+authStorage.setRuntimeApiKey("anthropic", "sk-my-temp-key");
+
+// Custom auth storage location
+const customAuth = new AuthStorage("/my/app/auth.json");
+const customRegistry = new ModelRegistry(customAuth, "/my/app/models.json");
+
 const { session } = await createAgentSession({
-  agentDir: "/custom/config",
-  // OAuth tokens still come from ~/.pi/agent/oauth.json
+  sessionManager: SessionManager.inMemory(),
+  authStorage: customAuth,
+  modelRegistry: customRegistry,
 });
+
+// No custom models.json (built-in models only)
+const simpleRegistry = new ModelRegistry(authStorage);
 ```
 
 > See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
@@ -630,10 +650,12 @@ Project overrides global. Nested objects merge keys. Setters only modify global 
 All discovery functions accept optional `cwd` and `agentDir` parameters.
 
 ```typescript
+import { getModel } from "@mariozechner/pi-ai";
 import {
+  AuthStorage,
+  ModelRegistry,
+  discoverAuthStorage,
   discoverModels,
-  discoverAvailableModels,
-  findModel,
   discoverSkills,
   discoverHooks,
   discoverCustomTools,
@@ -643,10 +665,13 @@ import {
   buildSystemPrompt,
 } from "@mariozechner/pi-coding-agent";
 
-// Models
-const allModels = discoverModels();
-const available = await discoverAvailableModels();
-const { model, error } = findModel("anthropic", "claude-sonnet-4-20250514");
+// Auth and Models
+const authStorage = discoverAuthStorage();           // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage);   // + ~/.pi/agent/models.json
+const allModels = modelRegistry.getAll();            // All models (built-in + custom)
+const available = await modelRegistry.getAvailable(); // Only models with API keys
+const model = modelRegistry.find("provider", "id");   // Find specific model
+const builtIn = getModel("anthropic", "claude-opus-4-5"); // Built-in only
 
 // Skills
 const skills = discoverSkills(cwd, agentDir, skillsSettings);
@@ -698,12 +723,12 @@ interface CreateAgentSessionResult {
 ## Complete Example
 
 ```typescript
+import { getModel } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import {
+  AuthStorage,
   createAgentSession,
-  configureOAuthStorage,
-  defaultGetApiKey,
-  findModel,
+  ModelRegistry,
   SessionManager,
   SettingsManager,
   readTool,
@@ -711,18 +736,17 @@ import {
   type HookFactory,
   type CustomAgentTool,
 } from "@mariozechner/pi-coding-agent";
-import { getAgentDir } from "@mariozechner/pi-coding-agent/config";
 
-// Use OAuth from default location
-configureOAuthStorage(getAgentDir());
+// Set up auth storage (custom location)
+const authStorage = new AuthStorage("/custom/agent/auth.json");
 
-// Custom API key with fallback
-const getApiKey = async (model: { provider: string }) => {
-  if (model.provider === "anthropic" && process.env.MY_KEY) {
-    return process.env.MY_KEY;
-  }
-  return defaultGetApiKey()(model as any);
-};
+// Runtime API key override (not persisted)
+if (process.env.MY_KEY) {
+  authStorage.setRuntimeApiKey("anthropic", process.env.MY_KEY);
+}
+
+// Model registry (no custom models.json)
+const modelRegistry = new ModelRegistry(authStorage);
 
 // Inline hook
 const auditHook: HookFactory = (api) => {
@@ -744,8 +768,7 @@ const statusTool: CustomAgentTool = {
   }),
 };
 
-const { model, error } = findModel("anthropic", "claude-sonnet-4-20250514");
-if (error) throw new Error(error);
+const model = getModel("anthropic", "claude-opus-4-5");
 if (!model) throw new Error("Model not found");
 
 // In-memory settings with overrides
@@ -760,7 +783,8 @@ const { session } = await createAgentSession({
   
   model,
   thinkingLevel: "off",
-  getApiKey,
+  authStorage,
+  modelRegistry,
   
   systemPrompt: "You are a minimal assistant. Be concise.",
   
@@ -812,12 +836,14 @@ The main entry point exports:
 ```typescript
 // Factory
 createAgentSession
-configureOAuthStorage
+
+// Auth and Models
+AuthStorage
+ModelRegistry
+discoverAuthStorage
+discoverModels
 
 // Discovery
-discoverModels
-discoverAvailableModels
-findModel
 discoverSkills
 discoverHooks
 discoverCustomTools
@@ -825,7 +851,6 @@ discoverContextFiles
 discoverSlashCommands
 
 // Helpers
-defaultGetApiKey
 loadSettings
 buildSystemPrompt
 
