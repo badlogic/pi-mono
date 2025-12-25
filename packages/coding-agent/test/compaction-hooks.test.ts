@@ -16,7 +16,7 @@ import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
 
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_OAUTH_TOKEN;
+const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
 describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	let session: AgentSession;

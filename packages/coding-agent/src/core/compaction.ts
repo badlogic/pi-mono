@@ -224,7 +224,7 @@ export function findCutPoint(
 
 	// Walk backwards from newest, accumulating estimated message sizes
 	let accumulatedTokens = 0;
-	let cutIndex = startIndex; // Default: keep everything in range
+	let cutIndex = cutPoints[0]; // Default: keep from first message (not header)
 
 	for (let i = endIndex - 1; i >= startIndex; i--) {
 		const entry = entries[i];
@@ -250,8 +250,8 @@ export function findCutPoint(
 	// Scan backwards from cutIndex to include any non-message entries (bash, settings, etc.)
 	while (cutIndex > startIndex) {
 		const prevEntry = entries[cutIndex - 1];
-		// Stop at compaction boundaries
-		if (prevEntry.type === "compaction") {
+		// Stop at session header or compaction boundaries
+		if (prevEntry.type === "session" || prevEntry.type === "compaction") {
 			break;
 		}
 		if (prevEntry.type === "message") {
@@ -319,6 +319,10 @@ export async function generateSummary(
 	];
 
 	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
+
+	if (response.stopReason === "error") {
+		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
 
 	const textContent = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -549,6 +553,10 @@ async function generateTurnPrefixSummary(
 	];
 
 	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
+
+	if (response.stopReason === "error") {
+		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
 
 	return response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
