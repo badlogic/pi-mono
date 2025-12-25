@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.29.1] - 2025-12-25
+
 ### Added
 
 - **Automatic custom system prompt loading**: Pi now auto-loads `SYSTEM.md` files to replace the default system prompt. Project-local `.pi/SYSTEM.md` takes precedence over global `~/.pi/agent/SYSTEM.md`. CLI `--system-prompt` flag overrides both. ([#309](https://github.com/badlogic/pi-mono/issues/309))
