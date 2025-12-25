@@ -140,34 +140,40 @@ Each pop just creates a new branch. Context: n→m→k→j→i→c→b→a.
 
 ### Current Approach
 
-Compaction stores `firstKeptEntryIndex` and requires careful handling when stacking crosses compaction boundaries.
+Compaction stores `firstKeptEntryIndex` (an index) and requires careful handling when stacking crosses compaction boundaries.
 
 ### Tree Approach
 
-Compaction creates a summary node:
+Compaction is just another entry in the linear chain, not a branch. Only change: `firstKeptEntryIndex` → `firstKeptEntryUuid`.
 
-```jsonl
-{"type":"compaction","uuid":"c1","parentUuid":"a1b2c3","summary":"...","summarizedUuids":["d4e5f6","g7h8i9"]}
-{"type":"message","uuid":"m1","parentUuid":"c1","message":{"role":"user",...}}
+```
+root → m1 → m2 → m3 → m4 → m5 → m6 → m7 → m8 → m9 → m10 → compaction
 ```
 
-The compaction node's `parentUuid` points to root. Walking from m1: m1→c1→a1b2c3.
+```jsonl
+{"type":"compaction","uuid":"c1","parentUuid":"m10","summary":"...","firstKeptEntryUuid":"m6","tokensBefore":50000}
+```
 
-Summarized entries are still in the file (for export, debugging) but not in context.
+Context building:
+1. Walk from leaf (compaction) to root
+2. See compaction entry → note `firstKeptEntryUuid: "m6"`
+3. Continue walking: m10, m9, m8, m7, m6 ← stop here
+4. Everything before m6 is replaced by summary
+5. Result: `[summary, m6, m7, m8, m9, m10]`
+
+**Tree is for branching (stacking, alternative paths). Compaction is just a marker in the linear chain.**
 
 ### Compaction + Stacking
 
-No special handling needed. They're both just branches:
+Stacking creates a branch, compaction is inline on each branch:
 
 ```
-[root]─[msg1]─[msg2]─[msg3]─[msg4]─[msg5]
-   │
-   └─[compaction]─[msg6]─[msg7]─[msg8]
-                    │
-                    └─[stack_summary]─[msg9:current]
+[root]─[m1]─[m2]─[m3]─[m4]─[m5]─[compaction1]─[m6]─[m7]─[m8]
+                  │
+                  └─[stack_summary]─[m9]─[m10]─[compaction2]─[m11:current]
 ```
 
-Context: msg9→stack_summary→msg6→compaction→root. Clean.
+Each branch has its own compaction history. Context walks the current branch only.
 
 ## Consequences for API
 
