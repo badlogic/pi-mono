@@ -15,7 +15,7 @@
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, supportsXhigh } from "@mariozechner/pi-ai";
+import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getModelsPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import { calculateContextTokens, compact, prepareCompaction, shouldCompact } from "./compaction.js";
@@ -596,9 +596,7 @@ export class AgentSession {
 		if (this._scopedModels.length <= 1) return null;
 
 		const currentModel = this.model;
-		let currentIndex = this._scopedModels.findIndex(
-			(sm) => sm.model.id === currentModel?.id && sm.model.provider === currentModel?.provider,
-		);
+		let currentIndex = this._scopedModels.findIndex((sm) => modelsAreEqual(sm.model, currentModel));
 
 		if (currentIndex === -1) currentIndex = 0;
 		const len = this._scopedModels.length;
@@ -627,9 +625,7 @@ export class AgentSession {
 		if (availableModels.length <= 1) return null;
 
 		const currentModel = this.model;
-		let currentIndex = availableModels.findIndex(
-			(m) => m.id === currentModel?.id && m.provider === currentModel?.provider,
-		);
+		let currentIndex = availableModels.findIndex((m) => modelsAreEqual(m, currentModel));
 
 		if (currentIndex === -1) currentIndex = 0;
 		const len = availableModels.length;
