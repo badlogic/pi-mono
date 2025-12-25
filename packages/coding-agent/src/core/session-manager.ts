@@ -411,8 +411,11 @@ export class SessionManager {
 		this.byId.clear();
 		this.leafId = "";
 		this.flushed = false;
-		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
-		this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
+		// Only generate filename if not already set (e.g., via --session flag)
+		if (!this.sessionFile) {
+			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
+		}
 	}
 
 	private _migrateToV2(): void {
