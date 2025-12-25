@@ -26,11 +26,10 @@ import {
 	isTab,
 } from "../keys.js";
 import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
-// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
-const segmenter = new Intl.Segmenter();
+const segmenter = getSegmenter();
 
 interface EditorState {
 	lines: string[];
@@ -919,30 +918,10 @@ export class Editor implements Component {
 				this.state.cursorCol = previousLine.length;
 			}
 		} else {
-			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-
-			const isWhitespace = (char: string): boolean => /\s/.test(char);
-			const isPunctuation = (char: string): boolean => {
-				// Treat obvious code punctuation as boundaries
-				return /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
-			};
-
-			let deleteFrom = this.state.cursorCol;
-			const lastChar = textBeforeCursor[deleteFrom - 1] ?? "";
-
-			// If immediately on whitespace or punctuation, delete that single boundary char
-			if (isWhitespace(lastChar) || isPunctuation(lastChar)) {
-				deleteFrom -= 1;
-			} else {
-				// Otherwise, delete a run of non-boundary characters (the "word")
-				while (deleteFrom > 0) {
-					const ch = textBeforeCursor[deleteFrom - 1] ?? "";
-					if (isWhitespace(ch) || isPunctuation(ch)) {
-						break;
-					}
-					deleteFrom -= 1;
-				}
-			}
+			const oldCursorCol = this.state.cursorCol;
+			this.moveWordBackwards();
+			const deleteFrom = this.state.cursorCol;
+			this.state.cursorCol = oldCursorCol;
 
 			this.state.lines[this.state.cursorLine] =
 				currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
@@ -1139,10 +1118,6 @@ export class Editor implements Component {
 		}
 	}
 
-	private isWordBoundary(char: string): boolean {
-		return /\s/.test(char) || /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
-	}
-
 	private moveWordBackwards(): void {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
@@ -1157,21 +1132,31 @@ export class Editor implements Component {
 		}
 
 		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		const graphemes = [...segmenter.segment(textBeforeCursor)];
 		let newCol = this.state.cursorCol;
-		const lastChar = textBeforeCursor[newCol - 1] ?? "";
 
-		// If immediately on whitespace or punctuation, skip that single boundary char
-		if (this.isWordBoundary(lastChar)) {
-			newCol -= 1;
+		// Skip trailing whitespace
+		while (graphemes.length > 0 && isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "")) {
+			newCol -= graphemes.pop()?.segment.length || 0;
 		}
 
-		// Now skip the "word" (non-boundary characters)
-		while (newCol > 0) {
-			const ch = textBeforeCursor[newCol - 1] ?? "";
-			if (this.isWordBoundary(ch)) {
-				break;
+		if (graphemes.length > 0) {
+			const lastGrapheme = graphemes[graphemes.length - 1]?.segment || "";
+			if (isPunctuationChar(lastGrapheme)) {
+				// Skip punctuation run
+				while (graphemes.length > 0 && isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")) {
+					newCol -= graphemes.pop()?.segment.length || 0;
+				}
+			} else {
+				// Skip word run
+				while (
+					graphemes.length > 0 &&
+					!isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "") &&
+					!isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")
+				) {
+					newCol -= graphemes.pop()?.segment.length || 0;
+				}
 			}
-			newCol -= 1;
 		}
 
 		this.state.cursorCol = newCol;
@@ -1189,24 +1174,33 @@ export class Editor implements Component {
 			return;
 		}
 
-		let newCol = this.state.cursorCol;
-		const charAtCursor = currentLine[newCol] ?? "";
+		const textAfterCursor = currentLine.slice(this.state.cursorCol);
+		const segments = segmenter.segment(textAfterCursor);
+		const iterator = segments[Symbol.iterator]();
+		let next = iterator.next();
 
-		// If on whitespace or punctuation, skip it
-		if (this.isWordBoundary(charAtCursor)) {
-			newCol += 1;
+		// Skip leading whitespace
+		while (!next.done && isWhitespaceChar(next.value.segment)) {
+			this.state.cursorCol += next.value.segment.length;
+			next = iterator.next();
 		}
 
-		// Skip the "word" (non-boundary characters)
-		while (newCol < currentLine.length) {
-			const ch = currentLine[newCol] ?? "";
-			if (this.isWordBoundary(ch)) {
-				break;
+		if (!next.done) {
+			const firstGrapheme = next.value.segment;
+			if (isPunctuationChar(firstGrapheme)) {
+				// Skip punctuation run
+				while (!next.done && isPunctuationChar(next.value.segment)) {
+					this.state.cursorCol += next.value.segment.length;
+					next = iterator.next();
+				}
+			} else {
+				// Skip word run
+				while (!next.done && !isWhitespaceChar(next.value.segment) && !isPunctuationChar(next.value.segment)) {
+					this.state.cursorCol += next.value.segment.length;
+					next = iterator.next();
+				}
 			}
-			newCol += 1;
 		}
-
-		this.state.cursorCol = newCol;
 	}
 
 	// Helper method to check if cursor is at start of message (for slash command detection)
@@ -1274,9 +1268,11 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 	private forceFileAutocomplete(): void {
 		if (!this.autocompleteProvider) return;
 
-		// Check if provider has the force method
-		const provider = this.autocompleteProvider as any;
-		if (!provider.getForceFileSuggestions) {
+		// Check if provider supports force file suggestions via runtime check
+		const provider = this.autocompleteProvider as {
+			getForceFileSuggestions?: CombinedAutocompleteProvider["getForceFileSuggestions"];
+		};
+		if (typeof provider.getForceFileSuggestions !== "function") {
 			this.tryTriggerAutocomplete(true);
 			return;
 		}
@@ -1298,7 +1294,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 	private cancelAutocomplete(): void {
 		this.isAutocompleting = false;
-		this.autocompleteList = undefined as any;
+		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
 	}
 

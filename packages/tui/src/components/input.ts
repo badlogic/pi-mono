@@ -1,21 +1,24 @@
 import {
 	isAltBackspace,
+	isAltLeft,
+	isAltRight,
 	isArrowLeft,
 	isArrowRight,
 	isBackspace,
 	isCtrlA,
 	isCtrlE,
 	isCtrlK,
+	isCtrlLeft,
+	isCtrlRight,
 	isCtrlU,
 	isCtrlW,
 	isDelete,
 	isEnter,
 } from "../keys.js";
 import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 
-// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
-const segmenter = new Intl.Segmenter();
+const segmenter = getSegmenter();
 
 /**
  * Input component - single-line text input with horizontal scrolling
@@ -168,10 +171,25 @@ export class Input implements Component {
 			return;
 		}
 
-		// Regular character input
-		if (data.length === 1 && data >= " " && data <= "~") {
+		if (isCtrlLeft(data) || isAltLeft(data)) {
+			this.moveWordBackwards();
+			return;
+		}
+
+		if (isCtrlRight(data) || isAltRight(data)) {
+			this.moveWordForwards();
+			return;
+		}
+
+		// Regular character input - accept printable characters including Unicode,
+		// but reject control characters (C0: 0x00-0x1F, DEL: 0x7F, C1: 0x80-0x9F)
+		const hasControlChars = [...data].some((ch) => {
+			const code = ch.charCodeAt(0);
+			return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f);
+		});
+		if (!hasControlChars) {
 			this.value = this.value.slice(0, this.cursor) + data + this.value.slice(this.cursor);
-			this.cursor++;
+			this.cursor += data.length;
 		}
 	}
 
@@ -180,30 +198,80 @@ export class Input implements Component {
 			return;
 		}
 
-		const text = this.value.slice(0, this.cursor);
-		let deleteFrom = this.cursor;
+		const oldCursor = this.cursor;
+		this.moveWordBackwards();
+		const deleteFrom = this.cursor;
+		this.cursor = oldCursor;
 
-		const isWhitespace = (char: string): boolean => /\s/.test(char);
-		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+		this.value = this.value.slice(0, deleteFrom) + this.value.slice(this.cursor);
+		this.cursor = deleteFrom;
+	}
 
-		const charBeforeCursor = text[deleteFrom - 1] ?? "";
-
-		// If immediately on whitespace or punctuation, delete that single boundary char
-		if (isWhitespace(charBeforeCursor) || isPunctuation(charBeforeCursor)) {
-			deleteFrom -= 1;
-		} else {
-			// Otherwise, delete a run of non-boundary characters (the "word")
-			while (deleteFrom > 0) {
-				const ch = text[deleteFrom - 1] ?? "";
-				if (isWhitespace(ch) || isPunctuation(ch)) {
-					break;
-				}
-				deleteFrom -= 1;
-			}
+	private moveWordBackwards(): void {
+		if (this.cursor === 0) {
+			return;
 		}
 
-		this.value = text.slice(0, deleteFrom) + this.value.slice(this.cursor);
-		this.cursor = deleteFrom;
+		const textBeforeCursor = this.value.slice(0, this.cursor);
+		const graphemes = [...segmenter.segment(textBeforeCursor)];
+
+		// Skip trailing whitespace
+		while (graphemes.length > 0 && isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "")) {
+			this.cursor -= graphemes.pop()?.segment.length || 0;
+		}
+
+		if (graphemes.length > 0) {
+			const lastGrapheme = graphemes[graphemes.length - 1]?.segment || "";
+			if (isPunctuationChar(lastGrapheme)) {
+				// Skip punctuation run
+				while (graphemes.length > 0 && isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")) {
+					this.cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			} else {
+				// Skip word run
+				while (
+					graphemes.length > 0 &&
+					!isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "") &&
+					!isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")
+				) {
+					this.cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			}
+		}
+	}
+
+	private moveWordForwards(): void {
+		if (this.cursor >= this.value.length) {
+			return;
+		}
+
+		const textAfterCursor = this.value.slice(this.cursor);
+		const segments = segmenter.segment(textAfterCursor);
+		const iterator = segments[Symbol.iterator]();
+		let next = iterator.next();
+
+		// Skip leading whitespace
+		while (!next.done && isWhitespaceChar(next.value.segment)) {
+			this.cursor += next.value.segment.length;
+			next = iterator.next();
+		}
+
+		if (!next.done) {
+			const firstGrapheme = next.value.segment;
+			if (isPunctuationChar(firstGrapheme)) {
+				// Skip punctuation run
+				while (!next.done && isPunctuationChar(next.value.segment)) {
+					this.cursor += next.value.segment.length;
+					next = iterator.next();
+				}
+			} else {
+				// Skip word run
+				while (!next.done && !isWhitespaceChar(next.value.segment) && !isPunctuationChar(next.value.segment)) {
+					this.cursor += next.value.segment.length;
+					next = iterator.next();
+				}
+			}
+		}
 	}
 
 	private handlePaste(pastedText: string): void {

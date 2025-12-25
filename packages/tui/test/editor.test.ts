@@ -396,6 +396,84 @@ describe("Editor component", () => {
 			const text = editor.getText();
 			assert.strictEqual(text, "xab");
 		});
+
+		it("deletes words correctly with Ctrl+W and Alt+Backspace", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			// Basic word deletion
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Trailing whitespace
+			editor.setText("foo bar   ");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo ");
+
+			// Punctuation run
+			editor.setText("foo bar...");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo bar");
+
+			// Delete across multiple lines
+			editor.setText("line one\nline two");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "line one\nline ");
+
+			// Delete empty line (merge)
+			editor.setText("line one\n");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "line one");
+
+			// Grapheme safety (emoji as a word)
+			editor.setText("foo 😀😀 bar");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo 😀😀 ");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo ");
+
+			// Alt+Backspace
+			editor.setText("foo bar");
+			editor.handleInput("\x1b\x7f"); // Alt+Backspace (legacy)
+			assert.strictEqual(editor.getText(), "foo ");
+		});
+
+		it("navigates words correctly with Ctrl+Left/Right", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.setText("foo bar... baz");
+			// Cursor at end
+
+			// Move left over baz
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 }); // after '...'
+
+			// Move left over punctuation
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // after 'bar'
+
+			// Move left over bar
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 }); // after 'foo '
+
+			// Move right over bar
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // at end of 'bar'
+
+			// Move right over punctuation run
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 }); // after '...'
+
+			// Move right skips space and lands after baz
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 14 }); // end of line
+
+			// Test forward from start with leading whitespace
+			editor.setText("   foo bar");
+			editor.handleInput("\x01"); // Ctrl+A to go to start
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 }); // after 'foo'
+		});
 	});
 
 	describe("Grapheme-aware text wrapping", () => {
