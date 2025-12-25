@@ -4,7 +4,6 @@
 
 import { describe, expect, it } from "vitest";
 import type { HookAPI } from "../src/core/hooks/index.js";
-import type { CompactionEntry } from "../src/core/session-manager.js";
 
 describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {
@@ -20,29 +19,30 @@ describe("Documentation example", () => {
 				const tokensBefore = event.tokensBefore;
 				const model = event.model;
 				const resolveApiKey = event.resolveApiKey;
+				const firstKeptEntryId = event.firstKeptEntryId;
 
 				// Verify types
 				expect(Array.isArray(messages)).toBe(true);
 				expect(Array.isArray(messagesToKeep)).toBe(true);
-				expect(typeof cutPoint.firstKeptEntryIndex).toBe("number");
+				expect(typeof cutPoint.firstKeptEntryIndex).toBe("number"); // cutPoint still uses index
 				expect(typeof tokensBefore).toBe("number");
 				expect(model).toBeDefined();
 				expect(typeof resolveApiKey).toBe("function");
+				expect(typeof firstKeptEntryId).toBe("string");
 
 				const summary = messages
 					.filter((m) => m.role === "user")
 					.map((m) => `- ${typeof m.content === "string" ? m.content.slice(0, 100) : "[complex]"}`)
 					.join("\n");
 
-				const compactionEntry: CompactionEntry = {
-					type: "compaction",
-					timestamp: new Date().toISOString(),
-					summary: `User requests:\n${summary}`,
-					firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex,
-					tokensBefore: event.tokensBefore,
+				// Hooks return compaction content - SessionManager adds id/parentId
+				return {
+					compaction: {
+						summary: `User requests:\n${summary}`,
+						firstKeptEntryId,
+						tokensBefore,
+					},
 				};
-
-				return { compactionEntry };
 			});
 		};
 

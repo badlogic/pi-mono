@@ -15,10 +15,14 @@ import {
 	buildSessionContext,
 	type CompactionEntry,
 	type LoadedSession,
+	type MessageContent,
+	type ModelChangeContent,
 	type ModelChangeEntry,
 	type SessionEntry,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
+	type ThinkingLevelContent,
+	type TreeNode,
 } from "@mariozechner/pi-coding-agent";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -49,6 +53,7 @@ export class MomSessionManager {
 	private channelDir: string;
 	private flushed: boolean = false;
 	private inMemoryEntries: SessionEntry[] = [];
+	private leafId: string | null = null;
 
 	constructor(channelDir: string) {
 		this.channelDir = channelDir;
@@ -64,12 +69,14 @@ export class MomSessionManager {
 		if (existsSync(this.contextFile)) {
 			this.inMemoryEntries = this.loadEntriesFromFile();
 			this.sessionId = this.extractSessionId() || uuidv4();
+			this._updateLeafId();
 			this.flushed = true;
 		} else {
 			this.sessionId = uuidv4();
 			this.inMemoryEntries = [
 				{
 					type: "session",
+					version: 2,
 					id: this.sessionId,
 					timestamp: new Date().toISOString(),
 					cwd: this.channelDir,
@@ -77,6 +84,28 @@ export class MomSessionManager {
 			];
 		}
 		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
+	}
+
+	private _updateLeafId(): void {
+		for (let i = this.inMemoryEntries.length - 1; i >= 0; i--) {
+			const entry = this.inMemoryEntries[i];
+			if (entry.type !== "session") {
+				this.leafId = entry.id;
+				return;
+			}
+		}
+		this.leafId = null;
+	}
+
+	private _createTreeNode(): TreeNode {
+		const id = uuidv4();
+		const node: TreeNode = {
+			id,
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+		};
+		this.leafId = id;
+		return node;
 	}
 
 	private _persist(entry: SessionEntry): void {
@@ -206,11 +235,15 @@ export class MomSessionManager {
 		newMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
 		for (const { timestamp, message } of newMessages) {
+			const id = uuidv4();
 			const entry: SessionMessageEntry = {
 				type: "message",
+				id,
+				parentId: this.leafId,
 				timestamp, // Use log date as entry timestamp for consistent deduplication
 				message,
 			};
+			this.leafId = id;
 
 			this.inMemoryEntries.push(entry);
 			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
@@ -247,32 +280,22 @@ export class MomSessionManager {
 	}
 
 	saveMessage(message: AppMessage): void {
-		const entry: SessionMessageEntry = {
-			type: "message",
-			timestamp: new Date().toISOString(),
-			message,
-		};
+		const content: MessageContent = { type: "message", message };
+		const entry: SessionMessageEntry = { ...this._createTreeNode(), ...content };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
-		const entry: ThinkingLevelChangeEntry = {
-			type: "thinking_level_change",
-			timestamp: new Date().toISOString(),
-			thinkingLevel,
-		};
+		const content: ThinkingLevelContent = { type: "thinking_level_change", thinkingLevel };
+		const entry: ThinkingLevelChangeEntry = { ...this._createTreeNode(), ...content };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
 
 	saveModelChange(provider: string, modelId: string): void {
-		const entry: ModelChangeEntry = {
-			type: "model_change",
-			timestamp: new Date().toISOString(),
-			provider,
-			modelId,
-		};
+		const content: ModelChangeContent = { type: "model_change", provider, modelId };
+		const entry: ModelChangeEntry = { ...this._createTreeNode(), ...content };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}

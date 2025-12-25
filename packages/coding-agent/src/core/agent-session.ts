@@ -754,7 +754,12 @@ export class AgentSession {
 
 			const preparation = prepareCompaction(entries, settings);
 			if (!preparation) {
-				throw new Error("Already compacted");
+				// Check why we can't compact
+				const lastEntry = entries[entries.length - 1];
+				if (lastEntry?.type === "compaction") {
+					throw new Error("Already compacted");
+				}
+				throw new Error("Nothing to compact (session too small or needs migration)");
 			}
 
 			// Find previous compaction summary if any
@@ -766,7 +771,7 @@ export class AgentSession {
 				}
 			}
 
-			let compactionEntry: CompactionEntry | undefined;
+			let hookCompaction: { summary: string; firstKeptEntryId: string; tokensBefore: number } | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
@@ -777,6 +782,7 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
+					firstKeptEntryId: preparation.firstKeptEntryId,
 					previousSummary,
 					messagesToSummarize: [...preparation.messagesToSummarize],
 					messagesToKeep: [...preparation.messagesToKeep],
@@ -791,14 +797,24 @@ export class AgentSession {
 					throw new Error("Compaction cancelled");
 				}
 
-				if (result?.compactionEntry) {
-					compactionEntry = result.compactionEntry;
+				if (result?.compaction) {
+					hookCompaction = result.compaction;
 					fromHook = true;
 				}
 			}
 
-			if (!compactionEntry) {
-				compactionEntry = await compact(
+			let summary: string;
+			let firstKeptEntryId: string;
+			let tokensBefore: number;
+
+			if (hookCompaction) {
+				// Hook provided compaction content
+				summary = hookCompaction.summary;
+				firstKeptEntryId = hookCompaction.firstKeptEntryId;
+				tokensBefore = hookCompaction.tokensBefore;
+			} else {
+				// Generate compaction result
+				const result = await compact(
 					entries,
 					this.model,
 					settings,
@@ -806,33 +822,41 @@ export class AgentSession {
 					this._compactionAbortController.signal,
 					customInstructions,
 				);
+				summary = result.summary;
+				firstKeptEntryId = result.firstKeptEntryId;
+				tokensBefore = result.tokensBefore;
 			}
 
 			if (this._compactionAbortController.signal.aborted) {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.saveCompaction(compactionEntry);
+			this.sessionManager.saveCompaction(summary, firstKeptEntryId, tokensBefore);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			if (this._hookRunner) {
+			// Get the saved compaction entry for the hook
+			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
+				| CompactionEntry
+				| undefined;
+
+			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
 					entries: newEntries,
 					sessionFile: this.sessionFile,
 					previousSessionFile: null,
 					reason: "compact",
-					compactionEntry,
-					tokensBefore: compactionEntry.tokensBefore,
+					compactionEntry: savedCompactionEntry,
+					tokensBefore,
 					fromHook,
 				});
 			}
 
 			return {
-				tokensBefore: compactionEntry.tokensBefore,
-				summary: compactionEntry.summary,
+				tokensBefore,
+				summary,
 			};
 		} finally {
 			this._compactionAbortController = null;
@@ -928,7 +952,7 @@ export class AgentSession {
 				}
 			}
 
-			let compactionEntry: CompactionEntry | undefined;
+			let hookCompaction: { summary: string; firstKeptEntryId: string; tokensBefore: number } | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
@@ -939,6 +963,7 @@ export class AgentSession {
 					previousSessionFile: null,
 					reason: "before_compact",
 					cutPoint: preparation.cutPoint,
+					firstKeptEntryId: preparation.firstKeptEntryId,
 					previousSummary,
 					messagesToSummarize: [...preparation.messagesToSummarize],
 					messagesToKeep: [...preparation.messagesToKeep],
@@ -954,20 +979,33 @@ export class AgentSession {
 					return;
 				}
 
-				if (hookResult?.compactionEntry) {
-					compactionEntry = hookResult.compactionEntry;
+				if (hookResult?.compaction) {
+					hookCompaction = hookResult.compaction;
 					fromHook = true;
 				}
 			}
 
-			if (!compactionEntry) {
-				compactionEntry = await compact(
+			let summary: string;
+			let firstKeptEntryId: string;
+			let tokensBefore: number;
+
+			if (hookCompaction) {
+				// Hook provided compaction content
+				summary = hookCompaction.summary;
+				firstKeptEntryId = hookCompaction.firstKeptEntryId;
+				tokensBefore = hookCompaction.tokensBefore;
+			} else {
+				// Generate compaction result
+				const compactResult = await compact(
 					entries,
 					this.model,
 					settings,
 					apiKey,
 					this._autoCompactionAbortController.signal,
 				);
+				summary = compactResult.summary;
+				firstKeptEntryId = compactResult.firstKeptEntryId;
+				tokensBefore = compactResult.tokensBefore;
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
@@ -975,27 +1013,32 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.saveCompaction(compactionEntry);
+			this.sessionManager.saveCompaction(summary, firstKeptEntryId, tokensBefore);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			if (this._hookRunner) {
+			// Get the saved compaction entry for the hook
+			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
+				| CompactionEntry
+				| undefined;
+
+			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
 					entries: newEntries,
 					sessionFile: this.sessionFile,
 					previousSessionFile: null,
 					reason: "compact",
-					compactionEntry,
-					tokensBefore: compactionEntry.tokensBefore,
+					compactionEntry: savedCompactionEntry,
+					tokensBefore,
 					fromHook,
 				});
 			}
 
 			const result: CompactionResult = {
-				tokensBefore: compactionEntry.tokensBefore,
-				summary: compactionEntry.summary,
+				tokensBefore,
+				summary,
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 
