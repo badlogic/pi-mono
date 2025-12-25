@@ -73,7 +73,7 @@ export {
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
 // Model configuration and OAuth
-export { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
+export { findModel, getApiKeyForModel, getAvailableModels } from "./core/models-json.js";
 export {
 	getOAuthProviders,
 	login,

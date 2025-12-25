@@ -3,7 +3,7 @@
  */
 
 import type { Api, Model } from "@mariozechner/pi-ai";
-import { getAvailableModels } from "../core/model-config.js";
+import { getAvailableModels } from "../core/models-json.js";
 import type { SettingsManager } from "../core/settings-manager.js";
 import { fuzzyFilter } from "../utils/fuzzy.js";
 

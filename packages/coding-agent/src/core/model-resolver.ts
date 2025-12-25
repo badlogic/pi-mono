@@ -6,7 +6,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { isValidThinkingLevel } from "../cli/args.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./model-config.js";
+import { findModel, getApiKeyForModel, getAvailableModels } from "./models-json.js";
 import type { SettingsManager } from "./settings-manager.js";
 
 /** Default model IDs for each known provider */

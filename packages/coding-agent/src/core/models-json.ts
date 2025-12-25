@@ -95,17 +95,16 @@ export function resolveApiKey(keyConfig: string): string | undefined {
 }
 
 /**
- * Load custom models from models.json in agent config dir
+ * Load custom models from a models.json file
  * Returns { models, error } - either models array or error message
  */
-function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api>[]; error: string | null } {
-	const configPath = join(agentDir, "models.json");
-	if (!existsSync(configPath)) {
+function loadCustomModels(modelsJsonPath: string): { models: Model<Api>[]; error: string | null } {
+	if (!existsSync(modelsJsonPath)) {
 		return { models: [], error: null };
 	}
 
 	try {
-		const content = readFileSync(configPath, "utf-8");
+		const content = readFileSync(modelsJsonPath, "utf-8");
 		const config: ModelsConfig = JSON.parse(content);
 
 		// Validate schema
@@ -117,7 +116,7 @@ function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api
 				"Unknown schema error";
 			return {
 				models: [],
-				error: `Invalid models.json schema:\n${errors}\n\nFile: ${configPath}`,
+				error: `Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`,
 			};
 		}
 
@@ -127,7 +126,7 @@ function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api
 		} catch (error) {
 			return {
 				models: [],
-				error: `Invalid models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${configPath}`,
+				error: `Invalid models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${modelsJsonPath}`,
 			};
 		}
 
@@ -137,12 +136,12 @@ function loadCustomModels(agentDir: string = getAgentDir()): { models: Model<Api
 		if (error instanceof SyntaxError) {
 			return {
 				models: [],
-				error: `Failed to parse models.json: ${error.message}\n\nFile: ${configPath}`,
+				error: `Failed to parse models.json: ${error.message}\n\nFile: ${modelsJsonPath}`,
 			};
 		}
 		return {
 			models: [],
-			error: `Failed to load models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${configPath}`,
+			error: `Failed to load models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${modelsJsonPath}`,
 		};
 	}
 }
@@ -244,7 +243,7 @@ export function loadAndMergeModels(agentDir: string = getAgentDir()): { models: 
 	}
 
 	// Load custom models
-	const { models: customModels, error } = loadCustomModels(agentDir);
+	const { models: customModels, error } = loadCustomModels(join(agentDir, "models.json"));
 
 	if (error) {
 		return { models: [], error };

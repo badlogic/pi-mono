@@ -30,7 +30,7 @@ import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.j
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
-import { invalidateOAuthCache } from "../../core/model-config.js";
+import { invalidateOAuthCache } from "../../core/models-json.js";
 import { listOAuthProviders, login, logout, type OAuthProvider } from "../../core/oauth/index.js";
 import {
 	getLatestCompactionEntry,

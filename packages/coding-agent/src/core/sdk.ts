@@ -45,7 +45,7 @@ import {
 	getApiKeyForModel,
 	getAvailableModels,
 	loadAndMergeModels,
-} from "./model-config.js";
+} from "./models-json.js";
 import { SessionManager } from "./session-manager.js";
 import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
 import { loadSkills as loadSkillsInternal, type Skill } from "./skills.js";
