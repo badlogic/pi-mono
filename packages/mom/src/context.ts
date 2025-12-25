@@ -14,6 +14,7 @@ import type { AppMessage } from "@mariozechner/pi-agent-core";
 import {
 	buildSessionContext,
 	type CompactionEntry,
+	type FileEntry,
 	type LoadedSession,
 	type MessageContent,
 	type ModelChangeContent,
@@ -52,7 +53,7 @@ export class MomSessionManager {
 	private logFile: string;
 	private channelDir: string;
 	private flushed: boolean = false;
-	private inMemoryEntries: SessionEntry[] = [];
+	private inMemoryEntries: FileEntry[] = [];
 	private leafId: string | null = null;
 
 	constructor(channelDir: string) {
@@ -259,17 +260,17 @@ export class MomSessionManager {
 		return null;
 	}
 
-	private loadEntriesFromFile(): SessionEntry[] {
+	private loadEntriesFromFile(): FileEntry[] {
 		if (!existsSync(this.contextFile)) return [];
 
 		const content = readFileSync(this.contextFile, "utf8");
-		const entries: SessionEntry[] = [];
+		const entries: FileEntry[] = [];
 		const lines = content.trim().split("\n");
 
 		for (const line of lines) {
 			if (!line.trim()) continue;
 			try {
-				const entry = JSON.parse(line) as SessionEntry;
+				const entry = JSON.parse(line) as FileEntry;
 				entries.push(entry);
 			} catch {
 				// Skip malformed lines
@@ -313,10 +314,8 @@ export class MomSessionManager {
 
 	loadEntries(): SessionEntry[] {
 		// Re-read from file to get latest state
-		if (existsSync(this.contextFile)) {
-			return this.loadEntriesFromFile();
-		}
-		return [...this.inMemoryEntries];
+		const entries = existsSync(this.contextFile) ? this.loadEntriesFromFile() : this.inMemoryEntries;
+		return entries.filter((e): e is SessionEntry => e.type !== "session");
 	}
 
 	getSessionId(): string {

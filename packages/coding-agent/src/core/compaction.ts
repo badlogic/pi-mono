@@ -9,7 +9,7 @@ import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
 import { messageTransformer } from "./messages.js";
-import type { CompactionEntry, ConversationEntry, SessionEntry } from "./session-manager.js";
+import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 /** Result from compact() - SessionManager adds uuid/parentUuid when saving */
 export interface CompactionResult {
@@ -251,7 +251,7 @@ export function findCutPoint(
 	while (cutIndex > startIndex) {
 		const prevEntry = entries[cutIndex - 1];
 		// Stop at session header or compaction boundaries
-		if (prevEntry.type === "session" || prevEntry.type === "compaction") {
+		if (prevEntry.type === "compaction") {
 			break;
 		}
 		if (prevEntry.type === "message") {
@@ -370,13 +370,10 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 
 	// Get UUID of first kept entry
 	const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
-	if (firstKeptEntry.type === "session") {
-		return null; // Can't compact if first kept is header
-	}
-	const firstKeptEntryId = (firstKeptEntry as ConversationEntry).id;
-	if (!firstKeptEntryId) {
+	if (!firstKeptEntry?.id) {
 		return null; // Session needs migration
 	}
+	const firstKeptEntryId = firstKeptEntry.id;
 
 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
 
@@ -405,7 +402,7 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 // Main compaction function
 // ============================================================================
 
-const TURN_PREFIX_SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION for a split turn. 
+const TURN_PREFIX_SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION for a split turn.
 This is the PREFIX of a turn that was too large to keep in full. The SUFFIX (recent work) is being kept.
 
 Create a handoff summary that captures:
@@ -515,10 +512,7 @@ export async function compact(
 
 	// Get UUID of first kept entry
 	const firstKeptEntry = entries[cutResult.firstKeptEntryIndex];
-	if (firstKeptEntry.type === "session") {
-		throw new Error("Cannot compact: first kept entry is session header");
-	}
-	const firstKeptEntryId = (firstKeptEntry as ConversationEntry).id;
+	const firstKeptEntryId = firstKeptEntry.id;
 	if (!firstKeptEntryId) {
 		throw new Error("First kept entry has no UUID - session may need migration");
 	}

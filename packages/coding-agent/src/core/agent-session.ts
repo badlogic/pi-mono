@@ -759,7 +759,7 @@ export class AgentSession {
 				if (lastEntry?.type === "compaction") {
 					throw new Error("Already compacted");
 				}
-				throw new Error("Nothing to compact (session too small or needs migration)");
+				throw new Error("Nothing to compact (session too small)");
 			}
 
 			// Find previous compaction summary if any

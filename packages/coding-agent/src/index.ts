@@ -116,6 +116,7 @@ export {
 	type ConversationEntry,
 	CURRENT_SESSION_VERSION,
 	createSummaryMessage,
+	type FileEntry,
 	getLatestCompactionEntry,
 	type MessageContent,
 	type ModelChangeContent,
