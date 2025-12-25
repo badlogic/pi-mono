@@ -1,5 +1,10 @@
 /**
  * Custom tool loader - loads TypeScript tool modules using jiti.
+ *
+ * For Bun compiled binaries, custom tools that import from @mariozechner/* packages
+ * are not supported because Bun's plugin system doesn't intercept imports from
+ * external files loaded at runtime. Users should use the npm-installed version
+ * for custom tools that depend on pi packages.
  */
 
 import { spawn } from "node:child_process";
@@ -9,7 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
-import { getAgentDir } from "../../config.js";
+import { getAgentDir, isBunBinary } from "../../config.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type {
 	CustomToolFactory,
@@ -31,11 +36,19 @@ function getAliases(): Record<string, string> {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
 	const packageIndex = path.resolve(__dirname, "../..", "index.js");
 
+	// For typebox, we need the package root directory (not the entry file)
+	// because jiti's alias is prefix-based: imports like "@sinclair/typebox/compiler"
+	// get the alias prepended. If we alias to the entry file (.../build/cjs/index.js),
+	// then "@sinclair/typebox/compiler" becomes ".../build/cjs/index.js/compiler" (invalid).
+	// By aliasing to the package root, it becomes ".../typebox/compiler" which resolves correctly.
+	const typeboxEntry = require.resolve("@sinclair/typebox");
+	const typeboxRoot = typeboxEntry.replace(/\/build\/cjs\/index\.js$/, "");
+
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
-		"@sinclair/typebox": require.resolve("@sinclair/typebox"),
+		"@sinclair/typebox": typeboxRoot,
 	};
 	return _aliases;
 }
@@ -169,7 +182,56 @@ function createNoOpUIContext(): HookUIContext {
 }
 
 /**
- * Load a single tool module using jiti.
+ * Load a tool in Bun binary mode.
+ *
+ * Since Bun plugins don't work for dynamically loaded external files,
+ * custom tools that import from @mariozechner/* packages won't work.
+ * Tools that only use standard npm packages (installed in the tool's directory)
+ * may still work.
+ */
+async function loadToolWithBun(
+	resolvedPath: string,
+	sharedApi: ToolAPI,
+): Promise<{ tools: LoadedCustomTool[] | null; error: string | null }> {
+	try {
+		// Try to import directly - will work for tools without @mariozechner/* imports
+		const module = await import(resolvedPath);
+		const factory = (module.default ?? module) as CustomToolFactory;
+
+		if (typeof factory !== "function") {
+			return { tools: null, error: "Tool must export a default function" };
+		}
+
+		const toolResult = await factory(sharedApi);
+		const toolsArray = Array.isArray(toolResult) ? toolResult : [toolResult];
+
+		const loadedTools: LoadedCustomTool[] = toolsArray.map((tool) => ({
+			path: resolvedPath,
+			resolvedPath,
+			tool,
+		}));
+
+		return { tools: loadedTools, error: null };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+
+		// Check if it's a module resolution error for our packages
+		if (message.includes("Cannot find module") && message.includes("@mariozechner/")) {
+			return {
+				tools: null,
+				error:
+					`${message}\n` +
+					"Note: Custom tools importing from @mariozechner/* packages are not supported in the standalone binary.\n" +
+					"Please install pi via npm: npm install -g @mariozechner/pi-coding-agent",
+			};
+		}
+
+		return { tools: null, error: `Failed to load tool: ${message}` };
+	}
+}
+
+/**
+ * Load a single tool module using jiti (or Bun.build for compiled binaries).
  */
 async function loadTool(
 	toolPath: string,
@@ -177,6 +239,11 @@ async function loadTool(
 	sharedApi: ToolAPI,
 ): Promise<{ tools: LoadedCustomTool[] | null; error: string | null }> {
 	const resolvedPath = resolveToolPath(toolPath, cwd);
+
+	// Use Bun.build for compiled binaries since jiti can't resolve bundled modules
+	if (isBunBinary) {
+		return loadToolWithBun(resolvedPath, sharedApi);
+	}
 
 	try {
 		// Create jiti instance for TypeScript/ESM loading
