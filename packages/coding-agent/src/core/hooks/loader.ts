@@ -23,12 +23,20 @@ function getAliases(): Record<string, string> {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
 	const packageIndex = path.resolve(__dirname, "../..", "index.js");
 
+	// For typebox, we need the package root directory (not the entry file)
+	// because jiti's alias is prefix-based: imports like "@sinclair/typebox/compiler"
+	// get the alias prepended. If we alias to the entry file (.../build/cjs/index.js),
+	// then "@sinclair/typebox/compiler" becomes ".../build/cjs/index.js/compiler" (invalid).
+	// By aliasing to the package root, it becomes ".../typebox/compiler" which resolves correctly.
+	const typeboxEntry = require.resolve("@sinclair/typebox");
+	const typeboxRoot = typeboxEntry.replace(/\/build\/cjs\/index\.js$/, "");
+
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
 		"@mariozechner/pi-coding-agent/hooks": path.resolve(__dirname, "index.js"),
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
-		"@sinclair/typebox": require.resolve("@sinclair/typebox"),
+		"@sinclair/typebox": typeboxRoot,
 	};
 	return _aliases;
 }

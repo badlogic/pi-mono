@@ -580,18 +580,19 @@ export class AgentSession {
 	}
 
 	/**
-	 * Cycle to next model.
+	 * Cycle to next/previous model.
 	 * Uses scoped models (from --models flag) if available, otherwise all available models.
+	 * @param direction - "forward" (default) or "backward"
 	 * @returns The new model info, or null if only one model available
 	 */
-	async cycleModel(): Promise<ModelCycleResult | null> {
+	async cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | null> {
 		if (this._scopedModels.length > 0) {
-			return this._cycleScopedModel();
+			return this._cycleScopedModel(direction);
 		}
-		return this._cycleAvailableModel();
+		return this._cycleAvailableModel(direction);
 	}
 
-	private async _cycleScopedModel(): Promise<ModelCycleResult | null> {
+	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
 		if (this._scopedModels.length <= 1) return null;
 
 		const currentModel = this.model;
@@ -600,7 +601,8 @@ export class AgentSession {
 		);
 
 		if (currentIndex === -1) currentIndex = 0;
-		const nextIndex = (currentIndex + 1) % this._scopedModels.length;
+		const len = this._scopedModels.length;
+		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
 		const next = this._scopedModels[nextIndex];
 
 		// Validate API key
@@ -620,7 +622,7 @@ export class AgentSession {
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
-	private async _cycleAvailableModel(): Promise<ModelCycleResult | null> {
+	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
 		const availableModels = await this._modelRegistry.getAvailable();
 		if (availableModels.length <= 1) return null;
 
@@ -630,7 +632,8 @@ export class AgentSession {
 		);
 
 		if (currentIndex === -1) currentIndex = 0;
-		const nextIndex = (currentIndex + 1) % availableModels.length;
+		const len = availableModels.length;
+		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
 		const nextModel = availableModels[nextIndex];
 
 		const apiKey = await this._modelRegistry.getApiKey(nextModel);

@@ -2,11 +2,17 @@
 
 ## [Unreleased]
 
+## [0.29.1] - 2025-12-25
+
 ### Added
 
+- **Automatic custom system prompt loading**: Pi now auto-loads `SYSTEM.md` files to replace the default system prompt. Project-local `.pi/SYSTEM.md` takes precedence over global `~/.pi/agent/SYSTEM.md`. CLI `--system-prompt` flag overrides both. ([#309](https://github.com/badlogic/pi-mono/issues/309))
 - **Unified `/settings` command**: New settings menu consolidating thinking level, theme, queue mode, auto-compact, show images, hide thinking, and collapse changelog. Replaces individual `/thinking`, `/queue`, `/theme`, `/autocompact`, and `/show-images` commands. ([#310](https://github.com/badlogic/pi-mono/issues/310))
-
 - **`--session-dir` flag**: Store and lookup sessions in a custom directory instead of the default `~/.pi/agent/sessions/<cwd>/`. Works with `-c` (continue) and `-r` (resume) flags. ([@scutifer](https://github.com/scutifer))
+
+### Fixed
+
+- **Custom tools/hooks with typebox subpath imports**: Fixed jiti alias for `@sinclair/typebox` to point to package root instead of entry file, allowing imports like `@sinclair/typebox/compiler` to resolve correctly. ([#311](https://github.com/badlogic/pi-mono/issues/311) by [@kim0](https://github.com/kim0))
 
 ## [0.29.0] - 2025-12-25
 
