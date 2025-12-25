@@ -7,27 +7,31 @@ import {
 	type AppMessage,
 	AppStorage,
 	ChatPanel,
-	createJavaScriptReplTool,
 	CustomProvidersStore,
+	createJavaScriptReplTool,
 	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
-	ProviderTransport,
 	ProvidersModelsTab,
+	ProviderTransport,
 	ProxyTab,
 	SessionListDialog,
 	SessionsStore,
-	setAppStorage,
 	SettingsDialog,
 	SettingsStore,
+	setAppStorage,
 } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";
-import { createSystemNotification, customMessageTransformer, registerCustomMessageRenderers } from "./custom-messages.js";
-import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { icon } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { Input } from "@mariozechner/mini-lit/dist/Input.js";
+import {
+	createSystemNotification,
+	customMessageTransformer,
+	registerCustomMessageRenderers,
+} from "./custom-messages.js";
 
 // Register custom message renderers
 registerCustomMessageRenderers();
@@ -92,7 +96,7 @@ const generateTitle = (messages: AppMessage[]): string => {
 	if (sentenceEnd > 0 && sentenceEnd <= 50) {
 		return text.substring(0, sentenceEnd + 1);
 	}
-	return text.length <= 50 ? text : text.substring(0, 47) + "...";
+	return text.length <= 50 ? text : `${text.substring(0, 47)}...`;
 };
 
 const shouldSaveSession = (messages: AppMessage[]): boolean => {
@@ -211,12 +215,12 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 		onApiKeyRequired: async (provider: string) => {
 			return await ApiKeyPromptDialog.prompt(provider);
 		},
-		toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
+		toolsFactory: (_agent, _agentInterface, _artifactsPanel, runtimeProvidersFactory) => {
 			// Create javascript_repl tool with access to attachments + artifacts
 			const replTool = createJavaScriptReplTool();
 			replTool.runtimeProvidersFactory = runtimeProvidersFactory;
 			return [replTool];
-		}
+		},
 	});
 };
 
@@ -290,9 +294,10 @@ const renderApp = () => {
 						title: "New Session",
 					})}
 
-					${currentTitle
-						? isEditingTitle
-							? html`<div class="flex items-center gap-2">
+					${
+						currentTitle
+							? isEditingTitle
+								? html`<div class="flex items-center gap-2">
 									${Input({
 										type: "text",
 										value: currentTitle,
@@ -322,7 +327,7 @@ const renderApp = () => {
 										},
 									})}
 								</div>`
-							: html`<button
+								: html`<button
 									class="px-2 py-1 text-sm text-foreground hover:bg-secondary rounded transition-colors"
 									@click=${() => {
 										isEditingTitle = true;
@@ -339,7 +344,8 @@ const renderApp = () => {
 								>
 									${currentTitle}
 								</button>`
-						: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`}
+							: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`
+					}
 				</div>
 				<div class="flex items-center gap-1 px-2">
 					${Button({
@@ -350,7 +356,9 @@ const renderApp = () => {
 							// Demo: Inject custom message
 							if (agent) {
 								agent.appendMessage(
-									createSystemNotification("This is a custom message! It appears in the UI but is never sent to the LLM."),
+									createSystemNotification(
+										"This is a custom message! It appears in the UI but is never sent to the LLM.",
+									),
 								);
 							}
 						},

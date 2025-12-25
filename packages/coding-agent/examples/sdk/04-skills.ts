@@ -27,7 +27,7 @@ const customSkill: Skill = {
 };
 
 // Use filtered + custom skills
-const { session } = await createAgentSession({
+await createAgentSession({
 	skills: [...filteredSkills, customSkill],
 	sessionManager: SessionManager.inMemory(),
 });

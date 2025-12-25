@@ -14,7 +14,7 @@ for (const file of discovered) {
 }
 
 // Use custom context files
-const { session } = await createAgentSession({
+await createAgentSession({
 	contextFiles: [
 		...discovered,
 		{

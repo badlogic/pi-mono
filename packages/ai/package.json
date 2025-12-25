@@ -15,7 +15,6 @@
 		"build": "npm run generate-models && tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"check": "biome check --write . && tsgo --noEmit",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

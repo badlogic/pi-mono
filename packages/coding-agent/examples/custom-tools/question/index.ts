@@ -2,9 +2,9 @@
  * Question Tool - Let the LLM ask the user a question with options
  */
 
-import { Type } from "@sinclair/typebox";
-import { Text } from "@mariozechner/pi-tui";
 import type { CustomAgentTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 
 interface QuestionDetails {
 	question: string;
@@ -57,7 +57,7 @@ const factory: CustomToolFactory = (pi) => {
 		renderCall(args, theme) {
 			let text = theme.fg("toolTitle", theme.bold("question ")) + theme.fg("muted", args.question);
 			if (args.options?.length) {
-				text += "\n" + theme.fg("dim", `  Options: ${args.options.join(", ")}`);
+				text += `\n${theme.fg("dim", `  Options: ${args.options.join(", ")}`)}`;
 			}
 			return new Text(text, 0, 0);
 		},

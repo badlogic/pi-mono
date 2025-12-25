@@ -5,7 +5,7 @@
 
 import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials } from "./types.js";
 
 // Antigravity OAuth credentials (different from Gemini CLI)
 const decode = (s: string) => Buffer.from(s, "base64").toString();
@@ -29,11 +29,6 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
-
-export interface AntigravityCredentials extends OAuthCredentials {
-	projectId: string;
-	email?: string;
-}
 
 /**
  * Generate PKCE code verifier and challenge
@@ -220,7 +215,6 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
 	};
 
 	return {
-		type: "oauth",
 		refresh: data.refresh_token || refreshToken,
 		access: data.access_token,
 		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
@@ -237,7 +231,7 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
 export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
-): Promise<AntigravityCredentials> {
+): Promise<OAuthCredentials> {
 	const { verifier, challenge } = generatePKCE();
 
 	// Start local server for callback
@@ -317,16 +311,13 @@ export async function loginAntigravity(
 		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
-		const credentials: AntigravityCredentials = {
-			type: "oauth",
+		const credentials: OAuthCredentials = {
 			refresh: tokenData.refresh_token,
 			access: tokenData.access_token,
 			expires: expiresAt,
 			projectId,
 			email,
 		};
-
-		saveOAuthCredentials("google-antigravity", credentials);
 
 		return credentials;
 	} finally {

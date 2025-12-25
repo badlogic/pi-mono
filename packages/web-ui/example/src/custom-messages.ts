@@ -1,8 +1,8 @@
-import type { Message } from "@mariozechner/pi-ai";
-import { html } from "lit";
-import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
-import type { AppMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
+import type { Message } from "@mariozechner/pi-ai";
+import type { AppMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
+import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
+import { html } from "lit";
 
 // ============================================================================
 // 1. EXTEND AppMessage TYPE VIA DECLARATION MERGING
@@ -85,10 +85,7 @@ export function customMessageTransformer(messages: AppMessage[]): Message[] {
 
 			// Keep LLM-compatible messages + custom messages
 			return (
-				m.role === "user" ||
-				m.role === "assistant" ||
-				m.role === "toolResult" ||
-				m.role === "system-notification"
+				m.role === "user" || m.role === "assistant" || m.role === "toolResult" || m.role === "system-notification"
 			);
 		})
 		.map((m) => {
@@ -103,7 +100,7 @@ export function customMessageTransformer(messages: AppMessage[]): Message[] {
 
 			// Strip attachments from user messages
 			if (m.role === "user") {
-				const { attachments, ...rest } = m as any;
+				const { attachments: _, ...rest } = m as any;
 				return rest as Message;
 			}
 

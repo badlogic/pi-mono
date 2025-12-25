@@ -23,7 +23,8 @@ export default function (pi: HookAPI) {
 
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, resolveApiKey, entries, signal } = event;
+		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, resolveApiKey, entries, signal } =
+			event;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		// findModel searches both built-in models and custom models from models.json

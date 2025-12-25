@@ -4,7 +4,7 @@
  * Shows how to select a specific model and thinking level.
  */
 
-import { createAgentSession, findModel, discoverAvailableModels } from "../../src/index.js";
+import { createAgentSession, discoverAvailableModels, findModel } from "../../src/index.js";
 
 // Option 1: Find a specific model by provider/id
 const { model: sonnet } = findModel("anthropic", "claude-sonnet-4-20250514");

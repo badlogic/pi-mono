@@ -10,31 +10,28 @@
 
 import { Type } from "@sinclair/typebox";
 import {
-	createAgentSession,
-	discoverCustomTools,
-	SessionManager,
-	codingTools, // read, bash, edit, write - uses process.cwd()
-	readOnlyTools, // read, grep, find, ls - uses process.cwd()
-	createCodingTools, // Factory: creates tools for specific cwd
-	createReadOnlyTools, // Factory: creates tools for specific cwd
-	createReadTool,
-	createBashTool,
-	createGrepTool,
-	readTool,
-	bashTool,
-	grepTool,
+	bashTool, // read, bash, edit, write - uses process.cwd()
 	type CustomAgentTool,
+	createAgentSession,
+	createBashTool,
+	createCodingTools, // Factory: creates tools for specific cwd
+	createGrepTool,
+	createReadTool,
+	grepTool,
+	readOnlyTools, // read, grep, find, ls - uses process.cwd()
+	readTool,
+	SessionManager,
 } from "../../src/index.js";
 
 // Read-only mode (no edit/write) - uses process.cwd()
-const { session: readOnly } = await createAgentSession({
+await createAgentSession({
 	tools: readOnlyTools,
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Read-only session created");
 
 // Custom tool selection - uses process.cwd()
-const { session: custom } = await createAgentSession({
+await createAgentSession({
 	tools: [readTool, bashTool, grepTool],
 	sessionManager: SessionManager.inMemory(),
 });
@@ -42,7 +39,7 @@ console.log("Custom tools session created");
 
 // With custom cwd - MUST use factory functions!
 const customCwd = "/path/to/project";
-const { session: customCwdSession } = await createAgentSession({
+await createAgentSession({
 	cwd: customCwd,
 	tools: createCodingTools(customCwd), // Tools resolve paths relative to customCwd
 	sessionManager: SessionManager.inMemory(),
@@ -50,7 +47,7 @@ const { session: customCwdSession } = await createAgentSession({
 console.log("Custom cwd session created");
 
 // Or pick specific tools for custom cwd
-const { session: specificTools } = await createAgentSession({
+await createAgentSession({
 	cwd: customCwd,
 	tools: [createReadTool(customCwd), createBashTool(customCwd), createGrepTool(customCwd)],
 	sessionManager: SessionManager.inMemory(),

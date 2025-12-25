@@ -3,7 +3,6 @@ import { agentLoop, agentLoopContinue } from "../src/agent/agent-loop.js";
 import { calculateTool } from "../src/agent/tools/calculate.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig } from "../src/agent/types.js";
 import { getModel } from "../src/models.js";
-import { resolveApiKey } from "../src/stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -13,6 +12,7 @@ import type {
 	ToolResultMessage,
 	UserMessage,
 } from "../src/types.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([

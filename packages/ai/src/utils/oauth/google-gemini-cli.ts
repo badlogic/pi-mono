@@ -5,7 +5,7 @@
 
 import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials } from "./types.js";
 
 const decode = (s: string) => Buffer.from(s, "base64").toString();
 const CLIENT_ID = decode(
@@ -21,11 +21,6 @@ const SCOPES = [
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
-
-export interface GoogleCloudCredentials extends OAuthCredentials {
-	projectId: string;
-	email?: string;
-}
 
 /**
  * Generate PKCE code verifier and challenge
@@ -251,7 +246,6 @@ export async function refreshGoogleCloudToken(refreshToken: string, projectId: s
 	};
 
 	return {
-		type: "oauth",
 		refresh: data.refresh_token || refreshToken,
 		access: data.access_token,
 		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
@@ -268,7 +262,7 @@ export async function refreshGoogleCloudToken(refreshToken: string, projectId: s
 export async function loginGeminiCli(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
-): Promise<GoogleCloudCredentials> {
+): Promise<OAuthCredentials> {
 	const { verifier, challenge } = generatePKCE();
 
 	// Start local server for callback
@@ -348,16 +342,13 @@ export async function loginGeminiCli(
 		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
-		const credentials: GoogleCloudCredentials = {
-			type: "oauth",
+		const credentials: OAuthCredentials = {
 			refresh: tokenData.refresh_token,
 			access: tokenData.access_token,
 			expires: expiresAt,
 			projectId,
 			email,
 		};
-
-		saveOAuthCredentials("google-gemini-cli", credentials);
 
 		return credentials;
 	} finally {

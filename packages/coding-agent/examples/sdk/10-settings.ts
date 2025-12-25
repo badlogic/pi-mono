@@ -17,7 +17,7 @@ settingsManager.applyOverrides({
 	retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
 });
 
-const { session } = await createAgentSession({
+await createAgentSession({
 	settingsManager,
 	sessionManager: SessionManager.inMemory(),
 });
@@ -30,7 +30,7 @@ const inMemorySettings = SettingsManager.inMemory({
 	retry: { enabled: false },
 });
 
-const { session: testSession } = await createAgentSession({
+await createAgentSession({
 	settingsManager: inMemorySettings,
 	sessionManager: SessionManager.inMemory(),
 });

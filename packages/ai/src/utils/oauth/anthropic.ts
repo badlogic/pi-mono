@@ -3,7 +3,7 @@
  */
 
 import { createHash, randomBytes } from "crypto";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials } from "./types.js";
 
 const decode = (s: string) => Buffer.from(s, "base64").toString();
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
@@ -30,7 +30,7 @@ function generatePKCE(): { verifier: string; challenge: string } {
 export async function loginAnthropic(
 	onAuthUrl: (url: string) => void,
 	onPromptCode: () => Promise<string>,
-): Promise<void> {
+): Promise<OAuthCredentials> {
 	const { verifier, challenge } = generatePKCE();
 
 	// Build authorization URL
@@ -87,14 +87,11 @@ export async function loginAnthropic(
 	const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
 	// Save credentials
-	const credentials: OAuthCredentials = {
-		type: "oauth",
+	return {
 		refresh: tokenData.refresh_token,
 		access: tokenData.access_token,
 		expires: expiresAt,
 	};
-
-	saveOAuthCredentials("anthropic", credentials);
 }
 
 /**
@@ -123,7 +120,6 @@ export async function refreshAnthropicToken(refreshToken: string): Promise<OAuth
 	};
 
 	return {
-		type: "oauth",
 		refresh: data.refresh_token,
 		access: data.access_token,
 		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,

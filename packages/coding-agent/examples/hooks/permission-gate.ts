@@ -8,11 +8,7 @@
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	const dangerousPatterns = [
-		/\brm\s+(-rf?|--recursive)/i,
-		/\bsudo\b/i,
-		/\b(chmod|chown)\b.*777/i,
-	];
+	const dangerousPatterns = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i, /\b(chmod|chown)\b.*777/i];
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "bash") return undefined;

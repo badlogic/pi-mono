@@ -13,9 +13,6 @@
 export { loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
 // GitHub Copilot
 export {
-	enableAllGitHubCopilotModels,
-	enableGitHubCopilotModel,
-	getBaseUrlFromToken,
 	getGitHubCopilotBaseUrl,
 	loginGitHubCopilot,
 	normalizeDomain,
@@ -23,32 +20,16 @@ export {
 } from "./github-copilot.js";
 // Google Antigravity
 export {
-	type AntigravityCredentials,
 	loginAntigravity,
 	refreshAntigravityToken,
 } from "./google-antigravity.js";
 // Google Gemini CLI
 export {
-	type GoogleCloudCredentials,
 	loginGeminiCli,
 	refreshGoogleCloudToken,
 } from "./google-gemini-cli.js";
-// Storage
-export {
-	getOAuthPath,
-	hasOAuthCredentials,
-	listOAuthProviders,
-	loadOAuthCredentials,
-	loadOAuthStorage,
-	type OAuthCredentials,
-	type OAuthProvider,
-	type OAuthStorage,
-	type OAuthStorageBackend,
-	removeOAuthCredentials,
-	resetOAuthStorage,
-	saveOAuthCredentials,
-	setOAuthStorage,
-} from "./storage.js";
+
+export * from "./types.js";
 
 // ============================================================================
 // High-level API
@@ -58,15 +39,16 @@ import { refreshAnthropicToken } from "./anthropic.js";
 import { refreshGitHubCopilotToken } from "./github-copilot.js";
 import { refreshAntigravityToken } from "./google-antigravity.js";
 import { refreshGoogleCloudToken } from "./google-gemini-cli.js";
-import type { OAuthCredentials, OAuthProvider } from "./storage.js";
-import { loadOAuthCredentials, removeOAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials, OAuthProvider, OAuthProviderInfo } from "./types.js";
 
 /**
  * Refresh token for any OAuth provider.
  * Saves the new credentials and returns the new access token.
  */
-export async function refreshToken(provider: OAuthProvider): Promise<string> {
-	const credentials = loadOAuthCredentials(provider);
+export async function refreshOAuthToken(
+	provider: OAuthProvider,
+	credentials: OAuthCredentials,
+): Promise<OAuthCredentials> {
 	if (!credentials) {
 		throw new Error(`No OAuth credentials found for ${provider}`);
 	}
@@ -96,8 +78,7 @@ export async function refreshToken(provider: OAuthProvider): Promise<string> {
 			throw new Error(`Unknown OAuth provider: ${provider}`);
 	}
 
-	saveOAuthCredentials(provider, newCredentials);
-	return newCredentials.access;
+	return newCredentials;
 }
 
 /**
@@ -107,81 +88,30 @@ export async function refreshToken(provider: OAuthProvider): Promise<string> {
  * For google-gemini-cli and antigravity, returns JSON-encoded { token, projectId }
  *
  * @returns API key string, or null if no credentials
+ * @throws Error if refresh fails
  */
-export async function getOAuthApiKey(provider: OAuthProvider): Promise<string | null> {
-	const credentials = loadOAuthCredentials(provider);
-	if (!credentials) {
+export async function getOAuthApiKey(
+	provider: OAuthProvider,
+	credentials: Record<string, OAuthCredentials>,
+): Promise<{ newCredentials: OAuthCredentials; apiKey: string } | null> {
+	let creds = credentials[provider];
+	if (!creds) {
 		return null;
 	}
 
-	// Providers that need projectId in the API key
-	const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
-
-	// Check if expired
-	if (Date.now() >= credentials.expires) {
+	// Refresh if expired
+	if (Date.now() >= creds.expires) {
 		try {
-			const newToken = await refreshToken(provider);
-
-			// For providers that need projectId, return JSON
-			if (needsProjectId) {
-				const refreshedCreds = loadOAuthCredentials(provider);
-				if (refreshedCreds?.projectId) {
-					return JSON.stringify({ token: newToken, projectId: refreshedCreds.projectId });
-				}
-			}
-
-			return newToken;
-		} catch (error) {
-			console.error(`Failed to refresh OAuth token for ${provider}:`, error);
-			removeOAuthCredentials(provider);
-			return null;
+			creds = await refreshOAuthToken(provider, creds);
+		} catch (_error) {
+			throw new Error(`Failed to refresh OAuth token for ${provider}`);
 		}
 	}
 
 	// For providers that need projectId, return JSON
-	if (needsProjectId) {
-		if (!credentials.projectId) {
-			return null;
-		}
-		return JSON.stringify({ token: credentials.access, projectId: credentials.projectId });
-	}
-
-	return credentials.access;
-}
-
-/**
- * Map model provider to OAuth provider.
- * Returns undefined if the provider doesn't use OAuth.
- */
-export function getOAuthProviderForModelProvider(modelProvider: string): OAuthProvider | undefined {
-	const mapping: Record<string, OAuthProvider> = {
-		anthropic: "anthropic",
-		"github-copilot": "github-copilot",
-		"google-gemini-cli": "google-gemini-cli",
-		"google-antigravity": "google-antigravity",
-	};
-	return mapping[modelProvider];
-}
-
-// ============================================================================
-// Login/Logout types for convenience
-// ============================================================================
-
-export type OAuthPrompt = {
-	message: string;
-	placeholder?: string;
-	allowEmpty?: boolean;
-};
-
-export type OAuthAuthInfo = {
-	url: string;
-	instructions?: string;
-};
-
-export interface OAuthProviderInfo {
-	id: OAuthProvider;
-	name: string;
-	available: boolean;
+	const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
+	const apiKey = needsProjectId ? JSON.stringify({ token: creds.access, projectId: creds.projectId }) : creds.access;
+	return { newCredentials: creds, apiKey };
 }
 
 /**

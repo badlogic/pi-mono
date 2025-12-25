@@ -8,10 +8,10 @@
  * The onSession callback reconstructs state by scanning past tool results.
  */
 
-import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
-import { Text } from "@mariozechner/pi-tui";
 import type { CustomAgentTool, CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 
 interface Todo {
 	id: number;
@@ -76,11 +76,18 @@ const factory: CustomToolFactory = (_pi) => {
 			switch (params.action) {
 				case "list":
 					return {
-						content: [{ type: "text", text: todos.length ? todos.map((t) => `[${t.done ? "x" : " "}] #${t.id}: ${t.text}`).join("\n") : "No todos" }],
+						content: [
+							{
+								type: "text",
+								text: todos.length
+									? todos.map((t) => `[${t.done ? "x" : " "}] #${t.id}: ${t.text}`).join("\n")
+									: "No todos",
+							},
+						],
 						details: { action: "list", todos: [...todos], nextId },
 					};
 
-				case "add":
+				case "add": {
 					if (!params.text) {
 						return {
 							content: [{ type: "text", text: "Error: text required for add" }],
@@ -93,8 +100,9 @@ const factory: CustomToolFactory = (_pi) => {
 						content: [{ type: "text", text: `Added todo #${newTodo.id}: ${newTodo.text}` }],
 						details: { action: "add", todos: [...todos], nextId },
 					};
+				}
 
-				case "toggle":
+				case "toggle": {
 					if (params.id === undefined) {
 						return {
 							content: [{ type: "text", text: "Error: id required for toggle" }],
@@ -113,8 +121,9 @@ const factory: CustomToolFactory = (_pi) => {
 						content: [{ type: "text", text: `Todo #${todo.id} ${todo.done ? "completed" : "uncompleted"}` }],
 						details: { action: "toggle", todos: [...todos], nextId },
 					};
+				}
 
-				case "clear":
+				case "clear": {
 					const count = todos.length;
 					todos = [];
 					nextId = 1;
@@ -122,6 +131,7 @@ const factory: CustomToolFactory = (_pi) => {
 						content: [{ type: "text", text: `Cleared ${count} todos` }],
 						details: { action: "clear", todos: [], nextId: 1 },
 					};
+				}
 
 				default:
 					return {
@@ -133,8 +143,8 @@ const factory: CustomToolFactory = (_pi) => {
 
 		renderCall(args, theme) {
 			let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", args.action);
-			if (args.text) text += " " + theme.fg("dim", `"${args.text}"`);
-			if (args.id !== undefined) text += " " + theme.fg("accent", `#${args.id}`);
+			if (args.text) text += ` ${theme.fg("dim", `"${args.text}"`)}`;
+			if (args.id !== undefined) text += ` ${theme.fg("accent", `#${args.id}`)}`;
 			return new Text(text, 0, 0);
 		},
 
@@ -153,7 +163,7 @@ const factory: CustomToolFactory = (_pi) => {
 			const todoList = details.todos;
 
 			switch (details.action) {
-				case "list":
+				case "list": {
 					if (todoList.length === 0) {
 						return new Text(theme.fg("dim", "No todos"), 0, 0);
 					}
@@ -162,16 +172,24 @@ const factory: CustomToolFactory = (_pi) => {
 					for (const t of display) {
 						const check = t.done ? theme.fg("success", "✓") : theme.fg("dim", "○");
 						const itemText = t.done ? theme.fg("dim", t.text) : theme.fg("muted", t.text);
-						listText += "\n" + check + " " + theme.fg("accent", `#${t.id}`) + " " + itemText;
+						listText += `\n${check} ${theme.fg("accent", `#${t.id}`)} ${itemText}`;
 					}
 					if (!expanded && todoList.length > 5) {
-						listText += "\n" + theme.fg("dim", `... ${todoList.length - 5} more`);
+						listText += `\n${theme.fg("dim", `... ${todoList.length - 5} more`)}`;
 					}
 					return new Text(listText, 0, 0);
+				}
 
 				case "add": {
 					const added = todoList[todoList.length - 1];
-					return new Text(theme.fg("success", "✓ Added ") + theme.fg("accent", `#${added.id}`) + " " + theme.fg("muted", added.text), 0, 0);
+					return new Text(
+						theme.fg("success", "✓ Added ") +
+							theme.fg("accent", `#${added.id}`) +
+							" " +
+							theme.fg("muted", added.text),
+						0,
+						0,
+					);
 				}
 
 				case "toggle": {

@@ -4,7 +4,7 @@
  * File-based commands that inject content when invoked with /commandname.
  */
 
-import { createAgentSession, discoverSlashCommands, SessionManager, type FileSlashCommand } from "../../src/index.js";
+import { createAgentSession, discoverSlashCommands, type FileSlashCommand, SessionManager } from "../../src/index.js";
 
 // Discover commands from cwd/.pi/commands/ and ~/.pi/agent/commands/
 const discovered = discoverSlashCommands();
@@ -21,12 +21,12 @@ const deployCommand: FileSlashCommand = {
 	content: `# Deploy Instructions
 
 1. Build: npm run build
-2. Test: npm test  
+2. Test: npm test
 3. Deploy: npm run deploy`,
 };
 
 // Use discovered + custom commands
-const { session } = await createAgentSession({
+await createAgentSession({
 	slashCommands: [...discovered, deployCommand],
 	sessionManager: SessionManager.inMemory(),
 });

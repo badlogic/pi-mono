@@ -1,8 +1,9 @@
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, resolveApiKey } from "../src/stream.js";
+import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, ToolResultMessage } from "../src/types.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Empty schema for test tools - must be proper OBJECT type for Cloud Code Assist
 const emptySchema = Type.Object({});

@@ -4,7 +4,7 @@
  * Hooks intercept agent events for logging, blocking, or modification.
  */
 
-import { createAgentSession, discoverHooks, SessionManager, type HookFactory } from "../../src/index.js";
+import { createAgentSession, type HookFactory, SessionManager } from "../../src/index.js";
 
 // Logging hook
 const loggingHook: HookFactory = (api) => {

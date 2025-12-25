@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/index.js";
-import { complete, getModel, resolveApiKey } from "../src/index.js";
+import { complete, getModel } from "../src/index.js";
 import type { OptionsForApi } from "../src/types.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([

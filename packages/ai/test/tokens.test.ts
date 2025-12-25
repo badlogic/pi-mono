@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { resolveApiKey, stream } from "../src/stream.js";
+import { stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([

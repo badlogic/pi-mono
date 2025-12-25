@@ -18,8 +18,9 @@ import type {
 } from "./types.js";
 
 /**
- * Get API key from environment variables (sync).
- * Does NOT check OAuth credentials - use getApiKeyAsync for that.
+ * Get API key for provider from known environment variables, e.g. OPENAI_API_KEY.
+ *
+ * Will not return API keys for providers that require OAuth tokens.
  */
 export function getApiKeyFromEnv(provider: KnownProvider): string | undefined;
 export function getApiKeyFromEnv(provider: string): string | undefined;

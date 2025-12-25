@@ -4,22 +4,17 @@
  * Configure API key resolution. Default checks: models.json, OAuth, env vars.
  */
 
-import {
-	createAgentSession,
-	configureOAuthStorage,
-	defaultGetApiKey,
-	SessionManager,
-} from "../../src/index.js";
 import { getAgentDir } from "../../src/config.js";
+import { configureOAuthStorage, createAgentSession, defaultGetApiKey, SessionManager } from "../../src/index.js";
 
 // Default: uses env vars (ANTHROPIC_API_KEY, etc.), OAuth, and models.json
-const { session: defaultSession } = await createAgentSession({
+await createAgentSession({
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Session with default API key resolution");
 
 // Custom resolver
-const { session: customSession } = await createAgentSession({
+await createAgentSession({
 	getApiKey: async (model) => {
 		// Custom logic (secrets manager, database, etc.)
 		if (model.provider === "anthropic") {
@@ -35,7 +30,7 @@ console.log("Session with custom API key resolver");
 // Use OAuth from ~/.pi/agent while customizing everything else
 configureOAuthStorage(getAgentDir()); // Must call before createAgentSession
 
-const { session: hybridSession } = await createAgentSession({
+await createAgentSession({
 	agentDir: "/tmp/custom-config", // Custom config location
 	// But OAuth tokens still come from ~/.pi/agent/oauth.json
 	systemPrompt: "You are helpful.",

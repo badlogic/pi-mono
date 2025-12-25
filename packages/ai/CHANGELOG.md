@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
-## Breaking Changes
-- **setApiKey, resolveApiKey**: removed. You need to create your own api key storage/resolution
-- **getApiKey**: renamed to `getApiKeyFromEnv`. Given a provider, checks for the known env variable holding the API key.
+### Breaking Changes
+- **setApiKey, resolveApiKey**: Removed. Callers must manage their own API key storage/resolution.
+- **getApiKey**: Renamed to `getApiKeyFromEnv`. Only checks environment variables for known providers.
+- **OAuth storage removed**: All storage functions (`loadOAuthCredentials`, `saveOAuthCredentials`, `setOAuthStorage`, etc.) removed. Callers are responsible for storing credentials.
+- **OAuth login functions**: `loginAnthropic`, `loginGitHubCopilot`, `loginGeminiCli`, `loginAntigravity` now return `OAuthCredentials` instead of saving to disk.
+- **refreshOAuthToken**: Now takes `(provider, credentials)` and returns new `OAuthCredentials` instead of saving.
+- **getOAuthApiKey**: Now takes `(provider, credentials)` and returns `{ newCredentials, apiKey }` or null.
+- **OAuthCredentials type**: No longer includes `type: "oauth"` discriminator. Callers add discriminator when storing.
 
 ## [0.27.7] - 2025-12-24
 

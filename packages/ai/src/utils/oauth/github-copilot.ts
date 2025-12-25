@@ -3,7 +3,7 @@
  */
 
 import { getModels } from "../../models.js";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials } from "./types.js";
 
 const decode = (s: string) => Buffer.from(s, "base64").toString();
 const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
@@ -63,7 +63,7 @@ function getUrls(domain: string): {
  * Token format: tid=...;exp=...;proxy-ep=proxy.individual.githubcopilot.com;...
  * Returns API URL like https://api.individual.githubcopilot.com
  */
-export function getBaseUrlFromToken(token: string): string | null {
+function getBaseUrlFromToken(token: string): string | null {
 	const match = token.match(/proxy-ep=([^;]+)/);
 	if (!match) return null;
 	const proxyHost = match[1];
@@ -217,7 +217,6 @@ export async function refreshGitHubCopilotToken(
 	}
 
 	return {
-		type: "oauth",
 		refresh: refreshToken,
 		access: token,
 		expires: expiresAt * 1000 - 5 * 60 * 1000,
@@ -229,11 +228,7 @@ export async function refreshGitHubCopilotToken(
  * Enable a model for the user's GitHub Copilot account.
  * This is required for some models (like Claude, Grok) before they can be used.
  */
-export async function enableGitHubCopilotModel(
-	token: string,
-	modelId: string,
-	enterpriseDomain?: string,
-): Promise<boolean> {
+async function enableGitHubCopilotModel(token: string, modelId: string, enterpriseDomain?: string): Promise<boolean> {
 	const baseUrl = getGitHubCopilotBaseUrl(token, enterpriseDomain);
 	const url = `${baseUrl}/models/${modelId}/policy`;
 
@@ -259,7 +254,7 @@ export async function enableGitHubCopilotModel(
  * Enable all known GitHub Copilot models that may require policy acceptance.
  * Called after successful login to ensure all models are available.
  */
-export async function enableAllGitHubCopilotModels(
+async function enableAllGitHubCopilotModels(
 	token: string,
 	enterpriseDomain?: string,
 	onProgress?: (model: string, success: boolean) => void,
@@ -312,9 +307,5 @@ export async function loginGitHubCopilot(options: {
 	// Enable all models after successful login
 	options.onProgress?.("Enabling models...");
 	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
-
-	// Save credentials
-	saveOAuthCredentials("github-copilot", credentials);
-
 	return credentials;
 }

@@ -1,20 +1,20 @@
-import { Type } from "@sinclair/typebox";
 import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 
-const factory: CustomToolFactory = (pi) => ({
-  name: "hello",
-  label: "Hello",
-  description: "A simple greeting tool",
-  parameters: Type.Object({
-    name: Type.String({ description: "Name to greet" }),
-  }),
+const factory: CustomToolFactory = (_pi) => ({
+	name: "hello",
+	label: "Hello",
+	description: "A simple greeting tool",
+	parameters: Type.Object({
+		name: Type.String({ description: "Name to greet" }),
+	}),
 
-  async execute(toolCallId, params) {
-    return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
-    };
-  },
+	async execute(_toolCallId, params) {
+		return {
+			content: [{ type: "text", text: `Hello, ${params.name}!` }],
+			details: { greeted: params.name },
+		};
+	},
 });
 
 export default factory;

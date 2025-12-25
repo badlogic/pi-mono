@@ -10,19 +10,19 @@
  */
 
 import { Type } from "@sinclair/typebox";
+import { getAgentDir } from "../../src/config.js";
 import {
-	createAgentSession,
+	type CustomAgentTool,
 	configureOAuthStorage,
+	createAgentSession,
+	createBashTool,
+	createReadTool,
 	defaultGetApiKey,
 	findModel,
+	type HookFactory,
 	SessionManager,
 	SettingsManager,
-	createReadTool,
-	createBashTool,
-	type HookFactory,
-	type CustomAgentTool,
 } from "../../src/index.js";
-import { getAgentDir } from "../../src/config.js";
 
 // Use OAuth from default location
 configureOAuthStorage(getAgentDir());

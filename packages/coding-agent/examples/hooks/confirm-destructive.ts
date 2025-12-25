@@ -28,9 +28,7 @@ export default function (pi: HookAPI) {
 			if (!ctx.hasUI) return;
 
 			// Check if there are unsaved changes (messages since last assistant response)
-			const hasUnsavedWork = event.entries.some(
-				(e) => e.type === "message" && e.message.role === "user",
-			);
+			const hasUnsavedWork = event.entries.some((e) => e.type === "message" && e.message.role === "user");
 
 			if (hasUnsavedWork) {
 				const confirmed = await ctx.ui.confirm(
@@ -48,10 +46,10 @@ export default function (pi: HookAPI) {
 		if (event.reason === "before_branch") {
 			if (!ctx.hasUI) return;
 
-			const choice = await ctx.ui.select(
-				`Branch from turn ${event.targetTurnIndex}?`,
-				["Yes, create branch", "No, stay in current session"],
-			);
+			const choice = await ctx.ui.select(`Branch from turn ${event.targetTurnIndex}?`, [
+				"Yes, create branch",
+				"No, stay in current session",
+			]);
 
 			if (choice !== "Yes, create branch") {
 				ctx.ui.notify("Branch cancelled", "info");
