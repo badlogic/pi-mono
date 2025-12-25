@@ -10,7 +10,7 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		// Only handle before_* events (the ones that can be cancelled)
-		if (event.reason === "before_clear") {
+		if (event.reason === "before_new") {
 			if (!ctx.hasUI) return;
 
 			const confirmed = await ctx.ui.confirm(

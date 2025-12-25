@@ -197,7 +197,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/resume` | Switch to a different session (interactive selector) |
 | `/login` | OAuth login for subscription-based models |
 | `/logout` | Clear OAuth tokens |
-| `/clear` | Clear context and start fresh session |
+| `/new` | Start a new session |
 | `/copy` | Copy last agent message to clipboard |
 | `/compact [instructions]` | Manually compact conversation context |
 | `/autocompact` | Toggle automatic context compaction |

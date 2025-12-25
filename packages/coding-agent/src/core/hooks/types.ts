@@ -99,7 +99,7 @@ interface SessionEventBase {
 	entries: SessionEntry[];
 	/** Current session file path, or null in --no-session mode */
 	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "clear" */
+	/** Previous session file path, or null for "start" and "new" */
 	previousSessionFile: string | null;
 }
 
@@ -110,7 +110,7 @@ interface SessionEventBase {
  * Lifecycle:
  * - start: Initial session load
  * - before_switch / switch: Session switch (e.g., /resume command)
- * - before_clear / clear: Session clear (e.g., /clear command)
+ * - before_new / new: New session (e.g., /new command)
  * - before_branch / branch: Session branch (e.g., /branch command)
  * - before_compact / compact: Before/after context compaction
  * - shutdown: Process exit (SIGINT/SIGTERM)
@@ -120,7 +120,7 @@ interface SessionEventBase {
  */
 export type SessionEvent =
 	| (SessionEventBase & {
-			reason: "start" | "switch" | "clear" | "before_switch" | "before_clear" | "shutdown";
+			reason: "start" | "switch" | "new" | "before_switch" | "before_new" | "shutdown";
 	  })
 	| (SessionEventBase & {
 			reason: "branch" | "before_branch";

@@ -186,7 +186,7 @@ interface ToolSessionEvent {
   entries: SessionEntry[];      // All session entries
   sessionFile: string | null;   // Current session file
   previousSessionFile: string | null;  // Previous session file
-  reason: "start" | "switch" | "branch" | "clear";
+  reason: "start" | "switch" | "branch" | "new";
 }
 ```
 
@@ -194,7 +194,7 @@ interface ToolSessionEvent {
 - `start`: Initial session load on startup
 - `switch`: User switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
-- `clear`: User cleared the session (`/clear`)
+- `new`: User started a new session (`/new`)
 
 ### State Management Pattern
 
@@ -250,7 +250,7 @@ const factory: CustomToolFactory = (pi) => {
 This pattern ensures:
 - When user branches, state is correct for that point in history
 - When user switches sessions, state matches that session
-- When user clears, state resets
+- When user starts a new session, state resets
 
 ## Custom Rendering
 

@@ -51,10 +51,10 @@ export interface SessionEvent {
 	entries: SessionEntry[];
 	/** Current session file path, or null in --no-session mode */
 	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "clear" */
+	/** Previous session file path, or null for "start" and "new" */
 	previousSessionFile: string | null;
 	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "clear";
+	reason: "start" | "switch" | "branch" | "new";
 }
 
 /** Rendering options passed to renderResult */

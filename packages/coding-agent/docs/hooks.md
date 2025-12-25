@@ -125,10 +125,10 @@ user switches session (/resume)
   ├─► session (reason: "before_switch", can cancel)
   └─► session (reason: "switch", AFTER switch)
 
-user clears session (/clear)
+user starts new session (/new)
   │
-  ├─► session (reason: "before_clear", can cancel)
-  └─► session (reason: "clear", AFTER clear)
+  ├─► session (reason: "before_new", can cancel)
+  └─► session (reason: "new", AFTER new session starts)
 
 context compaction (auto or /compact)
   │
@@ -151,12 +151,12 @@ pi.on("session", async (event, ctx) => {
   // event.entries: SessionEntry[] - all session entries
   // event.sessionFile: string | null - current session file (null with --no-session)
   // event.previousSessionFile: string | null - previous session file
-  // event.reason: "start" | "before_switch" | "switch" | "before_clear" | "clear" |
+  // event.reason: "start" | "before_switch" | "switch" | "before_new" | "new" |
   //               "before_branch" | "branch" | "before_compact" | "compact" | "shutdown"
   // event.targetTurnIndex: number - only for "before_branch" and "branch"
 
   // Cancel a before_* action:
-  if (event.reason === "before_clear") {
+  if (event.reason === "before_new") {
     return { cancel: true };
   }
 
@@ -171,7 +171,7 @@ pi.on("session", async (event, ctx) => {
 **Reasons:**
 - `start`: Initial session load on startup
 - `before_switch` / `switch`: User switched sessions (`/resume`)
-- `before_clear` / `clear`: User cleared the session (`/clear`)
+- `before_new` / `new`: User started a new session (`/new`)
 - `before_branch` / `branch`: User branched the session (`/branch`)
 - `before_compact` / `compact`: Context compaction (auto or `/compact`)
 - `shutdown`: Process is exiting (double Ctrl+C, Ctrl+D, or SIGTERM)
@@ -848,9 +848,9 @@ Session switch:
 
 Clear:
   -> AgentSession.reset()
-     -> hookRunner.emit({ type: "session", reason: "before_clear", ... })  # can cancel
-     -> [if not cancelled: clear happens]
-     -> hookRunner.emit({ type: "session", reason: "clear", ... })
+     -> hookRunner.emit({ type: "session", reason: "before_new", ... })  # can cancel
+     -> [if not cancelled: new session starts]
+     -> hookRunner.emit({ type: "session", reason: "new", ... })
 
 Shutdown (interactive mode):
   -> handleCtrlC() or handleCtrlD()

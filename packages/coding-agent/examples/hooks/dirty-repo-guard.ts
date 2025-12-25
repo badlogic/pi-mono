@@ -10,7 +10,7 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 export default function (pi: HookAPI) {
 	pi.on("session", async (event, ctx) => {
 		// Only guard destructive actions
-		if (event.reason !== "before_clear" && event.reason !== "before_switch" && event.reason !== "before_branch") {
+		if (event.reason !== "before_new" && event.reason !== "before_switch" && event.reason !== "before_branch") {
 			return;
 		}
 
@@ -36,11 +36,7 @@ export default function (pi: HookAPI) {
 		const changedFiles = stdout.trim().split("\n").filter(Boolean).length;
 
 		const action =
-			event.reason === "before_clear"
-				? "clear session"
-				: event.reason === "before_switch"
-					? "switch session"
-					: "branch";
+			event.reason === "before_new" ? "new session" : event.reason === "before_switch" ? "switch session" : "branch";
 
 		const choice = await ctx.ui.select(`You have ${changedFiles} uncommitted file(s). ${action} anyway?`, [
 			"Yes, proceed anyway",

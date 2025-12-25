@@ -169,7 +169,7 @@ export class InteractiveMode {
 			{ name: "logout", description: "Logout from OAuth provider" },
 			{ name: "queue", description: "Select message queue mode (opens selector UI)" },
 			{ name: "theme", description: "Select color theme (opens selector UI)" },
-			{ name: "clear", description: "Clear context and start a fresh session" },
+			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "autocompact", description: "Toggle automatic context compaction" },
 			{ name: "resume", description: "Resume a different session" },
@@ -672,7 +672,7 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/clear") {
+			if (text === "/new") {
 				this.editor.setText("");
 				await this.handleClearCommand();
 				return;
@@ -1843,9 +1843,7 @@ export class InteractiveMode {
 		this.isFirstUserMessage = true;
 
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(
-			new Text(`${theme.fg("accent", "✓ Context cleared")}\n${theme.fg("muted", "Started fresh session")}`, 1, 1),
-		);
+		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
 		this.ui.requestRender();
 	}
 

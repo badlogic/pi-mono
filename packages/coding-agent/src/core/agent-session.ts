@@ -517,14 +517,14 @@ export class AgentSession {
 		const previousSessionFile = this.sessionFile;
 		const entries = this.sessionManager.getEntries();
 
-		// Emit before_clear event (can be cancelled)
+		// Emit before_new event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
 				entries,
 				sessionFile: this.sessionFile,
 				previousSessionFile: null,
-				reason: "before_clear",
+				reason: "before_new",
 			})) as SessionEventResult | undefined;
 
 			if (result?.cancel) {
@@ -539,7 +539,7 @@ export class AgentSession {
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 
-		// Emit session event with reason "clear" to hooks
+		// Emit session event with reason "new" to hooks
 		if (this._hookRunner) {
 			this._hookRunner.setSessionFile(this.sessionFile);
 			await this._hookRunner.emit({
@@ -547,12 +547,12 @@ export class AgentSession {
 				entries: [],
 				sessionFile: this.sessionFile,
 				previousSessionFile,
-				reason: "clear",
+				reason: "new",
 			});
 		}
 
 		// Emit session event to custom tools
-		await this._emitToolSessionEvent("clear", previousSessionFile);
+		await this._emitToolSessionEvent("new", previousSessionFile);
 		return true;
 	}
 
