@@ -130,6 +130,8 @@ export type SessionEvent =
 	| (SessionEventBase & {
 			reason: "before_compact";
 			cutPoint: CutPointResult;
+			/** ID of first entry to keep (for hooks that return CompactionEntry) */
+			firstKeptEntryId: string;
 			/** Summary from previous compaction, if any. Include this in your summary to preserve context. */
 			previousSummary?: string;
 			/** Messages that will be summarized and discarded */
@@ -351,8 +353,12 @@ export interface SessionEventResult {
 	cancel?: boolean;
 	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
 	skipConversationRestore?: boolean;
-	/** Custom compaction entry (for before_compact event) */
-	compactionEntry?: CompactionEntry;
+	/** Custom compaction result (for before_compact event) - SessionManager adds id/parentId */
+	compaction?: {
+		summary: string;
+		firstKeptEntryId: string;
+		tokensBefore: number;
+	};
 }
 
 // ============================================================================

@@ -9,7 +9,14 @@ import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
 import { messageTransformer } from "./messages.js";
-import type { CompactionEntry, SessionEntry } from "./session-manager.js";
+import type { CompactionEntry, ConversationEntry, SessionEntry } from "./session-manager.js";
+
+/** Result from compact() - SessionManager adds uuid/parentUuid when saving */
+export interface CompactionResult {
+	summary: string;
+	firstKeptEntryId: string;
+	tokensBefore: number;
+}
 
 // ============================================================================
 // Types
@@ -327,6 +334,8 @@ export async function generateSummary(
 
 export interface CompactionPreparation {
 	cutPoint: CutPointResult;
+	/** UUID of first entry to keep */
+	firstKeptEntryId: string;
 	/** Messages that will be summarized and discarded */
 	messagesToSummarize: AppMessage[];
 	/** Messages that will be kept after the summary (recent turns) */
@@ -355,6 +364,16 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 
 	const cutPoint = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
+	// Get UUID of first kept entry
+	const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
+	if (firstKeptEntry.type === "session") {
+		return null; // Can't compact if first kept is header
+	}
+	const firstKeptEntryId = (firstKeptEntry as ConversationEntry).id;
+	if (!firstKeptEntryId) {
+		return null; // Session needs migration
+	}
+
 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
 
 	// Messages to summarize (will be discarded after summary)
@@ -375,7 +394,7 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 		}
 	}
 
-	return { cutPoint, messagesToSummarize, messagesToKeep, tokensBefore, boundaryStart };
+	return { cutPoint, firstKeptEntryId, messagesToSummarize, messagesToKeep, tokensBefore, boundaryStart };
 }
 
 // ============================================================================
@@ -394,9 +413,9 @@ Be concise. Focus on information needed to understand the retained recent work.`
 
 /**
  * Calculate compaction and generate summary.
- * Returns the CompactionEntry to append to the session file.
+ * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
  *
- * @param entries - All session entries
+ * @param entries - All session entries (must have uuid fields for v2)
  * @param model - Model to use for summarization
  * @param settings - Compaction settings
  * @param apiKey - API key for LLM
@@ -410,7 +429,7 @@ export async function compact(
 	apiKey: string,
 	signal?: AbortSignal,
 	customInstructions?: string,
-): Promise<CompactionEntry> {
+): Promise<CompactionResult> {
 	// Don't compact if the last entry is already a compaction
 	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
 		throw new Error("Already compacted");
@@ -490,11 +509,19 @@ export async function compact(
 		);
 	}
 
+	// Get UUID of first kept entry
+	const firstKeptEntry = entries[cutResult.firstKeptEntryIndex];
+	if (firstKeptEntry.type === "session") {
+		throw new Error("Cannot compact: first kept entry is session header");
+	}
+	const firstKeptEntryId = (firstKeptEntry as ConversationEntry).id;
+	if (!firstKeptEntryId) {
+		throw new Error("First kept entry has no UUID - session may need migration");
+	}
+
 	return {
-		type: "compaction",
-		timestamp: new Date().toISOString(),
 		summary,
-		firstKeptEntryIndex: cutResult.firstKeptEntryIndex,
+		firstKeptEntryId,
 		tokensBefore,
 	};
 }

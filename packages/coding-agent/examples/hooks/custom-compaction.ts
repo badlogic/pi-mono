@@ -94,14 +94,12 @@ Format the summary as structured markdown with clear sections.`,
 				return;
 			}
 
-			// Return a compaction entry that discards ALL messages
-			// firstKeptEntryIndex points past all current entries
+			// Return compaction content - SessionManager adds id/parentId
+			// Use firstKeptEntryId from event to keep recent messages
 			return {
-				compactionEntry: {
-					type: "compaction" as const,
-					timestamp: new Date().toISOString(),
+				compaction: {
 					summary,
-					firstKeptEntryIndex: entries.length,
+					firstKeptEntryId: event.firstKeptEntryId,
 					tokensBefore,
 				},
 			};

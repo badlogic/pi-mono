@@ -156,9 +156,9 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		expect(compaction.type).toBe("compaction");
 		if (compaction.type === "compaction") {
 			expect(compaction.summary.length).toBeGreaterThan(0);
-			// firstKeptEntryIndex can be 0 if all messages fit within keepRecentTokens
+			// firstKeptEntryId can be 0 if all messages fit within keepRecentTokens
 			// (which is the case for small conversations)
-			expect(compaction.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
+			expect(compaction.firstKeptEntryId).toBeGreaterThanOrEqual(0);
 			expect(compaction.tokensBefore).toBeGreaterThan(0);
 		}
 	}, 120000);

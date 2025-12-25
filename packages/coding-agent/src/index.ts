@@ -107,11 +107,20 @@ export {
 	readOnlyTools,
 } from "./core/sdk.js";
 export {
+	type BranchSummaryContent,
+	type BranchSummaryEntry,
 	buildSessionContext,
+	type CompactionContent,
 	type CompactionEntry,
+	type ConversationContent,
+	type ConversationEntry,
+	CURRENT_SESSION_VERSION,
 	createSummaryMessage,
 	getLatestCompactionEntry,
+	type MessageContent,
+	type ModelChangeContent,
 	type ModelChangeEntry,
+	migrateSessionEntries,
 	parseSessionEntries,
 	type SessionContext as LoadedSession,
 	type SessionEntry,
@@ -122,6 +131,9 @@ export {
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
 	type ThinkingLevelChangeEntry,
+	type ThinkingLevelContent,
+	// Tree types (v2)
+	type TreeNode,
 } from "./core/session-manager.js";
 export {
 	type CompactionSettings,
