@@ -173,12 +173,16 @@ function createSessionManager(parsed: Args, cwd: string): SessionManager | null 
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		return SessionManager.open(parsed.session);
+		return SessionManager.open(parsed.session, parsed.sessionDir);
 	}
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd);
+		return SessionManager.continueRecent(cwd, parsed.sessionDir);
 	}
 	// --resume is handled separately (needs picker UI)
+	// If --session-dir provided without --continue/--resume, create new session there
+	if (parsed.sessionDir) {
+		return SessionManager.create(cwd, parsed.sessionDir);
+	}
 	// Default case (new session) returns null, SDK will create one
 	return null;
 }
@@ -348,7 +352,7 @@ export async function main(args: string[]) {
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
-		const sessions = SessionManager.list(cwd);
+		const sessions = SessionManager.list(cwd, parsed.sessionDir);
 		time("SessionManager.list");
 		if (sessions.length === 0) {
 			console.log(chalk.dim("No sessions found"));

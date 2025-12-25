@@ -592,11 +592,14 @@ for (const info of sessions) {
   console.log(`${info.id}: ${info.firstMessage} (${info.messageCount} messages)`);
 }
 
-// Custom agentDir for sessions
+// Custom session directory (no cwd encoding)
+const customDir = "/path/to/my-sessions";
 const { session } = await createAgentSession({
-  agentDir: "/custom/agent",
-  sessionManager: SessionManager.create(process.cwd(), "/custom/agent"),
+  sessionManager: SessionManager.create(process.cwd(), customDir),
 });
+// Also works with list and continueRecent:
+// SessionManager.list(process.cwd(), customDir);
+// SessionManager.continueRecent(process.cwd(), customDir);
 ```
 
 > See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts)

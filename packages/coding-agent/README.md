@@ -768,6 +768,7 @@ pi [options] [@files...] [messages...]
 | `--print`, `-p` | Non-interactive: process prompt and exit |
 | `--no-session` | Don't save session |
 | `--session <path>` | Use specific session file |
+| `--session-dir <dir>` | Directory for session storage and lookup |
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |

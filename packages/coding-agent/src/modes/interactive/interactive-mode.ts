@@ -1519,7 +1519,7 @@ export class InteractiveMode {
 
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
-			const sessions = SessionManager.list(this.sessionManager.getCwd());
+			const sessions = SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir());
 			const selector = new SessionSelectorComponent(
 				sessions,
 				async (sessionPath) => {

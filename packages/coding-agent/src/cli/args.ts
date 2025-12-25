@@ -23,6 +23,7 @@ export interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
 	hooks?: string[];
@@ -78,6 +79,8 @@ export function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--session-dir" && i + 1 < args.length) {
+			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
 			result.models = args[++i].split(",").map((s) => s.trim());
 		} else if (arg === "--tools" && i + 1 < args.length) {
@@ -153,6 +156,7 @@ ${chalk.bold("Options:")}
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
   --session <path>               Use specific session file
+  --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)

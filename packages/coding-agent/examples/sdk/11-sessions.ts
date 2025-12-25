@@ -39,8 +39,10 @@ if (sessions.length > 0) {
 	console.log(`\nOpened: ${opened.sessionId}`);
 }
 
-// Custom session directory
+// Custom session directory (no cwd encoding)
+// const customDir = "/path/to/my-sessions";
 // const { session } = await createAgentSession({
-//   agentDir: "/custom/agent",
-//   sessionManager: SessionManager.create(process.cwd(), "/custom/agent"),
+//   sessionManager: SessionManager.create(process.cwd(), customDir),
 // });
+// SessionManager.list(process.cwd(), customDir);
+// SessionManager.continueRecent(process.cwd(), customDir);
