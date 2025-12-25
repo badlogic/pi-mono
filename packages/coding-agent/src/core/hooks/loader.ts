@@ -93,12 +93,58 @@ function expandPath(p: string): string {
 }
 
 /**
+ * Check if a path looks like an npm package specifier.
+ * npm packages:
+ * - Start with @ (scoped): @scope/package, @scope/package/subpath
+ * - Or are bare identifiers: package, package/subpath
+ *
+ * File paths:
+ * - Absolute paths (Unix: /path, Windows: C:\path or C:/path)
+ * - Start with ~ (home)
+ * - Start with ./ or ../ (relative)
+ */
+function isNpmPackage(hookPath: string): boolean {
+	// File path indicators
+	if (
+		path.isAbsolute(hookPath) ||
+		hookPath.startsWith("~") ||
+		hookPath.startsWith("./") ||
+		hookPath.startsWith("../")
+	) {
+		return false;
+	}
+	// Scoped package or bare identifier
+	return true;
+}
+
+/**
+ * Resolve npm package to absolute path.
+ * Uses require.resolve to find the package in node_modules.
+ * Returns null if resolution fails.
+ */
+function resolveNpmPackage(packageSpecifier: string): string | null {
+	try {
+		// require.resolve finds the package entry point
+		return require.resolve(packageSpecifier);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Resolve hook path.
+ * - npm packages resolved via require.resolve
  * - Absolute paths used as-is
  * - Paths starting with ~ expanded to home directory
  * - Relative paths resolved from cwd
  */
-function resolveHookPath(hookPath: string, cwd: string): string {
+function resolveHookPath(hookPath: string, cwd: string): string | null {
+	// npm package resolution
+	if (isNpmPackage(hookPath)) {
+		return resolveNpmPackage(hookPath);
+	}
+
+	// File path resolution
 	const expanded = expandPath(hookPath);
 
 	if (path.isAbsolute(expanded)) {
@@ -145,6 +191,10 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
  */
 async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
 	const resolvedPath = resolveHookPath(hookPath, cwd);
+
+	if (!resolvedPath) {
+		return { hook: null, error: `Could not resolve hook path: ${hookPath}` };
+	}
 
 	try {
 		// Create jiti instance for TypeScript/ESM loading
@@ -238,8 +288,8 @@ export async function discoverAndLoadHooks(
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
-	// Helper to add paths without duplicates
-	const addPaths = (paths: string[]) => {
+	// Helper to add file paths without duplicates (for discovered hooks)
+	const addFilePaths = (paths: string[]) => {
 		for (const p of paths) {
 			const resolved = path.resolve(p);
 			if (!seen.has(resolved)) {
@@ -251,14 +301,29 @@ export async function discoverAndLoadHooks(
 
 	// 1. Global hooks: agentDir/hooks/
 	const globalHooksDir = path.join(agentDir, "hooks");
-	addPaths(discoverHooksInDir(globalHooksDir));
+	addFilePaths(discoverHooksInDir(globalHooksDir));
 
 	// 2. Project-local hooks: cwd/.pi/hooks/
 	const localHooksDir = path.join(cwd, ".pi", "hooks");
-	addPaths(discoverHooksInDir(localHooksDir));
+	addFilePaths(discoverHooksInDir(localHooksDir));
 
-	// 3. Explicitly configured paths (can override/add)
-	addPaths(configuredPaths.map((p) => resolveHookPath(p, cwd)));
+	// 3. Explicitly configured paths (npm packages or file paths)
+	for (const p of configuredPaths) {
+		if (isNpmPackage(p)) {
+			// For npm packages, use specifier as-is for dedup
+			if (!seen.has(p)) {
+				seen.add(p);
+				allPaths.push(p);
+			}
+		} else {
+			// For file paths, resolve and dedup
+			const resolved = resolveHookPath(p, cwd);
+			if (resolved && !seen.has(resolved)) {
+				seen.add(resolved);
+				allPaths.push(p);
+			}
+		}
+	}
 
 	return loadHooks(allPaths, cwd);
 }

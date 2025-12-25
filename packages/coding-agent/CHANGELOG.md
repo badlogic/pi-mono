@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **npm package hooks**: Hooks can now be specified as npm package specifiers (e.g., `@scope/my-hook`) in addition to file paths. Packages are resolved via `require.resolve`.
+
 ## [0.30.0] - 2025-12-25
 
 ### Breaking Changes
