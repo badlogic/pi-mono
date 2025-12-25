@@ -16,65 +16,71 @@ Context is built by scanning linearly, applying compaction ranges.
 
 ## Proposed Format (Tree)
 
-Each entry has a `parent` field pointing to its parent entry's index (-1 for root):
+Each entry has a `uuid` and `parentUuid` field (null for root):
 
 ```jsonl
-{"type":"session","id":"...","parent":-1}                           // 0: root
-{"type":"message","parent":0,"message":{"role":"user",...}}         // 1
-{"type":"message","parent":1,"message":{"role":"assistant",...}}    // 2
-{"type":"message","parent":2,"message":{"role":"user",...}}         // 3
-{"type":"message","parent":3,"message":{"role":"assistant",...}}    // 4
-{"type":"head","parent":4,"name":"main"}                            // 5: current head
+{"type":"session","uuid":"a1b2c3","parentUuid":null,"id":"...","cwd":"..."}
+{"type":"message","uuid":"d4e5f6","parentUuid":"a1b2c3","message":{"role":"user",...}}
+{"type":"message","uuid":"g7h8i9","parentUuid":"d4e5f6","message":{"role":"assistant",...}}
+{"type":"message","uuid":"j0k1l2","parentUuid":"g7h8i9","message":{"role":"user",...}}
+{"type":"message","uuid":"m3n4o5","parentUuid":"j0k1l2","message":{"role":"assistant",...}}
 ```
 
-The **last entry** is always the current leaf. Context = walk from leaf to root.
+The **last entry** is always the current leaf. Context = walk from leaf to root via `parentUuid`.
+
+Using UUIDs (like Claude Code does) instead of indices because:
+- No remapping needed when branching to new file
+- Robust to entry deletion/reordering
+- Orphan references are detectable
+- ~30 extra bytes per entry is negligible for text-heavy sessions
 
 ### Branching
 
-Branch from entry 2 (after first assistant response):
+Branch from entry `g7h8i9` (after first assistant response):
 
 ```jsonl
-... entries 0-5 unchanged ...
-{"type":"message","parent":2,"message":{"role":"user",...}}         // 6: new branch
-{"type":"message","parent":6,"message":{"role":"assistant",...}}    // 7
-{"type":"head","parent":7,"name":"main"}                            // 8: new head
+... entries unchanged ...
+{"type":"message","uuid":"p6q7r8","parentUuid":"g7h8i9","message":{"role":"user",...}}
+{"type":"message","uuid":"s9t0u1","parentUuid":"p6q7r8","message":{"role":"assistant",...}}
 ```
 
-Now entry 8 is the leaf. Walking 8→7→6→2→1→0 gives the branched context.
+Walking s9t0u1→p6q7r8→g7h8i9→d4e5f6→a1b2c3 gives the branched context.
 
-The old path (entries 3-5) remains in the file but is not in the current context.
+The old path (j0k1l2, m3n4o5) remains in the file but is not in the current context.
 
 ### Visual
 
 ```
-     [0:session]
+     [a1b2:session]
           │
-     [1:user "hello"]
+     [d4e5:user "hello"]
           │
-     [2:assistant "hi"]
+     [g7h8:assistant "hi"]
           │
      ┌────┴────┐
      │         │
-[3:user A]  [6:user B]    ← branch point at 2
-     │         │
-[4:asst A]  [7:asst B]
-     │         │
-  (old)    [8:head]       ← current leaf
+[j0k1:user A]  [p6q7:user B]    ← branch point
+     │              │
+[m3n4:asst A]  [s9t0:asst B]    ← current leaf
+     │
+  (old path)
 ```
 
 ## Context Building
 
 ```typescript
 function buildContext(entries: SessionEntry[]): AppMessage[] {
-  // Find current head (last entry, or last head entry)
-  let current = entries.length - 1;
+  // Build UUID -> entry map
+  const byUuid = new Map(entries.map(e => [e.uuid, e]));
+  
+  // Start from last entry (current leaf)
+  let current: SessionEntry | undefined = entries[entries.length - 1];
   
   // Walk to root, collecting messages
   const path: SessionEntry[] = [];
-  while (current >= 0) {
-    const entry = entries[current];
-    path.unshift(entry);
-    current = entry.parent;
+  while (current) {
+    path.unshift(current);
+    current = current.parentUuid ? byUuid.get(current.parentUuid) : undefined;
   }
   
   // Extract messages, apply compaction summaries
@@ -82,7 +88,7 @@ function buildContext(entries: SessionEntry[]): AppMessage[] {
 }
 ```
 
-Complexity: O(depth) instead of O(n) for linear scan.
+Complexity: O(n) to build map, O(depth) to walk. Total O(n), but walk is fast.
 
 ## Consequences for Stacking
 
@@ -106,31 +112,29 @@ Context building requires tracking ranges, IDs, "later wins" logic.
 Stacking becomes trivial branching:
 
 ```jsonl
-... conversation entries 0-10 ...
-{"type":"stack_summary","parent":3,"summary":"Work done in entries 4-10"}  // 11
-{"type":"head","parent":11}                                                 // 12
+... conversation entries ...
+{"type":"stack_summary","uuid":"x1y2z3","parentUuid":"g7h8i9","summary":"Work done after this point"}
 ```
 
-To "pop" to entry 3:
-1. Generate summary of entries 4-10
-2. Append summary entry with `parent:3`
-3. Append new head
+To "pop" to entry `g7h8i9`:
+1. Generate summary of entries after `g7h8i9`
+2. Append summary entry with `parentUuid: "g7h8i9"`
 
-Context walk: 12→11→3→2→1→0. Entries 4-10 are not traversed.
+Context walk follows parentUuid chain. Abandoned entries are not traversed.
 
 **No range tracking. No overlap rules. No "later wins" logic.**
 
 ### Multiple Pops
 
 ```
-[0]─[1]─[2]─[3]─[4]─[5]─[6]─[7]─[8]
+[a]─[b]─[c]─[d]─[e]─[f]─[g]─[h]
               │
-              └─[9:summary of 4-8]─[10]─[11]─[12]
-                                         │
-                                         └─[13:summary of 10-12]─[14:head]
+              └─[i:summary]─[j]─[k]─[l]
+                                  │
+                                  └─[m:summary]─[n:current]
 ```
 
-Each pop just creates a new branch. Context: 14→13→9→3→2→1→0.
+Each pop just creates a new branch. Context: n→m→k→j→i→c→b→a.
 
 ## Consequences for Compaction
 
@@ -143,27 +147,27 @@ Compaction stores `firstKeptEntryIndex` and requires careful handling when stack
 Compaction creates a summary node:
 
 ```jsonl
-{"type":"compaction","parent":0,"summary":"...","summarizedPath":[1,2,3,4,5]}  // 6
-{"type":"message","parent":6,"message":{"role":"user",...}}                     // 7
+{"type":"compaction","uuid":"c1","parentUuid":"a1b2c3","summary":"...","summarizedUuids":["d4e5f6","g7h8i9"]}
+{"type":"message","uuid":"m1","parentUuid":"c1","message":{"role":"user",...}}
 ```
 
-The compaction node's `parent:0` means it attaches to root. Walking from 7: 7→6→0.
+The compaction node's `parentUuid` points to root. Walking from m1: m1→c1→a1b2c3.
 
-Entries 1-5 are still in the file (for export, debugging) but not in context.
+Summarized entries are still in the file (for export, debugging) but not in context.
 
 ### Compaction + Stacking
 
 No special handling needed. They're both just branches:
 
 ```
-[0]─[1]─[2]─[3]─[4]─[5]
- │
- └─[6:compaction summary]─[7]─[8]─[9]─[10]
-                           │
-                           └─[11:stack summary]─[12:head]
+[root]─[msg1]─[msg2]─[msg3]─[msg4]─[msg5]
+   │
+   └─[compaction]─[msg6]─[msg7]─[msg8]
+                    │
+                    └─[stack_summary]─[msg9:current]
 ```
 
-Context: 12→11→7→6→0. Clean.
+Context: msg9→stack_summary→msg6→compaction→root. Clean.
 
 ## Consequences for API
 
@@ -172,32 +176,36 @@ Context: 12→11→7→6→0. Clean.
 ```typescript
 interface SessionEntry {
   type: string;
-  parent: number;  // NEW: -1 for root, otherwise index of parent
+  uuid: string;           // NEW: unique identifier
+  parentUuid: string | null;  // NEW: null for root
   timestamp?: string;
   // ... type-specific fields
 }
 
 class SessionManager {
-  // NEW: Get current head index
-  getCurrentHead(): number;
+  // NEW: Get current leaf entry
+  getCurrentLeaf(): SessionEntry;
   
   // NEW: Walk from entry to root
-  getPath(fromIndex?: number): SessionEntry[];
+  getPath(fromUuid?: string): SessionEntry[];
+  
+  // NEW: Get entry by UUID
+  getEntry(uuid: string): SessionEntry | undefined;
   
   // CHANGED: Uses tree walk instead of linear scan
   buildSessionContext(): SessionContext;
   
-  // NEW: Create branch point, returns new head index
-  branch(parentIndex: number): number;
+  // NEW: Create branch point
+  branch(parentUuid: string): string;  // returns new entry's uuid
   
   // NEW: Create branch with summary of abandoned subtree
-  branchWithSummary(parentIndex: number, summary: string): number;
+  branchWithSummary(parentUuid: string, summary: string): string;
   
   // CHANGED: Simpler, just creates summary node
   saveCompaction(entry: CompactionEntry): void;
   
-  // UNCHANGED
-  saveMessage(message: AppMessage): void;
+  // CHANGED: Now requires parentUuid (uses current leaf if omitted)
+  saveMessage(message: AppMessage, parentUuid?: string): void;
   saveEntry(entry: SessionEntry): void;
 }
 ```
@@ -207,10 +215,10 @@ class SessionManager {
 ```typescript
 class AgentSession {
   // CHANGED: Uses tree-based branching
-  async branch(entryIndex: number): Promise<BranchResult>;
+  async branch(entryUuid: string): Promise<BranchResult>;
   
   // NEW: Branch in current session (no new file)
-  async branchInPlace(entryIndex: number, options?: {
+  async branchInPlace(entryUuid: string, options?: {
     summarize?: boolean;  // Generate summary of abandoned subtree
   }): Promise<void>;
   
@@ -235,10 +243,10 @@ interface BranchResult {
 interface HookEventContext {
   // NEW: Tree-aware entry access
   entries: readonly SessionEntry[];
-  currentPath: readonly SessionEntry[];  // Entries from root to current head
+  currentPath: readonly SessionEntry[];  // Entries from root to current leaf
   
   // NEW: Branch without creating new file
-  branchInPlace(parentIndex: number, summary?: string): Promise<void>;
+  branchInPlace(parentUuid: string, summary?: string): Promise<void>;
   
   // Existing
   saveEntry(entry: SessionEntry): Promise<void>;
@@ -263,7 +271,7 @@ Use case: Quick "let me try something else" without file proliferation.
 
 ```
 /branches      → List all branches in current session
-/switch 3      → Switch to branch starting at entry 3
+/switch <uuid> → Switch to branch at entry
 ```
 
 The session file contains full history. UI can visualize the tree.
@@ -274,7 +282,7 @@ No hooks needed for basic stacking:
 
 ```
 /pop           → Branch to previous user message with auto-summary
-/pop 5         → Branch to entry 5 with auto-summary
+/pop <uuid>    → Branch to specific entry with auto-summary
 ```
 
 Core functionality, not hook-dependent.
@@ -282,32 +290,37 @@ Core functionality, not hook-dependent.
 ### 4. Subtree Export
 
 ```
-/export-branch 3   → Export just the subtree from entry 3
+/export-branch <uuid>   → Export just the subtree from entry
 ```
 
-Useful for sharing specific conversation paths.
+Useful for sharing specific conversation paths. No index remapping needed since UUIDs are stable.
 
 ### 5. Merge/Cherry-pick (Future)
 
 With tree structure, could support:
 
 ```
-/cherry-pick 7    → Copy entry 7's message to current branch
-/merge 3          → Merge branch at entry 3 into current
+/cherry-pick <uuid>    → Copy entry's message to current branch
+/merge <uuid>          → Merge branch into current
 ```
 
 ## Migration
 
 ### File Format
 
-Add `parent` field to all entries. Existing sessions get `parent: previousIndex`:
+Add `uuid` and `parentUuid` fields to all entries. Existing sessions get generated UUIDs with linear parentage:
 
 ```typescript
 function migrateSession(content: string): string {
   const lines = content.trim().split('\n');
+  const uuids: string[] = [];
+  
   return lines.map((line, i) => {
     const entry = JSON.parse(line);
-    entry.parent = i === 0 ? -1 : i - 1;  // Linear chain
+    const uuid = generateUuid();
+    uuids.push(uuid);
+    entry.uuid = uuid;
+    entry.parentUuid = i === 0 ? null : uuids[i - 1];
     return JSON.stringify(entry);
   }).join('\n');
 }
@@ -318,7 +331,7 @@ Migrated sessions work exactly as before (linear path).
 ### API Compatibility
 
 - `buildSessionContext()` returns same structure
-- `branch()` still works, just more options
+- `branch()` still works, just uses UUIDs
 - Existing hooks continue to work
 
 ## Complexity Analysis
@@ -326,36 +339,35 @@ Migrated sessions work exactly as before (linear path).
 | Operation | Linear | Tree |
 |-----------|--------|------|
 | Append message | O(1) | O(1) |
-| Build context | O(n) | O(depth) |
-| Branch | O(n) copy | O(1) append |
-| Find entry | O(n) | O(n) |
+| Build context | O(n) | O(n) map + O(depth) walk |
+| Branch to new file | O(n) copy | O(path) copy, no remapping |
+| Find entry by UUID | O(n) | O(1) with map |
 | Compaction | O(n) | O(depth) |
 
-Tree is better or equal for all operations except "find arbitrary entry" (same).
+Tree with UUIDs is comparable or better. The UUID map can be cached.
 
 ## File Size
 
-Tree format adds ~15 bytes per entry (`"parent":123,`). For 1000-entry session: ~15KB overhead. Negligible.
+Tree format adds ~50 bytes per entry (`"uuid":"...","parentUuid":"..."`, 36 chars each). For 1000-entry session: ~50KB overhead. Negligible for text-heavy sessions.
 
 Abandoned branches remain in file but don't affect context building performance.
 
 ## Example: Full Session with Branching
 
 ```jsonl
-{"type":"session","id":"abc","parent":-1,"cwd":"/project"}
-{"type":"message","parent":0,"message":{"role":"user","content":"Build a CLI"}}
-{"type":"message","parent":1,"message":{"role":"assistant","content":"I'll create..."}}
-{"type":"message","parent":2,"message":{"role":"user","content":"Add --verbose flag"}}
-{"type":"message","parent":3,"message":{"role":"assistant","content":"Here's the flag..."}}
-{"type":"message","parent":4,"message":{"role":"user","content":"Actually use Python"}}
-{"type":"message","parent":5,"message":{"role":"assistant","content":"Converting to Python..."}}
-{"type":"branch_summary","parent":2,"summary":"Attempted Node.js CLI with --verbose flag"}
-{"type":"message","parent":7,"message":{"role":"user","content":"Use Rust instead"}}
-{"type":"message","parent":8,"message":{"role":"assistant","content":"Creating Rust CLI..."}}
-{"type":"head","parent":9}
+{"type":"session","uuid":"ses1","parentUuid":null,"id":"abc","cwd":"/project"}
+{"type":"message","uuid":"m1","parentUuid":"ses1","message":{"role":"user","content":"Build a CLI"}}
+{"type":"message","uuid":"m2","parentUuid":"m1","message":{"role":"assistant","content":"I'll create..."}}
+{"type":"message","uuid":"m3","parentUuid":"m2","message":{"role":"user","content":"Add --verbose flag"}}
+{"type":"message","uuid":"m4","parentUuid":"m3","message":{"role":"assistant","content":"Here's the flag..."}}
+{"type":"message","uuid":"m5","parentUuid":"m4","message":{"role":"user","content":"Actually use Python"}}
+{"type":"message","uuid":"m6","parentUuid":"m5","message":{"role":"assistant","content":"Converting to Python..."}}
+{"type":"branch_summary","uuid":"bs1","parentUuid":"m2","summary":"Attempted Node.js CLI with --verbose flag"}
+{"type":"message","uuid":"m7","parentUuid":"bs1","message":{"role":"user","content":"Use Rust instead"}}
+{"type":"message","uuid":"m8","parentUuid":"m7","message":{"role":"assistant","content":"Creating Rust CLI..."}}
 ```
 
-Context path: 10→9→8→7→2→1→0
+Context path: m8→m7→bs1→m2→m1→ses1
 
 Result:
 1. User: "Build a CLI"
@@ -364,16 +376,25 @@ Result:
 4. User: "Use Rust instead"
 5. Assistant: "Creating Rust CLI..."
 
-Entries 3-6 (the Node.js path) are preserved but not in context.
+Entries m3-m6 (the Node.js/Python path) are preserved but not in context.
+
+## Prior Art
+
+Claude Code uses the same approach:
+- `uuid` field on each entry
+- `parentUuid` links to parent (null for root)
+- `leafUuid` in summary entries to track conversation endpoints
+- Separate files for sidechains (`isSidechain: true`)
 
 ## Recommendation
 
-The tree format:
+The tree format with UUIDs:
 - Simplifies stacking (no range overlap logic)
 - Simplifies compaction (no boundary crossing)
 - Enables in-place branching
 - Enables branch visualization/navigation
+- No index remapping on branch-to-file
 - Maintains backward compatibility
-- Has negligible overhead
+- Validated by Claude Code's implementation
 
 **Recommend implementing for v2 of hooks/session system.**
