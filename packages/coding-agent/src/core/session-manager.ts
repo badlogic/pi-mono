@@ -225,9 +225,23 @@ export class SessionManager {
 	private flushed: boolean = false;
 	private inMemoryEntries: SessionEntry[] = [];
 
-	private constructor(cwd: string, agentDir: string, sessionFile: string | null, persist: boolean) {
+	private constructor(
+		cwd: string,
+		agentDir: string,
+		sessionFile: string | null,
+		persist: boolean,
+		customSessionDir?: string,
+	) {
 		this.cwd = cwd;
-		this.sessionDir = getSessionDirectory(cwd, agentDir);
+		if (customSessionDir) {
+			// Use custom directory directly (no cwd-based subdirectory)
+			if (!existsSync(customSessionDir)) {
+				mkdirSync(customSessionDir, { recursive: true });
+			}
+			this.sessionDir = customSessionDir;
+		} else {
+			this.sessionDir = getSessionDirectory(cwd, agentDir);
+		}
 		this.persist = persist;
 
 		if (sessionFile) {
@@ -426,6 +440,11 @@ export class SessionManager {
 	/** List all sessions for a directory */
 	static list(cwd: string, agentDir: string = getDefaultAgentDir()): SessionInfo[] {
 		const sessionDir = getSessionDirectory(cwd, agentDir);
+		return SessionManager.listDir(sessionDir);
+	}
+
+	/** List all sessions in a specific directory (no cwd encoding) */
+	static listDir(sessionDir: string): SessionInfo[] {
 		const sessions: SessionInfo[] = [];
 
 		try {
@@ -497,5 +516,22 @@ export class SessionManager {
 		}
 
 		return sessions;
+	}
+
+	/** Create a new session in a custom directory (no cwd encoding) */
+	static createInDir(sessionDir: string, cwd: string = process.cwd()): SessionManager {
+		return new SessionManager(cwd, getDefaultAgentDir(), null, true, sessionDir);
+	}
+
+	/** Continue the most recent session in a custom directory, or create new if none */
+	static continueRecentInDir(sessionDir: string, cwd: string = process.cwd()): SessionManager {
+		if (!existsSync(sessionDir)) {
+			mkdirSync(sessionDir, { recursive: true });
+		}
+		const mostRecent = findMostRecentSession(sessionDir);
+		if (mostRecent) {
+			return new SessionManager(cwd, getDefaultAgentDir(), mostRecent, true, sessionDir);
+		}
+		return new SessionManager(cwd, getDefaultAgentDir(), null, true, sessionDir);
 	}
 }

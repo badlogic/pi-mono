@@ -175,9 +175,16 @@ function createSessionManager(parsed: Args, cwd: string): SessionManager | null 
 		return SessionManager.open(parsed.session);
 	}
 	if (parsed.continue) {
+		if (parsed.sessionDir) {
+			return SessionManager.continueRecentInDir(parsed.sessionDir, cwd);
+		}
 		return SessionManager.continueRecent(cwd);
 	}
 	// --resume is handled separately (needs picker UI)
+	// When sessionDir is set without --continue or --resume, create new session in that dir
+	if (parsed.sessionDir) {
+		return SessionManager.createInDir(parsed.sessionDir, cwd);
+	}
 	// Default case (new session) returns null, SDK will create one
 	return null;
 }
@@ -328,7 +335,7 @@ export async function main(args: string[]) {
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
-		const sessions = SessionManager.list(cwd);
+		const sessions = parsed.sessionDir ? SessionManager.listDir(parsed.sessionDir) : SessionManager.list(cwd);
 		time("SessionManager.list");
 		if (sessions.length === 0) {
 			console.log(chalk.dim("No sessions found"));
@@ -340,7 +347,12 @@ export async function main(args: string[]) {
 			console.log(chalk.dim("No session selected"));
 			return;
 		}
-		sessionManager = SessionManager.open(selectedPath);
+		if (parsed.sessionDir) {
+			sessionManager = SessionManager.continueRecentInDir(parsed.sessionDir, cwd);
+			sessionManager.setSessionFile(selectedPath);
+		} else {
+			sessionManager = SessionManager.open(selectedPath);
+		}
 	}
 
 	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry);
