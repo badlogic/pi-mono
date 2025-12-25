@@ -30,6 +30,7 @@ const CODEPOINTS = {
 	e: 101,
 	g: 103,
 	k: 107,
+	l: 108,
 	o: 111,
 	p: 112,
 	t: 116,
@@ -164,6 +165,7 @@ export const Keys = {
 	CTRL_E: kittySequence(CODEPOINTS.e, MODIFIERS.ctrl),
 	CTRL_G: kittySequence(CODEPOINTS.g, MODIFIERS.ctrl),
 	CTRL_K: kittySequence(CODEPOINTS.k, MODIFIERS.ctrl),
+	CTRL_L: kittySequence(CODEPOINTS.l, MODIFIERS.ctrl),
 	CTRL_O: kittySequence(CODEPOINTS.o, MODIFIERS.ctrl),
 	CTRL_P: kittySequence(CODEPOINTS.p, MODIFIERS.ctrl),
 	CTRL_T: kittySequence(CODEPOINTS.t, MODIFIERS.ctrl),
@@ -220,6 +222,7 @@ const RAW = {
 	CTRL_E: "\x05",
 	CTRL_G: "\x07",
 	CTRL_K: "\x0b",
+	CTRL_L: "\x0c",
 	CTRL_O: "\x0f",
 	CTRL_P: "\x10",
 	CTRL_T: "\x14",
@@ -286,6 +289,14 @@ export function isCtrlK(data: string): boolean {
 }
 
 /**
+ * Check if input matches Ctrl+L (raw byte or Kitty protocol).
+ * Ignores lock key bits.
+ */
+export function isCtrlL(data: string): boolean {
+	return data === RAW.CTRL_L || data === Keys.CTRL_L || matchesKittySequence(data, CODEPOINTS.l, MODIFIERS.ctrl);
+}
+
+/**
  * Check if input matches Ctrl+O (raw byte or Kitty protocol).
  * Ignores lock key bits.
  */
@@ -299,6 +310,14 @@ export function isCtrlO(data: string): boolean {
  */
 export function isCtrlP(data: string): boolean {
 	return data === RAW.CTRL_P || data === Keys.CTRL_P || matchesKittySequence(data, CODEPOINTS.p, MODIFIERS.ctrl);
+}
+
+/**
+ * Check if input matches Shift+Ctrl+P (Kitty protocol only).
+ * Ignores lock key bits.
+ */
+export function isShiftCtrlP(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.p, MODIFIERS.shift + MODIFIERS.ctrl);
 }
 
 /**
