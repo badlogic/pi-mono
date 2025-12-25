@@ -87,16 +87,19 @@ export type ModelChangeEntry = TreeNode & ModelChangeContent;
 export type CompactionEntry = TreeNode & CompactionContent;
 export type BranchSummaryEntry = TreeNode & BranchSummaryContent;
 
-/** Conversation entry - has id/parentId for tree structure */
-export type ConversationEntry =
+/** Session entry - has id/parentId for tree structure */
+export type SessionEntry =
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
 	| CompactionEntry
 	| BranchSummaryEntry;
 
-/** Any session entry (header or conversation) */
-export type SessionEntry = SessionHeader | ConversationEntry;
+/** @deprecated Use SessionEntry */
+export type ConversationEntry = SessionEntry;
+
+/** Raw file entry (includes header) */
+export type FileEntry = SessionHeader | SessionEntry;
 
 export interface SessionContext {
 	messages: AppMessage[];
@@ -135,7 +138,7 @@ export function createSummaryMessage(summary: string): AppMessage {
  * Migrate v1 entries to v2 format by adding id/parentId fields.
  * Mutates entries in place. Safe to call on already-migrated entries.
  */
-export function migrateSessionEntries(entries: SessionEntry[]): void {
+export function migrateSessionEntries(entries: FileEntry[]): void {
 	// Check if already migrated
 	const firstConv = entries.find((e) => e.type !== "session");
 	if (firstConv && "id" in firstConv && firstConv.id) {
@@ -171,7 +174,7 @@ export function migrateSessionEntries(entries: SessionEntry[]): void {
 }
 
 /** Exported for compaction.test.ts */
-export function parseSessionEntries(content: string): SessionEntry[] {
+export function parseSessionEntries(content: string): FileEntry[] {
 	const entries: SessionEntry[] = [];
 	const lines = content.trim().split("\n");
 
@@ -203,26 +206,18 @@ export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEnt
  * Handles compaction and branch summaries along the path.
  */
 export function buildSessionContext(entries: SessionEntry[], leafId?: string): SessionContext {
-	// Build uuid index for conversation entries
-	const byId = new Map<string, ConversationEntry>();
+	// Build uuid index
+	const byId = new Map<string, SessionEntry>();
 	for (const entry of entries) {
-		if (entry.type !== "session") {
-			byId.set(entry.id, entry);
-		}
+		byId.set(entry.id, entry);
 	}
 
 	// Find leaf
-	let leaf: ConversationEntry | undefined;
+	let leaf: SessionEntry | undefined;
 	if (leafId) {
 		leaf = byId.get(leafId);
 	} else {
-		// Find last conversation entry
-		for (let i = entries.length - 1; i >= 0; i--) {
-			if (entries[i].type !== "session") {
-				leaf = entries[i] as ConversationEntry;
-				break;
-			}
-		}
+		leaf = entries[entries.length - 1];
 	}
 
 	if (!leaf) {
@@ -230,8 +225,8 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string): S
 	}
 
 	// Walk from leaf to root, collecting path
-	const path: ConversationEntry[] = [];
-	let current: ConversationEntry | undefined = leaf;
+	const path: SessionEntry[] = [];
+	let current: SessionEntry | undefined = leaf;
 	while (current) {
 		path.unshift(current);
 		current = current.parentId ? byId.get(current.parentId) : undefined;
@@ -316,7 +311,7 @@ function getDefaultSessionDir(cwd: string): string {
 	return sessionDir;
 }
 
-function loadEntriesFromFile(filePath: string): SessionEntry[] {
+function loadEntriesFromFile(filePath: string): FileEntry[] {
 	if (!existsSync(filePath)) return [];
 
 	const content = readFileSync(filePath, "utf8");
@@ -359,7 +354,7 @@ export class SessionManager {
 	private cwd: string;
 	private persist: boolean;
 	private flushed: boolean = false;
-	private inMemoryEntries: SessionEntry[] = [];
+	private inMemoryEntries: FileEntry[] = [];
 
 	// Tree structure (v2)
 	private byId: Map<string, ConversationEntry> = new Map();
@@ -570,11 +565,19 @@ export class SessionManager {
 	}
 
 	/**
-	 * Get all session entries. Returns a defensive copy.
+	 * Get session header.
+	 */
+	getHeader(): SessionHeader | null {
+		const h = this.inMemoryEntries.find((e) => e.type === "session");
+		return h ? (h as SessionHeader) : null;
+	}
+
+	/**
+	 * Get all session entries (excludes header). Returns a defensive copy.
 	 * Use buildSessionContext() if you need the messages for the LLM.
 	 */
 	getEntries(): SessionEntry[] {
-		return [...this.inMemoryEntries];
+		return this.inMemoryEntries.filter((e): e is SessionEntry => e.type !== "session");
 	}
 
 	// =========================================================================
@@ -606,12 +609,12 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	createBranchedSessionFromEntries(entries: SessionEntry[], branchBeforeIndex: number): string | null {
+	createBranchedSessionFromEntries(entries: FileEntry[], branchBeforeIndex: number): string | null {
 		const newSessionId = uuidv4();
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const newSessionFile = join(this.getSessionDir(), `${timestamp}_${newSessionId}.jsonl`);
 
-		const newEntries: SessionEntry[] = [];
+		const newEntries: FileEntry[] = [];
 		for (let i = 0; i < branchBeforeIndex; i++) {
 			const entry = entries[i];
 

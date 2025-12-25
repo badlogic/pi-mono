@@ -34,7 +34,7 @@ function loadLargeSessionEntries(): SessionEntry[] {
 	const content = readFileSync(sessionPath, "utf-8");
 	const entries = parseSessionEntries(content);
 	migrateSessionEntries(entries); // Add id/parentId for v1 fixtures
-	return entries;
+	return entries.filter((e): e is SessionEntry => e.type !== "session");
 }
 
 function createMockUsage(input: number, output: number, cacheRead = 0, cacheWrite = 0): Usage {
@@ -77,16 +77,6 @@ function resetEntryCounter() {
 beforeEach(() => {
 	resetEntryCounter();
 });
-
-function createSessionHeader() {
-	return {
-		type: "session" as const,
-		version: 2,
-		id: "test-session",
-		timestamp: "",
-		cwd: "",
-	};
-}
 
 function createMessageEntry(message: AppMessage): SessionMessageEntry {
 	const id = `test-id-${entryCounter++}`;
@@ -298,12 +288,6 @@ describe("createSummaryMessage", () => {
 describe("buildSessionContext", () => {
 	it("should load all messages when no compaction", () => {
 		const entries: SessionEntry[] = [
-			{
-				type: "session",
-				id: "1",
-				timestamp: "",
-				cwd: "",
-			},
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
 			createMessageEntry(createUserMessage("2")),
@@ -326,7 +310,7 @@ describe("buildSessionContext", () => {
 		const u3 = createMessageEntry(createUserMessage("3"));
 		const a3 = createMessageEntry(createAssistantMessage("c"));
 
-		const entries: SessionEntry[] = [createSessionHeader(), u1, a1, u2, a2, compaction, u3, a3];
+		const entries: SessionEntry[] = [u1, a1, u2, a2, compaction, u3, a3];
 
 		const loaded = buildSessionContext(entries);
 		// summary + kept (u2, a2) + after (u3, a3) = 5
@@ -350,7 +334,7 @@ describe("buildSessionContext", () => {
 		const u4 = createMessageEntry(createUserMessage("4"));
 		const d = createMessageEntry(createAssistantMessage("d"));
 
-		const entries: SessionEntry[] = [createSessionHeader(), u1, a1, compact1, u2, b, u3, c, compact2, u4, d];
+		const entries: SessionEntry[] = [u1, a1, compact1, u2, b, u3, c, compact2, u4, d];
 
 		const loaded = buildSessionContext(entries);
 		// summary + kept from u3 (u3, c) + after (u4, d) = 5
@@ -365,7 +349,7 @@ describe("buildSessionContext", () => {
 		const u2 = createMessageEntry(createUserMessage("2"));
 		const b = createMessageEntry(createAssistantMessage("b"));
 
-		const entries: SessionEntry[] = [createSessionHeader(), u1, a1, compact1, u2, b];
+		const entries: SessionEntry[] = [u1, a1, compact1, u2, b];
 
 		const loaded = buildSessionContext(entries);
 		// summary + all messages (u1, a1, u2, b) = 5
@@ -374,12 +358,6 @@ describe("buildSessionContext", () => {
 
 	it("should track model and thinking level changes", () => {
 		const entries: SessionEntry[] = [
-			{
-				type: "session",
-				id: "1",
-				timestamp: "",
-				cwd: "",
-			},
 			createMessageEntry(createUserMessage("1")),
 			createModelChangeEntry("openai", "gpt-4"),
 			createMessageEntry(createAssistantMessage("a")),
@@ -466,7 +444,7 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 
 		// Simulate appending compaction to entries by creating a proper entry
 		const lastEntry = entries[entries.length - 1];
-		const parentId = lastEntry.type === "session" ? null : lastEntry.id;
+		const parentId = lastEntry.id;
 		const compactionEntry: CompactionEntry = {
 			type: "compaction",
 			id: "compaction-test-id",
