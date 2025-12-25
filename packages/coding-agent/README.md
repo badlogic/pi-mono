@@ -186,6 +186,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 | Command | Description |
 |---------|-------------|
+| `/settings` | Open settings menu (thinking, theme, queue mode, toggles) |
 | `/model` | Switch models mid-session (fuzzy search, arrow keys, Enter to select) |
 | `/thinking` | Adjust thinking level for reasoning models (off/minimal/low/medium/high) |
 | `/queue` | Set message queue mode: one-at-a-time (default) or all-at-once |
