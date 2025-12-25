@@ -689,10 +689,20 @@ export class Editor implements Component {
 		const tabExpandedText = cleanText.replace(/\t/g, "    ");
 
 		// Filter out non-printable characters except newlines
-		const filteredText = tabExpandedText
+		let filteredText = tabExpandedText
 			.split("")
 			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
 			.join("");
+
+		// If pasting a file path (starts with /, ~, or .) and the character before
+		// the cursor is a word character, prepend a space for better readability
+		if (/^[/~.]/.test(filteredText)) {
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			const charBeforeCursor = this.state.cursorCol > 0 ? currentLine[this.state.cursorCol - 1] : "";
+			if (charBeforeCursor && /\w/.test(charBeforeCursor)) {
+				filteredText = ` ${filteredText}`;
+			}
+		}
 
 		// Split into lines
 		const pastedLines = filteredText.split("\n");
