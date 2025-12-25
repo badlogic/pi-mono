@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2025-12-25
+
 ### Changed
 
 - **Credential storage refactored**: API keys and OAuth tokens are now stored in `~/.pi/agent/auth.json` instead of `oauth.json` and `settings.json`. Existing credentials are automatically migrated on first run. ([#296](https://github.com/badlogic/pi-mono/issues/296))

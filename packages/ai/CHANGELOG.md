@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2025-12-25
+
 ### Breaking Changes
 
 - **OAuth storage removed** ([#296](https://github.com/badlogic/pi-mono/issues/296)): All storage functions (`loadOAuthCredentials`, `saveOAuthCredentials`, `setOAuthStorage`, etc.) removed. Callers are responsible for storing credentials.
