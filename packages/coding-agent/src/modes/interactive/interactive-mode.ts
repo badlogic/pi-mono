@@ -54,13 +54,14 @@ import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { QueueModeSelectorComponent } from "./components/queue-mode-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
+import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ShowImagesSelectorComponent } from "./components/show-images-selector.js";
 import { ThemeSelectorComponent } from "./components/theme-selector.js";
 import { ThinkingSelectorComponent } from "./components/thinking-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -157,6 +158,7 @@ export class InteractiveMode {
 
 		// Define slash commands for autocomplete
 		const slashCommands: SlashCommand[] = [
+			{ name: "settings", description: "Open settings menu" },
 			{ name: "thinking", description: "Select reasoning level (opens selector UI)" },
 			{ name: "model", description: "Select model (opens selector UI)" },
 			{ name: "export", description: "Export session to HTML file" },
@@ -612,6 +614,11 @@ export class InteractiveMode {
 			if (!text) return;
 
 			// Handle slash commands
+			if (text === "/settings") {
+				this.showSettingsSelector();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/thinking") {
 				this.showThinkingSelector();
 				this.editor.setText("");
@@ -1403,6 +1410,80 @@ export class InteractiveMode {
 		this.editorContainer.addChild(component);
 		this.ui.setFocus(focus);
 		this.ui.requestRender();
+	}
+
+	private showSettingsSelector(): void {
+		this.showSelector((done) => {
+			const selector = new SettingsSelectorComponent(
+				{
+					autoCompact: this.session.autoCompactionEnabled,
+					showImages: this.settingsManager.getShowImages(),
+					queueMode: this.session.queueMode,
+					thinkingLevel: this.session.thinkingLevel,
+					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
+					currentTheme: this.settingsManager.getTheme() || "dark",
+					availableThemes: getAvailableThemes(),
+					hideThinkingBlock: this.hideThinkingBlock,
+					collapseChangelog: this.settingsManager.getCollapseChangelog(),
+				},
+				{
+					onAutoCompactChange: (enabled) => {
+						this.session.setAutoCompactionEnabled(enabled);
+						this.footer.setAutoCompactEnabled(enabled);
+					},
+					onShowImagesChange: (enabled) => {
+						this.settingsManager.setShowImages(enabled);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof ToolExecutionComponent) {
+								child.setShowImages(enabled);
+							}
+						}
+					},
+					onQueueModeChange: (mode) => {
+						this.session.setQueueMode(mode);
+					},
+					onThinkingLevelChange: (level) => {
+						this.session.setThinkingLevel(level);
+						this.footer.updateState(this.session.state);
+						this.updateEditorBorderColor();
+					},
+					onThemeChange: (themeName) => {
+						const result = setTheme(themeName, true);
+						this.settingsManager.setTheme(themeName);
+						this.ui.invalidate();
+						if (!result.success) {
+							this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
+						}
+					},
+					onThemePreview: (themeName) => {
+						const result = setTheme(themeName, true);
+						if (result.success) {
+							this.ui.invalidate();
+							this.ui.requestRender();
+						}
+					},
+					onHideThinkingBlockChange: (hidden) => {
+						this.hideThinkingBlock = hidden;
+						this.settingsManager.setHideThinkingBlock(hidden);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof AssistantMessageComponent) {
+								child.setHideThinkingBlock(hidden);
+							}
+						}
+						this.chatContainer.clear();
+						this.rebuildChatFromMessages();
+					},
+					onCollapseChangelogChange: (collapsed) => {
+						this.settingsManager.setCollapseChangelog(collapsed);
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return { component: selector, focus: selector.getSettingsList() };
+		});
 	}
 
 	private showThinkingSelector(): void {
