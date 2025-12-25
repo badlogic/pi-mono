@@ -1,18 +1,10 @@
 import type { AppMessage } from "@mariozechner/pi-agent-core";
-import { randomBytes } from "crypto";
+import { randomUUID } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir as getDefaultAgentDir } from "../config.js";
 
 export const CURRENT_SESSION_VERSION = 2;
-
-function uuidv4(): string {
-	const bytes = randomBytes(16);
-	bytes[6] = (bytes[6] & 0x0f) | 0x40;
-	bytes[8] = (bytes[8] & 0x3f) | 0x80;
-	const hex = bytes.toString("hex");
-	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
 
 // ============================================================================
 // Session Header (metadata, not part of conversation tree)
@@ -154,7 +146,7 @@ export function migrateSessionEntries(entries: FileEntry[]): void {
 
 		// Add id/parentId to conversation entries
 		const convEntry = entry as ConversationEntry;
-		convEntry.id = uuidv4();
+		convEntry.id = randomUUID();
 		convEntry.parentId = prevId;
 		prevId = convEntry.id;
 
@@ -357,8 +349,18 @@ export class SessionManager {
 	private inMemoryEntries: FileEntry[] = [];
 
 	// Tree structure (v2)
-	private byId: Map<string, ConversationEntry> = new Map();
+	private byId: Map<string, SessionEntry> = new Map();
 	private leafId: string = "";
+
+	/** Generate a unique short ID (8 hex chars, collision-checked) */
+	private _generateId(): string {
+		for (let i = 0; i < 100; i++) {
+			const id = randomUUID().slice(0, 8);
+			if (!this.byId.has(id)) return id;
+		}
+		// Fallback to full UUID if somehow we have collisions
+		return randomUUID();
+	}
 
 	private constructor(cwd: string, sessionDir: string, sessionFile: string | null, persist: boolean) {
 		this.cwd = cwd;
@@ -381,7 +383,7 @@ export class SessionManager {
 		if (existsSync(this.sessionFile)) {
 			this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
 			const header = this.inMemoryEntries.find((e) => e.type === "session") as SessionHeader | undefined;
-			this.sessionId = header?.id ?? uuidv4();
+			this.sessionId = header?.id ?? randomUUID();
 
 			// Migrate v1 to v2 if needed
 			const version = header?.version ?? 1;
@@ -398,7 +400,7 @@ export class SessionManager {
 	}
 
 	private _initNewSession(): void {
-		this.sessionId = uuidv4();
+		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
 			type: "session",
@@ -488,7 +490,7 @@ export class SessionManager {
 	saveMessage(message: AppMessage): string {
 		const entry: SessionMessageEntry = {
 			type: "message",
-			id: uuidv4(),
+			id: this._generateId(),
 			parentId: this.leafId || null,
 			timestamp: new Date().toISOString(),
 			message,
@@ -500,7 +502,7 @@ export class SessionManager {
 	saveThinkingLevelChange(thinkingLevel: string): string {
 		const entry: ThinkingLevelChangeEntry = {
 			type: "thinking_level_change",
-			id: uuidv4(),
+			id: this._generateId(),
 			parentId: this.leafId || null,
 			timestamp: new Date().toISOString(),
 			thinkingLevel,
@@ -512,7 +514,7 @@ export class SessionManager {
 	saveModelChange(provider: string, modelId: string): string {
 		const entry: ModelChangeEntry = {
 			type: "model_change",
-			id: uuidv4(),
+			id: this._generateId(),
 			parentId: this.leafId || null,
 			timestamp: new Date().toISOString(),
 			provider,
@@ -525,7 +527,7 @@ export class SessionManager {
 	saveCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
 		const entry: CompactionEntry = {
 			type: "compaction",
-			id: uuidv4(),
+			id: this._generateId(),
 			parentId: this.leafId || null,
 			timestamp: new Date().toISOString(),
 			summary,
@@ -603,7 +605,7 @@ export class SessionManager {
 		this.leafId = branchFromId;
 		const entry: BranchSummaryEntry = {
 			type: "branch_summary",
-			id: uuidv4(),
+			id: this._generateId(),
 			parentId: branchFromId,
 			timestamp: new Date().toISOString(),
 			summary,
@@ -613,7 +615,7 @@ export class SessionManager {
 	}
 
 	createBranchedSessionFromEntries(entries: FileEntry[], branchBeforeIndex: number): string | null {
-		const newSessionId = uuidv4();
+		const newSessionId = randomUUID();
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 		const newSessionFile = join(this.getSessionDir(), `${timestamp}_${newSessionId}.jsonl`);
 
