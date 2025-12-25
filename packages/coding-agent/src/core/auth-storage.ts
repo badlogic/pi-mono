@@ -50,6 +50,13 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Remove a runtime API key override.
+	 */
+	removeRuntimeApiKey(provider: string): void {
+		this.runtimeOverrides.delete(provider);
+	}
+
+	/**
 	 * Set a fallback resolver for API keys not found in auth.json or env vars.
 	 * Used for custom provider keys from models.json.
 	 */
