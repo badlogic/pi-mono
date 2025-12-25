@@ -22,9 +22,9 @@ import type {
  *
  * Will not return API keys for providers that require OAuth tokens.
  */
-export function getApiKeyFromEnv(provider: KnownProvider): string | undefined;
-export function getApiKeyFromEnv(provider: string): string | undefined;
-export function getApiKeyFromEnv(provider: any): string | undefined {
+export function getEnvApiKey(provider: KnownProvider): string | undefined;
+export function getEnvApiKey(provider: string): string | undefined;
+export function getEnvApiKey(provider: any): string | undefined {
 	// Fall back to environment variables
 	if (provider === "github-copilot") {
 		return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
@@ -51,7 +51,7 @@ export function stream<TApi extends Api>(
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -100,7 +100,7 @@ export function streamSimple<TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-	const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}

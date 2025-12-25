@@ -6,7 +6,7 @@ import {
 	type ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
-import { getApiKeyFromEnv } from "../stream.js";
+import { getEnvApiKey } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -61,7 +61,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 		};
 
 		try {
-			const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider) || "";
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, apiKey);
 			const params = buildParams(model, context, options);
 			const googleStream = await client.models.generateContentStream(params);

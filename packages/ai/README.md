@@ -1103,10 +1103,10 @@ const response = await complete(model, context, {
 ### Checking Environment Variables
 
 ```typescript
-import { getApiKeyFromEnv } from '@mariozechner/pi-ai';
+import { getEnvApiKey } from '@mariozechner/pi-ai';
 
 // Check if an API key is set in environment variables
-const key = getApiKeyFromEnv('openai');  // checks OPENAI_API_KEY
+const key = getEnvApiKey('openai');  // checks OPENAI_API_KEY
 ```
 
 ## OAuth Providers

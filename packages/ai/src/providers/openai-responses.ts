@@ -11,7 +11,7 @@ import type {
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import { calculateCost } from "../models.js";
-import { getApiKeyFromEnv } from "../stream.js";
+import { getEnvApiKey } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -82,7 +82,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 
 		try {
 			// Create OpenAI client
-			const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider) || "";
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.responses.create(params, { signal: options?.signal });

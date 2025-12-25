@@ -9,7 +9,7 @@ import type {
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
 import { calculateCost } from "../models.js";
-import { getApiKeyFromEnv } from "../stream.js";
+import { getEnvApiKey } from "../stream.js";
 import type {
 	AssistantMessage,
 	Context,
@@ -99,7 +99,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 		};
 
 		try {
-			const apiKey = options?.apiKey || getApiKeyFromEnv(model.provider) || "";
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
