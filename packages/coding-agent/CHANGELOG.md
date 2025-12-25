@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Credential storage refactored**: API keys and OAuth tokens are now stored in `~/.pi/agent/auth.json` instead of `oauth.json` and `settings.json`. Existing credentials are automatically migrated on first run. ([#296](https://github.com/badlogic/pi-mono/issues/296))
+
+- **SDK API changes** ([#296](https://github.com/badlogic/pi-mono/issues/296)):
+  - Added `AuthStorage` class for credential management (API keys and OAuth tokens)
+  - Added `ModelRegistry` class for model discovery and API key resolution
+  - Added `discoverAuthStorage()` and `discoverModels()` discovery functions
+  - `createAgentSession()` now accepts `authStorage` and `modelRegistry` options
+  - Removed `configureOAuthStorage()`, `defaultGetApiKey()`, `findModel()`, `discoverAvailableModels()`
+  - Removed `getApiKey` callback option (use `AuthStorage.setRuntimeApiKey()` for runtime overrides)
+  - Use `getModel()` from `@mariozechner/pi-ai` for built-in models, `modelRegistry.find()` for custom models + built-in models
+  - See updated [SDK documentation](docs/sdk.md) and [README](README.md)
+
+- **Settings changes**: Removed `apiKeys` from `settings.json`. Use `auth.json` instead. ([#296](https://github.com/badlogic/pi-mono/issues/296))
+
 ### Fixed
 
 - **Duplicate skill warnings for symlinks**: Skills loaded via symlinks pointing to the same file are now silently deduplicated instead of showing name collision warnings. ([#304](https://github.com/badlogic/pi-mono/pull/304) by [@mitsuhiko](https://github.com/mitsuhiko))

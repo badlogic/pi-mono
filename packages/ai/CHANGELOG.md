@@ -3,13 +3,14 @@
 ## [Unreleased]
 
 ### Breaking Changes
-- **setApiKey, resolveApiKey**: Removed. Callers must manage their own API key storage/resolution.
-- **getApiKey**: Renamed to `getEnvApiKey`. Only checks environment variables for known providers.
-- **OAuth storage removed**: All storage functions (`loadOAuthCredentials`, `saveOAuthCredentials`, `setOAuthStorage`, etc.) removed. Callers are responsible for storing credentials.
+
+- **OAuth storage removed** ([#296](https://github.com/badlogic/pi-mono/issues/296)): All storage functions (`loadOAuthCredentials`, `saveOAuthCredentials`, `setOAuthStorage`, etc.) removed. Callers are responsible for storing credentials.
 - **OAuth login functions**: `loginAnthropic`, `loginGitHubCopilot`, `loginGeminiCli`, `loginAntigravity` now return `OAuthCredentials` instead of saving to disk.
 - **refreshOAuthToken**: Now takes `(provider, credentials)` and returns new `OAuthCredentials` instead of saving.
 - **getOAuthApiKey**: Now takes `(provider, credentials)` and returns `{ newCredentials, apiKey }` or null.
 - **OAuthCredentials type**: No longer includes `type: "oauth"` discriminator. Callers add discriminator when storing.
+- **setApiKey, resolveApiKey**: Removed. Callers must manage their own API key storage/resolution.
+- **getApiKey**: Renamed to `getEnvApiKey`. Only checks environment variables for known providers.
 
 ## [0.27.7] - 2025-12-24
 
