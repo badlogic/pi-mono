@@ -807,3 +807,13 @@ export function getEditorTheme(): EditorTheme {
 		selectList: getSelectListTheme(),
 	};
 }
+
+export function getSettingsListTheme(): import("@mariozechner/pi-tui").SettingsListTheme {
+	return {
+		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
+		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		description: (text: string) => theme.fg("dim", text),
+		cursor: theme.fg("accent", "→ "),
+		hint: (text: string) => theme.fg("dim", text),
+	};
+}

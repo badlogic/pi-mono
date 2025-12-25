@@ -13,7 +13,6 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
-	getCapabilities,
 	Input,
 	Loader,
 	Markdown,
@@ -52,15 +51,12 @@ import { HookInputComponent } from "./components/hook-input.js";
 import { HookSelectorComponent } from "./components/hook-selector.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
-import { QueueModeSelectorComponent } from "./components/queue-mode-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
-import { ShowImagesSelectorComponent } from "./components/show-images-selector.js";
-import { ThemeSelectorComponent } from "./components/theme-selector.js";
-import { ThinkingSelectorComponent } from "./components/thinking-selector.js";
+import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -157,7 +153,7 @@ export class InteractiveMode {
 
 		// Define slash commands for autocomplete
 		const slashCommands: SlashCommand[] = [
-			{ name: "thinking", description: "Select reasoning level (opens selector UI)" },
+			{ name: "settings", description: "Open settings menu" },
 			{ name: "model", description: "Select model (opens selector UI)" },
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
@@ -167,18 +163,10 @@ export class InteractiveMode {
 			{ name: "branch", description: "Create a new branch from a previous message" },
 			{ name: "login", description: "Login with OAuth provider" },
 			{ name: "logout", description: "Logout from OAuth provider" },
-			{ name: "queue", description: "Select message queue mode (opens selector UI)" },
-			{ name: "theme", description: "Select color theme (opens selector UI)" },
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
-			{ name: "autocompact", description: "Toggle automatic context compaction" },
 			{ name: "resume", description: "Resume a different session" },
 		];
-
-		// Add image toggle command only if terminal supports images
-		if (getCapabilities().images) {
-			slashCommands.push({ name: "show-images", description: "Toggle inline image display" });
-		}
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -612,8 +600,8 @@ export class InteractiveMode {
 			if (!text) return;
 
 			// Handle slash commands
-			if (text === "/thinking") {
-				this.showThinkingSelector();
+			if (text === "/settings") {
+				this.showSettingsSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -662,16 +650,6 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/queue") {
-				this.showQueueModeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/theme") {
-				this.showThemeSelector();
-				this.editor.setText("");
-				return;
-			}
 			if (text === "/new") {
 				this.editor.setText("");
 				await this.handleClearCommand();
@@ -686,16 +664,6 @@ export class InteractiveMode {
 				} finally {
 					this.editor.disableSubmit = false;
 				}
-				return;
-			}
-			if (text === "/autocompact") {
-				this.handleAutocompactCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/show-images") {
-				this.showShowImagesSelector();
-				this.editor.setText("");
 				return;
 			}
 			if (text === "/debug") {
@@ -1405,74 +1373,77 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private showThinkingSelector(): void {
+	private showSettingsSelector(): void {
 		this.showSelector((done) => {
-			const selector = new ThinkingSelectorComponent(
-				this.session.thinkingLevel,
-				this.session.getAvailableThinkingLevels(),
-				(level) => {
-					this.session.setThinkingLevel(level);
-					this.footer.updateState(this.session.state);
-					this.updateEditorBorderColor();
-					done();
-					this.showStatus(`Thinking level: ${level}`);
+			const selector = new SettingsSelectorComponent(
+				{
+					autoCompact: this.session.autoCompactionEnabled,
+					showImages: this.settingsManager.getShowImages(),
+					queueMode: this.session.queueMode,
+					thinkingLevel: this.session.thinkingLevel,
+					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
+					currentTheme: this.settingsManager.getTheme() || "dark",
+					availableThemes: getAvailableThemes(),
+					hideThinkingBlock: this.hideThinkingBlock,
+					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 				},
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-			);
-			return { component: selector, focus: selector.getSelectList() };
-		});
-	}
-
-	private showQueueModeSelector(): void {
-		this.showSelector((done) => {
-			const selector = new QueueModeSelectorComponent(
-				this.session.queueMode,
-				(mode) => {
-					this.session.setQueueMode(mode);
-					done();
-					this.showStatus(`Queue mode: ${mode}`);
-				},
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-			);
-			return { component: selector, focus: selector.getSelectList() };
-		});
-	}
-
-	private showThemeSelector(): void {
-		const currentTheme = this.settingsManager.getTheme() || "dark";
-		this.showSelector((done) => {
-			const selector = new ThemeSelectorComponent(
-				currentTheme,
-				(themeName) => {
-					const result = setTheme(themeName, true);
-					this.settingsManager.setTheme(themeName);
-					this.ui.invalidate();
-					done();
-					if (result.success) {
-						this.showStatus(`Theme: ${themeName}`);
-					} else {
-						this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
-					}
-				},
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-				(themeName) => {
-					const result = setTheme(themeName, true);
-					if (result.success) {
+				{
+					onAutoCompactChange: (enabled) => {
+						this.session.setAutoCompactionEnabled(enabled);
+						this.footer.setAutoCompactEnabled(enabled);
+					},
+					onShowImagesChange: (enabled) => {
+						this.settingsManager.setShowImages(enabled);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof ToolExecutionComponent) {
+								child.setShowImages(enabled);
+							}
+						}
+					},
+					onQueueModeChange: (mode) => {
+						this.session.setQueueMode(mode);
+					},
+					onThinkingLevelChange: (level) => {
+						this.session.setThinkingLevel(level);
+						this.footer.updateState(this.session.state);
+						this.updateEditorBorderColor();
+					},
+					onThemeChange: (themeName) => {
+						const result = setTheme(themeName, true);
+						this.settingsManager.setTheme(themeName);
 						this.ui.invalidate();
+						if (!result.success) {
+							this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
+						}
+					},
+					onThemePreview: (themeName) => {
+						const result = setTheme(themeName, true);
+						if (result.success) {
+							this.ui.invalidate();
+							this.ui.requestRender();
+						}
+					},
+					onHideThinkingBlockChange: (hidden) => {
+						this.hideThinkingBlock = hidden;
+						this.settingsManager.setHideThinkingBlock(hidden);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof AssistantMessageComponent) {
+								child.setHideThinkingBlock(hidden);
+							}
+						}
+						this.chatContainer.clear();
+						this.rebuildChatFromMessages();
+					},
+					onCollapseChangelogChange: (collapsed) => {
+						this.settingsManager.setCollapseChangelog(collapsed);
+					},
+					onCancel: () => {
+						done();
 						this.ui.requestRender();
-					}
+					},
 				},
 			);
-			return { component: selector, focus: selector.getSelectList() };
+			return { component: selector, focus: selector.getSettingsList() };
 		});
 	}
 
@@ -1936,46 +1907,6 @@ export class InteractiveMode {
 		}
 
 		await this.executeCompaction(customInstructions, false);
-	}
-
-	private handleAutocompactCommand(): void {
-		const newState = !this.session.autoCompactionEnabled;
-		this.session.setAutoCompactionEnabled(newState);
-		this.footer.setAutoCompactEnabled(newState);
-		this.showStatus(`Auto-compaction: ${newState ? "on" : "off"}`);
-	}
-
-	private showShowImagesSelector(): void {
-		// Only available if terminal supports images
-		const caps = getCapabilities();
-		if (!caps.images) {
-			this.showWarning("Your terminal does not support inline images");
-			return;
-		}
-
-		this.showSelector((done) => {
-			const selector = new ShowImagesSelectorComponent(
-				this.settingsManager.getShowImages(),
-				(newValue) => {
-					this.settingsManager.setShowImages(newValue);
-
-					// Update all existing tool execution components with new setting
-					for (const child of this.chatContainer.children) {
-						if (child instanceof ToolExecutionComponent) {
-							child.setShowImages(newValue);
-						}
-					}
-
-					done();
-					this.showStatus(`Inline images: ${newValue ? "on" : "off"}`);
-				},
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-			);
-			return { component: selector, focus: selector.getSelectList() };
-		});
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
