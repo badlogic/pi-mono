@@ -188,8 +188,6 @@ The agent reads, writes, and edits files, and executes commands via bash.
 |---------|-------------|
 | `/settings` | Open settings menu (thinking, theme, queue mode, toggles) |
 | `/model` | Switch models mid-session (fuzzy search, arrow keys, Enter to select) |
-| `/thinking` | Adjust thinking level for reasoning models (off/minimal/low/medium/high) |
-| `/queue` | Set message queue mode: one-at-a-time (default) or all-at-once |
 | `/export [file]` | Export session to self-contained HTML |
 | `/session` | Show session info: path, message counts, token usage, cost |
 | `/hotkeys` | Show all keyboard shortcuts |
@@ -201,9 +199,6 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/new` | Start a new session |
 | `/copy` | Copy last agent message to clipboard |
 | `/compact [instructions]` | Manually compact conversation context |
-| `/autocompact` | Toggle automatic context compaction |
-| `/theme` | Select color theme |
-| `/show-images` | Toggle inline image display (supported terminals only) |
 
 ### Editor Features
 
@@ -215,7 +210,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 **Multi-line paste:** Pasted content is collapsed to `[paste #N <lines> lines]` but sent in full.
 
-**Message queuing:** Submit messages while the agent is working. They queue and process based on `/queue` mode. Press Escape to abort and restore queued messages to editor.
+**Message queuing:** Submit messages while the agent is working. They queue and process based on queue mode (configurable via `/settings`). Press Escape to abort and restore queued messages to editor.
 
 ### Keyboard Shortcuts
 
@@ -288,7 +283,7 @@ Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
 **Inline rendering:** On terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images, images in tool output are rendered inline. On unsupported terminals, a text placeholder is shown instead.
 
-Toggle inline images with `/show-images` or set `terminal.showImages: false` in settings.
+Toggle inline images via `/settings` or set `terminal.showImages: false` in settings.
 
 ---
 
@@ -316,7 +311,7 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 **Manual:** `/compact` or `/compact Focus on the API changes`
 
-**Automatic:** Enable with `/autocompact`. When enabled, triggers in two cases:
+**Automatic:** Enable via `/settings`. When enabled, triggers in two cases:
 - **Overflow recovery**: LLM returns context overflow error. Compacts and auto-retries.
 - **Threshold maintenance**: Context exceeds `contextWindow - reserveTokens` after a successful turn. Compacts without retry.
 
@@ -460,9 +455,7 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 
 Built-in themes: `dark` (default), `light`. Auto-detected on first run.
 
-```bash
-/theme  # Interactive selector
-```
+Select theme via `/settings` or set in `~/.pi/agent/settings.json`.
 
 **Custom themes:** Create `~/.pi/agent/themes/*.json`. Custom themes support live reload.
 
@@ -471,7 +464,7 @@ mkdir -p ~/.pi/agent/themes
 cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent/themes/my-theme.json
 ```
 
-Select with `/theme`, then edit the file. Changes apply on save.
+Select with `/settings`, then edit the file. Changes apply on save.
 
 > See [Theme Documentation](docs/theme.md) on how to create custom themes in detail. Pi can help you create a new one.
 
