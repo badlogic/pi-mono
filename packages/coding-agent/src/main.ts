@@ -8,12 +8,13 @@
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { existsSync } from "fs";
 import { join } from "path";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
@@ -182,6 +183,23 @@ function createSessionManager(parsed: Args, cwd: string): SessionManager | null 
 	return null;
 }
 
+/** Discover SYSTEM.md file if no CLI system prompt was provided */
+function discoverSystemPromptFile(): string | undefined {
+	// Check project-local first: .pi/SYSTEM.md
+	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "SYSTEM.md");
+	if (existsSync(projectPath)) {
+		return projectPath;
+	}
+
+	// Fall back to global: ~/.pi/agent/SYSTEM.md
+	const globalPath = join(getAgentDir(), "SYSTEM.md");
+	if (existsSync(globalPath)) {
+		return globalPath;
+	}
+
+	return undefined;
+}
+
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
@@ -190,7 +208,9 @@ function buildSessionOptions(
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
-	const resolvedSystemPrompt = resolvePromptInput(parsed.systemPrompt, "system prompt");
+	// Auto-discover SYSTEM.md if no CLI system prompt provided
+	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
+	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
 	const resolvedAppendPrompt = resolvePromptInput(parsed.appendSystemPrompt, "append system prompt");
 
 	if (sessionManager) {

@@ -23,6 +23,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Branching](#branching)
 - [Configuration](#configuration)
   - [Project Context Files](#project-context-files)
+  - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
@@ -376,6 +377,26 @@ Use these for:
 - Use TypeScript strict mode
 - Prefer async/await over promises
 ```
+
+### Custom System Prompt
+
+Replace the default system prompt entirely by creating a `SYSTEM.md` file:
+
+1. **Project-local:** `.pi/SYSTEM.md` (takes precedence)
+2. **Global:** `~/.pi/agent/SYSTEM.md` (fallback)
+
+This is useful when using pi as different types of agents across repos (coding assistant, personal assistant, domain-specific agent, etc.).
+
+```markdown
+You are a technical writing assistant. Help users write clear documentation.
+
+Focus on:
+- Concise explanations
+- Code examples
+- Proper formatting
+```
+
+The `--system-prompt` CLI flag overrides both files. Use `--append-system-prompt` to add to (rather than replace) the prompt.
 
 ### Custom Models and Providers
 
