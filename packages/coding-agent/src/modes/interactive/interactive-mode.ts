@@ -225,8 +225,11 @@ export class InteractiveMode {
 			theme.fg("dim", "shift+tab") +
 			theme.fg("muted", " to cycle thinking") +
 			"\n" +
-			theme.fg("dim", "ctrl+p") +
+			theme.fg("dim", "ctrl+p/shift+ctrl+p") +
 			theme.fg("muted", " to cycle models") +
+			"\n" +
+			theme.fg("dim", "ctrl+l") +
+			theme.fg("muted", " to select model") +
 			"\n" +
 			theme.fg("dim", "ctrl+o") +
 			theme.fg("muted", " to expand tools") +
@@ -592,7 +595,9 @@ export class InteractiveMode {
 		this.editor.onCtrlD = () => this.handleCtrlD();
 		this.editor.onCtrlZ = () => this.handleCtrlZ();
 		this.editor.onShiftTab = () => this.cycleThinkingLevel();
-		this.editor.onCtrlP = () => this.cycleModel();
+		this.editor.onCtrlP = () => this.cycleModel("forward");
+		this.editor.onShiftCtrlP = () => this.cycleModel("backward");
+		this.editor.onCtrlL = () => this.showModelSelector();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
 		this.editor.onCtrlG = () => this.openExternalEditor();
@@ -1232,9 +1237,9 @@ export class InteractiveMode {
 		}
 	}
 
-	private async cycleModel(): Promise<void> {
+	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
 		try {
-			const result = await this.session.cycleModel();
+			const result = await this.session.cycleModel(direction);
 			if (result === null) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);

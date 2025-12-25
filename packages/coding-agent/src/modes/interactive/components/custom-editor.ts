@@ -3,11 +3,13 @@ import {
 	isCtrlC,
 	isCtrlD,
 	isCtrlG,
+	isCtrlL,
 	isCtrlO,
 	isCtrlP,
 	isCtrlT,
 	isCtrlZ,
 	isEscape,
+	isShiftCtrlP,
 	isShiftTab,
 } from "@mariozechner/pi-tui";
 
@@ -20,6 +22,8 @@ export class CustomEditor extends Editor {
 	public onCtrlD?: () => void;
 	public onShiftTab?: () => void;
 	public onCtrlP?: () => void;
+	public onShiftCtrlP?: () => void;
+	public onCtrlL?: () => void;
 	public onCtrlO?: () => void;
 	public onCtrlT?: () => void;
 	public onCtrlG?: () => void;
@@ -44,9 +48,21 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
+		// Intercept Ctrl+L for model selector
+		if (isCtrlL(data) && this.onCtrlL) {
+			this.onCtrlL();
+			return;
+		}
+
 		// Intercept Ctrl+O for tool output expansion
 		if (isCtrlO(data) && this.onCtrlO) {
 			this.onCtrlO();
+			return;
+		}
+
+		// Intercept Shift+Ctrl+P for backward model cycling (check before Ctrl+P)
+		if (isShiftCtrlP(data) && this.onShiftCtrlP) {
+			this.onShiftCtrlP();
 			return;
 		}
 
