@@ -77,7 +77,7 @@ async function runInteractiveMode(
 		}
 	});
 
-	mode.renderInitialMessages(session.state);
+	mode.renderInitialMessages();
 
 	if (migratedProviders.length > 0) {
 		mode.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);

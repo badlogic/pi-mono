@@ -34,9 +34,12 @@ const ThemeJsonSchema = Type.Object({
 		muted: ColorValueSchema,
 		dim: ColorValueSchema,
 		text: ColorValueSchema,
-		// Backgrounds & Content Text (7 colors)
+		// Backgrounds & Content Text (10 colors)
 		userMessageBg: ColorValueSchema,
 		userMessageText: ColorValueSchema,
+		customMessageBg: ColorValueSchema,
+		customMessageText: ColorValueSchema,
+		customMessageLabel: ColorValueSchema,
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
@@ -95,6 +98,8 @@ export type ThemeColor =
 	| "dim"
 	| "text"
 	| "userMessageText"
+	| "customMessageText"
+	| "customMessageLabel"
 	| "toolTitle"
 	| "toolOutput"
 	| "mdHeading"
@@ -127,7 +132,7 @@ export type ThemeColor =
 	| "thinkingXhigh"
 	| "bashMode";
 
-export type ThemeBg = "userMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
+export type ThemeBg = "userMessageBg" | "customMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -482,7 +487,13 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
-	const bgColorKeys: Set<string> = new Set(["userMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg"]);
+	const bgColorKeys: Set<string> = new Set([
+		"userMessageBg",
+		"customMessageBg",
+		"toolPendingBg",
+		"toolSuccessBg",
+		"toolErrorBg",
+	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
 			bgColors[key as ThemeBg] = value;
