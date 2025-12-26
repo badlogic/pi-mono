@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import type { LoadedHook, SendHandler } from "./loader.js";
 import type {
+	CustomMessageRenderer,
 	ExecOptions,
 	ExecResult,
 	HookError,
@@ -201,6 +202,20 @@ export class HookRunner {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Get a custom message renderer for the given customType.
+	 * Returns the first renderer found across all hooks, or undefined if none.
+	 */
+	getCustomMessageRenderer(customType: string): CustomMessageRenderer | undefined {
+		for (const hook of this.hooks) {
+			const renderer = hook.customMessageRenderers.get(customType);
+			if (renderer) {
+				return renderer;
+			}
+		}
+		return undefined;
 	}
 
 	/**

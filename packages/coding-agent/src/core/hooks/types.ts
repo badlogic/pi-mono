@@ -7,9 +7,11 @@
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { Component } from "@mariozechner/pi-tui";
+import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { CompactionEntry, SessionManager } from "../session-manager.js";
+import type { CompactionEntry, CustomMessageEntry, SessionManager } from "../session-manager.js";
 import type {
 	BashToolDetails,
 	FindToolDetails,
@@ -369,6 +371,24 @@ export interface SessionEventResult {
 export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Promise<R>;
 
 /**
+ * Options passed to custom message renderers.
+ */
+export interface CustomMessageRenderOptions {
+	/** Whether the view is expanded */
+	expanded: boolean;
+}
+
+/**
+ * Renderer for custom message entries.
+ * Hooks register these to provide custom TUI rendering for their CustomMessageEntry types.
+ */
+export type CustomMessageRenderer<T = unknown> = (
+	entry: CustomMessageEntry<T>,
+	options: CustomMessageRenderOptions,
+	theme: Theme,
+) => Component | null;
+
+/**
  * HookAPI passed to hook factory functions.
  * Hooks use pi.on() to subscribe to events and pi.send() to inject messages.
  */
@@ -388,6 +408,13 @@ export interface HookAPI {
 	 * If the agent is idle, a new agent loop is started.
 	 */
 	send(text: string, attachments?: Attachment[]): void;
+
+	/**
+	 * Register a custom renderer for CustomMessageEntry with a specific customType.
+	 * The renderer is called when rendering the entry in the TUI.
+	 * Return null to use the default renderer.
+	 */
+	renderCustomMessage<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void;
 }
 
 /**

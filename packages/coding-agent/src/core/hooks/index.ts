@@ -5,6 +5,8 @@ export type {
 	AgentEndEvent,
 	AgentStartEvent,
 	BashToolResultEvent,
+	CustomMessageRenderer,
+	CustomMessageRenderOptions,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	ExecResult,

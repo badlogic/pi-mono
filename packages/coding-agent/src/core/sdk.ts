@@ -340,6 +340,7 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
 function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; factory: HookFactory }>): LoadedHook[] {
 	return definitions.map((def) => {
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
+		const customMessageRenderers = new Map<string, any>();
 		let sendHandler: (text: string, attachments?: any[]) => void = () => {};
 
 		const api = {
@@ -351,6 +352,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			send: (text: string, attachments?: any[]) => {
 				sendHandler(text, attachments);
 			},
+			renderCustomMessage: (customType: string, renderer: any) => {
+				customMessageRenderers.set(customType, renderer);
+			},
 		};
 
 		def.factory(api as any);
@@ -359,6 +363,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			path: def.path ?? "<inline>",
 			resolvedPath: def.path ?? "<inline>",
 			handlers,
+			customMessageRenderers,
 			setSendHandler: (handler: (text: string, attachments?: any[]) => void) => {
 				sendHandler = handler;
 			},

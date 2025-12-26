@@ -63,6 +63,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			path: "test-hook",
 			resolvedPath: "/test/test-hook.ts",
 			handlers,
+			customMessageRenderers: new Map(),
 			setSendHandler: () => {},
 		};
 	}
@@ -238,6 +239,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 					],
 				],
 			]),
+			customMessageRenderers: new Map(),
 			setSendHandler: () => {},
 		};
 
@@ -281,6 +283,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 					],
 				],
 			]),
+			customMessageRenderers: new Map(),
 			setSendHandler: () => {},
 		};
 
@@ -303,6 +306,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 					],
 				],
 			]),
+			customMessageRenderers: new Map(),
 			setSendHandler: () => {},
 		};
 
