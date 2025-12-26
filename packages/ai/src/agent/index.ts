@@ -7,5 +7,8 @@ export type {
 	AgentTool,
 	AgentToolResult,
 	AgentToolUpdateCallback,
+	BeforeRequestCallback,
+	BeforeRequestContext,
+	BeforeRequestResult,
 	QueuedMessage,
 } from "./types.js";

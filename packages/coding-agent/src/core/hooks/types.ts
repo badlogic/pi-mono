@@ -6,7 +6,7 @@
  */
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { AgentTool, ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { CutPointResult } from "../compaction.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import type {
@@ -188,6 +188,27 @@ export interface TurnEndEvent {
 }
 
 /**
+ * Event data for before_request event.
+ * Fired before each LLM request within an agent loop.
+ * Allows dynamic modification of the context sent to the LLM.
+ */
+export interface BeforeRequestEvent {
+	type: "before_request";
+	/** Current system prompt */
+	systemPrompt: string;
+	/** Messages to be sent (LLM-formatted) */
+	messages: Message[];
+	/** Available tools */
+	tools: AgentTool<any>[];
+	/** Current model */
+	model: Model<any>;
+	/** Reasoning/thinking level */
+	reasoning?: string;
+	/** Zero-based turn index within this agent loop */
+	turnIndex: number;
+}
+
+/**
  * Event data for tool_call event.
  * Fired before a tool is executed. Hooks can block execution.
  */
@@ -311,6 +332,7 @@ export type HookEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| BeforeRequestEvent
 	| ToolCallEvent
 	| ToolResultEvent;
 
@@ -355,6 +377,17 @@ export interface SessionEventResult {
 	compactionEntry?: CompactionEntry;
 }
 
+/**
+ * Return type for before_request event handlers.
+ * Allows hooks to modify the context sent to the LLM.
+ */
+export interface BeforeRequestEventResult {
+	/** Override the system prompt */
+	systemPrompt?: string;
+	/** Override the messages (LLM-formatted) */
+	messages?: Message[];
+}
+
 // ============================================================================
 // Hook API
 // ============================================================================
@@ -375,6 +408,7 @@ export interface HookAPI {
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
+	on(event: "before_request", handler: HookHandler<BeforeRequestEvent, BeforeRequestEventResult | undefined>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult | undefined>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult | undefined>): void;
 

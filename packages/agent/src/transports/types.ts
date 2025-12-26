@@ -1,4 +1,12 @@
-import type { AgentEvent, AgentTool, Message, Model, QueuedMessage, ReasoningEffort } from "@mariozechner/pi-ai";
+import type {
+	AgentEvent,
+	AgentTool,
+	BeforeRequestCallback,
+	Message,
+	Model,
+	QueuedMessage,
+	ReasoningEffort,
+} from "@mariozechner/pi-ai";
 
 /**
  * The minimal configuration needed to run an agent turn.
@@ -9,6 +17,8 @@ export interface AgentRunConfig {
 	model: Model<any>;
 	reasoning?: ReasoningEffort;
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
+	/** Callback invoked before each LLM request, allows modifying context */
+	beforeRequest?: BeforeRequestCallback;
 }
 
 /**

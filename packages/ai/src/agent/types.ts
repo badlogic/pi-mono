@@ -82,6 +82,47 @@ export interface QueuedMessage<TApp = Message> {
 	llm?: Message; // Optional transformed message for loop context (undefined if filtered)
 }
 
+/**
+ * Context provided to beforeRequest callback before each LLM call.
+ * Contains the full request that will be sent to the LLM.
+ */
+export interface BeforeRequestContext {
+	/** System prompt to be sent */
+	systemPrompt: string;
+	/** Messages to be sent (already transformed for LLM) */
+	messages: Message[];
+	/** Available tools */
+	tools: AgentTool<any>[];
+	/** Model being used */
+	model: Model<any>;
+	/** Reasoning/thinking level */
+	reasoning?: string;
+	/** Zero-based turn index within this agent loop */
+	turnIndex: number;
+}
+
+/**
+ * Modifications that can be returned from beforeRequest callback.
+ * All fields are optional - only provided fields will override the defaults.
+ */
+export interface BeforeRequestResult {
+	/** Override the system prompt */
+	systemPrompt?: string;
+	/** Override the messages */
+	messages?: Message[];
+}
+
+/**
+ * Callback invoked before each LLM request within an agent loop.
+ * Allows dynamic modification of the context sent to the LLM.
+ *
+ * @param context - The full context about to be sent to the LLM
+ * @returns Modifications to apply, or undefined to use defaults
+ */
+export type BeforeRequestCallback = (
+	context: BeforeRequestContext,
+) => Promise<BeforeRequestResult | undefined> | BeforeRequestResult | undefined;
+
 // Configuration for agent loop execution
 export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
@@ -102,4 +143,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 
 	preprocessor?: (messages: AgentContext["messages"], abortSignal?: AbortSignal) => Promise<AgentContext["messages"]>;
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
+
+	/**
+	 * Optional callback invoked before each LLM request.
+	 * Allows dynamic modification of systemPrompt, messages, etc.
+	 * Called once per turn (each LLM call in the agent loop).
+	 */
+	beforeRequest?: BeforeRequestCallback;
 }

@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import type { LoadedHook, SendHandler } from "./loader.js";
 import type {
+	BeforeRequestEventResult,
 	ExecOptions,
 	ExecResult,
 	HookError,
@@ -218,11 +219,13 @@ export class HookRunner {
 
 	/**
 	 * Emit an event to all hooks.
-	 * Returns the result from session/tool_result events (if any handler returns one).
+	 * Returns the result from session/tool_result/before_request events (if any handler returns one).
 	 */
-	async emit(event: HookEvent): Promise<SessionEventResult | ToolResultEventResult | undefined> {
+	async emit(
+		event: HookEvent,
+	): Promise<SessionEventResult | ToolResultEventResult | BeforeRequestEventResult | undefined> {
 		const ctx = this.createContext();
-		let result: SessionEventResult | ToolResultEventResult | undefined;
+		let result: SessionEventResult | ToolResultEventResult | BeforeRequestEventResult | undefined;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get(event.type);
@@ -230,11 +233,12 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					// No timeout for before_compact events (like tool_call, they may take a while)
+					// No timeout for before_compact and before_request events (they may involve async operations)
 					const isBeforeCompact = event.type === "session" && (event as SessionEvent).reason === "before_compact";
+					const isBeforeRequest = event.type === "before_request";
 					let handlerResult: unknown;
 
-					if (isBeforeCompact) {
+					if (isBeforeCompact || isBeforeRequest) {
 						handlerResult = await handler(event, ctx);
 					} else {
 						const timeout = createTimeout(this.timeout);
@@ -254,6 +258,11 @@ export class HookRunner {
 					// For tool_result events, capture the result
 					if (event.type === "tool_result" && handlerResult) {
 						result = handlerResult as ToolResultEventResult;
+					}
+
+					// For before_request events, capture the result
+					if (event.type === "before_request" && handlerResult) {
+						result = handlerResult as BeforeRequestEventResult;
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);

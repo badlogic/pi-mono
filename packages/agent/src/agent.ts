@@ -1,4 +1,11 @@
-import type { ImageContent, Message, QueuedMessage, ReasoningEffort, TextContent } from "@mariozechner/pi-ai";
+import type {
+	BeforeRequestCallback,
+	ImageContent,
+	Message,
+	QueuedMessage,
+	ReasoningEffort,
+	TextContent,
+} from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentTransport } from "./transports/types.js";
 import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
@@ -57,6 +64,8 @@ export interface AgentOptions {
 	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
 	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
 	queueMode?: "all" | "one-at-a-time";
+	// Callback invoked before each LLM request, allows modifying context dynamically
+	beforeRequest?: BeforeRequestCallback;
 }
 
 export class Agent {
@@ -79,12 +88,22 @@ export class Agent {
 	private queueMode: "all" | "one-at-a-time";
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
+	private beforeRequest?: BeforeRequestCallback;
 
 	constructor(opts: AgentOptions) {
 		this._state = { ...this._state, ...opts.initialState };
 		this.transport = opts.transport;
 		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
 		this.queueMode = opts.queueMode || "one-at-a-time";
+		this.beforeRequest = opts.beforeRequest;
+	}
+
+	/**
+	 * Set the beforeRequest callback.
+	 * Called before each LLM request to allow dynamic context modification.
+	 */
+	setBeforeRequest(callback: BeforeRequestCallback | undefined) {
+		this.beforeRequest = callback;
 	}
 
 	get state(): AgentState {
@@ -286,6 +305,7 @@ export class Agent {
 					return queued as QueuedMessage<T>[];
 				}
 			},
+			beforeRequest: this.beforeRequest,
 		};
 
 		const llmMessages = await this.messageTransformer(this._state.messages);

@@ -91,6 +91,7 @@ async function runLoop(
 ): Promise<void> {
 	let hasMoreToolCalls = true;
 	let firstTurn = true;
+	let turnIndex = 0;
 	let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
 	let queuedAfterTools: QueuedMessage<any>[] | null = null;
 
@@ -114,8 +115,29 @@ async function runLoop(
 			queuedMessages = [];
 		}
 
+		// Call beforeRequest callback to allow context modification
+		let effectiveContext = currentContext;
+		if (config.beforeRequest) {
+			const modifications = await config.beforeRequest({
+				systemPrompt: currentContext.systemPrompt,
+				messages: currentContext.messages,
+				tools: currentContext.tools ?? [],
+				model: config.model,
+				reasoning: config.reasoning,
+				turnIndex,
+			});
+			if (modifications) {
+				effectiveContext = {
+					...currentContext,
+					systemPrompt: modifications.systemPrompt ?? currentContext.systemPrompt,
+					messages: modifications.messages ?? currentContext.messages,
+				};
+			}
+		}
+
 		// Stream assistant response
-		const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+		const message = await streamAssistantResponse(effectiveContext, config, signal, stream, streamFn);
+		turnIndex++;
 		newMessages.push(message);
 
 		if (message.stopReason === "error" || message.stopReason === "aborted") {

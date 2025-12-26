@@ -589,6 +589,25 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	});
 	time("createAgent");
 
+	// Wire up beforeRequest callback to hook system
+	if (hookRunner) {
+		agent.setBeforeRequest(async (context) => {
+			if (!hookRunner.hasHandlers("before_request")) {
+				return undefined;
+			}
+			const result = await hookRunner.emit({
+				type: "before_request",
+				systemPrompt: context.systemPrompt,
+				messages: context.messages,
+				tools: context.tools,
+				model: context.model,
+				reasoning: context.reasoning,
+				turnIndex: context.turnIndex,
+			});
+			return result as { systemPrompt?: string; messages?: any[] } | undefined;
+		});
+	}
+
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
