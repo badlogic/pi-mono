@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# pi-dev: Self-updating pi launcher for development fork
+#
+# Automatically merges upstream changes, rebuilds, and launches pi.
+# If merge conflicts occur, warns but still launches so you can use pi to resolve them.
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Colors
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+log() { echo -e "${DIM}[pi-dev]${RESET} $1"; }
+warn() { echo -e "${YELLOW}[pi-dev]${RESET} $1"; }
+error() { echo -e "${RED}[pi-dev]${RESET} $1"; }
+success() { echo -e "${GREEN}[pi-dev]${RESET} $1"; }
+
+# Check if we have uncommitted changes
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    warn "Uncommitted changes detected, skipping upstream sync"
+    SKIP_SYNC=1
+fi
+
+if [ -z "$SKIP_SYNC" ]; then
+    log "Fetching upstream..."
+    git fetch upstream --quiet 2>/dev/null || {
+        warn "Could not fetch upstream, continuing with current version"
+        SKIP_SYNC=1
+    }
+fi
+
+if [ -z "$SKIP_SYNC" ]; then
+    # Check if we're behind upstream
+    LOCAL=$(git rev-parse HEAD)
+    UPSTREAM=$(git rev-parse upstream/main 2>/dev/null || echo "")
+    BASE=$(git merge-base HEAD upstream/main 2>/dev/null || echo "")
+
+    if [ -n "$UPSTREAM" ] && [ "$LOCAL" != "$UPSTREAM" ]; then
+        if [ "$BASE" = "$LOCAL" ]; then
+            log "Behind upstream, attempting merge..."
+            
+            if git merge upstream/main --no-edit 2>/dev/null; then
+                success "Merged upstream changes successfully"
+                NEEDS_BUILD=1
+            else
+                error "Merge conflict detected!"
+                echo ""
+                warn "Conflict files:"
+                git diff --name-only --diff-filter=U | sed 's/^/  /'
+                echo ""
+                warn "Launching pi so you can resolve conflicts..."
+                warn "After resolving, run: git add . && git commit"
+                echo ""
+                MERGE_CONFLICT=1
+            fi
+        elif [ "$BASE" = "$UPSTREAM" ]; then
+            log "Ahead of upstream, no merge needed"
+        else
+            log "Diverged from upstream, attempting merge..."
+            
+            if git merge upstream/main --no-edit 2>/dev/null; then
+                success "Merged upstream changes successfully"
+                NEEDS_BUILD=1
+            else
+                error "Merge conflict detected!"
+                echo ""
+                warn "Conflict files:"
+                git diff --name-only --diff-filter=U | sed 's/^/  /'
+                echo ""
+                warn "Launching pi so you can resolve conflicts..."
+                warn "After resolving, run: git add . && git commit"
+                echo ""
+                MERGE_CONFLICT=1
+            fi
+        fi
+    else
+        log "Already up to date with upstream"
+    fi
+fi
+
+# Build if needed (merged new changes or dist doesn't exist)
+if [ -n "$NEEDS_BUILD" ] || [ ! -f "packages/coding-agent/dist/cli.js" ]; then
+    if [ -z "$MERGE_CONFLICT" ]; then
+        log "Building..."
+        if npm run build --silent 2>/dev/null; then
+            success "Build complete"
+        else
+            error "Build failed!"
+            if [ -f "packages/coding-agent/dist/cli.js" ]; then
+                warn "Using previous build..."
+            else
+                error "No previous build available, cannot launch"
+                exit 1
+            fi
+        fi
+    else
+        warn "Skipping build due to merge conflict"
+        if [ ! -f "packages/coding-agent/dist/cli.js" ]; then
+            error "No previous build available, cannot launch"
+            exit 1
+        fi
+    fi
+fi
+
+# Launch pi
+exec node "$SCRIPT_DIR/packages/coding-agent/dist/cli.js" "$@"
