@@ -4,7 +4,7 @@
 
 ### Added
 
-- **npm package hooks**: Hooks can now be specified as npm package specifiers (e.g., `@scope/my-hook`) in addition to file paths. Packages are resolved via `require.resolve`.
+- **npm package resolution for hooks and custom tools**: Hooks and custom tools can now be specified as npm package specifiers with optional version (e.g., `@scope/my-hook@1.0.0`, `my-tool@latest`) in addition to file paths. Packages with versions are installed to `~/.pi/agent/cache/`. For `@latest` packages, checks if a newer version exists before reinstalling. Includes timeout protection (10s for version check, 60s for install). ([#318](https://github.com/badlogic/pi-mono/pull/318) by [@melihmucuk](https://github.com/melihmucuk))
 
 ## [0.30.0] - 2025-12-25
 

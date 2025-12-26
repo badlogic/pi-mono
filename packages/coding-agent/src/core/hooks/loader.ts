@@ -4,12 +4,12 @@
 
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
+import { isNpmPackage, resolvePath } from "../npm-resolve.js";
 import type { HookAPI, HookFactory } from "./types.js";
 
 // Create require function to resolve module paths at runtime
@@ -75,86 +75,6 @@ export interface LoadHooksResult {
 	errors: Array<{ path: string; error: string }>;
 }
 
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
-
-function normalizeUnicodeSpaces(str: string): string {
-	return str.replace(UNICODE_SPACES, " ");
-}
-
-function expandPath(p: string): string {
-	const normalized = normalizeUnicodeSpaces(p);
-	if (normalized.startsWith("~/")) {
-		return path.join(os.homedir(), normalized.slice(2));
-	}
-	if (normalized.startsWith("~")) {
-		return path.join(os.homedir(), normalized.slice(1));
-	}
-	return normalized;
-}
-
-/**
- * Check if a path looks like an npm package specifier.
- * npm packages:
- * - Start with @ (scoped): @scope/package, @scope/package/subpath
- * - Or are bare identifiers: package, package/subpath
- *
- * File paths:
- * - Absolute paths (Unix: /path, Windows: C:\path or C:/path)
- * - Start with ~ (home)
- * - Start with ./ or ../ (relative)
- */
-function isNpmPackage(hookPath: string): boolean {
-	// File path indicators
-	if (
-		path.isAbsolute(hookPath) ||
-		hookPath.startsWith("~") ||
-		hookPath.startsWith("./") ||
-		hookPath.startsWith("../")
-	) {
-		return false;
-	}
-	// Scoped package or bare identifier
-	return true;
-}
-
-/**
- * Resolve npm package to absolute path.
- * Uses require.resolve to find the package in node_modules.
- * Returns null if resolution fails.
- */
-function resolveNpmPackage(packageSpecifier: string): string | null {
-	try {
-		// require.resolve finds the package entry point
-		return require.resolve(packageSpecifier);
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Resolve hook path.
- * - npm packages resolved via require.resolve
- * - Absolute paths used as-is
- * - Paths starting with ~ expanded to home directory
- * - Relative paths resolved from cwd
- */
-function resolveHookPath(hookPath: string, cwd: string): string | null {
-	// npm package resolution
-	if (isNpmPackage(hookPath)) {
-		return resolveNpmPackage(hookPath);
-	}
-
-	// File path resolution
-	const expanded = expandPath(hookPath);
-
-	if (path.isAbsolute(expanded)) {
-		return expanded;
-	}
-
-	// Relative paths resolved from cwd
-	return path.resolve(cwd, expanded);
-}
-
 /**
  * Create a HookAPI instance that collects handlers.
  * Returns the API and a function to set the send handler later.
@@ -190,11 +110,13 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
  * Load a single hook module using jiti.
  */
 async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
-	const resolvedPath = resolveHookPath(hookPath, cwd);
+	const resolved = await resolvePath(hookPath, cwd);
 
-	if (!resolvedPath) {
-		return { hook: null, error: `Could not resolve hook path: ${hookPath}` };
+	if (resolved.error || !resolved.path) {
+		return { hook: null, error: resolved.error ?? `Could not resolve hook path: ${hookPath}` };
 	}
+
+	const resolvedPath = resolved.path;
 
 	try {
 		// Create jiti instance for TypeScript/ESM loading
@@ -317,9 +239,9 @@ export async function discoverAndLoadHooks(
 			}
 		} else {
 			// For file paths, resolve and dedup
-			const resolved = resolveHookPath(p, cwd);
-			if (resolved && !seen.has(resolved)) {
-				seen.add(resolved);
+			const resolved = await resolvePath(p, cwd);
+			if (resolved.path && !seen.has(resolved.path)) {
+				seen.add(resolved.path);
 				allPaths.push(p);
 			}
 		}

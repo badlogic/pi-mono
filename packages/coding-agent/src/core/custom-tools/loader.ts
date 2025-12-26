@@ -10,12 +10,12 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir, isBunBinary } from "../../config.js";
 import type { HookUIContext } from "../hooks/types.js";
+import { isNpmPackage, resolvePath } from "../npm-resolve.js";
 import type {
 	CustomToolFactory,
 	CustomToolsLoadResult,
@@ -51,40 +51,6 @@ function getAliases(): Record<string, string> {
 		"@sinclair/typebox": typeboxRoot,
 	};
 	return _aliases;
-}
-
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
-
-function normalizeUnicodeSpaces(str: string): string {
-	return str.replace(UNICODE_SPACES, " ");
-}
-
-function expandPath(p: string): string {
-	const normalized = normalizeUnicodeSpaces(p);
-	if (normalized.startsWith("~/")) {
-		return path.join(os.homedir(), normalized.slice(2));
-	}
-	if (normalized.startsWith("~")) {
-		return path.join(os.homedir(), normalized.slice(1));
-	}
-	return normalized;
-}
-
-/**
- * Resolve tool path.
- * - Absolute paths used as-is
- * - Paths starting with ~ expanded to home directory
- * - Relative paths resolved from cwd
- */
-function resolveToolPath(toolPath: string, cwd: string): string {
-	const expanded = expandPath(toolPath);
-
-	if (path.isAbsolute(expanded)) {
-		return expanded;
-	}
-
-	// Relative paths resolved from cwd
-	return path.resolve(cwd, expanded);
 }
 
 /**
@@ -238,7 +204,13 @@ async function loadTool(
 	cwd: string,
 	sharedApi: ToolAPI,
 ): Promise<{ tools: LoadedCustomTool[] | null; error: string | null }> {
-	const resolvedPath = resolveToolPath(toolPath, cwd);
+	const resolved = await resolvePath(toolPath, cwd);
+
+	if (resolved.error || !resolved.path) {
+		return { tools: null, error: resolved.error ?? `Could not resolve tool path: ${toolPath}` };
+	}
+
+	const resolvedPath = resolved.path;
 
 	// Use Bun.build for compiled binaries since jiti can't resolve bundled modules
 	if (isBunBinary) {
@@ -389,8 +361,8 @@ export async function discoverAndLoadCustomTools(
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
-	// Helper to add paths without duplicates
-	const addPaths = (paths: string[]) => {
+	// Helper to add file paths without duplicates (for discovered tools)
+	const addFilePaths = (paths: string[]) => {
 		for (const p of paths) {
 			const resolved = path.resolve(p);
 			if (!seen.has(resolved)) {
@@ -402,14 +374,29 @@ export async function discoverAndLoadCustomTools(
 
 	// 1. Global tools: agentDir/tools/
 	const globalToolsDir = path.join(agentDir, "tools");
-	addPaths(discoverToolsInDir(globalToolsDir));
+	addFilePaths(discoverToolsInDir(globalToolsDir));
 
 	// 2. Project-local tools: cwd/.pi/tools/
 	const localToolsDir = path.join(cwd, ".pi", "tools");
-	addPaths(discoverToolsInDir(localToolsDir));
+	addFilePaths(discoverToolsInDir(localToolsDir));
 
-	// 3. Explicitly configured paths (can override/add)
-	addPaths(configuredPaths.map((p) => resolveToolPath(p, cwd)));
+	// 3. Explicitly configured paths (npm packages or file paths)
+	for (const p of configuredPaths) {
+		if (isNpmPackage(p)) {
+			// For npm packages, use specifier as-is for dedup
+			if (!seen.has(p)) {
+				seen.add(p);
+				allPaths.push(p);
+			}
+		} else {
+			// For file paths, resolve and dedup
+			const resolved = await resolvePath(p, cwd);
+			if (resolved.path && !seen.has(resolved.path)) {
+				seen.add(resolved.path);
+				allPaths.push(p);
+			}
+		}
+	}
 
 	return loadCustomTools(allPaths, cwd, builtInToolNames);
 }
