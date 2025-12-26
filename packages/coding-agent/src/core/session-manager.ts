@@ -1,4 +1,5 @@
-import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
+import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -101,7 +102,7 @@ export interface LabelEntry extends SessionEntryBase {
 export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	type: "custom_message";
 	customType: string;
-	content: (string | Attachment)[];
+	content: string | (TextContent | ImageContent)[];
 	details?: T;
 	display: boolean;
 }
@@ -161,31 +162,11 @@ export function createSummaryMessage(summary: string, timestamp: string): AppMes
 	};
 }
 
-/** Convert CustomMessageEntry content to AppMessage format */
+/** Convert CustomMessageEntry to AppMessage format */
 function createCustomMessage(entry: CustomMessageEntry): AppMessage {
-	// Convert content array to AppMessage content format
-	const content = entry.content.map((item) => {
-		if (typeof item === "string") {
-			return { type: "text" as const, text: item };
-		}
-		// Attachment - convert to appropriate content type
-		if (item.type === "image") {
-			return {
-				type: "image" as const,
-				data: item.content,
-				mimeType: item.mimeType,
-			};
-		}
-		// Document attachment - use extracted text or indicate document
-		return {
-			type: "text" as const,
-			text: item.extractedText ?? `[Document: ${item.fileName}]`,
-		};
-	});
-
 	return {
 		role: "user",
-		content,
+		content: entry.content,
 		timestamp: new Date(entry.timestamp).getTime(),
 	};
 }
@@ -684,14 +665,14 @@ export class SessionManager {
 	/**
 	 * Append a custom message entry (for hooks) that participates in LLM context.
 	 * @param customType Hook identifier for filtering on reload
-	 * @param content Message content (strings and attachments)
+	 * @param content Message content (string or TextContent/ImageContent array)
 	 * @param display Whether to show in TUI (true = styled display, false = hidden)
 	 * @param details Optional hook-specific metadata (not sent to LLM)
 	 * @returns Entry id
 	 */
 	appendCustomMessageEntry<T = unknown>(
 		customType: string,
-		content: (string | Attachment)[],
+		content: string | (TextContent | ImageContent)[],
 		display: boolean,
 		details?: T,
 	): string {
