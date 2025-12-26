@@ -46,9 +46,8 @@ export async function runPrintMode(
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			entries,
-			sessionFile: session.sessionFile,
-			previousSessionFile: null,
+			sessionManager: session.sessionManager,
+			modelRegistry: session.modelRegistry,
 			reason: "start",
 		});
 	}

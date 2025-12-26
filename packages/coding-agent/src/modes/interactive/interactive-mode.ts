@@ -384,9 +384,8 @@ export class InteractiveMode {
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			entries,
-			sessionFile: this.session.sessionFile,
-			previousSessionFile: null,
+			sessionManager: this.session.sessionManager,
+			modelRegistry: this.session.modelRegistry,
 			reason: "start",
 		});
 	}
@@ -1156,12 +1155,10 @@ export class InteractiveMode {
 		// Emit shutdown event to hooks
 		const hookRunner = this.session.hookRunner;
 		if (hookRunner?.hasHandlers("session")) {
-			const entries = this.sessionManager.getEntries();
 			await hookRunner.emit({
 				type: "session",
-				entries,
-				sessionFile: this.session.sessionFile,
-				previousSessionFile: null,
+				sessionManager: this.session.sessionManager,
+				modelRegistry: this.session.modelRegistry,
 				reason: "shutdown",
 			});
 		}

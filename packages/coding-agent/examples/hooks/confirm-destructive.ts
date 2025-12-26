@@ -5,6 +5,7 @@
  * Demonstrates how to cancel session events using the before_* variants.
  */
 
+import type { SessionMessageEntry } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
@@ -28,7 +29,10 @@ export default function (pi: HookAPI) {
 			if (!ctx.hasUI) return;
 
 			// Check if there are unsaved changes (messages since last assistant response)
-			const hasUnsavedWork = event.entries.some((e) => e.type === "message" && e.message.role === "user");
+			const entries = event.sessionManager.getEntries();
+			const hasUnsavedWork = entries.some(
+				(e): e is SessionMessageEntry => e.type === "message" && e.message.role === "user",
+			);
 
 			if (hasUnsavedWork) {
 				const confirmed = await ctx.ui.confirm(

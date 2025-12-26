@@ -21,9 +21,13 @@
   - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
   - `prepareCompaction()` now returns `firstKeptEntryId` in its result
 - **Hook types**:
-  - `SessionEventResult.compactionEntry` replaced with `SessionEventResult.compaction` (content only, SessionManager adds id/parentId)
-  - `before_compact` event now includes `firstKeptEntryId` field for hooks that return custom compaction
+  - `SessionEventBase` now passes `sessionManager` and `modelRegistry` instead of `entries`, `sessionFile`, `previousSessionFile`
+  - `before_compact` event passes `preparation: CompactionPreparation` and `previousCompactions: CompactionEntry[]` (newest first)
+  - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
+  - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
   - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
+- **SessionManager**:
+  - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 
 ### Added
 

@@ -395,7 +395,7 @@ export class AgentSession {
 
 	/** Current session file path, or null if sessions are disabled */
 	get sessionFile(): string | null {
-		return this.sessionManager.isPersisted() ? this.sessionManager.getSessionFile() : null;
+		return this.sessionManager.getSessionFile() ?? null;
 	}
 
 	/** Current session ID */
@@ -515,15 +515,13 @@ export class AgentSession {
 	 */
 	async reset(): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
-		const entries = this.sessionManager.getEntries();
 
 		// Emit before_new event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				entries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "before_new",
 			})) as SessionEventResult | undefined;
 
@@ -544,9 +542,8 @@ export class AgentSession {
 			this._hookRunner.setSessionFile(this.sessionFile);
 			await this._hookRunner.emit({
 				type: "session",
-				entries: [],
-				sessionFile: this.sessionFile,
-				previousSessionFile,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "new",
 			});
 		}
@@ -762,34 +759,22 @@ export class AgentSession {
 				throw new Error("Nothing to compact (session too small)");
 			}
 
-			// Find previous compaction summary if any
-			let previousSummary: string | undefined;
-			for (let i = entries.length - 1; i >= 0; i--) {
-				if (entries[i].type === "compaction") {
-					previousSummary = (entries[i] as CompactionEntry).summary;
-					break;
-				}
-			}
-
 			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
+				// Get previous compactions, newest first
+				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
+
 				const result = (await this._hookRunner.emit({
 					type: "session",
-					entries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
+					sessionManager: this.sessionManager,
+					modelRegistry: this._modelRegistry,
 					reason: "before_compact",
-					cutPoint: preparation.cutPoint,
-					firstKeptEntryId: preparation.firstKeptEntryId,
-					previousSummary,
-					messagesToSummarize: [...preparation.messagesToSummarize],
-					messagesToKeep: [...preparation.messagesToKeep],
-					tokensBefore: preparation.tokensBefore,
+					preparation,
+					previousCompactions,
 					customInstructions,
 					model: this.model,
-					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._compactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
@@ -847,12 +832,10 @@ export class AgentSession {
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
-					entries: newEntries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
+					sessionManager: this.sessionManager,
+					modelRegistry: this._modelRegistry,
 					reason: "compact",
 					compactionEntry: savedCompactionEntry,
-					tokensBefore,
 					fromHook,
 				});
 			}
@@ -948,34 +931,22 @@ export class AgentSession {
 				return;
 			}
 
-			// Find previous compaction summary if any
-			let previousSummary: string | undefined;
-			for (let i = entries.length - 1; i >= 0; i--) {
-				if (entries[i].type === "compaction") {
-					previousSummary = (entries[i] as CompactionEntry).summary;
-					break;
-				}
-			}
-
 			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
+				// Get previous compactions, newest first
+				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
+
 				const hookResult = (await this._hookRunner.emit({
 					type: "session",
-					entries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
+					sessionManager: this.sessionManager,
+					modelRegistry: this._modelRegistry,
 					reason: "before_compact",
-					cutPoint: preparation.cutPoint,
-					firstKeptEntryId: preparation.firstKeptEntryId,
-					previousSummary,
-					messagesToSummarize: [...preparation.messagesToSummarize],
-					messagesToKeep: [...preparation.messagesToKeep],
-					tokensBefore: preparation.tokensBefore,
+					preparation,
+					previousCompactions,
 					customInstructions: undefined,
 					model: this.model,
-					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._autoCompactionAbortController.signal,
 				})) as SessionEventResult | undefined;
 
@@ -1034,12 +1005,10 @@ export class AgentSession {
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
-					entries: newEntries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
+					sessionManager: this.sessionManager,
+					modelRegistry: this._modelRegistry,
 					reason: "compact",
 					compactionEntry: savedCompactionEntry,
-					tokensBefore,
 					fromHook,
 				});
 			}
@@ -1337,16 +1306,15 @@ export class AgentSession {
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
-		const oldEntries = this.sessionManager.getEntries();
 
 		// Emit before_switch event (can be cancelled)
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				entries: oldEntries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "before_switch",
+				targetSessionFile: sessionPath,
 			})) as SessionEventResult | undefined;
 
 			if (result?.cancel) {
@@ -1362,7 +1330,6 @@ export class AgentSession {
 		this.sessionManager.setSessionFile(sessionPath);
 
 		// Reload messages
-		const entries = this.sessionManager.getEntries();
 		const sessionContext = this.sessionManager.buildSessionContext();
 
 		// Emit session event to hooks
@@ -1370,10 +1337,10 @@ export class AgentSession {
 			this._hookRunner.setSessionFile(sessionPath);
 			await this._hookRunner.emit({
 				type: "session",
-				entries,
-				sessionFile: sessionPath,
-				previousSessionFile,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "switch",
+				previousSessionFile,
 			});
 		}
 
@@ -1428,9 +1395,8 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				entries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "before_branch",
 				targetTurnIndex: entryIndex,
 			})) as SessionEventResult | undefined;
@@ -1454,7 +1420,6 @@ export class AgentSession {
 		}
 
 		// Reload messages from entries (works for both file and in-memory mode)
-		const newEntries = this.sessionManager.getEntries();
 		const sessionContext = this.sessionManager.buildSessionContext();
 
 		// Emit branch event to hooks (after branch completes)
@@ -1462,9 +1427,8 @@ export class AgentSession {
 			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
 				type: "session",
-				entries: newEntries,
-				sessionFile: newSessionFile,
-				previousSessionFile,
+				sessionManager: this.sessionManager,
+				modelRegistry: this._modelRegistry,
 				reason: "branch",
 				targetTurnIndex: entryIndex,
 			});
