@@ -31,9 +31,6 @@ Custom context compaction that summarizes the entire conversation instead of kee
 ### async-notify.ts
 Listens for `subagent:complete` events from async subagents and sends a notification to the agent. When you run a subagent with `async: true`, it runs in the background and emits an event on completion. This hook catches that event and injects a message so you know when background work finishes.
 
-### command-notify.ts
-Listens for `command:complete` events from the `background_command` tool. Notifies the agent when background shell commands finish, showing exit status and output preview.
-
 ### external-events.ts
 Push-based external events. Linters, test watchers, or CI can notify the agent without polling:
 
