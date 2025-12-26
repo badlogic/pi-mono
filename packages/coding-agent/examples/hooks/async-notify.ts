@@ -1,5 +1,11 @@
 import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
+interface ChainStepResult {
+	agent: string;
+	output: string;
+	success: boolean;
+}
+
 interface SubagentResult {
 	id: string | null;
 	agent: string | null;
@@ -7,6 +13,7 @@ interface SubagentResult {
 	summary: string;
 	exitCode: number;
 	timestamp: number;
+	results?: ChainStepResult[];
 }
 
 export default function (pi: HookAPI) {
@@ -14,8 +21,7 @@ export default function (pi: HookAPI) {
 		const result = data as SubagentResult;
 		const agent = result.agent ?? "unknown";
 		const status = result.success ? "completed" : "failed";
-		const summary = result.summary.length > 200 ? `${result.summary.slice(0, 200)}...` : result.summary;
 
-		pi.send(`Background task ${status}: **${agent}**\n\n${summary}`);
+		pi.send(`Background task ${status}: **${agent}**\n\n${result.summary}`);
 	});
 }
