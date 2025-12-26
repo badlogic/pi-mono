@@ -111,6 +111,8 @@ export {
 	buildSessionContext,
 	type CompactionEntry,
 	CURRENT_SESSION_VERSION,
+	type CustomEntry,
+	type CustomMessageEntry,
 	createSummaryMessage,
 	type FileEntry,
 	getLatestCompactionEntry,
