@@ -1,4 +1,11 @@
-export { discoverAndLoadHooks, type LoadedHook, type LoadHooksResult, loadHooks, type SendHandler } from "./loader.js";
+export {
+	type AppendEntryHandler,
+	discoverAndLoadHooks,
+	type LoadedHook,
+	type LoadHooksResult,
+	loadHooks,
+	type SendMessageHandler,
+} from "./loader.js";
 export { type HookErrorListener, HookRunner } from "./runner.js";
 export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
 export type {
@@ -17,9 +24,11 @@ export type {
 	HookEvent,
 	HookEventContext,
 	HookFactory,
+	HookMessage,
 	HookUIContext,
 	LsToolResultEvent,
 	ReadToolResultEvent,
+	RegisteredCommand,
 	SessionEvent,
 	SessionEventResult,
 	ToolCallEvent,

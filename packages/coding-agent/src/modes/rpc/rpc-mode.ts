@@ -131,16 +131,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		hookRunner.onError((err) => {
 			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
 		});
-		// Set up send handler for pi.send()
-		hookRunner.setSendHandler((text, attachments) => {
-			// In RPC mode, just queue or prompt based on streaming state
-			if (session.isStreaming) {
-				session.queueMessage(text);
-			} else {
-				session.prompt(text, { attachments }).catch((e) => {
-					output(error(undefined, "hook_send", e.message));
-				});
-			}
+		// Set up handlers for pi.sendMessage() and pi.appendEntry()
+		hookRunner.setSendMessageHandler((message, triggerTurn) => {
+			session.sendHookMessage(message, triggerTurn).catch((e) => {
+				output(error(undefined, "hook_send", e.message));
+			});
+		});
+		hookRunner.setAppendEntryHandler((customType, data) => {
+			session.sessionManager.appendCustomEntry(customType, data);
 		});
 		// Emit session event
 		await hookRunner.emit({
