@@ -93,14 +93,14 @@ Questions to resolve:
 
 ### CustomMessageEntry<T>
 
-Hooks can define their own custom message entry types and inject them into the session.
+Hook-injected messages that participate in LLM context. Unlike `CustomEntry<T>` (for hook state only), these are sent to the model.
 
 ```typescript
 export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
   type: "custom_message";
   customType: string;           // Hook identifier
   content: (string | Attachment)[];  // Message content
-  details?: T;                  // Hook-specific data (like tool result details)
+  details?: T;                  // Hook-specific data for state reconstruction on reload
   display: boolean;             // Whether to display in TUI
 }
 ```
@@ -114,6 +114,8 @@ Behavior:
   - Custom renderer defined by the hook that contributes it
 - [ ] Define injection mechanism for hooks to add CustomMessageEntry
 - [ ] Hook registration for custom renderers
+
+See also: `CustomEntry<T>` for storing hook state that does NOT participate in context.
 
 ### HTML Export
 

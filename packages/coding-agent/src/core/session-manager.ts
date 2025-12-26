@@ -61,11 +61,20 @@ export interface BranchSummaryEntry extends SessionEntryBase {
 	summary: string;
 }
 
-/** Custom entry for hooks. Use customType to identify your hook's entries. */
-export interface CustomEntry extends SessionEntryBase {
+/**
+ * Custom entry for hooks to store hook-specific data in the session.
+ * Use customType to identify your hook's entries.
+ *
+ * Purpose: Persist hook state across session reloads. On reload, hooks can
+ * scan entries for their customType and reconstruct internal state.
+ *
+ * Does NOT participate in LLM context (ignored by buildSessionContext).
+ * For injecting content into context, see CustomMessageEntry.
+ */
+export interface CustomEntry<T = unknown> extends SessionEntryBase {
 	type: "custom";
 	customType: string;
-	data?: unknown;
+	data?: T;
 }
 
 /** Label entry for user-defined bookmarks/markers on entries. */
