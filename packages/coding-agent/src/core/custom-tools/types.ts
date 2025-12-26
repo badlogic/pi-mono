@@ -9,6 +9,7 @@ import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mario
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { EventBus } from "../event-bus.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type { SessionEntry } from "../session-manager.js";
 
@@ -43,6 +44,8 @@ export interface ToolAPI {
 	ui: ToolUIContext;
 	/** Whether UI is available (false in print/RPC mode) */
 	hasUI: boolean;
+	/** Shared event bus */
+	events: EventBus;
 }
 
 /** Session event passed to onSession callback */

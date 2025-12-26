@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir, isBunBinary } from "../../config.js";
+import { createEventBus, type EventBus } from "../event-bus.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type {
 	CustomToolFactory,
@@ -290,10 +291,12 @@ export async function loadCustomTools(
 	paths: string[],
 	cwd: string,
 	builtInToolNames: string[],
+	eventBus?: EventBus,
 ): Promise<CustomToolsLoadResult> {
 	const tools: LoadedCustomTool[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const seenNames = new Set<string>(builtInToolNames);
+	const resolvedEventBus = eventBus ?? createEventBus();
 
 	// Shared API object - all tools get the same instance
 	const sharedApi: ToolAPI = {
@@ -301,6 +304,7 @@ export async function loadCustomTools(
 		exec: (command: string, args: string[], options?: ExecOptions) => execCommand(command, args, cwd, options),
 		ui: createNoOpUIContext(),
 		hasUI: false,
+		events: resolvedEventBus,
 	};
 
 	for (const toolPath of paths) {
@@ -385,6 +389,7 @@ export async function discoverAndLoadCustomTools(
 	cwd: string,
 	builtInToolNames: string[],
 	agentDir: string = getAgentDir(),
+	eventBus?: EventBus,
 ): Promise<CustomToolsLoadResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
@@ -411,5 +416,5 @@ export async function discoverAndLoadCustomTools(
 	// 3. Explicitly configured paths (can override/add)
 	addPaths(configuredPaths.map((p) => resolveToolPath(p, cwd)));
 
-	return loadCustomTools(allPaths, cwd, builtInToolNames);
+	return loadCustomTools(allPaths, cwd, builtInToolNames, eventBus);
 }

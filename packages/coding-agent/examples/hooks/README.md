@@ -28,6 +28,30 @@ Automatically commits changes when the agent exits (shutdown event). Uses the la
 ### custom-compaction.ts
 Custom context compaction that summarizes the entire conversation instead of keeping recent turns. Uses the `before_compact` hook event to intercept compaction and generate a comprehensive summary using `complete()` from the AI package. Useful when you want maximum context window space at the cost of losing exact conversation history.
 
+### async-notify.ts
+Listens for `subagent:complete` events from async subagents and sends a notification to the agent. When you run a subagent with `async: true`, it runs in the background and emits an event on completion. This hook catches that event and injects a message so you know when background work finishes.
+
+### command-notify.ts
+Listens for `command:complete` events from the `background_command` tool. Notifies the agent when background shell commands finish, showing exit status and output preview.
+
+### external-events.ts
+Push-based external events. Linters, test watchers, or CI can notify the agent without polling:
+
+```
+tsc --watch ──┐
+vitest        ├──► write JSON ──► external-events.ts ──► pi.send() ──► Agent
+CI pipeline ──┘
+```
+
+**Directory:** `$PI_EXTERNAL_EVENTS_DIR` or `/tmp/pi-external-events`
+
+**Send an event:**
+```bash
+echo '{"type":"test_failed","file":"auth.test.ts","error":"timeout"}' > /tmp/pi-external-events/$(uuidgen).json
+```
+
+Handles `test_failed`, `type_error`, `build_complete` out of the box. Customize for your event types.
+
 ## Usage
 
 ```bash

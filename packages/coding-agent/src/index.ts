@@ -38,6 +38,7 @@ export type {
 	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,

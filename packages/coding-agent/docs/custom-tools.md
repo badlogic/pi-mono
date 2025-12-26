@@ -146,6 +146,7 @@ interface ToolAPI {
     notify(message: string, type?: "info" | "warning" | "error"): void;
   };
   hasUI: boolean;  // false in --print or --mode rpc
+  events: EventBus;  // Shared event bus (emit/on)
 }
 
 interface ExecOptions {
@@ -162,6 +163,16 @@ interface ExecResult {
 ```
 
 Always check `pi.hasUI` before using UI methods.
+
+### Event Bus
+
+Emit events that hooks can receive:
+
+```typescript
+pi.events.emit("my:event", { status: "done" });
+```
+
+See `examples/hooks/` for hooks that listen to events like `command:complete` and `subagent:complete`.
 
 ### Cancellation Example
 

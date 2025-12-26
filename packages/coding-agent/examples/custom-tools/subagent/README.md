@@ -95,6 +95,30 @@ Use a chain: first have scout find the read tool, then have planner suggest impr
 | Single | `{ agent, task }` | One agent, one task |
 | Parallel | `{ tasks: [...] }` | Multiple agents run concurrently (max 8, 4 concurrent) |
 | Chain | `{ chain: [...] }` | Sequential with `{previous}` placeholder |
+| Async | `{ ..., async: true }` | Runs in background, emits `subagent:complete` via `pi.events` |
+
+## Async Mode
+
+Runs subagents in the background. Works with both single agents and chains.
+
+```typescript
+// Single async
+{ agent: "scout", task: "find auth code", async: true }
+
+// Async chain (scout -> planner in background)
+{ chain: [
+  { agent: "scout", task: "find auth code" },
+  { agent: "planner", task: "plan based on: {previous}" }
+], async: true }
+```
+
+**How it works:**
+1. Subagent(s) spawn as detached process
+2. Returns immediately with an async ID
+3. On completion, emits `subagent:complete` event via `pi.events`
+4. A hook listens and calls `pi.send()` to notify you
+
+**Note:** Events only fire in interactive mode (agent must stay alive).
 
 ## Output Display
 

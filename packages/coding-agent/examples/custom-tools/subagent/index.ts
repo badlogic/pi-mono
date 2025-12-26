@@ -13,6 +13,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -32,6 +33,7 @@ const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const MAX_AGENTS_IN_DESCRIPTION = 10;
 const COLLAPSED_ITEM_COUNT = 10;
+const RESULTS_DIR = path.join(os.tmpdir(), "pi-subagent-results");
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
@@ -163,6 +165,16 @@ interface SubagentDetails {
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	asyncId?: string;
+}
+
+interface SubagentAsyncResult {
+	id: string | null;
+	agent: string | null;
+	success: boolean;
+	summary: string;
+	exitCode: number;
+	timestamp: number;
 }
 
 function getFinalOutput(messages: Message[]): string {
@@ -400,6 +412,7 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 const SubagentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
+	async: Type.Optional(Type.Boolean({ description: "Run asynchronously (single mode only)" })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
@@ -410,6 +423,61 @@ const SubagentParams = Type.Object({
 });
 
 const factory: CustomToolFactory = (pi) => {
+	fs.mkdirSync(RESULTS_DIR, { recursive: true });
+	const pendingPrompts = new Map<string, { dir: string; filePath: string }>();
+
+	const handleResultFile = (filename: string) => {
+		const filePath = path.join(RESULTS_DIR, filename);
+		if (!fs.existsSync(filePath)) return;
+
+		let raw = "";
+		try {
+			raw = fs.readFileSync(filePath, "utf-8");
+		} catch {
+			return;
+		}
+
+		try {
+			const data = JSON.parse(raw) as SubagentAsyncResult;
+			const id = (data as { id?: unknown }).id;
+			if (typeof id === "string") {
+				const prompt = pendingPrompts.get(id);
+				if (prompt) {
+					try {
+						fs.unlinkSync(prompt.filePath);
+					} catch {
+						/* ignore */
+					}
+					try {
+						fs.rmdirSync(prompt.dir);
+					} catch {
+						/* ignore */
+					}
+					pendingPrompts.delete(id);
+				}
+			}
+			pi.events.emit("subagent:complete", data);
+		} catch {
+			// ignore parse errors
+		} finally {
+			try {
+				fs.unlinkSync(filePath);
+			} catch {
+				/* ignore */
+			}
+		}
+	};
+
+	const watcher = fs.watch(RESULTS_DIR, (eventType, filename) => {
+		if (eventType !== "rename") return;
+		if (!filename) return;
+		const name = filename.toString();
+		if (!name.endsWith(".json")) return;
+		setTimeout(() => {
+			handleResultFile(name);
+		}, 50);
+	});
+
 	const tool: CustomAgentTool<typeof SubagentParams, SubagentDetails> = {
 		name: "subagent",
 		label: "Subagent",
@@ -488,6 +556,134 @@ const factory: CustomToolFactory = (pi) => {
 							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
 						};
 				}
+			}
+
+			if (params.async) {
+				if (hasTasks) {
+					return {
+						content: [{ type: "text", text: "Async mode does not support parallel tasks." }],
+						details: makeDetails("parallel")([]),
+						isError: true,
+					};
+				}
+
+				const id = randomUUID();
+				const resultPath = path.join(RESULTS_DIR, `${id}.json`);
+
+				if (hasChain && params.chain) {
+					const chainSteps = params.chain.map((step) => {
+						const agent = agents.find((a: AgentConfig) => a.name === step.agent);
+						return {
+							agent: step.agent,
+							task: step.task,
+							model: agent?.model,
+							tools: agent?.tools,
+							systemPrompt: agent?.systemPrompt?.trim() || null,
+						};
+					});
+
+					const runnerScript = `
+const { spawnSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+const steps = ${JSON.stringify(chainSteps)};
+const resultPath = ${JSON.stringify(resultPath)};
+const cwd = ${JSON.stringify(params.cwd ?? pi.cwd)};
+
+let previousOutput = "";
+const results = [];
+
+for (const step of steps) {
+  const args = ["-p", "--no-session"];
+  if (step.model) args.push("--model", step.model);
+  if (step.tools?.length) args.push("--tools", step.tools.join(","));
+  
+  if (step.systemPrompt) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-chain-"));
+    const promptPath = path.join(tmpDir, "prompt.md");
+    fs.writeFileSync(promptPath, step.systemPrompt);
+    args.push("--append-system-prompt", promptPath);
+  }
+  
+  const task = step.task.replace(/\\{previous\\}/g, previousOutput);
+  args.push("Task: " + task);
+  
+  const result = spawnSync("pi", args, { cwd, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+  const output = (result.stdout || "").trim();
+  previousOutput = output;
+  results.push({ agent: step.agent, output, success: result.status === 0 });
+}
+
+const summary = results.map(r => r.agent + ": " + r.output.slice(0, 200)).join("\\n\\n");
+fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+fs.writeFileSync(resultPath, JSON.stringify({
+  id: ${JSON.stringify(id)},
+  agent: "chain:" + steps.map(s => s.agent).join("->"),
+  success: results.every(r => r.success),
+  summary,
+  results,
+  exitCode: results.every(r => r.success) ? 0 : 1,
+  timestamp: Date.now()
+}));
+`;
+					const scriptPath = path.join(os.tmpdir(), `pi-chain-runner-${id}.js`);
+					fs.writeFileSync(scriptPath, runnerScript);
+
+					const proc = spawn("node", [scriptPath], {
+						cwd: params.cwd ?? pi.cwd,
+						detached: true,
+						stdio: "ignore",
+					});
+					proc.unref();
+
+					const agentNames = params.chain.map((s) => s.agent).join(" -> ");
+					return {
+						content: [{ type: "text", text: `Async chain started: ${agentNames} (${id})` }],
+						details: { ...makeDetails("chain")([]), asyncId: id },
+					};
+				}
+
+				const agentName = params.agent as string;
+				const agent = agents.find((a) => a.name === agentName);
+				if (!agent) {
+					return {
+						content: [{ type: "text", text: `Unknown agent: ${agentName}` }],
+						details: makeDetails("single")([]),
+						isError: true,
+					};
+				}
+
+				const args: string[] = ["-p", "--no-session"];
+				if (agent.model) args.push("--model", agent.model);
+				if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+
+				if (agent.systemPrompt.trim()) {
+					const tmp = writePromptToTempFile(agent.name, agent.systemPrompt);
+					pendingPrompts.set(id, tmp);
+					args.push("--append-system-prompt", tmp.filePath);
+				}
+
+				args.push(`Task: ${params.task}`);
+
+				const proc = spawn("pi", args, {
+					cwd: params.cwd ?? pi.cwd,
+					detached: true,
+					stdio: "ignore",
+					env: {
+						...process.env,
+						PI_ASYNC_RESULT: resultPath,
+						PI_ASYNC_ID: id,
+						PI_ASYNC_AGENT: agentName,
+					},
+				});
+				proc.unref();
+
+				return {
+					content: [{ type: "text", text: `Async subagent started: ${agentName} (${id})` }],
+					details: { ...makeDetails("single")([]), asyncId: id },
+				};
 			}
 
 			if (params.chain && params.chain.length > 0) {
@@ -697,9 +893,10 @@ const factory: CustomToolFactory = (pi) => {
 			}
 			const agentName = args.agent || "...";
 			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "...";
+			const asyncSuffix = args.async ? " (async)" : "";
 			let text =
 				theme.fg("toolTitle", theme.bold("subagent ")) +
-				theme.fg("accent", agentName) +
+				theme.fg("accent", `${agentName}${asyncSuffix}`) +
 				theme.fg("muted", ` [${scope}]`);
 			text += `\n  ${theme.fg("dim", preview)}`;
 			return new Text(text, 0, 0);
@@ -974,6 +1171,9 @@ const factory: CustomToolFactory = (pi) => {
 
 			const text = result.content[0];
 			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+		},
+		dispose() {
+			watcher.close();
 		},
 	};
 
