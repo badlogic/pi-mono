@@ -49,11 +49,13 @@ export interface ModelChangeEntry extends SessionEntryBase {
 	modelId: string;
 }
 
-export interface CompactionEntry extends SessionEntryBase {
+export interface CompactionEntry<T = unknown> extends SessionEntryBase {
 	type: "compaction";
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/** Hook-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
+	details?: T;
 }
 
 export interface BranchSummaryEntry extends SessionEntryBase {
@@ -592,8 +594,8 @@ export class SessionManager {
 	}
 
 	/** Append a compaction summary as child of current leaf, then advance leaf. Returns entry id. */
-	appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
-		const entry: CompactionEntry = {
+	appendCompaction<T = unknown>(summary: string, firstKeptEntryId: string, tokensBefore: number, details?: T): string {
+		const entry: CompactionEntry<T> = {
 			type: "compaction",
 			id: generateId(this.byId),
 			parentId: this.leafId || null,
@@ -601,6 +603,7 @@ export class SessionManager {
 			summary,
 			firstKeptEntryId,
 			tokensBefore,
+			details,
 		};
 		this._appendEntry(entry);
 		return entry.id;

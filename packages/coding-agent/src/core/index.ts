@@ -7,12 +7,12 @@ export {
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
-	type CompactionResult,
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
 } from "./agent-session.js";
 export { type BashExecutorOptions, type BashResult, executeBash } from "./bash-executor.js";
+export type { CompactionResult } from "./compaction.js";
 export {
 	type CustomAgentTool,
 	type CustomToolFactory,

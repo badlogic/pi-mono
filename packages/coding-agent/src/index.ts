@@ -4,7 +4,6 @@ export {
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
-	type CompactionResult,
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
@@ -13,6 +12,7 @@ export {
 export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
 // Compaction
 export {
+	type CompactionResult,
 	type CutPointResult,
 	calculateContextTokens,
 	compact,

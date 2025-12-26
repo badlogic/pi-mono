@@ -12,10 +12,12 @@ import { messageTransformer } from "./messages.js";
 import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 /** Result from compact() - SessionManager adds uuid/parentUuid when saving */
-export interface CompactionResult {
+export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/** Hook-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
+	details?: T;
 }
 
 // ============================================================================
