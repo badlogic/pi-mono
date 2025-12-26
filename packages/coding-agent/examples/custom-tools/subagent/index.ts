@@ -424,8 +424,8 @@ const factory: CustomToolFactory = (pi) => {
 						placeholder: "@pi:previous",
 					};
 
-					const jitiCli = process.env.PI_JITI_CLI;
-					if (!jitiCli) throw new Error("PI_JITI_CLI not set. Async chains require pi 0.13+");
+					const jitiCli = pi.jitiCliPath;
+					if (!jitiCli) throw new Error("jitiCliPath not available. Async chains require pi 0.13+");
 					const runnerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "chain-runner.ts");
 					const proc = spawn("node", [jitiCli, runnerPath], {
 						cwd: params.cwd ?? pi.cwd,

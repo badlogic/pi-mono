@@ -46,6 +46,8 @@ export interface ToolAPI {
 	hasUI: boolean;
 	/** Shared event bus */
 	events: EventBus;
+	/** Path to jiti CLI for spawning TypeScript subprocesses (undefined if unavailable) */
+	jitiCliPath?: string;
 }
 
 /** Session event passed to onSession callback */

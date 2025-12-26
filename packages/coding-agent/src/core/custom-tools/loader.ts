@@ -29,15 +29,15 @@ import type {
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
 
-// Expose jiti CLI path for custom tools that need to spawn TypeScript subprocesses
-if (!process.env.PI_JITI_CLI) {
+// Resolve jiti CLI path for custom tools that need to spawn TypeScript subprocesses
+const jitiCliPath: string | undefined = (() => {
 	try {
 		const jitiPkg = require.resolve("jiti/package.json");
-		process.env.PI_JITI_CLI = path.join(path.dirname(jitiPkg), "lib/jiti-cli.mjs");
+		return path.join(path.dirname(jitiPkg), "lib/jiti-cli.mjs");
 	} catch {
-		/* jiti not available - custom tools needing it will fail gracefully */
+		return undefined;
 	}
-}
+})();
 
 // Lazily computed aliases - resolved at runtime to handle global installs
 let _aliases: Record<string, string> | null = null;
@@ -315,6 +315,7 @@ export async function loadCustomTools(
 		ui: createNoOpUIContext(),
 		hasUI: false,
 		events: resolvedEventBus,
+		jitiCliPath,
 	};
 
 	for (const toolPath of paths) {

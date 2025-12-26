@@ -391,35 +391,42 @@ async execute(toolCallId, args, signal, onUpdate) {
 
 ## Spawning TypeScript Subprocesses
 
-Most tools run synchronously within `execute()`. However, if you need to spawn a **detached TypeScript subprocess** that outlives the tool call (e.g., for async background tasks), use the `PI_JITI_CLI` environment variable:
+Most tools run synchronously within `execute()`. However, if you need to spawn a **detached TypeScript subprocess** that outlives the tool call (e.g., for async background tasks), use `pi.jitiCliPath`:
 
 ```typescript
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ToolAPI } from "@mariozechner/pi-coding-agent";
 
-async execute(toolCallId, params) {
-  const jitiCli = process.env.PI_JITI_CLI;
-  if (!jitiCli) {
-    throw new Error("PI_JITI_CLI not set. Requires pi 0.13+");
-  }
-
-  const scriptPath = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "background-worker.ts"
-  );
-
-  const proc = spawn("node", [jitiCli, scriptPath], {
-    detached: true,
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-
-  proc.stdin?.write(JSON.stringify({ task: params.task }));
-  proc.stdin?.end();
-  proc.unref();
-
+export default function (pi: ToolAPI) {
   return {
-    content: [{ type: "text", text: "Background task started" }],
+    name: "my-tool",
+    // ...
+    async execute(toolCallId, params) {
+      const jitiCli = pi.jitiCliPath;
+      if (!jitiCli) {
+        throw new Error("jitiCliPath not available. Requires pi 0.13+");
+      }
+
+      const scriptPath = path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "background-worker.ts"
+      );
+
+      const proc = spawn("node", [jitiCli, scriptPath], {
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+      });
+
+      proc.stdin?.write(JSON.stringify({ task: params.task }));
+      proc.stdin?.end();
+      proc.unref();
+
+      return {
+        content: [{ type: "text", text: "Background task started" }],
+      };
+    },
   };
 }
 ```
