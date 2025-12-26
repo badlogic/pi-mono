@@ -91,6 +91,30 @@ Questions to resolve:
 - [ ] Display labels in UI (tree view, path view) - deferred to UI phase
 - [ ] `/label` command - deferred to UI phase
 
+### CustomMessageEntry<T>
+
+Hooks can define their own custom message entry types and inject them into the session.
+
+```typescript
+export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
+  type: "custom_message";
+  customType: string;           // Hook identifier
+  content: (string | Attachment)[];  // Message content
+  details?: T;                  // Hook-specific data (like tool result details)
+  display: boolean;             // Whether to display in TUI
+}
+```
+
+Behavior:
+- [ ] Participates in context and compaction as user messages (after messageTransformer)
+- [ ] Not displayed as user messages in TUI
+- [ ] Display options:
+  - `display: false` - hidden entirely
+  - `display: true` - baseline renderer (content with different bg/fg color)
+  - Custom renderer defined by the hook that contributes it
+- [ ] Define injection mechanism for hooks to add CustomMessageEntry
+- [ ] Hook registration for custom renderers
+
 ### HTML Export
 
 - [ ] Add collapsible sidebar showing full tree structure

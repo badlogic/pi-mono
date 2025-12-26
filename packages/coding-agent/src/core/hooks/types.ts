@@ -7,7 +7,7 @@
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { CutPointResult } from "../compaction.js";
+import type { CompactionResult, CutPointResult } from "../compaction.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import type {
 	BashToolDetails,
@@ -354,11 +354,7 @@ export interface SessionEventResult {
 	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
 	skipConversationRestore?: boolean;
 	/** Custom compaction result (for before_compact event) - SessionManager adds id/parentId */
-	compaction?: {
-		summary: string;
-		firstKeptEntryId: string;
-		tokensBefore: number;
-	};
+	compaction?: CompactionResult;
 }
 
 // ============================================================================

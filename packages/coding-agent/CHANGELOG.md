@@ -30,7 +30,8 @@
 
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
-- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry` for hook data
+- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry` for hook data, `LabelEntry` for user-defined bookmarks
+- **Entry labels**: New `getLabel(id)` and `appendLabelChange(targetId, label)` methods for labeling entries. Labels are included in `SessionTreeNode` for UI/export.
 
 ### Fixed
 
