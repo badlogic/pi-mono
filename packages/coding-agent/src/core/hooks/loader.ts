@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
-import type { HookAPI, HookFactory } from "./types.js";
+import type { CustomMessageRenderer, HookAPI, HookFactory } from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -61,6 +61,8 @@ export interface LoadedHook {
 	resolvedPath: string;
 	/** Map of event type to handler functions */
 	handlers: Map<string, HandlerFn[]>;
+	/** Map of customType to custom message renderer */
+	customMessageRenderers: Map<string, CustomMessageRenderer>;
 	/** Set the send handler for this hook's pi.send() */
 	setSendHandler: (handler: SendHandler) => void;
 }
@@ -110,16 +112,18 @@ function resolveHookPath(hookPath: string, cwd: string): string {
 }
 
 /**
- * Create a HookAPI instance that collects handlers.
- * Returns the API and a function to set the send handler later.
+ * Create a HookAPI instance that collects handlers and renderers.
+ * Returns the API, renderers map, and a function to set the send handler later.
  */
 function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 	api: HookAPI;
+	customMessageRenderers: Map<string, CustomMessageRenderer>;
 	setSendHandler: (handler: SendHandler) => void;
 } {
 	let sendHandler: SendHandler = () => {
 		// Default no-op until mode sets the handler
 	};
+	const customMessageRenderers = new Map<string, CustomMessageRenderer>();
 
 	const api: HookAPI = {
 		on(event: string, handler: HandlerFn): void {
@@ -130,10 +134,14 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 		send(text: string, attachments?: Attachment[]): void {
 			sendHandler(text, attachments);
 		},
+		renderCustomMessage(customType: string, renderer: CustomMessageRenderer): void {
+			customMessageRenderers.set(customType, renderer);
+		},
 	} as HookAPI;
 
 	return {
 		api,
+		customMessageRenderers,
 		setSendHandler: (handler: SendHandler) => {
 			sendHandler = handler;
 		},
@@ -164,13 +172,13 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, setSendHandler } = createHookAPI(handlers);
+		const { api, customMessageRenderers, setSendHandler } = createHookAPI(handlers);
 
 		// Call factory to register handlers
 		factory(api);
 
 		return {
-			hook: { path: hookPath, resolvedPath, handlers, setSendHandler },
+			hook: { path: hookPath, resolvedPath, handlers, customMessageRenderers, setSendHandler },
 			error: null,
 		};
 	} catch (err) {

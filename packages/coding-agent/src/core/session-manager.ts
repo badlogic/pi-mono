@@ -131,6 +131,8 @@ export interface SessionTreeNode {
 
 export interface SessionContext {
 	messages: AppMessage[];
+	/** Entries in the current path (root to leaf). Use to identify custom_message entries for rendering. */
+	entries: SessionEntry[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
 }
@@ -290,7 +292,7 @@ export function buildSessionContext(
 	}
 
 	if (!leaf) {
-		return { messages: [], thinkingLevel: "off", model: null };
+		return { messages: [], entries: [], thinkingLevel: "off", model: null };
 	}
 
 	// Walk from leaf to root, collecting path
@@ -318,16 +320,18 @@ export function buildSessionContext(
 		}
 	}
 
-	// Build messages - handle compaction ordering correctly
+	// Build messages and collect corresponding entries
 	// When there's a compaction, we need to:
-	// 1. Emit summary first
+	// 1. Emit summary first (entry = compaction)
 	// 2. Emit kept messages (from firstKeptEntryId up to compaction)
 	// 3. Emit messages after compaction
 	const messages: AppMessage[] = [];
+	const contextEntries: SessionEntry[] = [];
 
 	if (compaction) {
 		// Emit summary first
 		messages.push(createSummaryMessage(compaction.summary, compaction.timestamp));
+		contextEntries.push(compaction);
 
 		// Find compaction index in path
 		const compactionIdx = path.findIndex((e) => e.type === "compaction" && e.id === compaction.id);
@@ -342,8 +346,10 @@ export function buildSessionContext(
 			if (foundFirstKept) {
 				if (entry.type === "message") {
 					messages.push(entry.message);
+					contextEntries.push(entry);
 				} else if (entry.type === "custom_message") {
 					messages.push(createCustomMessage(entry));
+					contextEntries.push(entry);
 				}
 			}
 		}
@@ -353,10 +359,13 @@ export function buildSessionContext(
 			const entry = path[i];
 			if (entry.type === "message") {
 				messages.push(entry.message);
+				contextEntries.push(entry);
 			} else if (entry.type === "custom_message") {
 				messages.push(createCustomMessage(entry));
+				contextEntries.push(entry);
 			} else if (entry.type === "branch_summary") {
 				messages.push(createSummaryMessage(entry.summary, entry.timestamp));
+				contextEntries.push(entry);
 			}
 		}
 	} else {
@@ -364,15 +373,18 @@ export function buildSessionContext(
 		for (const entry of path) {
 			if (entry.type === "message") {
 				messages.push(entry.message);
+				contextEntries.push(entry);
 			} else if (entry.type === "custom_message") {
 				messages.push(createCustomMessage(entry));
+				contextEntries.push(entry);
 			} else if (entry.type === "branch_summary") {
 				messages.push(createSummaryMessage(entry.summary, entry.timestamp));
+				contextEntries.push(entry);
 			}
 		}
 	}
 
-	return { messages, thinkingLevel, model };
+	return { messages, entries: contextEntries, thinkingLevel, model };
 }
 
 /**
