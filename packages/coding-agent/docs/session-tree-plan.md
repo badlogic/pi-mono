@@ -58,8 +58,18 @@ Reference: [session-tree.md](./session-tree.md)
 
 ### Compaction Refactor
 
-- [ ] Clean up types passed to hooks (currently messy mix of `CompactionEntry`, `CompactionResult`, hook's `compaction` content)
-- [ ] Ensure consistent API between what hooks receive and what they return
+- [x] Use `CompactionResult` type for hook return value
+- [ ] Make `CompactionEntry<T>` generic with optional `details?: T` field for hook-specific data
+- [ ] Make `CompactionResult<T>` generic to match
+- [ ] Update `SessionEventBase` to pass `sessionManager` and `modelRegistry` instead of derived fields
+- [ ] Update `before_compact` event:
+  - Pass `preparation: CompactionPreparation` instead of individual fields
+  - Pass `previousCompactions: CompactionEntry[]` (newest first) instead of `previousSummary?: string`
+  - Keep: `customInstructions`, `model`, `signal`
+  - Drop: `resolveApiKey` (use `modelRegistry.getApiKey()`), `cutPoint`, `entries`
+- [ ] Update hook example `custom-compaction.ts` to use new API
+
+Reference: [#314](https://github.com/badlogic/pi-mono/pull/314) - Structured compaction with anchored iterative summarization needs `details` field to store `ArtifactIndex` and version markers.
 
 ### Branch Summary Design
 

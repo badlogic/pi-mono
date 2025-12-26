@@ -15,12 +15,15 @@
   - New methods: `getTree()`, `getPath()`, `getLeafUuid()`, `getLeafEntry()`, `getEntry()`, `branchWithSummary()`
   - New `appendCustomEntry(customType, data)` for hooks to store custom data
 - **Compaction API**:
-  - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore }`) instead of `CompactionEntry`
+  - `CompactionEntry<T>` and `CompactionResult<T>` are now generic with optional `details?: T` for hook-specific data
+  - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore, details? }`) instead of `CompactionEntry`
+  - `appendCompaction()` now accepts optional `details` parameter
   - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
   - `prepareCompaction()` now returns `firstKeptEntryId` in its result
 - **Hook types**:
   - `SessionEventResult.compactionEntry` replaced with `SessionEventResult.compaction` (content only, SessionManager adds id/parentId)
   - `before_compact` event now includes `firstKeptEntryId` field for hooks that return custom compaction
+  - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
 
 ### Added
 

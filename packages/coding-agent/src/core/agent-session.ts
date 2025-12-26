@@ -18,7 +18,13 @@ import type { AssistantMessage, Message, Model, TextContent } from "@mariozechne
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, prepareCompaction, shouldCompact } from "./compaction.js";
+import {
+	type CompactionResult,
+	calculateContextTokens,
+	compact,
+	prepareCompaction,
+	shouldCompact,
+} from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
@@ -74,12 +80,6 @@ export interface ModelCycleResult {
 	thinkingLevel: ThinkingLevel;
 	/** Whether cycling through scoped models (--models flag) or all available */
 	isScoped: boolean;
-}
-
-/** Result from compact() or checkAutoCompaction() */
-export interface CompactionResult {
-	tokensBefore: number;
-	summary: string;
 }
 
 /** Session statistics for /session command */
@@ -771,7 +771,7 @@ export class AgentSession {
 				}
 			}
 
-			let hookCompaction: { summary: string; firstKeptEntryId: string; tokensBefore: number } | undefined;
+			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
@@ -806,12 +806,14 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let details: unknown;
 
 			if (hookCompaction) {
 				// Hook provided compaction content
 				summary = hookCompaction.summary;
 				firstKeptEntryId = hookCompaction.firstKeptEntryId;
 				tokensBefore = hookCompaction.tokensBefore;
+				details = hookCompaction.details;
 			} else {
 				// Generate compaction result
 				const result = await compact(
@@ -825,13 +827,14 @@ export class AgentSession {
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
+				details = result.details;
 			}
 
 			if (this._compactionAbortController.signal.aborted) {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
@@ -855,8 +858,10 @@ export class AgentSession {
 			}
 
 			return {
-				tokensBefore,
 				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
 			};
 		} finally {
 			this._compactionAbortController = null;
@@ -952,7 +957,7 @@ export class AgentSession {
 				}
 			}
 
-			let hookCompaction: { summary: string; firstKeptEntryId: string; tokensBefore: number } | undefined;
+			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session")) {
@@ -988,12 +993,14 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let details: unknown;
 
 			if (hookCompaction) {
 				// Hook provided compaction content
 				summary = hookCompaction.summary;
 				firstKeptEntryId = hookCompaction.firstKeptEntryId;
 				tokensBefore = hookCompaction.tokensBefore;
+				details = hookCompaction.details;
 			} else {
 				// Generate compaction result
 				const compactResult = await compact(
@@ -1006,6 +1013,7 @@ export class AgentSession {
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
+				details = compactResult.details;
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
@@ -1013,7 +1021,7 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1037,8 +1045,10 @@ export class AgentSession {
 			}
 
 			const result: CompactionResult = {
-				tokensBefore,
 				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 

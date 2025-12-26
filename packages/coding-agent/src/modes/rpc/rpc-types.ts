@@ -7,8 +7,9 @@
 
 import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
-import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
+import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { CompactionResult } from "../../core/compaction.js";
 
 // ============================================================================
 // RPC Commands (stdin)

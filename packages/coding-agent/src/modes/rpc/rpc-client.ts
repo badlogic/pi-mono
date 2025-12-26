@@ -7,8 +7,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
 import type { AgentEvent, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
+import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { CompactionResult } from "../../core/compaction.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // ============================================================================
