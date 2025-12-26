@@ -118,14 +118,14 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 ```
 
 Behavior:
-- [ ] Participates in context and compaction as user messages (after messageTransformer)
-- [ ] Not displayed as user messages in TUI
-- [ ] Display options:
+- [x] Type definition matching plan
+- [x] `appendCustomMessageEntry(customType, content, display, details?)` in SessionManager
+- [x] `buildSessionContext()` includes custom_message entries as user messages
+- [x] Exported from main index
+- [ ] TUI rendering:
   - `display: false` - hidden entirely
   - `display: true` - baseline renderer (content with different bg/fg color)
-  - Custom renderer defined by the hook that contributes it
-- [ ] Define injection mechanism for hooks to add CustomMessageEntry
-- [ ] Hook registration for custom renderers
+  - Custom renderer defined by the hook that contributes it (future)
 
 See also: `CustomEntry<T>` for storing hook state that does NOT participate in context.
 

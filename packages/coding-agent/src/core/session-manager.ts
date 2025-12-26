@@ -1,4 +1,4 @@
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -86,6 +86,26 @@ export interface LabelEntry extends SessionEntryBase {
 	label: string | undefined;
 }
 
+/**
+ * Custom message entry for hooks to inject messages into LLM context.
+ * Use customType to identify your hook's entries.
+ *
+ * Unlike CustomEntry, this DOES participate in LLM context.
+ * The content is converted to a user message in buildSessionContext().
+ * Use details for hook-specific metadata (not sent to LLM).
+ *
+ * display controls TUI rendering:
+ * - false: hidden entirely
+ * - true: rendered with distinct styling (different from user messages)
+ */
+export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
+	type: "custom_message";
+	customType: string;
+	content: (string | Attachment)[];
+	details?: T;
+	display: boolean;
+}
+
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
 	| SessionMessageEntry
@@ -94,6 +114,7 @@ export type SessionEntry =
 	| CompactionEntry
 	| BranchSummaryEntry
 	| CustomEntry
+	| CustomMessageEntry
 	| LabelEntry;
 
 /** Raw file entry (includes header) */
@@ -137,6 +158,35 @@ export function createSummaryMessage(summary: string, timestamp: string): AppMes
 		role: "user",
 		content: SUMMARY_PREFIX + summary + SUMMARY_SUFFIX,
 		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
+/** Convert CustomMessageEntry content to AppMessage format */
+function createCustomMessage(entry: CustomMessageEntry): AppMessage {
+	// Convert content array to AppMessage content format
+	const content = entry.content.map((item) => {
+		if (typeof item === "string") {
+			return { type: "text" as const, text: item };
+		}
+		// Attachment - convert to appropriate content type
+		if (item.type === "image") {
+			return {
+				type: "image" as const,
+				data: item.content,
+				mimeType: item.mimeType,
+			};
+		}
+		// Document attachment - use extracted text or indicate document
+		return {
+			type: "text" as const,
+			text: item.extractedText ?? `[Document: ${item.fileName}]`,
+		};
+	});
+
+	return {
+		role: "user",
+		content,
+		timestamp: new Date(entry.timestamp).getTime(),
 	};
 }
 
@@ -308,8 +358,12 @@ export function buildSessionContext(
 			if (entry.id === compaction.firstKeptEntryId) {
 				foundFirstKept = true;
 			}
-			if (foundFirstKept && entry.type === "message") {
-				messages.push(entry.message);
+			if (foundFirstKept) {
+				if (entry.type === "message") {
+					messages.push(entry.message);
+				} else if (entry.type === "custom_message") {
+					messages.push(createCustomMessage(entry));
+				}
 			}
 		}
 
@@ -318,15 +372,19 @@ export function buildSessionContext(
 			const entry = path[i];
 			if (entry.type === "message") {
 				messages.push(entry.message);
+			} else if (entry.type === "custom_message") {
+				messages.push(createCustomMessage(entry));
 			} else if (entry.type === "branch_summary") {
 				messages.push(createSummaryMessage(entry.summary, entry.timestamp));
 			}
 		}
 	} else {
-		// No compaction - emit all messages, handle branch summaries
+		// No compaction - emit all messages, handle branch summaries and custom messages
 		for (const entry of path) {
 			if (entry.type === "message") {
 				messages.push(entry.message);
+			} else if (entry.type === "custom_message") {
+				messages.push(createCustomMessage(entry));
 			} else if (entry.type === "branch_summary") {
 				messages.push(createSummaryMessage(entry.summary, entry.timestamp));
 			}
@@ -615,6 +673,34 @@ export class SessionManager {
 			type: "custom",
 			customType,
 			data,
+			id: generateId(this.byId),
+			parentId: this.leafId || null,
+			timestamp: new Date().toISOString(),
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/**
+	 * Append a custom message entry (for hooks) that participates in LLM context.
+	 * @param customType Hook identifier for filtering on reload
+	 * @param content Message content (strings and attachments)
+	 * @param display Whether to show in TUI (true = styled display, false = hidden)
+	 * @param details Optional hook-specific metadata (not sent to LLM)
+	 * @returns Entry id
+	 */
+	appendCustomMessageEntry<T = unknown>(
+		customType: string,
+		content: (string | Attachment)[],
+		display: boolean,
+		details?: T,
+	): string {
+		const entry: CustomMessageEntry<T> = {
+			type: "custom_message",
+			customType,
+			content,
+			display,
+			details,
 			id: generateId(this.byId),
 			parentId: this.leafId || null,
 			timestamp: new Date().toISOString(),

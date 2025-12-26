@@ -13,7 +13,8 @@
   - `saveCompaction(entry)` replaced with `appendCompaction(summary, firstKeptEntryId, tokensBefore)`
   - `getEntries()` now excludes the session header (use `getHeader()` separately)
   - New methods: `getTree()`, `getPath()`, `getLeafUuid()`, `getLeafEntry()`, `getEntry()`, `branchWithSummary()`
-  - New `appendCustomEntry(customType, data)` for hooks to store custom data
+  - New `appendCustomEntry(customType, data)` for hooks to store custom data (not in LLM context)
+  - New `appendCustomMessageEntry(customType, content, display, details?)` for hooks to inject messages into LLM context
 - **Compaction API**:
   - `CompactionEntry<T>` and `CompactionResult<T>` are now generic with optional `details?: T` for hook-specific data
   - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore, details? }`) instead of `CompactionEntry`
