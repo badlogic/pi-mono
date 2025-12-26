@@ -273,9 +273,11 @@ describe("findCutPoint", () => {
 });
 
 describe("createSummaryMessage", () => {
-	it("should create user message with prefix", () => {
-		const msg = createSummaryMessage("This is the summary");
+	it("should create user message with prefix and correct timestamp", () => {
+		const ts = "2025-01-01T12:00:00.000Z";
+		const msg = createSummaryMessage("This is the summary", ts);
 		expect(msg.role).toBe("user");
+		expect(msg.timestamp).toBe(new Date(ts).getTime());
 		if (msg.role === "user") {
 			expect(msg.content).toContain(
 				"The conversation history before this point was compacted into the following summary:",

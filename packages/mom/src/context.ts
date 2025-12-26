@@ -98,9 +98,9 @@ export class MomSessionManager {
 		this.leafId = null;
 	}
 
-	private _createTreeNode(): TreeNode {
+	private _createTreeNode(): Omit<TreeNode, "type"> {
 		const id = uuidv4();
-		const node: TreeNode = {
+		const node = {
 			id,
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
