@@ -16,15 +16,19 @@ Context is built by scanning linearly, applying compaction ranges.
 
 ## Proposed Format (Tree)
 
-Each entry has a `uuid` and `parentUuid` field (null for root):
+Each entry has a `uuid` and `parentUuid` field (null for root). Session header includes `version` for future migrations:
 
 ```jsonl
-{"type":"session","uuid":"a1b2c3","parentUuid":null,"id":"...","cwd":"..."}
+{"type":"session","version":2,"uuid":"a1b2c3","parentUuid":null,"id":"...","cwd":"..."}
 {"type":"message","uuid":"d4e5f6","parentUuid":"a1b2c3","message":{"role":"user",...}}
 {"type":"message","uuid":"g7h8i9","parentUuid":"d4e5f6","message":{"role":"assistant",...}}
 {"type":"message","uuid":"j0k1l2","parentUuid":"g7h8i9","message":{"role":"user",...}}
 {"type":"message","uuid":"m3n4o5","parentUuid":"j0k1l2","message":{"role":"assistant",...}}
 ```
+
+Version history:
+- **v1** (implicit): Linear format, no uuid/parentUuid
+- **v2**: Tree format with uuid/parentUuid
 
 The **last entry** is always the current leaf. Context = walk from leaf to root via `parentUuid`.
 
@@ -140,34 +144,40 @@ Each pop just creates a new branch. Context: n→m→k→j→i→c→b→a.
 
 ### Current Approach
 
-Compaction stores `firstKeptEntryIndex` and requires careful handling when stacking crosses compaction boundaries.
+Compaction stores `firstKeptEntryIndex` (an index) and requires careful handling when stacking crosses compaction boundaries.
 
 ### Tree Approach
 
-Compaction creates a summary node:
+Compaction is just another entry in the linear chain, not a branch. Only change: `firstKeptEntryIndex` → `firstKeptEntryUuid`.
 
-```jsonl
-{"type":"compaction","uuid":"c1","parentUuid":"a1b2c3","summary":"...","summarizedUuids":["d4e5f6","g7h8i9"]}
-{"type":"message","uuid":"m1","parentUuid":"c1","message":{"role":"user",...}}
+```
+root → m1 → m2 → m3 → m4 → m5 → m6 → m7 → m8 → m9 → m10 → compaction
 ```
 
-The compaction node's `parentUuid` points to root. Walking from m1: m1→c1→a1b2c3.
+```jsonl
+{"type":"compaction","uuid":"c1","parentUuid":"m10","summary":"...","firstKeptEntryUuid":"m6","tokensBefore":50000}
+```
 
-Summarized entries are still in the file (for export, debugging) but not in context.
+Context building:
+1. Walk from leaf (compaction) to root
+2. See compaction entry → note `firstKeptEntryUuid: "m6"`
+3. Continue walking: m10, m9, m8, m7, m6 ← stop here
+4. Everything before m6 is replaced by summary
+5. Result: `[summary, m6, m7, m8, m9, m10]`
+
+**Tree is for branching (stacking, alternative paths). Compaction is just a marker in the linear chain.**
 
 ### Compaction + Stacking
 
-No special handling needed. They're both just branches:
+Stacking creates a branch, compaction is inline on each branch:
 
 ```
-[root]─[msg1]─[msg2]─[msg3]─[msg4]─[msg5]
-   │
-   └─[compaction]─[msg6]─[msg7]─[msg8]
-                    │
-                    └─[stack_summary]─[msg9:current]
+[root]─[m1]─[m2]─[m3]─[m4]─[m5]─[compaction1]─[m6]─[m7]─[m8]
+                  │
+                  └─[stack_summary]─[m9]─[m10]─[compaction2]─[m11:current]
 ```
 
-Context: msg9→stack_summary→msg6→compaction→root. Clean.
+Each branch has its own compaction history. Context walks the current branch only.
 
 ## Consequences for API
 
@@ -306,33 +316,75 @@ With tree structure, could support:
 
 ## Migration
 
-### File Format
+### Strategy: Migrate on Load + Rewrite
 
-Add `uuid` and `parentUuid` fields to all entries. Existing sessions get generated UUIDs with linear parentage:
+When loading a session, check if migration is needed. If so, migrate in memory and rewrite the file. This is transparent to users and only happens once per session file.
 
 ```typescript
-function migrateSession(content: string): string {
-  const lines = content.trim().split('\n');
-  const uuids: string[] = [];
+const CURRENT_VERSION = 2;
+
+function loadSession(path: string): SessionEntry[] {
+  const content = readFileSync(path, 'utf8');
+  const entries = parseEntries(content);
   
-  return lines.map((line, i) => {
-    const entry = JSON.parse(line);
-    const uuid = generateUuid();
-    uuids.push(uuid);
-    entry.uuid = uuid;
-    entry.parentUuid = i === 0 ? null : uuids[i - 1];
-    return JSON.stringify(entry);
-  }).join('\n');
+  const header = entries.find(e => e.type === 'session');
+  const version = header?.version ?? 1;
+  
+  if (version < CURRENT_VERSION) {
+    migrateEntries(entries, version);
+    writeFileSync(path, entries.map(e => JSON.stringify(e)).join('\n') + '\n');
+  }
+  
+  return entries;
+}
+
+function migrateEntries(entries: SessionEntry[], fromVersion: number): void {
+  if (fromVersion < 2) {
+    // v1 → v2: Add uuid/parentUuid, convert firstKeptEntryIndex
+    const uuids: string[] = [];
+    
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const uuid = generateUuid();
+      uuids.push(uuid);
+      
+      entry.uuid = uuid;
+      entry.parentUuid = i === 0 ? null : uuids[i - 1];
+      
+      // Update session header version
+      if (entry.type === 'session') {
+        entry.version = CURRENT_VERSION;
+      }
+      
+      // Convert compaction index to UUID
+      if (entry.type === 'compaction' && 'firstKeptEntryIndex' in entry) {
+        entry.firstKeptEntryUuid = uuids[entry.firstKeptEntryIndex];
+        delete entry.firstKeptEntryIndex;
+      }
+    }
+  }
+  
+  // Future migrations: if (fromVersion < 3) { ... }
 }
 ```
 
-Migrated sessions work exactly as before (linear path).
+### What Gets Migrated
+
+| v1 Field | v2 Field |
+|----------|----------|
+| (none) | `uuid` (generated) |
+| (none) | `parentUuid` (previous entry's uuid, null for root) |
+| (none on session) | `version: 2` |
+| `firstKeptEntryIndex` | `firstKeptEntryUuid` |
+
+Migrated sessions work exactly as before (linear path). Tree features become available.
 
 ### API Compatibility
 
 - `buildSessionContext()` returns same structure
 - `branch()` still works, just uses UUIDs
 - Existing hooks continue to work
+- Old sessions auto-migrate on first load
 
 ## Complexity Analysis
 
@@ -355,7 +407,7 @@ Abandoned branches remain in file but don't affect context building performance.
 ## Example: Full Session with Branching
 
 ```jsonl
-{"type":"session","uuid":"ses1","parentUuid":null,"id":"abc","cwd":"/project"}
+{"type":"session","version":2,"uuid":"ses1","parentUuid":null,"id":"abc","cwd":"/project"}
 {"type":"message","uuid":"m1","parentUuid":"ses1","message":{"role":"user","content":"Build a CLI"}}
 {"type":"message","uuid":"m2","parentUuid":"m1","message":{"role":"assistant","content":"I'll create..."}}
 {"type":"message","uuid":"m3","parentUuid":"m2","message":{"role":"user","content":"Add --verbose flag"}}

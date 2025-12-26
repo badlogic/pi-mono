@@ -6,6 +6,19 @@
 
 - **npm package resolution for hooks and custom tools**: Hooks and custom tools can now be specified as npm package specifiers with optional version (e.g., `@scope/my-hook@1.0.0`, `my-tool@latest`) in addition to file paths. Packages with versions are installed to `~/.pi/agent/cache/`. For `@latest` packages, checks if a newer version exists before reinstalling. Includes timeout protection (10s for version check, 60s for install). ([#318](https://github.com/badlogic/pi-mono/pull/318) by [@melihmucuk](https://github.com/melihmucuk))
 
+## [0.30.2] - 2025-12-26
+
+### Changed
+
+- **Consolidated migrations**: Moved auth migration from `AuthStorage.migrateLegacy()` to new `migrations.ts` module.
+
+## [0.30.1] - 2025-12-26
+
+### Fixed
+
+- **Sessions saved to wrong directory**: In v0.30.0, sessions were being saved to `~/.pi/agent/` instead of `~/.pi/agent/sessions/<encoded-cwd>/`, breaking `--resume` and `/resume`. Misplaced sessions are automatically migrated on startup. ([#320](https://github.com/badlogic/pi-mono/issues/320) by [@aliou](https://github.com/aliou))
+- **Custom system prompts missing context**: When using a custom system prompt string, project context files (AGENTS.md), skills, date/time, and working directory were not appended. ([#321](https://github.com/badlogic/pi-mono/issues/321))
+
 ## [0.30.0] - 2025-12-25
 
 ### Breaking Changes

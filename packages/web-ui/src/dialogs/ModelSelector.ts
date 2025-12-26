@@ -3,7 +3,7 @@ import { Badge } from "@mariozechner/mini-lit/dist/Badge.js";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
 import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
-import { getModels, getProviders, type Model } from "@mariozechner/pi-ai";
+import { getModels, getProviders, type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import { html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { createRef, ref } from "lit/directives/ref.js";
@@ -195,8 +195,8 @@ export class ModelSelector extends DialogBase {
 
 		// Sort: current model first, then by provider
 		filteredModels.sort((a, b) => {
-			const aIsCurrent = this.currentModel?.id === a.model.id;
-			const bIsCurrent = this.currentModel?.id === b.model.id;
+			const aIsCurrent = modelsAreEqual(this.currentModel, a.model);
+			const bIsCurrent = modelsAreEqual(this.currentModel, b.model);
 			if (aIsCurrent && !bIsCurrent) return -1;
 			if (!aIsCurrent && bIsCurrent) return 1;
 			return a.provider.localeCompare(b.provider);
@@ -270,7 +270,7 @@ export class ModelSelector extends DialogBase {
 			<!-- Scrollable model list -->
 			<div class="flex-1 overflow-y-auto" ${ref(this.scrollContainerRef)}>
 				${filteredModels.map(({ provider, id, model }, index) => {
-					const isCurrent = this.currentModel?.id === model.id && this.currentModel?.provider === model.provider;
+					const isCurrent = modelsAreEqual(this.currentModel, model);
 					const isSelected = index === this.selectedIndex;
 					return html`
 						<div

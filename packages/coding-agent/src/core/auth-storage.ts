@@ -13,8 +13,8 @@ import {
 	type OAuthCredentials,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname } from "path";
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -231,57 +231,5 @@ export class AuthStorage {
 
 		// Fall back to custom resolver (e.g., models.json custom providers)
 		return this.fallbackResolver?.(provider) ?? null;
-	}
-
-	/**
-	 * Migrate credentials from legacy oauth.json and settings.json apiKeys to auth.json.
-	 * Only runs if auth.json doesn't exist yet. Returns list of migrated providers.
-	 */
-	static migrateLegacy(authPath: string, agentDir: string): string[] {
-		const oauthPath = join(agentDir, "oauth.json");
-		const settingsPath = join(agentDir, "settings.json");
-
-		// Skip if auth.json already exists
-		if (existsSync(authPath)) return [];
-
-		const migrated: AuthStorageData = {};
-		const providers: string[] = [];
-
-		// Migrate oauth.json
-		if (existsSync(oauthPath)) {
-			try {
-				const oauth = JSON.parse(readFileSync(oauthPath, "utf-8"));
-				for (const [provider, cred] of Object.entries(oauth)) {
-					migrated[provider] = { type: "oauth", ...(cred as object) } as OAuthCredential;
-					providers.push(provider);
-				}
-				renameSync(oauthPath, `${oauthPath}.migrated`);
-			} catch {}
-		}
-
-		// Migrate settings.json apiKeys
-		if (existsSync(settingsPath)) {
-			try {
-				const content = readFileSync(settingsPath, "utf-8");
-				const settings = JSON.parse(content);
-				if (settings.apiKeys && typeof settings.apiKeys === "object") {
-					for (const [provider, key] of Object.entries(settings.apiKeys)) {
-						if (!migrated[provider] && typeof key === "string") {
-							migrated[provider] = { type: "api_key", key };
-							providers.push(provider);
-						}
-					}
-					delete settings.apiKeys;
-					writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-				}
-			} catch {}
-		}
-
-		if (Object.keys(migrated).length > 0) {
-			mkdirSync(dirname(authPath), { recursive: true });
-			writeFileSync(authPath, JSON.stringify(migrated, null, 2), { mode: 0o600 });
-		}
-
-		return providers;
 	}
 }

@@ -411,7 +411,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	time("settingsManager");
-	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, agentDir);
+	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
 	time("sessionManager");
 
 	// Check if session has existing data to restore
@@ -550,7 +550,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (options.systemPrompt === undefined) {
 		systemPrompt = defaultPrompt;
 	} else if (typeof options.systemPrompt === "string") {
-		systemPrompt = options.systemPrompt;
+		systemPrompt = buildSystemPromptInternal({
+			cwd,
+			agentDir,
+			skills,
+			contextFiles,
+			customPrompt: options.systemPrompt,
+		});
 	} else {
 		systemPrompt = options.systemPrompt(defaultPrompt);
 	}

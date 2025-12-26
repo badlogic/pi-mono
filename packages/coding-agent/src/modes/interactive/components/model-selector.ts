@@ -1,4 +1,4 @@
-import type { Model } from "@mariozechner/pi-ai";
+import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import {
 	Container,
 	Input,
@@ -143,8 +143,8 @@ export class ModelSelectorComponent extends Container {
 
 		// Sort: current model first, then by provider
 		models.sort((a, b) => {
-			const aIsCurrent = this.currentModel?.id === a.model.id && this.currentModel?.provider === a.provider;
-			const bIsCurrent = this.currentModel?.id === b.model.id && this.currentModel?.provider === b.provider;
+			const aIsCurrent = modelsAreEqual(this.currentModel, a.model);
+			const bIsCurrent = modelsAreEqual(this.currentModel, b.model);
 			if (aIsCurrent && !bIsCurrent) return -1;
 			if (!aIsCurrent && bIsCurrent) return 1;
 			return a.provider.localeCompare(b.provider);
@@ -176,7 +176,7 @@ export class ModelSelectorComponent extends Container {
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
-			const isCurrent = this.currentModel?.id === item.model.id;
+			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
 			let line = "";
 			if (isSelected) {
