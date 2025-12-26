@@ -1054,7 +1054,8 @@ export class InteractiveMode {
 			// Check if this is a custom_message entry
 			if (entry?.type === "custom_message") {
 				if (entry.display) {
-					this.chatContainer.addChild(new CustomMessageComponent(entry));
+					const renderer = this.session.hookRunner?.getCustomMessageRenderer(entry.customType);
+					this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
 				}
 				continue;
 			}
