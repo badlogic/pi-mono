@@ -350,6 +350,9 @@ export function buildSessionContext(
 				} else if (entry.type === "custom_message") {
 					messages.push(createCustomMessage(entry));
 					contextEntries.push(entry);
+				} else if (entry.type === "branch_summary") {
+					messages.push(createSummaryMessage(entry.summary, entry.timestamp));
+					contextEntries.push(entry);
 				}
 			}
 		}
