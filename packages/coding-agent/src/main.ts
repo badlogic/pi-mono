@@ -16,7 +16,7 @@ import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
-import { AuthStorage } from "./core/auth-storage.js";
+
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html.js";
 import type { HookUIContext } from "./core/index.js";
@@ -28,6 +28,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
+import { runMigrations } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
@@ -283,9 +284,8 @@ function buildSessionOptions(
 export async function main(args: string[]) {
 	time("start");
 
-	// Migrate legacy oauth.json and settings.json apiKeys to auth.json
-	const agentDir = getAgentDir();
-	const migratedProviders = AuthStorage.migrateLegacy(join(agentDir, "auth.json"), agentDir);
+	// Run migrations
+	const { migratedAuthProviders: migratedProviders } = runMigrations();
 
 	// Create AuthStorage and ModelRegistry upfront
 	const authStorage = discoverAuthStorage();
