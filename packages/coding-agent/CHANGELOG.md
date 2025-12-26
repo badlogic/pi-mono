@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2025-12-26
+
 ### Changed
 
 - **Consolidated migrations**: Moved auth migration from `AuthStorage.migrateLegacy()` to new `migrations.ts` module.
