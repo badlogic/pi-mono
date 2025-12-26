@@ -36,6 +36,7 @@
 	},
 	"version": "0.0.3",
 	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.30.2",
 		"get-east-asian-width": "^1.4.0"
 	}
 }
