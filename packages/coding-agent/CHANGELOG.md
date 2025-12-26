@@ -2,13 +2,41 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Session tree structure (v2)**: Sessions now store entries as a tree with `id`/`parentId` fields, enabling in-place branching without creating new files. Existing v1 sessions are auto-migrated on load.
+- **SessionManager API**:
+  - `saveXXX()` renamed to `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
+  - `branchInPlace()` renamed to `branch()`
+  - `reset()` renamed to `newSession()`
+  - `createBranchedSessionFromEntries(entries, index)` replaced with `createBranchedSession(leafId)`
+  - `saveCompaction(entry)` replaced with `appendCompaction(summary, firstKeptEntryId, tokensBefore)`
+  - `getEntries()` now excludes the session header (use `getHeader()` separately)
+  - New methods: `getTree()`, `getPath()`, `getLeafUuid()`, `getLeafEntry()`, `getEntry()`, `branchWithSummary()`
+  - New `appendCustomEntry(customType, data)` for hooks to store custom data
+- **Compaction API**:
+  - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore }`) instead of `CompactionEntry`
+  - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
+  - `prepareCompaction()` now returns `firstKeptEntryId` in its result
+- **Hook types**:
+  - `SessionEventResult.compactionEntry` replaced with `SessionEventResult.compaction` (content only, SessionManager adds id/parentId)
+  - `before_compact` event now includes `firstKeptEntryId` field for hooks that return custom compaction
+
 ### Added
 
 - **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
 
+### Changed
+
+- **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
+- **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
+- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry` for hook data
+
 ### Fixed
 
 - **Edit tool fails on Windows due to CRLF line endings**: Files with CRLF line endings now match correctly when LLMs send LF-only text. Line endings are normalized before matching and restored to original style on write. ([#355](https://github.com/badlogic/pi-mono/issues/355))
+- **Session file validation**: `findMostRecentSession()` now validates session headers before returning, preventing non-session JSONL files from being loaded
+- **Compaction error handling**: `generateSummary()` and `generateTurnPrefixSummary()` now throw on LLM errors instead of returning empty strings
 
 ## [0.30.2] - 2025-12-26
 

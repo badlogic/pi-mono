@@ -441,7 +441,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	});
 
 	// Load existing messages
-	const loadedSession = sessionManager.loadSession();
+	const loadedSession = sessionManager.buildSessionContex();
 	if (loadedSession.messages.length > 0) {
 		agent.replaceMessages(loadedSession.messages);
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
@@ -628,7 +628,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 			// Reload messages from context.jsonl
 			// This picks up any messages synced from log.jsonl before this run
-			const reloadedSession = sessionManager.loadSession();
+			const reloadedSession = sessionManager.buildSessionContex();
 			if (reloadedSession.messages.length > 0) {
 				agent.replaceMessages(reloadedSession.messages);
 				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);

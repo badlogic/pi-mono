@@ -15,15 +15,12 @@ import {
 	buildSessionContext,
 	type CompactionEntry,
 	type FileEntry,
-	type LoadedSession,
-	type MessageContent,
-	type ModelChangeContent,
 	type ModelChangeEntry,
+	type SessionContext,
 	type SessionEntry,
+	type SessionEntryBase,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
-	type ThinkingLevelContent,
-	type TreeNode,
 } from "@mariozechner/pi-coding-agent";
 import { randomBytes } from "crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -98,15 +95,15 @@ export class MomSessionManager {
 		this.leafId = null;
 	}
 
-	private _createTreeNode(): Omit<TreeNode, "type"> {
+	private _createEntryBase(): Omit<SessionEntryBase, "type"> {
 		const id = uuidv4();
-		const node = {
+		const base = {
 			id,
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 		};
 		this.leafId = id;
-		return node;
+		return base;
 	}
 
 	private _persist(entry: SessionEntry): void {
@@ -281,22 +278,23 @@ export class MomSessionManager {
 	}
 
 	saveMessage(message: AppMessage): void {
-		const content: MessageContent = { type: "message", message };
-		const entry: SessionMessageEntry = { ...this._createTreeNode(), ...content };
+		const entry: SessionMessageEntry = { ...this._createEntryBase(), type: "message", message };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
-		const content: ThinkingLevelContent = { type: "thinking_level_change", thinkingLevel };
-		const entry: ThinkingLevelChangeEntry = { ...this._createTreeNode(), ...content };
+		const entry: ThinkingLevelChangeEntry = {
+			...this._createEntryBase(),
+			type: "thinking_level_change",
+			thinkingLevel,
+		};
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
 
 	saveModelChange(provider: string, modelId: string): void {
-		const content: ModelChangeContent = { type: "model_change", provider, modelId };
-		const entry: ModelChangeEntry = { ...this._createTreeNode(), ...content };
+		const entry: ModelChangeEntry = { ...this._createEntryBase(), type: "model_change", provider, modelId };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
@@ -307,7 +305,7 @@ export class MomSessionManager {
 	}
 
 	/** Load session with compaction support */
-	loadSession(): LoadedSession {
+	buildSessionContex(): SessionContext {
 		const entries = this.loadEntries();
 		return buildSessionContext(entries);
 	}
@@ -354,15 +352,15 @@ export class MomSessionManager {
 	}
 
 	loadModel(): { provider: string; modelId: string } | null {
-		return this.loadSession().model;
+		return this.buildSessionContex().model;
 	}
 
 	loadThinkingLevel(): string {
-		return this.loadSession().thinkingLevel;
+		return this.buildSessionContex().thinkingLevel;
 	}
 
 	/** Not used by mom but required by AgentSession interface */
-	createBranchedSessionFromEntries(_entries: SessionEntry[], _branchBeforeIndex: number): string | null {
+	createBranchedSession(_leafId: string): string | null {
 		return null; // Mom doesn't support branching
 	}
 }
