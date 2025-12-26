@@ -110,10 +110,10 @@ Hook-injected messages that participate in LLM context. Unlike `CustomEntry<T>` 
 ```typescript
 export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
   type: "custom_message";
-  customType: string;           // Hook identifier
-  content: (string | Attachment)[];  // Message content
-  details?: T;                  // Hook-specific data for state reconstruction on reload
-  display: boolean;             // Whether to display in TUI
+  customType: string;                         // Hook identifier
+  content: string | (TextContent | ImageContent)[];  // Message content (same as UserMessage)
+  details?: T;                                // Hook-specific data for state reconstruction on reload
+  display: boolean;                           // Whether to display in TUI
 }
 ```
 
