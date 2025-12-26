@@ -26,54 +26,47 @@ export interface SessionHeader {
 	branchedFrom?: string;
 }
 
-export interface MessageContent {
-	type: "message";
-	message: AppMessage;
-}
-
-export interface ThinkingLevelContent {
-	type: "thinking_level_change";
-	thinkingLevel: string;
-}
-
-export interface ModelChangeContent {
-	type: "model_change";
-	provider: string;
-	modelId: string;
-}
-
-export interface CompactionContent {
-	type: "compaction";
-	summary: string;
-	firstKeptEntryId: string;
-	tokensBefore: number;
-}
-
-export interface BranchSummaryContent {
-	type: "branch_summary";
-	summary: string;
-}
-
-/** Union of all content types (for "write" methods in SessionManager) */
-export type SessionContent =
-	| MessageContent
-	| ThinkingLevelContent
-	| ModelChangeContent
-	| CompactionContent
-	| BranchSummaryContent;
-
-export interface TreeNode {
+export interface SessionEntryBase {
 	type: string;
 	id: string;
 	parentId: string | null;
 	timestamp: string;
 }
 
-export type SessionMessageEntry = TreeNode & MessageContent;
-export type ThinkingLevelChangeEntry = TreeNode & ThinkingLevelContent;
-export type ModelChangeEntry = TreeNode & ModelChangeContent;
-export type CompactionEntry = TreeNode & CompactionContent;
-export type BranchSummaryEntry = TreeNode & BranchSummaryContent;
+export interface SessionMessageEntry extends SessionEntryBase {
+	type: "message";
+	message: AppMessage;
+}
+
+export interface ThinkingLevelChangeEntry extends SessionEntryBase {
+	type: "thinking_level_change";
+	thinkingLevel: string;
+}
+
+export interface ModelChangeEntry extends SessionEntryBase {
+	type: "model_change";
+	provider: string;
+	modelId: string;
+}
+
+export interface CompactionEntry extends SessionEntryBase {
+	type: "compaction";
+	summary: string;
+	firstKeptEntryId: string;
+	tokensBefore: number;
+}
+
+export interface BranchSummaryEntry extends SessionEntryBase {
+	type: "branch_summary";
+	summary: string;
+}
+
+/** Custom entry for hooks. Use customType to identify your hook's entries. */
+export interface CustomEntry extends SessionEntryBase {
+	type: "custom";
+	customType: string;
+	data?: unknown;
+}
 
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
@@ -81,10 +74,17 @@ export type SessionEntry =
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
 	| CompactionEntry
-	| BranchSummaryEntry;
+	| BranchSummaryEntry
+	| CustomEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
+
+/** Tree node for getTree() - defensive copy of session structure */
+export interface SessionTreeNode {
+	entry: SessionEntry;
+	children: SessionTreeNode[];
+}
 
 export interface SessionContext {
 	messages: AppMessage[];
@@ -387,6 +387,17 @@ export function findMostRecentSession(sessionDir: string): string | null {
 	}
 }
 
+/**
+ * Manages conversation sessions as append-only trees stored in JSONL files.
+ *
+ * Each session entry has an id and parentId forming a tree structure. The "leaf"
+ * pointer tracks the current position. Appending creates a child of the current leaf.
+ * Branching moves the leaf to an earlier entry, allowing new branches without
+ * modifying history.
+ *
+ * Use buildSessionContext() to get the resolved message list for the LLM, which
+ * handles compaction summaries and follows the path from root to current leaf.
+ */
 export class SessionManager {
 	private sessionId: string = "";
 	private sessionFile: string = "";
@@ -394,7 +405,7 @@ export class SessionManager {
 	private cwd: string;
 	private persist: boolean;
 	private flushed: boolean = false;
-	private inMemoryEntries: FileEntry[] = [];
+	private fileEntries: FileEntry[] = [];
 	private byId: Map<string, SessionEntry> = new Map();
 	private leafId: string = "";
 
@@ -409,7 +420,7 @@ export class SessionManager {
 		if (sessionFile) {
 			this.setSessionFile(sessionFile);
 		} else {
-			this._initNewSession();
+			this.newSession();
 		}
 	}
 
@@ -417,22 +428,22 @@ export class SessionManager {
 	setSessionFile(sessionFile: string): void {
 		this.sessionFile = resolve(sessionFile);
 		if (existsSync(this.sessionFile)) {
-			this.inMemoryEntries = loadEntriesFromFile(this.sessionFile);
-			const header = this.inMemoryEntries.find((e) => e.type === "session") as SessionHeader | undefined;
+			this.fileEntries = loadEntriesFromFile(this.sessionFile);
+			const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
 			this.sessionId = header?.id ?? randomUUID();
 
-			if (migrateToCurrentVersion(this.inMemoryEntries)) {
+			if (migrateToCurrentVersion(this.fileEntries)) {
 				this._rewriteFile();
 			}
 
 			this._buildIndex();
 			this.flushed = true;
 		} else {
-			this._initNewSession();
+			this.newSession();
 		}
 	}
 
-	private _initNewSession(): void {
+	newSession(): void {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -442,7 +453,7 @@ export class SessionManager {
 			timestamp,
 			cwd: this.cwd,
 		};
-		this.inMemoryEntries = [header];
+		this.fileEntries = [header];
 		this.byId.clear();
 		this.leafId = "";
 		this.flushed = false;
@@ -456,7 +467,7 @@ export class SessionManager {
 	private _buildIndex(): void {
 		this.byId.clear();
 		this.leafId = "";
-		for (const entry of this.inMemoryEntries) {
+		for (const entry of this.fileEntries) {
 			if (entry.type === "session") continue;
 			this.byId.set(entry.id, entry);
 			this.leafId = entry.id;
@@ -465,7 +476,7 @@ export class SessionManager {
 
 	private _rewriteFile(): void {
 		if (!this.persist) return;
-		const content = `${this.inMemoryEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
+		const content = `${this.fileEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
 		writeFileSync(this.sessionFile, content);
 	}
 
@@ -489,18 +500,14 @@ export class SessionManager {
 		return this.sessionFile;
 	}
 
-	reset(): void {
-		this._initNewSession();
-	}
-
 	_persist(entry: SessionEntry): void {
 		if (!this.persist) return;
 
-		const hasAssistant = this.inMemoryEntries.some((e) => e.type === "message" && e.message.role === "assistant");
+		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
 		if (!hasAssistant) return;
 
 		if (!this.flushed) {
-			for (const e of this.inMemoryEntries) {
+			for (const e of this.fileEntries) {
 				appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
 			}
 			this.flushed = true;
@@ -510,13 +517,14 @@ export class SessionManager {
 	}
 
 	private _appendEntry(entry: SessionEntry): void {
-		this.inMemoryEntries.push(entry);
+		this.fileEntries.push(entry);
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
 		this._persist(entry);
 	}
 
-	saveMessage(message: AppMessage): string {
+	/** Append a message as child of current leaf, then advance leaf. Returns entry id. */
+	appendMessage(message: AppMessage): string {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),
@@ -528,7 +536,8 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	saveThinkingLevelChange(thinkingLevel: string): string {
+	/** Append a thinking level change as child of current leaf, then advance leaf. Returns entry id. */
+	appendThinkingLevelChange(thinkingLevel: string): string {
 		const entry: ThinkingLevelChangeEntry = {
 			type: "thinking_level_change",
 			id: generateId(this.byId),
@@ -540,7 +549,8 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	saveModelChange(provider: string, modelId: string): string {
+	/** Append a model change as child of current leaf, then advance leaf. Returns entry id. */
+	appendModelChange(provider: string, modelId: string): string {
 		const entry: ModelChangeEntry = {
 			type: "model_change",
 			id: generateId(this.byId),
@@ -553,7 +563,8 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	saveCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
+	/** Append a compaction summary as child of current leaf, then advance leaf. Returns entry id. */
+	appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
 		const entry: CompactionEntry = {
 			type: "compaction",
 			id: generateId(this.byId),
@@ -567,6 +578,20 @@ export class SessionManager {
 		return entry.id;
 	}
 
+	/** Append a custom entry (for hooks) as child of current leaf, then advance leaf. Returns entry id. */
+	appendCustomEntry(customType: string, data?: unknown): string {
+		const entry: CustomEntry = {
+			type: "custom",
+			customType,
+			data,
+			id: generateId(this.byId),
+			parentId: this.leafId || null,
+			timestamp: new Date().toISOString(),
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
 	// =========================================================================
 	// Tree Traversal
 	// =========================================================================
@@ -575,11 +600,19 @@ export class SessionManager {
 		return this.leafId;
 	}
 
+	getLeafEntry(): SessionEntry | undefined {
+		return this.byId.get(this.leafId);
+	}
+
 	getEntry(id: string): SessionEntry | undefined {
 		return this.byId.get(id);
 	}
 
-	/** Walk from entry to root, returning path (conversation entries only) */
+	/**
+	 * Walk from entry to root, returning all entries in path order.
+	 * Includes all entry types (messages, compaction, model changes, etc.).
+	 * Use buildSessionContext() to get the resolved messages for the LLM.
+	 */
 	getPath(fromId?: string): SessionEntry[] {
 		const path: SessionEntry[] = [];
 		let current = this.byId.get(fromId ?? this.leafId);
@@ -602,31 +635,75 @@ export class SessionManager {
 	 * Get session header.
 	 */
 	getHeader(): SessionHeader | null {
-		const h = this.inMemoryEntries.find((e) => e.type === "session");
+		const h = this.fileEntries.find((e) => e.type === "session");
 		return h ? (h as SessionHeader) : null;
 	}
 
 	/**
-	 * Get all session entries (excludes header). Returns a defensive copy.
-	 * Use buildSessionContext() if you need the messages for the LLM.
+	 * Get all session entries (excludes header). Returns a shallow copy.
+	 * The session is append-only: use appendXXX() to add entries, branch() to
+	 * change the leaf pointer. Entries cannot be modified or deleted.
 	 */
 	getEntries(): SessionEntry[] {
-		return this.inMemoryEntries.filter((e): e is SessionEntry => e.type !== "session");
+		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
+	}
+
+	/**
+	 * Get the session as a tree structure. Returns a shallow defensive copy of all entries.
+	 * A well-formed session has exactly one root (first entry with parentId === null).
+	 * Orphaned entries (broken parent chain) are also returned as roots.
+	 */
+	getTree(): SessionTreeNode[] {
+		const entries = this.getEntries();
+		const nodeMap = new Map<string, SessionTreeNode>();
+		const roots: SessionTreeNode[] = [];
+
+		// Create nodes
+		for (const entry of entries) {
+			nodeMap.set(entry.id, { entry, children: [] });
+		}
+
+		// Build tree
+		for (const entry of entries) {
+			const node = nodeMap.get(entry.id)!;
+			if (entry.parentId === null) {
+				roots.push(node);
+			} else {
+				const parent = nodeMap.get(entry.parentId);
+				if (parent) {
+					parent.children.push(node);
+				} else {
+					// Orphan - treat as root
+					roots.push(node);
+				}
+			}
+		}
+
+		return roots;
 	}
 
 	// =========================================================================
 	// Branching
 	// =========================================================================
 
-	/** Branch in-place by changing the leaf pointer */
-	branchInPlace(branchFromId: string): void {
+	/**
+	 * Start a new branch from an earlier entry.
+	 * Moves the leaf pointer to the specified entry. The next appendXXX() call
+	 * will create a child of that entry, forming a new branch. Existing entries
+	 * are not modified or deleted.
+	 */
+	branch(branchFromId: string): void {
 		if (!this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
 		this.leafId = branchFromId;
 	}
 
-	/** Branch with a summary of the abandoned path */
+	/**
+	 * Start a new branch with a summary of the abandoned path.
+	 * Same as branch(), but also appends a branch_summary entry that captures
+	 * context from the abandoned conversation path.
+	 */
 	branchWithSummary(branchFromId: string, summary: string): string {
 		if (!this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
@@ -643,35 +720,41 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	createBranchedSessionFromEntries(entries: FileEntry[], branchBeforeIndex: number): string | null {
-		const newSessionId = randomUUID();
-		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const newSessionFile = join(this.getSessionDir(), `${timestamp}_${newSessionId}.jsonl`);
-
-		const newEntries: FileEntry[] = [];
-		for (let i = 0; i < branchBeforeIndex; i++) {
-			const entry = entries[i];
-
-			if (entry.type === "session") {
-				newEntries.push({
-					...entry,
-					version: CURRENT_SESSION_VERSION,
-					id: newSessionId,
-					timestamp: new Date().toISOString(),
-					branchedFrom: this.persist ? this.sessionFile : undefined,
-				});
-			} else {
-				newEntries.push(entry);
-			}
+	/**
+	 * Create a new session file containing only the path from root to the specified leaf.
+	 * Useful for extracting a single conversation path from a branched session.
+	 * Returns the new session file path, or null if not persisting.
+	 */
+	createBranchedSession(leafId: string): string | null {
+		const path = this.getPath(leafId);
+		if (path.length === 0) {
+			throw new Error(`Entry ${leafId} not found`);
 		}
 
+		const newSessionId = randomUUID();
+		const timestamp = new Date().toISOString();
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		const newSessionFile = join(this.getSessionDir(), `${fileTimestamp}_${newSessionId}.jsonl`);
+
+		const header: SessionHeader = {
+			type: "session",
+			version: CURRENT_SESSION_VERSION,
+			id: newSessionId,
+			timestamp,
+			cwd: this.cwd,
+			branchedFrom: this.persist ? this.sessionFile : undefined,
+		};
+
 		if (this.persist) {
-			for (const entry of newEntries) {
+			appendFileSync(newSessionFile, `${JSON.stringify(header)}\n`);
+			for (const entry of path) {
 				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
 			}
 			return newSessionFile;
 		}
-		this.inMemoryEntries = newEntries;
+
+		// In-memory mode: replace current session with the path
+		this.fileEntries = [header, ...path];
 		this.sessionId = newSessionId;
 		this._buildIndex();
 		return null;

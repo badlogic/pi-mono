@@ -211,7 +211,7 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			this.sessionManager.saveMessage(event.message);
+			this.sessionManager.appendMessage(event.message);
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
@@ -535,7 +535,7 @@ export class AgentSession {
 		this._disconnectFromAgent();
 		await this.abort();
 		this.agent.reset();
-		this.sessionManager.reset();
+		this.sessionManager.newSession();
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 
@@ -572,7 +572,7 @@ export class AgentSession {
 		}
 
 		this.agent.setModel(model);
-		this.sessionManager.saveModelChange(model.provider, model.id);
+		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
@@ -611,7 +611,7 @@ export class AgentSession {
 
 		// Apply model
 		this.agent.setModel(next.model);
-		this.sessionManager.saveModelChange(next.model.provider, next.model.id);
+		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
 		// Apply thinking level (setThinkingLevel clamps to model capabilities)
@@ -638,7 +638,7 @@ export class AgentSession {
 		}
 
 		this.agent.setModel(nextModel);
-		this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
+		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 		// Re-clamp thinking level for new model's capabilities
@@ -671,7 +671,7 @@ export class AgentSession {
 			effectiveLevel = "high";
 		}
 		this.agent.setThinkingLevel(effectiveLevel);
-		this.sessionManager.saveThinkingLevelChange(effectiveLevel);
+		this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
 	}
 
@@ -831,7 +831,7 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.saveCompaction(summary, firstKeptEntryId, tokensBefore);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1013,7 +1013,7 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.saveCompaction(summary, firstKeptEntryId, tokensBefore);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1271,7 +1271,7 @@ export class AgentSession {
 				this.agent.appendMessage(bashMessage);
 
 				// Save to session
-				this.sessionManager.saveMessage(bashMessage);
+				this.sessionManager.appendMessage(bashMessage);
 			}
 
 			return result;
@@ -1309,7 +1309,7 @@ export class AgentSession {
 			this.agent.appendMessage(bashMessage);
 
 			// Save to session
-			this.sessionManager.saveMessage(bashMessage);
+			this.sessionManager.appendMessage(bashMessage);
 		}
 
 		this._pendingBashMessages = [];
@@ -1431,8 +1431,12 @@ export class AgentSession {
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
-		// Create branched session (returns null in --no-session mode)
-		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
+		// Create branched session ending before the selected message (returns null in --no-session mode)
+		// User will re-enter/edit the selected message
+		if (!selectedEntry.parentId) {
+			throw new Error("Cannot branch from first message");
+		}
+		const newSessionFile = this.sessionManager.createBranchedSession(selectedEntry.parentId);
 
 		// Update session file if we have one (file-based mode)
 		if (newSessionFile !== null) {
