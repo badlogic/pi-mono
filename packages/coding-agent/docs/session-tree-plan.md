@@ -78,11 +78,18 @@ Questions to resolve:
 - [ ] Design and implement branch summarizer
 - [ ] Add tests for `branchWithSummary()` flow
 
-### Entry Labels
+### Entry Labels ✅
 
-- [ ] Add optional `label?: string` field to `SessionEntryBase`
-- [ ] Allow users to label any entry
-- [ ] Display labels in UI (tree view, path view)
+- [x] Add `LabelEntry` type with `targetId` and `label` fields
+- [x] Add `labelsById: Map<string, string>` private field
+- [x] Build labels map in `_buildIndex()` via linear scan
+- [x] Add `getLabel(id)` method
+- [x] Add `appendLabelChange(targetId, label)` method (undefined clears)
+- [x] Update `createBranchedSession()` to filter out LabelEntry and recreate from resolved map
+- [x] `buildSessionContext()` already ignores LabelEntry (only handles message types)
+- [x] Add `label?: string` to `SessionTreeNode`, populated by `getTree()`
+- [ ] Display labels in UI (tree view, path view) - deferred to UI phase
+- [ ] `/label` command - deferred to UI phase
 
 ### HTML Export
 
@@ -109,10 +116,6 @@ Design new commands based on refactored SessionManager:
 - [ ] Show tree structure or list of branch points
 - [ ] Allow switching between branches (move leaf pointer)
 - [ ] Show current position in tree
-
-**`/label`** - Label entries (new, if labels implemented)
-- [ ] Allow labeling current or selected entry
-- [ ] Display in tree view
 
 ---
 
