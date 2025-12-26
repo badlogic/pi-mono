@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -276,6 +276,43 @@ describe("Coding Agent Tools", () => {
 			await expect(bashTool.execute("test-call-10", { command: "sleep 5", timeout: 1 })).rejects.toThrow(
 				/timed out/i,
 			);
+		});
+
+		it("should run in background and return immediately", async () => {
+			const start = Date.now();
+			const result = await bashTool.execute("test-bg-1", {
+				// Process that takes 2 seconds, writes output, then exits
+				command: 'echo "started" && sleep 2 && echo "finished"',
+				background: true,
+			});
+			const elapsed = Date.now() - start;
+
+			// Should return quickly, NOT wait for the 2-second sleep
+			expect(elapsed).toBeLessThan(500);
+
+			// Should return PID and log file path
+			expect(result.details?.backgrounded).toBe(true);
+			expect(result.details?.pid).toBeTypeOf("number");
+			expect(result.details?.logFile).toContain("pi-bash-bg-");
+
+			// Output should mention PID and log file
+			const output = getTextOutput(result);
+			expect(output).toContain(String(result.details?.pid));
+
+			// Wait for process to write initial output, verify log file works
+			await new Promise((r) => setTimeout(r, 100));
+			const logContent = readFileSync(result.details!.logFile!, "utf-8");
+			expect(logContent).toContain("started");
+			// Should NOT contain "finished" yet since sleep 2 is still running
+			expect(logContent).not.toContain("finished");
+
+			// Cleanup: kill process and remove log file
+			try {
+				process.kill(result.details!.pid!);
+			} catch {
+				// Process may have exited
+			}
+			rmSync(result.details!.logFile!, { force: true });
 		});
 	});
 

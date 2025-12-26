@@ -16,28 +16,126 @@ function getTempFilePath(): string {
 	return join(tmpdir(), `pi-bash-${id}.log`);
 }
 
+/**
+ * Generate a unique temp file path for background process output
+ */
+function getBackgroundLogPath(): string {
+	const id = randomBytes(8).toString("hex");
+	return join(tmpdir(), `pi-bash-bg-${id}.log`);
+}
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Run the command in the background and return immediately. Returns PID and log file path. Use for long-running processes like dev servers.",
+		}),
+	),
 });
 
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+	/** True if command was started in background mode */
+	backgrounded?: boolean;
+	/** PID of the background process */
+	pid?: number;
+	/** Path to log file containing background process output */
+	logFile?: string;
+}
+
+/**
+ * Execute a command in the background, returning immediately with PID and log file.
+ *
+ * Redirects output to a log file and runs the command in background.
+ * The key is redirecting stdout/stderr BEFORE the &, so the backgrounded
+ * process doesn't inherit Node's stdio pipes (which would cause hanging).
+ */
+function executeBackground(
+	command: string,
+	cwd: string,
+): Promise<{ content: Array<{ type: "text"; text: string }>; details: BashToolDetails }> {
+	return new Promise((resolve, reject) => {
+		const { shell, args } = getShellConfig();
+		const logFile = getBackgroundLogPath();
+
+		// Wrap command to:
+		// 1. Run command in a nested shell
+		// 2. Redirect stdout/stderr to log file BEFORE backgrounding
+		// 3. Redirect stdin from /dev/null
+		// 4. Run in background with &
+		// 5. Echo the PID so we can capture it
+		//
+		// The redirects before & ensure the backgrounded process doesn't
+		// inherit Node's pipes, avoiding the hanging issue.
+		const escapedCommand = command.replace(/'/g, "'\\''");
+		const wrappedCommand = `${shell} ${args.map((a) => `'${a}'`).join(" ")} '${escapedCommand}' > '${logFile}' 2>&1 </dev/null & echo $!`;
+
+		const child = spawn(shell, [...args, wrappedCommand], {
+			cwd,
+			detached: true,
+			// Only pipe stdout to capture the PID, ignore stdin and stderr
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+
+		let stdout = "";
+
+		child.stdout?.on("data", (data: Buffer) => {
+			stdout += data.toString();
+		});
+
+		child.on("close", (_code) => {
+			const pid = parseInt(stdout.trim(), 10);
+
+			if (Number.isNaN(pid)) {
+				reject(new Error(`Failed to start background process: could not parse PID from output: ${stdout}`));
+				return;
+			}
+
+			const outputText = `Started background process (PID ${pid})
+Log file: ${logFile}
+
+Use 'read ${logFile}' to check output.
+Use 'kill ${pid}' to stop the process.`;
+
+			resolve({
+				content: [{ type: "text", text: outputText }],
+				details: {
+					backgrounded: true,
+					pid,
+					logFile,
+				},
+			});
+		});
+
+		child.on("error", (err) => {
+			reject(new Error(`Failed to start background process: ${err.message}`));
+		});
+
+		// Unref so the parent doesn't wait for the detached child
+		child.unref();
+	});
 }
 
 export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. Use background=true for long-running processes (dev servers, watch processes) - returns immediately with PID and log file path.`,
 		parameters: bashSchema,
 		execute: async (
 			_toolCallId: string,
-			{ command, timeout }: { command: string; timeout?: number },
+			{ command, timeout, background }: { command: string; timeout?: number; background?: boolean },
 			signal?: AbortSignal,
 			onUpdate?,
 		) => {
+			// Background mode: start process detached and return immediately
+			if (background) {
+				return executeBackground(command, cwd);
+			}
+
 			return new Promise((resolve, reject) => {
 				const { shell, args } = getShellConfig();
 				const child = spawn(shell, [...args, command], {
