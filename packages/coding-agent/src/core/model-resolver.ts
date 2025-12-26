@@ -3,7 +3,7 @@
  */
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, KnownProvider, Model } from "@mariozechner/pi-ai";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { isValidThinkingLevel } from "../cli/args.js";
 import type { ModelRegistry } from "./model-registry.js";
@@ -184,7 +184,7 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 		}
 
 		// Avoid duplicates
-		if (!scopedModels.find((sm) => sm.model.id === model.id && sm.model.provider === model.provider)) {
+		if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
 			scopedModels.push({ model, thinkingLevel });
 		}
 	}

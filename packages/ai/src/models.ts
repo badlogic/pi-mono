@@ -54,3 +54,15 @@ const XHIGH_MODELS = new Set(["gpt-5.1-codex-max", "gpt-5.2", "gpt-5.2-codex"]);
 export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
 	return XHIGH_MODELS.has(model.id);
 }
+
+/**
+ * Check if two models are equal by comparing both their id and provider.
+ * Returns false if either model is null or undefined.
+ */
+export function modelsAreEqual<TApi extends Api>(
+	a: Model<TApi> | null | undefined,
+	b: Model<TApi> | null | undefined,
+): boolean {
+	if (!a || !b) return false;
+	return a.id === b.id && a.provider === b.provider;
+}
