@@ -402,18 +402,60 @@ To prevent corrupted state from interrupted installs (Ctrl+C):
    - If `package.json` has `dependencies` → run `npm install`
    - Rename `<target>.installing/` → `<target>/`
 
-## Update Command
+## Extension Management Commands
+
+### Install
+
+Adds extension to settings.json and installs to disk.
 
 ```bash
-pi update                  # update all extensions
-pi update hooks            # update only hooks
-pi update tools skills     # update specific types
+pi install <type> <source>              # global (default)
+pi install <type> -p <source>           # project-local
+pi install <type> --project <source>    # project-local
+
+# Examples:
+pi install hook npm:@scope/my-hook@1.0.0
+  # → adds to ~/.pi/agent/settings.json
+  # → installs to ~/.pi/agent/hooks/npm/@scope/my-hook@1.0.0/
+
+pi install tool -p git:https://github.com/user/tool@v1.0.0
+  # → adds to <cwd>/.pi/settings.json
+  # → installs to <cwd>/.pi/tools/git/github.com/user/tool@v1.0.0/
 ```
 
-**Behavior:**
-- For `npm:pkg@<version>`: check if newer version of that exact spec exists (e.g., `@latest` resolves to newer)
-- For `git:repo#branch`: `git pull`
-- For `git:repo@tag` or `git:repo@commit`: no-op (pinned)
+### Remove
+
+Removes extension from settings.json and deletes from disk.
+
+```bash
+pi remove <type> <name>                 # from global
+pi remove <type> -p <name>              # from project
+
+# Examples:
+pi remove hook my-hook                  # from ~/.pi/agent/settings.json + delete
+pi remove skill -p brave-search         # from <cwd>/.pi/settings.json + delete
+```
+
+### Update
+
+Updates npm/git extensions to latest versions.
+
+```bash
+pi update                               # all (project + global)
+pi update -p                            # project only
+pi update <type>...                     # specific types
+pi update -p <type>...                  # project, specific types
+
+# Examples:
+pi update                               # update everything
+pi update hook tool                     # update hooks and tools
+pi update -p skill                      # update project skills only
+```
+
+**Update behavior:**
+- `npm:pkg@<version>`: check if newer version exists (e.g., `@latest` resolves to newer)
+- `git:repo#branch`: `git pull`
+- `git:repo@tag` or `git:repo@commit`: no-op (pinned)
 - Local files/directories: no-op
 
 ## Loading Flow (Full)
@@ -733,7 +775,7 @@ Update argument parsing:
   result.noHooks = true;
 ```
 
-Add `pi update` command handling.
+Add subcommand handling for `pi install`, `pi remove`, `pi update`.
 
 ### `src/core/hooks/loader.ts`
 
@@ -907,7 +949,7 @@ if (settings.skills?.customDirectories) {
 5. **Phase 5: CLI updates**
    - Add new flags to args.ts
    - Update help text
-   - Add `pi update` command
+   - Add `pi install`, `pi remove`, `pi update` subcommands
 
 6. **Phase 6: Integration**
    - Update sdk.ts
