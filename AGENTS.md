@@ -89,3 +89,4 @@ Location: `packages/coding-agent/CHANGELOG.md`, `packages/ai/CHANGELOG.md`, `pac
 
 5. **Add new [Unreleased] section** at top of CHANGELOG.md for next cycle, commit it
 
+**CTRICIAL**: NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
