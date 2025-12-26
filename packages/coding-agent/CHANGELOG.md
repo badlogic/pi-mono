@@ -27,8 +27,13 @@
   - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
   - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
   - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
+- **Hook API**:
+  - New `pi.renderCustomMessage(customType, renderer)` to register custom renderers for `CustomMessageEntry`
+  - `CustomMessageRenderer` type: `(entry, options, theme) => Component | null`
+  - Renderers return inner content; the TUI wraps it in a styled Box
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
+- **Themes**: Custom themes must add `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens
 
 ### Added
 
@@ -38,8 +43,9 @@
 
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
-- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `LabelEntry` for user-defined bookmarks
+- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `CustomMessageEntry<T>` for hook-injected context messages, `LabelEntry` for user-defined bookmarks
 - **Entry labels**: New `getLabel(id)` and `appendLabelChange(targetId, label)` methods for labeling entries. Labels are included in `SessionTreeNode` for UI/export.
+- **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
 
 ### Fixed
 
