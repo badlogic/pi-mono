@@ -389,6 +389,52 @@ async execute(toolCallId, args, signal, onUpdate) {
 }
 ```
 
+## Spawning TypeScript Subprocesses
+
+Most tools run synchronously within `execute()`. However, if you need to spawn a **detached TypeScript subprocess** that outlives the tool call (e.g., for async background tasks), use the `PI_JITI_CLI` environment variable:
+
+```typescript
+import { spawn } from "node:child_process";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+async execute(toolCallId, params) {
+  const jitiCli = process.env.PI_JITI_CLI;
+  if (!jitiCli) {
+    throw new Error("PI_JITI_CLI not set. Requires pi 0.13+");
+  }
+
+  const scriptPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "background-worker.ts"
+  );
+
+  const proc = spawn("node", [jitiCli, scriptPath], {
+    detached: true,
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+
+  proc.stdin?.write(JSON.stringify({ task: params.task }));
+  proc.stdin?.end();
+  proc.unref();
+
+  return {
+    content: [{ type: "text", text: "Background task started" }],
+  };
+}
+```
+
+**When to use this:**
+- Async tasks that must survive after `execute()` returns
+- Long-running processes that shouldn't block the agent
+- Background workers that report results via events
+
+**Alternatives:**
+- **Keep it sync**: Most tools should just await and return
+- **Compile to JS**: If you want zero runtime dependencies, compile your subprocess script to JavaScript and spawn with plain `node`
+
+See [`examples/custom-tools/subagent/`](../examples/custom-tools/subagent/) for a complete example using this pattern.
+
 ## Multiple Tools from One File
 
 Return an array to share state between related tools:

@@ -162,4 +162,4 @@ export {
 // Main entry point
 export { main } from "./main.js";
 // Theme utilities for custom tools
-export { getMarkdownTheme } from "./modes/interactive/theme/theme.js";
+export { getMarkdownTheme, Theme, type ThemeColor } from "./modes/interactive/theme/theme.js";

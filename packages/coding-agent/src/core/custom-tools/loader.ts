@@ -29,6 +29,16 @@ import type {
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
 
+// Expose jiti CLI path for custom tools that need to spawn TypeScript subprocesses
+if (!process.env.PI_JITI_CLI) {
+	try {
+		const jitiPkg = require.resolve("jiti/package.json");
+		process.env.PI_JITI_CLI = path.join(path.dirname(jitiPkg), "lib/jiti-cli.mjs");
+	} catch {
+		/* jiti not available - custom tools needing it will fail gracefully */
+	}
+}
+
 // Lazily computed aliases - resolved at runtime to handle global installs
 let _aliases: Record<string, string> | null = null;
 function getAliases(): Record<string, string> {
