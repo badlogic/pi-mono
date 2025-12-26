@@ -23,15 +23,11 @@ export default function (pi: HookAPI) {
 
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const {
-			messagesToSummarize,
-			messagesToKeep,
-			previousSummary,
-			tokensBefore,
-			resolveApiKey,
-			entries: _,
-			signal,
-		} = event;
+		const { preparation, previousCompactions, modelRegistry, signal } = event;
+		const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId } = preparation;
+
+		// Get previous summary from most recent compaction (if any)
+		const previousSummary = previousCompactions[0]?.summary;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		const model = getModel("google", "gemini-2.5-flash");
@@ -41,7 +37,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Resolve API key for the summarization model
-		const apiKey = await resolveApiKey(model);
+		const apiKey = await modelRegistry.getApiKey(model);
 		if (!apiKey) {
 			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
 			return;
@@ -102,11 +98,11 @@ Format the summary as structured markdown with clear sections.`,
 			}
 
 			// Return compaction content - SessionManager adds id/parentId
-			// Use firstKeptEntryId from event to keep recent messages
+			// Use firstKeptEntryId from preparation to keep recent messages
 			return {
 				compaction: {
 					summary,
-					firstKeptEntryId: event.firstKeptEntryId,
+					firstKeptEntryId,
 					tokensBefore,
 				},
 			};

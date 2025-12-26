@@ -40,7 +40,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	});
 
 	function createHook(
-		onBeforeCompact?: (event: SessionEvent) => { cancel?: boolean; compactionEntry?: any } | undefined,
+		onBeforeCompact?: (event: SessionEvent) => { cancel?: boolean; compaction?: any } | undefined,
 		onCompact?: (event: SessionEvent) => void,
 	): LoadedHook {
 		const handlers = new Map<string, ((event: any, ctx: any) => Promise<any>)[]>();
@@ -98,7 +98,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			},
 			false,
 		);
-		hookRunner.setSessionFile(sessionManager.getSessionFile());
+		hookRunner.setSessionFile(sessionManager.getSessionFile() ?? null);
 
 		session = new AgentSession({
 			agent,
@@ -131,20 +131,21 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		const beforeEvent = beforeCompactEvents[0];
 		if (beforeEvent.reason === "before_compact") {
-			expect(beforeEvent.cutPoint).toBeDefined();
-			expect(beforeEvent.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
-			expect(beforeEvent.messagesToSummarize).toBeDefined();
-			expect(beforeEvent.messagesToKeep).toBeDefined();
-			expect(beforeEvent.tokensBefore).toBeGreaterThanOrEqual(0);
+			expect(beforeEvent.preparation).toBeDefined();
+			expect(beforeEvent.preparation.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
+			expect(beforeEvent.preparation.messagesToSummarize).toBeDefined();
+			expect(beforeEvent.preparation.messagesToKeep).toBeDefined();
+			expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
 			expect(beforeEvent.model).toBeDefined();
-			expect(beforeEvent.resolveApiKey).toBeDefined();
+			expect(beforeEvent.sessionManager).toBeDefined();
+			expect(beforeEvent.modelRegistry).toBeDefined();
 		}
 
 		const afterEvent = compactEvents[0];
 		if (afterEvent.reason === "compact") {
 			expect(afterEvent.compactionEntry).toBeDefined();
 			expect(afterEvent.compactionEntry.summary.length).toBeGreaterThan(0);
-			expect(afterEvent.tokensBefore).toBeGreaterThanOrEqual(0);
+			expect(afterEvent.compactionEntry.tokensBefore).toBeGreaterThanOrEqual(0);
 			expect(afterEvent.fromHook).toBe(false);
 		}
 	}, 120000);
@@ -162,18 +163,16 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		expect(compactEvents.length).toBe(0);
 	}, 120000);
 
-	it("should allow hooks to provide custom compactionEntry", async () => {
+	it("should allow hooks to provide custom compaction", async () => {
 		const customSummary = "Custom summary from hook";
 
 		const hook = createHook((event) => {
 			if (event.reason === "before_compact") {
 				return {
-					compactionEntry: {
-						type: "compaction" as const,
-						timestamp: new Date().toISOString(),
+					compaction: {
 						summary: customSummary,
-						firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex,
-						tokensBefore: event.tokensBefore,
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						tokensBefore: event.preparation.tokensBefore,
 					},
 				};
 			}
@@ -215,7 +214,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		const afterEvent = compactEvents[0];
 		if (afterEvent.reason === "compact") {
-			const hasCompactionEntry = afterEvent.entries.some((e) => e.type === "compaction");
+			const entries = afterEvent.sessionManager.getEntries();
+			const hasCompactionEntry = entries.some((e) => e.type === "compaction");
 			expect(hasCompactionEntry).toBe(true);
 		}
 	}, 120000);
@@ -337,35 +337,34 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		expect(capturedBeforeEvent).not.toBeNull();
 		const event = capturedBeforeEvent!;
-		expect(event.cutPoint).toHaveProperty("firstKeptEntryIndex");
-		expect(event.cutPoint).toHaveProperty("isSplitTurn");
-		expect(event.cutPoint).toHaveProperty("turnStartIndex");
+		expect(event.preparation.cutPoint).toHaveProperty("firstKeptEntryIndex");
+		expect(event.preparation.cutPoint).toHaveProperty("isSplitTurn");
+		expect(event.preparation.cutPoint).toHaveProperty("turnStartIndex");
 
-		expect(Array.isArray(event.messagesToSummarize)).toBe(true);
-		expect(Array.isArray(event.messagesToKeep)).toBe(true);
+		expect(Array.isArray(event.preparation.messagesToSummarize)).toBe(true);
+		expect(Array.isArray(event.preparation.messagesToKeep)).toBe(true);
 
-		expect(typeof event.tokensBefore).toBe("number");
+		expect(typeof event.preparation.tokensBefore).toBe("number");
 
 		expect(event.model).toHaveProperty("provider");
 		expect(event.model).toHaveProperty("id");
 
-		expect(typeof event.resolveApiKey).toBe("function");
+		expect(typeof event.modelRegistry.getApiKey).toBe("function");
 
-		expect(Array.isArray(event.entries)).toBe(true);
-		expect(event.entries.length).toBeGreaterThan(0);
+		const entries = event.sessionManager.getEntries();
+		expect(Array.isArray(entries)).toBe(true);
+		expect(entries.length).toBeGreaterThan(0);
 	}, 120000);
 
-	it("should use hook compactionEntry even with different firstKeptEntryIndex", async () => {
-		const customSummary = "Custom summary with modified index";
+	it("should use hook compaction even with different values", async () => {
+		const customSummary = "Custom summary with modified values";
 
 		const hook = createHook((event) => {
 			if (event.reason === "before_compact") {
 				return {
-					compactionEntry: {
-						type: "compaction" as const,
-						timestamp: new Date().toISOString(),
+					compaction: {
 						summary: customSummary,
-						firstKeptEntryIndex: 0,
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
 						tokensBefore: 999,
 					},
 				};

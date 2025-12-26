@@ -145,9 +145,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			entries,
-			sessionFile: session.sessionFile,
-			previousSessionFile: null,
+			sessionManager: session.sessionManager,
+			modelRegistry: session.modelRegistry,
 			reason: "start",
 		});
 	}

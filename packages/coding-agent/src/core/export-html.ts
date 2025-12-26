@@ -1343,6 +1343,9 @@ export function exportSessionToHtml(
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	const sessionFile = sessionManager.getSessionFile();
+	if (!sessionFile) {
+		throw new Error("Cannot export in-memory session to HTML");
+	}
 	const content = readFileSync(sessionFile, "utf8");
 	const data = parseSessionFile(content);
 

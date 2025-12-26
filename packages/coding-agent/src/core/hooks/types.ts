@@ -7,8 +7,9 @@
 
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { CompactionResult, CutPointResult } from "../compaction.js";
-import type { CompactionEntry, SessionEntry } from "../session-manager.js";
+import type { CompactionPreparation, CompactionResult } from "../compaction.js";
+import type { ModelRegistry } from "../model-registry.js";
+import type { CompactionEntry, SessionManager } from "../session-manager.js";
 import type {
 	BashToolDetails,
 	FindToolDetails,
@@ -95,12 +96,10 @@ export interface HookEventContext {
  */
 interface SessionEventBase {
 	type: "session";
-	/** All session entries (including pre-compaction history) */
-	entries: SessionEntry[];
-	/** Current session file path, or null in --no-session mode */
-	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "new" */
-	previousSessionFile: string | null;
+	/** Session manager instance - use for entries, session file, etc. */
+	sessionManager: SessionManager;
+	/** Model registry - use for API key resolution */
+	modelRegistry: ModelRegistry;
 }
 
 /**
@@ -120,7 +119,17 @@ interface SessionEventBase {
  */
 export type SessionEvent =
 	| (SessionEventBase & {
-			reason: "start" | "switch" | "new" | "before_switch" | "before_new" | "shutdown";
+			reason: "start" | "new" | "before_new" | "shutdown";
+	  })
+	| (SessionEventBase & {
+			reason: "before_switch";
+			/** Session file we're switching to */
+			targetSessionFile: string;
+	  })
+	| (SessionEventBase & {
+			reason: "switch";
+			/** Session file we came from */
+			previousSessionFile: string | null;
 	  })
 	| (SessionEventBase & {
 			reason: "branch" | "before_branch";
@@ -129,27 +138,20 @@ export type SessionEvent =
 	  })
 	| (SessionEventBase & {
 			reason: "before_compact";
-			cutPoint: CutPointResult;
-			/** ID of first entry to keep (for hooks that return CompactionEntry) */
-			firstKeptEntryId: string;
-			/** Summary from previous compaction, if any. Include this in your summary to preserve context. */
-			previousSummary?: string;
-			/** Messages that will be summarized and discarded */
-			messagesToSummarize: AppMessage[];
-			/** Messages that will be kept after the summary (recent turns) */
-			messagesToKeep: AppMessage[];
-			tokensBefore: number;
+			/** Compaction preparation with cut point, messages to summarize/keep, etc. */
+			preparation: CompactionPreparation;
+			/** Previous compaction entries, newest first. Use for iterative summarization. */
+			previousCompactions: CompactionEntry[];
+			/** Optional user-provided instructions for the summary */
 			customInstructions?: string;
+			/** Current model */
 			model: Model<any>;
-			/** Resolve API key for any model (checks settings, OAuth, env vars) */
-			resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
 			/** Abort signal - hooks should pass this to LLM calls and check it periodically */
 			signal: AbortSignal;
 	  })
 	| (SessionEventBase & {
 			reason: "compact";
 			compactionEntry: CompactionEntry;
-			tokensBefore: number;
 			/** Whether the compaction entry was provided by a hook */
 			fromHook: boolean;
 	  });

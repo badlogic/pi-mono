@@ -20,9 +20,10 @@ export default function (pi: HookAPI) {
 		}
 
 		// Find the last assistant message for commit context
+		const entries = event.sessionManager.getEntries();
 		let lastAssistantText = "";
-		for (let i = event.entries.length - 1; i >= 0; i--) {
-			const entry = event.entries[i];
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
 			if (entry.type === "message" && entry.message.role === "assistant") {
 				const content = entry.message.content;
 				if (Array.isArray(content)) {

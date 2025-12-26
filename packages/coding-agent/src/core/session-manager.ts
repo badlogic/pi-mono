@@ -421,7 +421,7 @@ export function findMostRecentSession(sessionDir: string): string | null {
  */
 export class SessionManager {
 	private sessionId: string = "";
-	private sessionFile: string = "";
+	private sessionFile: string | undefined;
 	private sessionDir: string;
 	private cwd: string;
 	private persist: boolean;
@@ -434,10 +434,10 @@ export class SessionManager {
 	private constructor(cwd: string, sessionDir: string, sessionFile: string | null, persist: boolean) {
 		this.cwd = cwd;
 		this.sessionDir = sessionDir;
+		this.persist = persist;
 		if (persist && sessionDir && !existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });
 		}
-		this.persist = persist;
 
 		if (sessionFile) {
 			this.setSessionFile(sessionFile);
@@ -479,8 +479,8 @@ export class SessionManager {
 		this.byId.clear();
 		this.leafId = "";
 		this.flushed = false;
-		// Only generate filename if not already set (e.g., via --session flag)
-		if (!this.sessionFile) {
+		// Only generate filename if persisting and not already set (e.g., via --session flag)
+		if (this.persist && !this.sessionFile) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
 		}
@@ -505,7 +505,7 @@ export class SessionManager {
 	}
 
 	private _rewriteFile(): void {
-		if (!this.persist) return;
+		if (!this.persist || !this.sessionFile) return;
 		const content = `${this.fileEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
 		writeFileSync(this.sessionFile, content);
 	}
@@ -526,12 +526,12 @@ export class SessionManager {
 		return this.sessionId;
 	}
 
-	getSessionFile(): string {
+	getSessionFile(): string | undefined {
 		return this.sessionFile;
 	}
 
 	_persist(entry: SessionEntry): void {
-		if (!this.persist) return;
+		if (!this.persist || !this.sessionFile) return;
 
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
 		if (!hasAssistant) return;
