@@ -8,6 +8,10 @@
 
 set -e
 
+# Save original working directory (for pi to use)
+ORIGINAL_CWD="$(pwd)"
+
+# Change to script directory for git operations
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -110,5 +114,6 @@ if [ -n "$NEEDS_BUILD" ] || [ ! -f "packages/coding-agent/dist/cli.js" ]; then
     fi
 fi
 
-# Launch pi
+# Launch pi from original working directory
+cd "$ORIGINAL_CWD"
 exec node "$SCRIPT_DIR/packages/coding-agent/dist/cli.js" "$@"
