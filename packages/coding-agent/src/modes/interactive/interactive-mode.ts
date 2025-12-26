@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
+import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -370,9 +370,24 @@ export class InteractiveMode {
 			this.showHookError(error.hookPath, error.error);
 		});
 
-		// Set up send handler for pi.send()
-		hookRunner.setSendHandler((text, attachments) => {
-			this.handleHookSend(text, attachments);
+		// Set up handlers for pi.sendMessage() and pi.appendEntry()
+		hookRunner.setSendMessageHandler((message, triggerTurn) => {
+			const wasStreaming = this.session.isStreaming;
+			this.session
+				.sendHookMessage(message, triggerTurn)
+				.then(() => {
+					// For non-streaming cases with display=true, update UI
+					// (streaming cases update via message_end event)
+					if (!wasStreaming && message.display) {
+						this.rebuildChatFromMessages();
+					}
+				})
+				.catch((err) => {
+					this.showError(`Hook sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+				});
+		});
+		hookRunner.setAppendEntryHandler((customType, data) => {
+			this.sessionManager.appendCustomEntry(customType, data);
 		});
 
 		// Show loaded hooks
@@ -534,19 +549,6 @@ export class InteractiveMode {
 	 * Handle pi.send() from hooks.
 	 * If streaming, queue the message. Otherwise, start a new agent loop.
 	 */
-	private handleHookSend(text: string, attachments?: Attachment[]): void {
-		if (this.session.isStreaming) {
-			// Queue the message for later (note: attachments are lost when queuing)
-			this.session.queueMessage(text);
-			this.updatePendingMessagesDisplay();
-		} else {
-			// Start a new agent loop immediately
-			this.session.prompt(text, { attachments }).catch((err) => {
-				this.showError(err instanceof Error ? err.message : String(err));
-			});
-		}
-	}
-
 	// =========================================================================
 	// Key Handlers
 	// =========================================================================

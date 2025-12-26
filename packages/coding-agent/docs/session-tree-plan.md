@@ -122,10 +122,67 @@ Behavior:
 - [x] `appendCustomMessageEntry(customType, content, display, details?)` in SessionManager
 - [x] `buildSessionContext()` includes custom_message entries as user messages
 - [x] Exported from main index
-- [ ] TUI rendering:
+- [x] TUI rendering:
   - `display: false` - hidden entirely
-  - `display: true` - baseline renderer (content with different bg/fg color)
-  - Custom renderer defined by the hook that contributes it (future)
+  - `display: true` - rendered with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors)
+  - [x] `registerCustomMessageRenderer(customType, renderer)` in HookAPI for custom renderers
+  - [x] Renderer returns inner Component, TUI wraps in styled Box
+
+### Hook API Changes
+
+**Renamed:**
+- `renderCustomMessage()` → `registerCustomMessageRenderer()`
+
+**New: `sendMessage()`**
+
+Replaces `send()`. Always creates CustomMessageEntry, never user messages.
+
+```typescript
+type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, 'customType' | 'content' | 'display' | 'details'>;
+
+sendMessage(message: HookMessage, triggerTurn?: boolean): void;
+```
+
+Behavior:
+- If streaming → queue, append after turn ends (never triggers turn)
+- If idle AND `triggerTurn: true` → append and trigger turn
+- If idle AND `triggerTurn: false` (default) → just append, no turn
+- TUI updates if `display: true`
+
+For hook state (CustomEntry), use `sessionManager.appendCustomEntry()` directly.
+
+**New: `registerCommand()`**
+
+```typescript
+interface CommandContext {
+  args: string;                    // Everything after /commandname
+  session: LimitedAgentSession;    // No prompt(), use sendMessage()
+  ui: HookUIContext;
+  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+}
+
+registerCommand(name: string, options: {
+  description?: string;
+  handler: (ctx: CommandContext) => Promise<string | void>;
+}): void;
+```
+
+Handler return:
+- `void` - command completed
+- `string` - text to send as prompt (like file-based slash commands)
+
+**New: `ui.custom()`**
+
+For arbitrary hook UI with keyboard focus:
+
+```typescript
+interface HookUIContext {
+  // ... existing: select, confirm, input, notify
+  
+  /** Show custom component with keyboard focus. Call done() when finished. */
+  custom(component: Component, done: () => void): void;
+}
+```
 
 See also: `CustomEntry<T>` for storing hook state that does NOT participate in context.
 

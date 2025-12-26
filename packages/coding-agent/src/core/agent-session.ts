@@ -14,7 +14,7 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
@@ -27,7 +27,7 @@ import {
 } from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
-import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
+import type { HookMessage, HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
@@ -99,6 +99,13 @@ export interface SessionStats {
 		total: number;
 	};
 	cost: number;
+}
+
+/** Internal marker for hook messages queued through the agent loop */
+interface HookMessageData {
+	customType: string;
+	display: boolean;
+	details?: unknown;
 }
 
 // ============================================================================
@@ -211,7 +218,21 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			this.sessionManager.appendMessage(event.message);
+			// Check if this is a hook message (has _hookData marker)
+			type HookAppMessage = AppMessage & { _hookData?: HookMessageData; content: (TextContent | ImageContent)[] };
+			const hookMessage = event.message as HookAppMessage;
+			if (hookMessage._hookData) {
+				// Persist as CustomMessageEntry
+				this.sessionManager.appendCustomMessageEntry(
+					hookMessage._hookData.customType,
+					hookMessage.content,
+					hookMessage._hookData.display,
+					hookMessage._hookData.details,
+				);
+			} else {
+				// Regular message - persist as SessionMessageEntry
+				this.sessionManager.appendMessage(event.message);
+			}
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
@@ -471,6 +492,60 @@ export class AgentSession {
 			content: [{ type: "text", text }],
 			timestamp: Date.now(),
 		});
+	}
+
+	/**
+	 * Send a hook message to the session. Creates a CustomMessageEntry.
+	 *
+	 * Handles three cases:
+	 * - Streaming: queues message, processed when loop pulls from queue
+	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
+	 * - Not streaming + no trigger: appends to state/session, no turn
+	 *
+	 * @param message Hook message with customType, content, display, details
+	 * @param triggerTurn If true and not streaming, triggers a new LLM turn
+	 */
+	async sendHookMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): Promise<void> {
+		// Normalize content to array format for the AppMessage
+		const content: (TextContent | ImageContent)[] =
+			typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content;
+
+		// Create AppMessage with _hookData marker for routing in message_end handler
+		const appMessage: AppMessage & { _hookData: HookMessageData } = {
+			role: "user",
+			content,
+			timestamp: Date.now(),
+			_hookData: {
+				customType: message.customType,
+				display: message.display,
+				details: message.details,
+			},
+		};
+
+		if (this.isStreaming) {
+			// Queue for processing by agent loop
+			await this.agent.queueMessage(appMessage);
+		} else if (triggerTurn) {
+			// Append to agent state and session, then trigger a turn
+			this.agent.appendMessage(appMessage);
+			this.sessionManager.appendCustomMessageEntry(
+				message.customType,
+				message.content,
+				message.display,
+				message.details,
+			);
+			// Start a new turn - agent.continue() works because last message is user role
+			await this.agent.continue();
+		} else {
+			// Just append to agent state and session, no turn
+			this.agent.appendMessage(appMessage);
+			this.sessionManager.appendCustomMessageEntry(
+				message.customType,
+				message.content,
+				message.display,
+				message.details,
+			);
+		}
 	}
 
 	/**

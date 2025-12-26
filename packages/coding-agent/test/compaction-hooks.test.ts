@@ -64,7 +64,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			resolvedPath: "/test/test-hook.ts",
 			handlers,
 			customMessageRenderers: new Map(),
-			setSendHandler: () => {},
+			commands: new Map(),
+			setSendMessageHandler: () => {},
+			setAppendEntryHandler: () => {},
 		};
 	}
 
@@ -240,7 +242,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				],
 			]),
 			customMessageRenderers: new Map(),
-			setSendHandler: () => {},
+			commands: new Map(),
+			setSendMessageHandler: () => {},
+			setAppendEntryHandler: () => {},
 		};
 
 		createSession([throwingHook]);
@@ -284,7 +288,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				],
 			]),
 			customMessageRenderers: new Map(),
-			setSendHandler: () => {},
+			commands: new Map(),
+			setSendMessageHandler: () => {},
+			setAppendEntryHandler: () => {},
 		};
 
 		const hook2: LoadedHook = {
@@ -307,7 +313,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				],
 			]),
 			customMessageRenderers: new Map(),
-			setSendHandler: () => {},
+			commands: new Map(),
+			setSendMessageHandler: () => {},
+			setAppendEntryHandler: () => {},
 		};
 
 		createSession([hook1, hook2]);

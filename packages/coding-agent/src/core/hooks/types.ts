@@ -5,7 +5,7 @@
  * and interact with the user via UI primitives.
  */
 
-import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
+import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
@@ -389,8 +389,49 @@ export type CustomMessageRenderer<T = unknown> = (
 ) => Component | null;
 
 /**
+ * Message type for hooks to send. Creates CustomMessageEntry in the session.
+ */
+export type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, "customType" | "content" | "display" | "details">;
+
+/**
+ * Context passed to command handlers.
+ */
+export interface CommandContext {
+	/** Arguments after the command name */
+	args: string;
+	/** UI methods for user interaction */
+	ui: HookUIContext;
+	/** Execute a command and return stdout/stderr/code */
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+	/** Whether UI is available (false in print mode) */
+	hasUI: boolean;
+	/** Current working directory */
+	cwd: string;
+	/** Session manager for reading/writing session entries */
+	sessionManager: SessionManager;
+	/** Model registry for API keys */
+	modelRegistry: ModelRegistry;
+	/**
+	 * Send a custom message to the session.
+	 * If streaming, queued and appended after turn ends.
+	 * If idle and triggerTurn=true, appends and triggers a new turn.
+	 * If idle and triggerTurn=false (default), just appends.
+	 */
+	sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void;
+}
+
+/**
+ * Command registration options.
+ */
+export interface RegisteredCommand {
+	name: string;
+	description?: string;
+	handler: (ctx: CommandContext) => Promise<string | undefined>;
+}
+
+/**
  * HookAPI passed to hook factory functions.
- * Hooks use pi.on() to subscribe to events and pi.send() to inject messages.
+ * Hooks use pi.on() to subscribe to events and pi.sendMessage() to inject messages.
  */
 export interface HookAPI {
 	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
@@ -403,18 +444,62 @@ export interface HookAPI {
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult | undefined>): void;
 
 	/**
-	 * Send a message to the agent.
-	 * If the agent is streaming, the message is queued.
-	 * If the agent is idle, a new agent loop is started.
+	 * Send a custom message to the session. Creates a CustomMessageEntry that
+	 * participates in LLM context and can be displayed in the TUI.
+	 *
+	 * Use this when you want the LLM to see the message content.
+	 * For hook state that should NOT be sent to the LLM, use appendEntry() instead.
+	 *
+	 * @param message - The message to send
+	 * @param message.customType - Identifier for your hook (used for filtering on reload)
+	 * @param message.content - Message content (string or TextContent/ImageContent array)
+	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
+	 * @param message.details - Optional hook-specific metadata (not sent to LLM)
+	 * @param triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
+	 *                      If agent is streaming, message is queued and triggerTurn is ignored.
 	 */
-	send(text: string, attachments?: Attachment[]): void;
+	sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void;
+
+	/**
+	 * Append a custom entry to the session for hook state persistence.
+	 * Creates a CustomEntry that does NOT participate in LLM context.
+	 *
+	 * Use this to store hook-specific data that should persist across session reloads
+	 * but should NOT be sent to the LLM. On reload, scan session entries for your
+	 * customType to reconstruct hook state.
+	 *
+	 * For messages that SHOULD be sent to the LLM, use sendMessage() instead.
+	 *
+	 * @param customType - Identifier for your hook (used for filtering on reload)
+	 * @param data - Hook-specific data to persist (must be JSON-serializable)
+	 *
+	 * @example
+	 * // Store permission state
+	 * pi.appendEntry("permissions", { level: "full", grantedAt: Date.now() });
+	 *
+	 * // On reload, reconstruct state from entries
+	 * pi.on("session", async (event, ctx) => {
+	 *   if (event.reason === "start") {
+	 *     const entries = event.sessionManager.getEntries();
+	 *     const myEntries = entries.filter(e => e.type === "custom" && e.customType === "permissions");
+	 *     // Reconstruct state from myEntries...
+	 *   }
+	 * });
+	 */
+	appendEntry<T = unknown>(customType: string, data?: T): void;
 
 	/**
 	 * Register a custom renderer for CustomMessageEntry with a specific customType.
 	 * The renderer is called when rendering the entry in the TUI.
 	 * Return null to use the default renderer.
 	 */
-	renderCustomMessage<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void;
+	registerCustomMessageRenderer<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void;
+
+	/**
+	 * Register a custom slash command.
+	 * Handler receives CommandContext and can return a string to send as prompt.
+	 */
+	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
 }
 
 /**

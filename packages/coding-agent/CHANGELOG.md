@@ -28,9 +28,14 @@
   - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
   - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
 - **Hook API**:
-  - New `pi.renderCustomMessage(customType, renderer)` to register custom renderers for `CustomMessageEntry`
+  - `pi.send(text, attachments?)` replaced with `pi.sendMessage(message, triggerTurn?)` which creates `CustomMessageEntry` instead of user messages
+  - New `pi.appendEntry(customType, data?)` to persist hook state (does NOT participate in LLM context)
+  - New `pi.registerCommand(name, options)` to register custom slash commands
+  - New `pi.registerCustomMessageRenderer(customType, renderer)` to register custom renderers for `CustomMessageEntry`
   - `CustomMessageRenderer` type: `(entry, options, theme) => Component | null`
   - Renderers return inner content; the TUI wraps it in a styled Box
+  - New types: `HookMessage<T>`, `RegisteredCommand`, `CommandContext`
+  - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 - **Themes**: Custom themes must add `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens
@@ -46,6 +51,7 @@
 - **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `CustomMessageEntry<T>` for hook-injected context messages, `LabelEntry` for user-defined bookmarks
 - **Entry labels**: New `getLabel(id)` and `appendLabelChange(targetId, label)` methods for labeling entries. Labels are included in `SessionTreeNode` for UI/export.
 - **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
+- **AgentSession**: New `sendHookMessage(message, triggerTurn?)` method for hooks to inject messages. Handles queuing during streaming, direct append when idle, and optional turn triggering.
 
 ### Fixed
 

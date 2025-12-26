@@ -3,7 +3,7 @@
  */
 
 import { spawn } from "node:child_process";
-import type { LoadedHook, SendHandler } from "./loader.js";
+import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
 import type {
 	CustomMessageRenderer,
 	ExecOptions,
@@ -12,6 +12,7 @@ import type {
 	HookEvent,
 	HookEventContext,
 	HookUIContext,
+	RegisteredCommand,
 	SessionEvent,
 	SessionEventResult,
 	ToolCallEvent,
@@ -164,12 +165,22 @@ export class HookRunner {
 	}
 
 	/**
-	 * Set the send handler for all hooks' pi.send().
+	 * Set the send message handler for all hooks' pi.sendMessage().
 	 * Call this when the mode initializes.
 	 */
-	setSendHandler(handler: SendHandler): void {
+	setSendMessageHandler(handler: SendMessageHandler): void {
 		for (const hook of this.hooks) {
-			hook.setSendHandler(handler);
+			hook.setSendMessageHandler(handler);
+		}
+	}
+
+	/**
+	 * Set the append entry handler for all hooks' pi.appendEntry().
+	 * Call this when the mode initializes.
+	 */
+	setAppendEntryHandler(handler: AppendEntryHandler): void {
+		for (const hook of this.hooks) {
+			hook.setAppendEntryHandler(handler);
 		}
 	}
 
@@ -213,6 +224,33 @@ export class HookRunner {
 			const renderer = hook.customMessageRenderers.get(customType);
 			if (renderer) {
 				return renderer;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Get all registered commands from all hooks.
+	 */
+	getRegisteredCommands(): RegisteredCommand[] {
+		const commands: RegisteredCommand[] = [];
+		for (const hook of this.hooks) {
+			for (const command of hook.commands.values()) {
+				commands.push(command);
+			}
+		}
+		return commands;
+	}
+
+	/**
+	 * Get a registered command by name.
+	 * Returns the first command found across all hooks, or undefined if none.
+	 */
+	getCommand(name: string): RegisteredCommand | undefined {
+		for (const hook of this.hooks) {
+			const command = hook.commands.get(name);
+			if (command) {
+				return command;
 			}
 		}
 		return undefined;

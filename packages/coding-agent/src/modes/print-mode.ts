@@ -39,9 +39,14 @@ export async function runPrintMode(
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);
 		});
-		// No-op send handler for print mode (single-shot, no async messages)
-		hookRunner.setSendHandler(() => {
-			console.error("Warning: pi.send() is not supported in print mode");
+		// Set up handlers - sendHookMessage handles queuing/direct append as needed
+		hookRunner.setSendMessageHandler((message, triggerTurn) => {
+			session.sendHookMessage(message, triggerTurn).catch((e) => {
+				console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+			});
+		});
+		hookRunner.setAppendEntryHandler((customType, data) => {
+			session.sessionManager.appendCustomEntry(customType, data);
 		});
 		// Emit session event
 		await hookRunner.emit({

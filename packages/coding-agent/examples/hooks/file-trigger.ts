@@ -21,7 +21,14 @@ export default function (pi: HookAPI) {
 			try {
 				const content = fs.readFileSync(triggerFile, "utf-8").trim();
 				if (content) {
-					pi.send(`External trigger: ${content}`);
+					pi.sendMessage(
+						{
+							customType: "file-trigger",
+							content: `External trigger: ${content}`,
+							display: true,
+						},
+						true, // triggerTurn - get LLM to respond
+					);
 					fs.writeFileSync(triggerFile, ""); // Clear after reading
 				}
 			} catch {
