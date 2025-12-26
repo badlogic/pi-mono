@@ -31,6 +31,7 @@ import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
 import {
 	getLatestCompactionEntry,
+	type SessionContext,
 	SessionManager,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
@@ -45,6 +46,7 @@ import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { CompactionComponent } from "./components/compaction.js";
 import { CustomEditor } from "./components/custom-editor.js";
+import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { HookInputComponent } from "./components/hook-input.js";
@@ -1020,13 +1022,13 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Render messages to chat. Used for initial load and rebuild after compaction.
-	 * @param messages Messages to render
+	 * Render session context to chat. Used for initial load and rebuild after compaction.
+	 * @param sessionContext Session context to render
 	 * @param options.updateFooter Update footer state
 	 * @param options.populateHistory Add user messages to editor history
 	 */
-	private renderMessages(
-		messages: readonly (Message | AppMessage)[],
+	private renderSessionContext(
+		sessionContext: SessionContext,
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.isFirstUserMessage = true;
@@ -1038,10 +1040,22 @@ export class InteractiveMode {
 		}
 
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getEntries());
+		const entries = sessionContext.entries;
 
-		for (const message of messages) {
+		for (let i = 0; i < sessionContext.messages.length; i++) {
+			const message = sessionContext.messages[i];
+			const entry = entries?.[i];
+
 			if (isBashExecutionMessage(message)) {
 				this.addMessageToChat(message);
+				continue;
+			}
+
+			// Check if this is a custom_message entry
+			if (entry?.type === "custom_message") {
+				if (entry.display) {
+					this.chatContainer.addChild(new CustomMessageComponent(entry));
+				}
 				continue;
 			}
 
@@ -1103,12 +1117,17 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	renderInitialMessages(state: AgentState): void {
-		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
+	renderInitialMessages(): void {
+		// Get aligned messages and entries from session context
+		const context = this.sessionManager.buildSessionContext();
+		this.renderSessionContext(context, {
+			updateFooter: true,
+			populateHistory: true,
+		});
 
 		// Show compaction info if session was compacted
-		const entries = this.sessionManager.getEntries();
-		const compactionCount = entries.filter((e) => e.type === "compaction").length;
+		const allEntries = this.sessionManager.getEntries();
+		const compactionCount = allEntries.filter((e) => e.type === "compaction").length;
 		if (compactionCount > 0) {
 			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
 			this.showStatus(`Session compacted ${times}`);
@@ -1125,7 +1144,8 @@ export class InteractiveMode {
 	}
 
 	private rebuildChatFromMessages(): void {
-		this.renderMessages(this.session.messages);
+		const context = this.sessionManager.buildSessionContext();
+		this.renderSessionContext(context);
 	}
 
 	// =========================================================================
@@ -1500,7 +1520,7 @@ export class InteractiveMode {
 
 					this.chatContainer.clear();
 					this.isFirstUserMessage = true;
-					this.renderInitialMessages(this.session.state);
+					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
 					done();
 					this.showStatus("Branched to new session");
@@ -1554,7 +1574,7 @@ export class InteractiveMode {
 		// Clear and re-render the chat
 		this.chatContainer.clear();
 		this.isFirstUserMessage = true;
-		this.renderInitialMessages(this.session.state);
+		this.renderInitialMessages();
 		this.showStatus("Resumed session");
 	}
 
