@@ -68,6 +68,13 @@ export interface CustomEntry extends SessionEntryBase {
 	data?: unknown;
 }
 
+/** Label entry for user-defined bookmarks/markers on entries. */
+export interface LabelEntry extends SessionEntryBase {
+	type: "label";
+	targetId: string;
+	label: string | undefined;
+}
+
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
 	| SessionMessageEntry
@@ -75,7 +82,8 @@ export type SessionEntry =
 	| ModelChangeEntry
 	| CompactionEntry
 	| BranchSummaryEntry
-	| CustomEntry;
+	| CustomEntry
+	| LabelEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -84,6 +92,8 @@ export type FileEntry = SessionHeader | SessionEntry;
 export interface SessionTreeNode {
 	entry: SessionEntry;
 	children: SessionTreeNode[];
+	/** Resolved label for this entry, if any */
+	label?: string;
 }
 
 export interface SessionContext {
@@ -407,6 +417,7 @@ export class SessionManager {
 	private flushed: boolean = false;
 	private fileEntries: FileEntry[] = [];
 	private byId: Map<string, SessionEntry> = new Map();
+	private labelsById: Map<string, string> = new Map();
 	private leafId: string = "";
 
 	private constructor(cwd: string, sessionDir: string, sessionFile: string | null, persist: boolean) {
@@ -466,11 +477,19 @@ export class SessionManager {
 
 	private _buildIndex(): void {
 		this.byId.clear();
+		this.labelsById.clear();
 		this.leafId = "";
 		for (const entry of this.fileEntries) {
 			if (entry.type === "session") continue;
 			this.byId.set(entry.id, entry);
 			this.leafId = entry.id;
+			if (entry.type === "label") {
+				if (entry.label) {
+					this.labelsById.set(entry.targetId, entry.label);
+				} else {
+					this.labelsById.delete(entry.targetId);
+				}
+			}
 		}
 	}
 
@@ -609,6 +628,39 @@ export class SessionManager {
 	}
 
 	/**
+	 * Get the label for an entry, if any.
+	 */
+	getLabel(id: string): string | undefined {
+		return this.labelsById.get(id);
+	}
+
+	/**
+	 * Set or clear a label on an entry.
+	 * Labels are user-defined markers for bookmarking/navigation.
+	 * Pass undefined or empty string to clear the label.
+	 */
+	appendLabelChange(targetId: string, label: string | undefined): string {
+		if (!this.byId.has(targetId)) {
+			throw new Error(`Entry ${targetId} not found`);
+		}
+		const entry: LabelEntry = {
+			type: "label",
+			id: generateId(this.byId),
+			parentId: this.leafId || null,
+			timestamp: new Date().toISOString(),
+			targetId,
+			label,
+		};
+		this._appendEntry(entry);
+		if (label) {
+			this.labelsById.set(targetId, label);
+		} else {
+			this.labelsById.delete(targetId);
+		}
+		return entry.id;
+	}
+
+	/**
 	 * Walk from entry to root, returning all entries in path order.
 	 * Includes all entry types (messages, compaction, model changes, etc.).
 	 * Use buildSessionContext() to get the resolved messages for the LLM.
@@ -658,9 +710,10 @@ export class SessionManager {
 		const nodeMap = new Map<string, SessionTreeNode>();
 		const roots: SessionTreeNode[] = [];
 
-		// Create nodes
+		// Create nodes with resolved labels
 		for (const entry of entries) {
-			nodeMap.set(entry.id, { entry, children: [] });
+			const label = this.labelsById.get(entry.id);
+			nodeMap.set(entry.id, { entry, children: [], label });
 		}
 
 		// Build tree
@@ -731,6 +784,9 @@ export class SessionManager {
 			throw new Error(`Entry ${leafId} not found`);
 		}
 
+		// Filter out LabelEntry from path - we'll recreate them from the resolved map
+		const pathWithoutLabels = path.filter((e) => e.type !== "label");
+
 		const newSessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
@@ -745,16 +801,55 @@ export class SessionManager {
 			branchedFrom: this.persist ? this.sessionFile : undefined,
 		};
 
+		// Collect labels for entries in the path
+		const pathEntryIds = new Set(pathWithoutLabels.map((e) => e.id));
+		const labelsToWrite: Array<{ targetId: string; label: string }> = [];
+		for (const [targetId, label] of this.labelsById) {
+			if (pathEntryIds.has(targetId)) {
+				labelsToWrite.push({ targetId, label });
+			}
+		}
+
 		if (this.persist) {
 			appendFileSync(newSessionFile, `${JSON.stringify(header)}\n`);
-			for (const entry of path) {
+			for (const entry of pathWithoutLabels) {
 				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+			// Write fresh label entries at the end
+			const lastEntryId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+			let parentId = lastEntryId;
+			for (const { targetId, label } of labelsToWrite) {
+				const labelEntry: LabelEntry = {
+					type: "label",
+					id: generateId(new Set(pathEntryIds)),
+					parentId,
+					timestamp: new Date().toISOString(),
+					targetId,
+					label,
+				};
+				appendFileSync(newSessionFile, `${JSON.stringify(labelEntry)}\n`);
+				pathEntryIds.add(labelEntry.id);
+				parentId = labelEntry.id;
 			}
 			return newSessionFile;
 		}
 
-		// In-memory mode: replace current session with the path
-		this.fileEntries = [header, ...path];
+		// In-memory mode: replace current session with the path + labels
+		const labelEntries: LabelEntry[] = [];
+		let parentId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+		for (const { targetId, label } of labelsToWrite) {
+			const labelEntry: LabelEntry = {
+				type: "label",
+				id: generateId(new Set([...pathEntryIds, ...labelEntries.map((e) => e.id)])),
+				parentId,
+				timestamp: new Date().toISOString(),
+				targetId,
+				label,
+			};
+			labelEntries.push(labelEntry);
+			parentId = labelEntry.id;
+		}
+		this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
 		this.sessionId = newSessionId;
 		this._buildIndex();
 		return null;
