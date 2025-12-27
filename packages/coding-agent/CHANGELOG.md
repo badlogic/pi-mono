@@ -52,6 +52,8 @@
 - **Entry labels**: New `getLabel(id)` and `appendLabelChange(targetId, label)` methods for labeling entries. Labels are included in `SessionTreeNode` for UI/export.
 - **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
 - **AgentSession**: New `sendHookMessage(message, triggerTurn?)` method for hooks to inject messages. Handles queuing during streaming, direct append when idle, and optional turn triggering.
+- **HookAppMessage**: New message type with `role: "hookMessage"` for hook-injected messages in agent events. Use `isHookAppMessage(msg)` type guard to identify them. These are converted to user messages for LLM context via `messageTransformer`.
+- **Agent.prompt()**: Now accepts `AppMessage` directly (in addition to `string, attachments?`) for custom message types like `HookAppMessage`.
 
 ### Fixed
 
