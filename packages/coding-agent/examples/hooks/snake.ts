@@ -168,8 +168,9 @@ class SnakeComponent {
 
 		const lines: string[] = [];
 
-		// Clamp game width to available terminal width (leaving space for border)
-		const effectiveWidth = Math.min(GAME_WIDTH, width - 4);
+		// Each game cell is 2 chars wide to appear square (terminal cells are ~2:1 aspect)
+		const cellWidth = 2;
+		const effectiveWidth = Math.min(GAME_WIDTH, Math.floor((width - 4) / cellWidth));
 		const effectiveHeight = GAME_HEIGHT;
 
 		// Colors
@@ -186,7 +187,7 @@ class SnakeComponent {
 		lines.push(this.padLine(` ${title}`, width));
 
 		// Top border with rounded corners
-		lines.push(this.padLine(dim(` ╭${"─".repeat(effectiveWidth)}╮`), width));
+		lines.push(this.padLine(dim(` ╭${"─".repeat(effectiveWidth * cellWidth)}╮`), width));
 
 		// Game grid
 		for (let y = 0; y < effectiveHeight; y++) {
@@ -197,13 +198,13 @@ class SnakeComponent {
 				const isFood = this.state.food.x === x && this.state.food.y === y;
 
 				if (isHead) {
-					row += green("●"); // Snake head
+					row += green("██"); // Snake head (2 chars)
 				} else if (isBody) {
-					row += green("○"); // Snake body
+					row += green("▓▓"); // Snake body (2 chars)
 				} else if (isFood) {
-					row += red("◆"); // Food
+					row += red("◆ "); // Food (2 chars)
 				} else {
-					row += dim("·"); // Empty cell
+					row += "  "; // Empty cell (2 spaces)
 				}
 			}
 			row += dim("│");
@@ -211,7 +212,7 @@ class SnakeComponent {
 		}
 
 		// Bottom border with rounded corners
-		lines.push(this.padLine(dim(` ╰${"─".repeat(effectiveWidth)}╯`), width));
+		lines.push(this.padLine(dim(` ╰${"─".repeat(effectiveWidth * cellWidth)}╯`), width));
 
 		// Footer
 		if (this.state.gameOver) {
