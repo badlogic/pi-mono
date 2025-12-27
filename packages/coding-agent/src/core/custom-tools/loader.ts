@@ -298,7 +298,8 @@ export async function loadCustomTools(
 	// Shared API object - all tools get the same instance
 	const sharedApi: ToolAPI = {
 		cwd,
-		exec: (command: string, args: string[], options?: ExecOptions) => execCommand(command, args, cwd, options),
+		exec: (command: string, args: string[], options?: ExecOptions) =>
+			execCommand(command, args, options?.cwd ?? cwd, options),
 		ui: createNoOpUIContext(),
 		hasUI: false,
 	};

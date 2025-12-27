@@ -31,6 +31,8 @@ export interface ExecOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds */
 	timeout?: number;
+	/** Working directory */
+	cwd?: string;
 }
 
 /** API passed to custom tool factory (stable across session changes) */
