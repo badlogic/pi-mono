@@ -602,8 +602,8 @@ export class AgentSession {
 				message.display,
 				message.details,
 			);
-			// Start a new turn - agent.continue() works because last message is user role
-			await this.agent.continue();
+			// Start a new turn - emit message events for the hook message so TUI can render it
+			await this.agent.continue(true);
 		} else {
 			// Just append to agent state and session, no turn
 			this.agent.appendMessage(appMessage);

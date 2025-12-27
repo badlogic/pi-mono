@@ -206,7 +206,12 @@ export class Agent {
 	 * Continue from the current context without adding a new user message.
 	 * Used for retry after overflow recovery when context already has user message or tool results.
 	 */
-	async continue() {
+	/**
+	 * Continue from the current context without adding a new user message.
+	 * Used for retry after overflow recovery when context already has user message or tool results.
+	 * @param emitLastMessage If true, emit message_start/message_end for the last message
+	 */
+	async continue(emitLastMessage?: boolean) {
 		const messages = this._state.messages;
 		if (messages.length === 0) {
 			throw new Error("No messages to continue from");
@@ -217,7 +222,7 @@ export class Agent {
 			throw new Error(`Cannot continue from message role: ${lastMessage.role}`);
 		}
 
-		await this._runAgentLoopContinue();
+		await this._runAgentLoopContinue(emitLastMessage);
 	}
 
 	/**
@@ -234,10 +239,10 @@ export class Agent {
 	/**
 	 * Internal: Continue the agent loop from current context.
 	 */
-	private async _runAgentLoopContinue() {
+	private async _runAgentLoopContinue(emitLastMessage?: boolean) {
 		const { llmMessages, cfg } = await this._prepareRun();
 
-		const events = this.transport.continue(llmMessages, cfg, this.abortController!.signal);
+		const events = this.transport.continue(llmMessages, cfg, this.abortController!.signal, emitLastMessage);
 
 		await this._processEvents(events);
 	}

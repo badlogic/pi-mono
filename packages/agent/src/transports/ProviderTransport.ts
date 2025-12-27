@@ -73,12 +73,12 @@ export class ProviderTransport implements AgentTransport {
 		}
 	}
 
-	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
+	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal, emitLastMessage?: boolean) {
 		const model = this.getModel(cfg);
 		const context = this.buildContext(messages, cfg);
 		const pc = this.buildLoopConfig(model, cfg);
 
-		for await (const ev of agentLoopContinue(context, pc, signal)) {
+		for await (const ev of agentLoopContinue(context, pc, signal, undefined, emitLastMessage)) {
 			yield ev;
 		}
 	}
