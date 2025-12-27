@@ -182,10 +182,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			case "prompt": {
 				// Don't await - events will stream
+				// Hook commands and file slash commands are handled in session.prompt()
 				session
 					.prompt(command.message, {
 						attachments: command.attachments,
-						expandSlashCommands: false,
 					})
 					.catch((e) => output(error(id, "prompt", e.message)));
 				return success(id, "prompt");

@@ -133,7 +133,7 @@ Behavior:
 **Renamed:**
 - `renderCustomMessage()` → `registerCustomMessageRenderer()`
 
-**New: `sendMessage()`**
+**New: `sendMessage()` ✅**
 
 Replaces `send()`. Always creates CustomMessageEntry, never user messages.
 
@@ -143,33 +143,56 @@ type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, 'customType' | 'cont
 sendMessage(message: HookMessage, triggerTurn?: boolean): void;
 ```
 
-Behavior:
-- If streaming → queue, append after turn ends (never triggers turn)
-- If idle AND `triggerTurn: true` → append and trigger turn
-- If idle AND `triggerTurn: false` (default) → just append, no turn
-- TUI updates if `display: true`
+Implementation:
+- Uses agent's queue mechanism with `_hookData` marker on AppMessage
+- `message_end` handler routes based on marker presence
+- `AgentSession.sendHookMessage()` handles three cases:
+  - Streaming: queues via `agent.queueMessage()`, loop processes and emits `message_end`
+  - Not streaming + triggerTurn: direct append + `agent.continue()`
+  - Not streaming + no trigger: direct append only
+- TUI updates via event (streaming) or explicit rebuild (non-streaming)
 
-For hook state (CustomEntry), use `sessionManager.appendCustomEntry()` directly.
+**New: `appendEntry()` ✅**
 
-**New: `registerCommand()`**
+For hook state persistence (NOT in LLM context):
+
+```typescript
+appendEntry(customType: string, data?: unknown): void;
+```
+
+Calls `sessionManager.appendCustomEntry()` directly.
+
+**New: `registerCommand()` (types ✅, wiring TODO)**
 
 ```typescript
 interface CommandContext {
   args: string;                    // Everything after /commandname
-  session: LimitedAgentSession;    // No prompt(), use sendMessage()
   ui: HookUIContext;
+  hasUI: boolean;
+  cwd: string;
+  sessionManager: SessionManager;
+  modelRegistry: ModelRegistry;
+  sendMessage: HookAPI['sendMessage'];
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 }
 
 registerCommand(name: string, options: {
   description?: string;
-  handler: (ctx: CommandContext) => Promise<string | void>;
+  handler: (ctx: CommandContext) => Promise<string | undefined>;
 }): void;
 ```
 
 Handler return:
-- `void` - command completed
+- `undefined` - command completed
 - `string` - text to send as prompt (like file-based slash commands)
+
+Wiring (all in AgentSession.prompt()):
+- [x] Add hook commands to autocomplete in interactive-mode
+- [x] `_tryExecuteHookCommand()` in AgentSession handles command execution
+- [x] Build CommandContext with ui (from hookRunner), exec, sessionManager, etc.
+- [x] If handler returns string, use as prompt text
+- [x] If handler returns undefined, return early (no LLM call)
+- [x] Works for all modes (interactive, RPC, print) via shared AgentSession
 
 **New: `ui.custom()`**
 

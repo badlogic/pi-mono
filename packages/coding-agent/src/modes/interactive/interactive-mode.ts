@@ -179,9 +179,15 @@ export class InteractiveMode {
 			description: cmd.description,
 		}));
 
+		// Convert hook commands to SlashCommand format
+		const hookCommands: SlashCommand[] = (this.session.hookRunner?.getRegisteredCommands() ?? []).map((cmd) => ({
+			name: cmd.name,
+			description: cmd.description ?? "(hook command)",
+		}));
+
 		// Setup autocomplete
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...fileSlashCommands],
+			[...slashCommands, ...fileSlashCommands, ...hookCommands],
 			process.cwd(),
 			fdPath,
 		);

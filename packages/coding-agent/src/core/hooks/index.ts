@@ -6,16 +6,18 @@ export {
 	loadHooks,
 	type SendMessageHandler,
 } from "./loader.js";
-export { type HookErrorListener, HookRunner } from "./runner.js";
+export { execCommand, type HookErrorListener, HookRunner } from "./runner.js";
 export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
 	BashToolResultEvent,
+	CommandContext,
 	CustomMessageRenderer,
 	CustomMessageRenderOptions,
 	CustomToolResultEvent,
 	EditToolResultEvent,
+	ExecOptions,
 	ExecResult,
 	FindToolResultEvent,
 	GrepToolResultEvent,
