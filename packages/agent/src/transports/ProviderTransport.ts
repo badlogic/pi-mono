@@ -60,6 +60,7 @@ export class ProviderTransport implements AgentTransport {
 			// Resolve API key per assistant response (important for expiring OAuth tokens)
 			getApiKey: this.options.getApiKey,
 			getQueuedMessages: cfg.getQueuedMessages,
+			preprocessor: cfg.preprocessor,
 		};
 	}
 

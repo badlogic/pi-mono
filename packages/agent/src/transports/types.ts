@@ -9,6 +9,8 @@ export interface AgentRunConfig {
 	model: Model<any>;
 	reasoning?: ReasoningEffort;
 	getQueuedMessages?: <T>() => Promise<QueuedMessage<T>[]>;
+	/** Called before each LLM call - can modify messages (e.g., for pruning) */
+	preprocessor?: (messages: Message[]) => Promise<Message[]>;
 }
 
 /**

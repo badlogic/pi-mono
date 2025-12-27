@@ -55,8 +55,8 @@ export interface AgentOptions {
 	transport: AgentTransport;
 	// Transform app messages to LLM-compatible messages before sending to transport
 	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
-	// Called before messageTransformer - can modify messages before they're sent to LLM (non-destructive)
-	contextTransform?: (messages: AppMessage[]) => Promise<AppMessage[] | undefined>;
+	// Called before each LLM call inside the agent loop - can modify messages (e.g., for pruning)
+	preprocessor?: (messages: Message[]) => Promise<Message[]>;
 	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
 	queueMode?: "all" | "one-at-a-time";
 }
@@ -77,7 +77,7 @@ export class Agent {
 	private abortController?: AbortController;
 	private transport: AgentTransport;
 	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
-	private contextTransform?: (messages: AppMessage[]) => Promise<AppMessage[] | undefined>;
+	private preprocessor?: (messages: Message[]) => Promise<Message[]>;
 	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
 	private queueMode: "all" | "one-at-a-time";
 	private runningPrompt?: Promise<void>;
@@ -87,7 +87,7 @@ export class Agent {
 		this._state = { ...this._state, ...opts.initialState };
 		this.transport = opts.transport;
 		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
-		this.contextTransform = opts.contextTransform;
+		this.preprocessor = opts.preprocessor;
 		this.queueMode = opts.queueMode || "one-at-a-time";
 	}
 
@@ -286,6 +286,7 @@ export class Agent {
 			tools: this._state.tools,
 			model,
 			reasoning,
+			preprocessor: this.preprocessor,
 			getQueuedMessages: async <T>() => {
 				if (this.queueMode === "one-at-a-time") {
 					if (this.messageQueue.length > 0) {
@@ -302,18 +303,7 @@ export class Agent {
 			},
 		};
 
-		// Apply context transform (hooks can modify messages non-destructively)
-		// Deep copy so modifications don't affect the original state
-		let messagesToSend = this._state.messages;
-		if (this.contextTransform) {
-			const messagesCopy = JSON.parse(JSON.stringify(messagesToSend)) as AppMessage[];
-			const transformed = await this.contextTransform(messagesCopy);
-			if (transformed) {
-				messagesToSend = transformed;
-			}
-		}
-
-		const llmMessages = await this.messageTransformer(messagesToSend);
+		const llmMessages = await this.messageTransformer(this._state.messages);
 
 		return { llmMessages, cfg, model };
 	}

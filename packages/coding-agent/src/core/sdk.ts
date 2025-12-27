@@ -589,7 +589,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: allToolsArray,
 		},
 		messageTransformer,
-		contextTransform: hookRunner
+		preprocessor: hookRunner
 			? async (messages) => {
 					return hookRunner.emitContext(messages);
 				}

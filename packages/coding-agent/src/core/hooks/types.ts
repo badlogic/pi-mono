@@ -6,7 +6,7 @@
  */
 
 import type { AppMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction.js";
@@ -148,13 +148,14 @@ export type SessionEvent =
 
 /**
  * Event data for context event.
- * Fired before messages are sent to the LLM, allowing hooks to modify context non-destructively.
+ * Fired before each LLM call, allowing hooks to modify context non-destructively.
  * Original session messages are NOT modified - only the messages sent to the LLM are affected.
+ * Messages are already in LLM format (Message[], not AppMessage[]).
  */
 export interface ContextEvent {
 	type: "context";
-	/** Messages about to be sent to the LLM */
-	messages: AppMessage[];
+	/** Messages about to be sent to the LLM (deep copy, safe to modify) */
+	messages: Message[];
 }
 
 /**
@@ -330,7 +331,7 @@ export type HookEvent =
  */
 export interface ContextEventResult {
 	/** Modified messages to send instead of the original */
-	messages?: AppMessage[];
+	messages?: Message[];
 }
 
 /**

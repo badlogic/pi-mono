@@ -2,7 +2,7 @@
  * Hook runner - executes hooks and manages their lifecycle.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
@@ -311,12 +311,13 @@ export class HookRunner {
 	/**
 	 * Emit a context event to all hooks.
 	 * Handlers are chained - each gets the previous handler's output (if any).
-	 * Returns the final modified messages, or undefined if no modifications.
+	 * Returns the final modified messages, or the original if no modifications.
+	 *
+	 * Note: Messages are already deep-copied by the caller (pi-ai preprocessor).
 	 */
-	async emitContext(messages: AppMessage[]): Promise<AppMessage[] | undefined> {
+	async emitContext(messages: Message[]): Promise<Message[]> {
 		const ctx = this.createContext();
 		let currentMessages = messages;
-		let modified = false;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get("context");
@@ -331,7 +332,6 @@ export class HookRunner {
 
 					if (handlerResult && (handlerResult as ContextEventResult).messages) {
 						currentMessages = (handlerResult as ContextEventResult).messages!;
-						modified = true;
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -344,6 +344,6 @@ export class HookRunner {
 			}
 		}
 
-		return modified ? currentMessages : undefined;
+		return currentMessages;
 	}
 }
