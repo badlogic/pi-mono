@@ -1,6 +1,7 @@
 import type { AnthropicOptions } from "./providers/anthropic.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
+import type { GoogleVertexOptions } from "./providers/google-vertex.js";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
 import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 import type { AssistantMessageEventStream } from "./utils/event-stream.js";
@@ -12,7 +13,8 @@ export type Api =
 	| "openai-responses"
 	| "anthropic-messages"
 	| "google-generative-ai"
-	| "google-gemini-cli";
+	| "google-gemini-cli"
+	| "google-vertex";
 
 export interface ApiOptionsMap {
 	"anthropic-messages": AnthropicOptions;
@@ -20,6 +22,7 @@ export interface ApiOptionsMap {
 	"openai-responses": OpenAIResponsesOptions;
 	"google-generative-ai": GoogleOptions;
 	"google-gemini-cli": GoogleGeminiCliOptions;
+	"google-vertex": GoogleVertexOptions;
 }
 
 // Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
@@ -38,6 +41,7 @@ export type KnownProvider =
 	| "google"
 	| "google-gemini-cli"
 	| "google-antigravity"
+	| "google-vertex"
 	| "openai"
 	| "github-copilot"
 	| "xai"
