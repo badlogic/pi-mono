@@ -27,7 +27,16 @@ import {
 } from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
-import type { HookMessage, HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
+import {
+	type CommandContext,
+	type ExecOptions,
+	execCommand,
+	type HookMessage,
+	type HookRunner,
+	type SessionEventResult,
+	type TurnEndEvent,
+	type TurnStartEvent,
+} from "./hooks/index.js";
 import type { BashExecutionMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
@@ -441,6 +450,7 @@ export class AgentSession {
 	/**
 	 * Send a prompt to the agent.
 	 * - Validates model and API key before sending
+	 * - Handles hook commands (registered via pi.registerCommand)
 	 * - Expands file-based slash commands by default
 	 * @throws Error if no model selected or no API key available
 	 */
@@ -449,6 +459,20 @@ export class AgentSession {
 		this._flushPendingBashMessages();
 
 		const expandCommands = options?.expandSlashCommands ?? true;
+
+		// Handle hook commands first (if enabled and text is a slash command)
+		if (expandCommands && text.startsWith("/")) {
+			const result = await this._tryExecuteHookCommand(text);
+			if (result.handled) {
+				if (result.prompt) {
+					// Hook returned text to use as prompt
+					text = result.prompt;
+				} else {
+					// Hook command executed, no prompt to send
+					return;
+				}
+			}
+		}
 
 		// Validate model
 		if (!this.model) {
@@ -474,11 +498,63 @@ export class AgentSession {
 			await this._checkCompaction(lastAssistant, false);
 		}
 
-		// Expand slash commands if requested
+		// Expand file-based slash commands if requested
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
 		await this.agent.prompt(expandedText, options?.attachments);
 		await this.waitForRetry();
+	}
+
+	/**
+	 * Try to execute a hook command. Returns whether it was handled and optional prompt text.
+	 */
+	private async _tryExecuteHookCommand(text: string): Promise<{ handled: boolean; prompt?: string }> {
+		if (!this._hookRunner) return { handled: false };
+
+		// Parse command name and args
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+
+		const command = this._hookRunner.getCommand(commandName);
+		if (!command) return { handled: false };
+
+		// Get UI context from hook runner (set by mode)
+		const uiContext = this._hookRunner.getUIContext();
+		if (!uiContext) return { handled: false };
+
+		// Build command context
+		const cwd = process.cwd();
+		const ctx: CommandContext = {
+			args,
+			ui: uiContext,
+			hasUI: this._hookRunner.getHasUI(),
+			cwd,
+			sessionManager: this.sessionManager,
+			modelRegistry: this._modelRegistry,
+			sendMessage: (message, triggerTurn) => {
+				this.sendHookMessage(message, triggerTurn).catch(() => {
+					// Error handling is done in sendHookMessage
+				});
+			},
+			exec: (cmd: string, cmdArgs: string[], options?: ExecOptions) => execCommand(cmd, cmdArgs, cwd, options),
+		};
+
+		try {
+			const result = await command.handler(ctx);
+			if (typeof result === "string") {
+				return { handled: true, prompt: result };
+			}
+			return { handled: true };
+		} catch (err) {
+			// Emit error via hook runner
+			this._hookRunner.emitError({
+				hookPath: `command:${commandName}`,
+				event: "command",
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return { handled: true };
+		}
 	}
 
 	/**

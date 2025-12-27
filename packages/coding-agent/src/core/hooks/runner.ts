@@ -34,7 +34,12 @@ export type HookErrorListener = (error: HookError) => void;
  * Execute a command and return stdout/stderr/code.
  * Supports cancellation via AbortSignal and timeout.
  */
-async function exec(command: string, args: string[], cwd: string, options?: ExecOptions): Promise<ExecResult> {
+export async function execCommand(
+	command: string,
+	args: string[],
+	cwd: string,
+	options?: ExecOptions,
+): Promise<ExecResult> {
 	return new Promise((resolve) => {
 		const proc = spawn(command, args, { cwd, shell: false });
 
@@ -151,6 +156,20 @@ export class HookRunner {
 	}
 
 	/**
+	 * Get the UI context (set by mode).
+	 */
+	getUIContext(): HookUIContext | null {
+		return this.uiContext;
+	}
+
+	/**
+	 * Get whether UI is available.
+	 */
+	getHasUI(): boolean {
+		return this.hasUI;
+	}
+
+	/**
 	 * Get the paths of all loaded hooks.
 	 */
 	getHookPaths(): string[] {
@@ -196,7 +215,10 @@ export class HookRunner {
 	/**
 	 * Emit an error to all listeners.
 	 */
-	private emitError(error: HookError): void {
+	/**
+	 * Emit an error to all error listeners.
+	 */
+	emitError(error: HookError): void {
 		for (const listener of this.errorListeners) {
 			listener(error);
 		}
@@ -261,7 +283,8 @@ export class HookRunner {
 	 */
 	private createContext(): HookEventContext {
 		return {
-			exec: (command: string, args: string[], options?: ExecOptions) => exec(command, args, this.cwd, options),
+			exec: (command: string, args: string[], options?: ExecOptions) =>
+				execCommand(command, args, this.cwd, options),
 			ui: this.uiContext,
 			hasUI: this.hasUI,
 			cwd: this.cwd,
