@@ -11,11 +11,11 @@ import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import { execCommand } from "./runner.js";
 import type {
-	CustomMessageRenderer,
 	ExecOptions,
 	HookAPI,
 	HookFactory,
 	HookMessage,
+	HookMessageRenderer,
 	RegisteredCommand,
 } from "./types.js";
 
@@ -73,8 +73,8 @@ export interface LoadedHook {
 	resolvedPath: string;
 	/** Map of event type to handler functions */
 	handlers: Map<string, HandlerFn[]>;
-	/** Map of customType to custom message renderer */
-	customMessageRenderers: Map<string, CustomMessageRenderer>;
+	/** Map of customType to hook message renderer */
+	messageRenderers: Map<string, HookMessageRenderer>;
 	/** Map of command name to registered command */
 	commands: Map<string, RegisteredCommand>;
 	/** Set the send message handler for this hook's pi.sendMessage() */
@@ -136,7 +136,7 @@ function createHookAPI(
 	cwd: string,
 ): {
 	api: HookAPI;
-	customMessageRenderers: Map<string, CustomMessageRenderer>;
+	messageRenderers: Map<string, HookMessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
@@ -147,7 +147,7 @@ function createHookAPI(
 	let appendEntryHandler: AppendEntryHandler = () => {
 		// Default no-op until mode sets the handler
 	};
-	const customMessageRenderers = new Map<string, CustomMessageRenderer>();
+	const messageRenderers = new Map<string, HookMessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
 
 	// Cast to HookAPI - the implementation is more general (string event names)
@@ -164,8 +164,8 @@ function createHookAPI(
 		appendEntry<T = unknown>(customType: string, data?: T): void {
 			appendEntryHandler(customType, data);
 		},
-		registerCustomMessageRenderer<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void {
-			customMessageRenderers.set(customType, renderer as CustomMessageRenderer);
+		registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void {
+			messageRenderers.set(customType, renderer as HookMessageRenderer);
 		},
 		registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void {
 			commands.set(name, { name, ...options });
@@ -177,7 +177,7 @@ function createHookAPI(
 
 	return {
 		api,
-		customMessageRenderers,
+		messageRenderers,
 		commands,
 		setSendMessageHandler: (handler: SendMessageHandler) => {
 			sendMessageHandler = handler;
@@ -212,7 +212,7 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, customMessageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = createHookAPI(
+		const { api, messageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = createHookAPI(
 			handlers,
 			cwd,
 		);
@@ -225,7 +225,7 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				path: hookPath,
 				resolvedPath,
 				handlers,
-				customMessageRenderers,
+				messageRenderers,
 				commands,
 				setSendMessageHandler,
 				setAppendEntryHandler,

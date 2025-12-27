@@ -10,6 +10,7 @@ import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mario
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction.js";
+import type { ExecOptions, ExecResult } from "../exec.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { CompactionEntry, CustomMessageEntry, SessionManager } from "../session-manager.js";
 import type { EditToolDetails } from "../tools/edit.js";
@@ -21,29 +22,8 @@ import type {
 	ReadToolDetails,
 } from "../tools/index.js";
 
-// ============================================================================
-// Execution Context
-// ============================================================================
-
-/**
- * Result of executing a command via ctx.exec()
- */
-export interface ExecResult {
-	stdout: string;
-	stderr: string;
-	code: number;
-	/** True if the process was killed due to signal or timeout */
-	killed?: boolean;
-}
-
-export interface ExecOptions {
-	/** AbortSignal to cancel the process */
-	signal?: AbortSignal;
-	/** Timeout in milliseconds */
-	timeout?: number;
-	/** Working directory */
-	cwd?: string;
-}
+// Re-export for backward compatibility
+export type { ExecOptions, ExecResult } from "../exec.js";
 
 /**
  * UI context for hooks to request interactive UI from the harness.
@@ -372,25 +352,25 @@ export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Prom
 /**
  * Options passed to custom message renderers.
  */
-export interface CustomMessageRenderOptions {
+/**
+ * Message type for hooks to send. Creates CustomMessageEntry in the session.
+ */
+export type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, "customType" | "content" | "display" | "details">;
+
+export interface HookMessageRenderOptions {
 	/** Whether the view is expanded */
 	expanded: boolean;
 }
 
 /**
- * Renderer for custom message entries.
- * Hooks register these to provide custom TUI rendering for their CustomMessageEntry types.
+ * Renderer for hook messages.
+ * Hooks register these to provide custom TUI rendering for their message types.
  */
-export type CustomMessageRenderer<T = unknown> = (
-	entry: CustomMessageEntry<T>,
-	options: CustomMessageRenderOptions,
+export type HookMessageRenderer<T = unknown> = (
+	message: HookMessage<T>,
+	options: HookMessageRenderOptions,
 	theme: Theme,
 ) => Component | null;
-
-/**
- * Message type for hooks to send. Creates CustomMessageEntry in the session.
- */
-export type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, "customType" | "content" | "display" | "details">;
 
 /**
  * Context passed to hook command handlers.
@@ -483,7 +463,7 @@ export interface HookAPI {
 	 * The renderer is called when rendering the entry in the TUI.
 	 * Return null to use the default renderer.
 	 */
-	registerCustomMessageRenderer<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void;
+	registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void;
 
 	/**
 	 * Register a custom slash command.

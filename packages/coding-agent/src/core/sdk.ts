@@ -340,7 +340,7 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
 function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; factory: HookFactory }>): LoadedHook[] {
 	return definitions.map((def) => {
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
-		const customMessageRenderers = new Map<string, any>();
+		const messageRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
 		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
@@ -357,8 +357,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			appendEntry: (customType: string, data?: any) => {
 				appendEntryHandler(customType, data);
 			},
-			registerCustomMessageRenderer: (customType: string, renderer: any) => {
-				customMessageRenderers.set(customType, renderer);
+			registerMessageRenderer: (customType: string, renderer: any) => {
+				messageRenderers.set(customType, renderer);
 			},
 			registerCommand: (name: string, options: any) => {
 				commands.set(name, { name, ...options });
@@ -371,7 +371,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			path: def.path ?? "<inline>",
 			resolvedPath: def.path ?? "<inline>",
 			handlers,
-			customMessageRenderers,
+			messageRenderers,
 			commands,
 			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
 				sendMessageHandler = handler;
