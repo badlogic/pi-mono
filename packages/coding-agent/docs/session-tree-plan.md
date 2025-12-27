@@ -234,6 +234,24 @@ Design new commands based on refactored SessionManager:
 - [ ] Allow switching between branches (move leaf pointer)
 - [ ] Show current position in tree
 
+### Documentation
+
+Update docs to reflect all changes:
+
+- [ ] `docs/hooks.md` - Update hook API:
+  - `pi.send()` → `pi.sendMessage()` with new signature
+  - New `pi.appendEntry()` for state persistence
+  - New `pi.registerCommand()` for custom slash commands
+  - New `pi.registerCustomMessageRenderer()` for custom TUI rendering
+  - `CommandContext` interface and handler patterns
+  - `HookMessage<T>` type
+  - Updated event signatures (`SessionEventBase`, `before_compact`, etc.)
+- [ ] `README.md` - Update hook examples if any
+- [ ] `docs/custom-tools.md` - Check if hook changes affect custom tools docs
+- [ ] Add `HookAppMessage` and `isHookAppMessage()` to public API docs
+- [ ] Document `Agent.prompt(AppMessage)` overload
+- [ ] Document session v2 tree structure (for programmatic users)
+
 ---
 
 ## Notes
