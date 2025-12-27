@@ -240,7 +240,10 @@ export class Agent {
 	private async _runAgentLoop(userMessage: AppMessage) {
 		const { llmMessages, cfg } = await this._prepareRun();
 
-		const events = this.transport.run(llmMessages, userMessage as Message, cfg, this.abortController!.signal);
+		// Transform user message (e.g., HookMessage -> user message)
+		const [transformedUserMessage] = await this.messageTransformer([userMessage]);
+
+		const events = this.transport.run(llmMessages, transformedUserMessage, cfg, this.abortController!.signal);
 
 		await this._processEvents(events);
 	}
@@ -326,7 +329,7 @@ export class Agent {
 					}
 					case "message_update": {
 						partial = ev.message;
-						this._state.streamMessage = ev.message as Message;
+						this._state.streamMessage = ev.message;
 						break;
 					}
 					case "message_end": {
