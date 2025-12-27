@@ -118,6 +118,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				notifyType: type,
 			} as RpcHookUIRequest);
 		},
+
+		custom() {
+			// Custom UI not supported in RPC mode
+			return { close: () => {}, requestRender: () => {} };
+		},
 	});
 
 	// Load entries once for session start events
