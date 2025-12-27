@@ -18,6 +18,8 @@ interface ChainConfig {
 	resultPath: string;
 	cwd: string;
 	placeholder: string;
+	taskIndex?: number;
+	totalTasks?: number;
 }
 
 interface StepResult {
@@ -27,7 +29,7 @@ interface StepResult {
 }
 
 function runChain(config: ChainConfig): void {
-	const { id, steps, resultPath, cwd, placeholder } = config;
+	const { id, steps, resultPath, cwd, placeholder, taskIndex, totalTasks } = config;
 	let previousOutput = "";
 	const results: StepResult[] = [];
 
@@ -68,32 +70,52 @@ function runChain(config: ChainConfig): void {
 	}
 
 	const summary = results.map((r) => `${r.agent}:\n${r.output}`).join("\n\n");
+	const agentName = steps.length === 1 ? steps[0].agent : `chain:${steps.map((s) => s.agent).join("->")}`;
 	fs.mkdirSync(path.dirname(resultPath), { recursive: true });
 	fs.writeFileSync(
 		resultPath,
 		JSON.stringify({
 			id,
-			agent: `chain:${steps.map((s) => s.agent).join("->")}`,
+			agent: agentName,
 			success: results.every((r) => r.success),
 			summary,
 			results,
 			exitCode: results.every((r) => r.success) ? 0 : 1,
 			timestamp: Date.now(),
+			...(taskIndex !== undefined && { taskIndex }),
+			...(totalTasks !== undefined && { totalTasks }),
 		}),
 	);
 }
 
-let input = "";
-process.stdin.setEncoding("utf-8");
-process.stdin.on("data", (chunk) => {
-	input += chunk;
-});
-process.stdin.on("end", () => {
+const configArg = process.argv[2];
+if (configArg) {
 	try {
-		const config = JSON.parse(input) as ChainConfig;
+		const configJson = fs.readFileSync(configArg, "utf-8");
+		const config = JSON.parse(configJson) as ChainConfig;
+		try {
+			fs.unlinkSync(configArg);
+		} catch {
+			/* ignore cleanup errors */
+		}
 		runChain(config);
 	} catch (err) {
 		console.error("Chain runner error:", err);
 		process.exit(1);
 	}
-});
+} else {
+	let input = "";
+	process.stdin.setEncoding("utf-8");
+	process.stdin.on("data", (chunk) => {
+		input += chunk;
+	});
+	process.stdin.on("end", () => {
+		try {
+			const config = JSON.parse(input) as ChainConfig;
+			runChain(config);
+		} catch (err) {
+			console.error("Chain runner error:", err);
+			process.exit(1);
+		}
+	});
+}

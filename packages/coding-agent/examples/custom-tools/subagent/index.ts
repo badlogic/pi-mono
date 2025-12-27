@@ -242,7 +242,7 @@ const SubagentParams = Type.Object({
 	async: Type.Optional(
 		Type.Boolean({
 			description:
-				"Run in background, return immediately with ID. Result delivered via subagent:complete event. Supports single and chain modes.",
+				"Run in background, return immediately with ID. Result delivered via subagent:complete event. Supports single, parallel, and chain modes.",
 		}),
 	),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
@@ -392,15 +392,81 @@ const factory: CustomToolFactory = (pi) => {
 			}
 
 			if (params.async) {
-				if (hasTasks) {
+				const id = randomUUID();
+
+				if (hasTasks && params.tasks) {
+					if (params.tasks.length > MAX_PARALLEL_TASKS) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+								},
+							],
+							details: makeDetails("parallel")([]),
+							isError: true,
+						};
+					}
+
+					const missingAgents = params.tasks
+						.map((t) => t.agent)
+						.filter((name) => !agents.some((a) => a.name === name));
+					if (missingAgents.length > 0) {
+						return {
+							content: [{ type: "text", text: `Unknown agent(s): ${missingAgents.join(", ")}` }],
+							details: makeDetails("parallel")([]),
+							isError: true,
+						};
+					}
+
+					const jitiCli = pi.jitiCliPath;
+					if (!jitiCli) throw new Error("jitiCliPath not available. Async parallel requires pi 0.13+");
+					const runnerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "chain-runner.ts");
+					const totalTasks = params.tasks.length;
+
+					for (let i = 0; i < params.tasks.length; i++) {
+						const task = params.tasks[i];
+						const agent = agents.find((a: AgentConfig) => a.name === task.agent)!;
+						const resultPath = path.join(RESULTS_DIR, `${id}-${i}.json`);
+
+						const chainConfig = {
+							id,
+							steps: [
+								{
+									agent: task.agent,
+									task: task.task,
+									cwd: task.cwd,
+									model: agent.model,
+									tools: agent.tools,
+									systemPrompt: agent.systemPrompt.trim() || null,
+								},
+							],
+							resultPath,
+							cwd: task.cwd ?? params.cwd ?? pi.cwd,
+							placeholder: "@pi:previous",
+							taskIndex: i,
+							totalTasks,
+						};
+
+						const configPath = path.join(os.tmpdir(), `pi-chain-config-${id}-${i}.json`);
+						fs.writeFileSync(configPath, JSON.stringify(chainConfig));
+
+						const proc = spawn("node", [jitiCli, runnerPath, configPath], {
+							cwd: task.cwd ?? params.cwd ?? pi.cwd,
+							detached: true,
+							stdio: "ignore",
+						});
+						proc.unref();
+					}
+
+					const agentNames = params.tasks.map((t) => t.agent).join(", ");
 					return {
-						content: [{ type: "text", text: "Async mode does not support parallel tasks." }],
-						details: makeDetails("parallel")([]),
-						isError: true,
+						content: [
+							{ type: "text", text: `Async parallel started: ${totalTasks} tasks (${agentNames}) (${id})` },
+						],
+						details: { ...makeDetails("parallel")([]), asyncId: id, totalTasks },
 					};
 				}
-
-				const id = randomUUID();
 				const resultPath = path.join(RESULTS_DIR, `${id}.json`);
 
 				if (hasChain && params.chain) {
@@ -427,14 +493,15 @@ const factory: CustomToolFactory = (pi) => {
 					const jitiCli = pi.jitiCliPath;
 					if (!jitiCli) throw new Error("jitiCliPath not available. Async chains require pi 0.13+");
 					const runnerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "chain-runner.ts");
-					const proc = spawn("node", [jitiCli, runnerPath], {
+
+					const configPath = path.join(os.tmpdir(), `pi-chain-config-${id}.json`);
+					fs.writeFileSync(configPath, JSON.stringify(chainConfig));
+
+					const proc = spawn("node", [jitiCli, runnerPath, configPath], {
 						cwd: params.cwd ?? pi.cwd,
 						detached: true,
-						stdio: ["pipe", "ignore", "ignore"],
+						stdio: "ignore",
 					});
-
-					proc.stdin?.write(JSON.stringify(chainConfig));
-					proc.stdin?.end();
 					proc.unref();
 
 					const agentNames = params.chain.map((s) => s.agent).join(" -> ");

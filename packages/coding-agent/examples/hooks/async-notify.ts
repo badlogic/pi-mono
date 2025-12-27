@@ -14,6 +14,8 @@ interface SubagentResult {
 	exitCode: number;
 	timestamp: number;
 	results?: ChainStepResult[];
+	taskIndex?: number;
+	totalTasks?: number;
 }
 
 export default function (pi: HookAPI) {
@@ -22,6 +24,11 @@ export default function (pi: HookAPI) {
 		const agent = result.agent ?? "unknown";
 		const status = result.success ? "completed" : "failed";
 
-		pi.send(`Background task ${status}: **${agent}**\n\n${result.summary}`);
+		const taskInfo =
+			result.taskIndex !== undefined && result.totalTasks !== undefined
+				? ` (${result.taskIndex + 1}/${result.totalTasks})`
+				: "";
+
+		pi.send(`Background task ${status}: **${agent}**${taskInfo}\n\n${result.summary}`);
 	});
 }

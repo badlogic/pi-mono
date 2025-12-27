@@ -101,11 +101,17 @@ Use a chain: first have scout find the read tool, then have planner suggest impr
 
 ## Async Mode
 
-Runs subagents in the background. Works with both single agents and chains.
+Runs subagents in the background. Works with single agents, parallel tasks, and chains.
 
 ```typescript
 // Single async
 { agent: "scout", task: "find auth code", async: true }
+
+// Async parallel (each task notifies independently when done)
+{ tasks: [
+  { agent: "scout", task: "find auth code" },
+  { agent: "scout", task: "find db queries" }
+], async: true }
 
 // Async chain (scout -> planner in background)
 { chain: [
@@ -115,10 +121,16 @@ Runs subagents in the background. Works with both single agents and chains.
 ```
 
 **How it works:**
-1. Subagent(s) spawn as detached process
+1. Subagent(s) spawn as detached processes
 2. Returns immediately with an async ID
 3. On completion, emits `subagent:complete` event via `pi.events`
 4. A hook listens and calls `pi.send()` to notify you
+
+**Async parallel behavior:**
+- Each task runs independently and emits its own event when done
+- Events include `taskIndex` and `totalTasks` for tracking
+- Agent receives N notifications (one per task)
+- No aggregated "all done" event - agent tracks completion itself
 
 **Note:** Events only fire in interactive mode (agent must stay alive).
 

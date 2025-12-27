@@ -31,6 +31,7 @@ export interface SubagentDetails {
 	projectAgentsDir: string | null;
 	results: SingleResult[];
 	asyncId?: string;
+	totalTasks?: number;
 }
 
 export interface ChainStepResult {
@@ -47,6 +48,8 @@ export interface SubagentAsyncResult {
 	exitCode: number;
 	timestamp: number;
 	results?: ChainStepResult[];
+	taskIndex?: number;
+	totalTasks?: number;
 }
 
 export type DisplayItem =
