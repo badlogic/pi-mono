@@ -24,6 +24,7 @@ export interface SlackUser {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackChannel {
@@ -41,6 +42,7 @@ export interface UserInfo {
 	id: string;
 	userName: string;
 	displayName: string;
+	email?: string;
 }
 
 export interface SlackContext {
@@ -49,6 +51,7 @@ export interface SlackContext {
 		rawText: string;
 		user: string;
 		userName?: string;
+		userEmail?: string;
 		channel: string;
 		ts: string;
 		attachments: Array<{ local: string }>;
@@ -122,6 +125,9 @@ class ChannelQueue {
 // SlackBot
 // ============================================================================
 
+// Slack message length limit - messages longer than this will be truncated
+const SLACK_MAX_LENGTH = 40000;
+
 export class SlackBot {
 	private socketClient: SocketModeClient;
 	private webClient: WebClient;
@@ -129,21 +135,52 @@ export class SlackBot {
 	private workingDir: string;
 	private store: ChannelStore;
 	private botUserId: string | null = null;
+	private botName: string;
 	private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
 	private users = new Map<string, SlackUser>();
 	private channels = new Map<string, SlackChannel>();
 	private queues = new Map<string, ChannelQueue>();
 
+	/**
+	 * Truncate message to Slack's length limit
+	 */
+	private truncateMessage(text: string, suffix = "\n\n_(message truncated)_"): string {
+		if (text.length <= SLACK_MAX_LENGTH) return text;
+		return text.substring(0, SLACK_MAX_LENGTH - suffix.length) + suffix;
+	}
+
 	constructor(
 		handler: MomHandler,
-		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+		config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore; botName: string },
 	) {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
 		this.store = config.store;
+		this.botName = config.botName;
 		this.socketClient = new SocketModeClient({ appToken: config.appToken });
 		this.webClient = new WebClient(config.botToken);
+	}
+
+	/**
+	 * Process mentions in message text:
+	 * - Replace bot's own mention with @{botName}
+	 * - Keep other user mentions as-is (raw Slack format like <@U12345ABC>)
+	 */
+	private processMentions(text: string): string {
+		if (!text) return "";
+		// Replace bot mention with @{botName} token
+		const processed = text.replace(new RegExp(`<@${this.botUserId}>`, "gi"), `@${this.botName}`);
+		return processed.trim();
+	}
+
+	/**
+	 * Check if text is a stop command (with or without bot mention prefix)
+	 */
+	private isStopCommand(text: string): boolean {
+		const normalized = text.toLowerCase().trim();
+		// Match "stop" or "@botname stop"
+		return normalized === "stop" || normalized === `@${this.botName.toLowerCase()} stop`;
 	}
 
 	// ==========================================================================
@@ -165,7 +202,7 @@ export class SlackBot {
 		// Record startup time - messages older than this are just logged, not processed
 		this.startupTs = (Date.now() / 1000).toFixed(6);
 
-		log.logConnected();
+		log.logConnected(this.botName);
 	}
 
 	getUser(userId: string): SlackUser | undefined {
@@ -185,12 +222,12 @@ export class SlackBot {
 	}
 
 	async postMessage(channel: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, text });
+		const result = await this.webClient.chat.postMessage({ channel, text: this.truncateMessage(text) });
 		return result.ts as string;
 	}
 
 	async updateMessage(channel: string, ts: string, text: string): Promise<void> {
-		await this.webClient.chat.update({ channel, ts, text });
+		await this.webClient.chat.update({ channel, ts, text: this.truncateMessage(text) });
 	}
 
 	async deleteMessage(channel: string, ts: string): Promise<void> {
@@ -198,7 +235,11 @@ export class SlackBot {
 	}
 
 	async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-		const result = await this.webClient.chat.postMessage({ channel, thread_ts: threadTs, text });
+		const result = await this.webClient.chat.postMessage({
+			channel,
+			thread_ts: threadTs,
+			text: this.truncateMessage(text),
+		});
 		return result.ts as string;
 	}
 
@@ -291,7 +332,7 @@ export class SlackBot {
 				channel: e.channel,
 				ts: e.ts,
 				user: e.user,
-				text: e.text.replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				text: this.processMentions(e.text),
 				files: e.files,
 			};
 
@@ -309,7 +350,7 @@ export class SlackBot {
 			}
 
 			// Check for stop command - execute immediately, don't queue!
-			if (slackEvent.text.toLowerCase().trim() === "stop") {
+			if (this.isStopCommand(slackEvent.text)) {
 				if (this.handler.isRunning(e.channel)) {
 					this.handler.handleStop(e.channel, this); // Don't await, don't queue
 				} else {
@@ -321,7 +362,7 @@ export class SlackBot {
 
 			// SYNC: Check if busy
 			if (this.handler.isRunning(e.channel)) {
-				this.postMessage(e.channel, "_Already working. Say `@mom stop` to cancel._");
+				this.postMessage(e.channel, `_Already working. Say \`@${this.botName} stop\` to cancel._`);
 			} else {
 				this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
 			}
@@ -370,7 +411,7 @@ export class SlackBot {
 				channel: e.channel,
 				ts: e.ts,
 				user: e.user,
-				text: (e.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim(),
+				text: this.processMentions(e.text || ""),
 				files: e.files,
 			};
 
@@ -388,7 +429,7 @@ export class SlackBot {
 			// Only trigger handler for DMs
 			if (isDM) {
 				// Check for stop command - execute immediately, don't queue!
-				if (slackEvent.text.toLowerCase().trim() === "stop") {
+				if (this.isStopCommand(slackEvent.text)) {
 					if (this.handler.isRunning(e.channel)) {
 						this.handler.handleStop(e.channel, this); // Don't await, don't queue
 					} else {
@@ -506,8 +547,8 @@ export class SlackBot {
 		for (const msg of relevantMessages) {
 			const isMomMessage = msg.user === this.botUserId;
 			const user = this.users.get(msg.user!);
-			// Strip @mentions from text (same as live messages)
-			const text = (msg.text || "").replace(/<@[A-Z0-9]+>/gi, "").trim();
+			// Process mentions in text (same as live messages)
+			const text = this.processMentions(msg.text || "");
 			// Process attachments - queues downloads in background
 			const attachments = msg.files ? this.store.processAttachments(channelId, msg.files, msg.ts!) : [];
 
@@ -564,12 +605,23 @@ export class SlackBot {
 		do {
 			const result = await this.webClient.users.list({ limit: 200, cursor });
 			const members = result.members as
-				| Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+				| Array<{
+						id?: string;
+						name?: string;
+						real_name?: string;
+						deleted?: boolean;
+						profile?: { email?: string };
+				  }>
 				| undefined;
 			if (members) {
 				for (const u of members) {
 					if (u.id && u.name && !u.deleted) {
-						this.users.set(u.id, { id: u.id, userName: u.name, displayName: u.real_name || u.name });
+						this.users.set(u.id, {
+							id: u.id,
+							userName: u.name,
+							displayName: u.real_name || u.name,
+							email: u.profile?.email,
+						});
 					}
 				}
 			}
