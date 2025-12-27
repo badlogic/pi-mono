@@ -539,26 +539,33 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	let systemPrompt: string;
-	const defaultPrompt = buildSystemPromptInternal({
-		cwd,
-		agentDir,
-		skills,
-		contextFiles,
-	});
-	time("buildSystemPrompt");
 
-	if (options.systemPrompt === undefined) {
-		systemPrompt = defaultPrompt;
-	} else if (typeof options.systemPrompt === "string") {
-		systemPrompt = buildSystemPromptInternal({
+	// If resuming a session with a stored system prompt, use it
+	if (hasExistingSession && existingSession.systemPrompt) {
+		systemPrompt = existingSession.systemPrompt;
+	} else {
+		// Build a new system prompt
+		const defaultPrompt = buildSystemPromptInternal({
 			cwd,
 			agentDir,
 			skills,
 			contextFiles,
-			customPrompt: options.systemPrompt,
 		});
-	} else {
-		systemPrompt = options.systemPrompt(defaultPrompt);
+		time("buildSystemPrompt");
+
+		if (options.systemPrompt === undefined) {
+			systemPrompt = defaultPrompt;
+		} else if (typeof options.systemPrompt === "string") {
+			systemPrompt = buildSystemPromptInternal({
+				cwd,
+				agentDir,
+				skills,
+				contextFiles,
+				customPrompt: options.systemPrompt,
+			});
+		} else {
+			systemPrompt = options.systemPrompt(defaultPrompt);
+		}
 	}
 
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
