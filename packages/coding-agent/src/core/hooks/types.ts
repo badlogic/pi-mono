@@ -426,7 +426,7 @@ export interface CommandContext {
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
-	handler: (ctx: CommandContext) => Promise<string | undefined>;
+	handler: (ctx: CommandContext) => Promise<void>;
 }
 
 /**

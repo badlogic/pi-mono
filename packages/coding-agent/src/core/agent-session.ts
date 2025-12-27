@@ -462,15 +462,10 @@ export class AgentSession {
 
 		// Handle hook commands first (if enabled and text is a slash command)
 		if (expandCommands && text.startsWith("/")) {
-			const result = await this._tryExecuteHookCommand(text);
-			if (result.handled) {
-				if (result.prompt) {
-					// Hook returned text to use as prompt
-					text = result.prompt;
-				} else {
-					// Hook command executed, no prompt to send
-					return;
-				}
+			const handled = await this._tryExecuteHookCommand(text);
+			if (handled) {
+				// Hook command executed, no prompt to send
+				return;
 			}
 		}
 
@@ -506,10 +501,10 @@ export class AgentSession {
 	}
 
 	/**
-	 * Try to execute a hook command. Returns whether it was handled and optional prompt text.
+	 * Try to execute a hook command. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteHookCommand(text: string): Promise<{ handled: boolean; prompt?: string }> {
-		if (!this._hookRunner) return { handled: false };
+	private async _tryExecuteHookCommand(text: string): Promise<boolean> {
+		if (!this._hookRunner) return false;
 
 		// Parse command name and args
 		const spaceIndex = text.indexOf(" ");
@@ -517,11 +512,11 @@ export class AgentSession {
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
 
 		const command = this._hookRunner.getCommand(commandName);
-		if (!command) return { handled: false };
+		if (!command) return false;
 
 		// Get UI context from hook runner (set by mode)
 		const uiContext = this._hookRunner.getUIContext();
-		if (!uiContext) return { handled: false };
+		if (!uiContext) return false;
 
 		// Build command context
 		const cwd = process.cwd();
@@ -541,11 +536,8 @@ export class AgentSession {
 		};
 
 		try {
-			const result = await command.handler(ctx);
-			if (typeof result === "string") {
-				return { handled: true, prompt: result };
-			}
-			return { handled: true };
+			await command.handler(ctx);
+			return true;
 		} catch (err) {
 			// Emit error via hook runner
 			this._hookRunner.emitError({
@@ -553,7 +545,7 @@ export class AgentSession {
 				event: "command",
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return { handled: true };
+			return true;
 		}
 	}
 
