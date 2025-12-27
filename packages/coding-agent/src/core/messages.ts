@@ -26,10 +26,26 @@ export interface BashExecutionMessage {
 	timestamp: number;
 }
 
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
+
+/**
+ * Message type for hook-injected messages via sendMessage().
+ * These are custom messages that hooks can inject into the conversation.
+ */
+export interface HookAppMessage<T = unknown> {
+	role: "hookMessage";
+	customType: string;
+	content: (TextContent | ImageContent)[];
+	display: boolean;
+	details?: T;
+	timestamp: number;
+}
+
 // Extend CustomMessages via declaration merging
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomMessages {
 		bashExecution: BashExecutionMessage;
+		hookMessage: HookAppMessage;
 	}
 }
 
@@ -42,6 +58,13 @@ declare module "@mariozechner/pi-agent-core" {
  */
 export function isBashExecutionMessage(msg: AppMessage | Message): msg is BashExecutionMessage {
 	return (msg as BashExecutionMessage).role === "bashExecution";
+}
+
+/**
+ * Type guard for HookAppMessage.
+ */
+export function isHookAppMessage(msg: AppMessage | Message): msg is HookAppMessage {
+	return (msg as HookAppMessage).role === "hookMessage";
 }
 
 // ============================================================================
@@ -88,6 +111,14 @@ export function messageTransformer(messages: AppMessage[]): Message[] {
 				return {
 					role: "user",
 					content: [{ type: "text", text: bashExecutionToText(m) }],
+					timestamp: m.timestamp,
+				};
+			}
+			if (isHookAppMessage(m)) {
+				// Convert hook message to user message
+				return {
+					role: "user",
+					content: m.content,
 					timestamp: m.timestamp,
 				};
 			}

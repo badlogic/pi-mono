@@ -37,7 +37,7 @@ import {
 	type TurnEndEvent,
 	type TurnStartEvent,
 } from "./hooks/index.js";
-import type { BashExecutionMessage } from "./messages.js";
+import { type BashExecutionMessage, type HookAppMessage, isHookAppMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
@@ -111,12 +111,6 @@ export interface SessionStats {
 }
 
 /** Internal marker for hook messages queued through the agent loop */
-interface HookMessageData {
-	customType: string;
-	display: boolean;
-	details?: unknown;
-}
-
 // ============================================================================
 // Constants
 // ============================================================================
@@ -228,15 +222,13 @@ export class AgentSession {
 		// Handle session persistence
 		if (event.type === "message_end") {
 			// Check if this is a hook message (has _hookData marker)
-			type HookAppMessage = AppMessage & { _hookData?: HookMessageData; content: (TextContent | ImageContent)[] };
-			const hookMessage = event.message as HookAppMessage;
-			if (hookMessage._hookData) {
+			if (isHookAppMessage(event.message)) {
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
-					hookMessage._hookData.customType,
-					hookMessage.content,
-					hookMessage._hookData.display,
-					hookMessage._hookData.details,
+					event.message.customType,
+					event.message.content,
+					event.message.display,
+					event.message.details,
 				);
 			} else {
 				// Regular message - persist as SessionMessageEntry
@@ -578,16 +570,14 @@ export class AgentSession {
 		const content: (TextContent | ImageContent)[] =
 			typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content;
 
-		// Create AppMessage with _hookData marker for routing in message_end handler
-		const appMessage: AppMessage & { _hookData: HookMessageData } = {
-			role: "user",
+		// Create HookAppMessage with proper role for type-safe handling
+		const appMessage: HookAppMessage = {
+			role: "hookMessage",
+			customType: message.customType,
 			content,
+			display: message.display,
+			details: message.details,
 			timestamp: Date.now(),
-			_hookData: {
-				customType: message.customType,
-				display: message.display,
-				details: message.details,
-			},
 		};
 
 		if (this.isStreaming) {
@@ -596,12 +586,6 @@ export class AgentSession {
 		} else if (triggerTurn) {
 			// Append to agent state and session, then trigger a turn
 			this.agent.appendMessage(appMessage);
-			this.sessionManager.appendCustomMessageEntry(
-				message.customType,
-				message.content,
-				message.display,
-				message.details,
-			);
 			// Start a new turn - emit message events for the hook message so TUI can render it
 			await this.agent.continue(true);
 		} else {
