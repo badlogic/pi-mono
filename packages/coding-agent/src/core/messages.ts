@@ -115,7 +115,7 @@ export function messageTransformer(messages: AppMessage[]): Message[] {
 				};
 			}
 			if (isHookAppMessage(m)) {
-				// Convert hook message to user message
+				// Convert hook message to user message for LLM
 				return {
 					role: "user",
 					content: m.content,
