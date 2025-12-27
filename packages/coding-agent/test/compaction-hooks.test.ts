@@ -40,17 +40,20 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	});
 
 	function createHook(
-		onBeforeCompact?: (event: SessionEvent) => { cancel?: boolean; compaction?: any } | undefined,
+		onBeforeCompact?: (
+			event: SessionEvent,
+			sessionManager?: SessionManager,
+		) => Promise<{ cancel?: boolean; compaction?: any }> | { cancel?: boolean; compaction?: any } | undefined,
 		onCompact?: (event: SessionEvent) => void,
 	): LoadedHook {
 		const handlers = new Map<string, ((event: any, ctx: any) => Promise<any>)[]>();
 
 		handlers.set("session", [
-			async (event: SessionEvent) => {
+			async (event: SessionEvent, ctx: any) => {
 				capturedEvents.push(event);
 
 				if (event.reason === "before_compact" && onBeforeCompact) {
-					return onBeforeCompact(event);
+					return await onBeforeCompact(event, ctx?.sessionManager);
 				}
 				if (event.reason === "compact" && onCompact) {
 					onCompact(event);
@@ -168,17 +171,22 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	it("should allow hooks to provide custom compaction", async () => {
 		const customSummary = "Custom summary from hook";
 
-		const hook = createHook((event) => {
+		const hook = createHook(async (event, sessionManager) => {
 			if (event.reason === "before_compact") {
+				const entries = await sessionManager!.getEntries();
+				const firstKeptEntry = entries[event.preparation.cutPoint.firstKeptEntryIndex];
+				const firstKeptEntryId = firstKeptEntry?.id;
+				if (!firstKeptEntryId) throw new Error("Cannot get first kept entry ID");
+
 				return {
 					compaction: {
 						summary: customSummary,
-						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						firstKeptEntryId,
 						tokensBefore: event.preparation.tokensBefore,
 					},
 				};
 			}
-			return undefined;
+			return { cancel: false };
 		});
 		createSession([hook]);
 
@@ -374,17 +382,22 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	it("should use hook compaction even with different values", async () => {
 		const customSummary = "Custom summary with modified values";
 
-		const hook = createHook((event) => {
+		const hook = createHook(async (event, sessionManager) => {
 			if (event.reason === "before_compact") {
+				const entries = await sessionManager!.getEntries();
+				const firstKeptEntry = entries[event.preparation.cutPoint.firstKeptEntryIndex];
+				const firstKeptEntryId = firstKeptEntry?.id;
+				if (!firstKeptEntryId) throw new Error("Cannot get first kept entry ID");
+
 				return {
 					compaction: {
 						summary: customSummary,
-						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						firstKeptEntryId,
 						tokensBefore: 999,
 					},
 				};
 			}
-			return undefined;
+			return { cancel: false };
 		});
 		createSession([hook]);
 

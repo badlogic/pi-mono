@@ -16,7 +16,13 @@ describe("Documentation example", () => {
 				// sessionManager and modelRegistry come from ctx, not event
 				const { preparation, previousCompactions, model } = event;
 				const { sessionManager, modelRegistry } = ctx;
-				const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId, cutPoint } = preparation;
+				const { messagesToSummarize, messagesToKeep, tokensBefore, cutPoint } = preparation;
+
+				// Get firstKeptEntryId from the entries
+				const entries = await sessionManager.getEntries();
+				const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
+				const firstKeptEntryId = firstKeptEntry?.id;
+				if (!firstKeptEntryId) throw new Error("Cannot get first kept entry ID");
 
 				// Get previous summary from most recent compaction
 				const _previousSummary = previousCompactions[0]?.summary;

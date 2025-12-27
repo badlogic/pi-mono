@@ -10,19 +10,40 @@ export {
 } from "./core/agent-session.js";
 // Auth and model registry
 export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
-// Compaction
+// Compaction - V2 Structured Summaries with Anchored Iterative Updates
 export {
+	type ArtifactIndex,
+	artifactIndexToMarkdown,
+	type CommandRecord,
+	type CompactionPreparation,
 	type CompactionResult,
 	type CutPointResult,
 	calculateContextTokens,
 	compact,
+	convertV1ToV2Summary,
+	createEmptyArtifactIndex,
+	createEmptyStructuredSummary,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateTokens,
+	extractArtifactIndex,
+	type FileRecord,
 	findCutPoint,
 	findTurnStartIndex,
-	generateSummary,
+	generateInitialStructuredSummaryV2,
 	getLastAssistantUsage,
+	isV2Summary,
+	mergeArtifactIndices,
+	parseArtifactIndexFromMarkdown,
+	parseStructuredSummaryFromMarkdown,
+	prepareCompaction,
+	type StructuredSummaryV2,
+	SUMMARY_TOKEN_BUDGET,
+	SUMMARY_V2_MARKER,
 	shouldCompact,
+	structuredSummaryToMarkdown,
+	type TestRecord,
+	type ToolCallRecord,
+	updateStructuredSummaryV2,
 } from "./core/compaction.js";
 // Custom tools
 export type {

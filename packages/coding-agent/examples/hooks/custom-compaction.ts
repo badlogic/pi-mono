@@ -24,7 +24,16 @@ export default function (pi: HookAPI) {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
 		const { preparation, previousCompactions, signal } = event;
-		const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId } = preparation;
+		const { messagesToSummarize, messagesToKeep, tokensBefore, cutPoint } = preparation;
+
+		// Get firstKeptEntryId from the entries via session manager
+		const entries = await ctx.sessionManager.getEntries();
+		const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
+		if (!firstKeptEntry?.id) {
+			ctx.ui.notify("Cannot get first kept entry ID, using default compaction", "warning");
+			return;
+		}
+		const firstKeptEntryId = firstKeptEntry.id;
 
 		// Get previous summary from most recent compaction (if any)
 		const previousSummary = previousCompactions[0]?.summary;
