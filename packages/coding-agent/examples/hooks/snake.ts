@@ -172,40 +172,54 @@ class SnakeComponent {
 		const effectiveWidth = Math.min(GAME_WIDTH, width - 4);
 		const effectiveHeight = GAME_HEIGHT;
 
-		// Header
-		const header = ` SNAKE | Score: ${this.state.score} | High: ${this.state.highScore} `;
-		lines.push(this.padLine(header, width));
-		lines.push(this.padLine(`+${"-".repeat(effectiveWidth)}+`, width));
+		// Colors
+		const dim = (s: string) => `\x1b[2m${s}\x1b[22m`;
+		const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
+		const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
+		const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+		const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
+
+		// Header with score
+		const scoreText = `Score: ${bold(yellow(String(this.state.score)))}`;
+		const highText = `High: ${bold(yellow(String(this.state.highScore)))}`;
+		const title = `${bold(green("🐍 SNAKE"))} │ ${scoreText} │ ${highText}`;
+		lines.push(this.padLine(` ${title}`, width));
+
+		// Top border with rounded corners
+		lines.push(this.padLine(dim(` ╭${"─".repeat(effectiveWidth)}╮`), width));
 
 		// Game grid
 		for (let y = 0; y < effectiveHeight; y++) {
-			let row = "|";
+			let row = dim(" │");
 			for (let x = 0; x < effectiveWidth; x++) {
 				const isHead = this.state.snake[0].x === x && this.state.snake[0].y === y;
 				const isBody = this.state.snake.slice(1).some((s) => s.x === x && s.y === y);
 				const isFood = this.state.food.x === x && this.state.food.y === y;
 
 				if (isHead) {
-					row += "\x1b[32m@\x1b[0m"; // Green head
+					row += green("●"); // Snake head
 				} else if (isBody) {
-					row += "\x1b[32mo\x1b[0m"; // Green body
+					row += green("○"); // Snake body
 				} else if (isFood) {
-					row += "\x1b[31m*\x1b[0m"; // Red food
+					row += red("◆"); // Food
 				} else {
-					row += " ";
+					row += dim("·"); // Empty cell
 				}
 			}
-			row += "|";
+			row += dim("│");
 			lines.push(this.padLine(row, width));
 		}
 
-		lines.push(this.padLine(`+${"-".repeat(effectiveWidth)}+`, width));
+		// Bottom border with rounded corners
+		lines.push(this.padLine(dim(` ╰${"─".repeat(effectiveWidth)}╯`), width));
 
 		// Footer
 		if (this.state.gameOver) {
-			lines.push(this.padLine("\x1b[31m GAME OVER! \x1b[0m Press R to restart, ESC to quit", width));
+			lines.push(
+				this.padLine(` ${red(bold("GAME OVER!"))} Press ${bold("R")} to restart, ${bold("ESC")} to quit`, width),
+			);
 		} else {
-			lines.push(this.padLine(" Arrow keys or WASD to move, ESC to quit", width));
+			lines.push(this.padLine(dim(` ↑↓←→ or WASD to move, ESC to quit`), width));
 		}
 
 		this.cachedLines = lines;
