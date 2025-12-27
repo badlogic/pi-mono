@@ -28,7 +28,7 @@ import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
-import { isBashExecutionMessage, isHookAppMessage } from "../../core/messages.js";
+import { isBashExecutionMessage, isHookMessage } from "../../core/messages.js";
 import {
 	getLatestCompactionEntry,
 	type SessionContext,
@@ -46,10 +46,10 @@ import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { CompactionComponent } from "./components/compaction.js";
 import { CustomEditor } from "./components/custom-editor.js";
-import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { HookInputComponent } from "./components/hook-input.js";
+import { HookMessageComponent } from "./components/hook-message.js";
 import { HookSelectorComponent } from "./components/hook-selector.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
@@ -817,7 +817,7 @@ export class InteractiveMode {
 				break;
 
 			case "message_start":
-				if (isHookAppMessage(event.message)) {
+				if (isHookMessage(event.message)) {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
@@ -1051,7 +1051,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: Message | AppMessage): void {
+	private addMessageToChat(message: AppMessage): void {
 		if (isBashExecutionMessage(message)) {
 			const component = new BashExecutionComponent(message.command, this.ui);
 			if (message.output) {
@@ -1067,20 +1067,11 @@ export class InteractiveMode {
 			return;
 		}
 
-		if (isHookAppMessage(message)) {
+		if (isHookMessage(message)) {
 			// Render as custom message if display is true
 			if (message.display) {
-				const entry = {
-					type: "custom_message" as const,
-					customType: message.customType,
-					content: message.content,
-					display: true,
-					id: "",
-					parentId: null,
-					timestamp: new Date().toISOString(),
-				};
 				const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
-				this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
+				this.chatContainer.addChild(new HookMessageComponent(message, renderer));
 			}
 		} else if (message.role === "user") {
 			const textContent = this.getUserMessageText(message);
@@ -1114,11 +1105,9 @@ export class InteractiveMode {
 		}
 
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getEntries());
-		const entries = sessionContext.entries;
 
 		for (let i = 0; i < sessionContext.messages.length; i++) {
 			const message = sessionContext.messages[i];
-			const entry = entries?.[i];
 
 			if (isBashExecutionMessage(message)) {
 				this.addMessageToChat(message);
@@ -1126,10 +1115,10 @@ export class InteractiveMode {
 			}
 
 			// Check if this is a custom_message entry
-			if (entry?.type === "custom_message") {
-				if (entry.display) {
-					const renderer = this.session.hookRunner?.getMessageRenderer(entry.customType);
-					this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
+			if (isHookMessage(message)) {
+				if (message.display) {
+					const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
+					this.chatContainer.addChild(new HookMessageComponent(message, renderer));
 				}
 				continue;
 			}
@@ -1322,7 +1311,7 @@ export class InteractiveMode {
 				child.setExpanded(this.toolOutputExpanded);
 			} else if (child instanceof BashExecutionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof CustomMessageComponent) {
+			} else if (child instanceof HookMessageComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}

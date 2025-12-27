@@ -32,10 +32,10 @@ import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
  * Message type for hook-injected messages via sendMessage().
  * These are custom messages that hooks can inject into the conversation.
  */
-export interface HookAppMessage<T = unknown> {
+export interface HookMessage<T = unknown> {
 	role: "hookMessage";
 	customType: string;
-	content: (TextContent | ImageContent)[];
+	content: string | (TextContent | ImageContent)[];
 	display: boolean;
 	details?: T;
 	timestamp: number;
@@ -45,7 +45,7 @@ export interface HookAppMessage<T = unknown> {
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomMessages {
 		bashExecution: BashExecutionMessage;
-		hookMessage: HookAppMessage;
+		hookMessage: HookMessage;
 	}
 }
 
@@ -63,8 +63,8 @@ export function isBashExecutionMessage(msg: AppMessage | Message): msg is BashEx
 /**
  * Type guard for HookAppMessage.
  */
-export function isHookAppMessage(msg: AppMessage | Message): msg is HookAppMessage {
-	return (msg as HookAppMessage).role === "hookMessage";
+export function isHookMessage(msg: AppMessage | Message): msg is HookMessage {
+	return (msg as HookMessage).role === "hookMessage";
 }
 
 // ============================================================================
@@ -114,7 +114,7 @@ export function messageTransformer(messages: AppMessage[]): Message[] {
 					timestamp: m.timestamp,
 				};
 			}
-			if (isHookAppMessage(m)) {
+			if (isHookMessage(m)) {
 				// Convert hook message to user message for LLM
 				return {
 					role: "user",

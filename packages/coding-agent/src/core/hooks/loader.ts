@@ -9,15 +9,9 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
+import type { HookMessage } from "../messages.js";
 import { execCommand } from "./runner.js";
-import type {
-	ExecOptions,
-	HookAPI,
-	HookFactory,
-	HookMessage,
-	HookMessageRenderer,
-	RegisteredCommand,
-} from "./types.js";
+import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -56,7 +50,10 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 /**
  * Send message handler type for pi.sendMessage().
  */
-export type SendMessageHandler = <T = unknown>(message: HookMessage<T>, triggerTurn?: boolean) => void;
+export type SendMessageHandler = <T = unknown>(
+	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+	triggerTurn?: boolean,
+) => void;
 
 /**
  * Append entry handler type for pi.appendEntry().

@@ -11,8 +11,9 @@ import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
+import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { CompactionEntry, CustomMessageEntry, SessionManager } from "../session-manager.js";
+import type { CompactionEntry, SessionManager } from "../session-manager.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
@@ -380,14 +381,6 @@ export interface SessionEventResult {
  */
 export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Promise<R>;
 
-/**
- * Options passed to custom message renderers.
- */
-/**
- * Message type for hooks to send. Creates CustomMessageEntry in the session.
- */
-export type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, "customType" | "content" | "display" | "details">;
-
 export interface HookMessageRenderOptions {
 	/** Whether the view is expanded */
 	expanded: boolean;
@@ -463,7 +456,10 @@ export interface HookAPI {
 	 * @param triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
 	 *                      If agent is streaming, message is queued and triggerTurn is ignored.
 	 */
-	sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void;
+	sendMessage<T = unknown>(
+		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		triggerTurn?: boolean,
+	): void;
 
 	/**
 	 * Append a custom entry to the session for hook state persistence.

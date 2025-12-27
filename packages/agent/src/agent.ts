@@ -325,15 +325,15 @@ export class Agent {
 						break;
 					}
 					case "message_update": {
-						partial = ev.message as AppMessage;
+						partial = ev.message;
 						this._state.streamMessage = ev.message as Message;
 						break;
 					}
 					case "message_end": {
 						partial = null;
 						this._state.streamMessage = null;
-						this.appendMessage(ev.message as AppMessage);
-						generatedMessages.push(ev.message as AppMessage);
+						this.appendMessage(ev.message);
+						generatedMessages.push(ev.message);
 						break;
 					}
 					case "tool_execution_start": {

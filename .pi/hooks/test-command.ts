@@ -11,7 +11,7 @@ export default function (pi: HookAPI) {
 			const name = ctx.args.trim() || "world";
 
 			// Insert a custom message and trigger LLM response
-			ctx.sendMessage(
+			pi.sendMessage(
 				{
 					customType: "greeting",
 					content: `Hello, ${name}! Please say something nice about them.`,

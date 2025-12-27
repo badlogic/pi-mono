@@ -219,7 +219,7 @@ For arbitrary hook UI with keyboard focus:
 ```typescript
 interface HookUIContext {
   // ... existing: select, confirm, input, notify
-  
+
   /** Show custom component with keyboard focus. Call done() when finished. */
   custom(component: Component, done: () => void): void;
 }
@@ -325,7 +325,7 @@ Review and update all docs:
   - Updated event signatures (`SessionEventBase`, `before_compact`, etc.)
 - [ ] `docs/hooks-v2.md` - Review/merge or remove if obsolete
 - [ ] `docs/sdk.md` - Update for:
-  - `HookAppMessage` and `isHookAppMessage()` 
+  - `HookMessage` and `isHookMessage()`
   - `Agent.prompt(AppMessage)` overload
   - Session v2 tree structure
   - SessionManager API changes

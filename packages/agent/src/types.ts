@@ -73,7 +73,7 @@ export interface AgentState {
 	tools: AgentTool<any>[];
 	messages: AppMessage[]; // Can include attachments + custom message types
 	isStreaming: boolean;
-	streamMessage: Message | null;
+	streamMessage: AppMessage | null;
 	pendingToolCalls: Set<string>;
 	error?: string;
 }

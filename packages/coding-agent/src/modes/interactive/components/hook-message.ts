@@ -1,22 +1,22 @@
 import type { TextContent } from "@mariozechner/pi-ai";
 import { Box, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import type { HookMessage, HookMessageRenderer } from "../../../core/hooks/types.js";
-import type { CustomMessageEntry } from "../../../core/session-manager.js";
+import type { HookMessage } from "packages/coding-agent/src/core/messages.js";
+import type { HookMessageRenderer } from "../../../core/hooks/types.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
  * Component that renders a custom message entry from hooks.
  * Uses distinct styling to differentiate from user messages.
  */
-export class CustomMessageComponent extends Container {
-	private entry: CustomMessageEntry;
+export class HookMessageComponent extends Container {
+	private message: HookMessage<unknown>;
 	private customRenderer?: HookMessageRenderer;
 	private box: Box;
 	private _expanded = false;
 
-	constructor(entry: CustomMessageEntry, customRenderer?: HookMessageRenderer) {
+	constructor(message: HookMessage<unknown>, customRenderer?: HookMessageRenderer) {
 		super();
-		this.entry = entry;
+		this.message = message;
 		this.customRenderer = customRenderer;
 
 		this.addChild(new Spacer(1));
@@ -38,18 +38,10 @@ export class CustomMessageComponent extends Container {
 	private rebuild(): void {
 		this.box.clear();
 
-		// Convert entry to HookMessage for renderer
-		const message: HookMessage = {
-			customType: this.entry.customType,
-			content: this.entry.content,
-			display: this.entry.display,
-			details: this.entry.details,
-		};
-
 		// Try custom renderer first
 		if (this.customRenderer) {
 			try {
-				const component = this.customRenderer(message, { expanded: this._expanded }, theme);
+				const component = this.customRenderer(this.message, { expanded: this._expanded }, theme);
 				if (component) {
 					this.box.addChild(component);
 					return;
@@ -60,16 +52,16 @@ export class CustomMessageComponent extends Container {
 		}
 
 		// Default rendering: label + content
-		const label = theme.fg("customMessageLabel", `\x1b[1m[${this.entry.customType}]\x1b[22m`);
+		const label = theme.fg("customMessageLabel", `\x1b[1m[${this.message.customType}]\x1b[22m`);
 		this.box.addChild(new Text(label, 0, 0));
 		this.box.addChild(new Spacer(1));
 
 		// Extract text content
 		let text: string;
-		if (typeof this.entry.content === "string") {
-			text = this.entry.content;
+		if (typeof this.message.content === "string") {
+			text = this.message.content;
 		} else {
-			text = this.entry.content
+			text = this.message.content
 				.filter((c): c is TextContent => c.type === "text")
 				.map((c) => c.text)
 				.join("\n");

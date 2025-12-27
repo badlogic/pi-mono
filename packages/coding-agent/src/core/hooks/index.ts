@@ -27,7 +27,6 @@ export type {
 	HookEvent,
 	HookEventContext,
 	HookFactory,
-	HookMessage,
 	HookMessageRenderer,
 	HookMessageRenderOptions,
 	HookUIContext,

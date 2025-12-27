@@ -14,7 +14,7 @@
  */
 
 import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
@@ -29,13 +29,12 @@ import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custo
 import { exportSessionToHtml } from "./export-html.js";
 import type {
 	HookCommandContext,
-	HookMessage,
 	HookRunner,
 	SessionEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./hooks/index.js";
-import { type BashExecutionMessage, type HookAppMessage, isHookAppMessage } from "./messages.js";
+import { type BashExecutionMessage, type HookMessage, isHookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
@@ -220,7 +219,7 @@ export class AgentSession {
 		// Handle session persistence
 		if (event.type === "message_end") {
 			// Check if this is a hook message (has _hookData marker)
-			if (isHookAppMessage(event.message)) {
+			if (isHookMessage(event.message)) {
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -557,21 +556,18 @@ export class AgentSession {
 	 * @param message Hook message with customType, content, display, details
 	 * @param triggerTurn If true and not streaming, triggers a new LLM turn
 	 */
-	async sendHookMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): Promise<void> {
-		// Normalize content to array format for the AppMessage
-		const content: (TextContent | ImageContent)[] =
-			typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content;
-
-		// Create HookAppMessage with proper role for type-safe handling
-		const appMessage: HookAppMessage = {
-			role: "hookMessage",
+	async sendHookMessage<T = unknown>(
+		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		triggerTurn?: boolean,
+	): Promise<void> {
+		const appMessage = {
+			role: "hookMessage" as const,
 			customType: message.customType,
-			content,
+			content: message.content,
 			display: message.display,
 			details: message.details,
 			timestamp: Date.now(),
-		};
-
+		} satisfies HookMessage<T>;
 		if (this.isStreaming) {
 			// Queue for processing by agent loop
 			await this.agent.queueMessage(appMessage);
