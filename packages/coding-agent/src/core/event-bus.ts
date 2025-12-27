@@ -13,7 +13,11 @@ export function createEventBus(): EventBusController {
 	const emitter = new EventEmitter();
 	return {
 		emit: (channel, data) => {
-			emitter.emit(channel, data);
+			try {
+				emitter.emit(channel, data);
+			} catch (err) {
+				console.error(`Event handler error (${channel}):`, err);
+			}
 		},
 		on: (channel, handler) => {
 			emitter.on(channel, handler);
