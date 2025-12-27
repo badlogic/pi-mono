@@ -227,6 +227,64 @@ interface HookUIContext {
 
 See also: `CustomEntry<T>` for storing hook state that does NOT participate in context.
 
+**New: `context` event (TODO)**
+
+Fires before messages are sent to the LLM, allowing hooks to modify context non-destructively.
+
+```typescript
+interface ContextEvent {
+  type: "context";
+  /** Messages that will be sent to the LLM */
+  messages: Message[];
+}
+
+interface ContextEventResult {
+  /** Modified messages to send instead */
+  messages?: Message[];
+}
+
+// In HookAPI:
+on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult | void>): void;
+```
+
+Example use case: **Dynamic Context Pruning** ([discussion #330](https://github.com/badlogic/pi-mono/discussions/330))
+
+Non-destructive pruning of tool results to reduce context size:
+
+```typescript
+export default function(pi: HookAPI) {
+  // Register /prune command
+  pi.registerCommand("prune", {
+    description: "Mark tool results for pruning",
+    handler: async (ctx) => {
+      // Show UI to select which tool results to prune
+      // Append custom entry recording pruning decisions:
+      // { toolResultId, strategy: "summary" | "truncate" | "remove" }
+      pi.appendEntry("tool-result-pruning", { ... });
+    }
+  });
+
+  // Intercept context before LLM call
+  pi.on("context", async (event, ctx) => {
+    // Find all pruning entries in session
+    const entries = ctx.sessionManager.getEntries();
+    const pruningRules = entries
+      .filter(e => e.type === "custom" && e.customType === "tool-result-pruning")
+      .map(e => e.data);
+
+    // Apply pruning rules to messages
+    const prunedMessages = applyPruning(event.messages, pruningRules);
+    return { messages: prunedMessages };
+  });
+}
+```
+
+Benefits:
+- Original tool results stay intact in session
+- Pruning is stored as custom entries, survives session reload
+- Works with branching (pruning entries are part of the tree)
+- Trade-off: cache busting on first submission after pruning
+
 ### HTML Export
 
 - [ ] Add collapsible sidebar showing full tree structure
