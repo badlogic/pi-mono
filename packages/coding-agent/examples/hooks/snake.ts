@@ -233,6 +233,7 @@ class SnakeComponent {
 export default function (pi: HookAPI) {
 	pi.registerCommand("snake", {
 		description: "Play Snake!",
+		immediate: true, // Run immediately, even during streaming
 		handler: async (ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("Snake requires interactive mode", "error");

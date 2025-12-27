@@ -405,6 +405,8 @@ export interface HookCommandContext {
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
+	/** If true, command runs immediately even during streaming (doesn't get queued) */
+	immediate?: boolean;
 	handler: (ctx: HookCommandContext) => Promise<void>;
 }
 
@@ -478,7 +480,10 @@ export interface HookAPI {
 	 * Register a custom slash command.
 	 * Handler receives HookCommandContext.
 	 */
-	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+	registerCommand(
+		name: string,
+		options: { description?: string; immediate?: boolean; handler: RegisteredCommand["handler"] },
+	): void;
 
 	/**
 	 * Execute a shell command and return stdout/stderr/code.
