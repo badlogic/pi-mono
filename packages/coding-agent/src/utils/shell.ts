@@ -26,8 +26,9 @@ function findBashOnPath(): string | null {
  * Get shell configuration based on platform.
  * Resolution order:
  * 1. User-specified shellPath in settings.json
- * 2. On Windows: Git Bash in known locations
- * 3. Fallback: bash on PATH (Windows) or sh (Unix)
+ * 2. On Windows: Git Bash in known locations, then bash on PATH
+ * 3. On Unix: /bin/bash
+ * 4. Fallback: sh
  */
 export function getShellConfig(): { shell: string; args: string[] } {
 	if (cachedShellConfig) {
@@ -81,6 +82,12 @@ export function getShellConfig(): { shell: string; args: string[] } {
 				`  3. Set shellPath in ~/.pi/agent/settings.json\n\n` +
 				`Searched Git Bash in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
 		);
+	}
+
+	// Unix: prefer bash over sh
+	if (existsSync("/bin/bash")) {
+		cachedShellConfig = { shell: "/bin/bash", args: ["-c"] };
+		return cachedShellConfig;
 	}
 
 	cachedShellConfig = { shell: "sh", args: ["-c"] };
