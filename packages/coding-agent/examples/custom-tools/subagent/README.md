@@ -16,8 +16,9 @@ Delegate tasks to specialized subagents with isolated context windows.
 ```
 subagent/
 ├── README.md            # This file
-├── subagent.ts          # The custom tool (entry point)
+├── index.ts             # The custom tool (entry point)
 ├── agents.ts            # Agent discovery logic
+├── chain-runner.ts      # Async chain execution (spawned via jiti)
 ├── agents/              # Sample agent definitions
 │   ├── scout.md         # Fast recon, returns compressed context
 │   ├── planner.md       # Creates implementation plans
@@ -36,8 +37,9 @@ From the repository root, symlink the files:
 ```bash
 # Symlink the tool (must be in a subdirectory with index.ts)
 mkdir -p ~/.pi/agent/tools/subagent
-ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/subagent.ts" ~/.pi/agent/tools/subagent/index.ts
+ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/index.ts" ~/.pi/agent/tools/subagent/index.ts
 ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/agents.ts" ~/.pi/agent/tools/subagent/agents.ts
+ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/chain-runner.ts" ~/.pi/agent/tools/subagent/chain-runner.ts
 
 # Symlink agents
 mkdir -p ~/.pi/agent/agents
@@ -94,7 +96,43 @@ Use a chain: first have scout find the read tool, then have planner suggest impr
 |------|-----------|-------------|
 | Single | `{ agent, task }` | One agent, one task |
 | Parallel | `{ tasks: [...] }` | Multiple agents run concurrently (max 8, 4 concurrent) |
-| Chain | `{ chain: [...] }` | Sequential with `{previous}` placeholder |
+| Chain | `{ chain: [...] }` | Sequential with `@pi:previous` placeholder |
+| Async | `{ ..., async: true }` | Runs in background, emits `subagent:complete` via `pi.events` |
+
+## Async Mode
+
+Runs subagents in the background. Works with single agents, parallel tasks, and chains.
+
+```typescript
+// Single async
+{ agent: "scout", task: "find auth code", async: true }
+
+// Async parallel (each task notifies independently when done)
+{ tasks: [
+  { agent: "scout", task: "find auth code" },
+  { agent: "scout", task: "find db queries" }
+], async: true }
+
+// Async chain (scout -> planner in background)
+{ chain: [
+  { agent: "scout", task: "find auth code" },
+  { agent: "planner", task: "plan based on: @pi:previous" }
+], async: true }
+```
+
+**How it works:**
+1. Subagent(s) spawn as detached processes
+2. Returns immediately with an async ID
+3. On completion, emits `subagent:complete` event via `pi.events`
+4. A hook listens and calls `pi.send()` to notify you
+
+**Async parallel behavior:**
+- Each task runs independently and emits its own event when done
+- Events include `taskIndex` and `totalTasks` for tracking
+- Agent receives N notifications (one per task)
+- No aggregated "all done" event - agent tracks completion itself
+
+**Note:** Events only fire in interactive mode (agent must stay alive).
 
 ## Output Display
 

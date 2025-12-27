@@ -72,6 +72,18 @@ export default function (pi: HookAPI) {
 }
 ```
 
+### Event Bus
+
+`pi.events` is shared between tools and hooks. Tools emit events, hooks receive them:
+
+```typescript
+pi.events.on("subagent:complete", (data) => {
+  pi.send(`Subagent finished: ${JSON.stringify(data)}`);
+});
+```
+
+Events only fire in interactive mode (the agent must stay alive to receive them). See `examples/custom-tools/background-command/` for a complete example.
+
 ### Setup
 
 Create a hooks directory:

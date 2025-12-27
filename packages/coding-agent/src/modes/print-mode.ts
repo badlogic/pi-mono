@@ -6,9 +6,39 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+
+function getLastAssistantMessage(session: AgentSession): AssistantMessage | null {
+	const messages = session.state.messages;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			return msg as AssistantMessage;
+		}
+	}
+	return null;
+}
+
+function writeAsyncResult(session: AgentSession, exitCode: number): void {
+	const asyncResultPath = process.env.PI_ASYNC_RESULT;
+	if (!asyncResultPath) return;
+
+	const result = {
+		id: process.env.PI_ASYNC_ID ?? null,
+		agent: process.env.PI_ASYNC_AGENT ?? null,
+		success: exitCode === 0,
+		summary: session.getLastAssistantText()?.slice(0, 500) ?? "(no output)",
+		exitCode,
+		timestamp: Date.now(),
+	};
+
+	fs.mkdirSync(path.dirname(asyncResultPath), { recursive: true });
+	fs.writeFileSync(asyncResultPath, JSON.stringify(result));
+}
 
 /**
  * Run in print (single-shot) mode.
@@ -87,27 +117,29 @@ export async function runPrintMode(
 		await session.prompt(message);
 	}
 
+	const lastAssistant = getLastAssistantMessage(session);
+	const exitCode =
+		lastAssistant && (lastAssistant.stopReason === "error" || lastAssistant.stopReason === "aborted") ? 1 : 0;
+
 	// In text mode, output final response
 	if (mode === "text") {
-		const state = session.state;
-		const lastMessage = state.messages[state.messages.length - 1];
-
-		if (lastMessage?.role === "assistant") {
-			const assistantMsg = lastMessage as AssistantMessage;
-
-			// Check for error/aborted
-			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
-				console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
-				process.exit(1);
-			}
-
-			// Output text content
-			for (const content of assistantMsg.content) {
-				if (content.type === "text") {
-					console.log(content.text);
+		if (lastAssistant) {
+			if (exitCode === 1) {
+				console.error(lastAssistant.errorMessage || `Request ${lastAssistant.stopReason}`);
+			} else {
+				for (const content of lastAssistant.content) {
+					if (content.type === "text") {
+						console.log(content.text);
+					}
 				}
 			}
 		}
+	}
+
+	writeAsyncResult(session, exitCode);
+
+	if (mode === "text" && exitCode === 1) {
+		process.exit(1);
 	}
 
 	// Ensure stdout is fully flushed before returning

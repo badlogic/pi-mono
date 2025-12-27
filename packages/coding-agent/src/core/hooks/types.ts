@@ -8,6 +8,7 @@
 import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { CutPointResult } from "../compaction.js";
+import type { EventBus } from "../event-bus.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import type {
 	BashToolDetails,
@@ -384,6 +385,9 @@ export interface HookAPI {
 	 * If the agent is idle, a new agent loop is started.
 	 */
 	send(text: string, attachments?: Attachment[]): void;
+
+	/** Shared event bus */
+	events: EventBus;
 }
 
 /**

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { Attachment } from "@mariozechner/pi-agent-core";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
+import { createEventBus, type EventBus } from "../event-bus.js";
 import type { HookAPI, HookFactory } from "./types.js";
 
 // Create require function to resolve module paths at runtime
@@ -113,7 +114,10 @@ function resolveHookPath(hookPath: string, cwd: string): string {
  * Create a HookAPI instance that collects handlers.
  * Returns the API and a function to set the send handler later.
  */
-function createHookAPI(handlers: Map<string, HandlerFn[]>): {
+function createHookAPI(
+	handlers: Map<string, HandlerFn[]>,
+	eventBus: EventBus,
+): {
 	api: HookAPI;
 	setSendHandler: (handler: SendHandler) => void;
 } {
@@ -130,6 +134,7 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 		send(text: string, attachments?: Attachment[]): void {
 			sendHandler(text, attachments);
 		},
+		events: eventBus,
 	} as HookAPI;
 
 	return {
@@ -143,7 +148,11 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 /**
  * Load a single hook module using jiti.
  */
-async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
+async function loadHook(
+	hookPath: string,
+	cwd: string,
+	eventBus: EventBus,
+): Promise<{ hook: LoadedHook | null; error: string | null }> {
 	const resolvedPath = resolveHookPath(hookPath, cwd);
 
 	try {
@@ -164,7 +173,7 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, setSendHandler } = createHookAPI(handlers);
+		const { api, setSendHandler } = createHookAPI(handlers, eventBus);
 
 		// Call factory to register handlers
 		factory(api);
@@ -184,12 +193,13 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
  * @param paths - Array of hook file paths
  * @param cwd - Current working directory for resolving relative paths
  */
-export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooksResult> {
+export async function loadHooks(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadHooksResult> {
 	const hooks: LoadedHook[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
+	const resolvedEventBus = eventBus ?? createEventBus();
 
 	for (const hookPath of paths) {
-		const { hook, error } = await loadHook(hookPath, cwd);
+		const { hook, error } = await loadHook(hookPath, cwd, resolvedEventBus);
 
 		if (error) {
 			errors.push({ path: hookPath, error });
@@ -234,6 +244,7 @@ export async function discoverAndLoadHooks(
 	configuredPaths: string[],
 	cwd: string,
 	agentDir: string = getAgentDir(),
+	eventBus?: EventBus,
 ): Promise<LoadHooksResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
@@ -260,5 +271,5 @@ export async function discoverAndLoadHooks(
 	// 3. Explicitly configured paths (can override/add)
 	addPaths(configuredPaths.map((p) => resolveHookPath(p, cwd)));
 
-	return loadHooks(allPaths, cwd);
+	return loadHooks(allPaths, cwd, eventBus);
 }

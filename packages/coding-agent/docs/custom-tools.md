@@ -146,6 +146,7 @@ interface ToolAPI {
     notify(message: string, type?: "info" | "warning" | "error"): void;
   };
   hasUI: boolean;  // false in --print or --mode rpc
+  events: EventBus;  // Shared event bus (emit/on)
 }
 
 interface ExecOptions {
@@ -162,6 +163,16 @@ interface ExecResult {
 ```
 
 Always check `pi.hasUI` before using UI methods.
+
+### Event Bus
+
+Emit events that hooks can receive:
+
+```typescript
+pi.events.emit("my:event", { status: "done" });
+```
+
+See `examples/hooks/` for hooks that listen to events like `command:complete` and `subagent:complete`.
 
 ### Cancellation Example
 
@@ -377,6 +388,59 @@ async execute(toolCallId, args, signal, onUpdate) {
   };
 }
 ```
+
+## Spawning TypeScript Subprocesses
+
+Most tools run synchronously within `execute()`. However, if you need to spawn a **detached TypeScript subprocess** that outlives the tool call (e.g., for async background tasks), use `pi.jitiCliPath`:
+
+```typescript
+import { spawn } from "node:child_process";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ToolAPI } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: ToolAPI) {
+  return {
+    name: "my-tool",
+    // ...
+    async execute(toolCallId, params) {
+      const jitiCli = pi.jitiCliPath;
+      if (!jitiCli) {
+        throw new Error("jitiCliPath not available. Requires pi 0.13+");
+      }
+
+      const scriptPath = path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "background-worker.ts"
+      );
+
+      const proc = spawn("node", [jitiCli, scriptPath], {
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+      });
+
+      proc.stdin?.write(JSON.stringify({ task: params.task }));
+      proc.stdin?.end();
+      proc.unref();
+
+      return {
+        content: [{ type: "text", text: "Background task started" }],
+      };
+    },
+  };
+}
+```
+
+**When to use this:**
+- Async tasks that must survive after `execute()` returns
+- Long-running processes that shouldn't block the agent
+- Background workers that report results via events
+
+**Alternatives:**
+- **Keep it sync**: Most tools should just await and return
+- **Compile to JS**: If you want zero runtime dependencies, compile your subprocess script to JavaScript and spawn with plain `node`
+
+See [`examples/custom-tools/subagent/`](../examples/custom-tools/subagent/) for a complete example using this pattern.
 
 ## Multiple Tools from One File
 

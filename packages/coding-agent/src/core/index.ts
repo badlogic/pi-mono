@@ -25,6 +25,7 @@ export {
 	type ToolAPI,
 	type ToolUIContext,
 } from "./custom-tools/index.js";
+export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
 export {
 	type HookAPI,
 	type HookError,
