@@ -28,6 +28,17 @@ Delegate tasks to specialized subagents with isolated context windows. Includes:
 
 See [subagent/README.md](subagent/README.md) for full documentation.
 
+### codex/
+Use OpenAI Codex as a sub-agent with its own isolated context window.
+- Runs with full access and no approvals by default (like `--dangerously-bypass-approvals-and-sandbox`)
+- Re-uses authentication from `~/.codex/auth.json` (via `codex login`)
+- Streams events in real-time as Codex works
+- Useful for code review, refactoring, and complex analysis
+
+Requires: `npm install @openai/codex-sdk`
+
+See [codex/README.md](codex/README.md) for full documentation.
+
 ## Usage
 
 ```bash
