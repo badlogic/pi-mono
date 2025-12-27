@@ -369,7 +369,6 @@ export class InteractiveMode {
 
 		// Set UI context on hook runner
 		hookRunner.setUIContext(uiContext, true);
-		hookRunner.setSessionFile(this.session.sessionFile);
 
 		// Subscribe to hook errors
 		hookRunner.onError((error) => {
@@ -407,8 +406,6 @@ export class InteractiveMode {
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			sessionManager: this.session.sessionManager,
-			modelRegistry: this.session.modelRegistry,
 			reason: "start",
 		});
 	}
@@ -1204,8 +1201,6 @@ export class InteractiveMode {
 		if (hookRunner?.hasHandlers("session")) {
 			await hookRunner.emit({
 				type: "session",
-				sessionManager: this.session.sessionManager,
-				modelRegistry: this.session.modelRegistry,
 				reason: "shutdown",
 			});
 		}

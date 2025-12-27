@@ -534,7 +534,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
-			hookRunner = new HookRunner(loadedHooks, cwd, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
 		}
 	} else {
 		// Discover hooks, merging with additional paths
@@ -545,7 +545,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
 		if (hooks.length > 0) {
-			hookRunner = new HookRunner(hooks, cwd, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
 		}
 	}
 

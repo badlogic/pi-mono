@@ -15,7 +15,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Check for uncommitted changes
-		const { stdout, code } = await ctx.exec("git", ["status", "--porcelain"]);
+		const { stdout, code } = await pi.exec("git", ["status", "--porcelain"]);
 
 		if (code !== 0) {
 			// Not a git repo, allow the action

@@ -127,7 +127,6 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
 		hookRunner.setUIContext(createHookUIContext(), false);
-		hookRunner.setSessionFile(session.sessionFile);
 		hookRunner.onError((err) => {
 			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
 		});
@@ -143,8 +142,6 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			sessionManager: session.sessionManager,
-			modelRegistry: session.modelRegistry,
 			reason: "start",
 		});
 	}

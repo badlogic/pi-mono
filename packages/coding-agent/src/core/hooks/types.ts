@@ -41,6 +41,8 @@ export interface ExecOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds */
 	timeout?: number;
+	/** Working directory */
+	cwd?: string;
 }
 
 /**
@@ -78,16 +80,16 @@ export interface HookUIContext {
  * Context passed to hook event handlers.
  */
 export interface HookEventContext {
-	/** Execute a command and return stdout/stderr/code */
-	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** UI methods for user interaction */
 	ui: HookUIContext;
 	/** Whether UI is available (false in print mode) */
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
-	/** Path to session file, or null if --no-session */
-	sessionFile: string | null;
+	/** Session manager instance - use for entries, session file, etc. */
+	sessionManager: SessionManager;
+	/** Model registry - use for API key resolution and model retrieval */
+	modelRegistry: ModelRegistry;
 }
 
 // ============================================================================
@@ -99,10 +101,6 @@ export interface HookEventContext {
  */
 interface SessionEventBase {
 	type: "session";
-	/** Session manager instance - use for entries, session file, etc. */
-	sessionManager: SessionManager;
-	/** Model registry - use for API key resolution */
-	modelRegistry: ModelRegistry;
 }
 
 /**
@@ -402,8 +400,6 @@ export interface HookCommandContext {
 	args: string;
 	/** UI methods for user interaction */
 	ui: HookUIContext;
-	/** Execute a command and return stdout/stderr/code */
-	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** Whether UI is available (false in print mode) */
 	hasUI: boolean;
 	/** Current working directory */
@@ -491,9 +487,15 @@ export interface HookAPI {
 
 	/**
 	 * Register a custom slash command.
-	 * Handler receives CommandContext and can return a string to send as prompt.
+	 * Handler receives HookCommandContext.
 	 */
 	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+
+	/**
+	 * Execute a shell command and return stdout/stderr/code.
+	 * Supports timeout and abort signal.
+	 */
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 }
 
 /**
