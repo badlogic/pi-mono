@@ -27,15 +27,13 @@ import {
 } from "./compaction.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
-import {
-	type ExecOptions,
-	execCommand,
-	type HookCommandContext,
-	type HookMessage,
-	type HookRunner,
-	type SessionEventResult,
-	type TurnEndEvent,
-	type TurnStartEvent,
+import type {
+	HookCommandContext,
+	HookMessage,
+	HookRunner,
+	SessionEventResult,
+	TurnEndEvent,
+	TurnStartEvent,
 } from "./hooks/index.js";
 import { type BashExecutionMessage, type HookAppMessage, isHookAppMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
@@ -519,7 +517,6 @@ export class AgentSession {
 			cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this._modelRegistry,
-			exec: (cmd: string, cmdArgs: string[], options?: ExecOptions) => execCommand(cmd, cmdArgs, cwd, options),
 		};
 
 		try {
@@ -640,8 +637,6 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "before_new",
 			})) as SessionEventResult | undefined;
 
@@ -659,11 +654,8 @@ export class AgentSession {
 
 		// Emit session event with reason "new" to hooks
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(this.sessionFile);
 			await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "new",
 			});
 		}
@@ -888,8 +880,6 @@ export class AgentSession {
 
 				const result = (await this._hookRunner.emit({
 					type: "session",
-					sessionManager: this.sessionManager,
-					modelRegistry: this._modelRegistry,
 					reason: "before_compact",
 					preparation,
 					previousCompactions,
@@ -952,8 +942,6 @@ export class AgentSession {
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
-					sessionManager: this.sessionManager,
-					modelRegistry: this._modelRegistry,
 					reason: "compact",
 					compactionEntry: savedCompactionEntry,
 					fromHook,
@@ -1060,8 +1048,6 @@ export class AgentSession {
 
 				const hookResult = (await this._hookRunner.emit({
 					type: "session",
-					sessionManager: this.sessionManager,
-					modelRegistry: this._modelRegistry,
 					reason: "before_compact",
 					preparation,
 					previousCompactions,
@@ -1125,8 +1111,6 @@ export class AgentSession {
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
 					type: "session",
-					sessionManager: this.sessionManager,
-					modelRegistry: this._modelRegistry,
 					reason: "compact",
 					compactionEntry: savedCompactionEntry,
 					fromHook,
@@ -1431,8 +1415,6 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "before_switch",
 				targetSessionFile: sessionPath,
 			})) as SessionEventResult | undefined;
@@ -1454,11 +1436,8 @@ export class AgentSession {
 
 		// Emit session event to hooks
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(sessionPath);
 			await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "switch",
 				previousSessionFile,
 			});
@@ -1515,8 +1494,6 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session")) {
 			const result = (await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "before_branch",
 				targetTurnIndex: entryIndex,
 			})) as SessionEventResult | undefined;
@@ -1544,11 +1521,8 @@ export class AgentSession {
 
 		// Emit branch event to hooks (after branch completes)
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
 				type: "session",
-				sessionManager: this.sessionManager,
-				modelRegistry: this._modelRegistry,
 				reason: "branch",
 				targetTurnIndex: entryIndex,
 			});

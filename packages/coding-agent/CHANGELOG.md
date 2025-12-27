@@ -22,7 +22,10 @@
   - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
   - `prepareCompaction()` now returns `firstKeptEntryId` in its result
 - **Hook types**:
-  - `SessionEventBase` now passes `sessionManager` and `modelRegistry` instead of `entries`, `sessionFile`, `previousSessionFile`
+  - `SessionEventBase` no longer has `sessionManager`/`modelRegistry` - access them via `HookEventContext` instead
+  - `HookEventContext` now has `sessionManager` and `modelRegistry` (moved from events)
+  - `HookEventContext` no longer has `exec()` - use `pi.exec()` instead
+  - `HookCommandContext` no longer has `exec()` - use `pi.exec()` instead
   - `before_compact` event passes `preparation: CompactionPreparation` and `previousCompactions: CompactionEntry[]` (newest first)
   - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
   - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
@@ -32,6 +35,7 @@
   - New `pi.appendEntry(customType, data?)` to persist hook state (does NOT participate in LLM context)
   - New `pi.registerCommand(name, options)` to register custom slash commands
   - New `pi.registerCustomMessageRenderer(customType, renderer)` to register custom renderers for `CustomMessageEntry`
+  - New `pi.exec(command, args, options?)` to execute shell commands (moved from `HookEventContext`/`HookCommandContext`)
   - `CustomMessageRenderer` type: `(entry, options, theme) => Component | null`
   - Renderers return inner content; the TUI wraps it in a styled Box
   - New types: `HookMessage<T>`, `RegisteredCommand`, `HookCommandContext`

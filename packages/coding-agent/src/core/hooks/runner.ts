@@ -3,6 +3,8 @@
  */
 
 import { spawn } from "node:child_process";
+import type { ModelRegistry } from "../model-registry.js";
+import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
 import type {
 	CustomMessageRenderer,
@@ -133,16 +135,24 @@ export class HookRunner {
 	private uiContext: HookUIContext;
 	private hasUI: boolean;
 	private cwd: string;
-	private sessionFile: string | null;
+	private sessionManager: SessionManager;
+	private modelRegistry: ModelRegistry;
 	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 
-	constructor(hooks: LoadedHook[], cwd: string, timeout: number = DEFAULT_TIMEOUT) {
+	constructor(
+		hooks: LoadedHook[],
+		cwd: string,
+		sessionManager: SessionManager,
+		modelRegistry: ModelRegistry,
+		timeout: number = DEFAULT_TIMEOUT,
+	) {
 		this.hooks = hooks;
 		this.uiContext = noOpUIContext;
 		this.hasUI = false;
 		this.cwd = cwd;
-		this.sessionFile = null;
+		this.sessionManager = sessionManager;
+		this.modelRegistry = modelRegistry;
 		this.timeout = timeout;
 	}
 
@@ -174,13 +184,6 @@ export class HookRunner {
 	 */
 	getHookPaths(): string[] {
 		return this.hooks.map((h) => h.path);
-	}
-
-	/**
-	 * Set the session file path.
-	 */
-	setSessionFile(sessionFile: string | null): void {
-		this.sessionFile = sessionFile;
 	}
 
 	/**
@@ -283,12 +286,11 @@ export class HookRunner {
 	 */
 	private createContext(): HookEventContext {
 		return {
-			exec: (command: string, args: string[], options?: ExecOptions) =>
-				execCommand(command, args, this.cwd, options),
 			ui: this.uiContext,
 			hasUI: this.hasUI,
 			cwd: this.cwd,
-			sessionFile: this.sessionFile,
+			sessionManager: this.sessionManager,
+			modelRegistry: this.modelRegistry,
 		};
 	}
 

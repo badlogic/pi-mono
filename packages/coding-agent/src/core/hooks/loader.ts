@@ -9,7 +9,15 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
-import type { CustomMessageRenderer, HookAPI, HookFactory, HookMessage, RegisteredCommand } from "./types.js";
+import { execCommand } from "./runner.js";
+import type {
+	CustomMessageRenderer,
+	ExecOptions,
+	HookAPI,
+	HookFactory,
+	HookMessage,
+	RegisteredCommand,
+} from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -123,7 +131,10 @@ function resolveHookPath(hookPath: string, cwd: string): string {
  * Create a HookAPI instance that collects handlers, renderers, and commands.
  * Returns the API, maps, and a function to set the send message handler later.
  */
-function createHookAPI(handlers: Map<string, HandlerFn[]>): {
+function createHookAPI(
+	handlers: Map<string, HandlerFn[]>,
+	cwd: string,
+): {
 	api: HookAPI;
 	customMessageRenderers: Map<string, CustomMessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
@@ -139,7 +150,9 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 	const customMessageRenderers = new Map<string, CustomMessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
 
-	const api: HookAPI = {
+	// Cast to HookAPI - the implementation is more general (string event names)
+	// but the interface has specific overloads for type safety in hooks
+	const api = {
 		on(event: string, handler: HandlerFn): void {
 			const list = handlers.get(event) ?? [];
 			list.push(handler);
@@ -151,11 +164,14 @@ function createHookAPI(handlers: Map<string, HandlerFn[]>): {
 		appendEntry<T = unknown>(customType: string, data?: T): void {
 			appendEntryHandler(customType, data);
 		},
-		registerCustomMessageRenderer(customType: string, renderer: CustomMessageRenderer): void {
-			customMessageRenderers.set(customType, renderer);
+		registerCustomMessageRenderer<T = unknown>(customType: string, renderer: CustomMessageRenderer<T>): void {
+			customMessageRenderers.set(customType, renderer as CustomMessageRenderer);
 		},
 		registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void {
 			commands.set(name, { name, ...options });
+		},
+		exec(command: string, args: string[], options?: ExecOptions) {
+			return execCommand(command, args, options?.cwd ?? cwd, options);
 		},
 	} as HookAPI;
 
@@ -196,8 +212,10 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, customMessageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } =
-			createHookAPI(handlers);
+		const { api, customMessageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = createHookAPI(
+			handlers,
+			cwd,
+		);
 
 		// Call factory to register handlers
 		factory(api);

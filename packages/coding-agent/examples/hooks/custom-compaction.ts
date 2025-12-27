@@ -23,7 +23,7 @@ export default function (pi: HookAPI) {
 
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { preparation, previousCompactions, modelRegistry, signal } = event;
+		const { preparation, previousCompactions, signal } = event;
 		const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId } = preparation;
 
 		// Get previous summary from most recent compaction (if any)
@@ -37,7 +37,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Resolve API key for the summarization model
-		const apiKey = await modelRegistry.getApiKey(model);
+		const apiKey = await ctx.modelRegistry.getApiKey(model);
 		if (!apiKey) {
 			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
 			return;

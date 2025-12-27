@@ -34,8 +34,6 @@ export async function runPrintMode(
 	// Set up hooks for print mode (no UI)
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		// Use actual session file if configured (via --session), otherwise null
-		hookRunner.setSessionFile(session.sessionFile);
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);
 		});
@@ -51,8 +49,6 @@ export async function runPrintMode(
 		// Emit session event
 		await hookRunner.emit({
 			type: "session",
-			sessionManager: session.sessionManager,
-			modelRegistry: session.modelRegistry,
 			reason: "start",
 		});
 	}
