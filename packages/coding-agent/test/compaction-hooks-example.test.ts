@@ -9,11 +9,13 @@ describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {
 		// This is the example from hooks.md - verify it compiles
 		const exampleHook = (pi: HookAPI) => {
-			pi.on("session", async (event, _ctx) => {
+			pi.on("session", async (event, ctx) => {
 				if (event.reason !== "before_compact") return;
 
 				// After narrowing, these should all be accessible
-				const { preparation, previousCompactions, sessionManager, modelRegistry, model } = event;
+				// sessionManager and modelRegistry come from ctx, not event
+				const { preparation, previousCompactions, model } = event;
+				const { sessionManager, modelRegistry } = ctx;
 				const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId, cutPoint } = preparation;
 
 				// Get previous summary from most recent compaction

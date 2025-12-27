@@ -91,7 +91,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage);
 
-		hookRunner = new HookRunner(hooks, tempDir);
+		hookRunner = new HookRunner(hooks, tempDir, sessionManager, modelRegistry);
 		hookRunner.setUIContext(
 			{
 				select: async () => null,
@@ -101,7 +101,6 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			},
 			false,
 		);
-		hookRunner.setSessionFile(sessionManager.getSessionFile() ?? null);
 
 		session = new AgentSession({
 			agent,
@@ -140,8 +139,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			expect(beforeEvent.preparation.messagesToKeep).toBeDefined();
 			expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
 			expect(beforeEvent.model).toBeDefined();
-			expect(beforeEvent.sessionManager).toBeDefined();
-			expect(beforeEvent.modelRegistry).toBeDefined();
+			// sessionManager and modelRegistry are now on ctx, not event
 		}
 
 		const afterEvent = compactEvents[0];
@@ -217,8 +215,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		const afterEvent = compactEvents[0];
 		if (afterEvent.reason === "compact") {
-			const entries = afterEvent.sessionManager.getEntries();
-			const hasCompactionEntry = entries.some((e) => e.type === "compaction");
+			// sessionManager is now on ctx, use session.sessionManager directly
+			const entries = session.sessionManager.getEntries();
+			const hasCompactionEntry = entries.some((e: { type: string }) => e.type === "compaction");
 			expect(hasCompactionEntry).toBe(true);
 		}
 	}, 120000);
@@ -361,9 +360,12 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		expect(event.model).toHaveProperty("provider");
 		expect(event.model).toHaveProperty("id");
 
-		expect(typeof event.modelRegistry.getApiKey).toBe("function");
+		// sessionManager and modelRegistry are now on ctx, not event
+		// Verify they're accessible via session
+		expect(typeof session.sessionManager.getEntries).toBe("function");
+		expect(typeof session.modelRegistry.getApiKey).toBe("function");
 
-		const entries = event.sessionManager.getEntries();
+		const entries = session.sessionManager.getEntries();
 		expect(Array.isArray(entries)).toBe(true);
 		expect(entries.length).toBeGreaterThan(0);
 	}, 120000);
