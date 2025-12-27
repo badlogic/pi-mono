@@ -236,9 +236,9 @@ Design new commands based on refactored SessionManager:
 
 ### Documentation
 
-Update docs to reflect all changes:
+Review and update all docs:
 
-- [ ] `docs/hooks.md` - Update hook API:
+- [ ] `docs/hooks.md` - Major update for hook API:
   - `pi.send()` → `pi.sendMessage()` with new signature
   - New `pi.appendEntry()` for state persistence
   - New `pi.registerCommand()` for custom slash commands
@@ -246,11 +246,31 @@ Update docs to reflect all changes:
   - `CommandContext` interface and handler patterns
   - `HookMessage<T>` type
   - Updated event signatures (`SessionEventBase`, `before_compact`, etc.)
+- [ ] `docs/hooks-v2.md` - Review/merge or remove if obsolete
+- [ ] `docs/sdk.md` - Update for:
+  - `HookAppMessage` and `isHookAppMessage()` 
+  - `Agent.prompt(AppMessage)` overload
+  - Session v2 tree structure
+  - SessionManager API changes
+- [ ] `docs/session.md` - Update for v2 tree structure, new entry types
+- [ ] `docs/custom-tools.md` - Check if hook changes affect custom tools
+- [ ] `docs/rpc.md` - Check if hook commands work in RPC mode
+- [ ] `docs/skills.md` - Review for any hook-related updates
+- [ ] `docs/extension-loading.md` - Review
+- [ ] `docs/theme.md` - Add customMessageBg/Text/Label color tokens
 - [ ] `README.md` - Update hook examples if any
-- [ ] `docs/custom-tools.md` - Check if hook changes affect custom tools docs
-- [ ] Add `HookAppMessage` and `isHookAppMessage()` to public API docs
-- [ ] Document `Agent.prompt(AppMessage)` overload
-- [ ] Document session v2 tree structure (for programmatic users)
+
+### Examples
+
+Review and update examples:
+
+- [ ] `examples/hooks/` - Update existing, add new examples:
+  - [ ] Review `custom-compaction.ts` for new API
+  - [ ] Add `registerCommand()` example
+  - [ ] Add `sendMessage()` example
+  - [ ] Add `registerCustomMessageRenderer()` example
+- [ ] `examples/sdk/` - Update for new session/hook APIs
+- [ ] `examples/custom-tools/` - Review for compatibility
 
 ---
 
