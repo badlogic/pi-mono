@@ -2,7 +2,7 @@
  * Snake game hook - play snake with /snake command
  */
 
-import { isArrowDown, isArrowLeft, isArrowRight, isArrowUp, isEscape } from "@mariozechner/pi-tui";
+import { isArrowDown, isArrowLeft, isArrowRight, isArrowUp, isEscape, visibleWidth } from "@mariozechner/pi-tui";
 import type { HookAPI } from "../../src/core/hooks/types.js";
 
 const GAME_WIDTH = 40;
@@ -226,7 +226,8 @@ class SnakeComponent {
 		const boxWidth = effectiveWidth * cellWidth;
 
 		// Helper to pad content inside box
-		const boxLine = (content: string, contentLen: number) => {
+		const boxLine = (content: string) => {
+			const contentLen = visibleWidth(content);
 			const padding = Math.max(0, boxWidth - contentLen);
 			return dim(" │") + content + " ".repeat(padding) + dim("│");
 		};
@@ -237,10 +238,8 @@ class SnakeComponent {
 		// Header with score
 		const scoreText = `Score: ${bold(yellow(String(this.state.score)))}`;
 		const highText = `High: ${bold(yellow(String(this.state.highScore)))}`;
-		const title = `${bold(green("🐍 SNAKE"))} │ ${scoreText} │ ${highText}`;
-		// Approximate visible length (emojis and formatting make this tricky)
-		const titleLen = 8 + 3 + 7 + String(this.state.score).length + 3 + 6 + String(this.state.highScore).length;
-		lines.push(this.padLine(boxLine(title, titleLen), width));
+		const title = `${bold(green("SNAKE"))} │ ${scoreText} │ ${highText}`;
+		lines.push(this.padLine(boxLine(title), width));
 
 		// Separator
 		lines.push(this.padLine(dim(` ├${"─".repeat(boxWidth)}┤`), width));
@@ -271,18 +270,14 @@ class SnakeComponent {
 
 		// Footer
 		let footer: string;
-		let footerLen: number;
 		if (this.paused) {
 			footer = `${yellow(bold("PAUSED"))} Press any key to continue, ${bold("Q")} to quit`;
-			footerLen = 42;
 		} else if (this.state.gameOver) {
 			footer = `${red(bold("GAME OVER!"))} Press ${bold("R")} to restart, ${bold("Q")} to quit`;
-			footerLen = 40;
 		} else {
-			footer = dim(`↑↓←→ or WASD to move, ${bold("ESC")} pause, ${bold("Q")} quit`);
-			footerLen = 38;
+			footer = `↑↓←→ or WASD to move, ${bold("ESC")} pause, ${bold("Q")} quit`;
 		}
-		lines.push(this.padLine(boxLine(footer, footerLen), width));
+		lines.push(this.padLine(boxLine(footer), width));
 
 		// Bottom border
 		lines.push(this.padLine(dim(` ╰${"─".repeat(boxWidth)}╯`), width));
