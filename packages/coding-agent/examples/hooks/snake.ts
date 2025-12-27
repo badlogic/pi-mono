@@ -55,17 +55,36 @@ class SnakeComponent {
 	private state: GameState;
 	private interval: ReturnType<typeof setInterval> | null = null;
 	private onClose: () => void;
+	private onSave: (state: GameState | null) => void;
 	private requestRender: () => void;
 	private cachedLines: string[] = [];
 	private cachedWidth = 0;
 	private version = 0;
 	private cachedVersion = -1;
+	private paused: boolean;
 
-	constructor(onClose: () => void, requestRender: () => void) {
-		this.state = createInitialState();
+	constructor(
+		onClose: () => void,
+		onSave: (state: GameState | null) => void,
+		requestRender: () => void,
+		savedState?: GameState,
+	) {
+		if (savedState && !savedState.gameOver) {
+			// Resume from saved state, start paused
+			this.state = savedState;
+			this.paused = true;
+		} else {
+			// New game or saved game was over
+			this.state = createInitialState();
+			if (savedState) {
+				this.state.highScore = savedState.highScore;
+			}
+			this.paused = false;
+			this.startGame();
+		}
 		this.onClose = onClose;
+		this.onSave = onSave;
 		this.requestRender = requestRender;
-		this.startGame();
 	}
 
 	private startGame(): void {
@@ -129,9 +148,32 @@ class SnakeComponent {
 	}
 
 	handleInput(data: string): void {
-		// ESC or q to quit
-		if (isEscape(data) || data === "q" || data === "Q") {
+		// If paused (resuming), wait for any key
+		if (this.paused) {
+			if (isEscape(data) || data === "q" || data === "Q") {
+				// Quit without clearing save
+				this.dispose();
+				this.onClose();
+				return;
+			}
+			// Any other key resumes
+			this.paused = false;
+			this.startGame();
+			return;
+		}
+
+		// ESC to pause and save
+		if (isEscape(data)) {
 			this.dispose();
+			this.onSave(this.state);
+			this.onClose();
+			return;
+		}
+
+		// Q to quit without saving (clears saved state)
+		if (data === "q" || data === "Q") {
+			this.dispose();
+			this.onSave(null); // Clear saved state
 			this.onClose();
 			return;
 		}
@@ -152,6 +194,7 @@ class SnakeComponent {
 			const highScore = this.state.highScore;
 			this.state = createInitialState();
 			this.state.highScore = highScore;
+			this.onSave(null); // Clear saved state on restart
 			this.version++;
 			this.requestRender();
 		}
@@ -180,18 +223,31 @@ class SnakeComponent {
 		const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 		const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
 
+		const boxWidth = effectiveWidth * cellWidth;
+
+		// Helper to pad content inside box
+		const boxLine = (content: string, contentLen: number) => {
+			const padding = Math.max(0, boxWidth - contentLen);
+			return dim(" │") + content + " ".repeat(padding) + dim("│");
+		};
+
+		// Top border
+		lines.push(this.padLine(dim(` ╭${"─".repeat(boxWidth)}╮`), width));
+
 		// Header with score
 		const scoreText = `Score: ${bold(yellow(String(this.state.score)))}`;
 		const highText = `High: ${bold(yellow(String(this.state.highScore)))}`;
 		const title = `${bold(green("🐍 SNAKE"))} │ ${scoreText} │ ${highText}`;
-		lines.push(this.padLine(` ${title}`, width));
+		// Approximate visible length (emojis and formatting make this tricky)
+		const titleLen = 8 + 3 + 7 + String(this.state.score).length + 3 + 6 + String(this.state.highScore).length;
+		lines.push(this.padLine(boxLine(title, titleLen), width));
 
-		// Top border with rounded corners
-		lines.push(this.padLine(dim(` ╭${"─".repeat(effectiveWidth * cellWidth)}╮`), width));
+		// Separator
+		lines.push(this.padLine(dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
 		// Game grid
 		for (let y = 0; y < effectiveHeight; y++) {
-			let row = dim(" │");
+			let row = "";
 			for (let x = 0; x < effectiveWidth; x++) {
 				const isHead = this.state.snake[0].x === x && this.state.snake[0].y === y;
 				const isBody = this.state.snake.slice(1).some((s) => s.x === x && s.y === y);
@@ -207,21 +263,29 @@ class SnakeComponent {
 					row += "  "; // Empty cell (2 spaces)
 				}
 			}
-			row += dim("│");
-			lines.push(this.padLine(row, width));
+			lines.push(this.padLine(dim(" │") + row + dim("│"), width));
 		}
 
-		// Bottom border with rounded corners
-		lines.push(this.padLine(dim(` ╰${"─".repeat(effectiveWidth * cellWidth)}╯`), width));
+		// Separator
+		lines.push(this.padLine(dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
 		// Footer
-		if (this.state.gameOver) {
-			lines.push(
-				this.padLine(` ${red(bold("GAME OVER!"))} Press ${bold("R")} to restart, ${bold("ESC")} to quit`, width),
-			);
+		let footer: string;
+		let footerLen: number;
+		if (this.paused) {
+			footer = `${yellow(bold("PAUSED"))} Press any key to continue, ${bold("Q")} to quit`;
+			footerLen = 42;
+		} else if (this.state.gameOver) {
+			footer = `${red(bold("GAME OVER!"))} Press ${bold("R")} to restart, ${bold("Q")} to quit`;
+			footerLen = 40;
 		} else {
-			lines.push(this.padLine(dim(` ↑↓←→ or WASD to move, ESC to quit`), width));
+			footer = dim(`↑↓←→ or WASD to move, ${bold("ESC")} pause, ${bold("Q")} quit`);
+			footerLen = 38;
 		}
+		lines.push(this.padLine(boxLine(footer, footerLen), width));
+
+		// Bottom border
+		lines.push(this.padLine(dim(` ╰${"─".repeat(boxWidth)}╯`), width));
 
 		this.cachedLines = lines;
 		this.cachedWidth = width;
@@ -245,6 +309,8 @@ class SnakeComponent {
 	}
 }
 
+const SNAKE_SAVE_TYPE = "snake-save";
+
 export default function (pi: HookAPI) {
 	pi.registerCommand("snake", {
 		description: "Play Snake!",
@@ -255,11 +321,27 @@ export default function (pi: HookAPI) {
 				return;
 			}
 
+			// Load saved state from session
+			const entries = ctx.sessionManager.getEntries();
+			let savedState: GameState | undefined;
+			for (let i = entries.length - 1; i >= 0; i--) {
+				const entry = entries[i];
+				if (entry.type === "custom" && entry.customType === SNAKE_SAVE_TYPE) {
+					savedState = entry.data as GameState;
+					break;
+				}
+			}
+
 			let ui: { close: () => void; requestRender: () => void } | null = null;
 
 			const component = new SnakeComponent(
 				() => ui?.close(),
+				(state) => {
+					// Save or clear state
+					pi.appendEntry(SNAKE_SAVE_TYPE, state);
+				},
 				() => ui?.requestRender(),
+				savedState,
 			);
 
 			ui = ctx.ui.custom(component);
