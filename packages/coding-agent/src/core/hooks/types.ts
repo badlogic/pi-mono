@@ -54,6 +54,15 @@ export interface HookUIContext {
 	 * Show a notification to the user.
 	 */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
+
+	/**
+	 * Show a custom component with keyboard focus.
+	 * The component receives keyboard input via handleInput() if implemented.
+	 *
+	 * @param component - Component to display (implement handleInput for keyboard, dispose for cleanup)
+	 * @returns Object with close() to restore normal UI and requestRender() to trigger redraw
+	 */
+	custom(component: Component & { dispose?(): void }): { close: () => void; requestRender: () => void };
 }
 
 /**

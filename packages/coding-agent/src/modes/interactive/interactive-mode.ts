@@ -443,6 +443,7 @@ export class InteractiveMode {
 			confirm: (title, message) => this.showHookConfirm(title, message),
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
+			custom: (component) => this.showHookCustom(component),
 		};
 	}
 
@@ -537,6 +538,42 @@ export class InteractiveMode {
 		} else {
 			this.showStatus(message);
 		}
+	}
+
+	/**
+	 * Show a custom component with keyboard focus.
+	 * Returns a function to call when done.
+	 */
+	private showHookCustom(component: Component & { dispose?(): void }): {
+		close: () => void;
+		requestRender: () => void;
+	} {
+		// Store current editor content
+		const savedText = this.editor.getText();
+
+		// Replace editor with custom component
+		this.editorContainer.clear();
+		this.editorContainer.addChild(component);
+		this.ui.setFocus(component);
+		this.ui.requestRender();
+
+		// Return control object
+		return {
+			close: () => {
+				// Call dispose if available
+				component.dispose?.();
+
+				// Restore editor
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.editor.setText(savedText);
+				this.ui.setFocus(this.editor);
+				this.ui.requestRender();
+			},
+			requestRender: () => {
+				this.ui.requestRender();
+			},
+		};
 	}
 
 	/**
