@@ -170,34 +170,44 @@ export class Agent {
 		this.messageQueue = [];
 	}
 
-	async prompt(input: string, attachments?: Attachment[]) {
+	/** Send a prompt to the agent with an AppMessage. */
+	async prompt(message: AppMessage): Promise<void>;
+	/** Send a prompt to the agent with text and optional attachments. */
+	async prompt(input: string, attachments?: Attachment[]): Promise<void>;
+	async prompt(input: string | AppMessage, attachments?: Attachment[]) {
 		const model = this._state.model;
 		if (!model) {
 			throw new Error("No model configured");
 		}
 
-		// Build user message with attachments
-		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
-		if (attachments?.length) {
-			for (const a of attachments) {
-				if (a.type === "image") {
-					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
+		let userMessage: AppMessage;
+
+		if (typeof input === "string") {
+			// Build user message from text + attachments
+			const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
+			if (attachments?.length) {
+				for (const a of attachments) {
+					if (a.type === "image") {
+						content.push({ type: "image", data: a.content, mimeType: a.mimeType });
+					} else if (a.type === "document" && a.extractedText) {
+						content.push({
+							type: "text",
+							text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
+							isDocument: true,
+						} as TextContent);
+					}
 				}
 			}
+			userMessage = {
+				role: "user",
+				content,
+				attachments: attachments?.length ? attachments : undefined,
+				timestamp: Date.now(),
+			};
+		} else {
+			// Use provided AppMessage directly
+			userMessage = input;
 		}
-
-		const userMessage: AppMessage = {
-			role: "user",
-			content,
-			attachments: attachments?.length ? attachments : undefined,
-			timestamp: Date.now(),
-		};
 
 		await this._runAgentLoop(userMessage);
 	}

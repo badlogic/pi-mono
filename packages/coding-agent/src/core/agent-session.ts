@@ -584,10 +584,8 @@ export class AgentSession {
 			// Queue for processing by agent loop
 			await this.agent.queueMessage(appMessage);
 		} else if (triggerTurn) {
-			// Append to agent state and session, then trigger a turn
-			this.agent.appendMessage(appMessage);
-			// Start a new turn - emit message events for the hook message so TUI can render it
-			await this.agent.continue(true);
+			// Send as prompt - agent loop will emit message events
+			await this.agent.prompt(appMessage);
 		} else {
 			// Just append to agent state and session, no turn
 			this.agent.appendMessage(appMessage);
