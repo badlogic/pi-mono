@@ -165,6 +165,26 @@ Calls `sessionManager.appendCustomEntry()` directly.
 **New: `registerCommand()` (types ✅, wiring TODO)**
 
 ```typescript
+// HookAPI (the `pi` object) - utilities available to all hooks:
+interface HookAPI {
+  sendMessage(message: HookMessage, triggerTurn?: boolean): void;
+  appendEntry(customType: string, data?: unknown): void;
+  registerCommand(name: string, options: RegisteredCommand): void;
+  registerCustomMessageRenderer(customType: string, renderer: CustomMessageRenderer): void;
+  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+}
+
+// HookEventContext - passed to event handlers, has stable context:
+interface HookEventContext {
+  ui: HookUIContext;
+  hasUI: boolean;
+  cwd: string;
+  sessionManager: SessionManager;
+  modelRegistry: ModelRegistry;
+}
+// Note: exec moved to HookAPI, sessionManager/modelRegistry moved from SessionEventBase
+
+// HookCommandContext - passed to command handlers:
 interface HookCommandContext {
   args: string;                    // Everything after /commandname
   ui: HookUIContext;
@@ -172,9 +192,8 @@ interface HookCommandContext {
   cwd: string;
   sessionManager: SessionManager;
   modelRegistry: ModelRegistry;
-  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 }
-// Note: sendMessage not on context - handler captures `pi` in closure
+// Note: exec and sendMessage accessed via `pi` closure
 
 registerCommand(name: string, options: {
   description?: string;
