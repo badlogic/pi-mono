@@ -183,8 +183,7 @@ registerCommand(name: string, options: {
 ```
 
 Handler return:
-- `undefined` - command completed
-- `string` - text to send as prompt (like file-based slash commands)
+- `void` - command completed (use `sendMessage()` with `triggerTurn: true` to prompt LLM)
 
 Wiring (all in AgentSession.prompt()):
 - [x] Add hook commands to autocomplete in interactive-mode
