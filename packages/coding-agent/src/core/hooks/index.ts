@@ -1,18 +1,18 @@
+// biome-ignore assist/source/organizeImports: biome is not smart
 export {
-	type AppendEntryHandler,
 	discoverAndLoadHooks,
+	loadHooks,
+	type AppendEntryHandler,
 	type LoadedHook,
 	type LoadHooksResult,
-	loadHooks,
 	type SendMessageHandler,
 } from "./loader.js";
-export { execCommand, type HookErrorListener, HookRunner } from "./runner.js";
+export { execCommand, HookRunner, type HookErrorListener } from "./runner.js";
 export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
 	BashToolResultEvent,
-	CommandContext,
 	CustomMessageRenderer,
 	CustomMessageRenderOptions,
 	CustomToolResultEvent,
@@ -22,6 +22,7 @@ export type {
 	FindToolResultEvent,
 	GrepToolResultEvent,
 	HookAPI,
+	HookCommandContext,
 	HookError,
 	HookEvent,
 	HookEventContext,

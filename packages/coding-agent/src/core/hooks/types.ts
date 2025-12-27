@@ -12,6 +12,7 @@ import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { CompactionEntry, CustomMessageEntry, SessionManager } from "../session-manager.js";
+import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
 	FindToolDetails,
@@ -237,7 +238,7 @@ export interface ReadToolResultEvent extends ToolResultEventBase {
 /** Tool result event for edit tool */
 export interface EditToolResultEvent extends ToolResultEventBase {
 	toolName: "edit";
-	details: undefined;
+	details: EditToolDetails | undefined;
 }
 
 /** Tool result event for write tool */
@@ -394,9 +395,9 @@ export type CustomMessageRenderer<T = unknown> = (
 export type HookMessage<T = unknown> = Pick<CustomMessageEntry<T>, "customType" | "content" | "display" | "details">;
 
 /**
- * Context passed to command handlers.
+ * Context passed to hook command handlers.
  */
-export interface CommandContext {
+export interface HookCommandContext {
 	/** Arguments after the command name */
 	args: string;
 	/** UI methods for user interaction */
@@ -411,13 +412,6 @@ export interface CommandContext {
 	sessionManager: SessionManager;
 	/** Model registry for API keys */
 	modelRegistry: ModelRegistry;
-	/**
-	 * Send a custom message to the session.
-	 * If streaming, queued and appended after turn ends.
-	 * If idle and triggerTurn=true, appends and triggers a new turn.
-	 * If idle and triggerTurn=false (default), just appends.
-	 */
-	sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void;
 }
 
 /**
@@ -426,7 +420,7 @@ export interface CommandContext {
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
-	handler: (ctx: CommandContext) => Promise<void>;
+	handler: (ctx: HookCommandContext) => Promise<void>;
 }
 
 /**

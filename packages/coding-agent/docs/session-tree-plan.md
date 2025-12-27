@@ -165,20 +165,20 @@ Calls `sessionManager.appendCustomEntry()` directly.
 **New: `registerCommand()` (types ✅, wiring TODO)**
 
 ```typescript
-interface CommandContext {
+interface HookCommandContext {
   args: string;                    // Everything after /commandname
   ui: HookUIContext;
   hasUI: boolean;
   cwd: string;
   sessionManager: SessionManager;
   modelRegistry: ModelRegistry;
-  sendMessage: HookAPI['sendMessage'];
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 }
+// Note: sendMessage not on context - handler captures `pi` in closure
 
 registerCommand(name: string, options: {
   description?: string;
-  handler: (ctx: CommandContext) => Promise<string | undefined>;
+  handler: (ctx: HookCommandContext) => Promise<void>;
 }): void;
 ```
 
@@ -188,7 +188,7 @@ Handler return:
 Wiring (all in AgentSession.prompt()):
 - [x] Add hook commands to autocomplete in interactive-mode
 - [x] `_tryExecuteHookCommand()` in AgentSession handles command execution
-- [x] Build CommandContext with ui (from hookRunner), exec, sessionManager, etc.
+- [x] Build HookCommandContext with ui (from hookRunner), exec, sessionManager, etc.
 - [x] If handler returns string, use as prompt text
 - [x] If handler returns undefined, return early (no LLM call)
 - [x] Works for all modes (interactive, RPC, print) via shared AgentSession
@@ -243,7 +243,7 @@ Review and update all docs:
   - New `pi.appendEntry()` for state persistence
   - New `pi.registerCommand()` for custom slash commands
   - New `pi.registerCustomMessageRenderer()` for custom TUI rendering
-  - `CommandContext` interface and handler patterns
+  - `HookCommandContext` interface and handler patterns
   - `HookMessage<T>` type
   - Updated event signatures (`SessionEventBase`, `before_compact`, etc.)
 - [ ] `docs/hooks-v2.md` - Review/merge or remove if obsolete

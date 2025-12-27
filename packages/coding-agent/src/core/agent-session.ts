@@ -28,9 +28,9 @@ import {
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import {
-	type CommandContext,
 	type ExecOptions,
 	execCommand,
+	type HookCommandContext,
 	type HookMessage,
 	type HookRunner,
 	type SessionEventResult,
@@ -512,18 +512,13 @@ export class AgentSession {
 
 		// Build command context
 		const cwd = process.cwd();
-		const ctx: CommandContext = {
+		const ctx: HookCommandContext = {
 			args,
 			ui: uiContext,
 			hasUI: this._hookRunner.getHasUI(),
 			cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this._modelRegistry,
-			sendMessage: (message, triggerTurn) => {
-				this.sendHookMessage(message, triggerTurn).catch(() => {
-					// Error handling is done in sendHookMessage
-				});
-			},
 			exec: (cmd: string, cmdArgs: string[], options?: ExecOptions) => execCommand(cmd, cmdArgs, cwd, options),
 		};
 
