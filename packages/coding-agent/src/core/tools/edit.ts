@@ -122,6 +122,11 @@ const editSchema = Type.Object({
 	newText: Type.String({ description: "New text to replace the old text with" }),
 });
 
+export interface EditToolDetails {
+	/** Unified diff of the changes made */
+	diff: string;
+}
+
 export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 	return {
 		name: "edit",
