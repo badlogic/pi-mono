@@ -592,6 +592,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
+	} else {
+		// Save system prompt to session file for new sessions
+		sessionManager.saveSystemPrompt(systemPrompt);
 	}
 
 	const session = new AgentSession({

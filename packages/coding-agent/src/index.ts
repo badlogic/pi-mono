@@ -121,6 +121,7 @@ export {
 	type SessionMessageEntry,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
+	type SystemPromptEntry,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
 export {

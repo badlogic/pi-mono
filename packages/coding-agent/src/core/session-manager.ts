@@ -47,8 +47,15 @@ export interface CompactionEntry {
 	tokensBefore: number;
 }
 
+export interface SystemPromptEntry {
+	type: "system_prompt";
+	timestamp: string;
+	systemPrompt: string;
+}
+
 export type SessionEntry =
 	| SessionHeader
+	| SystemPromptEntry
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
@@ -352,6 +359,16 @@ export class SessionManager {
 	}
 
 	saveCompaction(entry: CompactionEntry): void {
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	saveSystemPrompt(systemPrompt: string): void {
+		const entry: SystemPromptEntry = {
+			type: "system_prompt",
+			timestamp: new Date().toISOString(),
+			systemPrompt,
+		};
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}

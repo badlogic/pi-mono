@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **System prompt stored in session files**: The synthesized system prompt is now saved in JSONL session files, ensuring resumed sessions use the exact same prompt they were created with.
+
 ## [0.30.2] - 2025-12-26
 
 ### Changed
