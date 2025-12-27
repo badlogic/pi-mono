@@ -116,9 +116,11 @@ export function messageTransformer(messages: AppMessage[]): Message[] {
 			}
 			if (isHookMessage(m)) {
 				// Convert hook message to user message for LLM
+				// Normalize string content to array format
+				const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 				return {
 					role: "user",
-					content: m.content,
+					content,
 					timestamp: m.timestamp,
 				};
 			}
