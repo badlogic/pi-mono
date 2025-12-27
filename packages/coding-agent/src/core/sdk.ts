@@ -532,7 +532,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
+	// Custom tools can override built-ins - filter out shadowed built-ins
+	const customToolNames = new Set(customToolsResult.tools.map((lt) => lt.tool.name));
+	const filteredBuiltIns = builtInTools.filter((t) => !customToolNames.has(t.name));
+	let allToolsArray: Tool[] = [
+		...filteredBuiltIns,
+		...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool),
+	];
 	time("combineTools");
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];

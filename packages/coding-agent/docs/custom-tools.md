@@ -53,12 +53,12 @@ The tool is automatically discovered and available in your next pi session.
 
 Tools must be in a subdirectory with an `index.ts` entry point:
 
-| Location | Scope | Auto-discovered |
-|----------|-------|-----------------|
-| `~/.pi/agent/tools/*/index.ts` | Global (all projects) | Yes |
-| `.pi/tools/*/index.ts` | Project-local | Yes |
-| `settings.json` `customTools` array | Configured paths | Yes |
-| `--tool <path>` CLI flag | One-off/debugging | No |
+| Location | Scope | Auto-discovered | Can Override Built-ins |
+|----------|-------|-----------------|------------------------|
+| `~/.pi/agent/tools/*/index.ts` | Global (all projects) | Yes | Yes |
+| `.pi/tools/*/index.ts` | Project-local | Yes | No |
+| `settings.json` `customTools` array | Configured paths | Yes | Yes |
+| `--tool <path>` CLI flag | One-off/debugging | No | Yes |
 
 **Example structure:**
 ```
@@ -73,7 +73,16 @@ Tools must be in a subdirectory with an `index.ts` entry point:
 
 **Priority:** Later sources win on name conflicts. CLI `--tool` takes highest priority.
 
-**Reserved names:** Custom tools cannot use built-in tool names (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`).
+### Overriding Built-in Tools
+
+Global tools (`~/.pi/agent/tools/`) can override built-in tools like `bash`, `read`, `write`, etc. This allows you to:
+- Add features to existing tools (e.g., background process support for `bash`)
+- Customize tool behavior for your workflow
+- Prototype changes before contributing upstream
+
+Project-local tools (`.pi/tools/`) **cannot** override built-ins for security reasons - a malicious repository could otherwise hijack tool behavior.
+
+Overridden tools appear in the "Loaded custom tools" list at startup.
 
 ## Available Imports
 

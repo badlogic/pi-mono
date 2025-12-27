@@ -280,22 +280,29 @@ async function loadTool(
 	}
 }
 
+/** Tool path with override permission metadata */
+export interface ToolPathInfo {
+	path: string;
+	/** If true, this tool can override built-in tools (global user tools can, project-local cannot) */
+	canOverrideBuiltIns: boolean;
+}
+
 /**
  * Load all tools from configuration.
- * @param paths - Array of tool file paths
+ * @param pathInfos - Array of tool paths with override permissions
  * @param cwd - Current working directory for resolving relative paths
  * @param builtInToolNames - Names of built-in tools to check for conflicts
  */
 export async function loadCustomTools(
-	paths: string[],
+	pathInfos: ToolPathInfo[],
 	cwd: string,
 	builtInToolNames: string[],
 ): Promise<CustomToolsLoadResult> {
 	const tools: LoadedCustomTool[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
-	const seenNames = new Set<string>(builtInToolNames);
+	const builtInNames = new Set<string>(builtInToolNames);
+	const seenNames = new Set<string>();
 
-	// Shared API object - all tools get the same instance
 	const sharedApi: ToolAPI = {
 		cwd,
 		exec: (command: string, args: string[], options?: ExecOptions) => execCommand(command, args, cwd, options),
@@ -303,7 +310,7 @@ export async function loadCustomTools(
 		hasUI: false,
 	};
 
-	for (const toolPath of paths) {
+	for (const { path: toolPath, canOverrideBuiltIns } of pathInfos) {
 		const { tools: loadedTools, error } = await loadTool(toolPath, cwd, sharedApi);
 
 		if (error) {
@@ -313,16 +320,22 @@ export async function loadCustomTools(
 
 		if (loadedTools) {
 			for (const loadedTool of loadedTools) {
-				// Check for name conflicts
-				if (seenNames.has(loadedTool.tool.name)) {
+				const name = loadedTool.tool.name;
+
+				if (seenNames.has(name)) {
+					errors.push({ path: toolPath, error: `Tool "${name}" conflicts with another custom tool` });
+					continue;
+				}
+
+				if (builtInNames.has(name) && !canOverrideBuiltIns) {
 					errors.push({
 						path: toolPath,
-						error: `Tool name "${loadedTool.tool.name}" conflicts with existing tool`,
+						error: `Tool "${name}" cannot override built-in (only ~/.pi/agent/tools/ can)`,
 					});
 					continue;
 				}
 
-				seenNames.add(loadedTool.tool.name);
+				seenNames.add(name);
 				tools.push(loadedTool);
 			}
 		}
@@ -370,15 +383,9 @@ function discoverToolsInDir(dir: string): string[] {
 
 /**
  * Discover and load tools from standard locations:
- * 1. agentDir/tools/*.ts (global)
- * 2. cwd/.pi/tools/*.ts (project-local)
- *
- * Plus any explicitly configured paths from settings or CLI.
- *
- * @param configuredPaths - Explicit paths from settings.json and CLI --tool flags
- * @param cwd - Current working directory
- * @param builtInToolNames - Names of built-in tools to check for conflicts
- * @param agentDir - Agent config directory. Default: from getAgentDir()
+ * 1. agentDir/tools/ (global, can override built-ins)
+ * 2. cwd/.pi/tools/ (project-local, cannot override built-ins for security)
+ * 3. Configured paths (can override built-ins)
  */
 export async function discoverAndLoadCustomTools(
 	configuredPaths: string[],
@@ -386,30 +393,25 @@ export async function discoverAndLoadCustomTools(
 	builtInToolNames: string[],
 	agentDir: string = getAgentDir(),
 ): Promise<CustomToolsLoadResult> {
-	const allPaths: string[] = [];
+	const allPaths: ToolPathInfo[] = [];
 	const seen = new Set<string>();
 
-	// Helper to add paths without duplicates
-	const addPaths = (paths: string[]) => {
+	const addPaths = (paths: string[], canOverrideBuiltIns: boolean) => {
 		for (const p of paths) {
 			const resolved = path.resolve(p);
 			if (!seen.has(resolved)) {
 				seen.add(resolved);
-				allPaths.push(p);
+				allPaths.push({ path: p, canOverrideBuiltIns });
 			}
 		}
 	};
 
-	// 1. Global tools: agentDir/tools/
-	const globalToolsDir = path.join(agentDir, "tools");
-	addPaths(discoverToolsInDir(globalToolsDir));
-
-	// 2. Project-local tools: cwd/.pi/tools/
-	const localToolsDir = path.join(cwd, ".pi", "tools");
-	addPaths(discoverToolsInDir(localToolsDir));
-
-	// 3. Explicitly configured paths (can override/add)
-	addPaths(configuredPaths.map((p) => resolveToolPath(p, cwd)));
+	addPaths(discoverToolsInDir(path.join(agentDir, "tools")), true);
+	addPaths(discoverToolsInDir(path.join(cwd, ".pi", "tools")), false);
+	addPaths(
+		configuredPaths.map((p) => resolveToolPath(p, cwd)),
+		true,
+	);
 
 	return loadCustomTools(allPaths, cwd, builtInToolNames);
 }

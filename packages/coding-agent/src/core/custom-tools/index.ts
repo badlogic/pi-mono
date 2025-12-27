@@ -2,7 +2,7 @@
  * Custom tools module.
  */
 
-export { discoverAndLoadCustomTools, loadCustomTools } from "./loader.js";
+export { discoverAndLoadCustomTools, loadCustomTools, type ToolPathInfo } from "./loader.js";
 export type {
 	AgentToolUpdateCallback,
 	CustomAgentTool,
