@@ -341,8 +341,9 @@ export async function main(args: string[]) {
 	time("initTheme");
 
 	let scopedModels: ScopedModel[] = [];
-	if (parsed.models && parsed.models.length > 0) {
-		scopedModels = await resolveModelScope(parsed.models, modelRegistry);
+	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
+	if (modelPatterns && modelPatterns.length > 0) {
+		scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
 		time("resolveModelScope");
 	}
 

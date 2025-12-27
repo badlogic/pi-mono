@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
+
 ## [0.30.2] - 2025-12-26
 
 ### Changed
