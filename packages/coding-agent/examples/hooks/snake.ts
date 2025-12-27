@@ -2,6 +2,7 @@
  * Snake game hook - play snake with /snake command
  */
 
+import { isArrowDown, isArrowLeft, isArrowRight, isArrowUp, isEscape } from "@mariozechner/pi-tui";
 import type { HookAPI } from "../../src/core/hooks/types.js";
 
 const GAME_WIDTH = 40;
@@ -129,20 +130,20 @@ class SnakeComponent {
 
 	handleInput(data: string): void {
 		// ESC or q to quit
-		if (data === "\x1b" || data === "q" || data === "Q") {
+		if (isEscape(data) || data === "q" || data === "Q") {
 			this.dispose();
 			this.onClose();
 			return;
 		}
 
-		// Arrow keys
-		if (data === "\x1b[A" || data === "w" || data === "W") {
+		// Arrow keys or WASD
+		if (isArrowUp(data) || data === "w" || data === "W") {
 			if (this.state.direction !== "down") this.state.nextDirection = "up";
-		} else if (data === "\x1b[B" || data === "s" || data === "S") {
+		} else if (isArrowDown(data) || data === "s" || data === "S") {
 			if (this.state.direction !== "up") this.state.nextDirection = "down";
-		} else if (data === "\x1b[C" || data === "d" || data === "D") {
+		} else if (isArrowRight(data) || data === "d" || data === "D") {
 			if (this.state.direction !== "left") this.state.nextDirection = "right";
-		} else if (data === "\x1b[D" || data === "a" || data === "A") {
+		} else if (isArrowLeft(data) || data === "a" || data === "A") {
 			if (this.state.direction !== "right") this.state.nextDirection = "left";
 		}
 
