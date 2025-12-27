@@ -13,6 +13,8 @@ export type {
 	AgentEndEvent,
 	AgentStartEvent,
 	BashToolResultEvent,
+	ContextEvent,
+	ContextEventResult,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	ExecOptions,

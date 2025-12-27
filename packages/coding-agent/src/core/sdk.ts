@@ -589,6 +589,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: allToolsArray,
 		},
 		messageTransformer,
+		contextTransform: hookRunner
+			? async (messages) => {
+					return hookRunner.emitContext(messages);
+				}
+			: undefined,
 		queueMode: settingsManager.getQueueMode(),
 		transport: new ProviderTransport({
 			getApiKey: async () => {

@@ -2,10 +2,13 @@
  * Hook runner - executes hooks and manages their lifecycle.
  */
 
+import type { AppMessage } from "@mariozechner/pi-agent-core";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
 import type {
+	ContextEvent,
+	ContextEventResult,
 	HookError,
 	HookEvent,
 	HookEventContext,
@@ -303,5 +306,44 @@ export class HookRunner {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Emit a context event to all hooks.
+	 * Handlers are chained - each gets the previous handler's output (if any).
+	 * Returns the final modified messages, or undefined if no modifications.
+	 */
+	async emitContext(messages: AppMessage[]): Promise<AppMessage[] | undefined> {
+		const ctx = this.createContext();
+		let currentMessages = messages;
+		let modified = false;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("context");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: ContextEvent = { type: "context", messages: currentMessages };
+					const timeout = createTimeout(this.timeout);
+					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+					timeout.clear();
+
+					if (handlerResult && (handlerResult as ContextEventResult).messages) {
+						currentMessages = (handlerResult as ContextEventResult).messages!;
+						modified = true;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.emitError({
+						hookPath: hook.path,
+						event: "context",
+						error: message,
+					});
+				}
+			}
+		}
+
+		return modified ? currentMessages : undefined;
 	}
 }

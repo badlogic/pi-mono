@@ -147,6 +147,17 @@ export type SessionEvent =
 	  });
 
 /**
+ * Event data for context event.
+ * Fired before messages are sent to the LLM, allowing hooks to modify context non-destructively.
+ * Original session messages are NOT modified - only the messages sent to the LLM are affected.
+ */
+export interface ContextEvent {
+	type: "context";
+	/** Messages about to be sent to the LLM */
+	messages: AppMessage[];
+}
+
+/**
  * Event data for agent_start event.
  * Fired when an agent loop starts (once per user prompt).
  */
@@ -301,6 +312,7 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
  */
 export type HookEvent =
 	| SessionEvent
+	| ContextEvent
 	| AgentStartEvent
 	| AgentEndEvent
 	| TurnStartEvent
@@ -311,6 +323,15 @@ export type HookEvent =
 // ============================================================================
 // Event Results
 // ============================================================================
+
+/**
+ * Return type for context event handlers.
+ * Allows hooks to modify messages before they're sent to the LLM.
+ */
+export interface ContextEventResult {
+	/** Modified messages to send instead of the original */
+	messages?: AppMessage[];
+}
 
 /**
  * Return type for tool_call event handlers.
@@ -417,6 +438,8 @@ export interface RegisteredCommand {
 export interface HookAPI {
 	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
 	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
+	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
+	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult | void>): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;

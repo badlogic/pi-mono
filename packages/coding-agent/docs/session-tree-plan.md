@@ -227,7 +227,7 @@ interface HookUIContext {
 
 See also: `CustomEntry<T>` for storing hook state that does NOT participate in context.
 
-**New: `context` event (TODO)**
+**New: `context` event ✅**
 
 Fires before messages are sent to the LLM, allowing hooks to modify context non-destructively.
 
