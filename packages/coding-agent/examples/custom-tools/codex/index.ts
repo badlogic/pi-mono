@@ -14,43 +14,17 @@ import * as path from "node:path";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { type CustomAgentTool, type CustomToolFactory, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import {
+	Codex,
+	type CommandExecutionItem,
+	type ErrorItem,
+	type FileChangeItem,
+	type ReasoningItem,
+	type ThreadEvent,
+	type ThreadItem,
+	type Usage,
+} from "@openai/codex-sdk";
 import { Type } from "@sinclair/typebox";
-
-// Types from @openai/codex-sdk (dynamically imported at runtime)
-// Install with: npm install @openai/codex-sdk
-type CommandExecutionStatus = "in_progress" | "completed" | "failed";
-type CommandExecutionItem = {
-	id: string;
-	type: "command_execution";
-	command: string;
-	aggregated_output: string;
-	exit_code?: number;
-	status: CommandExecutionStatus;
-};
-type PatchChangeKind = "add" | "delete" | "update";
-type FileUpdateChange = { path: string; kind: PatchChangeKind };
-type PatchApplyStatus = "completed" | "failed";
-type FileChangeItem = {
-	id: string;
-	type: "file_change";
-	changes: FileUpdateChange[];
-	status: PatchApplyStatus;
-};
-type ReasoningItem = { id: string; type: "reasoning"; text: string };
-type ErrorItem = { id: string; type: "error"; message: string };
-type AgentMessageItem = { id: string; type: "agent_message"; text: string };
-type ThreadItem =
-	| AgentMessageItem
-	| ReasoningItem
-	| CommandExecutionItem
-	| FileChangeItem
-	| ErrorItem
-	| { id: string; type: string };
-type Usage = {
-	input_tokens: number;
-	cached_input_tokens: number;
-	output_tokens: number;
-};
 
 const CODEX_AUTH_PATH = path.join(os.homedir(), ".codex", "auth.json");
 const CODEX_CONFIG_PATH = path.join(os.homedir(), ".codex", "config.toml");
@@ -71,6 +45,8 @@ interface CodexToolDetails {
 	finalResponse: string;
 	error?: string;
 	status: "running" | "completed" | "failed";
+	prompt: string;
+	startTime: number;
 }
 
 function formatTokens(count: number): string {
@@ -78,6 +54,17 @@ function formatTokens(count: number): string {
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	return `${(count / 1000000).toFixed(1)}M`;
+}
+
+function formatElapsed(startTime: number): string {
+	const elapsed = Math.floor((Date.now() - startTime) / 1000);
+	if (elapsed < 60) return `${elapsed}s`;
+	const mins = Math.floor(elapsed / 60);
+	const secs = elapsed % 60;
+	if (mins < 60) return `${mins}m${secs}s`;
+	const hours = Math.floor(mins / 60);
+	const remainingMins = mins % 60;
+	return `${hours}h${remainingMins}m`;
 }
 
 function formatUsage(usage: Usage | null, model: string | null): string {
@@ -169,32 +156,7 @@ const factory: CustomToolFactory = (pi) => {
 
 		async execute(_toolCallId, rawParams, signal, onUpdate) {
 			const params = rawParams as CodexParamsType;
-
-			// Dynamically import the SDK (it's a large dependency)
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			let sdk: any;
-			try {
-				sdk = await import("@openai/codex-sdk");
-			} catch (err) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Failed to load @openai/codex-sdk. Install it with: npm install @openai/codex-sdk\nError: ${err instanceof Error ? err.message : String(err)}`,
-						},
-					],
-					details: {
-						threadId: null,
-						items: [],
-						usage: null,
-						model: null,
-						finalResponse: "",
-						error: "SDK not installed",
-						status: "failed",
-					},
-					isError: true,
-				};
-			}
+			const startTime = Date.now();
 
 			if (!hasCodexAuth()) {
 				return {
@@ -212,6 +174,8 @@ const factory: CustomToolFactory = (pi) => {
 						finalResponse: "",
 						error: "Not authenticated",
 						status: "failed",
+						prompt: params.prompt,
+						startTime,
 					},
 					isError: true,
 				};
@@ -224,6 +188,8 @@ const factory: CustomToolFactory = (pi) => {
 				model: params.model || getDefaultModel() || null,
 				finalResponse: "",
 				status: "running",
+				prompt: params.prompt,
+				startTime,
 			};
 
 			const emitUpdate = () => {
@@ -233,10 +199,23 @@ const factory: CustomToolFactory = (pi) => {
 				});
 			};
 
+			// Emit immediately so the UI shows progress from the start
+			emitUpdate();
+
+			// Set up a periodic timer to refresh elapsed time display
+			const refreshInterval = setInterval(() => {
+				if (currentDetails.status === "running") {
+					emitUpdate();
+				}
+			}, 1000);
+
+			// Track the events generator for cleanup
+			let events: AsyncGenerator<ThreadEvent> | null = null;
+
 			try {
 				// Don't pass apiKey - let the codex CLI use its own auth from ~/.codex/auth.json
 				// The SDK spawns the CLI as a subprocess, which handles OAuth tokens properly
-				const codex = new sdk.Codex({});
+				const codex = new Codex({});
 
 				const thread = codex.startThread({
 					model: params.model || getDefaultModel(),
@@ -250,7 +229,8 @@ const factory: CustomToolFactory = (pi) => {
 					approvalPolicy: "never",
 				});
 
-				const { events } = await thread.runStreamed(params.prompt, { signal });
+				const streamResult = await thread.runStreamed(params.prompt, { signal });
+				events = streamResult.events;
 
 				// Process events until turn completes or fails
 				eventLoop: for await (const event of events) {
@@ -366,6 +346,19 @@ const factory: CustomToolFactory = (pi) => {
 					details: currentDetails,
 					isError: true,
 				};
+			} finally {
+				// Always clean up resources
+				clearInterval(refreshInterval);
+
+				// Close the async generator to ensure the underlying CLI process is terminated.
+				// This is important when we break out of the loop early (on turn.completed/turn.failed/abort).
+				if (events?.return) {
+					try {
+						await events.return(undefined);
+					} catch {
+						// Ignore errors during cleanup
+					}
+				}
 			}
 		},
 
@@ -408,14 +401,21 @@ const factory: CustomToolFactory = (pi) => {
 			if (expanded) {
 				const container = new Container();
 
-				// Header
+				// Header with elapsed time
 				let header = `${icon} ${theme.fg("toolTitle", theme.bold("codex"))}`;
 				if (details.model) header += ` ${theme.fg("accent", details.model)}`;
+				header += ` ${theme.fg("dim", `(${formatElapsed(details.startTime)})`)}`;
 				if (details.threadId) header += ` ${theme.fg("dim", `[${details.threadId.slice(0, 8)}...]`)}`;
 				container.addChild(new Text(header, 0, 0));
 
+				// Show the prompt
+				container.addChild(new Spacer(1));
+				container.addChild(new Text(theme.fg("muted", "─── Prompt ───"), 0, 0));
+				container.addChild(new Text(theme.fg("toolOutput", details.prompt), 0, 0));
+
 				// Error message
 				if (details.error) {
+					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("error", `Error: ${details.error}`), 0, 0));
 				}
 
@@ -502,10 +502,7 @@ const factory: CustomToolFactory = (pi) => {
 			// Collapsed view
 			let text = `${icon} ${theme.fg("toolTitle", theme.bold("codex"))}`;
 			if (details.model) text += ` ${theme.fg("accent", details.model)}`;
-
-			if (details.error) {
-				text += `\n${theme.fg("error", `Error: ${details.error}`)}`;
-			}
+			text += ` ${theme.fg("dim", `(${formatElapsed(details.startTime)})`)}`;
 
 			// Show summary of activity
 			const activity: string[] = [];
@@ -515,18 +512,56 @@ const factory: CustomToolFactory = (pi) => {
 				activity.push(`${totalChanges} file${totalChanges > 1 ? "s" : ""}`);
 			}
 			if (activity.length > 0) {
-				text += ` ${theme.fg("dim", `(${activity.join(", ")})`)}`;
+				text += ` ${theme.fg("dim", `[${activity.join(", ")}]`)}`;
 			}
 
-			// Show preview of response
-			if (details.finalResponse) {
+			// Show prompt preview (truncated)
+			const promptPreview = details.prompt.length > 80 ? `${details.prompt.slice(0, 80)}...` : details.prompt;
+			text += `\n${theme.fg("toolOutput", promptPreview)}`;
+
+			if (details.error) {
+				text += `\n${theme.fg("error", `Error: ${details.error}`)}`;
+			}
+
+			// Show activity: commands or reasoning status
+			if (commands.length > 0) {
+				const completedCmds = commands.filter((c) => c.status !== "in_progress");
+				const runningCmd = commands.find((c) => c.status === "in_progress");
+
+				// Show last 3 completed commands
+				const recentCompleted = completedCmds.slice(-3);
+				for (const cmd of recentCompleted) {
+					const cmdIcon = cmd.status === "completed" ? theme.fg("success", "✓") : theme.fg("error", "✗");
+					const cmdText = cmd.command.length > 60 ? `${cmd.command.slice(0, 60)}...` : cmd.command;
+					text += `\n${cmdIcon} ${theme.fg("dim", cmdText)}`;
+				}
+
+				// Show current running command
+				if (runningCmd) {
+					const cmdText =
+						runningCmd.command.length > 60 ? `${runningCmd.command.slice(0, 60)}...` : runningCmd.command;
+					text += `\n${theme.fg("warning", "⏳")} ${theme.fg("toolOutput", cmdText)}`;
+				}
+			} else if (isRunning) {
+				// No commands yet - show what's happening
+				if (reasoning.length > 0) {
+					// Show that reasoning is in progress with a preview
+					const lastReasoning = reasoning[reasoning.length - 1];
+					const reasoningPreview =
+						lastReasoning.text.length > 60 ? `${lastReasoning.text.slice(0, 60)}...` : lastReasoning.text;
+					text += `\n${theme.fg("warning", "⏳")} ${theme.fg("muted", "thinking:")} ${theme.fg("dim", reasoningPreview)}`;
+				} else if (details.threadId) {
+					text += `\n${theme.fg("warning", "⏳")} ${theme.fg("muted", "thinking...")}`;
+				} else {
+					text += `\n${theme.fg("warning", "⏳")} ${theme.fg("muted", "starting...")}`;
+				}
+			}
+
+			// Show preview of final response only when completed
+			if (!isRunning && details.finalResponse) {
 				const preview =
 					details.finalResponse.length > 200 ? `${details.finalResponse.slice(0, 200)}...` : details.finalResponse;
-				text += `\n${theme.fg("toolOutput", preview.split("\n").slice(0, 5).join("\n"))}`;
-			} else if (isRunning) {
-				text += `\n${theme.fg("muted", "(running...)")}`;
-			} else {
-				text += `\n${theme.fg("muted", "(no output)")}`;
+				text += `\n${theme.fg("dim", preview.split("\n").slice(0, 3).join("\n"))}`;
 			}
 
 			// Usage stats
