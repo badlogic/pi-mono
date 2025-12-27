@@ -752,6 +752,20 @@ export class InteractiveMode {
 				return;
 			}
 
+			// Check if this is an immediate hook command (runs even during streaming)
+			if (text.startsWith("/") && this.session.hookRunner && this.session.isStreaming) {
+				const spaceIndex = text.indexOf(" ");
+				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+				const command = this.session.hookRunner.getCommand(commandName);
+				if (command?.immediate) {
+					// Execute immediate hook command right away
+					this.editor.addToHistory(text);
+					this.editor.setText("");
+					await this.session.prompt(text);
+					return;
+				}
+			}
+
 			// Queue message if agent is streaming
 			if (this.session.isStreaming) {
 				await this.session.queueMessage(text);
