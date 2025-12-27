@@ -256,6 +256,16 @@ const SubagentParams = Type.Object({
 
 const factory: CustomToolFactory = (pi) => {
 	fs.mkdirSync(RESULTS_DIR, { recursive: true });
+
+	// Clean up stale result files from previous sessions
+	for (const file of fs.readdirSync(RESULTS_DIR)) {
+		if (file.endsWith(".json")) {
+			try {
+				fs.unlinkSync(path.join(RESULTS_DIR, file));
+			} catch {}
+		}
+	}
+
 	const pendingPrompts = new Map<string, { dir: string; filePath: string }>();
 
 	const handleResultFile = (filename: string) => {
