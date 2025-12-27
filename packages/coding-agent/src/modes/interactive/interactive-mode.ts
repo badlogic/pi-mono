@@ -28,7 +28,7 @@ import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
-import { isBashExecutionMessage } from "../../core/messages.js";
+import { isBashExecutionMessage, isHookAppMessage } from "../../core/messages.js";
 import {
 	getLatestCompactionEntry,
 	type SessionContext,
@@ -1016,7 +1016,22 @@ export class InteractiveMode {
 			return;
 		}
 
-		if (message.role === "user") {
+		if (isHookAppMessage(message)) {
+			// Render as custom message if display is true
+			if (message.display) {
+				const entry = {
+					type: "custom_message" as const,
+					customType: message.customType,
+					content: message.content,
+					display: true,
+					id: "",
+					parentId: null,
+					timestamp: new Date().toISOString(),
+				};
+				const renderer = this.session.hookRunner?.getCustomMessageRenderer(message.customType);
+				this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
+			}
+		} else if (message.role === "user") {
 			const textContent = this.getUserMessageText(message);
 			if (textContent) {
 				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
