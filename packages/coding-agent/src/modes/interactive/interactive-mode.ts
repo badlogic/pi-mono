@@ -769,7 +769,10 @@ export class InteractiveMode {
 				break;
 
 			case "message_start":
-				if (event.message.role === "user") {
+				if (isHookAppMessage(event.message)) {
+					this.addMessageToChat(event.message);
+					this.ui.requestRender();
+				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
 					this.editor.setText("");
 					this.updatePendingMessagesDisplay();
