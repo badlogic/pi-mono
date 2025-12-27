@@ -34,7 +34,7 @@
   - New `pi.registerCustomMessageRenderer(customType, renderer)` to register custom renderers for `CustomMessageEntry`
   - `CustomMessageRenderer` type: `(entry, options, theme) => Component | null`
   - Renderers return inner content; the TUI wraps it in a styled Box
-  - New types: `HookMessage<T>`, `RegisteredCommand`, `CommandContext`
+  - New types: `HookMessage<T>`, `RegisteredCommand`, `HookCommandContext`
   - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
