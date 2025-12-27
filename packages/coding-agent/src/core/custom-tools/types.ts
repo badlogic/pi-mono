@@ -9,6 +9,7 @@ import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mario
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type { SessionEntry } from "../session-manager.js";
 
@@ -18,22 +19,8 @@ export type ToolUIContext = HookUIContext;
 /** Re-export for custom tools to use in execute signature */
 export type { AgentToolUpdateCallback };
 
-export interface ExecResult {
-	stdout: string;
-	stderr: string;
-	code: number;
-	/** True if the process was killed due to signal or timeout */
-	killed?: boolean;
-}
-
-export interface ExecOptions {
-	/** AbortSignal to cancel the process */
-	signal?: AbortSignal;
-	/** Timeout in milliseconds */
-	timeout?: number;
-	/** Working directory */
-	cwd?: string;
-}
+// Re-export for backward compatibility
+export type { ExecOptions, ExecResult } from "../exec.js";
 
 /** API passed to custom tool factory (stable across session changes) */
 export interface ToolAPI {

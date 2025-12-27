@@ -1028,7 +1028,7 @@ export class InteractiveMode {
 					parentId: null,
 					timestamp: new Date().toISOString(),
 				};
-				const renderer = this.session.hookRunner?.getCustomMessageRenderer(message.customType);
+				const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
 				this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
 			}
 		} else if (message.role === "user") {
@@ -1077,7 +1077,7 @@ export class InteractiveMode {
 			// Check if this is a custom_message entry
 			if (entry?.type === "custom_message") {
 				if (entry.display) {
-					const renderer = this.session.hookRunner?.getCustomMessageRenderer(entry.customType);
+					const renderer = this.session.hookRunner?.getMessageRenderer(entry.customType);
 					this.chatContainer.addChild(new CustomMessageComponent(entry, renderer));
 				}
 				continue;
@@ -1270,6 +1270,8 @@ export class InteractiveMode {
 			} else if (child instanceof CompactionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			} else if (child instanceof BashExecutionComponent) {
+				child.setExpanded(this.toolOutputExpanded);
+			} else if (child instanceof CustomMessageComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}
