@@ -44,14 +44,12 @@ export function agentLoop(
  * Continue an agent loop from the current context without adding a new message.
  * Used for retry after overflow - context already has user message or tool results.
  * Throws if the last message is not a user message or tool result.
- * @param emitLastMessage If true, emit message_start/message_end for the last message in context
  */
 export function agentLoopContinue(
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal?: AbortSignal,
 	streamFn?: typeof streamSimple,
-	emitLastMessage?: boolean,
 ): EventStream<AgentEvent, AgentContext["messages"]> {
 	// Validate that we can continue from this context
 	const lastMessage = context.messages[context.messages.length - 1];
@@ -70,12 +68,7 @@ export function agentLoopContinue(
 
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
-
-		// Optionally emit events for the last message (used when message was added outside the loop)
-		if (emitLastMessage) {
-			stream.push({ type: "message_start", message: lastMessage });
-			stream.push({ type: "message_end", message: lastMessage });
-		}
+		// No user message events - we're continuing from existing context
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
 	})();

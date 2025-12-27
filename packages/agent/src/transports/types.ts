@@ -28,10 +28,5 @@ export interface AgentTransport {
 	): AsyncIterable<AgentEvent>;
 
 	/** Continue from current context (no new user message) */
-	continue(
-		messages: Message[],
-		config: AgentRunConfig,
-		signal?: AbortSignal,
-		emitLastMessage?: boolean,
-	): AsyncIterable<AgentEvent>;
+	continue(messages: Message[], config: AgentRunConfig, signal?: AbortSignal): AsyncIterable<AgentEvent>;
 }
