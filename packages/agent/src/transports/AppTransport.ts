@@ -380,7 +380,7 @@ export class AppTransport implements AgentTransport {
 		}
 	}
 
-	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal) {
+	async *continue(messages: Message[], cfg: AgentRunConfig, signal?: AbortSignal, emitLastMessage?: boolean) {
 		const authToken = await this.options.getAuthToken();
 		if (!authToken) {
 			throw new Error("Auth token is required for AppTransport");
@@ -390,7 +390,7 @@ export class AppTransport implements AgentTransport {
 		const context = this.buildContext(messages, cfg);
 		const pc = this.buildLoopConfig(cfg);
 
-		for await (const ev of agentLoopContinue(context, pc, signal, streamFn as any)) {
+		for await (const ev of agentLoopContinue(context, pc, signal, streamFn as any, emitLastMessage)) {
 			yield ev;
 		}
 	}
