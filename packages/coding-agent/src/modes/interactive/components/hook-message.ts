@@ -1,7 +1,7 @@
 import type { TextContent } from "@mariozechner/pi-ai";
 import { Box, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import type { HookMessage } from "packages/coding-agent/src/core/messages.js";
 import type { HookMessageRenderer } from "../../../core/hooks/types.js";
+import type { HookMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
