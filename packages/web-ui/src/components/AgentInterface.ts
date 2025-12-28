@@ -137,7 +137,14 @@ export class AgentInterface extends LitElement {
 				case "turn_start":
 				case "turn_end":
 				case "agent_start":
+					this.requestUpdate();
+					break;
 				case "agent_end":
+					// Clear streaming container when agent finishes
+					if (this._streamingContainer) {
+						this._streamingContainer.isStreaming = false;
+						this._streamingContainer.setMessage(null, true);
+					}
 					this.requestUpdate();
 					break;
 				case "message_update":
