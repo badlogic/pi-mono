@@ -11,7 +11,10 @@ import type {
 } from "@mariozechner/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
 
-export type StreamFn = typeof streamSimple;
+/** Stream function - can return sync or Promise for async config lookup */
+export type StreamFn = (
+	...args: Parameters<typeof streamSimple>
+) => ReturnType<typeof streamSimple> | Promise<ReturnType<typeof streamSimple>>;
 
 /**
  * Configuration for the agent loop.

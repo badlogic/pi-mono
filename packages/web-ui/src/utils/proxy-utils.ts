@@ -114,13 +114,16 @@ export function isCorsError(error: unknown): boolean {
 
 /**
  * Create a streamFn that applies CORS proxy when needed.
+ * Reads proxy settings from storage on each call.
  *
- * @param proxyUrl - CORS proxy URL, or undefined to disable
+ * @param getProxyUrl - Async function to get current proxy URL (or undefined if disabled)
  * @returns A streamFn compatible with Agent's streamFn option
  */
-export function createStreamFn(proxyUrl?: string) {
-	return (model: Model<any>, context: Context, options?: SimpleStreamOptions) => {
+export function createStreamFn(getProxyUrl: () => Promise<string | undefined>) {
+	return async (model: Model<any>, context: Context, options?: SimpleStreamOptions) => {
 		const apiKey = options?.apiKey;
+		const proxyUrl = await getProxyUrl();
+
 		if (!apiKey || !proxyUrl) {
 			return streamSimple(model, context, options);
 		}

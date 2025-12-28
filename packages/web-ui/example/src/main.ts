@@ -161,10 +161,6 @@ const createAgent = async (initialState?: Partial<AgentState>) => {
 		agentUnsubscribe();
 	}
 
-	// Read proxy settings for streamFn
-	const proxyEnabled = await storage.settings.get<boolean>("proxy.enabled");
-	const proxyUrl = proxyEnabled ? (await storage.settings.get<string>("proxy.url")) || undefined : undefined;
-
 	agent = new Agent({
 		initialState: initialState || {
 			systemPrompt: `You are a helpful AI assistant with access to various tools.
@@ -186,8 +182,11 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 			const key = await storage.providerKeys.get(provider);
 			return key ?? undefined;
 		},
-		// Use streamFn with CORS proxy support
-		streamFn: createStreamFn(proxyUrl),
+		// Use streamFn with CORS proxy support (reads settings on each call)
+		streamFn: createStreamFn(async () => {
+			const enabled = await storage.settings.get<boolean>("proxy.enabled");
+			return enabled ? (await storage.settings.get<string>("proxy.url")) || undefined : undefined;
+		}),
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {
