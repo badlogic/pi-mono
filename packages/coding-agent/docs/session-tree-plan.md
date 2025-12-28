@@ -128,7 +128,7 @@ Behavior:
   - [x] `registerCustomMessageRenderer(customType, renderer)` in HookAPI for custom renderers
   - [x] Renderer returns inner Component, TUI wraps in styled Box
 
-### Hook API Changes
+### Hook API Changes ✅
 
 **Renamed:**
 - `renderCustomMessage()` → `registerCustomMessageRenderer()`
@@ -212,7 +212,7 @@ Wiring (all in AgentSession.prompt()):
 - [x] If handler returns undefined, return early (no LLM call)
 - [x] Works for all modes (interactive, RPC, print) via shared AgentSession
 
-**New: `ui.custom()`**
+**New: `ui.custom()` ✅**
 
 For arbitrary hook UI with keyboard focus:
 
