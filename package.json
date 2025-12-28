@@ -20,6 +20,9 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run check",
 		"publish": "npm run prepublishOnly && npm publish -ws --access public",
 		"publish:dry": "npm run prepublishOnly && npm publish -ws --access public --dry-run",
+		"release:patch": "node scripts/release.mjs patch",
+		"release:minor": "node scripts/release.mjs minor",
+		"release:major": "node scripts/release.mjs major",
 		"prepare": "husky"
 	},
 	"devDependencies": {
