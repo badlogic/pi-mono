@@ -442,8 +442,7 @@ export interface HookCommandContext {
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
-	/** If true, command runs during streaming instead of being queued */
-	allowDuringStreaming?: boolean;
+
 	handler: (ctx: HookCommandContext) => Promise<void>;
 }
 
@@ -456,9 +455,9 @@ export interface HookAPI {
 	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
 	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
 	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult | void>): void;
-	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
 	on(
 		event: "before_agent_start",
+		// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
 		handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult | void>,
 	): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
@@ -527,10 +526,7 @@ export interface HookAPI {
 	 * Register a custom slash command.
 	 * Handler receives HookCommandContext.
 	 */
-	registerCommand(
-		name: string,
-		options: { description?: string; allowDuringStreaming?: boolean; handler: RegisteredCommand["handler"] },
-	): void;
+	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
 
 	/**
 	 * Execute a shell command and return stdout/stderr/code.

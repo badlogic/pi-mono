@@ -744,13 +744,13 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Check if this hook command can run during streaming (not queued)
-			if (text.startsWith("/") && this.session.hookRunner && this.session.isStreaming) {
+			// Hook commands always run immediately, even during streaming
+			// (if they need to interact with LLM, they use pi.sendMessage which handles queueing)
+			if (text.startsWith("/") && this.session.hookRunner) {
 				const spaceIndex = text.indexOf(" ");
 				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 				const command = this.session.hookRunner.getCommand(commandName);
-				if (command?.allowDuringStreaming) {
-					// Execute hook command right away
+				if (command) {
 					this.editor.addToHistory(text);
 					this.editor.setText("");
 					await this.session.prompt(text);
@@ -758,7 +758,7 @@ export class InteractiveMode {
 				}
 			}
 
-			// Queue message if agent is streaming
+			// Queue regular messages if agent is streaming
 			if (this.session.isStreaming) {
 				await this.session.queueMessage(text);
 				this.updatePendingMessagesDisplay();
