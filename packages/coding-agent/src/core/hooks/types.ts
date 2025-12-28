@@ -5,7 +5,7 @@
  * and interact with the user via UI primitives.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
@@ -151,7 +151,7 @@ export type SessionEvent =
  * Event data for context event.
  * Fired before each LLM call, allowing hooks to modify context non-destructively.
  * Original session messages are NOT modified - only the messages sent to the LLM are affected.
- * Messages are already in LLM format (Message[], not AppMessage[]).
+ * Messages are already in LLM format (Message[], not AgentMessage[]).
  */
 export interface ContextEvent {
 	type: "context";
@@ -172,7 +172,7 @@ export interface AgentStartEvent {
  */
 export interface AgentEndEvent {
 	type: "agent_end";
-	messages: AppMessage[];
+	messages: AgentMessage[];
 }
 
 /**
@@ -190,7 +190,7 @@ export interface TurnStartEvent {
 export interface TurnEndEvent {
 	type: "turn_end";
 	turnIndex: number;
-	message: AppMessage;
+	message: AgentMessage;
 	toolResults: ToolResultMessage[];
 }
 

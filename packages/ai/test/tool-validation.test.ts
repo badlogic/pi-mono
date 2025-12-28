@@ -1,4 +1,4 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import addFormatsModule from "ajv-formats";
 
@@ -7,7 +7,7 @@ const Ajv = (AjvModule as any).default || AjvModule;
 const addFormats = (addFormatsModule as any).default || addFormatsModule;
 
 import { describe, expect, it } from "vitest";
-import type { AgentTool } from "../src/agent/types.js";
+import type { Tool } from "../src/types.js";
 
 describe("Tool Validation with TypeBox and AJV", () => {
 	// Define a test tool with TypeBox schema
@@ -18,20 +18,11 @@ describe("Tool Validation with TypeBox and AJV", () => {
 		tags: Type.Optional(Type.Array(Type.String())),
 	});
 
-	type TestParams = Static<typeof testSchema>;
-
-	const testTool: AgentTool<typeof testSchema, void> = {
-		label: "Test Tool",
+	const testTool = {
 		name: "test_tool",
 		description: "A test tool for validation",
 		parameters: testSchema,
-		execute: async (_toolCallId, args) => {
-			return {
-				content: [{ type: "text", text: `Processed: ${args.name}, ${args.age}, ${args.email}` }],
-				details: undefined,
-			};
-		},
-	};
+	} satisfies Tool<typeof testSchema>;
 
 	// Create AJV instance for validation
 	const ajv = new Ajv({ allErrors: true });
@@ -114,27 +105,5 @@ describe("Tool Validation with TypeBox and AJV", () => {
 			expect(errors).toContain("age: must be <= 150");
 			expect(errors).toContain('email: must match format "email"');
 		}
-	});
-
-	it("should have type-safe execute function", async () => {
-		const validInput = {
-			name: "John Doe",
-			age: 30,
-			email: "john@example.com",
-		};
-
-		// Validate and execute
-		const validate = ajv.compile(testTool.parameters);
-		const isValid = validate(validInput);
-		expect(isValid).toBe(true);
-
-		const result = await testTool.execute("test-id", validInput as TestParams);
-
-		const textOutput = result.content
-			.filter((c: any) => c.type === "text")
-			.map((c: any) => c.text)
-			.join("\n");
-		expect(textOutput).toBe("Processed: John Doe, 30, john@example.com");
-		expect(result.details).toBeUndefined();
 	});
 });

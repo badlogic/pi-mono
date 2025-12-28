@@ -1,4 +1,4 @@
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Usage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { readFileSync } from "fs";
@@ -48,7 +48,7 @@ function createMockUsage(input: number, output: number, cacheRead = 0, cacheWrit
 	};
 }
 
-function createUserMessage(text: string): AppMessage {
+function createUserMessage(text: string): AgentMessage {
 	return { role: "user", content: text, timestamp: Date.now() };
 }
 
@@ -78,7 +78,7 @@ beforeEach(() => {
 	resetEntryCounter();
 });
 
-function createMessageEntry(message: AppMessage): SessionMessageEntry {
+function createMessageEntry(message: AgentMessage): SessionMessageEntry {
 	const id = `test-id-${entryCounter++}`;
 	const entry: SessionMessageEntry = {
 		type: "message",

@@ -5,7 +5,7 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
@@ -161,7 +161,7 @@ export type RpcResponse =
 	  }
 
 	// Messages
-	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AppMessage[] } }
+	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentState, AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -1051,7 +1051,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: AppMessage): void {
+	private addMessageToChat(message: AgentMessage): void {
 		if (isBashExecutionMessage(message)) {
 			const component = new BashExecutionComponent(message.command, this.ui);
 			if (message.output) {

@@ -13,7 +13,14 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type {
+	Agent,
+	AgentEvent,
+	AgentMessage,
+	AgentState,
+	Attachment,
+	ThinkingLevel,
+} from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
@@ -403,7 +410,7 @@ export class AgentSession {
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
-	get messages(): AppMessage[] {
+	get messages(): AgentMessage[] {
 		return this.agent.state.messages;
 	}
 

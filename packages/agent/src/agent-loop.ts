@@ -1,24 +1,41 @@
-import { streamSimple } from "../stream.js";
-import type { AssistantMessage, Context, Message, ToolResultMessage, UserMessage } from "../types.js";
-import { EventStream } from "../utils/event-stream.js";
-import { validateToolArguments } from "../utils/validation.js";
-import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult, QueuedMessage } from "./types.js";
+/**
+ * Agent loop that works with AgentMessage throughout.
+ * Transforms to Message[] only at the LLM call boundary.
+ */
+
+import {
+	type AssistantMessage,
+	type Context,
+	EventStream,
+	streamSimple,
+	type ToolResultMessage,
+	validateToolArguments,
+} from "@mariozechner/pi-ai";
+import type {
+	AgentContext,
+	AgentEvent,
+	AgentLoopConfig,
+	AgentMessage,
+	AgentTool,
+	AgentToolResult,
+	StreamFn,
+} from "./types.js";
 
 /**
- * Start an agent loop with a new user message.
+ * Start an agent loop with a new prompt message.
  * The prompt is added to the context and events are emitted for it.
  */
 export function agentLoop(
-	prompt: UserMessage,
+	prompt: AgentMessage,
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal?: AbortSignal,
-	streamFn?: typeof streamSimple,
-): EventStream<AgentEvent, AgentContext["messages"]> {
+	streamFn?: StreamFn,
+): EventStream<AgentEvent, AgentMessage[]> {
 	const stream = createAgentStream();
 
 	(async () => {
-		const newMessages: AgentContext["messages"] = [prompt];
+		const newMessages: AgentMessage[] = [prompt];
 		const currentContext: AgentContext = {
 			...context,
 			messages: [...context.messages, prompt],
@@ -37,38 +54,34 @@ export function agentLoop(
 
 /**
  * Continue an agent loop from the current context without adding a new message.
- * Used for retry after overflow - context already has user message or tool results.
- * Throws if the last message is not a user message or tool result.
- */
-/**
- * Continue an agent loop from the current context without adding a new message.
- * Used for retry after overflow - context already has user message or tool results.
- * Throws if the last message is not a user message or tool result.
+ * Used for retries - context already has user message or tool results.
+ *
+ * **Important:** The last message in context must convert to a `user` or `toolResult` message
+ * via `convertToLlm`. If it doesn't, the LLM provider will reject the request.
+ * This cannot be validated here since `convertToLlm` is only called once per turn.
  */
 export function agentLoopContinue(
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal?: AbortSignal,
-	streamFn?: typeof streamSimple,
-): EventStream<AgentEvent, AgentContext["messages"]> {
-	// Validate that we can continue from this context
-	const lastMessage = context.messages[context.messages.length - 1];
-	if (!lastMessage) {
+	streamFn?: StreamFn,
+): EventStream<AgentEvent, AgentMessage[]> {
+	if (context.messages.length === 0) {
 		throw new Error("Cannot continue: no messages in context");
 	}
-	if (lastMessage.role !== "user" && lastMessage.role !== "toolResult") {
-		throw new Error(`Cannot continue from message role: ${lastMessage.role}. Expected 'user' or 'toolResult'.`);
+
+	if (context.messages[context.messages.length - 1].role === "assistant") {
+		throw new Error("Cannot continue from message role: assistant");
 	}
 
 	const stream = createAgentStream();
 
 	(async () => {
-		const newMessages: AgentContext["messages"] = [];
+		const newMessages: AgentMessage[] = [];
 		const currentContext: AgentContext = { ...context };
 
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
-		// No user message events - we're continuing from existing context
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
 	})();
@@ -76,28 +89,28 @@ export function agentLoopContinue(
 	return stream;
 }
 
-function createAgentStream(): EventStream<AgentEvent, AgentContext["messages"]> {
-	return new EventStream<AgentEvent, AgentContext["messages"]>(
+function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
+	return new EventStream<AgentEvent, AgentMessage[]>(
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
 }
 
 /**
- * Shared loop logic for both agentLoop and agentLoopContinue.
+ * Main loop logic shared by agentLoop and agentLoopContinue.
  */
 async function runLoop(
 	currentContext: AgentContext,
-	newMessages: AgentContext["messages"],
+	newMessages: AgentMessage[],
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
-	stream: EventStream<AgentEvent, AgentContext["messages"]>,
-	streamFn?: typeof streamSimple,
+	stream: EventStream<AgentEvent, AgentMessage[]>,
+	streamFn?: StreamFn,
 ): Promise<void> {
 	let hasMoreToolCalls = true;
 	let firstTurn = true;
-	let queuedMessages: QueuedMessage<any>[] = (await config.getQueuedMessages?.()) || [];
-	let queuedAfterTools: QueuedMessage<any>[] | null = null;
+	let queuedMessages: AgentMessage[] = (await config.getQueuedMessages?.()) || [];
+	let queuedAfterTools: AgentMessage[] | null = null;
 
 	while (hasMoreToolCalls || queuedMessages.length > 0) {
 		if (!firstTurn) {
@@ -106,15 +119,13 @@ async function runLoop(
 			firstTurn = false;
 		}
 
-		// Process queued messages first (inject before next assistant response)
+		// Process queued messages (inject before next assistant response)
 		if (queuedMessages.length > 0) {
-			for (const { original, llm } of queuedMessages) {
-				stream.push({ type: "message_start", message: original });
-				stream.push({ type: "message_end", message: original });
-				if (llm) {
-					currentContext.messages.push(llm);
-					newMessages.push(llm);
-				}
+			for (const message of queuedMessages) {
+				stream.push({ type: "message_start", message });
+				stream.push({ type: "message_end", message });
+				currentContext.messages.push(message);
+				newMessages.push(message);
 			}
 			queuedMessages = [];
 		}
@@ -124,7 +135,6 @@ async function runLoop(
 		newMessages.push(message);
 
 		if (message.stopReason === "error" || message.stopReason === "aborted") {
-			// Stop the loop on error or abort
 			stream.push({ type: "turn_end", message, toolResults: [] });
 			stream.push({ type: "agent_end", messages: newMessages });
 			stream.end(newMessages);
@@ -137,7 +147,6 @@ async function runLoop(
 
 		const toolResults: ToolResultMessage[] = [];
 		if (hasMoreToolCalls) {
-			// Execute tool calls
 			const toolExecution = await executeToolCalls(
 				currentContext.tools,
 				message,
@@ -147,10 +156,14 @@ async function runLoop(
 			);
 			toolResults.push(...toolExecution.toolResults);
 			queuedAfterTools = toolExecution.queuedMessages ?? null;
-			currentContext.messages.push(...toolResults);
-			newMessages.push(...toolResults);
+
+			for (const result of toolResults) {
+				currentContext.messages.push(result);
+				newMessages.push(result);
+			}
 		}
-		stream.push({ type: "turn_end", message, toolResults: toolResults });
+
+		stream.push({ type: "turn_end", message, toolResults });
 
 		// Get queued messages after turn completes
 		if (queuedAfterTools && queuedAfterTools.length > 0) {
@@ -165,41 +178,44 @@ async function runLoop(
 	stream.end(newMessages);
 }
 
-// Helper functions
+/**
+ * Stream an assistant response from the LLM.
+ * This is where AgentMessage[] gets transformed to Message[] for the LLM.
+ */
 async function streamAssistantResponse(
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
-	stream: EventStream<AgentEvent, AgentContext["messages"]>,
-	streamFn?: typeof streamSimple,
+	stream: EventStream<AgentEvent, AgentMessage[]>,
+	streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
-	// Convert AgentContext to Context for streamSimple
-	// Use a copy of messages to avoid mutating the original context
-	const processedMessages = config.preprocessor
-		? await config.preprocessor(context.messages, signal)
-		: [...context.messages];
-	const processedContext: Context = {
+	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
+	let messages = context.messages;
+	if (config.transformContext) {
+		messages = await config.transformContext(messages, signal);
+	}
+
+	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
+	const llmMessages = await config.convertToLlm(messages);
+
+	// Build LLM context
+	const llmContext: Context = {
 		systemPrompt: context.systemPrompt,
-		messages: [...processedMessages].map((m) => {
-			if (m.role === "toolResult") {
-				// biome-ignore lint/correctness/noUnusedVariables: fine here
-				const { details, ...rest } = m;
-				return rest;
-			} else {
-				return m;
-			}
-		}),
-		tools: context.tools, // AgentTool extends Tool, so this works
+		messages: llmMessages,
+		tools: context.tools,
 	};
 
-	// Use custom stream function if provided, otherwise use default streamSimple
 	const streamFunction = streamFn || streamSimple;
 
-	// Resolve API key for every assistant response (important for expiring tokens)
+	// Resolve API key (important for expiring tokens)
 	const resolvedApiKey =
 		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
 
-	const response = await streamFunction(config.model, processedContext, { ...config, apiKey: resolvedApiKey, signal });
+	const response = streamFunction(config.model, llmContext, {
+		...config,
+		apiKey: resolvedApiKey,
+		signal,
+	});
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
@@ -225,7 +241,11 @@ async function streamAssistantResponse(
 				if (partialMessage) {
 					partialMessage = event.partial;
 					context.messages[context.messages.length - 1] = partialMessage;
-					stream.push({ type: "message_update", assistantMessageEvent: event, message: { ...partialMessage } });
+					stream.push({
+						type: "message_update",
+						assistantMessageEvent: event,
+						message: { ...partialMessage },
+					});
 				}
 				break;
 
@@ -249,16 +269,19 @@ async function streamAssistantResponse(
 	return await response.result();
 }
 
-async function executeToolCalls<T>(
-	tools: AgentTool<any, T>[] | undefined,
+/**
+ * Execute tool calls from an assistant message.
+ */
+async function executeToolCalls(
+	tools: AgentTool<any>[] | undefined,
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
-	stream: EventStream<AgentEvent, Message[]>,
+	stream: EventStream<AgentEvent, AgentMessage[]>,
 	getQueuedMessages?: AgentLoopConfig["getQueuedMessages"],
-): Promise<{ toolResults: ToolResultMessage<T>[]; queuedMessages?: QueuedMessage<any>[] }> {
+): Promise<{ toolResults: ToolResultMessage[]; queuedMessages?: AgentMessage[] }> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
-	const results: ToolResultMessage<any>[] = [];
-	let queuedMessages: QueuedMessage<any>[] | undefined;
+	const results: ToolResultMessage[] = [];
+	let queuedMessages: AgentMessage[] | undefined;
 
 	for (let index = 0; index < toolCalls.length; index++) {
 		const toolCall = toolCalls[index];
@@ -271,16 +294,14 @@ async function executeToolCalls<T>(
 			args: toolCall.arguments,
 		});
 
-		let result: AgentToolResult<T>;
+		let result: AgentToolResult<any>;
 		let isError = false;
 
 		try {
 			if (!tool) throw new Error(`Tool ${toolCall.name} not found`);
 
-			// Validate arguments using shared validation function
 			const validatedArgs = validateToolArguments(tool, toolCall);
 
-			// Execute with validated, typed arguments, passing update callback
 			result = await tool.execute(toolCall.id, validatedArgs, signal, (partialResult) => {
 				stream.push({
 					type: "tool_execution_update",
@@ -293,7 +314,7 @@ async function executeToolCalls<T>(
 		} catch (e) {
 			result = {
 				content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
-				details: {} as T,
+				details: {},
 			};
 			isError = true;
 		}
@@ -306,7 +327,7 @@ async function executeToolCalls<T>(
 			isError,
 		});
 
-		const toolResultMessage: ToolResultMessage<T> = {
+		const toolResultMessage: ToolResultMessage = {
 			role: "toolResult",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
@@ -320,6 +341,7 @@ async function executeToolCalls<T>(
 		stream.push({ type: "message_start", message: toolResultMessage });
 		stream.push({ type: "message_end", message: toolResultMessage });
 
+		// Check for queued messages - skip remaining tools if user interrupted
 		if (getQueuedMessages) {
 			const queued = await getQueuedMessages();
 			if (queued.length > 0) {
@@ -336,13 +358,13 @@ async function executeToolCalls<T>(
 	return { toolResults: results, queuedMessages };
 }
 
-function skipToolCall<T>(
+function skipToolCall(
 	toolCall: Extract<AssistantMessage["content"][number], { type: "toolCall" }>,
-	stream: EventStream<AgentEvent, Message[]>,
-): ToolResultMessage<T> {
-	const result: AgentToolResult<T> = {
+	stream: EventStream<AgentEvent, AgentMessage[]>,
+): ToolResultMessage {
+	const result: AgentToolResult<any> = {
 		content: [{ type: "text", text: "Skipped due to queued user message." }],
-		details: {} as T,
+		details: {},
 	};
 
 	stream.push({
@@ -359,12 +381,12 @@ function skipToolCall<T>(
 		isError: true,
 	});
 
-	const toolResultMessage: ToolResultMessage<T> = {
+	const toolResultMessage: ToolResultMessage = {
 		role: "toolResult",
 		toolCallId: toolCall.id,
 		toolName: toolCall.name,
 		content: result.content,
-		details: result.details,
+		details: {},
 		isError: true,
 		timestamp: Date.now(),
 	};

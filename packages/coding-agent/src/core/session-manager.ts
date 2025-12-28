@@ -1,4 +1,4 @@
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { randomUUID } from "crypto";
 import {
@@ -36,7 +36,7 @@ export interface SessionEntryBase {
 
 export interface SessionMessageEntry extends SessionEntryBase {
 	type: "message";
-	message: AppMessage;
+	message: AgentMessage;
 }
 
 export interface ThinkingLevelChangeEntry extends SessionEntryBase {
@@ -130,7 +130,7 @@ export interface SessionTreeNode {
 }
 
 export interface SessionContext {
-	messages: AppMessage[];
+	messages: AgentMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
 }
@@ -154,7 +154,7 @@ export const SUMMARY_SUFFIX = `
 </summary>`;
 
 /** Exported for compaction.test.ts */
-export function createSummaryMessage(summary: string, timestamp: string): AppMessage {
+export function createSummaryMessage(summary: string, timestamp: string): AgentMessage {
 	return {
 		role: "user",
 		content: SUMMARY_PREFIX + summary + SUMMARY_SUFFIX,
@@ -162,8 +162,8 @@ export function createSummaryMessage(summary: string, timestamp: string): AppMes
 	};
 }
 
-/** Convert CustomMessageEntry to AppMessage format */
-function createCustomMessage(entry: CustomMessageEntry): AppMessage {
+/** Convert CustomMessageEntry to AgentMessage format */
+function createCustomMessage(entry: CustomMessageEntry): AgentMessage {
 	return {
 		role: "user",
 		content: entry.content,
@@ -323,7 +323,7 @@ export function buildSessionContext(
 	// 1. Emit summary first (entry = compaction)
 	// 2. Emit kept messages (from firstKeptEntryId up to compaction)
 	// 3. Emit messages after compaction
-	const messages: AppMessage[] = [];
+	const messages: AgentMessage[] = [];
 
 	if (compaction) {
 		// Emit summary first
@@ -595,7 +595,7 @@ export class SessionManager {
 	}
 
 	/** Append a message as child of current leaf, then advance leaf. Returns entry id. */
-	appendMessage(message: AppMessage): string {
+	appendMessage(message: AgentMessage): string {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),

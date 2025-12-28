@@ -6,7 +6,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { AgentEvent, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction.js";
@@ -349,9 +349,9 @@ export class RpcClient {
 	/**
 	 * Get all messages in the session.
 	 */
-	async getMessages(): Promise<AppMessage[]> {
+	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
-		return this.getData<{ messages: AppMessage[] }>(response).messages;
+		return this.getData<{ messages: AgentMessage[] }>(response).messages;
 	}
 
 	// =========================================================================

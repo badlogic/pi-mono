@@ -1,26 +1,83 @@
 import type {
-	AgentTool,
-	AssistantMessage,
 	AssistantMessageEvent,
+	ImageContent,
 	Message,
 	Model,
+	SimpleStreamOptions,
+	streamSimple,
+	TextContent,
+	Tool,
 	ToolResultMessage,
-	UserMessage,
 } from "@mariozechner/pi-ai";
+import type { Static, TSchema } from "@sinclair/typebox";
+
+export type StreamFn = typeof streamSimple;
 
 /**
- * Attachment type definition.
- * Processing is done by consumers (e.g., document extraction in web-ui).
+ * Configuration for the agent loop.
  */
-export interface Attachment {
-	id: string;
-	type: "image" | "document";
-	fileName: string;
-	mimeType: string;
-	size: number;
-	content: string; // base64 encoded (without data URL prefix)
-	extractedText?: string; // For documents
-	preview?: string; // base64 image preview
+export interface AgentLoopConfig extends SimpleStreamOptions {
+	model: Model<any>;
+
+	/**
+	 * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
+	 *
+	 * Each AgentMessage must be converted to a UserMessage, AssistantMessage, or ToolResultMessage
+	 * that the LLM can understand. AgentMessages that cannot be converted (e.g., UI-only notifications,
+	 * status messages) should be filtered out.
+	 *
+	 * @example
+	 * ```typescript
+	 * convertToLlm: (messages) => messages.flatMap(m => {
+	 *   if (m.role === "hookMessage") {
+	 *     // Convert custom message to user message
+	 *     return [{ role: "user", content: m.content, timestamp: m.timestamp }];
+	 *   }
+	 *   if (m.role === "notification") {
+	 *     // Filter out UI-only messages
+	 *     return [];
+	 *   }
+	 *   // Pass through standard LLM messages
+	 *   return [m];
+	 * })
+	 * ```
+	 */
+	convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
+
+	/**
+	 * Optional transform applied to the context before `convertToLlm`.
+	 *
+	 * Use this for operations that work at the AgentMessage level:
+	 * - Context window management (pruning old messages)
+	 * - Injecting context from external sources
+	 *
+	 * @example
+	 * ```typescript
+	 * transformContext: async (messages) => {
+	 *   if (estimateTokens(messages) > MAX_TOKENS) {
+	 *     return pruneOldMessages(messages);
+	 *   }
+	 *   return messages;
+	 * }
+	 * ```
+	 */
+	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+
+	/**
+	 * Resolves an API key dynamically for each LLM call.
+	 *
+	 * Useful for short-lived OAuth tokens (e.g., GitHub Copilot) that may expire
+	 * during long-running tool execution phases.
+	 */
+	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Returns queued messages to inject into the conversation.
+	 *
+	 * Called after each turn to check for user interruptions or injected messages.
+	 * If messages are returned, they're added to the context before the next LLM call.
+	 */
+	getQueuedMessages?: () => Promise<AgentMessage[]>;
 }
 
 /**
@@ -30,38 +87,29 @@ export interface Attachment {
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 /**
- * User message with optional attachments.
- */
-export type UserMessageWithAttachments = UserMessage & { attachments?: Attachment[] };
-
-/**
  * Extensible interface for custom app messages.
  * Apps can extend via declaration merging:
  *
  * @example
  * ```typescript
  * declare module "@mariozechner/agent" {
- *   interface CustomMessages {
+ *   interface CustomAgentMessages {
  *     artifact: ArtifactMessage;
  *     notification: NotificationMessage;
  *   }
  * }
  * ```
  */
-export interface CustomMessages {
+export interface CustomAgentMessages {
 	// Empty by default - apps extend via declaration merging
 }
 
 /**
- * AppMessage: Union of LLM messages + attachments + custom messages.
+ * AgentMessage: Union of LLM messages + custom messages.
  * This abstraction allows apps to add custom message types while maintaining
  * type safety and compatibility with the base LLM messages.
  */
-export type AppMessage =
-	| AssistantMessage
-	| UserMessageWithAttachments
-	| Message // Includes ToolResultMessage
-	| CustomMessages[keyof CustomMessages];
+export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
 
 /**
  * Agent state containing all configuration and conversation data.
@@ -71,11 +119,40 @@ export interface AgentState {
 	model: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	tools: AgentTool<any>[];
-	messages: AppMessage[]; // Can include attachments + custom message types
+	messages: AgentMessage[]; // Can include attachments + custom message types
 	isStreaming: boolean;
-	streamMessage: AppMessage | null;
+	streamMessage: AgentMessage | null;
 	pendingToolCalls: Set<string>;
 	error?: string;
+}
+
+export interface AgentToolResult<T> {
+	// Content blocks supporting text and images
+	content: (TextContent | ImageContent)[];
+	// Details to be displayed in a UI or logged
+	details: T;
+}
+
+// Callback for streaming tool execution updates
+export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T>) => void;
+
+// AgentTool extends Tool but adds the execute function
+export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
+	// A human-readable label for the tool to be displayed in UI
+	label: string;
+	execute: (
+		toolCallId: string,
+		params: Static<TParameters>,
+		signal?: AbortSignal,
+		onUpdate?: AgentToolUpdateCallback<TDetails>,
+	) => Promise<AgentToolResult<TDetails>>;
+}
+
+// AgentContext is like Context but uses AgentTool
+export interface AgentContext {
+	systemPrompt: string;
+	messages: Message[];
+	tools?: AgentTool<any>[];
 }
 
 /**
@@ -85,15 +162,15 @@ export interface AgentState {
 export type AgentEvent =
 	// Agent lifecycle
 	| { type: "agent_start" }
-	| { type: "agent_end"; messages: AppMessage[] }
+	| { type: "agent_end"; messages: AgentMessage[] }
 	// Turn lifecycle - a turn is one assistant response + any tool calls/results
 	| { type: "turn_start" }
-	| { type: "turn_end"; message: AppMessage; toolResults: ToolResultMessage[] }
+	| { type: "turn_end"; message: AgentMessage; toolResults: ToolResultMessage[] }
 	// Message lifecycle - emitted for user, assistant, and toolResult messages
-	| { type: "message_start"; message: AppMessage }
+	| { type: "message_start"; message: AgentMessage }
 	// Only emitted for assistant messages during streaming
-	| { type: "message_update"; message: AppMessage; assistantMessageEvent: AssistantMessageEvent }
-	| { type: "message_end"; message: AppMessage }
+	| { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
+	| { type: "message_end"; message: AgentMessage }
 	// Tool execution lifecycle
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
 	| { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }

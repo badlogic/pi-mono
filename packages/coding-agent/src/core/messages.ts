@@ -1,11 +1,11 @@
 /**
  * Custom message types and transformers for the coding agent.
  *
- * Extends the base AppMessage type with coding-agent specific message types,
+ * Extends the base AgentMessage type with coding-agent specific message types,
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Message } from "@mariozechner/pi-ai";
 
 // ============================================================================
@@ -56,14 +56,14 @@ declare module "@mariozechner/pi-agent-core" {
 /**
  * Type guard for BashExecutionMessage.
  */
-export function isBashExecutionMessage(msg: AppMessage | Message): msg is BashExecutionMessage {
+export function isBashExecutionMessage(msg: AgentMessage | Message): msg is BashExecutionMessage {
 	return (msg as BashExecutionMessage).role === "bashExecution";
 }
 
 /**
- * Type guard for HookAppMessage.
+ * Type guard for HookAgentMessage.
  */
-export function isHookMessage(msg: AppMessage | Message): msg is HookMessage {
+export function isHookMessage(msg: AgentMessage | Message): msg is HookMessage {
 	return (msg as HookMessage).role === "hookMessage";
 }
 
@@ -97,13 +97,13 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 // ============================================================================
 
 /**
- * Transform AppMessages (including custom types) to LLM-compatible Messages.
+ * Transform AgentMessages (including custom types) to LLM-compatible Messages.
  *
  * This is used by:
  * - Agent's messageTransformer option (for prompt calls)
  * - Compaction's generateSummary (for summarization)
  */
-export function messageTransformer(messages: AppMessage[]): Message[] {
+export function messageTransformer(messages: AgentMessage[]): Message[] {
 	return messages
 		.map((m): Message | null => {
 			if (isBashExecutionMessage(m)) {

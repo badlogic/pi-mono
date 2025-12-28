@@ -10,7 +10,7 @@
  * - MomSettingsManager: Simple settings for mom (compaction, retry, model preferences)
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	buildSessionContext,
 	type CompactionEntry,
@@ -153,7 +153,7 @@ export class MomSessionManager {
 				contextSlackTimestamps.add(entry.timestamp);
 
 				// Also store message text to catch duplicates added via prompt()
-				// AppMessage has different shapes, check for content property
+				// AgentMessage has different shapes, check for content property
 				const msg = msgEntry.message as { role: string; content?: unknown };
 				if (msg.role === "user" && msg.content !== undefined) {
 					const content = msg.content;
@@ -189,7 +189,7 @@ export class MomSessionManager {
 			isBot?: boolean;
 		}
 
-		const newMessages: Array<{ timestamp: string; slackTs: string; message: AppMessage }> = [];
+		const newMessages: Array<{ timestamp: string; slackTs: string; message: AgentMessage }> = [];
 
 		for (const line of logLines) {
 			try {
@@ -215,7 +215,7 @@ export class MomSessionManager {
 				if (contextMessageTexts.has(messageText)) continue;
 
 				const msgTime = new Date(date).getTime() || Date.now();
-				const userMessage: AppMessage = {
+				const userMessage: AgentMessage = {
 					role: "user",
 					content: messageText,
 					timestamp: msgTime,
@@ -277,7 +277,7 @@ export class MomSessionManager {
 		return entries;
 	}
 
-	saveMessage(message: AppMessage): void {
+	saveMessage(message: AgentMessage): void {
 		const entry: SessionMessageEntry = { ...this._createEntryBase(), type: "message", message };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);

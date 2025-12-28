@@ -5,17 +5,17 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
 import { messageTransformer } from "./messages.js";
 import { type CompactionEntry, createSummaryMessage, type SessionEntry } from "./session-manager.js";
 
 /**
- * Extract AppMessage from an entry if it produces one.
+ * Extract AgentMessage from an entry if it produces one.
  * Returns null for entries that don't contribute to LLM context.
  */
-function getMessageFromEntry(entry: SessionEntry): AppMessage | null {
+function getMessageFromEntry(entry: SessionEntry): AgentMessage | null {
 	if (entry.type === "message") {
 		return entry.message;
 	}
@@ -73,7 +73,7 @@ export function calculateContextTokens(usage: Usage): number {
  * Get usage from an assistant message if available.
  * Skips aborted and error messages as they don't have valid usage data.
  */
-function getAssistantUsage(msg: AppMessage): Usage | null {
+function getAssistantUsage(msg: AgentMessage): Usage | null {
 	if (msg.role === "assistant" && "usage" in msg) {
 		const assistantMsg = msg as AssistantMessage;
 		if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
@@ -113,7 +113,7 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
  */
-export function estimateTokens(message: AppMessage): number {
+export function estimateTokens(message: AgentMessage): number {
 	let chars = 0;
 
 	// Handle bashExecution messages
@@ -323,7 +323,7 @@ Be concise, structured, and focused on helping the next LLM seamlessly continue 
  * Generate a summary of the conversation using the LLM.
  */
 export async function generateSummary(
-	currentMessages: AppMessage[],
+	currentMessages: AgentMessage[],
 	model: Model<any>,
 	reserveTokens: number,
 	apiKey: string,
@@ -371,9 +371,9 @@ export interface CompactionPreparation {
 	/** UUID of first entry to keep */
 	firstKeptEntryId: string;
 	/** Messages that will be summarized and discarded */
-	messagesToSummarize: AppMessage[];
+	messagesToSummarize: AgentMessage[];
 	/** Messages that will be kept after the summary (recent turns) */
-	messagesToKeep: AppMessage[];
+	messagesToKeep: AgentMessage[];
 	tokensBefore: number;
 	boundaryStart: number;
 }
@@ -408,14 +408,14 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
 
 	// Messages to summarize (will be discarded after summary)
-	const messagesToSummarize: AppMessage[] = [];
+	const messagesToSummarize: AgentMessage[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const msg = getMessageFromEntry(entries[i]);
 		if (msg) messagesToSummarize.push(msg);
 	}
 
 	// Messages to keep (recent turns, kept after summary)
-	const messagesToKeep: AppMessage[] = [];
+	const messagesToKeep: AgentMessage[] = [];
 	for (let i = cutPoint.firstKeptEntryIndex; i < boundaryEnd; i++) {
 		const msg = getMessageFromEntry(entries[i]);
 		if (msg) messagesToKeep.push(msg);
@@ -482,7 +482,7 @@ export async function compact(
 
 	// Extract messages for history summary (before the turn that contains the cut point)
 	const historyEnd = cutResult.isSplitTurn ? cutResult.turnStartIndex : cutResult.firstKeptEntryIndex;
-	const historyMessages: AppMessage[] = [];
+	const historyMessages: AgentMessage[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const msg = getMessageFromEntry(entries[i]);
 		if (msg) historyMessages.push(msg);
@@ -499,7 +499,7 @@ export async function compact(
 	}
 
 	// Extract messages for turn prefix summary (if splitting a turn)
-	const turnPrefixMessages: AppMessage[] = [];
+	const turnPrefixMessages: AgentMessage[] = [];
 	if (cutResult.isSplitTurn) {
 		for (let i = cutResult.turnStartIndex; i < cutResult.firstKeptEntryIndex; i++) {
 			const msg = getMessageFromEntry(entries[i]);
@@ -550,7 +550,7 @@ export async function compact(
  * Generate a summary for a turn prefix (when splitting a turn).
  */
 async function generateTurnPrefixSummary(
-	messages: AppMessage[],
+	messages: AgentMessage[],
 	model: Model<any>,
 	reserveTokens: number,
 	apiKey: string,
