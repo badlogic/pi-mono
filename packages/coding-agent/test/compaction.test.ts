@@ -180,9 +180,9 @@ describe("getLastAssistantUsage", () => {
 		expect(usage!.input).toBe(100);
 	});
 
-	it("should return null if no assistant messages", () => {
+	it("should return undefined if no assistant messages", () => {
 		const entries: SessionEntry[] = [createMessageEntry(createUserMessage("Hello"))];
-		expect(getLastAssistantUsage(entries)).toBeNull();
+		expect(getLastAssistantUsage(entries)).toBeUndefined();
 	});
 });
 
@@ -301,8 +301,8 @@ describe("buildSessionContext", () => {
 		const loaded = buildSessionContext(entries);
 		// summary + kept (u2, a2) + after (u3, a3) = 5
 		expect(loaded.messages.length).toBe(5);
-		expect(loaded.messages[0].role).toBe("user");
-		expect((loaded.messages[0] as any).content).toContain("Summary of 1,a,2,b");
+		expect(loaded.messages[0].role).toBe("compactionSummary");
+		expect((loaded.messages[0] as any).summary).toContain("Summary of 1,a,2,b");
 	});
 
 	it("should handle multiple compactions (only latest matters)", () => {
@@ -325,7 +325,7 @@ describe("buildSessionContext", () => {
 		const loaded = buildSessionContext(entries);
 		// summary + kept from u3 (u3, c) + after (u4, d) = 5
 		expect(loaded.messages.length).toBe(5);
-		expect((loaded.messages[0] as any).content).toContain("Second summary");
+		expect((loaded.messages[0] as any).summary).toContain("Second summary");
 	});
 
 	it("should keep all messages when firstKeptEntryId is first entry", () => {
@@ -443,8 +443,8 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 
 		// Should have summary + kept messages
 		expect(reloaded.messages.length).toBeLessThan(loaded.messages.length);
-		expect(reloaded.messages[0].role).toBe("user");
-		expect((reloaded.messages[0] as any).content).toContain(compactionResult.summary);
+		expect(reloaded.messages[0].role).toBe("compactionSummary");
+		expect((reloaded.messages[0] as any).summary).toContain(compactionResult.summary);
 
 		console.log("Original messages:", loaded.messages.length);
 		console.log("After compaction:", reloaded.messages.length);

@@ -530,7 +530,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customToolsResult = result;
 	}
 
-	let hookRunner: HookRunner | null = null;
+	let hookRunner: HookRunner | undefined;
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);

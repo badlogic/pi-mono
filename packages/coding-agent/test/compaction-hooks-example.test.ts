@@ -3,18 +3,16 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { HookAPI } from "../src/core/hooks/index.js";
+import type { HookAPI, SessionBeforeCompactEvent, SessionCompactEvent } from "../src/core/hooks/index.js";
 
 describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {
 		// This is the example from hooks.md - verify it compiles
 		const exampleHook = (pi: HookAPI) => {
-			pi.on("session", async (event, ctx) => {
-				if (event.reason !== "before_compact") return;
-
-				// After narrowing, these should all be accessible
-				// sessionManager and modelRegistry come from ctx, not event
+			pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
+				// All these should be accessible on the event
 				const { preparation, previousCompactions, model } = event;
+				// sessionManager and modelRegistry come from ctx, not event
 				const { sessionManager, modelRegistry } = ctx;
 				const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId, cutPoint } = preparation;
 
@@ -51,12 +49,10 @@ describe("Documentation example", () => {
 		expect(typeof exampleHook).toBe("function");
 	});
 
-	it("compact event should have correct fields after narrowing", () => {
+	it("compact event should have correct fields", () => {
 		const checkCompactEvent = (pi: HookAPI) => {
-			pi.on("session", async (event, _ctx) => {
-				if (event.reason !== "compact") return;
-
-				// After narrowing, these should all be accessible
+			pi.on("session_compact", async (event: SessionCompactEvent) => {
+				// These should all be accessible
 				const entry = event.compactionEntry;
 				const fromHook = event.fromHook;
 

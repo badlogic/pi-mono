@@ -33,10 +33,10 @@ import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js"
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
-async function checkForNewVersion(currentVersion: string): Promise<string | null> {
+async function checkForNewVersion(currentVersion: string): Promise<string | undefined> {
 	try {
 		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi -coding-agent/latest");
-		if (!response.ok) return null;
+		if (!response.ok) return undefined;
 
 		const data = (await response.json()) as { version?: string };
 		const latestVersion = data.version;
@@ -45,26 +45,26 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 			return latestVersion;
 		}
 
-		return null;
+		return undefined;
 	} catch {
-		return null;
+		return undefined;
 	}
 }
 
 async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
-	changelogMarkdown: string | null,
+	changelogMarkdown: string | undefined,
 	modelFallbackMessage: string | undefined,
-	modelsJsonError: string | null,
+	modelsJsonError: string | undefined,
 	migratedProviders: string[],
-	versionCheckPromise: Promise<string | null>,
+	versionCheckPromise: Promise<string | undefined>,
 	initialMessages: string[],
 	customTools: LoadedCustomTool[],
 	setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
 	initialImages?: ImageContent[],
-	fdPath: string | null = null,
+	fdPath: string | undefined = undefined,
 ): Promise<void> {
 	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
 
@@ -143,9 +143,9 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 	};
 }
 
-function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | null {
+function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | undefined {
 	if (parsed.continue || parsed.resume) {
-		return null;
+		return undefined;
 	}
 
 	const lastVersion = settingsManager.getLastChangelogVersion();
@@ -165,10 +165,10 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 		}
 	}
 
-	return null;
+	return undefined;
 }
 
-function createSessionManager(parsed: Args, cwd: string): SessionManager | null {
+function createSessionManager(parsed: Args, cwd: string): SessionManager | undefined {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
@@ -183,8 +183,8 @@ function createSessionManager(parsed: Args, cwd: string): SessionManager | null 
 	if (parsed.sessionDir) {
 		return SessionManager.create(cwd, parsed.sessionDir);
 	}
-	// Default case (new session) returns null, SDK will create one
-	return null;
+	// Default case (new session) returns undefined, SDK will create one
+	return undefined;
 }
 
 /** Discover SYSTEM.md file if no CLI system prompt was provided */
@@ -207,7 +207,7 @@ function discoverSystemPromptFile(): string | undefined {
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
-	sessionManager: SessionManager | null,
+	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
@@ -408,7 +408,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
+		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => undefined);
 		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
 
 		if (scopedModels.length > 0) {

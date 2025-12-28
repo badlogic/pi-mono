@@ -65,12 +65,12 @@ export type RpcCommand =
 // ============================================================================
 
 export interface RpcSessionState {
-	model: Model<any> | null;
+	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	queueMode: "all" | "one-at-a-time";
-	sessionFile: string | null;
+	sessionFile?: string;
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;

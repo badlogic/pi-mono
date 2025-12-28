@@ -51,17 +51,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 * Create a hook UI context that uses the RPC protocol.
 	 */
 	const createHookUIContext = (): HookUIContext => ({
-		async select(title: string, options: string[]): Promise<string | null> {
+		async select(title: string, options: string[]): Promise<string | undefined> {
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
 				pendingHookRequests.set(id, {
 					resolve: (response: RpcHookUIResponse) => {
 						if ("cancelled" in response && response.cancelled) {
-							resolve(null);
+							resolve(undefined);
 						} else if ("value" in response) {
 							resolve(response.value);
 						} else {
-							resolve(null);
+							resolve(undefined);
 						}
 					},
 					reject,
@@ -89,17 +89,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
-		async input(title: string, placeholder?: string): Promise<string | null> {
+		async input(title: string, placeholder?: string): Promise<string | undefined> {
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
 				pendingHookRequests.set(id, {
 					resolve: (response: RpcHookUIResponse) => {
 						if ("cancelled" in response && response.cancelled) {
-							resolve(null);
+							resolve(undefined);
 						} else if ("value" in response) {
 							resolve(response.value);
 						} else {
-							resolve(null);
+							resolve(undefined);
 						}
 					},
 					reject,
@@ -144,10 +144,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		hookRunner.setAppendEntryHandler((customType, data) => {
 			session.sessionManager.appendCustomEntry(customType, data);
 		});
-		// Emit session event
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -159,7 +158,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				await tool.onSession({
 					entries,
 					sessionFile: session.sessionFile,
-					previousSessionFile: null,
+					previousSessionFile: undefined,
 					reason: "start",
 				});
 			} catch (_err) {

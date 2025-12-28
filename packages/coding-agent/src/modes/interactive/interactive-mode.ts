@@ -67,14 +67,14 @@ export class InteractiveMode {
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
-	private loadingAnimation: Loader | null = null;
+	private loadingAnimation: Loader | undefined = undefined;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
-	private changelogMarkdown: string | null = null;
+	private changelogMarkdown: string | undefined = undefined;
 
 	// Streaming message tracking
-	private streamingComponent: AssistantMessageComponent | null = null;
+	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -92,22 +92,22 @@ export class InteractiveMode {
 	private isBashMode = false;
 
 	// Track current bash execution component
-	private bashComponent: BashExecutionComponent | null = null;
+	private bashComponent: BashExecutionComponent | undefined = undefined;
 
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
 	// Auto-compaction state
-	private autoCompactionLoader: Loader | null = null;
+	private autoCompactionLoader: Loader | undefined = undefined;
 	private autoCompactionEscapeHandler?: () => void;
 
 	// Auto-retry state
-	private retryLoader: Loader | null = null;
+	private retryLoader: Loader | undefined = undefined;
 	private retryEscapeHandler?: () => void;
 
 	// Hook UI state
-	private hookSelector: HookSelectorComponent | null = null;
-	private hookInput: HookInputComponent | null = null;
+	private hookSelector: HookSelectorComponent | undefined = undefined;
+	private hookInput: HookInputComponent | undefined = undefined;
 
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
@@ -126,10 +126,10 @@ export class InteractiveMode {
 	constructor(
 		session: AgentSession,
 		version: string,
-		changelogMarkdown: string | null = null,
+		changelogMarkdown: string | undefined = undefined,
 		customTools: LoadedCustomTool[] = [],
 		private setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void = () => {},
-		fdPath: string | null = null,
+		fdPath: string | undefined = undefined,
 	) {
 		this.session = session;
 		this.version = version;
@@ -350,7 +350,7 @@ export class InteractiveMode {
 		await this.emitToolSessionEvent({
 			entries,
 			sessionFile: this.session.sessionFile,
-			previousSessionFile: null,
+			previousSessionFile: undefined,
 			reason: "start",
 		});
 
@@ -395,10 +395,9 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Emit session event
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -442,7 +441,7 @@ export class InteractiveMode {
 	/**
 	 * Show a selector for hooks.
 	 */
-	private showHookSelector(title: string, options: string[]): Promise<string | null> {
+	private showHookSelector(title: string, options: string[]): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.hookSelector = new HookSelectorComponent(
 				title,
@@ -453,7 +452,7 @@ export class InteractiveMode {
 				},
 				() => {
 					this.hideHookSelector();
-					resolve(null);
+					resolve(undefined);
 				},
 			);
 
@@ -470,7 +469,7 @@ export class InteractiveMode {
 	private hideHookSelector(): void {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
-		this.hookSelector = null;
+		this.hookSelector = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -486,7 +485,7 @@ export class InteractiveMode {
 	/**
 	 * Show a text input for hooks.
 	 */
-	private showHookInput(title: string, placeholder?: string): Promise<string | null> {
+	private showHookInput(title: string, placeholder?: string): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.hookInput = new HookInputComponent(
 				title,
@@ -497,7 +496,7 @@ export class InteractiveMode {
 				},
 				() => {
 					this.hideHookInput();
-					resolve(null);
+					resolve(undefined);
 				},
 			);
 
@@ -514,7 +513,7 @@ export class InteractiveMode {
 	private hideHookInput(): void {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
-		this.hookInput = null;
+		this.hookInput = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -874,7 +873,7 @@ export class InteractiveMode {
 						}
 						this.pendingTools.clear();
 					}
-					this.streamingComponent = null;
+					this.streamingComponent = undefined;
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -920,12 +919,12 @@ export class InteractiveMode {
 			case "agent_end":
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
-					this.loadingAnimation = null;
+					this.loadingAnimation = undefined;
 					this.statusContainer.clear();
 				}
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
-					this.streamingComponent = null;
+					this.streamingComponent = undefined;
 				}
 				this.pendingTools.clear();
 				this.ui.requestRender();
@@ -964,7 +963,7 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.autoCompactionLoader) {
 					this.autoCompactionLoader.stop();
-					this.autoCompactionLoader = null;
+					this.autoCompactionLoader = undefined;
 					this.statusContainer.clear();
 				}
 				// Handle result
@@ -1018,7 +1017,7 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.retryLoader) {
 					this.retryLoader.stop();
-					this.retryLoader = null;
+					this.retryLoader = undefined;
 					this.statusContainer.clear();
 				}
 				// Show error only on final failure (success shows normal response)
@@ -1228,10 +1227,9 @@ export class InteractiveMode {
 	private async shutdown(): Promise<void> {
 		// Emit shutdown event to hooks
 		const hookRunner = this.session.hookRunner;
-		if (hookRunner?.hasHandlers("session")) {
+		if (hookRunner?.hasHandlers("session_shutdown")) {
 			await hookRunner.emit({
-				type: "session",
-				reason: "shutdown",
+				type: "session_shutdown",
 			});
 		}
 
@@ -1265,7 +1263,7 @@ export class InteractiveMode {
 
 	private cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
-		if (newLevel === null) {
+		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
 			this.footer.updateState(this.session.state);
@@ -1277,7 +1275,7 @@ export class InteractiveMode {
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
 		try {
 			const result = await this.session.cycleModel(direction);
-			if (result === null) {
+			if (result === undefined) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
@@ -1612,13 +1610,13 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
-		this.streamingComponent = null;
+		this.streamingComponent = undefined;
 		this.pendingTools.clear();
 
 		// Switch session via AgentSession (emits hook and tool session events)
@@ -1874,7 +1872,7 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
@@ -1884,7 +1882,7 @@ export class InteractiveMode {
 		// Clear UI state
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
-		this.streamingComponent = null;
+		this.streamingComponent = undefined;
 		this.pendingTools.clear();
 
 		this.chatContainer.addChild(new Spacer(1));
@@ -1962,12 +1960,12 @@ export class InteractiveMode {
 			}
 		} catch (error) {
 			if (this.bashComponent) {
-				this.bashComponent.setComplete(null, false);
+				this.bashComponent.setComplete(undefined, false);
 			}
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 
-		this.bashComponent = null;
+		this.bashComponent = undefined;
 		this.ui.requestRender();
 	}
 
@@ -1987,7 +1985,7 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
@@ -2039,7 +2037,7 @@ export class InteractiveMode {
 	stop(): void {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.footer.dispose();
 		if (this.unsubscribe) {

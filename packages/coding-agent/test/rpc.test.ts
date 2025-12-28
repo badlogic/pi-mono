@@ -273,7 +273,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 
 		// Initially null
 		let text = await client.getLastAssistantText();
-		expect(text).toBeNull();
+		expect(text).toBeUndefined();
 
 		// Send prompt
 		await client.promptAndWait("Reply with just: test123");

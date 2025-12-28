@@ -18,9 +18,7 @@ import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "before_compact") return;
-
+	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
 		const { preparation, previousCompactions, signal } = event;

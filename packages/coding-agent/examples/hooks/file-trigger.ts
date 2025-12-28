@@ -12,9 +12,7 @@ import * as fs from "node:fs";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "start") return;
-
+	pi.on("session_start", async (_event, ctx) => {
 		const triggerFile = "/tmp/agent-trigger.txt";
 
 		fs.watch(triggerFile, () => {

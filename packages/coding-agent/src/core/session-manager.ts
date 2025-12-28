@@ -450,7 +450,7 @@ export class SessionManager {
 	private labelsById: Map<string, string> = new Map();
 	private leafId: string = "";
 
-	private constructor(cwd: string, sessionDir: string, sessionFile: string | null, persist: boolean) {
+	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
 		this.cwd = cwd;
 		this.sessionDir = sessionDir;
 		this.persist = persist;
@@ -484,7 +484,7 @@ export class SessionManager {
 		}
 	}
 
-	newSession(): void {
+	newSession(): string | undefined {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -503,6 +503,7 @@ export class SessionManager {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
 		}
+		return this.sessionFile;
 	}
 
 	private _buildIndex(): void {
@@ -841,9 +842,9 @@ export class SessionManager {
 	/**
 	 * Create a new session file containing only the path from root to the specified leaf.
 	 * Useful for extracting a single conversation path from a branched session.
-	 * Returns the new session file path, or null if not persisting.
+	 * Returns the new session file path, or undefined if not persisting.
 	 */
-	createBranchedSession(leafId: string): string | null {
+	createBranchedSession(leafId: string): string | undefined {
 		const path = this.getPath(leafId);
 		if (path.length === 0) {
 			throw new Error(`Entry ${leafId} not found`);
@@ -883,6 +884,7 @@ export class SessionManager {
 			// Write fresh label entries at the end
 			const lastEntryId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
 			let parentId = lastEntryId;
+			const labelEntries: LabelEntry[] = [];
 			for (const { targetId, label } of labelsToWrite) {
 				const labelEntry: LabelEntry = {
 					type: "label",
@@ -894,8 +896,12 @@ export class SessionManager {
 				};
 				appendFileSync(newSessionFile, `${JSON.stringify(labelEntry)}\n`);
 				pathEntryIds.add(labelEntry.id);
+				labelEntries.push(labelEntry);
 				parentId = labelEntry.id;
 			}
+			this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
+			this.sessionId = newSessionId;
+			this._buildIndex();
 			return newSessionFile;
 		}
 
@@ -917,7 +923,7 @@ export class SessionManager {
 		this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
 		this.sessionId = newSessionId;
 		this._buildIndex();
-		return null;
+		return undefined;
 	}
 
 	/**
@@ -927,7 +933,7 @@ export class SessionManager {
 	 */
 	static create(cwd: string, sessionDir?: string): SessionManager {
 		const dir = sessionDir ?? getDefaultSessionDir(cwd);
-		return new SessionManager(cwd, dir, null, true);
+		return new SessionManager(cwd, dir, undefined, true);
 	}
 
 	/**
@@ -956,12 +962,12 @@ export class SessionManager {
 		if (mostRecent) {
 			return new SessionManager(cwd, dir, mostRecent, true);
 		}
-		return new SessionManager(cwd, dir, null, true);
+		return new SessionManager(cwd, dir, undefined, true);
 	}
 
 	/** Create an in-memory session (no file persistence) */
 	static inMemory(cwd: string = process.cwd()): SessionManager {
-		return new SessionManager(cwd, "", null, false);
+		return new SessionManager(cwd, "", undefined, false);
 	}
 
 	/**

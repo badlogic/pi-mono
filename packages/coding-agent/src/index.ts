@@ -38,33 +38,7 @@ export type {
 	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
-export type {
-	AgentEndEvent,
-	AgentStartEvent,
-	BashToolResultEvent,
-	BeforeAgentStartEvent,
-	BeforeAgentStartEventResult,
-	CustomToolResultEvent,
-	EditToolResultEvent,
-	FindToolResultEvent,
-	GrepToolResultEvent,
-	HookAPI,
-	HookEvent,
-	HookEventContext,
-	HookFactory,
-	HookUIContext,
-	LsToolResultEvent,
-	ReadToolResultEvent,
-	SessionEvent,
-	SessionEventResult,
-	ToolCallEvent,
-	ToolCallEventResult,
-	ToolResultEvent,
-	ToolResultEventResult,
-	TurnEndEvent,
-	TurnStartEvent,
-	WriteToolResultEvent,
-} from "./core/hooks/index.js";
+export type * from "./core/hooks/index.js";
 // Hook system types and type guards
 export {
 	isBashToolResult,

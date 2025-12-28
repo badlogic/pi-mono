@@ -8,9 +8,7 @@
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "shutdown") return;
-
+	pi.on("session_shutdown", async (_event, ctx) => {
 		// Check for uncommitted changes
 		const { stdout: status, code } = await pi.exec("git", ["status", "--porcelain"]);
 

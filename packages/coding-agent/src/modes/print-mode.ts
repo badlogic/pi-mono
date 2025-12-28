@@ -45,10 +45,9 @@ export async function runPrintMode(
 		hookRunner.setAppendEntryHandler((customType, data) => {
 			session.sessionManager.appendCustomEntry(customType, data);
 		});
-		// Emit session event
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -59,7 +58,7 @@ export async function runPrintMode(
 				await tool.onSession({
 					entries,
 					sessionFile: session.sessionFile,
-					previousSessionFile: null,
+					previousSessionFile: undefined,
 					reason: "start",
 				});
 			} catch (_err) {

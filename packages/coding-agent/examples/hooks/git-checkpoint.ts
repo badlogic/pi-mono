@@ -19,11 +19,8 @@ export default function (pi: HookAPI) {
 		}
 	});
 
-	pi.on("session", async (event, ctx) => {
-		// Only handle before_branch events
-		if (event.reason !== "before_branch") return;
-
-		const ref = checkpoints.get(event.targetTurnIndex);
+	pi.on("session_before_branch", async (event, ctx) => {
+		const ref = checkpoints.get(event.entryIndex);
 		if (!ref) return;
 
 		if (!ctx.hasUI) {

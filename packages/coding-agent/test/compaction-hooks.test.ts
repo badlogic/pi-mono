@@ -10,7 +10,13 @@ import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { HookRunner, type LoadedHook, type SessionEvent } from "../src/core/hooks/index.js";
+import {
+	HookRunner,
+	type LoadedHook,
+	type SessionBeforeCompactEvent,
+	type SessionCompactEvent,
+	type SessionEvent,
+} from "../src/core/hooks/index.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
@@ -40,19 +46,25 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	});
 
 	function createHook(
-		onBeforeCompact?: (event: SessionEvent) => { cancel?: boolean; compaction?: any } | undefined,
-		onCompact?: (event: SessionEvent) => void,
+		onBeforeCompact?: (event: SessionBeforeCompactEvent) => { cancel?: boolean; compaction?: any } | undefined,
+		onCompact?: (event: SessionCompactEvent) => void,
 	): LoadedHook {
 		const handlers = new Map<string, ((event: any, ctx: any) => Promise<any>)[]>();
 
-		handlers.set("session", [
-			async (event: SessionEvent) => {
+		handlers.set("session_before_compact", [
+			async (event: SessionBeforeCompactEvent) => {
 				capturedEvents.push(event);
-
-				if (event.reason === "before_compact" && onBeforeCompact) {
+				if (onBeforeCompact) {
 					return onBeforeCompact(event);
 				}
-				if (event.reason === "compact" && onCompact) {
+				return undefined;
+			},
+		]);
+
+		handlers.set("session_compact", [
+			async (event: SessionCompactEvent) => {
+				capturedEvents.push(event);
+				if (onCompact) {
 					onCompact(event);
 				}
 				return undefined;
@@ -89,9 +101,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		hookRunner = new HookRunner(hooks, tempDir, sessionManager, modelRegistry);
 		hookRunner.setUIContext(
 			{
-				select: async () => null,
+				select: async () => undefined,
 				confirm: async () => false,
-				input: async () => null,
+				input: async () => undefined,
 				notify: () => {},
 				custom: () => ({ close: () => {}, requestRender: () => {} }),
 			},
@@ -121,30 +133,28 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		await session.compact();
 
-		const beforeCompactEvents = capturedEvents.filter((e) => e.reason === "before_compact");
-		const compactEvents = capturedEvents.filter((e) => e.reason === "compact");
+		const beforeCompactEvents = capturedEvents.filter(
+			(e): e is SessionBeforeCompactEvent => e.type === "session_before_compact",
+		);
+		const compactEvents = capturedEvents.filter((e): e is SessionCompactEvent => e.type === "session_compact");
 
 		expect(beforeCompactEvents.length).toBe(1);
 		expect(compactEvents.length).toBe(1);
 
 		const beforeEvent = beforeCompactEvents[0];
-		if (beforeEvent.reason === "before_compact") {
-			expect(beforeEvent.preparation).toBeDefined();
-			expect(beforeEvent.preparation.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
-			expect(beforeEvent.preparation.messagesToSummarize).toBeDefined();
-			expect(beforeEvent.preparation.messagesToKeep).toBeDefined();
-			expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
-			expect(beforeEvent.model).toBeDefined();
-			// sessionManager and modelRegistry are now on ctx, not event
-		}
+		expect(beforeEvent.preparation).toBeDefined();
+		expect(beforeEvent.preparation.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
+		expect(beforeEvent.preparation.messagesToSummarize).toBeDefined();
+		expect(beforeEvent.preparation.messagesToKeep).toBeDefined();
+		expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
+		expect(beforeEvent.model).toBeDefined();
+		// sessionManager and modelRegistry are now on ctx, not event
 
 		const afterEvent = compactEvents[0];
-		if (afterEvent.reason === "compact") {
-			expect(afterEvent.compactionEntry).toBeDefined();
-			expect(afterEvent.compactionEntry.summary.length).toBeGreaterThan(0);
-			expect(afterEvent.compactionEntry.tokensBefore).toBeGreaterThanOrEqual(0);
-			expect(afterEvent.fromHook).toBe(false);
-		}
+		expect(afterEvent.compactionEntry).toBeDefined();
+		expect(afterEvent.compactionEntry.summary.length).toBeGreaterThan(0);
+		expect(afterEvent.compactionEntry.tokensBefore).toBeGreaterThanOrEqual(0);
+		expect(afterEvent.fromHook).toBe(false);
 	}, 120000);
 
 	it("should allow hooks to cancel compaction", async () => {
@@ -156,7 +166,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		await expect(session.compact()).rejects.toThrow("Compaction cancelled");
 
-		const compactEvents = capturedEvents.filter((e) => e.reason === "compact");
+		const compactEvents = capturedEvents.filter((e) => e.type === "session_compact");
 		expect(compactEvents.length).toBe(0);
 	}, 120000);
 
@@ -164,7 +174,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		const customSummary = "Custom summary from hook";
 
 		const hook = createHook((event) => {
-			if (event.reason === "before_compact") {
+			if (event.type === "session_before_compact") {
 				return {
 					compaction: {
 						summary: customSummary,
@@ -187,11 +197,11 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		expect(result.summary).toBe(customSummary);
 
-		const compactEvents = capturedEvents.filter((e) => e.reason === "compact");
+		const compactEvents = capturedEvents.filter((e) => e.type === "session_compact");
 		expect(compactEvents.length).toBe(1);
 
 		const afterEvent = compactEvents[0];
-		if (afterEvent.reason === "compact") {
+		if (afterEvent.type === "session_compact") {
 			expect(afterEvent.compactionEntry.summary).toBe(customSummary);
 			expect(afterEvent.fromHook).toBe(true);
 		}
@@ -206,11 +216,11 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		await session.compact();
 
-		const compactEvents = capturedEvents.filter((e) => e.reason === "compact");
+		const compactEvents = capturedEvents.filter((e) => e.type === "session_compact");
 		expect(compactEvents.length).toBe(1);
 
 		const afterEvent = compactEvents[0];
-		if (afterEvent.reason === "compact") {
+		if (afterEvent.type === "session_compact") {
 			// sessionManager is now on ctx, use session.sessionManager directly
 			const entries = session.sessionManager.getEntries();
 			const hasCompactionEntry = entries.some((e: { type: string }) => e.type === "compaction");
@@ -224,13 +234,19 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			resolvedPath: "/test/throwing-hook.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
 				[
-					"session",
+					"session_before_compact",
 					[
-						async (event: SessionEvent) => {
+						async (event: SessionBeforeCompactEvent) => {
 							capturedEvents.push(event);
-							if (event.reason === "before_compact") {
-								throw new Error("Hook intentionally failed");
-							}
+							throw new Error("Hook intentionally throws");
+						},
+					],
+				],
+				[
+					"session_compact",
+					[
+						async (event: SessionCompactEvent) => {
+							capturedEvents.push(event);
 							return undefined;
 						},
 					],
@@ -252,12 +268,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		expect(result.summary).toBeDefined();
 		expect(result.summary.length).toBeGreaterThan(0);
 
-		const compactEvents = capturedEvents.filter((e) => e.reason === "compact");
+		const compactEvents = capturedEvents.filter((e): e is SessionCompactEvent => e.type === "session_compact");
 		expect(compactEvents.length).toBe(1);
-
-		if (compactEvents[0].reason === "compact") {
-			expect(compactEvents[0].fromHook).toBe(false);
-		}
+		expect(compactEvents[0].fromHook).toBe(false);
 	}, 120000);
 
 	it("should call multiple hooks in order", async () => {
@@ -268,15 +281,19 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			resolvedPath: "/test/hook1.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
 				[
-					"session",
+					"session_before_compact",
 					[
-						async (event: SessionEvent) => {
-							if (event.reason === "before_compact") {
-								callOrder.push("hook1-before");
-							}
-							if (event.reason === "compact") {
-								callOrder.push("hook1-after");
-							}
+						async () => {
+							callOrder.push("hook1-before");
+							return undefined;
+						},
+					],
+				],
+				[
+					"session_compact",
+					[
+						async () => {
+							callOrder.push("hook1-after");
 							return undefined;
 						},
 					],
@@ -293,15 +310,19 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			resolvedPath: "/test/hook2.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
 				[
-					"session",
+					"session_before_compact",
 					[
-						async (event: SessionEvent) => {
-							if (event.reason === "before_compact") {
-								callOrder.push("hook2-before");
-							}
-							if (event.reason === "compact") {
-								callOrder.push("hook2-after");
-							}
+						async () => {
+							callOrder.push("hook2-before");
+							return undefined;
+						},
+					],
+				],
+				[
+					"session_compact",
+					[
+						async () => {
+							callOrder.push("hook2-after");
 							return undefined;
 						},
 					],
@@ -324,12 +345,10 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 	}, 120000);
 
 	it("should pass correct data in before_compact event", async () => {
-		let capturedBeforeEvent: (SessionEvent & { reason: "before_compact" }) | null = null;
+		let capturedBeforeEvent: SessionBeforeCompactEvent | null = null;
 
 		const hook = createHook((event) => {
-			if (event.reason === "before_compact") {
-				capturedBeforeEvent = event;
-			}
+			capturedBeforeEvent = event;
 			return undefined;
 		});
 		createSession([hook]);
@@ -370,7 +389,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		const customSummary = "Custom summary with modified values";
 
 		const hook = createHook((event) => {
-			if (event.reason === "before_compact") {
+			if (event.type === "session_before_compact") {
 				return {
 					compaction: {
 						summary: customSummary,

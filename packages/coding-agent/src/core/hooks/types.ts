@@ -13,13 +13,7 @@ import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type {
-	CompactionEntry,
-	SessionEntry,
-	SessionHeader,
-	SessionManager,
-	SessionTreeNode,
-} from "../session-manager.js";
+import type { CompactionEntry, SessionManager } from "../session-manager.js";
 
 /**
  * Read-only view of SessionManager for hooks.
@@ -64,7 +58,7 @@ export interface HookUIContext {
 	 * @param options - Array of string options
 	 * @returns Selected option string, or null if cancelled
 	 */
-	select(title: string, options: string[]): Promise<string | null>;
+	select(title: string, options: string[]): Promise<string | undefined>;
 
 	/**
 	 * Show a confirmation dialog.
@@ -74,9 +68,9 @@ export interface HookUIContext {
 
 	/**
 	 * Show a text input dialog.
-	 * @returns User input, or null if cancelled
+	 * @returns User input, or undefined if cancelled
 	 */
-	input(title: string, placeholder?: string): Promise<string | null>;
+	input(title: string, placeholder?: string): Promise<string | undefined>;
 
 	/**
 	 * Show a notification to the user.
@@ -110,69 +104,91 @@ export interface HookEventContext {
 }
 
 // ============================================================================
-// Events
+// Session Events
 // ============================================================================
 
-/**
- * Base fields shared by all session events.
- */
-interface SessionEventBase {
-	type: "session";
+/** Fired on initial session load */
+export interface SessionStartEvent {
+	type: "session_start";
 }
 
-/**
- * Event data for session events.
- * Discriminated union based on reason.
- *
- * Lifecycle:
- * - start: Initial session load
- * - before_switch / switch: Session switch (e.g., /resume command)
- * - before_new / new: New session (e.g., /new command)
- * - before_branch / branch: Session branch (e.g., /branch command)
- * - before_compact / compact: Before/after context compaction
- * - shutdown: Process exit (SIGINT/SIGTERM)
- *
- * "before_*" events fire before the action and can be cancelled via SessionEventResult.
- * Other events fire after the action completes.
- */
+/** Fired before switching to another session (can be cancelled) */
+export interface SessionBeforeSwitchEvent {
+	type: "session_before_switch";
+	/** Session file we're switching to */
+	targetSessionFile: string;
+}
+
+/** Fired after switching to another session */
+export interface SessionSwitchEvent {
+	type: "session_switch";
+	/** Session file we came from */
+	previousSessionFile: string | undefined;
+}
+
+/** Fired before creating a new session (can be cancelled) */
+export interface SessionBeforeNewEvent {
+	type: "session_before_new";
+}
+
+/** Fired after creating a new session */
+export interface SessionNewEvent {
+	type: "session_new";
+}
+
+/** Fired before branching a session (can be cancelled) */
+export interface SessionBeforeBranchEvent {
+	type: "session_before_branch";
+	/** Index of the entry in the session (SessionManager.getEntries()) to branch from */
+	entryIndex: number;
+}
+
+/** Fired after branching a session */
+export interface SessionBranchEvent {
+	type: "session_branch";
+	previousSessionFile: string | undefined;
+}
+
+/** Fired before context compaction (can be cancelled or customized) */
+export interface SessionBeforeCompactEvent {
+	type: "session_before_compact";
+	/** Compaction preparation with cut point, messages to summarize/keep, etc. */
+	preparation: CompactionPreparation;
+	/** Previous compaction entries, newest first. Use for iterative summarization. */
+	previousCompactions: CompactionEntry[];
+	/** Optional user-provided instructions for the summary */
+	customInstructions?: string;
+	/** Current model */
+	model: Model<any>;
+	/** Abort signal - hooks should pass this to LLM calls and check it periodically */
+	signal: AbortSignal;
+}
+
+/** Fired after context compaction */
+export interface SessionCompactEvent {
+	type: "session_compact";
+	compactionEntry: CompactionEntry;
+	/** Whether the compaction entry was provided by a hook */
+	fromHook: boolean;
+}
+
+/** Fired on process exit (SIGINT/SIGTERM) */
+export interface SessionShutdownEvent {
+	type: "session_shutdown";
+}
+
+/** Union of all session event types */
 export type SessionEvent =
-	| (SessionEventBase & {
-			reason: "start" | "new" | "before_new" | "shutdown";
-	  })
-	| (SessionEventBase & {
-			reason: "before_switch";
-			/** Session file we're switching to */
-			targetSessionFile: string;
-	  })
-	| (SessionEventBase & {
-			reason: "switch";
-			/** Session file we came from */
-			previousSessionFile: string | null;
-	  })
-	| (SessionEventBase & {
-			reason: "branch" | "before_branch";
-			/** Index of the turn to branch from */
-			targetTurnIndex: number;
-	  })
-	| (SessionEventBase & {
-			reason: "before_compact";
-			/** Compaction preparation with cut point, messages to summarize/keep, etc. */
-			preparation: CompactionPreparation;
-			/** Previous compaction entries, newest first. Use for iterative summarization. */
-			previousCompactions: CompactionEntry[];
-			/** Optional user-provided instructions for the summary */
-			customInstructions?: string;
-			/** Current model */
-			model: Model<any>;
-			/** Abort signal - hooks should pass this to LLM calls and check it periodically */
-			signal: AbortSignal;
-	  })
-	| (SessionEventBase & {
-			reason: "compact";
-			compactionEntry: CompactionEntry;
-			/** Whether the compaction entry was provided by a hook */
-			fromHook: boolean;
-	  });
+	| SessionStartEvent
+	| SessionBeforeSwitchEvent
+	| SessionSwitchEvent
+	| SessionBeforeNewEvent
+	| SessionNewEvent
+	| SessionBeforeBranchEvent
+	| SessionBranchEvent
+	| SessionBeforeCompactEvent
+	| SessionCompactEvent
+	| SessionShutdownEvent;
 
 /**
  * Event data for context event.
@@ -408,16 +424,45 @@ export interface BeforeAgentStartEventResult {
 	message?: Pick<HookMessage, "customType" | "content" | "display" | "details">;
 }
 
-/**
- * Return type for session event handlers.
- * Allows hooks to cancel "before_*" actions.
- */
-export interface SessionEventResult {
-	/** If true, cancel the pending action (switch, clear, or branch) */
+/** Return type for session_before_switch handlers */
+export interface SessionBeforeSwitchResult {
+	/** If true, cancel the switch */
 	cancel?: boolean;
-	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
+}
+
+/** Return type for session_before_new handlers */
+export interface SessionBeforeNewResult {
+	/** If true, cancel the new session */
+	cancel?: boolean;
+}
+
+/** Return type for session_before_branch handlers */
+export interface SessionBeforeBranchResult {
+	/**
+	 * If true, abort the branch entirely. No new session file is created,
+	 * conversation stays unchanged.
+	 */
+	cancel?: boolean;
+	/**
+	 * If true, the branch proceeds (new session file created, session state updated)
+	 * but the in-memory conversation is NOT rewound to the branch point.
+	 *
+	 * Use case: git-checkpoint hook that restores code state separately.
+	 * The hook handles state restoration itself, so it doesn't want the
+	 * agent's conversation to be rewound (which would lose recent context).
+	 *
+	 * - `cancel: true` → nothing happens, user stays in current session
+	 * - `skipConversationRestore: true` → branch happens, but messages stay as-is
+	 * - neither → branch happens AND messages rewind to branch point (default)
+	 */
 	skipConversationRestore?: boolean;
-	/** Custom compaction result (for before_compact event) - SessionManager adds id/parentId */
+}
+
+/** Return type for session_before_compact handlers */
+export interface SessionBeforeCompactResult {
+	/** If true, cancel the compaction */
+	cancel?: boolean;
+	/** Custom compaction result - SessionManager adds id/parentId */
 	compaction?: CompactionResult;
 }
 
@@ -427,8 +472,10 @@ export interface SessionEventResult {
 
 /**
  * Handler function type for each event.
+ * Handlers can return R, undefined, or void (bare return statements).
  */
-export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Promise<R>;
+// biome-ignore lint/suspicious/noConfusingVoidType: void allows bare return statements in handlers
+export type HookHandler<E, R = undefined> = (event: E, ctx: HookEventContext) => Promise<R | void> | R | void;
 
 export interface HookMessageRenderOptions {
 	/** Whether the view is expanded */
@@ -443,7 +490,7 @@ export type HookMessageRenderer<T = unknown> = (
 	message: HookMessage<T>,
 	options: HookMessageRenderOptions,
 	theme: Theme,
-) => Component | null;
+) => Component | undefined;
 
 /**
  * Context passed to hook command handlers.
@@ -478,21 +525,30 @@ export interface RegisteredCommand {
  * Hooks use pi.on() to subscribe to events and pi.sendMessage() to inject messages.
  */
 export interface HookAPI {
-	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
-	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
-	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
-	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult | void>): void;
+	// Session events
+	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
+	on(event: "session_before_switch", handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
+	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
+	on(event: "session_before_new", handler: HookHandler<SessionBeforeNewEvent, SessionBeforeNewResult>): void;
+	on(event: "session_new", handler: HookHandler<SessionNewEvent>): void;
+	on(event: "session_before_branch", handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>): void;
+	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): void;
 	on(
-		event: "before_agent_start",
-		// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
-		handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult | void>,
+		event: "session_before_compact",
+		handler: HookHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
 	): void;
+	on(event: "session_compact", handler: HookHandler<SessionCompactEvent>): void;
+	on(event: "session_shutdown", handler: HookHandler<SessionShutdownEvent>): void;
+
+	// Context and agent events
+	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult>): void;
+	on(event: "before_agent_start", handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
-	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult | undefined>): void;
-	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult | undefined>): void;
+	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
+	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
 
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry that
@@ -545,7 +601,7 @@ export interface HookAPI {
 	/**
 	 * Register a custom renderer for CustomMessageEntry with a specific customType.
 	 * The renderer is called when rendering the entry in the TUI.
-	 * Return null to use the default renderer.
+	 * Return nothing to use the default renderer.
 	 */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void;
 

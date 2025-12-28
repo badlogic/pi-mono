@@ -100,7 +100,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		createSession(true);
 
 		// Verify sessions are disabled
-		expect(session.sessionFile).toBeNull();
+		expect(session.sessionFile).toBeUndefined();
 
 		// Send one message
 		await session.prompt("Say hi");
@@ -121,8 +121,8 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		// After branching, conversation should be empty
 		expect(session.messages.length).toBe(0);
 
-		// Session file should still be null (no file created)
-		expect(session.sessionFile).toBeNull();
+		// Session file should still be undefined (no file created)
+		expect(session.sessionFile).toBeUndefined();
 	});
 
 	it("should branch from middle of conversation", async () => {

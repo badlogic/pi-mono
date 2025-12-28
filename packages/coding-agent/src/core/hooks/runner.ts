@@ -17,8 +17,7 @@ import type {
 	HookMessageRenderer,
 	HookUIContext,
 	RegisteredCommand,
-	SessionEvent,
-	SessionEventResult,
+	SessionBeforeCompactResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -53,9 +52,9 @@ function createTimeout(ms: number): { promise: Promise<never>; clear: () => void
 
 /** No-op UI context used when no UI is available */
 const noOpUIContext: HookUIContext = {
-	select: async () => null,
+	select: async () => undefined,
 	confirm: async () => false,
-	input: async () => null,
+	input: async () => undefined,
 	notify: () => {},
 	custom: () => ({ close: () => {}, requestRender: () => {} }),
 };
@@ -228,12 +227,26 @@ export class HookRunner {
 	}
 
 	/**
-	 * Emit an event to all hooks.
-	 * Returns the result from session/tool_result events (if any handler returns one).
+	 * Check if event type is a session "before_*" event that can be cancelled.
 	 */
-	async emit(event: HookEvent): Promise<SessionEventResult | ToolResultEventResult | undefined> {
+	private isSessionBeforeEvent(
+		type: string,
+	): type is "session_before_switch" | "session_before_new" | "session_before_branch" | "session_before_compact" {
+		return (
+			type === "session_before_switch" ||
+			type === "session_before_new" ||
+			type === "session_before_branch" ||
+			type === "session_before_compact"
+		);
+	}
+
+	/**
+	 * Emit an event to all hooks.
+	 * Returns the result from session before_* / tool_result events (if any handler returns one).
+	 */
+	async emit(event: HookEvent): Promise<SessionBeforeCompactResult | ToolResultEventResult | undefined> {
 		const ctx = this.createContext();
-		let result: SessionEventResult | ToolResultEventResult | undefined;
+		let result: SessionBeforeCompactResult | ToolResultEventResult | undefined;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get(event.type);
@@ -241,11 +254,10 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					// No timeout for before_compact events (like tool_call, they may take a while)
-					const isBeforeCompact = event.type === "session" && (event as SessionEvent).reason === "before_compact";
+					// No timeout for session_before_compact events (like tool_call, they may take a while)
 					let handlerResult: unknown;
 
-					if (isBeforeCompact) {
+					if (event.type === "session_before_compact") {
 						handlerResult = await handler(event, ctx);
 					} else {
 						const timeout = createTimeout(this.timeout);
@@ -253,9 +265,9 @@ export class HookRunner {
 						timeout.clear();
 					}
 
-					// For session events, capture the result (for before_* cancellation)
-					if (event.type === "session" && handlerResult) {
-						result = handlerResult as SessionEventResult;
+					// For session before_* events, capture the result (for cancellation)
+					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
+						result = handlerResult as SessionBeforeCompactResult;
 						// If cancelled, stop processing further hooks
 						if (result.cancel) {
 							return result;

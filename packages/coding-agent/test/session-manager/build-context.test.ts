@@ -48,7 +48,7 @@ function compaction(id: string, parentId: string | null, summary: string, firstK
 	};
 }
 
-function branchSummary(id: string, parentId: string | null, fromId: string, summary: string): BranchSummaryEntry {
+function branchSummary(id: string, parentId: string | null, summary: string, fromId: string): BranchSummaryEntry {
 	return { type: "branch_summary", id, parentId, timestamp: "2025-01-01T00:00:00Z", summary, fromId };
 }
 
@@ -132,7 +132,7 @@ describe("buildSessionContext", () => {
 
 			// Should have: summary + kept (3,4) + after (6,7) = 5 messages
 			expect(ctx.messages).toHaveLength(5);
-			expect((ctx.messages[0] as any).content).toContain("Summary of first two turns");
+			expect((ctx.messages[0] as any).summary).toContain("Summary of first two turns");
 			expect((ctx.messages[1] as any).content).toBe("second");
 			expect((ctx.messages[2] as any).content[0].text).toBe("response2");
 			expect((ctx.messages[3] as any).content).toBe("third");
@@ -150,7 +150,7 @@ describe("buildSessionContext", () => {
 
 			// Summary + all messages (1,2,4)
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).content).toContain("Empty summary");
+			expect((ctx.messages[0] as any).summary).toContain("Empty summary");
 		});
 
 		it("multiple compactions uses latest", () => {
@@ -167,7 +167,7 @@ describe("buildSessionContext", () => {
 
 			// Should use second summary, keep from 4
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).content).toContain("Second summary");
+			expect((ctx.messages[0] as any).summary).toContain("Second summary");
 		});
 	});
 
@@ -203,7 +203,7 @@ describe("buildSessionContext", () => {
 			const ctx = buildSessionContext(entries, "5");
 
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[2] as any).content).toContain("Summary of abandoned work");
+			expect((ctx.messages[2] as any).summary).toContain("Summary of abandoned work");
 			expect((ctx.messages[3] as any).content).toBe("new direction");
 		});
 
@@ -231,7 +231,7 @@ describe("buildSessionContext", () => {
 			// Main path to 7: summary + kept(3,4) + after(6,7)
 			const ctxMain = buildSessionContext(entries, "7");
 			expect(ctxMain.messages).toHaveLength(5);
-			expect((ctxMain.messages[0] as any).content).toContain("Compacted history");
+			expect((ctxMain.messages[0] as any).summary).toContain("Compacted history");
 			expect((ctxMain.messages[1] as any).content).toBe("q2");
 			expect((ctxMain.messages[2] as any).content[0].text).toBe("r2");
 			expect((ctxMain.messages[3] as any).content).toBe("q3");
@@ -243,7 +243,7 @@ describe("buildSessionContext", () => {
 			expect((ctxBranch.messages[0] as any).content).toBe("start");
 			expect((ctxBranch.messages[1] as any).content[0].text).toBe("r1");
 			expect((ctxBranch.messages[2] as any).content).toBe("q2");
-			expect((ctxBranch.messages[3] as any).content).toContain("Tried wrong approach");
+			expect((ctxBranch.messages[3] as any).summary).toContain("Tried wrong approach");
 			expect((ctxBranch.messages[4] as any).content).toBe("better approach");
 		});
 	});

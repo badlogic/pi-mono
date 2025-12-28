@@ -86,9 +86,9 @@ function resolveToolPath(toolPath: string, cwd: string): string {
  */
 function createNoOpUIContext(): HookUIContext {
 	return {
-		select: async () => null,
+		select: async () => undefined,
 		confirm: async () => false,
-		input: async () => null,
+		input: async () => undefined,
 		notify: () => {},
 		custom: () => ({ close: () => {}, requestRender: () => {} }),
 	};

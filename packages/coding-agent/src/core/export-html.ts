@@ -121,7 +121,7 @@ function resolveColorValue(
 }
 
 /** Load theme JSON from built-in or custom themes directory. */
-function loadThemeJson(name: string): ThemeJson | null {
+function loadThemeJson(name: string): ThemeJson | undefined {
 	// Try built-in themes first
 	const themesDir = getThemesDir();
 	const builtinPath = path.join(themesDir, `${name}.json`);
@@ -129,7 +129,7 @@ function loadThemeJson(name: string): ThemeJson | null {
 		try {
 			return JSON.parse(readFileSync(builtinPath, "utf-8")) as ThemeJson;
 		} catch {
-			return null;
+			return undefined;
 		}
 	}
 
@@ -140,11 +140,11 @@ function loadThemeJson(name: string): ThemeJson | null {
 		try {
 			return JSON.parse(readFileSync(customPath, "utf-8")) as ThemeJson;
 		} catch {
-			return null;
+			return undefined;
 		}
 	}
 
-	return null;
+	return undefined;
 }
 
 /** Build complete theme colors object, resolving theme JSON values against defaults. */
@@ -831,7 +831,9 @@ function formatMessage(
 
 	switch (message.role) {
 		case "bashExecution": {
-			const isError = message.cancelled || (message.exitCode !== 0 && message.exitCode !== null);
+			const isError =
+				message.cancelled ||
+				(message.exitCode !== 0 && message.exitCode !== null && message.exitCode !== undefined);
 
 			html += `<div class="tool-execution user-bash${isError ? " user-bash-error" : ""}">`;
 			html += timestampHtml;
@@ -844,7 +846,7 @@ function formatMessage(
 
 			if (message.cancelled) {
 				html += `<div class="bash-status warning">(cancelled)</div>`;
-			} else if (message.exitCode !== 0 && message.exitCode !== null) {
+			} else if (message.exitCode !== 0 && message.exitCode !== null && message.exitCode !== undefined) {
 				html += `<div class="bash-status error">(exit ${message.exitCode})</div>`;
 			}
 
@@ -1020,7 +1022,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
 	const lastModelInfo = lastProvider ? `${lastProvider}/${lastModel}` : lastModel;
 
 	const contextWindow = data.contextWindow || 0;
-	const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : null;
+	const contextPercent = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : undefined;
 
 	let messagesHtml = "";
 	for (const event of data.sessionEvents) {

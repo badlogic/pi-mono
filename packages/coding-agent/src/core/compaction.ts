@@ -13,9 +13,9 @@ import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 /**
  * Extract AgentMessage from an entry if it produces one.
- * Returns null for entries that don't contribute to LLM context.
+ * Returns undefined for entries that don't contribute to LLM context.
  */
-function getMessageFromEntry(entry: SessionEntry): AgentMessage | null {
+function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 	if (entry.type === "message") {
 		return entry.message;
 	}
@@ -25,7 +25,7 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | null {
 	if (entry.type === "branch_summary") {
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
-	return null;
+	return undefined;
 }
 
 /** Result from compact() - SessionManager adds uuid/parentUuid when saving */
@@ -69,20 +69,20 @@ export function calculateContextTokens(usage: Usage): number {
  * Get usage from an assistant message if available.
  * Skips aborted and error messages as they don't have valid usage data.
  */
-function getAssistantUsage(msg: AgentMessage): Usage | null {
+function getAssistantUsage(msg: AgentMessage): Usage | undefined {
 	if (msg.role === "assistant" && "usage" in msg) {
 		const assistantMsg = msg as AssistantMessage;
 		if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
 			return assistantMsg.usage;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 /**
  * Find the last non-aborted assistant message usage from session entries.
  */
-export function getLastAssistantUsage(entries: SessionEntry[]): Usage | null {
+export function getLastAssistantUsage(entries: SessionEntry[]): Usage | undefined {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (entry.type === "message") {
@@ -90,7 +90,7 @@ export function getLastAssistantUsage(entries: SessionEntry[]): Usage | null {
 			if (usage) return usage;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 /**
@@ -398,9 +398,12 @@ export interface CompactionPreparation {
 	boundaryStart: number;
 }
 
-export function prepareCompaction(entries: SessionEntry[], settings: CompactionSettings): CompactionPreparation | null {
+export function prepareCompaction(
+	entries: SessionEntry[],
+	settings: CompactionSettings,
+): CompactionPreparation | undefined {
 	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
-		return null;
+		return undefined;
 	}
 
 	let prevCompactionIndex = -1;
@@ -421,7 +424,7 @@ export function prepareCompaction(entries: SessionEntry[], settings: CompactionS
 	// Get UUID of first kept entry
 	const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
 	if (!firstKeptEntry?.id) {
-		return null; // Session needs migration
+		return undefined; // Session needs migration
 	}
 	const firstKeptEntryId = firstKeptEntry.id;
 

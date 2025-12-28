@@ -38,10 +38,10 @@ export interface ToolAPI {
 export interface SessionEvent {
 	/** All session entries (including pre-compaction history) */
 	entries: SessionEntry[];
-	/** Current session file path, or null in --no-session mode */
-	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "new" */
-	previousSessionFile: string | null;
+	/** Current session file path, or undefined in --no-session mode */
+	sessionFile: string | undefined;
+	/** Previous session file path, or undefined for "start" and "new" */
+	previousSessionFile: string | undefined;
 	/** Reason for the session event */
 	reason: "start" | "switch" | "branch" | "new";
 }

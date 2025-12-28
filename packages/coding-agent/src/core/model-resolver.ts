@@ -44,9 +44,9 @@ function isAlias(id: string): boolean {
 
 /**
  * Try to match a pattern to a model from the available models list.
- * Returns the matched model or null if no match found.
+ * Returns the matched model or undefined if no match found.
  */
-function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Model<Api> | null {
+function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Model<Api> | undefined {
 	// Check for provider/modelId format (provider is everything before the first /)
 	const slashIndex = modelPattern.indexOf("/");
 	if (slashIndex !== -1) {
@@ -75,7 +75,7 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	);
 
 	if (matches.length === 0) {
-		return null;
+		return undefined;
 	}
 
 	// Separate into aliases and dated versions
@@ -94,9 +94,9 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 }
 
 export interface ParsedModelResult {
-	model: Model<Api> | null;
+	model: Model<Api> | undefined;
 	thinkingLevel: ThinkingLevel;
-	warning: string | null;
+	warning: string | undefined;
 }
 
 /**
@@ -116,14 +116,14 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 	// Try exact match first
 	const exactMatch = tryMatchModel(pattern, availableModels);
 	if (exactMatch) {
-		return { model: exactMatch, thinkingLevel: "off", warning: null };
+		return { model: exactMatch, thinkingLevel: "off", warning: undefined };
 	}
 
 	// No match - try splitting on last colon if present
 	const lastColonIndex = pattern.lastIndexOf(":");
 	if (lastColonIndex === -1) {
 		// No colons, pattern simply doesn't match any model
-		return { model: null, thinkingLevel: "off", warning: null };
+		return { model: undefined, thinkingLevel: "off", warning: undefined };
 	}
 
 	const prefix = pattern.substring(0, lastColonIndex);
@@ -193,9 +193,9 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 }
 
 export interface InitialModelResult {
-	model: Model<Api> | null;
+	model: Model<Api> | undefined;
 	thinkingLevel: ThinkingLevel;
-	fallbackMessage: string | null;
+	fallbackMessage: string | undefined;
 }
 
 /**
@@ -227,7 +227,7 @@ export async function findInitialModel(options: {
 		modelRegistry,
 	} = options;
 
-	let model: Model<Api> | null = null;
+	let model: Model<Api> | undefined;
 	let thinkingLevel: ThinkingLevel = "off";
 
 	// 1. CLI args take priority
@@ -237,7 +237,7 @@ export async function findInitialModel(options: {
 			console.error(chalk.red(`Model ${cliProvider}/${cliModel} not found`));
 			process.exit(1);
 		}
-		return { model: found, thinkingLevel: "off", fallbackMessage: null };
+		return { model: found, thinkingLevel: "off", fallbackMessage: undefined };
 	}
 
 	// 2. Use first model from scoped models (skip if continuing/resuming)
@@ -245,7 +245,7 @@ export async function findInitialModel(options: {
 		return {
 			model: scopedModels[0].model,
 			thinkingLevel: scopedModels[0].thinkingLevel,
-			fallbackMessage: null,
+			fallbackMessage: undefined,
 		};
 	}
 
@@ -257,7 +257,7 @@ export async function findInitialModel(options: {
 			if (defaultThinkingLevel) {
 				thinkingLevel = defaultThinkingLevel;
 			}
-			return { model, thinkingLevel, fallbackMessage: null };
+			return { model, thinkingLevel, fallbackMessage: undefined };
 		}
 	}
 
@@ -270,16 +270,16 @@ export async function findInitialModel(options: {
 			const defaultId = defaultModelPerProvider[provider];
 			const match = availableModels.find((m) => m.provider === provider && m.id === defaultId);
 			if (match) {
-				return { model: match, thinkingLevel: "off", fallbackMessage: null };
+				return { model: match, thinkingLevel: "off", fallbackMessage: undefined };
 			}
 		}
 
 		// If no default found, use first available
-		return { model: availableModels[0], thinkingLevel: "off", fallbackMessage: null };
+		return { model: availableModels[0], thinkingLevel: "off", fallbackMessage: undefined };
 	}
 
 	// 5. No model found
-	return { model: null, thinkingLevel: "off", fallbackMessage: null };
+	return { model: undefined, thinkingLevel: "off", fallbackMessage: undefined };
 }
 
 /**
@@ -288,10 +288,10 @@ export async function findInitialModel(options: {
 export async function restoreModelFromSession(
 	savedProvider: string,
 	savedModelId: string,
-	currentModel: Model<Api> | null,
+	currentModel: Model<Api> | undefined,
 	shouldPrintMessages: boolean,
 	modelRegistry: ModelRegistry,
-): Promise<{ model: Model<Api> | null; fallbackMessage: string | null }> {
+): Promise<{ model: Model<Api> | undefined; fallbackMessage: string | undefined }> {
 	const restoredModel = modelRegistry.find(savedProvider, savedModelId);
 
 	// Check if restored model exists and has a valid API key
@@ -301,7 +301,7 @@ export async function restoreModelFromSession(
 		if (shouldPrintMessages) {
 			console.log(chalk.dim(`Restored model: ${savedProvider}/${savedModelId}`));
 		}
-		return { model: restoredModel, fallbackMessage: null };
+		return { model: restoredModel, fallbackMessage: undefined };
 	}
 
 	// Model not found or no API key - fall back
@@ -327,7 +327,7 @@ export async function restoreModelFromSession(
 
 	if (availableModels.length > 0) {
 		// Try to find a default model from known providers
-		let fallbackModel: Model<Api> | null = null;
+		let fallbackModel: Model<Api> | undefined;
 		for (const provider of Object.keys(defaultModelPerProvider) as KnownProvider[]) {
 			const defaultId = defaultModelPerProvider[provider];
 			const match = availableModels.find((m) => m.provider === provider && m.id === defaultId);
@@ -353,5 +353,5 @@ export async function restoreModelFromSession(
 	}
 
 	// No models available
-	return { model: null, fallbackMessage: null };
+	return { model: undefined, fallbackMessage: undefined };
 }

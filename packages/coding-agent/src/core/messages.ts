@@ -30,7 +30,7 @@ export interface BashExecutionMessage {
 	role: "bashExecution";
 	command: string;
 	output: string;
-	exitCode: number | null;
+	exitCode: number | undefined;
 	cancelled: boolean;
 	truncated: boolean;
 	fullOutputPath?: string;
@@ -86,7 +86,7 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 	}
 	if (msg.cancelled) {
 		text += "\n\n(command cancelled)";
-	} else if (msg.exitCode !== null && msg.exitCode !== 0) {
+	} else if (msg.exitCode !== null && msg.exitCode !== undefined && msg.exitCode !== 0) {
 		text += `\n\nCommand exited with code ${msg.exitCode}`;
 	}
 	if (msg.truncated && msg.fullOutputPath) {
@@ -145,7 +145,7 @@ export function createHookMessage(
  */
 export function convertToLlm(messages: AgentMessage[]): Message[] {
 	return messages
-		.map((m): Message | null => {
+		.map((m): Message | undefined => {
 			switch (m.role) {
 				case "bashExecution":
 					return {
@@ -182,8 +182,8 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 				default:
 					// biome-ignore lint/correctness/noSwitchDeclarations: fine
 					const _exhaustiveCheck: never = m;
-					return null;
+					return undefined;
 			}
 		})
-		.filter((m) => m !== null);
+		.filter((m) => m !== undefined);
 }

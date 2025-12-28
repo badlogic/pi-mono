@@ -30,7 +30,10 @@ import { exportSessionToHtml } from "./export-html.js";
 import type {
 	HookCommandContext,
 	HookRunner,
-	SessionEventResult,
+	SessionBeforeBranchResult,
+	SessionBeforeCompactResult,
+	SessionBeforeNewResult,
+	SessionBeforeSwitchResult,
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./hooks/index.js";
@@ -44,7 +47,7 @@ import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean }
+	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -64,7 +67,7 @@ export interface AgentSessionConfig {
 	/** File-based slash commands for expansion */
 	fileCommands?: FileSlashCommand[];
 	/** Hook runner (created in main.ts with wrapped tools) */
-	hookRunner?: HookRunner | null;
+	hookRunner?: HookRunner;
 	/** Custom tools for session lifecycle events */
 	customTools?: LoadedCustomTool[];
 	skillsSettings?: Required<SkillsSettings>;
@@ -90,7 +93,7 @@ export interface ModelCycleResult {
 
 /** Session statistics for /session command */
 export interface SessionStats {
-	sessionFile: string | null;
+	sessionFile: string | undefined;
 	sessionId: string;
 	userMessages: number;
 	assistantMessages: number;
@@ -138,21 +141,21 @@ export class AgentSession {
 	private _queuedMessages: string[] = [];
 
 	// Compaction state
-	private _compactionAbortController: AbortController | null = null;
-	private _autoCompactionAbortController: AbortController | null = null;
+	private _compactionAbortController: AbortController | undefined = undefined;
+	private _autoCompactionAbortController: AbortController | undefined = undefined;
 
 	// Retry state
-	private _retryAbortController: AbortController | null = null;
+	private _retryAbortController: AbortController | undefined = undefined;
 	private _retryAttempt = 0;
-	private _retryPromise: Promise<void> | null = null;
-	private _retryResolve: (() => void) | null = null;
+	private _retryPromise: Promise<void> | undefined = undefined;
+	private _retryResolve: (() => void) | undefined = undefined;
 
 	// Bash execution state
-	private _bashAbortController: AbortController | null = null;
+	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
 	// Hook system
-	private _hookRunner: HookRunner | null = null;
+	private _hookRunner: HookRunner | undefined = undefined;
 	private _turnIndex = 0;
 
 	// Custom tools for session lifecycle
@@ -169,10 +172,14 @@ export class AgentSession {
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];
-		this._hookRunner = config.hookRunner ?? null;
+		this._hookRunner = config.hookRunner;
 		this._customTools = config.customTools ?? [];
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
+
+		// Always subscribe to agent events for internal handling
+		// (session persistence, hooks, auto-compaction, retry logic)
+		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -192,7 +199,7 @@ export class AgentSession {
 	}
 
 	// Track last assistant message for auto-compaction check
-	private _lastAssistantMessage: AssistantMessage | null = null;
+	private _lastAssistantMessage: AssistantMessage | undefined = undefined;
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
@@ -246,7 +253,7 @@ export class AgentSession {
 		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
-			this._lastAssistantMessage = null;
+			this._lastAssistantMessage = undefined;
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
 			if (this._isRetryableError(msg)) {
@@ -272,8 +279,8 @@ export class AgentSession {
 	private _resolveRetry(): void {
 		if (this._retryResolve) {
 			this._retryResolve();
-			this._retryResolve = null;
-			this._retryPromise = null;
+			this._retryResolve = undefined;
+			this._retryPromise = undefined;
 		}
 	}
 
@@ -287,7 +294,7 @@ export class AgentSession {
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */
-	private _findLastAssistantMessage(): AssistantMessage | null {
+	private _findLastAssistantMessage(): AssistantMessage | undefined {
 		const messages = this.agent.state.messages;
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
@@ -295,7 +302,7 @@ export class AgentSession {
 				return msg as AssistantMessage;
 			}
 		}
-		return null;
+		return undefined;
 	}
 
 	/** Emit hook events based on agent events */
@@ -333,11 +340,6 @@ export class AgentSession {
 	 */
 	subscribe(listener: AgentSessionEventListener): () => void {
 		this._eventListeners.push(listener);
-
-		// Set up agent subscription if not already done
-		if (!this._unsubscribeAgent) {
-			this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
-		}
 
 		// Return unsubscribe function for this specific listener
 		return () => {
@@ -387,8 +389,8 @@ export class AgentSession {
 		return this.agent.state;
 	}
 
-	/** Current model (may be null if not yet selected) */
-	get model(): Model<any> | null {
+	/** Current model (may be undefined if not yet selected) */
+	get model(): Model<any> | undefined {
 		return this.agent.state.model;
 	}
 
@@ -404,7 +406,7 @@ export class AgentSession {
 
 	/** Whether auto-compaction is currently running */
 	get isCompacting(): boolean {
-		return this._autoCompactionAbortController !== null || this._compactionAbortController !== null;
+		return this._autoCompactionAbortController !== undefined || this._compactionAbortController !== undefined;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -417,9 +419,9 @@ export class AgentSession {
 		return this.agent.getQueueMode();
 	}
 
-	/** Current session file path, or null if sessions are disabled */
-	get sessionFile(): string | null {
-		return this.sessionManager.getSessionFile() ?? null;
+	/** Current session file path, or undefined if sessions are disabled */
+	get sessionFile(): string | undefined {
+		return this.sessionManager.getSessionFile();
 	}
 
 	/** Current session ID */
@@ -663,12 +665,11 @@ export class AgentSession {
 	async reset(): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
 
-		// Emit before_new event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_new event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_new")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				reason: "before_new",
-			})) as SessionEventResult | undefined;
+				type: "session_before_new",
+			})) as SessionBeforeNewResult | undefined;
 
 			if (result?.cancel) {
 				return false;
@@ -682,11 +683,10 @@ export class AgentSession {
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 
-		// Emit session event with reason "new" to hooks
+		// Emit session_new event to hooks
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
-				type: "session",
-				reason: "new",
+				type: "session_new",
 			});
 		}
 
@@ -722,17 +722,17 @@ export class AgentSession {
 	 * Cycle to next/previous model.
 	 * Uses scoped models (from --models flag) if available, otherwise all available models.
 	 * @param direction - "forward" (default) or "backward"
-	 * @returns The new model info, or null if only one model available
+	 * @returns The new model info, or undefined if only one model available
 	 */
-	async cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | null> {
+	async cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | undefined> {
 		if (this._scopedModels.length > 0) {
 			return this._cycleScopedModel(direction);
 		}
 		return this._cycleAvailableModel(direction);
 	}
 
-	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
-		if (this._scopedModels.length <= 1) return null;
+	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
+		if (this._scopedModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
 		let currentIndex = this._scopedModels.findIndex((sm) => modelsAreEqual(sm.model, currentModel));
@@ -759,9 +759,9 @@ export class AgentSession {
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
-	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
+	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
 		const availableModels = await this._modelRegistry.getAvailable();
-		if (availableModels.length <= 1) return null;
+		if (availableModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
 		let currentIndex = availableModels.findIndex((m) => modelsAreEqual(m, currentModel));
@@ -816,10 +816,10 @@ export class AgentSession {
 
 	/**
 	 * Cycle to next thinking level.
-	 * @returns New level, or null if model doesn't support thinking
+	 * @returns New level, or undefined if model doesn't support thinking
 	 */
-	cycleThinkingLevel(): ThinkingLevel | null {
-		if (!this.supportsThinking()) return null;
+	cycleThinkingLevel(): ThinkingLevel | undefined {
+		if (!this.supportsThinking()) return undefined;
 
 		const levels = this.getAvailableThinkingLevels();
 		const currentIndex = levels.indexOf(this.thinkingLevel);
@@ -904,19 +904,18 @@ export class AgentSession {
 			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
-			if (this._hookRunner?.hasHandlers("session")) {
+			if (this._hookRunner?.hasHandlers("session_before_compact")) {
 				// Get previous compactions, newest first
 				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
 
 				const result = (await this._hookRunner.emit({
-					type: "session",
-					reason: "before_compact",
+					type: "session_before_compact",
 					preparation,
 					previousCompactions,
 					customInstructions,
 					model: this.model,
 					signal: this._compactionAbortController.signal,
-				})) as SessionEventResult | undefined;
+				})) as SessionBeforeCompactResult | undefined;
 
 				if (result?.cancel) {
 					throw new Error("Compaction cancelled");
@@ -971,8 +970,7 @@ export class AgentSession {
 
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
-					type: "session",
-					reason: "compact",
+					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
 					fromHook,
 				});
@@ -985,7 +983,7 @@ export class AgentSession {
 				details,
 			};
 		} finally {
-			this._compactionAbortController = null;
+			this._compactionAbortController = undefined;
 			this._reconnectToAgent();
 		}
 	}
@@ -1051,13 +1049,13 @@ export class AgentSession {
 
 		try {
 			if (!this.model) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
 			const apiKey = await this._modelRegistry.getApiKey(this.model);
 			if (!apiKey) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
@@ -1065,29 +1063,28 @@ export class AgentSession {
 
 			const preparation = prepareCompaction(entries, settings);
 			if (!preparation) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
 			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
-			if (this._hookRunner?.hasHandlers("session")) {
+			if (this._hookRunner?.hasHandlers("session_before_compact")) {
 				// Get previous compactions, newest first
 				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
 
 				const hookResult = (await this._hookRunner.emit({
-					type: "session",
-					reason: "before_compact",
+					type: "session_before_compact",
 					preparation,
 					previousCompactions,
 					customInstructions: undefined,
 					model: this.model,
 					signal: this._autoCompactionAbortController.signal,
-				})) as SessionEventResult | undefined;
+				})) as SessionBeforeCompactResult | undefined;
 
 				if (hookResult?.cancel) {
-					this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
+					this._emit({ type: "auto_compaction_end", result: undefined, aborted: true, willRetry: false });
 					return;
 				}
 
@@ -1124,7 +1121,7 @@ export class AgentSession {
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: true, willRetry: false });
 				return;
 			}
 
@@ -1140,8 +1137,7 @@ export class AgentSession {
 
 			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
-					type: "session",
-					reason: "compact",
+					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
 					fromHook,
 				});
@@ -1167,7 +1163,7 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
-			this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+			this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 
 			if (reason === "overflow") {
 				throw new Error(
@@ -1175,7 +1171,7 @@ export class AgentSession {
 				);
 			}
 		} finally {
-			this._autoCompactionAbortController = null;
+			this._autoCompactionAbortController = undefined;
 		}
 	}
 
@@ -1267,7 +1263,7 @@ export class AgentSession {
 			// Aborted during sleep - emit end event so UI can clean up
 			const attempt = this._retryAttempt;
 			this._retryAttempt = 0;
-			this._retryAbortController = null;
+			this._retryAbortController = undefined;
 			this._emit({
 				type: "auto_retry_end",
 				success: false,
@@ -1277,7 +1273,7 @@ export class AgentSession {
 			this._resolveRetry();
 			return false;
 		}
-		this._retryAbortController = null;
+		this._retryAbortController = undefined;
 
 		// Retry via continue() - use setTimeout to break out of event handler chain
 		setTimeout(() => {
@@ -1329,7 +1325,7 @@ export class AgentSession {
 
 	/** Whether auto-retry is currently in progress */
 	get isRetrying(): boolean {
-		return this._retryPromise !== null;
+		return this._retryPromise !== undefined;
 	}
 
 	/** Whether auto-retry is enabled */
@@ -1389,7 +1385,7 @@ export class AgentSession {
 
 			return result;
 		} finally {
-			this._bashAbortController = null;
+			this._bashAbortController = undefined;
 		}
 	}
 
@@ -1402,7 +1398,7 @@ export class AgentSession {
 
 	/** Whether a bash command is currently running */
 	get isBashRunning(): boolean {
-		return this._bashAbortController !== null;
+		return this._bashAbortController !== undefined;
 	}
 
 	/** Whether there are pending bash messages waiting to be flushed */
@@ -1439,15 +1435,14 @@ export class AgentSession {
 	 * @returns true if switch completed, false if cancelled by hook
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
-		const previousSessionFile = this.sessionFile;
+		const previousSessionFile = this.sessionManager.getSessionFile();
 
-		// Emit before_switch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_switch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_switch")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				reason: "before_switch",
+				type: "session_before_switch",
 				targetSessionFile: sessionPath,
-			})) as SessionEventResult | undefined;
+			})) as SessionBeforeSwitchResult | undefined;
 
 			if (result?.cancel) {
 				return false;
@@ -1464,11 +1459,10 @@ export class AgentSession {
 		// Reload messages
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session event to hooks
+		// Emit session_switch event to hooks
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
-				type: "session",
-				reason: "switch",
+				type: "session_switch",
 				previousSessionFile,
 			});
 		}
@@ -1520,13 +1514,12 @@ export class AgentSession {
 
 		let skipConversationRestore = false;
 
-		// Emit before_branch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_branch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_branch")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				reason: "before_branch",
-				targetTurnIndex: entryIndex,
-			})) as SessionEventResult | undefined;
+				type: "session_before_branch",
+				entryIndex: entryIndex,
+			})) as SessionBeforeBranchResult | undefined;
 
 			if (result?.cancel) {
 				return { selectedText, cancelled: true };
@@ -1534,27 +1527,20 @@ export class AgentSession {
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
-		// Create branched session ending before the selected message (returns null in --no-session mode)
-		// User will re-enter/edit the selected message
 		if (!selectedEntry.parentId) {
-			throw new Error("Cannot branch from first message");
-		}
-		const newSessionFile = this.sessionManager.createBranchedSession(selectedEntry.parentId);
-
-		// Update session file if we have one (file-based mode)
-		if (newSessionFile !== null) {
-			this.sessionManager.setSessionFile(newSessionFile);
+			this.sessionManager.newSession();
+		} else {
+			this.sessionManager.createBranchedSession(selectedEntry.parentId);
 		}
 
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit branch event to hooks (after branch completes)
+		// Emit session_branch event to hooks (after branch completes)
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
-				type: "session",
-				reason: "branch",
-				targetTurnIndex: entryIndex,
+				type: "session_branch",
+				previousSessionFile,
 			});
 		}
 
@@ -1664,9 +1650,9 @@ export class AgentSession {
 	/**
 	 * Get text content of last assistant message.
 	 * Useful for /copy command.
-	 * @returns Text content, or null if no assistant message exists
+	 * @returns Text content, or undefined if no assistant message exists
 	 */
-	getLastAssistantText(): string | null {
+	getLastAssistantText(): string | undefined {
 		const lastAssistant = this.messages
 			.slice()
 			.reverse()
@@ -1678,7 +1664,7 @@ export class AgentSession {
 				return true;
 			});
 
-		if (!lastAssistant) return null;
+		if (!lastAssistant) return undefined;
 
 		let text = "";
 		for (const content of (lastAssistant as AssistantMessage).content) {
@@ -1687,7 +1673,7 @@ export class AgentSession {
 			}
 		}
 
-		return text.trim() || null;
+		return text.trim() || undefined;
 	}
 
 	// =========================================================================
@@ -1704,7 +1690,7 @@ export class AgentSession {
 	/**
 	 * Get the hook runner (for setting UI context and error handlers).
 	 */
-	get hookRunner(): HookRunner | null {
+	get hookRunner(): HookRunner | undefined {
 		return this._hookRunner;
 	}
 
@@ -1721,7 +1707,7 @@ export class AgentSession {
 	 */
 	private async _emitToolSessionEvent(
 		reason: ToolSessionEvent["reason"],
-		previousSessionFile: string | null,
+		previousSessionFile: string | undefined,
 	): Promise<void> {
 		const event: ToolSessionEvent = {
 			entries: this.sessionManager.getEntries(),
