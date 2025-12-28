@@ -920,12 +920,9 @@ export class InteractiveMode {
 					this.showStatus("Auto-compaction cancelled");
 				} else if (event.result) {
 					// Rebuild chat to show compacted state
+					// Note: renderMessages() already creates the CompactionComponent from the summary message
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
-					// Add compaction component (same as manual /compact)
-					const compactionComponent = new CompactionComponent(event.result.tokensBefore, event.result.summary);
-					compactionComponent.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
 				}
 				this.ui.requestRender();
@@ -1941,16 +1938,12 @@ export class InteractiveMode {
 		this.ui.requestRender();
 
 		try {
-			const result = await this.session.compact(customInstructions);
+			await this.session.compact(customInstructions);
 
 			// Rebuild UI
+			// Note: renderMessages() already creates the CompactionComponent from the summary message
 			this.chatContainer.clear();
 			this.rebuildChatFromMessages();
-
-			// Add compaction component
-			const compactionComponent = new CompactionComponent(result.tokensBefore, result.summary);
-			compactionComponent.setExpanded(this.toolOutputExpanded);
-			this.chatContainer.addChild(compactionComponent);
 
 			this.footer.updateState(this.session.state);
 		} catch (error) {

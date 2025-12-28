@@ -6,6 +6,10 @@
 
 - **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
 
+### Fixed
+
+- **Duplicate compaction warning**: Compaction message was displayed twice after manual `/compact` or auto-compaction. ([#341](https://github.com/badlogic/pi-mono/pull/341) by [@aliou](https://github.com/aliou))
+
 ## [0.30.2] - 2025-12-26
 
 ### Changed
