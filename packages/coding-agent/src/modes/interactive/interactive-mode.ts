@@ -38,6 +38,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
+import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
@@ -1071,19 +1072,15 @@ export class InteractiveMode {
 				break;
 			}
 			case "compactionSummary": {
+				this.chatContainer.addChild(new Spacer(1));
 				const component = new CompactionSummaryMessageComponent(message);
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
 			}
 			case "branchSummary": {
-				// Branch summaries are rendered as compaction summaries
-				const component = new CompactionSummaryMessageComponent({
-					role: "compactionSummary",
-					summary: message.summary,
-					tokensBefore: 0,
-					timestamp: message.timestamp,
-				});
+				this.chatContainer.addChild(new Spacer(1));
+				const component = new BranchSummaryMessageComponent(message);
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
