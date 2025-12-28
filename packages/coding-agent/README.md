@@ -699,6 +699,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-4-20250514",
   "defaultThinkingLevel": "medium",
+  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
   "queueMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
   "hideThinkingBlock": false,
@@ -731,6 +732,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `defaultProvider` | Default model provider | - |
 | `defaultModel` | Default model ID | - |
 | `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
 | `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
 | `shellPath` | Custom bash path (Windows) | auto-detected |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |

@@ -47,6 +47,7 @@ export interface Settings {
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
+	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -364,5 +365,9 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showImages = show;
 		this.save();
+	}
+
+	getEnabledModels(): string[] | undefined {
+		return this.settings.enabledModels;
 	}
 }

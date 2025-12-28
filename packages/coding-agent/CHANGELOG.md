@@ -5,6 +5,7 @@
 ### Added
 
 - **Custom prompts persisted in session files**: `--system-prompt` and `--append-system-prompt` values are now stored in session files. Resumed sessions restore these values while still loading fresh dynamic content (AGENTS.md, skills, etc.). Passing these flags on resume creates new entries that supersede the stored ones.
+- **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
 
 ## [0.30.2] - 2025-12-26
 

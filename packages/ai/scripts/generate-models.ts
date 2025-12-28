@@ -662,11 +662,15 @@ import type { Model } from "./types.js";
 export const MODELS = {
 `;
 
-	// Generate provider sections
-	for (const [providerId, models] of Object.entries(providers)) {
+	// Generate provider sections (sorted for deterministic output)
+	const sortedProviderIds = Object.keys(providers).sort();
+	for (const providerId of sortedProviderIds) {
+		const models = providers[providerId];
 		output += `\t${JSON.stringify(providerId)}: {\n`;
 
-		for (const model of Object.values(models)) {
+		const sortedModelIds = Object.keys(models).sort();
+		for (const modelId of sortedModelIds) {
+			const model = models[modelId];
 			output += `\t\t"${model.id}": {\n`;
 			output += `\t\t\tid: "${model.id}",\n`;
 			output += `\t\t\tname: "${model.name}",\n`;
