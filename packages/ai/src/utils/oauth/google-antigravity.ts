@@ -6,7 +6,7 @@
  * It is only intended for CLI use, not browser environments.
  */
 
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials } from "./types.js";
 
@@ -36,7 +36,12 @@ const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 /**
  * Start a local HTTP server to receive the OAuth callback
  */
-function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise<{ code: string; state: string }> }> {
+async function startCallbackServer(): Promise<{
+	server: Server;
+	getCode: () => Promise<{ code: string; state: string }>;
+}> {
+	const { createServer } = await import("http");
+
 	return new Promise((resolve, reject) => {
 		let codeResolve: (value: { code: string; state: string }) => void;
 		let codeReject: (error: Error) => void;
