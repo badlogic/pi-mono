@@ -29,6 +29,14 @@ export default function (pi: HookAPI) {
 		return box;
 	});
 
+	pi.registerCommand("no-stream", {
+		description: "Send a message without streaming",
+		handler: async (ctx) => {
+			ctx.ui.notify("Sending message after streaming is done...");
+		},
+		allowDuringStreaming: true,
+	})
+
 	// Register /test-msg command
 	pi.registerCommand("test-msg", {
 		description: "Send a test custom message",

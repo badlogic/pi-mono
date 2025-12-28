@@ -309,7 +309,7 @@ const SNAKE_SAVE_TYPE = "snake-save";
 export default function (pi: HookAPI) {
 	pi.registerCommand("snake", {
 		description: "Play Snake!",
-		immediate: true, // Run immediately, even during streaming
+		allowDuringStreaming: true, // Run even during streaming, not queued
 		handler: async (ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("Snake requires interactive mode", "error");

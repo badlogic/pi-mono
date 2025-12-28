@@ -442,8 +442,8 @@ export interface HookCommandContext {
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
-	/** If true, command runs immediately even during streaming (doesn't get queued) */
-	immediate?: boolean;
+	/** If true, command runs during streaming instead of being queued */
+	allowDuringStreaming?: boolean;
 	handler: (ctx: HookCommandContext) => Promise<void>;
 }
 
@@ -529,7 +529,7 @@ export interface HookAPI {
 	 */
 	registerCommand(
 		name: string,
-		options: { description?: string; immediate?: boolean; handler: RegisteredCommand["handler"] },
+		options: { description?: string; allowDuringStreaming?: boolean; handler: RegisteredCommand["handler"] },
 	): void;
 
 	/**

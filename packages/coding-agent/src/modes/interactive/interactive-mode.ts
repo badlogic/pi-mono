@@ -744,13 +744,13 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Check if this is an immediate hook command (runs even during streaming)
+			// Check if this hook command can run during streaming (not queued)
 			if (text.startsWith("/") && this.session.hookRunner && this.session.isStreaming) {
 				const spaceIndex = text.indexOf(" ");
 				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 				const command = this.session.hookRunner.getCommand(commandName);
-				if (command?.immediate) {
-					// Execute immediate hook command right away
+				if (command?.allowDuringStreaming) {
+					// Execute hook command right away
 					this.editor.addToHistory(text);
 					this.editor.setText("");
 					await this.session.prompt(text);
