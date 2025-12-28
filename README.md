@@ -70,55 +70,18 @@ These commands:
 
 ### Publishing
 
-Complete release process:
+```bash
+npm run release:patch    # Bug fixes
+npm run release:minor    # New features
+npm run release:major    # Breaking changes
+```
 
-1. **Add changes to CHANGELOG.md** (if changes affect coding-agent):
-   ```bash
-   # Add your changes to the [Unreleased] section in packages/coding-agent/CHANGELOG.md
-   # Always add new entries under [Unreleased], never under already-released versions
-   ```
+This handles version bump, CHANGELOG updates, commit, tag, publish, and push.
 
-2. **Bump version** (all packages):
-   ```bash
-   npm run version:patch    # For bug fixes
-   npm run version:minor    # For new features
-   npm run version:major    # For breaking changes
-   ```
-
-3. **Finalize CHANGELOG.md for release** (if changes affect coding-agent):
-   ```bash
-   # Change [Unreleased] to the new version number with today's date
-   # e.g., ## [0.7.16] - 2025-11-17
-   # NEVER add entries to already-released version sections
-   # Each version section is immutable once released
-   ```
-
-4. **Commit and tag**:
-   ```bash
-   git add .
-   git commit -m "Release v0.7.16"
-   git tag v0.7.16
-   git push origin main
-   git push origin v0.7.16
-   ```
-
-5. **Publish to npm**:
-   ```bash
-   npm run publish        # Publish all packages to npm
-   ```
-
-   **NPM Token Setup**: Publishing requires a granular access token with "Bypass 2FA on publish" enabled.
-   - Go to https://www.npmjs.com/settings/badlogic/tokens/
-   - Create a new "Granular Access Token"
-   - Select "Bypass 2FA on publish"
-   - Tokens expire after 90 days, so regenerate when needed
-   - Set the token: `npm config set //registry.npmjs.org/:_authToken=YOUR_TOKEN`
-
-6. **Add new [Unreleased] section** (for next development cycle):
-   ```bash
-   # Add a new [Unreleased] section at the top of CHANGELOG.md
-   # Commit: git commit -am "Add [Unreleased] section"
-   ```
+**NPM Token Setup**: Requires a granular access token with "Bypass 2FA on publish" enabled.
+- Go to https://www.npmjs.com/settings/badlogic/tokens/
+- Create a new "Granular Access Token" with "Bypass 2FA on publish"
+- Set the token: `npm config set //registry.npmjs.org/:_authToken=YOUR_TOKEN`
 
 ## License
 
