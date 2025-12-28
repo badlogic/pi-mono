@@ -1,7 +1,7 @@
 /**
  * Test hook demonstrating custom commands, message rendering, and before_agent_start.
  */
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { BeforeAgentStartEvent, HookAPI } from "@mariozechner/pi-coding-agent";
 import { Box, Text } from "@mariozechner/pi-tui";
 
 export default function (pi: HookAPI) {
@@ -12,7 +12,7 @@ export default function (pi: HookAPI) {
 	pi.registerMessageRenderer("test-info", (message, options, theme) => {
 		const box = new Box(0, 0, (t) => theme.bg("customMessageBg", t));
 
-		const label = theme.fg("successText", "[TEST INFO]");
+		const label = theme.fg("success", "[TEST INFO]");
 		box.addChild(new Text(label, 0, 0));
 
 		const content =
@@ -20,7 +20,7 @@ export default function (pi: HookAPI) {
 				? message.content
 				: message.content.map((c) => (c.type === "text" ? c.text : "[image]")).join("");
 
-		box.addChild(new Text(theme.fg("successText", content), 0, 1));
+		box.addChild(new Text(theme.fg("text", content), 0, 1));
 
 		if (options.expanded && message.details) {
 			box.addChild(new Text(theme.fg("dim", `Details: ${JSON.stringify(message.details)}`), 0, 2));
@@ -32,7 +32,7 @@ export default function (pi: HookAPI) {
 	// Register /test-msg command
 	pi.registerCommand("test-msg", {
 		description: "Send a test custom message",
-		handler: async (ctx) => {
+		handler: async () => {
 			pi.sendMessage({
 				customType: "test-info",
 				content: "This is a test message with custom rendering!",
@@ -65,7 +65,7 @@ export default function (pi: HookAPI) {
 	});
 
 	// Demonstrate before_agent_start: inject context when enabled
-	pi.on("before_agent_start", async (event, ctx) => {
+	pi.on("before_agent_start", async (event: BeforeAgentStartEvent) => {
 		if (!injectEnabled) return;
 
 		// Return a message to inject before the user's prompt
