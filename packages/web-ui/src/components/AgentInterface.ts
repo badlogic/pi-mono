@@ -131,13 +131,23 @@ export class AgentInterface extends LitElement {
 		}
 		if (!this.session) return;
 		this._unsubscribeSession = this.session.subscribe(async (ev: AgentEvent) => {
-			if (ev.type === "message_update") {
-				if (this._streamingContainer) {
-					const isStreaming = this.session?.state.isStreaming || false;
-					this._streamingContainer.isStreaming = isStreaming;
-					this._streamingContainer.setMessage(ev.message, !isStreaming);
-				}
-				this.requestUpdate();
+			switch (ev.type) {
+				case "message_start":
+				case "message_end":
+				case "turn_start":
+				case "turn_end":
+				case "agent_start":
+				case "agent_end":
+					this.requestUpdate();
+					break;
+				case "message_update":
+					if (this._streamingContainer) {
+						const isStreaming = this.session?.state.isStreaming || false;
+						this._streamingContainer.isStreaming = isStreaming;
+						this._streamingContainer.setMessage(ev.message, !isStreaming);
+					}
+					this.requestUpdate();
+					break;
 			}
 		});
 	}
