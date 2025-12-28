@@ -1,3 +1,11 @@
+/**
+ * Google Generative AI provider using the official @google/genai SDK.
+ *
+ * Note: The @google/genai SDK does not expose a custom fetch option in GoogleGenAIOptions.
+ * The SDK has internal support for custom fetch but it is not accessible via the public
+ * GoogleGenAI constructor. As a result, HTTP hooks will not fire for this provider.
+ * Users who need HTTP hooks should use the google-gemini-cli provider instead.
+ */
 import {
 	type GenerateContentConfig,
 	type GenerateContentParameters,

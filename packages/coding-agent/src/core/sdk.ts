@@ -27,6 +27,7 @@ import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
+import { createExtensionFetchFactory } from "./extensions/http.js";
 import {
 	discoverAndLoadExtensions,
 	type ExtensionFactory,
@@ -303,7 +304,6 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		images: { autoResize: manager.getImageAutoResize(), blockImages: manager.getBlockImages() },
 	};
 }
-
 // Factory
 
 /**
@@ -672,6 +672,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 			return key;
 		},
+		createFetch: createExtensionFetchFactory(extensionRunner),
 	});
 	time("createAgent");
 

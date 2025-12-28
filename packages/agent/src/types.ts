@@ -23,6 +23,12 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
 
 	/**
+	 * Factory to create a custom fetch function for HTTP requests.
+	 * Use this to intercept, modify, or log HTTP requests made to the LLM provider.
+	 */
+	createFetch?: (model: Model<any>) => typeof globalThis.fetch;
+
+	/**
 	 * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
 	 *
 	 * Each AgentMessage must be converted to a UserMessage, AssistantMessage, or ToolResultMessage

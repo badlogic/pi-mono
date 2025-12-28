@@ -141,7 +141,8 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				headers: redactHeaders(headers),
 			});
 
-			const response = await fetch(url, {
+			const fetchFn = options?.fetch ?? globalThis.fetch;
+			const response = await fetchFn(url, {
 				method: "POST",
 				headers,
 				body: JSON.stringify(transformedBody),

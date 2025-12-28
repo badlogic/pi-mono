@@ -70,6 +70,12 @@ export interface StreamOptions {
 	 * session-aware features. Ignored by providers that don't support it.
 	 */
 	sessionId?: string;
+	/**
+	 * Custom fetch function for HTTP hooks.
+	 * Note: The google-generative-ai provider does not support custom fetch due to SDK limitations.
+	 * Use google-gemini-cli instead if you need HTTP hooks for Google models.
+	 */
+	fetch?: typeof globalThis.fetch;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

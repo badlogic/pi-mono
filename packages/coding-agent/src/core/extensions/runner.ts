@@ -23,6 +23,9 @@ import type {
 	ExtensionUIContext,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	HttpRequestEvent,
+	HttpRequestEventResult,
+	HttpResponseEvent,
 	LoadedExtension,
 	MessageRenderer,
 	RegisteredCommand,
@@ -464,5 +467,77 @@ export class ExtensionRunner {
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Emit http_request event to all extensions.
+	 * Returns the merged result from all handlers (headers merged, cancel if any).
+	 */
+	async emitHttpRequest(event: Omit<HttpRequestEvent, "type">): Promise<HttpRequestEventResult | undefined> {
+		const ctx = this.createContext();
+		let mergedHeaders: Record<string, string> | undefined;
+		let cancel = false;
+
+		const fullEvent: HttpRequestEvent = { type: "http_request", ...event };
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("http_request");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerResult = await handler(fullEvent, ctx);
+					if (handlerResult) {
+						const result = handlerResult as HttpRequestEventResult;
+						if (result.cancel) cancel = true;
+						if (result.headers) {
+							mergedHeaders = { ...mergedHeaders, ...result.headers };
+						}
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "http_request",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		if (cancel || mergedHeaders) {
+			return { cancel, headers: mergedHeaders };
+		}
+		return undefined;
+	}
+
+	/**
+	 * Emit http_response event to all extensions.
+	 */
+	async emitHttpResponse(event: Omit<HttpResponseEvent, "type">): Promise<void> {
+		const ctx = this.createContext();
+		const fullEvent: HttpResponseEvent = { type: "http_response", ...event };
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("http_response");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					await handler(fullEvent, ctx);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "http_response",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
 	}
 }

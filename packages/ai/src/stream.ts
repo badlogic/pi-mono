@@ -178,6 +178,7 @@ function mapOptionsForApi<TApi extends Api>(
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 		sessionId: options?.sessionId,
+		fetch: options?.fetch,
 	};
 
 	// Helper to clamp xhigh to high for providers that don't support it

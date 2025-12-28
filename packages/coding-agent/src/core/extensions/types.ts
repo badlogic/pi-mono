@@ -413,6 +413,39 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 	return e.toolName === "ls";
 }
 
+// ============================================================================
+// HTTP Events
+// ============================================================================
+
+/**
+ * Fired before an HTTP request is made to an LLM provider.
+ * Extensions can add headers or cancel the request.
+ */
+export interface HttpRequestEvent {
+	type: "http_request";
+	provider: string;
+	modelId: string;
+	url: string;
+	method: string;
+	/** Request headers with sensitive values redacted */
+	headers: Record<string, string>;
+	/** Request body (if present and a string) */
+	body?: string;
+}
+
+/**
+ * Fired after an HTTP response is received from an LLM provider.
+ * Useful for logging and monitoring.
+ */
+export interface HttpResponseEvent {
+	type: "http_response";
+	provider: string;
+	modelId: string;
+	status: number;
+	headers: Record<string, string>;
+	durationMs: number;
+}
+
 /** Union of all event types */
 export type ExtensionEvent =
 	| SessionEvent
@@ -423,7 +456,9 @@ export type ExtensionEvent =
 	| TurnStartEvent
 	| TurnEndEvent
 	| ToolCallEvent
-	| ToolResultEvent;
+	| ToolResultEvent
+	| HttpRequestEvent
+	| HttpResponseEvent;
 
 // ============================================================================
 // Event Results
@@ -469,6 +504,13 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+}
+
+export interface HttpRequestEventResult {
+	/** Additional headers to merge into the request */
+	headers?: Record<string, string>;
+	/** If true, cancel the request (throws an error) */
+	cancel?: boolean;
 }
 
 // ============================================================================
@@ -538,6 +580,8 @@ export interface ExtensionAPI {
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
+	on(event: "http_request", handler: ExtensionHandler<HttpRequestEvent, HttpRequestEventResult>): void;
+	on(event: "http_response", handler: ExtensionHandler<HttpResponseEvent>): void;
 
 	// =========================================================================
 	// Tool Registration

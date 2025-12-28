@@ -648,6 +648,13 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
 - HTML export template split into separate files (template.html, template.css, template.js) for easier maintenance
 
+### Added
+
+- **`http_request` hook event**: Fired before HTTP requests to LLM providers. Hooks can add custom headers or cancel requests. API keys are automatically redacted from headers.
+- **`http_response` hook event**: Fired after HTTP responses from LLM providers. Includes status, headers, and request duration for logging and monitoring.
+
+**Note:** The `google-generative-ai` provider does not support HTTP hooks due to SDK limitations. Use `google-gemini-cli` instead for Google models if you need HTTP hooks.
+
 ### Fixed
 
 - HTML export now properly sanitizes user messages containing HTML tags like `<style>` that could break DOM rendering

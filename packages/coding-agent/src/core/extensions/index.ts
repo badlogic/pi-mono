@@ -40,6 +40,9 @@ export type {
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GrepToolResultEvent,
+	HttpRequestEvent,
+	HttpRequestEventResult,
+	HttpResponseEvent,
 	LoadExtensionsResult,
 	// Loaded Extension
 	LoadedExtension,
