@@ -285,7 +285,7 @@ Benefits:
 - Works with branching (pruning entries are part of the tree)
 - Trade-off: cache busting on first submission after pruning
 
-### Investigate: `context` event vs `before_agent_start`
+### Investigate: `context` event vs `before_agent_start` ✅
 
 References:
 - [#324](https://github.com/badlogic/pi-mono/issues/324) - `before_agent_start` proposal
@@ -329,9 +329,11 @@ Questions:
 | Cache impact | Can bust cache | Append-only, cache-safe |
 | Use case | Transient manipulation | Persistent context injection |
 
-**Design questions:**
-- [ ] Should `before_agent_start` create a new message type (`SystemMessage` with `role: "system"`)?
-- [ ] How should it render in TUI? (label when collapsed, full content when expanded)
+**Implementation (completed):**
+- Reuses `HookMessage` type (no new message type needed)
+- Handler returns `{ message: Pick<HookMessage, "customType" | "content" | "display" | "details"> }`
+- Message is appended to agent state AND persisted to session before `agent.prompt()` is called
+- Renders using existing `HookMessageComponent` (or custom renderer if registered)
 - [ ] How does it interact with compaction? (treated like user messages?)
 - [ ] Can hook return multiple messages or just one?
 

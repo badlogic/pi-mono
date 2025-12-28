@@ -10,7 +10,7 @@ export default function (pi: HookAPI) {
 
 	// Register a custom message renderer for our "test-info" type
 	pi.registerMessageRenderer("test-info", (message, options, theme) => {
-		const box = new Box(0, 0, (t) => theme.bg("success", t));
+		const box = new Box(0, 0, (t) => theme.bg("customMessageBg", t));
 
 		const label = theme.fg("successText", "[TEST INFO]");
 		box.addChild(new Text(label, 0, 0));
