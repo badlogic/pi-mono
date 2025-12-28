@@ -50,12 +50,19 @@ export interface CompactionEntry {
 export interface SystemPromptEntry {
 	type: "system_prompt";
 	timestamp: string;
-	systemPrompt: string;
+	customPrompt: string;
+}
+
+export interface AppendSystemPromptEntry {
+	type: "append_system_prompt";
+	timestamp: string;
+	appendPrompt: string;
 }
 
 export type SessionEntry =
 	| SessionHeader
 	| SystemPromptEntry
+	| AppendSystemPromptEntry
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
@@ -65,7 +72,8 @@ export interface SessionContext {
 	messages: AppMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
-	systemPrompt: string | null;
+	customPrompt: string | null;
+	appendPrompt: string | null;
 }
 
 export interface SessionInfo {
@@ -133,7 +141,8 @@ export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEnt
 export function buildSessionContext(entries: SessionEntry[]): SessionContext {
 	let thinkingLevel = "off";
 	let model: { provider: string; modelId: string } | null = null;
-	let systemPrompt: string | null = null;
+	let customPrompt: string | null = null;
+	let appendPrompt: string | null = null;
 
 	for (const entry of entries) {
 		if (entry.type === "thinking_level_change") {
@@ -143,7 +152,9 @@ export function buildSessionContext(entries: SessionEntry[]): SessionContext {
 		} else if (entry.type === "message" && entry.message.role === "assistant") {
 			model = { provider: entry.message.provider, modelId: entry.message.model };
 		} else if (entry.type === "system_prompt") {
-			systemPrompt = entry.systemPrompt;
+			customPrompt = entry.customPrompt;
+		} else if (entry.type === "append_system_prompt") {
+			appendPrompt = entry.appendPrompt;
 		}
 	}
 
@@ -162,7 +173,7 @@ export function buildSessionContext(entries: SessionEntry[]): SessionContext {
 				messages.push(entry.message);
 			}
 		}
-		return { messages, thinkingLevel, model, systemPrompt };
+		return { messages, thinkingLevel, model, customPrompt, appendPrompt };
 	}
 
 	const compactionEvent = entries[latestCompactionIndex] as CompactionEntry;
@@ -179,7 +190,7 @@ export function buildSessionContext(entries: SessionEntry[]): SessionContext {
 	messages.push(createSummaryMessage(compactionEvent.summary));
 	messages.push(...keptMessages);
 
-	return { messages, thinkingLevel, model, systemPrompt };
+	return { messages, thinkingLevel, model, customPrompt, appendPrompt };
 }
 
 /**
@@ -367,11 +378,21 @@ export class SessionManager {
 		this._persist(entry);
 	}
 
-	saveSystemPrompt(systemPrompt: string): void {
+	saveCustomPrompt(customPrompt: string): void {
 		const entry: SystemPromptEntry = {
 			type: "system_prompt",
 			timestamp: new Date().toISOString(),
-			systemPrompt,
+			customPrompt,
+		};
+		this.inMemoryEntries.push(entry);
+		this._persist(entry);
+	}
+
+	saveAppendPrompt(appendPrompt: string): void {
+		const entry: AppendSystemPromptEntry = {
+			type: "append_system_prompt",
+			timestamp: new Date().toISOString(),
+			appendPrompt,
 		};
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);

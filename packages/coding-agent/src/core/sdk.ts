@@ -95,6 +95,8 @@ export interface CreateAgentSessionOptions {
 
 	/** System prompt. String replaces default, function receives default and returns final. */
 	systemPrompt?: string | ((defaultPrompt: string) => string);
+	/** Text to append to system prompt (after customPrompt or default). */
+	appendPrompt?: string;
 
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
@@ -538,35 +540,46 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
 	}
 
-	let systemPrompt: string;
+	// Resolve customPrompt: CLI option > session entry > undefined (use built-in default)
+	let customPrompt: string | undefined;
+	if (typeof options.systemPrompt === "string") {
+		customPrompt = options.systemPrompt;
+	} else if (options.systemPrompt === undefined && hasExistingSession && existingSession.customPrompt) {
+		customPrompt = existingSession.customPrompt;
+	}
 
-	// If resuming a session with a stored system prompt, use it
-	if (hasExistingSession && existingSession.systemPrompt) {
-		systemPrompt = existingSession.systemPrompt;
-	} else {
-		// Build a new system prompt
+	// Resolve appendPrompt: CLI option > session entry > undefined (empty)
+	let appendPrompt: string | undefined;
+	if (options.appendPrompt) {
+		appendPrompt = options.appendPrompt;
+	} else if (options.appendPrompt === undefined && hasExistingSession && existingSession.appendPrompt) {
+		appendPrompt = existingSession.appendPrompt;
+	}
+
+	// Build the system prompt with resolved values
+	let systemPrompt: string;
+	if (typeof options.systemPrompt === "function") {
+		// Function form: let the function modify the default prompt
 		const defaultPrompt = buildSystemPromptInternal({
 			cwd,
 			agentDir,
 			skills,
 			contextFiles,
+			appendSystemPrompt: appendPrompt,
 		});
-		time("buildSystemPrompt");
-
-		if (options.systemPrompt === undefined) {
-			systemPrompt = defaultPrompt;
-		} else if (typeof options.systemPrompt === "string") {
-			systemPrompt = buildSystemPromptInternal({
-				cwd,
-				agentDir,
-				skills,
-				contextFiles,
-				customPrompt: options.systemPrompt,
-			});
-		} else {
-			systemPrompt = options.systemPrompt(defaultPrompt);
-		}
+		systemPrompt = options.systemPrompt(defaultPrompt);
+	} else {
+		// String or undefined: use buildSystemPromptInternal with resolved values
+		systemPrompt = buildSystemPromptInternal({
+			cwd,
+			agentDir,
+			skills,
+			contextFiles,
+			customPrompt,
+			appendSystemPrompt: appendPrompt,
+		});
 	}
+	time("buildSystemPrompt");
 
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
@@ -599,9 +612,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
-	} else {
-		// Save system prompt to session file for new sessions
-		sessionManager.saveSystemPrompt(systemPrompt);
+	}
+
+	// Save prompt entries if CLI options provided (creates new entries that supersede old ones)
+	if (typeof options.systemPrompt === "string") {
+		sessionManager.saveCustomPrompt(options.systemPrompt);
+	}
+	if (options.appendPrompt) {
+		sessionManager.saveAppendPrompt(options.appendPrompt);
 	}
 
 	const session = new AgentSession({

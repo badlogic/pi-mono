@@ -4,7 +4,7 @@
 
 ### Added
 
-- **System prompt stored in session files**: The synthesized system prompt is now saved in JSONL session files, ensuring resumed sessions use the exact same prompt they were created with.
+- **Custom prompts persisted in session files**: `--system-prompt` and `--append-system-prompt` values are now stored in session files. Resumed sessions restore these values while still loading fresh dynamic content (AGENTS.md, skills, etc.). Passing these flags on resume creates new entries that supersede the stored ones.
 
 ## [0.30.2] - 2025-12-26
 
