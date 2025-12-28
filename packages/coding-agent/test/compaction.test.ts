@@ -16,7 +16,6 @@ import {
 import {
 	buildSessionContext,
 	type CompactionEntry,
-	createSummaryMessage,
 	type ModelChangeEntry,
 	migrateSessionEntries,
 	parseSessionEntries,
@@ -268,21 +267,6 @@ describe("findCutPoint", () => {
 		if (cutEntry.message.role === "assistant") {
 			expect(result.isSplitTurn).toBe(true);
 			expect(result.turnStartIndex).toBe(2); // Turn 2 starts at index 2
-		}
-	});
-});
-
-describe("createSummaryMessage", () => {
-	it("should create user message with prefix and correct timestamp", () => {
-		const ts = "2025-01-01T12:00:00.000Z";
-		const msg = createSummaryMessage("This is the summary", ts);
-		expect(msg.role).toBe("user");
-		expect(msg.timestamp).toBe(new Date(ts).getTime());
-		if (msg.role === "user") {
-			expect(msg.content).toContain(
-				"The conversation history before this point was compacted into the following summary:",
-			);
-			expect(msg.content).toContain("This is the summary");
 		}
 	});
 });

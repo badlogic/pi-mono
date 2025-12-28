@@ -1,4 +1,4 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import hljs from "highlight.js";
@@ -7,7 +7,6 @@ import { homedir } from "os";
 import * as path from "path";
 import { basename } from "path";
 import { APP_NAME, getCustomThemesDir, getThemesDir, VERSION } from "../config.js";
-import { type BashExecutionMessage, isBashExecutionMessage } from "./messages.js";
 import type { SessionManager } from "./session-manager.js";
 
 // ============================================================================
@@ -821,110 +820,136 @@ function formatToolExecution(
 	return { html, bgColor };
 }
 
-function formatMessage(message: Message, toolResultsMap: Map<string, ToolResultMessage>, colors: ThemeColors): string {
+function formatMessage(
+	message: AgentMessage,
+	toolResultsMap: Map<string, ToolResultMessage>,
+	colors: ThemeColors,
+): string {
 	let html = "";
 	const timestamp = (message as { timestamp?: number }).timestamp;
 	const timestampHtml = timestamp ? `<div class="message-timestamp">${formatTimestamp(timestamp)}</div>` : "";
 
-	// Handle bash execution messages (user-executed via ! command)
-	if (isBashExecutionMessage(message)) {
-		const bashMsg = message as unknown as BashExecutionMessage;
-		const isError = bashMsg.cancelled || (bashMsg.exitCode !== 0 && bashMsg.exitCode !== null);
+	switch (message.role) {
+		case "bashExecution": {
+			const isError = message.cancelled || (message.exitCode !== 0 && message.exitCode !== null);
 
-		html += `<div class="tool-execution user-bash${isError ? " user-bash-error" : ""}">`;
-		html += timestampHtml;
-		html += `<div class="tool-command">$ ${escapeHtml(bashMsg.command)}</div>`;
+			html += `<div class="tool-execution user-bash${isError ? " user-bash-error" : ""}">`;
+			html += timestampHtml;
+			html += `<div class="tool-command">$ ${escapeHtml(message.command)}</div>`;
 
-		if (bashMsg.output) {
-			const lines = bashMsg.output.split("\n");
-			html += formatExpandableOutput(lines, 10);
+			if (message.output) {
+				const lines = message.output.split("\n");
+				html += formatExpandableOutput(lines, 10);
+			}
+
+			if (message.cancelled) {
+				html += `<div class="bash-status warning">(cancelled)</div>`;
+			} else if (message.exitCode !== 0 && message.exitCode !== null) {
+				html += `<div class="bash-status error">(exit ${message.exitCode})</div>`;
+			}
+
+			if (message.truncated && message.fullOutputPath) {
+				html += `<div class="bash-truncation warning">Output truncated. Full output: ${escapeHtml(message.fullOutputPath)}</div>`;
+			}
+
+			html += `</div>`;
+			break;
 		}
+		case "user": {
+			const userMsg = message as UserMessage;
+			let textContent = "";
+			const images: ImageContent[] = [];
 
-		if (bashMsg.cancelled) {
-			html += `<div class="bash-status warning">(cancelled)</div>`;
-		} else if (bashMsg.exitCode !== 0 && bashMsg.exitCode !== null) {
-			html += `<div class="bash-status error">(exit ${bashMsg.exitCode})</div>`;
-		}
-
-		if (bashMsg.truncated && bashMsg.fullOutputPath) {
-			html += `<div class="bash-truncation warning">Output truncated. Full output: ${escapeHtml(bashMsg.fullOutputPath)}</div>`;
-		}
-
-		html += `</div>`;
-		return html;
-	}
-
-	if (message.role === "user") {
-		const userMsg = message as UserMessage;
-		let textContent = "";
-		const images: ImageContent[] = [];
-
-		if (typeof userMsg.content === "string") {
-			textContent = userMsg.content;
-		} else {
-			for (const block of userMsg.content) {
-				if (block.type === "text") {
-					textContent += block.text;
-				} else if (block.type === "image") {
-					images.push(block as ImageContent);
+			if (typeof userMsg.content === "string") {
+				textContent = userMsg.content;
+			} else {
+				for (const block of userMsg.content) {
+					if (block.type === "text") {
+						textContent += block.text;
+					} else if (block.type === "image") {
+						images.push(block as ImageContent);
+					}
 				}
 			}
-		}
 
-		html += `<div class="user-message">${timestampHtml}`;
+			html += `<div class="user-message">${timestampHtml}`;
 
-		// Render images first
-		if (images.length > 0) {
-			html += `<div class="message-images">`;
-			for (const img of images) {
-				html += `<img src="data:${img.mimeType};base64,${img.data}" alt="User uploaded image" class="message-image" />`;
+			// Render images first
+			if (images.length > 0) {
+				html += `<div class="message-images">`;
+				for (const img of images) {
+					html += `<img src="data:${img.mimeType};base64,${img.data}" alt="User uploaded image" class="message-image" />`;
+				}
+				html += `</div>`;
 			}
+
+			// Render text as markdown (server-side)
+			if (textContent.trim()) {
+				html += `<div class="markdown-content">${renderMarkdown(textContent)}</div>`;
+			}
+
 			html += `</div>`;
+			break;
 		}
+		case "assistant": {
+			html += timestampHtml ? `<div class="assistant-message">${timestampHtml}` : "";
 
-		// Render text as markdown (server-side)
-		if (textContent.trim()) {
-			html += `<div class="markdown-content">${renderMarkdown(textContent)}</div>`;
-		}
-
-		html += `</div>`;
-	} else if (message.role === "assistant") {
-		const assistantMsg = message as AssistantMessage;
-		html += timestampHtml ? `<div class="assistant-message">${timestampHtml}` : "";
-
-		for (const content of assistantMsg.content) {
-			if (content.type === "text" && content.text.trim()) {
-				// Render markdown server-side
-				html += `<div class="assistant-text markdown-content">${renderMarkdown(content.text)}</div>`;
-			} else if (content.type === "thinking" && content.thinking.trim()) {
-				html += `<div class="thinking-text">${escapeHtml(content.thinking.trim()).replace(/\n/g, "<br>")}</div>`;
+			for (const content of message.content) {
+				if (content.type === "text" && content.text.trim()) {
+					// Render markdown server-side
+					html += `<div class="assistant-text markdown-content">${renderMarkdown(content.text)}</div>`;
+				} else if (content.type === "thinking" && content.thinking.trim()) {
+					html += `<div class="thinking-text">${escapeHtml(content.thinking.trim()).replace(/\n/g, "<br>")}</div>`;
+				}
 			}
-		}
 
-		for (const content of assistantMsg.content) {
-			if (content.type === "toolCall") {
-				const toolResult = toolResultsMap.get(content.id);
-				const { html: toolHtml, bgColor } = formatToolExecution(
-					content.name,
-					content.arguments as Record<string, unknown>,
-					toolResult,
-					colors,
-				);
-				html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
+			for (const content of message.content) {
+				if (content.type === "toolCall") {
+					const toolResult = toolResultsMap.get(content.id);
+					const { html: toolHtml, bgColor } = formatToolExecution(
+						content.name,
+						content.arguments as Record<string, unknown>,
+						toolResult,
+						colors,
+					);
+					html += `<div class="tool-execution" style="background-color: ${bgColor}">${toolHtml}</div>`;
+				}
 			}
-		}
 
-		const hasToolCalls = assistantMsg.content.some((c) => c.type === "toolCall");
-		if (!hasToolCalls) {
-			if (assistantMsg.stopReason === "aborted") {
-				html += '<div class="error-text">Aborted</div>';
-			} else if (assistantMsg.stopReason === "error") {
-				html += `<div class="error-text">Error: ${escapeHtml(assistantMsg.errorMessage || "Unknown error")}</div>`;
+			const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+			if (!hasToolCalls) {
+				if (message.stopReason === "aborted") {
+					html += '<div class="error-text">Aborted</div>';
+				} else if (message.stopReason === "error") {
+					html += `<div class="error-text">Error: ${escapeHtml(message.errorMessage || "Unknown error")}</div>`;
+				}
 			}
-		}
 
-		if (timestampHtml) {
-			html += "</div>";
+			if (timestampHtml) {
+				html += "</div>";
+			}
+			break;
+		}
+		case "toolResult":
+			// Tool results are rendered inline with tool calls
+			break;
+		case "hookMessage":
+			// Hook messages with display:true shown as info boxes
+			if (message.display) {
+				const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+				html += `<div class="hook-message">${timestampHtml}<div class="hook-type">[${escapeHtml(message.customType)}]</div><div class="markdown-content">${renderMarkdown(content)}</div></div>`;
+			}
+			break;
+		case "compactionSummary":
+			// Rendered separately via formatCompaction
+			break;
+		case "branchSummary":
+			// Rendered as compaction-like summary
+			html += `<div class="compaction-container expanded"><div class="compaction-content"><div class="compaction-summary"><div class="compaction-summary-header">Branch Summary</div><div class="compaction-summary-content">${escapeHtml(message.summary).replace(/\n/g, "<br>")}</div></div></div></div>`;
+			break;
+		default: {
+			// Exhaustive check
+			const _exhaustive: never = message;
 		}
 	}
 

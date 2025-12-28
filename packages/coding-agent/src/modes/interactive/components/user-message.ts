@@ -5,13 +5,9 @@ import { getMarkdownTheme, theme } from "../theme/theme.js";
  * Component that renders a user message
  */
 export class UserMessageComponent extends Container {
-	constructor(text: string, isFirst: boolean) {
+	constructor(text: string) {
 		super();
-
-		// Add spacer before user message (except first one)
-		if (!isFirst) {
-			this.addChild(new Spacer(1));
-		}
+		this.addChild(new Spacer(1));
 		this.addChild(
 			new Markdown(text, 1, 1, getMarkdownTheme(), {
 				bgColor: (text: string) => theme.bg("userMessageBg", text),

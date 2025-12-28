@@ -113,7 +113,6 @@ export {
 	CURRENT_SESSION_VERSION,
 	type CustomEntry,
 	type CustomMessageEntry,
-	createSummaryMessage,
 	type FileEntry,
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
@@ -126,8 +125,6 @@ export {
 	type SessionInfo,
 	SessionManager,
 	type SessionMessageEntry,
-	SUMMARY_PREFIX,
-	SUMMARY_SUFFIX,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
 export {

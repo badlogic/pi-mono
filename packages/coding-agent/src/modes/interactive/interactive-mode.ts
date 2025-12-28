@@ -28,14 +28,8 @@ import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
-import { isBashExecutionMessage, isHookMessage } from "../../core/messages.js";
-import {
-	getLatestCompactionEntry,
-	type SessionContext,
-	SessionManager,
-	SUMMARY_PREFIX,
-	SUMMARY_SUFFIX,
-} from "../../core/session-manager.js";
+import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -44,7 +38,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
-import { CompactionComponent } from "./components/compaction.js";
+import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
@@ -83,9 +77,6 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Track if this is the first user message (to skip spacer)
-	private isFirstUserMessage = true;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -817,7 +808,7 @@ export class InteractiveMode {
 				break;
 
 			case "message_start":
-				if (isHookMessage(event.message)) {
+				if (event.message.role === "hookMessage") {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
@@ -828,7 +819,7 @@ export class InteractiveMode {
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(event.message as AssistantMessage);
+					this.streamingComponent.updateContent(event.message);
 					this.ui.requestRender();
 				}
 				break;
@@ -983,7 +974,12 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
 					// Add compaction component (same as manual /compact)
-					const compactionComponent = new CompactionComponent(event.result.tokensBefore, event.result.summary);
+					const compactionComponent = new CompactionSummaryMessageComponent({
+						role: "compactionSummary",
+						tokensBefore: event.result.tokensBefore,
+						summary: event.result.summary,
+						timestamp: Date.now(),
+					});
 					compactionComponent.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
@@ -1051,38 +1047,70 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: AgentMessage): void {
-		if (isBashExecutionMessage(message)) {
-			const component = new BashExecutionComponent(message.command, this.ui);
-			if (message.output) {
-				component.appendOutput(message.output);
+	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+		switch (message.role) {
+			case "bashExecution": {
+				const component = new BashExecutionComponent(message.command, this.ui);
+				if (message.output) {
+					component.appendOutput(message.output);
+				}
+				component.setComplete(
+					message.exitCode,
+					message.cancelled,
+					message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
+					message.fullOutputPath,
+				);
+				this.chatContainer.addChild(component);
+				break;
 			}
-			component.setComplete(
-				message.exitCode,
-				message.cancelled,
-				message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
-				message.fullOutputPath,
-			);
-			this.chatContainer.addChild(component);
-			return;
-		}
-
-		if (isHookMessage(message)) {
-			// Render as custom message if display is true
-			if (message.display) {
-				const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
-				this.chatContainer.addChild(new HookMessageComponent(message, renderer));
+			case "hookMessage": {
+				if (message.display) {
+					const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
+					this.chatContainer.addChild(new HookMessageComponent(message, renderer));
+				}
+				break;
 			}
-		} else if (message.role === "user") {
-			const textContent = this.getUserMessageText(message);
-			if (textContent) {
-				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-				this.chatContainer.addChild(userComponent);
-				this.isFirstUserMessage = false;
+			case "compactionSummary": {
+				const component = new CompactionSummaryMessageComponent(message);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+				break;
 			}
-		} else if (message.role === "assistant") {
-			const assistantComponent = new AssistantMessageComponent(message as AssistantMessage, this.hideThinkingBlock);
-			this.chatContainer.addChild(assistantComponent);
+			case "branchSummary": {
+				// Branch summaries are rendered as compaction summaries
+				const component = new CompactionSummaryMessageComponent({
+					role: "compactionSummary",
+					summary: message.summary,
+					tokensBefore: 0,
+					timestamp: message.timestamp,
+				});
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+				break;
+			}
+			case "user": {
+				const textContent = this.getUserMessageText(message);
+				if (textContent) {
+					const userComponent = new UserMessageComponent(textContent);
+					this.chatContainer.addChild(userComponent);
+					if (options?.populateHistory) {
+						this.editor.addToHistory(textContent);
+					}
+				}
+				break;
+			}
+			case "assistant": {
+				const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock);
+				this.chatContainer.addChild(assistantComponent);
+				break;
+			}
+			case "toolResult": {
+				// Tool results are rendered inline with tool calls, handled separately
+				break;
+			}
+			default: {
+				const _exhaustive: never = message;
+			}
 		}
 	}
 
@@ -1096,7 +1124,6 @@ export class InteractiveMode {
 		sessionContext: SessionContext,
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
-		this.isFirstUserMessage = true;
 		this.pendingTools.clear();
 
 		if (options.updateFooter) {
@@ -1104,65 +1131,25 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getEntries());
-
-		for (let i = 0; i < sessionContext.messages.length; i++) {
-			const message = sessionContext.messages[i];
-
-			if (isBashExecutionMessage(message)) {
+		for (const message of sessionContext.messages) {
+			// Assistant messages need special handling for tool calls
+			if (message.role === "assistant") {
 				this.addMessageToChat(message);
-				continue;
-			}
-
-			// Check if this is a custom_message entry
-			if (isHookMessage(message)) {
-				if (message.display) {
-					const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
-					this.chatContainer.addChild(new HookMessageComponent(message, renderer));
-				}
-				continue;
-			}
-
-			if (message.role === "user") {
-				const textContent = this.getUserMessageText(message);
-				if (textContent) {
-					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
-						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
-						const component = new CompactionComponent(compactionEntry.tokensBefore, summary);
-						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
-					} else {
-						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-						this.chatContainer.addChild(userComponent);
-						this.isFirstUserMessage = false;
-						if (options.populateHistory) {
-							this.editor.addToHistory(textContent);
-						}
-					}
-				}
-			} else if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
-				this.chatContainer.addChild(assistantComponent);
-
-				for (const content of assistantMsg.content) {
+				// Render tool call components
+				for (const content of message.content) {
 					if (content.type === "toolCall") {
 						const component = new ToolExecutionComponent(
 							content.name,
 							content.arguments,
-							{
-								showImages: this.settingsManager.getShowImages(),
-							},
+							{ showImages: this.settingsManager.getShowImages() },
 							this.customTools.get(content.name)?.tool,
 							this.ui,
 						);
 						this.chatContainer.addChild(component);
 
-						if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							const errorMessage =
-								assistantMsg.stopReason === "aborted"
-									? "Operation aborted"
-									: assistantMsg.errorMessage || "Error";
+								message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
 							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
 						} else {
 							this.pendingTools.set(content.id, component);
@@ -1170,13 +1157,18 @@ export class InteractiveMode {
 					}
 				}
 			} else if (message.role === "toolResult") {
+				// Match tool results to pending tool components
 				const component = this.pendingTools.get(message.toolCallId);
 				if (component) {
 					component.updateResult(message);
 					this.pendingTools.delete(message.toolCallId);
 				}
+			} else {
+				// All other messages use standard rendering
+				this.addMessageToChat(message, options);
 			}
 		}
+
 		this.pendingTools.clear();
 		this.ui.requestRender();
 	}
@@ -1308,7 +1300,7 @@ export class InteractiveMode {
 		for (const child of this.chatContainer.children) {
 			if (child instanceof ToolExecutionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof CompactionComponent) {
+			} else if (child instanceof CompactionSummaryMessageComponent) {
 				child.setExpanded(this.toolOutputExpanded);
 			} else if (child instanceof BashExecutionComponent) {
 				child.setExpanded(this.toolOutputExpanded);
@@ -1584,7 +1576,6 @@ export class InteractiveMode {
 					}
 
 					this.chatContainer.clear();
-					this.isFirstUserMessage = true;
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
 					done();
@@ -1638,7 +1629,6 @@ export class InteractiveMode {
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
-		this.isFirstUserMessage = true;
 		this.renderInitialMessages();
 		this.showStatus("Resumed session");
 	}
@@ -1899,7 +1889,6 @@ export class InteractiveMode {
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = null;
 		this.pendingTools.clear();
-		this.isFirstUserMessage = true;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
@@ -2027,11 +2016,11 @@ export class InteractiveMode {
 			const result = await this.session.compact(customInstructions);
 
 			// Rebuild UI
-			this.chatContainer.clear();
 			this.rebuildChatFromMessages();
 
 			// Add compaction component
-			const compactionComponent = new CompactionComponent(result.tokensBefore, result.summary);
+			const msg = createCompactionSummaryMessage(result.summary, result.tokensBefore, new Date().toISOString());
+			const compactionComponent = new CompactionSummaryMessageComponent(msg);
 			compactionComponent.setExpanded(this.toolOutputExpanded);
 			this.chatContainer.addChild(compactionComponent);
 

@@ -6,7 +6,6 @@ import {
 	type ModelChangeEntry,
 	type SessionEntry,
 	type SessionMessageEntry,
-	SUMMARY_PREFIX,
 	type ThinkingLevelChangeEntry,
 } from "../../src/core/session-manager.js";
 
@@ -49,8 +48,8 @@ function compaction(id: string, parentId: string | null, summary: string, firstK
 	};
 }
 
-function branchSummary(id: string, parentId: string | null, summary: string): BranchSummaryEntry {
-	return { type: "branch_summary", id, parentId, timestamp: "2025-01-01T00:00:00Z", summary };
+function branchSummary(id: string, parentId: string | null, fromId: string, summary: string): BranchSummaryEntry {
+	return { type: "branch_summary", id, parentId, timestamp: "2025-01-01T00:00:00Z", summary, fromId };
 }
 
 function thinkingLevel(id: string, parentId: string | null, level: string): ThinkingLevelChangeEntry {
@@ -151,7 +150,7 @@ describe("buildSessionContext", () => {
 
 			// Summary + all messages (1,2,4)
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).content).toContain(SUMMARY_PREFIX);
+			expect((ctx.messages[0] as any).content).toContain("Empty summary");
 		});
 
 		it("multiple compactions uses latest", () => {
@@ -198,7 +197,7 @@ describe("buildSessionContext", () => {
 				msg("1", null, "user", "start"),
 				msg("2", "1", "assistant", "response"),
 				msg("3", "2", "user", "abandoned path"),
-				branchSummary("4", "2", "Summary of abandoned work"),
+				branchSummary("4", "2", "Summary of abandoned work", "3"),
 				msg("5", "4", "user", "new direction"),
 			];
 			const ctx = buildSessionContext(entries, "5");
@@ -225,7 +224,7 @@ describe("buildSessionContext", () => {
 				msg("8", "3", "user", "wrong path"),
 				msg("9", "8", "assistant", "wrong response"),
 				// Branch summary resuming from 3
-				branchSummary("10", "3", "Tried wrong approach"),
+				branchSummary("10", "3", "Tried wrong approach", "9"),
 				msg("11", "10", "user", "better approach"),
 			];
 

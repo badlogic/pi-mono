@@ -8,6 +8,21 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 
+export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
+
+<summary>
+`;
+
+export const COMPACTION_SUMMARY_SUFFIX = `
+</summary>`;
+
+export const BRANCH_SUMMARY_PREFIX = `The following is a summary of a branch that this conversation came back from:
+
+<summary>
+`;
+
+export const BRANCH_SUMMARY_SUFFIX = `</summary>`;
+
 /**
  * Message type for bash executions via the ! command.
  */
@@ -35,26 +50,28 @@ export interface HookMessage<T = unknown> {
 	timestamp: number;
 }
 
+export interface BranchSummaryMessage {
+	role: "branchSummary";
+	summary: string;
+	fromId: string;
+	timestamp: number;
+}
+
+export interface CompactionSummaryMessage {
+	role: "compactionSummary";
+	summary: string;
+	tokensBefore: number;
+	timestamp: number;
+}
+
 // Extend CustomAgentMessages via declaration merging
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomAgentMessages {
 		bashExecution: BashExecutionMessage;
 		hookMessage: HookMessage;
+		branchSummary: BranchSummaryMessage;
+		compactionSummary: CompactionSummaryMessage;
 	}
-}
-
-/**
- * Type guard for BashExecutionMessage.
- */
-export function isBashExecutionMessage(msg: AgentMessage | Message): msg is BashExecutionMessage {
-	return msg.role === "bashExecution";
-}
-
-/**
- * Type guard for HookMessage.
- */
-export function isHookMessage(msg: AgentMessage | Message): msg is HookMessage {
-	return msg.role === "hookMessage";
 }
 
 /**
@@ -78,6 +95,46 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 	return text;
 }
 
+export function createBranchSummaryMessage(summary: string, fromId: string, timestamp: string): BranchSummaryMessage {
+	return {
+		role: "branchSummary",
+		summary,
+		fromId,
+		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
+export function createCompactionSummaryMessage(
+	summary: string,
+	tokensBefore: number,
+	timestamp: string,
+): CompactionSummaryMessage {
+	return {
+		role: "compactionSummary",
+		summary: summary,
+		tokensBefore,
+		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
+/** Convert CustomMessageEntry to AgentMessage format */
+export function createHookMessage(
+	customType: string,
+	content: string | (TextContent | ImageContent)[],
+	display: boolean,
+	details: unknown | undefined,
+	timestamp: string,
+): HookMessage {
+	return {
+		role: "hookMessage",
+		customType,
+		content,
+		display,
+		details,
+		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
 /**
  * Transform AgentMessages (including custom types) to LLM-compatible Messages.
  *
@@ -89,30 +146,44 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 export function convertToLlm(messages: AgentMessage[]): Message[] {
 	return messages
 		.map((m): Message | null => {
-			if (isBashExecutionMessage(m)) {
-				// Convert bash execution to user message
-				return {
-					role: "user",
-					content: [{ type: "text", text: bashExecutionToText(m) }],
-					timestamp: m.timestamp,
-				};
+			switch (m.role) {
+				case "bashExecution":
+					return {
+						role: "user",
+						content: [{ type: "text", text: bashExecutionToText(m) }],
+						timestamp: m.timestamp,
+					};
+				case "hookMessage": {
+					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
+					return {
+						role: "user",
+						content,
+						timestamp: m.timestamp,
+					};
+				}
+				case "branchSummary":
+					return {
+						role: "user",
+						content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
+						timestamp: m.timestamp,
+					};
+				case "compactionSummary":
+					return {
+						role: "user",
+						content: [
+							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
+						],
+						timestamp: m.timestamp,
+					};
+				case "user":
+				case "assistant":
+				case "toolResult":
+					return m;
+				default:
+					// biome-ignore lint/correctness/noSwitchDeclarations: fine
+					const _exhaustiveCheck: never = m;
+					return null;
 			}
-			if (isHookMessage(m)) {
-				// Convert hook message to user message for LLM
-				// Normalize string content to array format
-				const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-				return {
-					role: "user",
-					content,
-					timestamp: m.timestamp,
-				};
-			}
-			// Pass through standard LLM roles
-			if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
-				return m as Message;
-			}
-			// Filter out unknown message types
-			return null;
 		})
 		.filter((m) => m !== null);
 }

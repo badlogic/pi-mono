@@ -8,8 +8,8 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import { convertToLlm } from "./messages.js";
-import { type CompactionEntry, createSummaryMessage, type SessionEntry } from "./session-manager.js";
+import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "./messages.js";
+import type { CompactionEntry, SessionEntry } from "./session-manager.js";
 
 /**
  * Extract AgentMessage from an entry if it produces one.
@@ -20,14 +20,10 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | null {
 		return entry.message;
 	}
 	if (entry.type === "custom_message") {
-		return {
-			role: "user",
-			content: entry.content,
-			timestamp: new Date(entry.timestamp).getTime(),
-		};
+		return createHookMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
 	}
 	if (entry.type === "branch_summary") {
-		return createSummaryMessage(entry.summary, entry.timestamp);
+		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
 	return null;
 }
@@ -116,59 +112,65 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 export function estimateTokens(message: AgentMessage): number {
 	let chars = 0;
 
-	// Handle bashExecution messages
-	if (message.role === "bashExecution") {
-		const bash = message as unknown as { command: string; output: string };
-		chars = bash.command.length + bash.output.length;
-		return Math.ceil(chars / 4);
-	}
-
-	// Handle user messages
-	if (message.role === "user") {
-		const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
-		if (typeof content === "string") {
-			chars = content.length;
-		} else if (Array.isArray(content)) {
-			for (const block of content) {
-				if (block.type === "text" && block.text) {
-					chars += block.text.length;
+	switch (message.role) {
+		case "user": {
+			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+			if (typeof content === "string") {
+				chars = content.length;
+			} else if (Array.isArray(content)) {
+				for (const block of content) {
+					if (block.type === "text" && block.text) {
+						chars += block.text.length;
+					}
 				}
 			}
+			return Math.ceil(chars / 4);
 		}
-		return Math.ceil(chars / 4);
-	}
-
-	// Handle assistant messages
-	if (message.role === "assistant") {
-		const assistant = message as AssistantMessage;
-		for (const block of assistant.content) {
-			if (block.type === "text") {
-				chars += block.text.length;
-			} else if (block.type === "thinking") {
-				chars += block.thinking.length;
-			} else if (block.type === "toolCall") {
-				chars += block.name.length + JSON.stringify(block.arguments).length;
+		case "assistant": {
+			const assistant = message as AssistantMessage;
+			for (const block of assistant.content) {
+				if (block.type === "text") {
+					chars += block.text.length;
+				} else if (block.type === "thinking") {
+					chars += block.thinking.length;
+				} else if (block.type === "toolCall") {
+					chars += block.name.length + JSON.stringify(block.arguments).length;
+				}
 			}
+			return Math.ceil(chars / 4);
 		}
-		return Math.ceil(chars / 4);
-	}
-
-	// Handle tool results
-	if (message.role === "toolResult") {
-		const toolResult = message as { content: Array<{ type: string; text?: string }> };
-		for (const block of toolResult.content) {
-			if (block.type === "text" && block.text) {
-				chars += block.text.length;
+		case "hookMessage":
+		case "toolResult": {
+			if (typeof message.content === "string") {
+				chars = message.content.length;
+			} else {
+				for (const block of message.content) {
+					if (block.type === "text" && block.text) {
+						chars += block.text.length;
+					}
+					if (block.type === "image") {
+						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
+					}
+				}
 			}
+			return Math.ceil(chars / 4);
 		}
-		return Math.ceil(chars / 4);
+		case "bashExecution": {
+			chars = message.command.length + message.output.length;
+			return Math.ceil(chars / 4);
+		}
+		case "branchSummary":
+		case "compactionSummary": {
+			chars = message.summary.length;
+			return Math.ceil(chars / 4);
+		}
 	}
 
 	return 0;
 }
 
 /**
- * Find valid cut points: indices of user, assistant, or bashExecution messages.
+ * Find valid cut points: indices of user, assistant, custom, or bashExecution messages.
  * Never cut at tool results (they must follow their tool call).
  * When we cut at an assistant message with tool calls, its tool results follow it
  * and will be kept.
@@ -178,16 +180,34 @@ function findValidCutPoints(entries: SessionEntry[], startIndex: number, endInde
 	const cutPoints: number[] = [];
 	for (let i = startIndex; i < endIndex; i++) {
 		const entry = entries[i];
+		switch (entry.type) {
+			case "message": {
+				const role = entry.message.role;
+				switch (role) {
+					case "bashExecution":
+					case "hookMessage":
+					case "branchSummary":
+					case "compactionSummary":
+					case "user":
+					case "assistant":
+						cutPoints.push(i);
+						break;
+					case "toolResult":
+						break;
+				}
+				break;
+			}
+			case "thinking_level_change":
+			case "model_change":
+			case "compaction":
+			case "branch_summary":
+			case "custom":
+			case "custom_message":
+			case "label":
+		}
 		// branch_summary and custom_message are user-role messages, valid cut points
 		if (entry.type === "branch_summary" || entry.type === "custom_message") {
 			cutPoints.push(i);
-		} else if (entry.type === "message") {
-			const role = entry.message.role;
-			// user, assistant, and bashExecution are valid cut points
-			// toolResult must stay with its preceding tool call
-			if (role === "user" || role === "assistant" || role === "bashExecution") {
-				cutPoints.push(i);
-			}
 		}
 	}
 	return cutPoints;

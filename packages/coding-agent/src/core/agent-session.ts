@@ -34,7 +34,7 @@ import type {
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./hooks/index.js";
-import { type BashExecutionMessage, type HookMessage, isHookMessage } from "./messages.js";
+import type { BashExecutionMessage, HookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
@@ -218,8 +218,8 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			// Check if this is a hook message (has _hookData marker)
-			if (isHookMessage(event.message)) {
+			// Check if this is a hook message
+			if (event.message.role === "hookMessage") {
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -227,10 +227,15 @@ export class AgentSession {
 					event.message.display,
 					event.message.details,
 				);
-			} else {
-				// Regular message - persist as SessionMessageEntry
+			} else if (
+				event.message.role === "user" ||
+				event.message.role === "assistant" ||
+				event.message.role === "toolResult"
+			) {
+				// Regular LLM message - persist as SessionMessageEntry
 				this.sessionManager.appendMessage(event.message);
 			}
+			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
