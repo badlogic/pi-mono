@@ -306,6 +306,7 @@ export class Agent {
 						break;
 
 					case "agent_end":
+						this._state.isStreaming = false;
 						this._state.streamMessage = null;
 						break;
 				}
