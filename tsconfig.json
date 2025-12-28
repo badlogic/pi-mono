@@ -17,8 +17,6 @@
 			"@mariozechner/pi-mom/*": ["./packages/mom/src/*"],
 			"@mariozechner/pi": ["./packages/pods/src/index.ts"],
 			"@mariozechner/pi/*": ["./packages/pods/src/*"],
-			"@mariozechner/pi-proxy": ["./packages/proxy/src/index.ts"],
-			"@mariozechner/pi-proxy/*": ["./packages/proxy/src/*"],
 			"@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
 			"@mariozechner/pi-tui/*": ["./packages/tui/src/*"],
 			"@mariozechner/pi-web-ui": ["./packages/web-ui/src/index.ts"],
