@@ -1,6 +1,6 @@
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
-import type { Message } from "@mariozechner/pi-ai";
-import type { AppMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
+import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
+import type { AgentMessage, Attachment, MessageRenderer, UserMessageWithAttachments } from "@mariozechner/pi-web-ui";
 import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
 import { html } from "lit";
 
@@ -16,8 +16,9 @@ export interface SystemNotificationMessage {
 	timestamp: string;
 }
 
-// Extend CustomMessages interface via declaration merging
-declare module "@mariozechner/pi-web-ui" {
+// Extend CustomAgentMessages interface via declaration merging
+// This must target pi-agent-core where CustomAgentMessages is defined
+declare module "@mariozechner/pi-agent-core" {
 	interface CustomAgentMessages {
 		"system-notification": SystemNotificationMessage;
 	}
@@ -74,8 +75,28 @@ export function createSystemNotification(
 // 5. CUSTOM MESSAGE TRANSFORMER
 // ============================================================================
 
-// Transform custom messages to user messages with <system> tags so LLM can see them
-export function customMessageTransformer(messages: AppMessage[]): Message[] {
+// Convert attachments to content blocks
+function convertAttachments(attachments: Attachment[]): (TextContent | ImageContent)[] {
+	const content: (TextContent | ImageContent)[] = [];
+	for (const attachment of attachments) {
+		if (attachment.type === "image") {
+			content.push({
+				type: "image",
+				data: attachment.content,
+				mimeType: attachment.mimeType,
+			} as ImageContent);
+		} else if (attachment.type === "document" && attachment.extractedText) {
+			content.push({
+				type: "text",
+				text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
+			} as TextContent);
+		}
+	}
+	return content;
+}
+
+// Transform custom messages to LLM-compatible messages
+export function customMessageTransformer(messages: AgentMessage[]): Message[] {
 	return messages
 		.filter((m) => {
 			// Filter out artifact messages - they're for session reconstruction only
@@ -85,7 +106,11 @@ export function customMessageTransformer(messages: AppMessage[]): Message[] {
 
 			// Keep LLM-compatible messages + custom messages
 			return (
-				m.role === "user" || m.role === "assistant" || m.role === "toolResult" || m.role === "system-notification"
+				m.role === "user" ||
+				m.role === "user-with-attachments" ||
+				m.role === "assistant" ||
+				m.role === "toolResult" ||
+				m.role === "system-notification"
 			);
 		})
 		.map((m) => {
@@ -95,13 +120,25 @@ export function customMessageTransformer(messages: AppMessage[]): Message[] {
 				return {
 					role: "user",
 					content: `<system>${notification.message}</system>`,
+					timestamp: Date.now(),
 				} as Message;
 			}
 
-			// Strip attachments from user messages
-			if (m.role === "user-with-attachment") {
-				const { attachments: _, ...rest } = m;
-				return rest as Message;
+			// Convert user-with-attachments to user message with content blocks
+			if (m.role === "user-with-attachments") {
+				const msg = m as UserMessageWithAttachments;
+				const textContent: (TextContent | ImageContent)[] =
+					typeof msg.content === "string" ? [{ type: "text", text: msg.content }] : [...msg.content];
+
+				if (msg.attachments) {
+					textContent.push(...convertAttachments(msg.attachments));
+				}
+
+				return {
+					role: "user",
+					content: textContent,
+					timestamp: msg.timestamp,
+				} as Message;
 			}
 
 			return m as Message;

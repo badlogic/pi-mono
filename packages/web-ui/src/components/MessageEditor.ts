@@ -9,6 +9,7 @@ import { Brain, Loader2, Paperclip, Send, Sparkles, Square } from "lucide";
 import { type Attachment, loadAttachment } from "../utils/attachment-utils.js";
 import { i18n } from "../utils/i18n.js";
 import "./AttachmentTile.js";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 @customElement("message-editor")
 export class MessageEditor extends LitElement {
@@ -28,7 +29,7 @@ export class MessageEditor extends LitElement {
 
 	@property() isStreaming = false;
 	@property() currentModel?: Model<any>;
-	@property() thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" = "off";
+	@property() thinkingLevel: ThinkingLevel = "off";
 	@property() showAttachmentButton = true;
 	@property() showModelSelector = true;
 	@property() showThinkingSelector = true;

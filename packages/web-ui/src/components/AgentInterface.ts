@@ -12,6 +12,7 @@ import type { Agent, AgentEvent } from "@mariozechner/pi-agent-core";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
+import type { UserMessageWithAttachments } from "./Messages.js";
 import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
 
 @customElement("agent-interface")
@@ -202,7 +203,18 @@ export class AgentInterface extends LitElement {
 		this._messageEditor.attachments = [];
 		this._autoScroll = true; // Enable auto-scroll when sending a message
 
-		await this.session?.prompt(input, attachments);
+		// Compose message with attachments if any
+		if (attachments && attachments.length > 0) {
+			const message: UserMessageWithAttachments = {
+				role: "user-with-attachments",
+				content: input,
+				attachments,
+				timestamp: Date.now(),
+			};
+			await this.session?.prompt(message);
+		} else {
+			await this.session?.prompt(input);
+		}
 	}
 
 	private renderMessages() {

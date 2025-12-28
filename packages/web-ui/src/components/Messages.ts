@@ -34,7 +34,7 @@ export interface ArtifactMessage {
 
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomAgentMessages {
-		"user-with-attachment": UserMessageWithAttachments;
+		"user-with-attachments": UserMessageWithAttachments;
 		artifact: ArtifactMessage;
 	}
 }

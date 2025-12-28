@@ -1,10 +1,9 @@
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
+import { Agent, type AgentMessage } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
-	Agent,
 	type AgentState,
 	ApiKeyPromptDialog,
-	type AppMessage,
 	AppStorage,
 	ChatPanel,
 	CustomProvidersStore,
@@ -13,7 +12,6 @@ import {
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
 	ProvidersModelsTab,
-	ProviderTransport,
 	ProxyTab,
 	SessionListDialog,
 	SessionsStore,
@@ -75,7 +73,7 @@ let agent: Agent;
 let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
-const generateTitle = (messages: AppMessage[]): string => {
+const generateTitle = (messages: AgentMessage[]): string => {
 	const firstUserMsg = messages.find((m) => m.role === "user");
 	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
 
@@ -99,7 +97,7 @@ const generateTitle = (messages: AppMessage[]): string => {
 	return text.length <= 50 ? text : `${text.substring(0, 47)}...`;
 };
 
-const shouldSaveSession = (messages: AppMessage[]): boolean => {
+const shouldSaveSession = (messages: AgentMessage[]): boolean => {
 	const hasUserMsg = messages.some((m: any) => m.role === "user");
 	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
 	return hasUserMsg && hasAssistantMsg;
@@ -166,8 +164,6 @@ const createAgent = async (initialState?: Partial<AgentState>) => {
 		agentUnsubscribe();
 	}
 
-	const transport = new ProviderTransport();
-
 	agent = new Agent({
 		initialState: initialState || {
 			systemPrompt: `You are a helpful AI assistant with access to various tools.
@@ -182,9 +178,8 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 			messages: [],
 			tools: [],
 		},
-		transport,
-		// Custom transformer: convert system notifications to user messages with <system> tags
-		messageTransformer: customMessageTransformer,
+		// Custom transformer: convert custom messages to LLM-compatible format
+		convertToLlm: customMessageTransformer,
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {
