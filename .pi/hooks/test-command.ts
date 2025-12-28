@@ -33,12 +33,15 @@ export default function (pi: HookAPI) {
 	pi.registerCommand("test-msg", {
 		description: "Send a test custom message",
 		handler: async () => {
-			pi.sendMessage({
-				customType: "test-info",
-				content: "This is a test message with custom rendering!",
-				display: true,
-				details: { timestamp: Date.now(), source: "test-command hook" },
-			});
+			pi.sendMessage(
+				{
+					customType: "test-info",
+					content: "This is a test message with custom rendering!",
+					display: true,
+					details: { timestamp: Date.now(), source: "test-command hook" },
+				},
+				true, // triggerTurn: start agent run
+			);
 		},
 	});
 
