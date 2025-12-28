@@ -165,10 +165,13 @@ export function createSummaryMessage(summary: string, timestamp: string): AgentM
 /** Convert CustomMessageEntry to AgentMessage format */
 function createCustomMessage(entry: CustomMessageEntry): AgentMessage {
 	return {
-		role: "user",
+		role: "hookMessage",
+		customType: entry.customType,
 		content: entry.content,
+		display: entry.display,
+		details: entry.details,
 		timestamp: new Date(entry.timestamp).getTime(),
-	};
+	} as AgentMessage;
 }
 
 /** Generate a unique short ID (8 hex chars, collision-checked) */
