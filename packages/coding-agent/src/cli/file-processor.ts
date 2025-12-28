@@ -3,21 +3,21 @@
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { Attachment } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
 
 export interface ProcessedFiles {
-	textContent: string;
-	imageAttachments: Attachment[];
+	text: string;
+	images: ImageContent[];
 }
 
 /** Process @file arguments into text content and image attachments */
 export async function processFileArguments(fileArgs: string[]): Promise<ProcessedFiles> {
-	let textContent = "";
-	const imageAttachments: Attachment[] = [];
+	let text = "";
+	const images: ImageContent[] = [];
 
 	for (const fileArg of fileArgs) {
 		// Expand and resolve path (handles ~ expansion and macOS screenshot Unicode spaces)
@@ -45,24 +45,21 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 			const content = await readFile(absolutePath);
 			const base64Content = content.toString("base64");
 
-			const attachment: Attachment = {
-				id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+			const attachment: ImageContent = {
 				type: "image",
-				fileName: absolutePath.split("/").pop() || absolutePath,
 				mimeType,
-				size: stats.size,
-				content: base64Content,
+				data: base64Content,
 			};
 
-			imageAttachments.push(attachment);
+			images.push(attachment);
 
 			// Add text reference to image
-			textContent += `<file name="${absolutePath}"></file>\n`;
+			text += `<file name="${absolutePath}"></file>\n`;
 		} else {
 			// Handle text file
 			try {
 				const content = await readFile(absolutePath, "utf-8");
-				textContent += `<file name="${absolutePath}">\n${content}\n</file>\n`;
+				text += `<file name="${absolutePath}">\n${content}\n</file>\n`;
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.error(chalk.red(`Error: Could not read file ${absolutePath}: ${message}`));
@@ -71,5 +68,5 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 		}
 	}
 
-	return { textContent, imageAttachments };
+	return { text, images };
 }

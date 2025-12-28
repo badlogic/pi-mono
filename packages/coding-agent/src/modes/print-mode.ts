@@ -6,8 +6,7 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
-import type { Attachment } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
 
 /**
@@ -18,14 +17,14 @@ import type { AgentSession } from "../core/agent-session.js";
  * @param mode Output mode: "text" for final response only, "json" for all events
  * @param messages Array of prompts to send
  * @param initialMessage Optional first message (may contain @file content)
- * @param initialAttachments Optional attachments for the initial message
+ * @param initialImages Optional images for the initial message
  */
 export async function runPrintMode(
 	session: AgentSession,
 	mode: "text" | "json",
 	messages: string[],
 	initialMessage?: string,
-	initialAttachments?: Attachment[],
+	initialImages?: ImageContent[],
 ): Promise<void> {
 	// Load entries once for session start events
 	const entries = session.sessionManager.getEntries();
@@ -79,7 +78,7 @@ export async function runPrintMode(
 
 	// Send initial message with attachments
 	if (initialMessage) {
-		await session.prompt(initialMessage, { attachments: initialAttachments });
+		await session.prompt(initialMessage, { images: initialImages });
 	}
 
 	// Send remaining messages

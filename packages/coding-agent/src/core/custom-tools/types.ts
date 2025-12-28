@@ -5,7 +5,7 @@
  * They can provide custom rendering for tool calls and results in the TUI.
  */
 
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";

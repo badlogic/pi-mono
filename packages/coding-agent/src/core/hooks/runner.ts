@@ -2,7 +2,7 @@
  * Hook runner - executes hooks and manages their lifecycle.
  */
 
-import type { Message } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
@@ -315,7 +315,7 @@ export class HookRunner {
 	 *
 	 * Note: Messages are already deep-copied by the caller (pi-ai preprocessor).
 	 */
-	async emitContext(messages: Message[]): Promise<Message[]> {
+	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
 		let currentMessages = messages;
 

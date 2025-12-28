@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, ProviderTransport } from "@mariozechner/pi-agent-core";
+import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
@@ -72,13 +72,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 	function createSession(hooks: LoadedHook[]) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-
-		const transport = new ProviderTransport({
-			getApiKey: () => API_KEY,
-		});
-
 		const agent = new Agent({
-			transport,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",

@@ -6,7 +6,8 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { AgentEvent, AgentMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction.js";
@@ -167,8 +168,8 @@ export class RpcClient {
 	 * Returns immediately after sending; use onEvent() to receive streaming events.
 	 * Use waitForIdle() to wait for completion.
 	 */
-	async prompt(message: string, attachments?: Attachment[]): Promise<void> {
-		await this.send({ type: "prompt", message, attachments });
+	async prompt(message: string, images?: ImageContent[]): Promise<void> {
+		await this.send({ type: "prompt", message, images });
 	}
 
 	/**
@@ -404,9 +405,9 @@ export class RpcClient {
 	/**
 	 * Send prompt and wait for completion, returning all events.
 	 */
-	async promptAndWait(message: string, attachments?: Attachment[], timeout = 60000): Promise<AgentEvent[]> {
+	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
 		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, attachments);
+		await this.prompt(message, images);
 		return eventsPromise;
 	}
 

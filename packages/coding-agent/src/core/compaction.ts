@@ -8,7 +8,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import { messageTransformer } from "./messages.js";
+import { convertToLlm } from "./messages.js";
 import { type CompactionEntry, createSummaryMessage, type SessionEntry } from "./session-manager.js";
 
 /**
@@ -337,7 +337,7 @@ export async function generateSummary(
 		: SUMMARIZATION_PROMPT;
 
 	// Transform custom messages (like bashExecution) to LLM-compatible messages
-	const transformedMessages = messageTransformer(currentMessages);
+	const transformedMessages = convertToLlm(currentMessages);
 
 	const summarizationMessages = [
 		...transformedMessages,
@@ -558,7 +558,7 @@ async function generateTurnPrefixSummary(
 ): Promise<string> {
 	const maxTokens = Math.floor(0.5 * reserveTokens); // Smaller budget for turn prefix
 
-	const transformedMessages = messageTransformer(messages);
+	const transformedMessages = convertToLlm(messages);
 	const summarizationMessages = [
 		...transformedMessages,
 		{

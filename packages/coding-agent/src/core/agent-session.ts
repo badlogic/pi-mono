@@ -13,15 +13,8 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type {
-	Agent,
-	AgentEvent,
-	AgentMessage,
-	AgentState,
-	Attachment,
-	ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { Agent, AgentEvent, AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
@@ -83,8 +76,8 @@ export interface AgentSessionConfig {
 export interface PromptOptions {
 	/** Whether to expand file-based slash commands (default: true) */
 	expandSlashCommands?: boolean;
-	/** Image/file attachments */
-	attachments?: Attachment[];
+	/** Image attachments */
+	images?: ImageContent[];
 }
 
 /** Result from cycleModel() */
@@ -492,7 +485,7 @@ export class AgentSession {
 		// Expand file-based slash commands if requested
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
-		await this.agent.prompt(expandedText, options?.attachments);
+		await this.agent.prompt(expandedText, options?.images);
 		await this.waitForRetry();
 	}
 

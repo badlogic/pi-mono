@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@mariozechner/pi-ai";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { getShellConfig, killProcessTree } from "../../utils/shell.js";

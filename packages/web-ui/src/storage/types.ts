@@ -1,6 +1,5 @@
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
-import type { ThinkingLevel } from "../agent/agent.js";
-import type { AppMessage } from "../components/Messages.js";
 
 /**
  * Transaction interface for atomic operations across stores.
@@ -159,7 +158,7 @@ export interface SessionData {
 	thinkingLevel: ThinkingLevel;
 
 	/** Full conversation history (with attachments inline) */
-	messages: AppMessage[];
+	messages: AgentMessage[];
 
 	/** ISO 8601 UTC timestamp of creation */
 	createdAt: string;

@@ -73,7 +73,7 @@ export {
 	isReadToolResult,
 	isWriteToolResult,
 } from "./core/hooks/index.js";
-export { messageTransformer } from "./core/messages.js";
+export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 // SDK for programmatic usage
 export {

@@ -5,8 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import type { Attachment } from "@mariozechner/pi-agent-core";
-import { supportsXhigh } from "@mariozechner/pi-ai";
+import { type ImageContent, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -64,7 +63,7 @@ async function runInteractiveMode(
 	customTools: LoadedCustomTool[],
 	setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
-	initialAttachments?: Attachment[],
+	initialImages?: ImageContent[],
 	fdPath: string | null = null,
 ): Promise<void> {
 	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
@@ -93,7 +92,7 @@ async function runInteractiveMode(
 
 	if (initialMessage) {
 		try {
-			await session.prompt(initialMessage, { attachments: initialAttachments });
+			await session.prompt(initialMessage, { images: initialImages });
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			mode.showError(errorMessage);
@@ -122,25 +121,25 @@ async function runInteractiveMode(
 
 async function prepareInitialMessage(parsed: Args): Promise<{
 	initialMessage?: string;
-	initialAttachments?: Attachment[];
+	initialImages?: ImageContent[];
 }> {
 	if (parsed.fileArgs.length === 0) {
 		return {};
 	}
 
-	const { textContent, imageAttachments } = await processFileArguments(parsed.fileArgs);
+	const { text, images } = await processFileArguments(parsed.fileArgs);
 
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
-		initialMessage = textContent + parsed.messages[0];
+		initialMessage = text + parsed.messages[0];
 		parsed.messages.shift();
 	} else {
-		initialMessage = textContent;
+		initialMessage = text;
 	}
 
 	return {
 		initialMessage,
-		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+		initialImages: images.length > 0 ? images : undefined,
 	};
 }
 
@@ -330,7 +329,7 @@ export async function main(args: string[]) {
 	}
 
 	const cwd = process.cwd();
-	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
+	const { initialMessage, initialImages } = await prepareInitialMessage(parsed);
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
@@ -438,11 +437,11 @@ export async function main(args: string[]) {
 			customToolsResult.tools,
 			customToolsResult.setUIContext,
 			initialMessage,
-			initialAttachments,
+			initialImages,
 			fdPath,
 		);
 	} else {
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
+		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages);
 		stopThemeWatcher();
 		if (process.stdout.writableLength > 0) {
 			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));

@@ -151,7 +151,7 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 // AgentContext is like Context but uses AgentTool
 export interface AgentContext {
 	systemPrompt: string;
-	messages: Message[];
+	messages: AgentMessage[];
 	tools?: AgentTool<any>[];
 }
 

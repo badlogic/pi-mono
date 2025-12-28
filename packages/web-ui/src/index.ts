@@ -1,13 +1,7 @@
 // Main chat interface
 
-export type { AgentState, ThinkingLevel } from "./agent/agent.js";
-// State management
-export { Agent } from "./agent/agent.js";
-// Transports
-export { AppTransport } from "./agent/transports/AppTransport.js";
-export { ProviderTransport } from "./agent/transports/ProviderTransport.js";
-export type { ProxyAssistantMessageEvent } from "./agent/transports/proxy-types.js";
-export type { AgentRunConfig, AgentTransport } from "./agent/transports/types.js";
+export type { Agent, AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
+export type { Model } from "@mariozechner/pi-ai";
 export { ChatPanel } from "./ChatPanel.js";
 // Components
 export { AgentInterface } from "./components/AgentInterface.js";
@@ -18,7 +12,7 @@ export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
 // Message components
-export type { AppMessage, CustomMessages, UserMessageWithAttachments } from "./components/Messages.js";
+export type { UserMessageWithAttachments } from "./components/Messages.js";
 export { AssistantMessage, ToolMessage, UserMessage } from "./components/Messages.js";
 // Message renderer registry
 export {

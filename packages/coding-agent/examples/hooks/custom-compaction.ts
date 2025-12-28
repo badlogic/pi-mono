@@ -14,7 +14,7 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
-import { messageTransformer } from "@mariozechner/pi-coding-agent";
+import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
@@ -52,7 +52,7 @@ export default function (pi: HookAPI) {
 		);
 
 		// Transform app messages to pi-ai package format
-		const transformedMessages = messageTransformer(allMessages);
+		const transformedMessages = convertToLlm(allMessages);
 
 		// Include previous summary context if available
 		const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";

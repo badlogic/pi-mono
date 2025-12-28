@@ -29,7 +29,7 @@
  * ```
  */
 
-import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
@@ -39,7 +39,7 @@ import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./custom-tool
 import type { CustomAgentTool } from "./custom-tools/types.js";
 import { discoverAndLoadHooks, HookRunner, type LoadedHook, wrapToolsWithHooks } from "./hooks/index.js";
 import type { HookFactory } from "./hooks/types.js";
-import { messageTransformer } from "./messages.js";
+import { convertToLlm } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { SessionManager } from "./session-manager.js";
 import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
@@ -588,26 +588,24 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			thinkingLevel,
 			tools: allToolsArray,
 		},
-		messageTransformer,
-		preprocessor: hookRunner
+		convertToLlm,
+		transformContext: hookRunner
 			? async (messages) => {
 					return hookRunner.emitContext(messages);
 				}
 			: undefined,
 		queueMode: settingsManager.getQueueMode(),
-		transport: new ProviderTransport({
-			getApiKey: async () => {
-				const currentModel = agent.state.model;
-				if (!currentModel) {
-					throw new Error("No model selected");
-				}
-				const key = await modelRegistry.getApiKey(currentModel);
-				if (!key) {
-					throw new Error(`No API key found for provider "${currentModel.provider}"`);
-				}
-				return key;
-			},
-		}),
+		getApiKey: async () => {
+			const currentModel = agent.state.model;
+			if (!currentModel) {
+				throw new Error("No model selected");
+			}
+			const key = await modelRegistry.getApiKey(currentModel);
+			if (!key) {
+				throw new Error(`No API key found for provider "${currentModel.provider}"`);
+			}
+			return key;
+		},
 	});
 	time("createAgent");
 

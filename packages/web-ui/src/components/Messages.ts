@@ -1,6 +1,7 @@
 import type {
-	AgentTool,
 	AssistantMessage as AssistantMessageType,
+	ImageContent,
+	TextContent,
 	ToolCall,
 	ToolResultMessage as ToolResultMessageType,
 	UserMessage as UserMessageType,
@@ -12,8 +13,14 @@ import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
 import "./ThinkingBlock.js";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 
-export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
+export type UserMessageWithAttachments = {
+	role: "user-with-attachments";
+	content: string | (TextContent | ImageContent)[];
+	timestamp: number;
+	attachments?: Attachment[];
+};
 
 // Artifact message type for session persistence
 export interface ArtifactMessage {
@@ -25,26 +32,16 @@ export interface ArtifactMessage {
 	timestamp: string;
 }
 
-// Base message union
-type BaseMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType | ArtifactMessage;
-
-// Extensible interface - apps can extend via declaration merging
-// Example:
-// declare module "@mariozechner/pi-web-ui" {
-//   interface CustomMessages {
-//     "system-notification": SystemNotificationMessage;
-//   }
-// }
-export interface CustomMessages {
-	// Empty by default - apps extend via declaration merging
+declare module "@mariozechner/pi-agent-core" {
+	interface CustomAgentMessages {
+		"user-with-attachment": UserMessageWithAttachments;
+		artifact: ArtifactMessage;
+	}
 }
-
-// AppMessage is union of base messages + custom messages
-export type AppMessage = BaseMessage | CustomMessages[keyof CustomMessages];
 
 @customElement("user-message")
 export class UserMessage extends LitElement {
-	@property({ type: Object }) message!: UserMessageWithAttachments;
+	@property({ type: Object }) message!: UserMessageWithAttachments | UserMessageType;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -66,7 +63,9 @@ export class UserMessage extends LitElement {
 				<div class="user-message-container py-2 px-4 rounded-xl">
 					<markdown-block .content=${content}></markdown-block>
 					${
-						this.message.attachments && this.message.attachments.length > 0
+						this.message.role === "user-with-attachments" &&
+						this.message.attachments &&
+						this.message.attachments.length > 0
 							? html`
 								<div class="mt-3 flex flex-wrap gap-2">
 									${this.message.attachments.map(

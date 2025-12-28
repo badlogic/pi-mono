@@ -151,12 +151,11 @@ export type SessionEvent =
  * Event data for context event.
  * Fired before each LLM call, allowing hooks to modify context non-destructively.
  * Original session messages are NOT modified - only the messages sent to the LLM are affected.
- * Messages are already in LLM format (Message[], not AgentMessage[]).
  */
 export interface ContextEvent {
 	type: "context";
 	/** Messages about to be sent to the LLM (deep copy, safe to modify) */
-	messages: Message[];
+	messages: AgentMessage[];
 }
 
 /**

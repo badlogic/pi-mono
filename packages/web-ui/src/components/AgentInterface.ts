@@ -6,9 +6,9 @@ import type { MessageEditor } from "./MessageEditor.js";
 import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
-import type { Agent, AgentEvent } from "../agent/agent.js";
 import { getAppStorage } from "../storage/app-storage.js";
 import "./StreamingMessageContainer.js";
+import type { Agent, AgentEvent } from "@mariozechner/pi-agent-core";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
@@ -130,16 +130,13 @@ export class AgentInterface extends LitElement {
 		}
 		if (!this.session) return;
 		this._unsubscribeSession = this.session.subscribe(async (ev: AgentEvent) => {
-			if (ev.type === "state-update") {
+			if (ev.type === "message_update") {
 				if (this._streamingContainer) {
-					this._streamingContainer.isStreaming = ev.state.isStreaming;
-					this._streamingContainer.setMessage(ev.state.streamMessage, !ev.state.isStreaming);
+					const isStreaming = this.session?.state.isStreaming || false;
+					this._streamingContainer.isStreaming = isStreaming;
+					this._streamingContainer.setMessage(ev.message, !isStreaming);
 				}
 				this.requestUpdate();
-			} else if (ev.type === "error-no-model") {
-				// TODO show some UI feedback
-			} else if (ev.type === "error-no-api-key") {
-				// Handled by onApiKeyRequired callback
 			}
 		});
 	}

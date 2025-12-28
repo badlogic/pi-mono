@@ -56,7 +56,6 @@ console.log(agent.state.messages);
 
 The agent internally works with `AgentMessage`, a flexible type that can include:
 - Standard LLM messages (`user`, `assistant`, `toolResult`)
-- User messages with attachments
 - Custom app-specific message types (via declaration merging)
 
 LLMs only understand a subset: `user`, `assistant`, and `toolResult` messages with specific content formats. The `convertToLlm` function bridges this gap.
@@ -166,11 +165,14 @@ When you call `prompt(message)`, the agent emits `message_start` and `message_en
 
 ```
 prompt(userMessage)
+  → agent_start
+  → turn_start
   → message_start { message: userMessage }
   → message_end { message: userMessage }
   → message_start { message: assistantMessage }  // LLM starts responding
   → message_update { message: partialAssistant } // streaming...
   → message_end { message: assistantMessage }
+  ...
 ```
 
 Queued messages (via `queueMessage()`) emit the same events when injected:
@@ -238,7 +240,7 @@ Extend `AgentMessage` for app-specific messages via declaration merging:
 
 ```typescript
 declare module '@mariozechner/pi-agent-core' {
-  interface CustomMessages {
+  interface CustomAgentMessages {
     artifact: { role: 'artifact'; code: string; language: string; timestamp: number };
     notification: { role: 'notification'; text: string; timestamp: number };
   }

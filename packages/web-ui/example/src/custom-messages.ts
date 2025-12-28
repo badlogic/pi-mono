@@ -18,7 +18,7 @@ export interface SystemNotificationMessage {
 
 // Extend CustomMessages interface via declaration merging
 declare module "@mariozechner/pi-web-ui" {
-	interface CustomMessages {
+	interface CustomAgentMessages {
 		"system-notification": SystemNotificationMessage;
 	}
 }
@@ -99,8 +99,8 @@ export function customMessageTransformer(messages: AppMessage[]): Message[] {
 			}
 
 			// Strip attachments from user messages
-			if (m.role === "user") {
-				const { attachments: _, ...rest } = m as any;
+			if (m.role === "user-with-attachment") {
+				const { attachments: _, ...rest } = m;
 				return rest as Message;
 			}
 

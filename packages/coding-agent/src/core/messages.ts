@@ -6,11 +6,7 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { Message } from "@mariozechner/pi-ai";
-
-// ============================================================================
-// Custom Message Types
-// ============================================================================
+import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 
 /**
  * Message type for bash executions via the ! command.
@@ -26,8 +22,6 @@ export interface BashExecutionMessage {
 	timestamp: number;
 }
 
-import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
-
 /**
  * Message type for hook-injected messages via sendMessage().
  * These are custom messages that hooks can inject into the conversation.
@@ -41,35 +35,27 @@ export interface HookMessage<T = unknown> {
 	timestamp: number;
 }
 
-// Extend CustomMessages via declaration merging
+// Extend CustomAgentMessages via declaration merging
 declare module "@mariozechner/pi-agent-core" {
-	interface CustomMessages {
+	interface CustomAgentMessages {
 		bashExecution: BashExecutionMessage;
 		hookMessage: HookMessage;
 	}
 }
 
-// ============================================================================
-// Type Guards
-// ============================================================================
-
 /**
  * Type guard for BashExecutionMessage.
  */
 export function isBashExecutionMessage(msg: AgentMessage | Message): msg is BashExecutionMessage {
-	return (msg as BashExecutionMessage).role === "bashExecution";
+	return msg.role === "bashExecution";
 }
 
 /**
- * Type guard for HookAgentMessage.
+ * Type guard for HookMessage.
  */
 export function isHookMessage(msg: AgentMessage | Message): msg is HookMessage {
-	return (msg as HookMessage).role === "hookMessage";
+	return msg.role === "hookMessage";
 }
-
-// ============================================================================
-// Message Formatting
-// ============================================================================
 
 /**
  * Convert a BashExecutionMessage to user message text for LLM context.
@@ -92,18 +78,15 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 	return text;
 }
 
-// ============================================================================
-// Message Transformer
-// ============================================================================
-
 /**
  * Transform AgentMessages (including custom types) to LLM-compatible Messages.
  *
  * This is used by:
- * - Agent's messageTransformer option (for prompt calls)
+ * - Agent's transormToLlm option (for prompt calls and queued messages)
  * - Compaction's generateSummary (for summarization)
+ * - Custom hooks and tools
  */
-export function messageTransformer(messages: AgentMessage[]): Message[] {
+export function convertToLlm(messages: AgentMessage[]): Message[] {
 	return messages
 		.map((m): Message | null => {
 			if (isBashExecutionMessage(m)) {
@@ -131,5 +114,5 @@ export function messageTransformer(messages: AgentMessage[]): Message[] {
 			// Filter out unknown message types
 			return null;
 		})
-		.filter((m): m is Message => m !== null);
+		.filter((m) => m !== null);
 }

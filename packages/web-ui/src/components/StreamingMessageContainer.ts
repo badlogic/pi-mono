@@ -1,4 +1,5 @@
-import type { AgentTool, Message, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
+import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { html, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 
@@ -9,8 +10,8 @@ export class StreamingMessageContainer extends LitElement {
 	@property({ type: Object }) toolResultsById?: Map<string, ToolResultMessage>;
 	@property({ attribute: false }) onCostClick?: () => void;
 
-	@state() private _message: Message | null = null;
-	private _pendingMessage: Message | null = null;
+	@state() private _message: AgentMessage | null = null;
+	private _pendingMessage: AgentMessage | null = null;
 	private _updateScheduled = false;
 	private _immediateUpdate = false;
 
@@ -24,7 +25,7 @@ export class StreamingMessageContainer extends LitElement {
 	}
 
 	// Public method to update the message with batching for performance
-	public setMessage(message: Message | null, immediate = false) {
+	public setMessage(message: AgentMessage | null, immediate = false) {
 		// Store the latest message
 		this._pendingMessage = message;
 

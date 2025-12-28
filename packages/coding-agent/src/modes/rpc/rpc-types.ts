@@ -5,8 +5,8 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { AgentMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction.js";
@@ -17,7 +17,7 @@ import type { CompactionResult } from "../../core/compaction.js";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; attachments?: Attachment[] }
+	| { id?: string; type: "prompt"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "queue_message"; message: string }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "reset" }

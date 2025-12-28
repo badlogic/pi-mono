@@ -1,16 +1,15 @@
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type {
-	AgentTool,
 	AssistantMessage as AssistantMessageType,
 	ToolResultMessage as ToolResultMessageType,
 } from "@mariozechner/pi-ai";
 import { html, LitElement, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { AppMessage } from "./Messages.js";
 import { renderMessage } from "./message-renderer-registry.js";
 
 export class MessageList extends LitElement {
-	@property({ type: Array }) messages: AppMessage[] = [];
+	@property({ type: Array }) messages: AgentMessage[] = [];
 	@property({ type: Array }) tools: AgentTool[] = [];
 	@property({ type: Object }) pendingToolCalls?: Set<string>;
 	@property({ type: Boolean }) isStreaming: boolean = false;

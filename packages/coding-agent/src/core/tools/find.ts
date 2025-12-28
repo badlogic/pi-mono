@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mariozechner/pi-ai";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";

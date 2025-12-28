@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mariozechner/pi-ai";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import { constants } from "fs";
