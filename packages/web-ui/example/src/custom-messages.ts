@@ -79,7 +79,7 @@ export function createSystemNotification(
  * Custom message transformer that extends defaultConvertToLlm.
  * Handles system-notification messages by converting them to user messages.
  */
-export function customMessageTransformer(messages: AgentMessage[]): Message[] {
+export function customConvertToLlm(messages: AgentMessage[]): Message[] {
 	// First, handle our custom system-notification type
 	const processed = messages.map((m): AgentMessage => {
 		if (m.role === "system-notification") {

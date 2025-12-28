@@ -25,11 +25,7 @@ import "./app.css";
 import { icon } from "@mariozechner/mini-lit";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { Input } from "@mariozechner/mini-lit/dist/Input.js";
-import {
-	createSystemNotification,
-	customMessageTransformer,
-	registerCustomMessageRenderers,
-} from "./custom-messages.js";
+import { createSystemNotification, customConvertToLlm, registerCustomMessageRenderers } from "./custom-messages.js";
 
 // Register custom message renderers
 registerCustomMessageRenderers();
@@ -179,7 +175,7 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 			tools: [],
 		},
 		// Custom transformer: convert custom messages to LLM-compatible format
-		convertToLlm: customMessageTransformer,
+		convertToLlm: customConvertToLlm,
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {
