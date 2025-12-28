@@ -8,7 +8,6 @@ import {
 	ChatPanel,
 	CustomProvidersStore,
 	createJavaScriptReplTool,
-	createStreamFn,
 	IndexedDBStorageBackend,
 	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
@@ -177,16 +176,6 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 		},
 		// Custom transformer: convert custom messages to LLM-compatible format
 		convertToLlm: customConvertToLlm,
-		// Get API keys from provider keys store
-		getApiKey: async (provider: string) => {
-			const key = await storage.providerKeys.get(provider);
-			return key ?? undefined;
-		},
-		// Use streamFn with CORS proxy support (reads settings on each call)
-		streamFn: createStreamFn(async () => {
-			const enabled = await storage.settings.get<boolean>("proxy.enabled");
-			return enabled ? (await storage.settings.get<string>("proxy.url")) || undefined : undefined;
-		}),
 	});
 
 	agentUnsubscribe = agent.subscribe((event: any) => {

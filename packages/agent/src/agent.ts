@@ -82,8 +82,8 @@ export class Agent {
 	private transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
 	private messageQueue: AgentMessage[] = [];
 	private queueMode: "all" | "one-at-a-time";
-	private streamFn: StreamFn;
-	private getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+	public streamFn: StreamFn;
+	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 

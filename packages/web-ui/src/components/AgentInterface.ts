@@ -1,4 +1,4 @@
-import type { ToolResultMessage, Usage } from "@mariozechner/pi-ai";
+import { streamSimple, type ToolResultMessage, type Usage } from "@mariozechner/pi-ai";
 import { html, LitElement } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
 import { ModelSelector } from "../dialogs/ModelSelector.js";
@@ -12,6 +12,7 @@ import type { Agent, AgentEvent } from "@mariozechner/pi-agent-core";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
+import { createStreamFn } from "../utils/proxy-utils.js";
 import type { UserMessageWithAttachments } from "./Messages.js";
 import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
 
@@ -130,6 +131,23 @@ export class AgentInterface extends LitElement {
 			this._unsubscribeSession = undefined;
 		}
 		if (!this.session) return;
+
+		// Set default streamFn with proxy support if not already set
+		if (this.session.streamFn === streamSimple) {
+			this.session.streamFn = createStreamFn(async () => {
+				const enabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
+				return enabled ? (await getAppStorage().settings.get<string>("proxy.url")) || undefined : undefined;
+			});
+		}
+
+		// Set default getApiKey if not already set
+		if (!this.session.getApiKey) {
+			this.session.getApiKey = async (provider: string) => {
+				const key = await getAppStorage().providerKeys.get(provider);
+				return key ?? undefined;
+			};
+		}
+
 		this._unsubscribeSession = this.session.subscribe(async (ev: AgentEvent) => {
 			switch (ev.type) {
 				case "message_start":
