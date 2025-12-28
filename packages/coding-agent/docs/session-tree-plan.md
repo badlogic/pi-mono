@@ -287,19 +287,32 @@ Benefits:
 
 ### Investigate: `context` event vs `before_agent_start`
 
-Reference: [#324](https://github.com/badlogic/pi-mono/issues/324)
+References:
+- [#324](https://github.com/badlogic/pi-mono/issues/324) - `before_agent_start` proposal
+- [#330](https://github.com/badlogic/pi-mono/discussions/330) - Dynamic Context Pruning (why `context` was added)
 
 **Current `context` event:**
 - Fires before each LLM call within the agent loop
 - Receives `AgentMessage[]` (deep copy, safe to modify)
+- Returns `Message[]` (inconsistent with input type)
 - Modifications are transient (not persisted to session)
 - No TUI visibility of what was changed
 - Use case: non-destructive pruning, dynamic context manipulation
 
-**Problem:** `AgentMessage` includes custom types (hookMessage, bashExecution, etc.) that need conversion to LLM `Message[]` before sending. Need to verify:
-- [ ] Where does `AgentMessage[]` → `Message[]` conversion happen relative to `context` event?
-- [ ] Should hooks work with `AgentMessage[]` or `Message[]`?
-- [ ] Is the current abstraction level correct?
+**Type inconsistency:** Event receives `AgentMessage[]` but result returns `Message[]`:
+```typescript
+interface ContextEvent {
+  messages: AgentMessage[];  // Input
+}
+interface ContextEventResult {
+  messages?: Message[];      // Output - different type!
+}
+```
+
+Questions:
+- [ ] Should input/output both be `Message[]` (LLM format)?
+- [ ] Or both be `AgentMessage[]` with conversion happening after?
+- [ ] Where does `AgentMessage[]` → `Message[]` conversion currently happen?
 
 **Proposed `before_agent_start` event:**
 - Fires once when user submits a prompt, before `agent_start`
