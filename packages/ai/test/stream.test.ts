@@ -556,7 +556,7 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5-air");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -571,17 +571,16 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle thinking", { retry: 3 }, async () => {
-			// Prompt doesn't trigger thinking
-			// await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await multiTurn(llm, { reasoningEffort: "medium" });
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5v");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -596,18 +595,16 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle thinking", { retry: 3 }, async () => {
-			// Prompt doesn't trigger thinking
-			// await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await multiTurn(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle image input", { retry: 3 }, async () => {
-			// Can't see image for some reason?
-			// await handleImage(llm);
+			await handleImage(llm);
 		});
 	});
 
