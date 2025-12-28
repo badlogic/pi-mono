@@ -81,4 +81,5 @@ Use these sections under `## [Unreleased]`:
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
+### Tool Usage
 **CTRICIAL**: NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
