@@ -2,24 +2,15 @@
  * Anthropic OAuth flow (Claude Pro/Max)
  */
 
-import { createHash, randomBytes } from "crypto";
+import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials } from "./types.js";
 
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
 const REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback";
 const SCOPES = "org:create_api_key user:profile user:inference";
-
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { verifier: string; challenge: string } {
-	const verifier = randomBytes(32).toString("base64url");
-	const challenge = createHash("sha256").update(verifier).digest("base64url");
-	return { verifier, challenge };
-}
 
 /**
  * Login with Anthropic OAuth (device code flow)
@@ -31,7 +22,7 @@ export async function loginAnthropic(
 	onAuthUrl: (url: string) => void,
 	onPromptCode: () => Promise<string>,
 ): Promise<OAuthCredentials> {
-	const { verifier, challenge } = generatePKCE();
+	const { verifier, challenge } = await generatePKCE();
 
 	// Build authorization URL
 	const authParams = new URLSearchParams({

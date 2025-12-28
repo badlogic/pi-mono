@@ -1,14 +1,17 @@
 /**
  * Antigravity OAuth flow (Gemini 3, Claude, GPT-OSS via Google Cloud)
  * Uses different OAuth credentials than google-gemini-cli for access to additional models.
+ *
+ * NOTE: This module uses Node.js http.createServer for the OAuth callback.
+ * It is only intended for CLI use, not browser environments.
  */
 
-import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
+import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials } from "./types.js";
 
 // Antigravity OAuth credentials (different from Gemini CLI)
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode(
 	"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
 );
@@ -29,15 +32,6 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
-
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { verifier: string; challenge: string } {
-	const verifier = randomBytes(32).toString("base64url");
-	const challenge = createHash("sha256").update(verifier).digest("base64url");
-	return { verifier, challenge };
-}
 
 /**
  * Start a local HTTP server to receive the OAuth callback
@@ -232,7 +226,7 @@ export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
 ): Promise<OAuthCredentials> {
-	const { verifier, challenge } = generatePKCE();
+	const { verifier, challenge } = await generatePKCE();
 
 	// Start local server for callback
 	onProgress?.("Starting local server for OAuth callback...");

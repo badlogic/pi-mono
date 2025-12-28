@@ -1,13 +1,16 @@
 /**
  * Gemini CLI OAuth flow (Google Cloud Code Assist)
  * Standard Gemini models only (gemini-2.0-flash, gemini-2.5-*)
+ *
+ * NOTE: This module uses Node.js http.createServer for the OAuth callback.
+ * It is only intended for CLI use, not browser environments.
  */
 
-import { createHash, randomBytes } from "crypto";
 import { createServer, type Server } from "http";
+import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials } from "./types.js";
 
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode(
 	"NjgxMjU1ODA5Mzk1LW9vOGZ0Mm9wcmRybnA5ZTNhcWY2YXYzaG1kaWIxMzVqLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t",
 );
@@ -21,15 +24,6 @@ const SCOPES = [
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
-
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { verifier: string; challenge: string } {
-	const verifier = randomBytes(32).toString("base64url");
-	const challenge = createHash("sha256").update(verifier).digest("base64url");
-	return { verifier, challenge };
-}
 
 /**
  * Start a local HTTP server to receive the OAuth callback
@@ -263,7 +257,7 @@ export async function loginGeminiCli(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
 ): Promise<OAuthCredentials> {
-	const { verifier, challenge } = generatePKCE();
+	const { verifier, challenge } = await generatePKCE();
 
 	// Start local server for callback
 	onProgress?.("Starting local server for OAuth callback...");
