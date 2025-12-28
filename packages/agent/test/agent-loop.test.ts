@@ -105,7 +105,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 
 		const events: AgentEvent[] = [];
-		const stream = agentLoop(userPrompt, context, config, undefined, streamFn);
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
 
 		for await (const event of stream) {
 			events.push(event);
@@ -172,7 +172,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 
 		const events: AgentEvent[] = [];
-		const stream = agentLoop(userPrompt, context, config, undefined, streamFn);
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
 
 		for await (const event of stream) {
 			events.push(event);
@@ -224,7 +224,7 @@ describe("agentLoop with AgentMessage", () => {
 			return stream;
 		};
 
-		const stream = agentLoop(userPrompt, context, config, undefined, streamFn);
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
 
 		for await (const _ of stream) {
 			// consume
@@ -288,7 +288,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 
 		const events: AgentEvent[] = [];
-		const stream = agentLoop(userPrompt, context, config, undefined, streamFn);
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
 
 		for await (const event of stream) {
 			events.push(event);
@@ -351,7 +351,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 
 		const events: AgentEvent[] = [];
-		const stream = agentLoop(userPrompt, context, config, undefined, (_model, ctx, _options) => {
+		const stream = agentLoop([userPrompt], context, config, undefined, (_model, ctx, _options) => {
 			// Check if interrupt message is in context on second call
 			if (callIndex === 1) {
 				sawInterruptInContext = ctx.messages.some(

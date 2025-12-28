@@ -168,29 +168,33 @@ export class Agent {
 	}
 
 	/** Send a prompt with an AgentMessage */
-	async prompt(message: AgentMessage): Promise<void>;
+	async prompt(message: AgentMessage | AgentMessage[]): Promise<void>;
 	async prompt(input: string, images?: ImageContent[]): Promise<void>;
-	async prompt(input: string | AgentMessage, images?: ImageContent[]) {
+	async prompt(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]) {
 		const model = this._state.model;
 		if (!model) throw new Error("No model configured");
 
-		let userMessage: AgentMessage;
+		let msgs: AgentMessage[];
 
-		if (typeof input === "string") {
+		if (Array.isArray(input)) {
+			msgs = input;
+		} else if (typeof input === "string") {
 			const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
 			if (images && images.length > 0) {
 				content.push(...images);
 			}
-			userMessage = {
-				role: "user",
-				content,
-				timestamp: Date.now(),
-			};
+			msgs = [
+				{
+					role: "user",
+					content,
+					timestamp: Date.now(),
+				},
+			];
 		} else {
-			userMessage = input;
+			msgs = [input];
 		}
 
-		await this._runLoop(userMessage);
+		await this._runLoop(msgs);
 	}
 
 	/** Continue from current context (for retry after overflow) */
@@ -208,10 +212,10 @@ export class Agent {
 
 	/**
 	 * Run the agent loop.
-	 * If userMessage is provided, starts a new conversation turn.
+	 * If messages are provided, starts a new conversation turn with those messages.
 	 * Otherwise, continues from existing context.
 	 */
-	private async _runLoop(userMessage?: AgentMessage) {
+	private async _runLoop(messages?: AgentMessage[]) {
 		const model = this._state.model;
 		if (!model) throw new Error("No model configured");
 
@@ -262,8 +266,8 @@ export class Agent {
 		let partial: AgentMessage | null = null;
 
 		try {
-			const stream = userMessage
-				? agentLoop(userMessage, context, config, this.abortController.signal, this.streamFn)
+			const stream = messages
+				? agentLoop(messages, context, config, this.abortController.signal, this.streamFn)
 				: agentLoopContinue(context, config, this.abortController.signal, this.streamFn);
 
 			for await (const event of stream) {

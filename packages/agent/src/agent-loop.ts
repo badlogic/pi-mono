@@ -26,7 +26,7 @@ import type {
  * The prompt is added to the context and events are emitted for it.
  */
 export function agentLoop(
-	prompt: AgentMessage,
+	prompts: AgentMessage[],
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal?: AbortSignal,
@@ -35,16 +35,18 @@ export function agentLoop(
 	const stream = createAgentStream();
 
 	(async () => {
-		const newMessages: AgentMessage[] = [prompt];
+		const newMessages: AgentMessage[] = [...prompts];
 		const currentContext: AgentContext = {
 			...context,
-			messages: [...context.messages, prompt],
+			messages: [...context.messages, ...prompts],
 		};
 
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
-		stream.push({ type: "message_start", message: prompt });
-		stream.push({ type: "message_end", message: prompt });
+		for (const prompt of prompts) {
+			stream.push({ type: "message_start", message: prompt });
+			stream.push({ type: "message_end", message: prompt });
+		}
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
 	})();

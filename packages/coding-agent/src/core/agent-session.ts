@@ -490,30 +490,36 @@ export class AgentSession {
 		// Expand file-based slash commands if requested
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
+		// Build messages array (hook message if any, then user message)
+		const messages: AgentMessage[] = [];
+
+		// Add user message
+		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+		if (options?.images) {
+			userContent.push(...options.images);
+		}
+		messages.push({
+			role: "user",
+			content: userContent,
+			timestamp: Date.now(),
+		});
+
 		// Emit before_agent_start hook event
 		if (this._hookRunner) {
 			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
 			if (result?.message) {
-				// Append hook message to agent state and session
-				const hookMessage: HookMessage = {
+				messages.push({
 					role: "hookMessage",
 					customType: result.message.customType,
 					content: result.message.content,
 					display: result.message.display,
 					details: result.message.details,
 					timestamp: Date.now(),
-				};
-				this.agent.appendMessage(hookMessage);
-				this.sessionManager.appendCustomMessageEntry(
-					result.message.customType,
-					result.message.content,
-					result.message.display,
-					result.message.details,
-				);
+				});
 			}
 		}
 
-		await this.agent.prompt(expandedText, options?.images);
+		await this.agent.prompt(messages);
 		await this.waitForRetry();
 	}
 
