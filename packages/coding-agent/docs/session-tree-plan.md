@@ -285,6 +285,59 @@ Benefits:
 - Works with branching (pruning entries are part of the tree)
 - Trade-off: cache busting on first submission after pruning
 
+### Investigate: `context` event vs `before_agent_start`
+
+Reference: [#324](https://github.com/badlogic/pi-mono/issues/324)
+
+**Current `context` event:**
+- Fires before each LLM call within the agent loop
+- Receives `AgentMessage[]` (deep copy, safe to modify)
+- Modifications are transient (not persisted to session)
+- No TUI visibility of what was changed
+- Use case: non-destructive pruning, dynamic context manipulation
+
+**Problem:** `AgentMessage` includes custom types (hookMessage, bashExecution, etc.) that need conversion to LLM `Message[]` before sending. Need to verify:
+- [ ] Where does `AgentMessage[]` → `Message[]` conversion happen relative to `context` event?
+- [ ] Should hooks work with `AgentMessage[]` or `Message[]`?
+- [ ] Is the current abstraction level correct?
+
+**Proposed `before_agent_start` event:**
+- Fires once when user submits a prompt, before `agent_start`
+- Allows hooks to inject additional content that gets **persisted** to session
+- Injected content is visible in TUI (observability)
+- Does not bust prompt cache (appended after user message, not modifying system prompt)
+
+**Key difference:**
+| Aspect | `context` | `before_agent_start` |
+|--------|-----------|---------------------|
+| When | Before each LLM call | Once per user prompt |
+| Persisted | No | Yes (as SystemMessage) |
+| TUI visible | No | Yes (collapsible) |
+| Cache impact | Can bust cache | Append-only, cache-safe |
+| Use case | Transient manipulation | Persistent context injection |
+
+**Design questions:**
+- [ ] Should `before_agent_start` create a new message type (`SystemMessage` with `role: "system"`)?
+- [ ] How should it render in TUI? (label when collapsed, full content when expanded)
+- [ ] How does it interact with compaction? (treated like user messages?)
+- [ ] Can hook return multiple messages or just one?
+
+**Implementation sketch:**
+```typescript
+interface BeforeAgentStartEvent {
+  type: "before_agent_start";
+  userMessage: UserMessage;  // The prompt user just submitted
+}
+
+interface BeforeAgentStartResult {
+  /** Additional context to inject (persisted as SystemMessage) */
+  inject?: {
+    label: string;           // Shown in collapsed TUI state
+    content: string | (TextContent | ImageContent)[];
+  };
+}
+```
+
 ### HTML Export
 
 - [ ] Add collapsible sidebar showing full tree structure
