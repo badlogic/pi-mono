@@ -152,19 +152,14 @@ agent.queueMessage({
 
 When queued messages are detected after a tool call, remaining tool calls are skipped with error results.
 
-## Attachments
+## Images
 
-User messages can include attachments (images, documents):
+User messages can include images:
 
 ```typescript
-await agent.prompt('What is in this image?', [{
-  id: 'img1',
-  type: 'image',
-  fileName: 'photo.jpg',
-  mimeType: 'image/jpeg',
-  size: 102400,
-  content: base64ImageData  // base64 without data URL prefix
-}]);
+await agent.prompt('What is in this image?', [
+  { type: 'image', data: base64ImageData, mimeType: 'image/jpeg' }
+]);
 ```
 
 ## Proxy Usage
