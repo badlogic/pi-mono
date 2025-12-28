@@ -74,8 +74,8 @@ let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
 const generateTitle = (messages: AgentMessage[]): string => {
-	const firstUserMsg = messages.find((m) => m.role === "user");
-	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
+	const firstUserMsg = messages.find((m) => m.role === "user" || m.role === "user-with-attachments");
+	if (!firstUserMsg || (firstUserMsg.role !== "user" && firstUserMsg.role !== "user-with-attachments")) return "";
 
 	let text = "";
 	const content = firstUserMsg.content;
@@ -98,7 +98,7 @@ const generateTitle = (messages: AgentMessage[]): string => {
 };
 
 const shouldSaveSession = (messages: AgentMessage[]): boolean => {
-	const hasUserMsg = messages.some((m: any) => m.role === "user");
+	const hasUserMsg = messages.some((m: any) => m.role === "user" || m.role === "user-with-attachments");
 	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
 	return hasUserMsg && hasAssistantMsg;
 };

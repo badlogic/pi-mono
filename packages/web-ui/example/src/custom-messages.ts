@@ -1,7 +1,7 @@
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
-import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
-import type { AgentMessage, Attachment, MessageRenderer, UserMessageWithAttachments } from "@mariozechner/pi-web-ui";
-import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
+import type { Message } from "@mariozechner/pi-ai";
+import type { AgentMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
+import { defaultConvertToLlm, registerMessageRenderer } from "@mariozechner/pi-web-ui";
 import { html } from "lit";
 
 // ============================================================================
@@ -75,72 +75,25 @@ export function createSystemNotification(
 // 5. CUSTOM MESSAGE TRANSFORMER
 // ============================================================================
 
-// Convert attachments to content blocks
-function convertAttachments(attachments: Attachment[]): (TextContent | ImageContent)[] {
-	const content: (TextContent | ImageContent)[] = [];
-	for (const attachment of attachments) {
-		if (attachment.type === "image") {
-			content.push({
-				type: "image",
-				data: attachment.content,
-				mimeType: attachment.mimeType,
-			} as ImageContent);
-		} else if (attachment.type === "document" && attachment.extractedText) {
-			content.push({
-				type: "text",
-				text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-			} as TextContent);
-		}
-	}
-	return content;
-}
-
-// Transform custom messages to LLM-compatible messages
+/**
+ * Custom message transformer that extends defaultConvertToLlm.
+ * Handles system-notification messages by converting them to user messages.
+ */
 export function customMessageTransformer(messages: AgentMessage[]): Message[] {
-	return messages
-		.filter((m) => {
-			// Filter out artifact messages - they're for session reconstruction only
-			if (m.role === "artifact") {
-				return false;
-			}
+	// First, handle our custom system-notification type
+	const processed = messages.map((m): AgentMessage => {
+		if (m.role === "system-notification") {
+			const notification = m as SystemNotificationMessage;
+			// Convert to user message with <system> tags
+			return {
+				role: "user",
+				content: `<system>${notification.message}</system>`,
+				timestamp: Date.now(),
+			};
+		}
+		return m;
+	});
 
-			// Keep LLM-compatible messages + custom messages
-			return (
-				m.role === "user" ||
-				m.role === "user-with-attachments" ||
-				m.role === "assistant" ||
-				m.role === "toolResult" ||
-				m.role === "system-notification"
-			);
-		})
-		.map((m) => {
-			// Transform system notifications to user messages
-			if (m.role === "system-notification") {
-				const notification = m as SystemNotificationMessage;
-				return {
-					role: "user",
-					content: `<system>${notification.message}</system>`,
-					timestamp: Date.now(),
-				} as Message;
-			}
-
-			// Convert user-with-attachments to user message with content blocks
-			if (m.role === "user-with-attachments") {
-				const msg = m as UserMessageWithAttachments;
-				const textContent: (TextContent | ImageContent)[] =
-					typeof msg.content === "string" ? [{ type: "text", text: msg.content }] : [...msg.content];
-
-				if (msg.attachments) {
-					textContent.push(...convertAttachments(msg.attachments));
-				}
-
-				return {
-					role: "user",
-					content: textContent,
-					timestamp: msg.timestamp,
-				} as Message;
-			}
-
-			return m as Message;
-		});
+	// Then use defaultConvertToLlm for standard handling
+	return defaultConvertToLlm(processed);
 }

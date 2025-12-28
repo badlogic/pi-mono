@@ -285,3 +285,93 @@ export class AbortedMessage extends LitElement {
 		return html`<span class="text-sm text-destructive italic">${i18n("Request aborted")}</span>`;
 	}
 }
+
+// ============================================================================
+// Default Message Transformer
+// ============================================================================
+
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
+
+/**
+ * Convert attachments to content blocks for LLM.
+ * - Images become ImageContent blocks
+ * - Documents with extractedText become TextContent blocks with filename header
+ */
+export function convertAttachments(attachments: Attachment[]): (TextContent | ImageContent)[] {
+	const content: (TextContent | ImageContent)[] = [];
+	for (const attachment of attachments) {
+		if (attachment.type === "image") {
+			content.push({
+				type: "image",
+				data: attachment.content,
+				mimeType: attachment.mimeType,
+			} as ImageContent);
+		} else if (attachment.type === "document" && attachment.extractedText) {
+			content.push({
+				type: "text",
+				text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
+			} as TextContent);
+		}
+	}
+	return content;
+}
+
+/**
+ * Check if a message is a UserMessageWithAttachments.
+ */
+export function isUserMessageWithAttachments(msg: AgentMessage): msg is UserMessageWithAttachments {
+	return (msg as UserMessageWithAttachments).role === "user-with-attachments";
+}
+
+/**
+ * Check if a message is an ArtifactMessage.
+ */
+export function isArtifactMessage(msg: AgentMessage): msg is ArtifactMessage {
+	return (msg as ArtifactMessage).role === "artifact";
+}
+
+/**
+ * Default convertToLlm for web-ui apps.
+ *
+ * Handles:
+ * - UserMessageWithAttachments: converts to user message with content blocks
+ * - ArtifactMessage: filtered out (UI-only, for session reconstruction)
+ * - Standard LLM messages (user, assistant, toolResult): passed through
+ */
+export function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
+	return messages
+		.filter((m) => {
+			// Filter out artifact messages - they're for session reconstruction only
+			if (isArtifactMessage(m)) {
+				return false;
+			}
+			return true;
+		})
+		.map((m): Message | null => {
+			// Convert user-with-attachments to user message with content blocks
+			if (isUserMessageWithAttachments(m)) {
+				const textContent: (TextContent | ImageContent)[] =
+					typeof m.content === "string" ? [{ type: "text", text: m.content }] : [...m.content];
+
+				if (m.attachments) {
+					textContent.push(...convertAttachments(m.attachments));
+				}
+
+				return {
+					role: "user",
+					content: textContent,
+					timestamp: m.timestamp,
+				} as Message;
+			}
+
+			// Pass through standard LLM roles
+			if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+				return m as Message;
+			}
+
+			// Filter out unknown message types
+			return null;
+		})
+		.filter((m): m is Message => m !== null);
+}

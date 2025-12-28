@@ -74,7 +74,7 @@ export class StreamingMessageContainer extends LitElement {
 		if (msg.role === "toolResult") {
 			// Skip standalone tool result in streaming; the stable list will render paired tool-message
 			return html``;
-		} else if (msg.role === "user") {
+		} else if (msg.role === "user" || msg.role === "user-with-attachments") {
 			// Skip standalone tool result in streaming; the stable list will render it immediiately
 			return html``;
 		} else if (msg.role === "assistant") {

@@ -12,8 +12,16 @@ export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
 // Message components
-export type { UserMessageWithAttachments } from "./components/Messages.js";
-export { AssistantMessage, ToolMessage, UserMessage } from "./components/Messages.js";
+export type { ArtifactMessage, UserMessageWithAttachments } from "./components/Messages.js";
+export {
+	AssistantMessage,
+	convertAttachments,
+	defaultConvertToLlm,
+	isArtifactMessage,
+	isUserMessageWithAttachments,
+	ToolMessage,
+	UserMessage,
+} from "./components/Messages.js";
 // Message renderer registry
 export {
 	getMessageRenderer,

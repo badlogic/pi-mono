@@ -50,7 +50,7 @@ export class MessageList extends LitElement {
 			}
 
 			// Fall back to built-in renderers
-			if (msg.role === "user") {
+			if (msg.role === "user" || msg.role === "user-with-attachments") {
 				items.push({
 					key: `msg:${index}`,
 					template: html`<user-message .message=${msg}></user-message>`,
