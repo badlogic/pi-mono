@@ -13,7 +13,34 @@ import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { CompactionEntry, SessionManager } from "../session-manager.js";
+import type {
+	CompactionEntry,
+	SessionEntry,
+	SessionHeader,
+	SessionManager,
+	SessionTreeNode,
+} from "../session-manager.js";
+
+/**
+ * Read-only view of SessionManager for hooks.
+ * Hooks should use pi.sendMessage() and pi.appendEntry() for writes.
+ */
+export type ReadonlySessionManager = Pick<
+	SessionManager,
+	| "getCwd"
+	| "getSessionDir"
+	| "getSessionId"
+	| "getSessionFile"
+	| "getLeafUuid"
+	| "getLeafEntry"
+	| "getEntry"
+	| "getLabel"
+	| "getPath"
+	| "getHeader"
+	| "getEntries"
+	| "getTree"
+>;
+
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
@@ -76,8 +103,8 @@ export interface HookEventContext {
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
-	/** Session manager instance - use for entries, session file, etc. */
-	sessionManager: SessionManager;
+	/** Session manager (read-only) - use pi.sendMessage()/pi.appendEntry() for writes */
+	sessionManager: ReadonlySessionManager;
 	/** Model registry - use for API key resolution and model retrieval */
 	modelRegistry: ModelRegistry;
 }
@@ -430,8 +457,8 @@ export interface HookCommandContext {
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
-	/** Session manager for reading/writing session entries */
-	sessionManager: SessionManager;
+	/** Session manager (read-only) - use pi.sendMessage()/pi.appendEntry() for writes */
+	sessionManager: ReadonlySessionManager;
 	/** Model registry for API keys */
 	modelRegistry: ModelRegistry;
 }

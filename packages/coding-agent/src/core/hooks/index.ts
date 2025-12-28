@@ -33,6 +33,7 @@ export type {
 	HookMessageRenderOptions,
 	HookUIContext,
 	LsToolResultEvent,
+	ReadonlySessionManager,
 	ReadToolResultEvent,
 	RegisteredCommand,
 	SessionEvent,
