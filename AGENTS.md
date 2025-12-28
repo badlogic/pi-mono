@@ -49,44 +49,36 @@ When closing issues via commit:
 - Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
 
 ## Changelog
-Location: `packages/coding-agent/CHANGELOG.md`, `packages/ai/CHANGELOG.md`, `packages/tui/CHANGELOG.md`, pick the one relevant to the changes or ask user.
+Location: `packages/*/CHANGELOG.md` (each package has its own)
+
+### Format
+Use these sections under `## [Unreleased]`:
+- `### Breaking Changes` - API changes requiring migration
+- `### Added` - New features
+- `### Changed` - Changes to existing functionality
+- `### Fixed` - Bug fixes
+- `### Removed` - Removed features
+
+### Rules
 - New entries ALWAYS go under `## [Unreleased]` section
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
-- When releasing: rename `[Unreleased]` to the new version, then add a fresh empty `[Unreleased]` section
 
-### Attribution format
-- **Internal changes (from issues)**: Reference issue only
-  - Example: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
-- **External contributions (PRs from others)**: Reference PR and credit the contributor
-  - Example: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
-- If a PR addresses an issue, reference both: `([#123](...issues/123), [#456](...pull/456) by [@user](...))` or just the PR if the issue context is clear from the description
+### Attribution
+- **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
+- **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
 ## Releasing
 
-1. **Bump version** (all packages use lockstep versioning):
+1. **Update CHANGELOGs**: Ensure all changes since last release are documented in the `[Unreleased]` section of each affected package's CHANGELOG.md
+
+2. **Run release script**:
    ```bash
-   npm run version:patch    # For bug fixes
-   npm run version:minor    # For new features
-   npm run version:major    # For breaking changes
+   npm run release:patch    # Bug fixes
+   npm run release:minor    # New features
+   npm run release:major    # Breaking changes
    ```
 
-2. **Finalize CHANGELOG.md**: Change `[Unreleased]` to the new version with today's date (e.g., `## [0.12.12] - 2025-12-05`)
-
-3. **Commit and tag**:
-   ```bash
-   git add .
-   git commit -m "Release v0.12.12"
-   git tag v0.12.12
-   git push origin main
-   git push origin v0.12.12
-   ```
-
-4. **Publish to npm**:
-   ```bash
-   npm run publish
-   ```
-
-5. **Add new [Unreleased] section** at top of CHANGELOG.md for next cycle, commit it
+The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
 **CTRICIAL**: NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
