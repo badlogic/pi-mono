@@ -7,6 +7,8 @@ import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
 import type {
+	BeforeAgentStartEvent,
+	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
 	HookError,
@@ -345,5 +347,45 @@ export class HookRunner {
 		}
 
 		return currentMessages;
+	}
+
+	/**
+	 * Emit before_agent_start event to all hooks.
+	 * Returns the first message to inject (if any handler returns one).
+	 */
+	async emitBeforeAgentStart(
+		prompt: string,
+		images?: import("@mariozechner/pi-ai").ImageContent[],
+	): Promise<BeforeAgentStartEventResult | undefined> {
+		const ctx = this.createContext();
+		let result: BeforeAgentStartEventResult | undefined;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("before_agent_start");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
+					const timeout = createTimeout(this.timeout);
+					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+					timeout.clear();
+
+					// Take the first message returned
+					if (handlerResult && (handlerResult as BeforeAgentStartEventResult).message && !result) {
+						result = handlerResult as BeforeAgentStartEventResult;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.emitError({
+						hookPath: hook.path,
+						event: "before_agent_start",
+						error: message,
+					});
+				}
+			}
+		}
+
+		return result;
 	}
 }

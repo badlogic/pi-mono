@@ -490,6 +490,29 @@ export class AgentSession {
 		// Expand file-based slash commands if requested
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
+		// Emit before_agent_start hook event
+		if (this._hookRunner) {
+			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
+			if (result?.message) {
+				// Append hook message to agent state and session
+				const hookMessage: HookMessage = {
+					role: "hookMessage",
+					customType: result.message.customType,
+					content: result.message.content,
+					display: result.message.display,
+					details: result.message.details,
+					timestamp: Date.now(),
+				};
+				this.agent.appendMessage(hookMessage);
+				this.sessionManager.appendCustomMessageEntry(
+					result.message.customType,
+					result.message.content,
+					result.message.display,
+					result.message.details,
+				);
+			}
+		}
+
 		await this.agent.prompt(expandedText, options?.images);
 		await this.waitForRetry();
 	}

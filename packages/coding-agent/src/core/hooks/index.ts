@@ -12,6 +12,8 @@ export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
+	BeforeAgentStartEvent,
+	BeforeAgentStartEventResult,
 	BashToolResultEvent,
 	ContextEvent,
 	ContextEventResult,

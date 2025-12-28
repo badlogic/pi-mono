@@ -42,6 +42,8 @@ export type {
 	AgentEndEvent,
 	AgentStartEvent,
 	BashToolResultEvent,
+	BeforeAgentStartEvent,
+	BeforeAgentStartEventResult,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	FindToolResultEvent,

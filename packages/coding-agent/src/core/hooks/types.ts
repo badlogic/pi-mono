@@ -159,6 +159,19 @@ export interface ContextEvent {
 }
 
 /**
+ * Event data for before_agent_start event.
+ * Fired after user submits a prompt but before the agent loop starts.
+ * Allows hooks to inject context that will be persisted and visible in TUI.
+ */
+export interface BeforeAgentStartEvent {
+	type: "before_agent_start";
+	/** The user's prompt text */
+	prompt: string;
+	/** Any images attached to the prompt */
+	images?: ImageContent[];
+}
+
+/**
  * Event data for agent_start event.
  * Fired when an agent loop starts (once per user prompt).
  */
@@ -314,6 +327,7 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 export type HookEvent =
 	| SessionEvent
 	| ContextEvent
+	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
 	| TurnStartEvent
@@ -356,6 +370,15 @@ export interface ToolResultEventResult {
 	details?: unknown;
 	/** Override isError flag */
 	isError?: boolean;
+}
+
+/**
+ * Return type for before_agent_start event handlers.
+ * Allows hooks to inject context before the agent runs.
+ */
+export interface BeforeAgentStartEventResult {
+	/** Message to inject into context (persisted to session, visible in TUI) */
+	message?: Pick<HookMessage, "customType" | "content" | "display" | "details">;
 }
 
 /**
@@ -433,6 +456,11 @@ export interface HookAPI {
 	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
 	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
 	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult | void>): void;
+	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
+	on(
+		event: "before_agent_start",
+		handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult | void>,
+	): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
