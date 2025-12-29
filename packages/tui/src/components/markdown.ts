@@ -317,7 +317,10 @@ export class Markdown implements Component {
 				break;
 
 			case "html":
-				// Skip HTML for terminal output
+				// Render HTML as plain text (escaped for terminal)
+				if ("raw" in token && typeof token.raw === "string") {
+					lines.push(this.applyDefaultStyle(token.raw.trim()));
+				}
 				break;
 
 			case "space":
@@ -393,6 +396,13 @@ export class Markdown implements Component {
 					result += this.theme.strikethrough(delContent) + this.getDefaultStylePrefix();
 					break;
 				}
+
+				case "html":
+					// Render inline HTML as plain text
+					if ("raw" in token && typeof token.raw === "string") {
+						result += this.applyDefaultStyle(token.raw);
+					}
+					break;
 
 				default:
 					// Handle any other inline token types as plain text

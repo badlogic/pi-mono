@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Markdown component now renders HTML tags as plain text instead of silently dropping them ([#359](https://github.com/badlogic/pi-mono/issues/359))
+
 ## [0.29.0] - 2025-12-25
 
 ### Added
