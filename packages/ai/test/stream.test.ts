@@ -572,11 +572,11 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skip("should handle thinking mode", { retry: 3 }, async () => {
-			await handleThinking(llm, { thinkingEnabled: true });
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true });
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		});
 	});
 
