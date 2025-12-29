@@ -1525,7 +1525,13 @@ export class AgentSession {
 		const lastAssistant = this.messages
 			.slice()
 			.reverse()
-			.find((m) => m.role === "assistant");
+			.find((m) => {
+				if (m.role !== "assistant") return false;
+				const msg = m as AssistantMessage;
+				// Skip aborted messages with no content
+				if (msg.stopReason === "aborted" && msg.content.length === 0) return false;
+				return true;
+			});
 
 		if (!lastAssistant) return null;
 
