@@ -314,7 +314,7 @@ export class SettingsManager {
 	}
 
 	getHookPaths(): string[] {
-		return this.settings.hooks ?? [];
+		return [...(this.settings.hooks ?? [])];
 	}
 
 	setHookPaths(paths: string[]): void {
@@ -332,7 +332,7 @@ export class SettingsManager {
 	}
 
 	getCustomToolPaths(): string[] {
-		return this.settings.customTools ?? [];
+		return [...(this.settings.customTools ?? [])];
 	}
 
 	setCustomToolPaths(paths: string[]): void {
@@ -360,9 +360,9 @@ export class SettingsManager {
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
 			enablePiUser: this.settings.skills?.enablePiUser ?? true,
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
-			customDirectories: this.settings.skills?.customDirectories ?? [],
-			ignoredSkills: this.settings.skills?.ignoredSkills ?? [],
-			includeSkills: this.settings.skills?.includeSkills ?? [],
+			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
+			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
+			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
 		};
 	}
 
