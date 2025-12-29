@@ -1583,7 +1583,7 @@ export class AgentSession {
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string } = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean }> {
-		const oldLeafId = this.sessionManager.getLeafUuid();
+		const oldLeafId = this.sessionManager.getLeafId();
 
 		// No-op if already at target
 		if (targetId === oldLeafId) {
@@ -1661,21 +1661,19 @@ export class AgentSession {
 		// Run default summarizer if needed
 		let summaryText: string | undefined;
 		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
-			try {
-				summaryText = await this._generateBranchSummary(
-					entriesToSummarize,
-					options.customInstructions,
-					this._branchSummaryAbortController.signal,
-				);
-			} catch (error) {
-				this._branchSummaryAbortController = undefined;
-				// Check if aborted
-				if (error instanceof Error && (error.name === "AbortError" || error.message === "aborted")) {
-					return { cancelled: true, aborted: true };
-				}
-				// Re-throw actual errors so UI can display them
-				throw error;
+			const result = await this._generateBranchSummary(
+				entriesToSummarize,
+				options.customInstructions,
+				this._branchSummaryAbortController.signal,
+			);
+			this._branchSummaryAbortController = undefined;
+			if (result.aborted) {
+				return { cancelled: true, aborted: true };
 			}
+			if (result.error) {
+				throw new Error(result.error);
+			}
+			summaryText = result.summary;
 		} else if (hookSummary) {
 			summaryText = hookSummary.summary;
 		}
@@ -1704,14 +1702,17 @@ export class AgentSession {
 		}
 
 		// Switch leaf (with or without summary)
+		// Summary is attached at the navigation target position (newLeafId), not the old branch
 		let summaryEntry: BranchSummaryEntry | undefined;
-		if (newLeafId === null) {
-			// Navigating to root user message - reset leaf to empty
-			this.sessionManager.resetLeaf();
-		} else if (summaryText) {
+		if (summaryText) {
+			// Create summary at target position (can be null for root)
 			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+		} else if (newLeafId === null) {
+			// No summary, navigating to root - reset leaf
+			this.sessionManager.resetLeaf();
 		} else {
+			// No summary, navigating to non-root
 			this.sessionManager.branch(newLeafId);
 		}
 
@@ -1723,7 +1724,7 @@ export class AgentSession {
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
 				type: "session_tree",
-				newLeafId: this.sessionManager.getLeafUuid(),
+				newLeafId: this.sessionManager.getLeafId(),
 				oldLeafId,
 				summaryEntry,
 				fromHook: summaryText ? fromHook : undefined,
@@ -1744,7 +1745,7 @@ export class AgentSession {
 		entries: SessionEntry[],
 		customInstructions: string | undefined,
 		signal: AbortSignal,
-	): Promise<string> {
+	): Promise<{ summary?: string; aborted?: boolean; error?: string }> {
 		// Convert entries to messages for summarization
 		const messages: Array<{ role: string; content: string }> = [];
 		for (const entry of entries) {
@@ -1770,7 +1771,7 @@ export class AgentSession {
 		}
 
 		if (messages.length === 0) {
-			return "No content to summarize";
+			return { summary: "No content to summarize" };
 		}
 
 		// Build prompt for summarization
@@ -1804,12 +1805,20 @@ export class AgentSession {
 			{ apiKey, signal, maxTokens: 1024 },
 		);
 
+		// Check if aborted or errored
+		if (response.stopReason === "aborted") {
+			return { aborted: true };
+		}
+		if (response.stopReason === "error") {
+			return { error: response.errorMessage || "Summarization failed" };
+		}
+
 		const summary = response.content
 			.filter((c): c is { type: "text"; text: string } => c.type === "text")
 			.map((c) => c.text)
 			.join("\n");
 
-		return summary || "No summary generated";
+		return { summary: summary || "No summary generated" };
 	}
 
 	/**

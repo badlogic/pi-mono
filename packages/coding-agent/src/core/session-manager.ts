@@ -684,7 +684,7 @@ export class SessionManager {
 	// Tree Traversal
 	// =========================================================================
 
-	getLeafUuid(): string | null {
+	getLeafId(): string | null {
 		return this.leafId;
 	}
 
@@ -845,8 +845,8 @@ export class SessionManager {
 	 * Same as branch(), but also appends a branch_summary entry that captures
 	 * context from the abandoned conversation path.
 	 */
-	branchWithSummary(branchFromId: string, summary: string): string {
-		if (!this.byId.has(branchFromId)) {
+	branchWithSummary(branchFromId: string | null, summary: string): string {
+		if (branchFromId !== null && !this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
 		this.leafId = branchFromId;
@@ -855,7 +855,7 @@ export class SessionManager {
 			id: generateId(this.byId),
 			parentId: branchFromId,
 			timestamp: new Date().toISOString(),
-			fromId: branchFromId,
+			fromId: branchFromId ?? "root",
 			summary,
 		};
 		this._appendEntry(entry);

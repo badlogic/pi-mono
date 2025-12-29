@@ -25,7 +25,7 @@ export type ReadonlySessionManager = Pick<
 	| "getSessionDir"
 	| "getSessionId"
 	| "getSessionFile"
-	| "getLeafUuid"
+	| "getLeafId"
 	| "getLeafEntry"
 	| "getEntry"
 	| "getLabel"

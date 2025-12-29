@@ -1600,7 +1600,7 @@ export class InteractiveMode {
 
 	private showTreeSelector(): void {
 		const tree = this.sessionManager.getTree();
-		const realLeafId = this.sessionManager.getLeafUuid();
+		const realLeafId = this.sessionManager.getLeafId();
 
 		// Find the visible leaf for display (skip metadata entries like labels)
 		let visibleLeafId = realLeafId;
@@ -1660,7 +1660,9 @@ export class InteractiveMode {
 						const result = await this.session.navigateTree(entryId, { summarize: wantsSummary });
 
 						if (result.aborted) {
+							// Summarization aborted - re-show tree selector
 							this.showStatus("Branch summarization cancelled");
+							this.showTreeSelector();
 							return;
 						}
 						if (result.cancelled) {

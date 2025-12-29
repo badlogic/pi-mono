@@ -129,16 +129,16 @@ describe("SessionManager append and tree traversal", () => {
 		it("leaf pointer advances after each append", () => {
 			const session = SessionManager.inMemory();
 
-			expect(session.getLeafUuid()).toBe("");
+			expect(session.getLeafId()).toBe("");
 
 			const id1 = session.appendMessage(userMsg("1"));
-			expect(session.getLeafUuid()).toBe(id1);
+			expect(session.getLeafId()).toBe(id1);
 
 			const id2 = session.appendMessage(assistantMsg("2"));
-			expect(session.getLeafUuid()).toBe(id2);
+			expect(session.getLeafId()).toBe(id2);
 
 			const id3 = session.appendThinkingLevelChange("high");
-			expect(session.getLeafUuid()).toBe(id3);
+			expect(session.getLeafId()).toBe(id3);
 		});
 	});
 
@@ -303,10 +303,10 @@ describe("SessionManager append and tree traversal", () => {
 			const _id2 = session.appendMessage(assistantMsg("2"));
 			const id3 = session.appendMessage(userMsg("3"));
 
-			expect(session.getLeafUuid()).toBe(id3);
+			expect(session.getLeafId()).toBe(id3);
 
 			session.branch(id1);
-			expect(session.getLeafUuid()).toBe(id1);
+			expect(session.getLeafId()).toBe(id1);
 		});
 
 		it("throws for non-existent entry", () => {
@@ -341,7 +341,7 @@ describe("SessionManager append and tree traversal", () => {
 
 			const summaryId = session.branchWithSummary(id1, "Summary of abandoned work");
 
-			expect(session.getLeafUuid()).toBe(summaryId);
+			expect(session.getLeafId()).toBe(summaryId);
 
 			const entries = session.getEntries();
 			const summaryEntry = entries.find((e) => e.type === "branch_summary");

@@ -3620,7 +3620,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 196608,
-			maxTokens: 131072,
+			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
 		"deepcogito/cogito-v2-preview-llama-405b": {
 			id: "deepcogito/cogito-v2-preview-llama-405b",
@@ -4623,7 +4623,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 128000,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-20b": {
 			id: "openai/gpt-oss-20b",

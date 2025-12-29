@@ -609,8 +609,12 @@ class TreeList implements Component {
 				return `[edit: ${path}]`;
 			}
 			case "bash": {
-				const cmd = String(args.command || "").slice(0, 50);
-				return `[bash: ${cmd}${(args.command as string)?.length > 50 ? "..." : ""}]`;
+				const rawCmd = String(args.command || "");
+				const cmd = rawCmd
+					.replace(/[\n\t]/g, " ")
+					.trim()
+					.slice(0, 50);
+				return `[bash: ${cmd}${rawCmd.length > 50 ? "..." : ""}]`;
 			}
 			case "grep": {
 				const pattern = String(args.pattern || "");
