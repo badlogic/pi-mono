@@ -7,7 +7,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model, OAuthProvider } from "@mariozechner/pi-ai";
+import { completeSimple, getModels } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -29,6 +30,12 @@ import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.j
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
+import {
+	type CommandAPI,
+	type CompleteOptions,
+	discoverAndLoadScriptCommands,
+	type LoadedScriptCommand,
+} from "../../core/script-commands/index.js";
 import {
 	getLatestCompactionEntry,
 	SessionManager,
@@ -117,6 +124,9 @@ export class InteractiveMode {
 
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
+
+	// Script commands
+	private scriptCommands: Map<string, LoadedScriptCommand> = new Map();
 
 	// Convenience accessors
 	private get agent() {
@@ -346,6 +356,9 @@ export class InteractiveMode {
 		const uiContext = this.createHookUIContext();
 		this.setToolUIContext(uiContext, true);
 
+		// Load and initialize script commands
+		await this.loadScriptCommands();
+
 		// Notify custom tools of session start
 		await this.emitToolSessionEvent({
 			entries,
@@ -404,6 +417,117 @@ export class InteractiveMode {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Load script commands and set up their API.
+	 */
+	private async loadScriptCommands(): Promise<void> {
+		const result = await discoverAndLoadScriptCommands(process.cwd());
+
+		// Store commands
+		for (const cmd of result.commands) {
+			this.scriptCommands.set(cmd.name, cmd);
+		}
+
+		// Show errors
+		for (const { path: cmdPath, error } of result.errors) {
+			this.chatContainer.addChild(new Text(theme.fg("error", `Script command error (${cmdPath}): ${error}`), 1, 0));
+		}
+
+		// Show loaded commands
+		if (this.scriptCommands.size > 0) {
+			const cmdList = Array.from(this.scriptCommands.values())
+				.map((c) => theme.fg("dim", `  /${c.name} ${c.source}`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded script commands:\n") + cmdList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Set the API - this enables the commands to work
+		result.setAPI(this.createCommandAPI());
+
+		// Update autocomplete with script commands
+		this.updateAutocompleteWithScriptCommands();
+	}
+
+	/**
+	 * Create the CommandAPI for script commands.
+	 */
+	private createCommandAPI(): CommandAPI {
+		return {
+			cwd: process.cwd(),
+			getLastAssistantText: () => this.session.getLastAssistantText(),
+			setEditorText: (text: string) => {
+				this.editor.setText(text);
+				this.ui.requestRender();
+			},
+			getEditorText: () => this.editor.getText(),
+			complete: (prompt: string, options?: CompleteOptions) => this.completeForCommand(prompt, options),
+			showStatus: (message: string) => this.showStatus(message),
+			showError: (message: string) => this.showError(message),
+			copyToClipboard: (text: string) => copyToClipboard(text),
+		};
+	}
+
+	/**
+	 * Make an LLM completion call for script commands.
+	 */
+	private async completeForCommand(prompt: string, options?: CompleteOptions): Promise<AssistantMessage> {
+		let model: Model<any>;
+
+		if (options?.model) {
+			const providers = ["anthropic", "openai", "google", "groq", "xai"] as const;
+			let found: Model<any> | undefined;
+			for (const provider of providers) {
+				const models = getModels(provider);
+				found = models.find((m) => m.id === options.model);
+				if (found) break;
+			}
+			if (!found) {
+				throw new Error(`Model "${options.model}" not found`);
+			}
+			model = found;
+		} else {
+			const sessionModel = this.session.model;
+			if (!sessionModel) {
+				throw new Error("No model configured for session");
+			}
+			model = sessionModel;
+		}
+
+		const apiKey = await this.session.modelRegistry.getApiKey(model);
+		if (!apiKey) {
+			throw new Error(
+				`No API key for ${model.provider}. Run /login ${model.provider} or set the appropriate env var.`,
+			);
+		}
+
+		const result = await completeSimple(
+			model,
+			{
+				systemPrompt: options?.systemPrompt,
+				messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+			},
+			{
+				apiKey,
+				maxTokens: options?.maxTokens ?? 4096,
+				signal: options?.signal,
+			},
+		);
+
+		return result;
+	}
+
+	/**
+	 * Update autocomplete provider to include script commands.
+	 * Note: Autocomplete is set up in constructor with static commands.
+	 * Script commands are executed via tryExecuteScriptCommand.
+	 */
+	private updateAutocompleteWithScriptCommands(): void {
+		// Script commands will still work even without autocomplete
+		// because tryExecuteScriptCommand checks the scriptCommands map
+		// TODO: Re-create autocomplete provider with script commands for tab completion
 	}
 
 	/**
@@ -685,6 +809,15 @@ export class InteractiveMode {
 				this.showSessionSelector();
 				this.editor.setText("");
 				return;
+			}
+
+			// Handle script commands (loaded from .ts files)
+			if (text.startsWith("/")) {
+				const handled = await this.tryExecuteScriptCommand(text);
+				if (handled) {
+					this.editor.setText("");
+					return;
+				}
 			}
 
 			// Handle bash command
@@ -1700,6 +1833,56 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/**
+	 * Try to execute a script command.
+	 * @returns true if a script command was found and executed
+	 */
+	private async tryExecuteScriptCommand(text: string): Promise<boolean> {
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+
+		const command = this.scriptCommands.get(commandName);
+		if (!command) {
+			return false;
+		}
+
+		// Parse arguments (simple space-separated, respecting quotes)
+		const args: string[] = [];
+		let current = "";
+		let inQuote: string | null = null;
+		for (let i = 0; i < argsString.length; i++) {
+			const char = argsString[i];
+			if (inQuote) {
+				if (char === inQuote) {
+					inQuote = null;
+				} else {
+					current += char;
+				}
+			} else if (char === '"' || char === "'") {
+				inQuote = char;
+			} else if (char === " " || char === "\t") {
+				if (current) {
+					args.push(current);
+					current = "";
+				}
+			} else {
+				current += char;
+			}
+		}
+		if (current) {
+			args.push(current);
+		}
+
+		try {
+			await command.execute(args);
+		} catch (error) {
+			this.showError(`Command /${commandName} failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		return true;
 	}
 
 	private handleSessionCommand(): void {

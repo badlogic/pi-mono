@@ -75,6 +75,15 @@ export {
 } from "./core/hooks/index.js";
 export { messageTransformer } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+// Script commands
+export type {
+	CommandAPI,
+	LoadedScriptCommand,
+	ScriptCommand,
+	ScriptCommandFactory,
+	ScriptCommandsLoadResult,
+} from "./core/script-commands/index.js";
+export { discoverAndLoadScriptCommands } from "./core/script-commands/index.js";
 // SDK for programmatic usage
 export {
 	type BuildSystemPromptOptions,
