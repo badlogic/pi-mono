@@ -146,6 +146,9 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 
+	// Branch summarization state
+	private _branchSummaryAbortController: AbortController | undefined = undefined;
+
 	// Retry state
 	private _retryAbortController: AbortController | undefined = undefined;
 	private _retryAttempt = 0;
@@ -999,6 +1002,13 @@ export class AgentSession {
 	}
 
 	/**
+	 * Cancel in-progress branch summarization.
+	 */
+	abortBranchSummary(): void {
+		this._branchSummaryAbortController?.abort();
+	}
+
+	/**
 	 * Check if compaction is needed and run it.
 	 * Called after agent_end and before prompt submission.
 	 *
@@ -1572,7 +1582,7 @@ export class AgentSession {
 	async navigateTree(
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string } = {},
-	): Promise<{ editorText?: string; cancelled: boolean }> {
+	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean }> {
 		const oldLeafId = this.sessionManager.getLeafUuid();
 
 		// No-op if already at target
@@ -1625,7 +1635,7 @@ export class AgentSession {
 		};
 
 		// Set up abort controller for summarization
-		const abortController = new AbortController();
+		this._branchSummaryAbortController = new AbortController();
 		let hookSummary: { summary: string; details?: unknown } | undefined;
 		let fromHook = false;
 
@@ -1635,7 +1645,7 @@ export class AgentSession {
 				type: "session_before_tree",
 				preparation,
 				model: this.model!, // Checked above if summarize is true
-				signal: abortController.signal,
+				signal: this._branchSummaryAbortController.signal,
 			})) as SessionBeforeTreeResult | undefined;
 
 			if (result?.cancel) {
@@ -1655,11 +1665,16 @@ export class AgentSession {
 				summaryText = await this._generateBranchSummary(
 					entriesToSummarize,
 					options.customInstructions,
-					abortController.signal,
+					this._branchSummaryAbortController.signal,
 				);
-			} catch {
-				// Summarization failed - cancel navigation
-				return { cancelled: true };
+			} catch (error) {
+				this._branchSummaryAbortController = undefined;
+				// Check if aborted
+				if (error instanceof Error && (error.name === "AbortError" || error.message === "aborted")) {
+					return { cancelled: true, aborted: true };
+				}
+				// Re-throw actual errors so UI can display them
+				throw error;
 			}
 		} else if (hookSummary) {
 			summaryText = hookSummary.summary;
@@ -1718,6 +1733,7 @@ export class AgentSession {
 		// Emit to custom tools
 		await this._emitToolSessionEvent("tree", this.sessionFile);
 
+		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false };
 	}
 

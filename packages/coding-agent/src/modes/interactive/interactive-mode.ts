@@ -1637,8 +1637,32 @@ export class InteractiveMode {
 						"Create a summary of the branch you're leaving?",
 					);
 
+					// Set up escape handler and loader if summarizing
+					let summaryLoader: Loader | undefined;
+					const originalOnEscape = this.editor.onEscape;
+
+					if (wantsSummary) {
+						this.editor.onEscape = () => {
+							this.session.abortBranchSummary();
+						};
+						this.chatContainer.addChild(new Spacer(1));
+						summaryLoader = new Loader(
+							this.ui,
+							(spinner) => theme.fg("accent", spinner),
+							(text) => theme.fg("muted", text),
+							"Summarizing branch... (esc to cancel)",
+						);
+						this.statusContainer.addChild(summaryLoader);
+						this.ui.requestRender();
+					}
+
 					try {
 						const result = await this.session.navigateTree(entryId, { summarize: wantsSummary });
+
+						if (result.aborted) {
+							this.showStatus("Branch summarization cancelled");
+							return;
+						}
 						if (result.cancelled) {
 							this.showStatus("Navigation cancelled");
 							return;
@@ -1653,6 +1677,12 @@ export class InteractiveMode {
 						this.showStatus("Navigated to selected point");
 					} catch (error) {
 						this.showError(error instanceof Error ? error.message : String(error));
+					} finally {
+						if (summaryLoader) {
+							summaryLoader.stop();
+							this.statusContainer.clear();
+						}
+						this.editor.onEscape = originalOnEscape;
 					}
 				},
 				() => {
