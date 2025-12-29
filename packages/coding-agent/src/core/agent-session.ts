@@ -1704,7 +1704,7 @@ export class AgentSession {
 		let summaryEntry: BranchSummaryEntry | undefined;
 		if (summaryText) {
 			// Create summary at target position (can be null for root)
-			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails);
+			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromHook);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf

@@ -215,8 +215,9 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 
 	// First pass: collect file ops from ALL entries (even if they don't fit in token budget)
 	// This ensures we capture cumulative file tracking from nested branch summaries
+	// Only extract from pi-generated summaries (fromHook !== true), not hook-generated ones
 	for (const entry of entries) {
-		if (entry.type === "branch_summary" && entry.details) {
+		if (entry.type === "branch_summary" && !entry.fromHook && entry.details) {
 			const details = entry.details as BranchSummaryDetails;
 			if (Array.isArray(details.readFiles)) {
 				for (const f of details.readFiles) fileOps.read.add(f);
