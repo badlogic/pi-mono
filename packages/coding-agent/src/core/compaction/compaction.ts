@@ -11,6 +11,119 @@ import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 
+// ============================================================================
+// File Operation Tracking
+// ============================================================================
+
+/** Details stored in CompactionEntry.details for file tracking */
+export interface CompactionDetails {
+	readFiles: string[];
+	modifiedFiles: string[];
+}
+
+interface FileOperations {
+	read: Set<string>;
+	written: Set<string>;
+	edited: Set<string>;
+}
+
+/**
+ * Extract file operations from tool calls in an assistant message.
+ */
+function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
+	if (message.role !== "assistant") return;
+	if (!("content" in message) || !Array.isArray(message.content)) return;
+
+	for (const block of message.content) {
+		if (typeof block !== "object" || block === null) continue;
+		if (!("type" in block) || block.type !== "toolCall") continue;
+		if (!("arguments" in block) || !("name" in block)) continue;
+
+		const args = block.arguments as Record<string, unknown> | undefined;
+		if (!args) continue;
+
+		const path = typeof args.path === "string" ? args.path : undefined;
+		if (!path) continue;
+
+		switch (block.name) {
+			case "read":
+				fileOps.read.add(path);
+				break;
+			case "write":
+				fileOps.written.add(path);
+				break;
+			case "edit":
+				fileOps.edited.add(path);
+				break;
+		}
+	}
+}
+
+/**
+ * Extract file operations from messages and previous compaction entries.
+ */
+function extractFileOperations(
+	messages: AgentMessage[],
+	entries: SessionEntry[],
+	prevCompactionIndex: number,
+): FileOperations {
+	const fileOps: FileOperations = {
+		read: new Set(),
+		written: new Set(),
+		edited: new Set(),
+	};
+
+	// Collect from previous compaction's details (if pi-generated)
+	if (prevCompactionIndex >= 0) {
+		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
+		if (!prevCompaction.fromHook && prevCompaction.details) {
+			const details = prevCompaction.details as CompactionDetails;
+			if (Array.isArray(details.readFiles)) {
+				for (const f of details.readFiles) fileOps.read.add(f);
+			}
+			if (Array.isArray(details.modifiedFiles)) {
+				for (const f of details.modifiedFiles) fileOps.edited.add(f);
+			}
+		}
+	}
+
+	// Extract from tool calls in messages
+	for (const msg of messages) {
+		extractFileOpsFromMessage(msg, fileOps);
+	}
+
+	return fileOps;
+}
+
+/**
+ * Compute final file lists from file operations.
+ */
+function computeFileLists(fileOps: FileOperations): { readFiles: string[]; modifiedFiles: string[] } {
+	const modified = new Set([...fileOps.edited, ...fileOps.written]);
+	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
+	const modifiedFiles = [...modified].sort();
+	return { readFiles: readOnly, modifiedFiles };
+}
+
+/**
+ * Format file operations as XML tags for summary.
+ */
+function formatFileOperations(readFiles: string[], modifiedFiles: string[]): string {
+	const sections: string[] = [];
+	if (readFiles.length > 0) {
+		sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
+	}
+	if (modifiedFiles.length > 0) {
+		sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
+	}
+	if (sections.length === 0) return "";
+	return `\n\n${sections.join("\n\n")}`;
+}
+
+// ============================================================================
+// Message Extraction
+// ============================================================================
+
 /**
  * Extract AgentMessage from an entry if it produces one.
  * Returns undefined for entries that don't contribute to LLM context.
@@ -361,8 +474,48 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
+const UPDATE_SUMMARIZATION_PROMPT = `Update the existing structured summary with new information from the conversation.
+
+RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE "Next Steps" based on what was accomplished
+- PRESERVE exact file paths, function names, and error messages
+- If something is no longer relevant, you may remove it
+
+Use this EXACT format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Constraints & Preferences
+- [Preserve existing, add new ones discovered]
+
+## Progress
+### Done
+- [x] [Include previously done items AND newly completed items]
+
+### In Progress
+- [ ] [Current work - update based on progress]
+
+### Blocked
+- [Current blockers - remove if resolved]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
 /**
  * Generate a summary of the conversation using the LLM.
+ * If previousSummary is provided, uses the update prompt to merge.
  */
 export async function generateSummary(
 	currentMessages: AgentMessage[],
@@ -371,24 +524,45 @@ export async function generateSummary(
 	apiKey: string,
 	signal?: AbortSignal,
 	customInstructions?: string,
+	previousSummary?: string,
 ): Promise<string> {
 	const maxTokens = Math.floor(0.8 * reserveTokens);
 
-	const prompt = customInstructions
-		? `${SUMMARIZATION_PROMPT}\n\nAdditional focus: ${customInstructions}`
-		: SUMMARIZATION_PROMPT;
+	// Use update prompt if we have a previous summary, otherwise initial prompt
+	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+	if (customInstructions) {
+		basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
+	}
 
 	// Transform custom messages (like bashExecution) to LLM-compatible messages
 	const transformedMessages = convertToLlm(currentMessages);
 
-	const summarizationMessages = [
-		...transformedMessages,
-		{
+	// Build summarization messages
+	const summarizationMessages = [];
+
+	// If we have a previous summary, include it as context
+	if (previousSummary) {
+		summarizationMessages.push({
 			role: "user" as const,
-			content: [{ type: "text" as const, text: prompt }],
+			content: [{ type: "text" as const, text: `PREVIOUS SUMMARY:\n\n${previousSummary}` }],
 			timestamp: Date.now(),
-		},
-	];
+		});
+		summarizationMessages.push({
+			role: "user" as const,
+			content: [{ type: "text" as const, text: "NEW MESSAGES TO INCORPORATE:" }],
+			timestamp: Date.now(),
+		});
+	}
+
+	// Add the conversation messages
+	summarizationMessages.push(...transformedMessages);
+
+	// Add the prompt
+	summarizationMessages.push({
+		role: "user" as const,
+		content: [{ type: "text" as const, text: basePrompt }],
+		timestamp: Date.now(),
+	});
 
 	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
 
@@ -538,15 +712,17 @@ export async function compact(
 		if (msg) historyMessages.push(msg);
 	}
 
-	// Include previous summary if there was a compaction
+	// Get previous summary for iterative update (if not from hook)
+	let previousSummary: string | undefined;
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
-		historyMessages.unshift({
-			role: "user",
-			content: `Previous session summary:\n${prevCompaction.summary}`,
-			timestamp: Date.now(),
-		});
+		if (!prevCompaction.fromHook) {
+			previousSummary = prevCompaction.summary;
+		}
 	}
+
+	// Extract file operations from messages and previous compaction
+	const fileOps = extractFileOperations(historyMessages, entries, prevCompactionIndex);
 
 	// Extract messages for turn prefix summary (if splitting a turn)
 	const turnPrefixMessages: AgentMessage[] = [];
@@ -554,6 +730,10 @@ export async function compact(
 		for (let i = cutResult.turnStartIndex; i < cutResult.firstKeptEntryIndex; i++) {
 			const msg = getMessageFromEntry(entries[i]);
 			if (msg) turnPrefixMessages.push(msg);
+		}
+		// Also extract file ops from turn prefix
+		for (const msg of turnPrefixMessages) {
+			extractFileOpsFromMessage(msg, fileOps);
 		}
 	}
 
@@ -564,7 +744,15 @@ export async function compact(
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
 			historyMessages.length > 0
-				? generateSummary(historyMessages, model, settings.reserveTokens, apiKey, signal, customInstructions)
+				? generateSummary(
+						historyMessages,
+						model,
+						settings.reserveTokens,
+						apiKey,
+						signal,
+						customInstructions,
+						previousSummary,
+					)
 				: Promise.resolve("No prior history."),
 			generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, signal),
 		]);
@@ -579,8 +767,13 @@ export async function compact(
 			apiKey,
 			signal,
 			customInstructions,
+			previousSummary,
 		);
 	}
+
+	// Compute file lists and append to summary
+	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+	summary += formatFileOperations(readFiles, modifiedFiles);
 
 	// Get UUID of first kept entry
 	const firstKeptEntry = entries[cutResult.firstKeptEntryIndex];
@@ -593,6 +786,7 @@ export async function compact(
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		details: { readFiles, modifiedFiles } as CompactionDetails,
 	};
 }
 
