@@ -264,7 +264,7 @@ const BRANCH_SUMMARY_PROMPT = `Create a structured summary of this conversation 
 Use this EXACT format:
 
 ## Goal
-[1-2 sentences: What was the user trying to accomplish in this branch?]
+[What was the user trying to accomplish in this branch?]
 
 ## Constraints & Preferences
 - [Any constraints, preferences, or requirements mentioned]

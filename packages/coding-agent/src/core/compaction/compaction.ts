@@ -333,7 +333,7 @@ const SUMMARIZATION_PROMPT = `Create a structured context checkpoint summary. An
 Use this EXACT format:
 
 ## Goal
-[1-2 sentences: What is the user trying to accomplish?]
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
 
 ## Constraints & Preferences
 - [Any constraints, preferences, or requirements mentioned by user]
