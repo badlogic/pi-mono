@@ -363,15 +363,15 @@ class TreeList implements Component {
 			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
 			const prefix = gutterStr + connector + extraIndent;
 
-			// Active path marker
+			// Active path marker - shown right before the entry text
 			const isOnActivePath = this.activePathIds.has(entry.id);
-			const pathMarker = isOnActivePath ? theme.fg("accent", "● ") : "  ";
+			const pathMarker = isOnActivePath ? theme.fg("accent", "●") : "";
 
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + pathMarker + theme.fg("dim", prefix) + label + content + suffix;
+			const line = cursor + theme.fg("dim", prefix) + pathMarker + label + content + suffix;
 			lines.push(truncateToWidth(line, width));
 		}
 
