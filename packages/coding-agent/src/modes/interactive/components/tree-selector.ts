@@ -46,6 +46,7 @@ class TreeList implements Component {
 	private filterMode: FilterMode = "default";
 	private searchQuery = "";
 	private toolCallMap: Map<string, ToolCallInfo> = new Map();
+	private multipleRoots = false;
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -54,6 +55,7 @@ class TreeList implements Component {
 	constructor(tree: SessionTreeNode[], currentLeafId: string | null, maxVisibleLines: number) {
 		this.currentLeafId = currentLeafId;
 		this.maxVisibleLines = maxVisibleLines;
+		this.multipleRoots = tree.length > 1;
 		this.flatNodes = this.flattenTree(tree);
 		this.applyFilter();
 
@@ -305,7 +307,9 @@ class TreeList implements Component {
 
 			// Build line: cursor + indent + label + content + suffix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const indentStr = "  ".repeat(flatNode.indent);
+			// If multiple roots, shift indent down by 1 for display (roots at 0, not 1)
+			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
+			const indentStr = "  ".repeat(displayIndent);
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
