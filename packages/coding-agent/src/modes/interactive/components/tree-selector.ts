@@ -108,16 +108,34 @@ class TreeList implements Component {
 		// - At indent 1: children always go to indent 2 (visual grouping of subtree)
 		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
 
-		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters]
+		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
 		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, boolean[], boolean];
 		const stack: StackItem[] = [];
 
-		// Add roots in reverse order
+		// Determine which subtrees contain the active leaf (to sort current branch first)
+		const containsActive = new Map<SessionTreeNode, boolean>();
+		const leafId = this.currentLeafId;
+		const markContains = (node: SessionTreeNode): boolean => {
+			let has = leafId !== null && node.entry.id === leafId;
+			for (const child of node.children) {
+				if (markContains(child)) {
+					has = true;
+				}
+			}
+			containsActive.set(node, has);
+			return has;
+		};
+		for (const root of roots) {
+			markContains(root);
+		}
+
+		// Add roots in reverse order, prioritizing the one containing the active leaf
 		// If multiple roots, treat them as children of a virtual root that branches
 		const multipleRoots = roots.length > 1;
-		for (let i = roots.length - 1; i >= 0; i--) {
-			const isLast = i === roots.length - 1;
-			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, [], multipleRoots]);
+		const orderedRoots = [...roots].sort((a, b) => Number(containsActive.get(b)) - Number(containsActive.get(a)));
+		for (let i = orderedRoots.length - 1; i >= 0; i--) {
+			const isLast = i === orderedRoots.length - 1;
+			stack.push([orderedRoots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, [], multipleRoots]);
 		}
 
 		while (stack.length > 0) {
@@ -142,6 +160,20 @@ class TreeList implements Component {
 			const children = node.children;
 			const multipleChildren = children.length > 1;
 
+			// Order children so the branch containing the active leaf comes first
+			const orderedChildren = (() => {
+				const prioritized: SessionTreeNode[] = [];
+				const rest: SessionTreeNode[] = [];
+				for (const child of children) {
+					if (containsActive.get(child)) {
+						prioritized.push(child);
+					} else {
+						rest.push(child);
+					}
+				}
+				return [...prioritized, ...rest];
+			})();
+
 			// Calculate child indent
 			let childIndent: number;
 			if (multipleChildren) {
@@ -160,10 +192,10 @@ class TreeList implements Component {
 			const childGutters = showConnector ? [...gutters, !isLast] : gutters;
 
 			// Add children in reverse order
-			for (let i = children.length - 1; i >= 0; i--) {
-				const childIsLast = i === children.length - 1;
+			for (let i = orderedChildren.length - 1; i >= 0; i--) {
+				const childIsLast = i === orderedChildren.length - 1;
 				stack.push([
-					children[i],
+					orderedChildren[i],
 					childIndent,
 					multipleChildren,
 					multipleChildren,
@@ -355,9 +387,9 @@ class TreeList implements Component {
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
 
 			// Build prefix: gutters + connector + extra spaces
-			const gutterStr = flatNode.gutters.map((g) => (g ? "│ " : "  ")).join("");
+			const gutterStr = flatNode.gutters.map((g) => (g ? "│  " : "   ")).join("");
 			const connector =
-				flatNode.showConnector && !flatNode.isVirtualRootChild ? (flatNode.isLast ? "└─" : "├─") : "";
+				flatNode.showConnector && !flatNode.isVirtualRootChild ? (flatNode.isLast ? "└─ " : "├─ ") : "";
 			// Extra indent for visual grouping beyond gutters/connector
 			const prefixLevels = flatNode.gutters.length + (connector ? 1 : 0);
 			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
