@@ -296,11 +296,15 @@ class TreeList implements Component {
 			case "message": {
 				const msg = entry.message;
 				const role = msg.role;
-				if (role === "user" || role === "assistant" || role === "toolResult") {
+				if (role === "user" || role === "assistant") {
 					const msgWithContent = msg as { content?: unknown };
 					const content = normalize(this.extractContent(msgWithContent.content));
-					const roleColor = role === "user" ? "accent" : role === "assistant" ? "success" : "muted";
+					const roleColor = role === "user" ? "accent" : "success";
 					result = theme.fg(roleColor, `${role}: `) + content;
+				} else if (role === "toolResult") {
+					const toolMsg = msg as { toolName?: string };
+					const toolName = toolMsg.toolName ?? "tool";
+					result = theme.fg("muted", `[${toolName}]`);
 				} else if (role === "bashExecution") {
 					const bashMsg = msg as { command?: string };
 					result = theme.fg("dim", `[bash]: ${normalize(bashMsg.command ?? "")}`);
