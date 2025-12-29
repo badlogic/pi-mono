@@ -53,8 +53,8 @@ export interface GenerateBranchSummaryOptions {
 	signal: AbortSignal;
 	/** Optional custom instructions for summarization */
 	customInstructions?: string;
-	/** Reserve this fraction of context window for summary (default 0.2) */
-	reserveFraction?: number;
+	/** Maximum tokens to include in summary context (default 100000) */
+	maxTokens?: number;
 }
 
 // ============================================================================
@@ -321,13 +321,9 @@ export async function generateBranchSummary(
 	entries: SessionEntry[],
 	options: GenerateBranchSummaryOptions,
 ): Promise<BranchSummaryResult> {
-	const { model, apiKey, signal, customInstructions, reserveFraction = 0.2 } = options;
+	const { model, apiKey, signal, customInstructions, maxTokens = 100000 } = options;
 
-	// Calculate token budget (leave room for summary generation)
-	const contextWindow = model.contextWindow || 128000;
-	const tokenBudget = Math.floor(contextWindow * (1 - reserveFraction));
-
-	const { messages, fileOps } = prepareBranchEntries(entries, tokenBudget);
+	const { messages, fileOps } = prepareBranchEntries(entries, maxTokens);
 
 	if (messages.length === 0) {
 		return { summary: "No content to summarize" };

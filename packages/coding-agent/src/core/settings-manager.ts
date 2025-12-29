@@ -9,7 +9,7 @@ export interface CompactionSettings {
 }
 
 export interface BranchSummarySettings {
-	reserveFraction?: number; // default: 0.2 (fraction of context window reserved for summary)
+	maxTokens?: number; // default: 100000 (max tokens to include in branch summary context)
 }
 
 export interface RetrySettings {
@@ -260,9 +260,9 @@ export class SettingsManager {
 		};
 	}
 
-	getBranchSummarySettings(): { reserveFraction: number } {
+	getBranchSummarySettings(): { maxTokens: number } {
 		return {
-			reserveFraction: this.settings.branchSummary?.reserveFraction ?? 0.2,
+			maxTokens: this.settings.branchSummary?.maxTokens ?? 100000,
 		};
 	}
 
