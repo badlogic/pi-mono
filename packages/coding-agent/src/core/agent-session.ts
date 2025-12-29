@@ -1040,6 +1040,63 @@ export class AgentSession {
 	// =========================================================================
 
 	/**
+	 * Parse Google quota error to extract retry delay.
+	 * Returns delay in milliseconds, or null if not a Google quota error with retry info.
+	 */
+	private _parseGoogleRetryDelay(errorMessage: string): number | null {
+		try {
+			// Try to parse the error message as JSON (it may be double-encoded)
+			let parsed: any = null;
+			try {
+				parsed = JSON.parse(errorMessage);
+			} catch {
+				// Not valid JSON, continue to text parsing
+			}
+
+			// If parsed, check if error.message contains nested JSON
+			if (parsed?.error?.message) {
+				try {
+					const innerMessage = parsed.error.message.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+					const innerParsed = JSON.parse(innerMessage);
+					if (innerParsed?.error) {
+						parsed = innerParsed;
+					}
+				} catch {
+					// Inner message not JSON, continue with outer parsed
+				}
+			}
+
+			// Look for RetryInfo in details array
+			const error = parsed?.error || parsed;
+			if (error?.details && Array.isArray(error.details)) {
+				for (const detail of error.details) {
+					if (detail?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && detail.retryDelay) {
+						// retryDelay is in format like "25s" or "25.187552824s"
+						const delayStr = String(detail.retryDelay);
+						const seconds = parseFloat(delayStr.replace(/s$/, ""));
+						if (!isNaN(seconds) && seconds > 0) {
+							return Math.ceil(seconds * 1000); // Convert to milliseconds, round up
+						}
+					}
+				}
+			}
+
+			// Fallback: try to extract from message text like "Please retry in 25.187552824s."
+			const textMatch = errorMessage.match(/[Pp]lease retry in ([\d.]+)s/i);
+			if (textMatch) {
+				const seconds = parseFloat(textMatch[1]);
+				if (!isNaN(seconds) && seconds > 0) {
+					return Math.ceil(seconds * 1000);
+				}
+			}
+		} catch {
+			// Ignore parsing errors
+		}
+
+		return null;
+	}
+
+	/**
 	 * Check if an error is retryable (overloaded, rate limit, server errors).
 	 * Context overflow errors are NOT retryable (handled by compaction instead).
 	 */
@@ -1051,6 +1108,15 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
+		
+		// Check for Google quota errors with retry info (safe to retry)
+		if (/quota|RESOURCE_EXHAUSTED|429/i.test(err)) {
+			const retryDelay = this._parseGoogleRetryDelay(err);
+			if (retryDelay !== null) {
+				return true; // Google explicitly says it's safe to retry
+			}
+		}
+
 		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error
 		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error/i.test(
 			err,
@@ -1058,7 +1124,7 @@ export class AgentSession {
 	}
 
 	/**
-	 * Handle retryable errors with exponential backoff.
+	 * Handle retryable errors with smart delay (uses Google's suggested delay if available, otherwise exponential backoff).
 	 * @returns true if retry was initiated, false if max retries exceeded or disabled
 	 */
 	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
@@ -1087,7 +1153,9 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		// Try to parse Google's suggested retry delay, otherwise use exponential backoff
+		const googleDelay = this._parseGoogleRetryDelay(message.errorMessage || "");
+		const delayMs = googleDelay !== null ? googleDelay : settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
 
 		this._emit({
 			type: "auto_retry_start",
