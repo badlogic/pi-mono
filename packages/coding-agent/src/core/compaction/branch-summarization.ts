@@ -7,7 +7,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
-import { complete } from "@mariozechner/pi-ai";
+import { completeSimple } from "@mariozechner/pi-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -16,6 +16,15 @@ import {
 } from "../messages.js";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.js";
 import { estimateTokens } from "./compaction.js";
+import {
+	computeFileLists,
+	createFileOps,
+	extractFileOpsFromMessage,
+	type FileOperations,
+	formatFileOperations,
+	SUMMARIZATION_SYSTEM_PROMPT,
+	serializeConversation,
+} from "./utils.js";
 
 // ============================================================================
 // Types
@@ -35,11 +44,7 @@ export interface BranchSummaryDetails {
 	modifiedFiles: string[];
 }
 
-export interface FileOperations {
-	read: Set<string>;
-	written: Set<string>;
-	edited: Set<string>;
-}
+export type { FileOperations } from "./utils.js";
 
 export interface BranchPreparation {
 	/** Messages extracted for summarization, in chronological order */
@@ -160,38 +165,6 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 }
 
 /**
- * Extract file operations from tool calls in an assistant message.
- */
-function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
-	if (message.role !== "assistant") return;
-	if (!("content" in message) || !Array.isArray(message.content)) return;
-
-	for (const block of message.content) {
-		if (typeof block !== "object" || block === null) continue;
-		if (!("type" in block) || block.type !== "toolCall") continue;
-		if (!("arguments" in block) || !("name" in block)) continue;
-
-		const args = block.arguments as Record<string, unknown> | undefined;
-		if (!args) continue;
-
-		const path = typeof args.path === "string" ? args.path : undefined;
-		if (!path) continue;
-
-		switch (block.name) {
-			case "read":
-				fileOps.read.add(path);
-				break;
-			case "write":
-				fileOps.written.add(path);
-				break;
-			case "edit":
-				fileOps.edited.add(path);
-				break;
-		}
-	}
-}
-
-/**
  * Prepare entries for summarization with token budget.
  *
  * Walks entries from NEWEST to OLDEST, adding messages until we hit the token budget.
@@ -206,11 +179,7 @@ function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperation
  */
 export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: number = 0): BranchPreparation {
 	const messages: AgentMessage[] = [];
-	const fileOps: FileOperations = {
-		read: new Set(),
-		written: new Set(),
-		edited: new Set(),
-	};
+	const fileOps = createFileOps();
 	let totalTokens = 0;
 
 	// First pass: collect file ops from ALL entries (even if they don't fit in token budget)
@@ -322,24 +291,29 @@ export async function generateBranchSummary(
 		return { summary: "No content to summarize" };
 	}
 
-	// Transform to LLM-compatible messages (preserves tool calls, etc.)
-	const transformedMessages = convertToLlm(messages);
+	// Transform to LLM-compatible messages, then serialize to text
+	// Serialization prevents the model from treating it as a conversation to continue
+	const llmMessages = convertToLlm(messages);
+	const conversationText = serializeConversation(llmMessages);
 
 	// Build prompt
 	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
+	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${instructions}`;
 
-	// Append summarization prompt as final user message
 	const summarizationMessages = [
-		...transformedMessages,
 		{
 			role: "user" as const,
-			content: [{ type: "text" as const, text: instructions }],
+			content: [{ type: "text" as const, text: promptText }],
 			timestamp: Date.now(),
 		},
 	];
 
 	// Call LLM for summarization
-	const response = await complete(model, { messages: summarizationMessages }, { apiKey, signal, maxTokens: 2048 });
+	const response = await completeSimple(
+		model,
+		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{ apiKey, signal, maxTokens: 2048 },
+	);
 
 	// Check if aborted or errored
 	if (response.stopReason === "aborted") {
@@ -357,26 +331,13 @@ export async function generateBranchSummary(
 	// Prepend preamble to provide context about the branch summary
 	summary = BRANCH_SUMMARY_PREAMBLE + summary;
 
-	// Compute file lists
-	const modified = new Set([...fileOps.edited, ...fileOps.written]);
-	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
-	const modifiedFiles = [...modified].sort();
-
-	// Append file lists to summary text (for LLM context and TUI display)
-	const fileSections: string[] = [];
-	if (readOnly.length > 0) {
-		fileSections.push(`<read-files>\n${readOnly.join("\n")}\n</read-files>`);
-	}
-	if (modifiedFiles.length > 0) {
-		fileSections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
-	}
-	if (fileSections.length > 0) {
-		summary += `\n\n${fileSections.join("\n\n")}`;
-	}
+	// Compute file lists and append to summary
+	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+	summary += formatFileOperations(readFiles, modifiedFiles);
 
 	return {
 		summary: summary || "No summary generated",
-		readFiles: readOnly,
+		readFiles,
 		modifiedFiles,
 	};
 }
