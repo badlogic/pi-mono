@@ -1647,6 +1647,10 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
+				(entryId, label) => {
+					this.sessionManager.appendLabelChange(entryId, label);
+					this.ui.requestRender();
+				},
 			);
 			return { component: selector, focus: selector };
 		});

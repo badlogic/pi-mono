@@ -1,16 +1,17 @@
 import {
 	type Component,
 	Container,
+	Input,
 	isArrowDown,
 	isArrowUp,
 	isBackspace,
 	isCtrlC,
 	isCtrlO,
-	isCtrlU,
 	isEnter,
 	isEscape,
 	Spacer,
 	Text,
+	TruncatedText,
 	truncateToWidth,
 } from "@mariozechner/pi-tui";
 import type { SessionTreeNode } from "../../../core/session-manager.js";
@@ -22,12 +23,14 @@ interface FlatNode {
 	node: SessionTreeNode;
 	depth: number;
 	isLast: boolean;
-	/** Prefix chars showing tree structure (│, ├, └, spaces) */
+	/** Prefix chars showing tree structure (│ and spaces for gutter) */
 	prefix: string;
+	/** Whether to show ├─/└─ connector (true at branch points) */
+	showConnector: boolean;
 }
 
 /** Filter mode for tree display */
-type FilterMode = "default" | "user-only" | "all";
+type FilterMode = "default" | "user-only" | "labeled-only" | "all";
 
 /**
  * Tree list component with selection and ASCII art visualization
@@ -43,6 +46,7 @@ class TreeList implements Component {
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
+	public onLabelEdit?: (entryId: string, currentLabel: string | undefined) => void;
 
 	constructor(tree: SessionTreeNode[], currentLeafId: string | null, maxVisibleLines: number) {
 		this.currentLeafId = currentLeafId;
@@ -62,27 +66,50 @@ class TreeList implements Component {
 	private flattenTree(roots: SessionTreeNode[]): FlatNode[] {
 		const result: FlatNode[] = [];
 
-		const traverse = (node: SessionTreeNode, depth: number, prefix: string, isLast: boolean) => {
-			result.push({ node, depth, isLast, prefix });
+		// Use iterative approach to avoid stack overflow on deep trees
+		// Stack items: [node, prefix, isLast, showConnector]
+		const stack: [SessionTreeNode, string, boolean, boolean][] = [];
+
+		// Add roots in reverse order so first root is processed first
+		const multipleRoots = roots.length > 1;
+		for (let i = roots.length - 1; i >= 0; i--) {
+			stack.push([roots[i], "", i === roots.length - 1, multipleRoots]);
+		}
+
+		while (stack.length > 0) {
+			const [node, prefix, isLast, showConnector] = stack.pop()!;
+
+			const depth = prefix.length / 3 + (showConnector ? 1 : 0);
+			result.push({ node, depth, isLast, prefix, showConnector });
 
 			const children = node.children;
-			for (let i = 0; i < children.length; i++) {
+			const multipleChildren = children.length > 1;
+
+			// Build prefix for children
+			let childPrefix: string;
+			if (showConnector) {
+				childPrefix = prefix + (isLast ? "   " : "│  ");
+			} else if (multipleChildren) {
+				childPrefix = prefix;
+			} else {
+				childPrefix = prefix;
+			}
+
+			// Add children in reverse order so first child is processed first
+			for (let i = children.length - 1; i >= 0; i--) {
 				const child = children[i];
 				const childIsLast = i === children.length - 1;
-				const childPrefix = prefix + (isLast ? "   " : "│  ");
-				traverse(child, depth + 1, childPrefix, childIsLast);
+				stack.push([child, childPrefix, childIsLast, multipleChildren]);
 			}
-		};
-
-		for (let i = 0; i < roots.length; i++) {
-			traverse(roots[i], 0, "", i === roots.length - 1);
 		}
 
 		return result;
 	}
 
 	private applyFilter(): void {
-		// Parse search tokens (lowercase, split by whitespace)
+		// Remember currently selected node to preserve cursor position
+		const previouslySelectedId = this.filteredNodes[this.selectedIndex]?.node.entry.id;
+
 		const searchTokens = this.searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
 		this.filteredNodes = this.flatNodes.filter((flatNode) => {
@@ -94,6 +121,8 @@ class TreeList implements Component {
 				passesFilter =
 					(entry.type === "message" && entry.message.role === "user") ||
 					(entry.type === "custom_message" && entry.display);
+			} else if (this.filterMode === "labeled-only") {
+				passesFilter = flatNode.node.label !== undefined;
 			} else if (this.filterMode !== "all") {
 				// Default mode: hide label and custom entries
 				passesFilter = entry.type !== "label" && entry.type !== "custom";
@@ -110,7 +139,16 @@ class TreeList implements Component {
 			return true;
 		});
 
-		// Adjust selected index if needed
+		// Try to preserve cursor on the same node after filtering
+		if (previouslySelectedId) {
+			const newIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === previouslySelectedId);
+			if (newIndex !== -1) {
+				this.selectedIndex = newIndex;
+				return;
+			}
+		}
+
+		// Fall back: clamp index if out of bounds
 		if (this.selectedIndex >= this.filteredNodes.length) {
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
 		}
@@ -121,7 +159,6 @@ class TreeList implements Component {
 		const entry = node.entry;
 		const parts: string[] = [];
 
-		// Add label if present
 		if (node.label) {
 			parts.push(node.label);
 		}
@@ -171,28 +208,47 @@ class TreeList implements Component {
 		return parts.join(" ");
 	}
 
-	invalidate(): void {
-		// No cached state to invalidate
-	}
+	invalidate(): void {}
 
-	/** Get current search query for external rendering */
 	getSearchQuery(): string {
 		return this.searchQuery;
+	}
+
+	getSelectedNode(): SessionTreeNode | undefined {
+		return this.filteredNodes[this.selectedIndex]?.node;
+	}
+
+	updateNodeLabel(entryId: string, label: string | undefined): void {
+		for (const flatNode of this.flatNodes) {
+			if (flatNode.node.entry.id === entryId) {
+				flatNode.node.label = label;
+				break;
+			}
+		}
+	}
+
+	private getFilterLabel(): string {
+		switch (this.filterMode) {
+			case "user-only":
+				return " [user]";
+			case "labeled-only":
+				return " [labeled]";
+			case "all":
+				return " [all]";
+			default:
+				return "";
+		}
 	}
 
 	render(width: number): string[] {
 		const lines: string[] = [];
 
 		if (this.filteredNodes.length === 0) {
-			lines.push(theme.fg("muted", "  No entries found"));
-			// Still show status with filter info
-			const filterLabel =
-				this.filterMode === "default" ? "" : this.filterMode === "user-only" ? " [user only]" : " [all]";
-			lines.push(theme.fg("muted", `  (0/0)${filterLabel}`));
+			lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
+			lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getFilterLabel()}`), width));
 			return lines;
 		}
 
-		// Calculate visible range with scrolling
 		const startIndex = Math.max(
 			0,
 			Math.min(
@@ -208,66 +264,50 @@ class TreeList implements Component {
 			const isSelected = i === this.selectedIndex;
 			const isCurrentLeaf = entry.id === this.currentLeafId;
 
-			// Build tree connector
-			let connector = "";
-			if (flatNode.depth > 0) {
-				connector = flatNode.prefix + (flatNode.isLast ? "└─ " : "├─ ");
-			}
-
-			// Get entry display text
-			const displayText = this.getEntryDisplayText(flatNode.node, width - connector.length - 15);
-
-			// Build suffix
-			let suffix = "";
-			if (isCurrentLeaf) {
-				suffix = theme.fg("accent", " ← active");
-			}
-			if (flatNode.node.label) {
-				suffix += theme.fg("warning", ` [${flatNode.node.label}]`);
-			}
-
-			// Combine with selection indicator
+			// Build line: cursor + gutter + connector + label + content + suffix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const text = isSelected ? theme.bold(displayText) : displayText;
-			const line = cursor + theme.fg("dim", connector) + text + suffix;
+			const gutter = flatNode.prefix ? theme.fg("dim", flatNode.prefix) : "";
+			const connector = flatNode.showConnector ? theme.fg("dim", flatNode.isLast ? "└─ " : "├─ ") : "";
+			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
+			const content = this.getEntryDisplayText(flatNode.node, isSelected);
+			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			lines.push(line);
+			const line = cursor + gutter + connector + label + content + suffix;
+			lines.push(truncateToWidth(line, width));
 		}
 
-		// Add scroll and filter info (search shown separately above)
-		const filterLabel =
-			this.filterMode === "default" ? "" : this.filterMode === "user-only" ? " [user only]" : " [all]";
-		const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${filterLabel}`);
-		lines.push(scrollInfo);
+		lines.push(
+			truncateToWidth(
+				theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getFilterLabel()}`),
+				width,
+			),
+		);
 
 		return lines;
 	}
 
-	private getEntryDisplayText(node: SessionTreeNode, maxWidth: number): string {
+	private getEntryDisplayText(node: SessionTreeNode, isSelected: boolean): string {
 		const entry = node.entry;
+		let result: string;
+
+		const normalize = (s: string) => s.replace(/[\n\t]/g, " ").trim();
 
 		switch (entry.type) {
 			case "message": {
 				const msg = entry.message;
 				const role = msg.role;
-				// Handle messages that have content property
 				if (role === "user" || role === "assistant" || role === "toolResult") {
 					const msgWithContent = msg as { content?: unknown };
-					const content = this.extractContent(msgWithContent.content);
+					const content = normalize(this.extractContent(msgWithContent.content));
 					const roleColor = role === "user" ? "accent" : role === "assistant" ? "success" : "muted";
-					const roleLabel = theme.fg(roleColor, `${role}: `);
-					const truncated = truncateToWidth(content.replace(/\n/g, " ").trim(), maxWidth - role.length - 2);
-					return roleLabel + truncated;
-				}
-				// Handle special message types
-				if (role === "bashExecution") {
+					result = theme.fg(roleColor, `${role}: `) + content;
+				} else if (role === "bashExecution") {
 					const bashMsg = msg as { command?: string };
-					return theme.fg("dim", `[bash]: ${bashMsg.command ?? ""}`);
+					result = theme.fg("dim", `[bash]: ${normalize(bashMsg.command ?? "")}`);
+				} else {
+					result = theme.fg("dim", `[${role}]`);
 				}
-				if (role === "compactionSummary" || role === "branchSummary" || role === "hookMessage") {
-					return theme.fg("dim", `[${role}]`);
-				}
-				return theme.fg("dim", `[${role}]`);
+				break;
 			}
 			case "custom_message": {
 				const content =
@@ -277,43 +317,48 @@ class TreeList implements Component {
 								.filter((c): c is { type: "text"; text: string } => c.type === "text")
 								.map((c) => c.text)
 								.join("");
-				const label = theme.fg("customMessageLabel", `[${entry.customType}]: `);
-				const truncated = truncateToWidth(
-					content.replace(/\n/g, " ").trim(),
-					maxWidth - entry.customType.length - 4,
-				);
-				return label + truncated;
+				result = theme.fg("customMessageLabel", `[${entry.customType}]: `) + normalize(content);
+				break;
 			}
 			case "compaction": {
 				const tokens = Math.round(entry.tokensBefore / 1000);
-				return theme.fg("borderAccent", `[compaction: ${tokens}k tokens]`);
+				result = theme.fg("borderAccent", `[compaction: ${tokens}k tokens]`);
+				break;
 			}
-			case "branch_summary": {
-				const truncated = truncateToWidth(entry.summary.replace(/\n/g, " ").trim(), maxWidth - 20);
-				return theme.fg("warning", `[branch summary]: `) + truncated;
-			}
-			case "model_change": {
-				return theme.fg("dim", `[model: ${entry.modelId}]`);
-			}
-			case "thinking_level_change": {
-				return theme.fg("dim", `[thinking: ${entry.thinkingLevel}]`);
-			}
-			case "custom": {
-				return theme.fg("dim", `[custom: ${entry.customType}]`);
-			}
-			case "label": {
-				return theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
-			}
+			case "branch_summary":
+				result = theme.fg("warning", `[branch summary]: `) + normalize(entry.summary);
+				break;
+			case "model_change":
+				result = theme.fg("dim", `[model: ${entry.modelId}]`);
+				break;
+			case "thinking_level_change":
+				result = theme.fg("dim", `[thinking: ${entry.thinkingLevel}]`);
+				break;
+			case "custom":
+				result = theme.fg("dim", `[custom: ${entry.customType}]`);
+				break;
+			case "label":
+				result = theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
+				break;
+			default:
+				result = "";
 		}
+
+		return isSelected ? theme.bold(result) : result;
 	}
 
 	private extractContent(content: unknown): string {
-		if (typeof content === "string") return content;
+		const maxLen = 200;
+		if (typeof content === "string") return content.slice(0, maxLen);
 		if (Array.isArray(content)) {
-			return content
-				.filter((c) => typeof c === "object" && c !== null && "type" in c && c.type === "text")
-				.map((c) => (c as { text: string }).text)
-				.join("");
+			let result = "";
+			for (const c of content) {
+				if (typeof c === "object" && c !== null && "type" in c && c.type === "text") {
+					result += (c as { text: string }).text;
+					if (result.length >= maxLen) return result.slice(0, maxLen);
+				}
+			}
+			return result;
 		}
 		return "";
 	}
@@ -329,7 +374,6 @@ class TreeList implements Component {
 				this.onSelect(selected.node.entry.id);
 			}
 		} else if (isEscape(keyData)) {
-			// Escape: clear search first, then cancel
 			if (this.searchQuery) {
 				this.searchQuery = "";
 				this.applyFilter();
@@ -338,22 +382,23 @@ class TreeList implements Component {
 			}
 		} else if (isCtrlC(keyData)) {
 			this.onCancel?.();
-		} else if (isCtrlU(keyData)) {
-			// Toggle user-only filter
-			this.filterMode = this.filterMode === "user-only" ? "default" : "user-only";
-			this.applyFilter();
 		} else if (isCtrlO(keyData)) {
-			// Toggle show-all filter
-			this.filterMode = this.filterMode === "all" ? "default" : "all";
+			// Cycle filter: default → user-only → labeled-only → all → default
+			const modes: FilterMode[] = ["default", "user-only", "labeled-only", "all"];
+			const currentIndex = modes.indexOf(this.filterMode);
+			this.filterMode = modes[(currentIndex + 1) % modes.length];
 			this.applyFilter();
 		} else if (isBackspace(keyData)) {
-			// Remove last character from search
 			if (this.searchQuery.length > 0) {
 				this.searchQuery = this.searchQuery.slice(0, -1);
 				this.applyFilter();
 			}
+		} else if (keyData === "l" && !this.searchQuery) {
+			const selected = this.filteredNodes[this.selectedIndex];
+			if (selected && this.onLabelEdit) {
+				this.onLabelEdit(selected.node.entry.id, selected.node.label);
+			}
 		} else {
-			// Check for printable characters (reject control chars)
 			const hasControlChars = [...keyData].some((ch) => {
 				const code = ch.charCodeAt(0);
 				return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f);
@@ -372,15 +417,54 @@ class SearchLine implements Component {
 
 	invalidate(): void {}
 
-	render(_width: number): string[] {
+	render(width: number): string[] {
 		const query = this.treeList.getSearchQuery();
 		if (query) {
-			return [`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`];
+			return [truncateToWidth(`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`, width)];
 		}
-		return [`  ${theme.fg("muted", "Search:")}`];
+		return [truncateToWidth(`  ${theme.fg("muted", "Search:")}`, width)];
 	}
 
 	handleInput(_keyData: string): void {}
+}
+
+/** Label input component shown when editing a label */
+class LabelInput implements Component {
+	private input: Input;
+	private entryId: string;
+	public onSubmit?: (entryId: string, label: string | undefined) => void;
+	public onCancel?: () => void;
+
+	constructor(entryId: string, currentLabel: string | undefined) {
+		this.entryId = entryId;
+		this.input = new Input();
+		if (currentLabel) {
+			this.input.setValue(currentLabel);
+		}
+	}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const lines: string[] = [];
+		const indent = "  ";
+		const availableWidth = width - indent.length;
+		lines.push(truncateToWidth(`${indent}${theme.fg("muted", "Label (empty to remove):")}`, width));
+		lines.push(...this.input.render(availableWidth).map((line) => truncateToWidth(`${indent}${line}`, width)));
+		lines.push(truncateToWidth(`${indent}${theme.fg("dim", "enter: save  esc: cancel")}`, width));
+		return lines;
+	}
+
+	handleInput(keyData: string): void {
+		if (isEnter(keyData)) {
+			const value = this.input.getValue().trim();
+			this.onSubmit?.(this.entryId, value || undefined);
+		} else if (isEscape(keyData)) {
+			this.onCancel?.();
+		} else {
+			this.input.handleInput(keyData);
+		}
+	}
 }
 
 /**
@@ -388,6 +472,10 @@ class SearchLine implements Component {
  */
 export class TreeSelectorComponent extends Container {
 	private treeList: TreeList;
+	private labelInput: LabelInput | null = null;
+	private labelInputContainer: Container;
+	private treeContainer: Container;
+	private onLabelChangeCallback?: (entryId: string, label: string | undefined) => void;
 
 	constructor(
 		tree: SessionTreeNode[],
@@ -395,40 +483,66 @@ export class TreeSelectorComponent extends Container {
 		terminalHeight: number,
 		onSelect: (entryId: string) => void,
 		onCancel: () => void,
+		onLabelChange?: (entryId: string, label: string | undefined) => void,
 	) {
 		super();
 
-		// Cap at half terminal height
+		this.onLabelChangeCallback = onLabelChange;
 		const maxVisibleLines = Math.max(5, Math.floor(terminalHeight / 2));
 
-		// Create tree list first (needed by SearchLine)
 		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines);
 		this.treeList.onSelect = onSelect;
 		this.treeList.onCancel = onCancel;
+		this.treeList.onLabelEdit = (entryId, currentLabel) => this.showLabelInput(entryId, currentLabel);
 
-		// Layout:
-		// Title
-		// Border
-		// Help text
-		// Search field
-		// Border
-		// Tree entries
-		// Border
+		this.treeContainer = new Container();
+		this.treeContainer.addChild(this.treeList);
+
+		this.labelInputContainer = new Container();
 
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.bold("Session Tree"), 1, 0));
 		this.addChild(new DynamicBorder());
-		this.addChild(new Text(theme.fg("muted", "  Type to search. Ctrl+U: user only, Ctrl+O: all"), 0, 0));
+		this.addChild(new TruncatedText(theme.fg("muted", "  Type to search. l: label. ^O: cycle filter"), 0, 0));
 		this.addChild(new SearchLine(this.treeList));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
-		this.addChild(this.treeList);
+		this.addChild(this.treeContainer);
+		this.addChild(this.labelInputContainer);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
-		// Auto-cancel if empty tree
 		if (tree.length === 0) {
 			setTimeout(() => onCancel(), 100);
+		}
+	}
+
+	private showLabelInput(entryId: string, currentLabel: string | undefined): void {
+		this.labelInput = new LabelInput(entryId, currentLabel);
+		this.labelInput.onSubmit = (id, label) => {
+			this.treeList.updateNodeLabel(id, label);
+			this.onLabelChangeCallback?.(id, label);
+			this.hideLabelInput();
+		};
+		this.labelInput.onCancel = () => this.hideLabelInput();
+
+		this.treeContainer.clear();
+		this.labelInputContainer.clear();
+		this.labelInputContainer.addChild(this.labelInput);
+	}
+
+	private hideLabelInput(): void {
+		this.labelInput = null;
+		this.labelInputContainer.clear();
+		this.treeContainer.clear();
+		this.treeContainer.addChild(this.treeList);
+	}
+
+	handleInput(keyData: string): void {
+		if (this.labelInput) {
+			this.labelInput.handleInput(keyData);
+		} else {
+			this.treeList.handleInput(keyData);
 		}
 	}
 
