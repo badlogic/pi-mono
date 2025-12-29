@@ -361,15 +361,27 @@ export async function generateBranchSummary(
 		return { error: response.errorMessage || "Summarization failed" };
 	}
 
-	const summary = response.content
+	let summary = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
 
-	// Compute file lists for details
+	// Compute file lists
 	const modified = new Set([...fileOps.edited, ...fileOps.written]);
 	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
 	const modifiedFiles = [...modified].sort();
+
+	// Append file lists to summary text (for LLM context and TUI display)
+	const fileSections: string[] = [];
+	if (readOnly.length > 0) {
+		fileSections.push(`<read-files>\n${readOnly.join("\n")}\n</read-files>`);
+	}
+	if (modifiedFiles.length > 0) {
+		fileSections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
+	}
+	if (fileSections.length > 0) {
+		summary += `\n\n${fileSections.join("\n\n")}`;
+	}
 
 	return {
 		summary: summary || "No summary generated",
