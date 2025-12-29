@@ -965,7 +965,7 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1139,7 +1139,7 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);

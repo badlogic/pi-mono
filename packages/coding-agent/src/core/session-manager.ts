@@ -641,7 +641,13 @@ export class SessionManager {
 	}
 
 	/** Append a compaction summary as child of current leaf, then advance leaf. Returns entry id. */
-	appendCompaction<T = unknown>(summary: string, firstKeptEntryId: string, tokensBefore: number, details?: T): string {
+	appendCompaction<T = unknown>(
+		summary: string,
+		firstKeptEntryId: string,
+		tokensBefore: number,
+		details?: T,
+		fromHook?: boolean,
+	): string {
 		const entry: CompactionEntry<T> = {
 			type: "compaction",
 			id: generateId(this.byId),
@@ -651,6 +657,7 @@ export class SessionManager {
 			firstKeptEntryId,
 			tokensBefore,
 			details,
+			fromHook,
 		};
 		this._appendEntry(entry);
 		return entry.id;
