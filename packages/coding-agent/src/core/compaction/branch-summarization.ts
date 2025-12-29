@@ -8,7 +8,12 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import { createBranchSummaryMessage, createCompactionSummaryMessage, createHookMessage } from "../messages.js";
+import {
+	convertToLlm,
+	createBranchSummaryMessage,
+	createCompactionSummaryMessage,
+	createHookMessage,
+} from "../messages.js";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.js";
 import { estimateTokens } from "./compaction.js";
 
@@ -290,50 +295,6 @@ Use this EXACT format:
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
 /**
- * Convert messages to text for the summarization prompt.
- */
-function messagesToText(messages: AgentMessage[]): string {
-	const parts: string[] = [];
-
-	for (const msg of messages) {
-		let text = "";
-
-		if (msg.role === "user" && typeof msg.content === "string") {
-			text = msg.content;
-		} else if (msg.role === "user" && Array.isArray(msg.content)) {
-			text = msg.content
-				.filter((c): c is { type: "text"; text: string } => c.type === "text")
-				.map((c) => c.text)
-				.join("");
-		} else if (msg.role === "assistant" && "content" in msg && Array.isArray(msg.content)) {
-			text = msg.content
-				.filter((c): c is { type: "text"; text: string } => c.type === "text")
-				.map((c) => c.text)
-				.join("");
-		} else if (msg.role === "branchSummary" && "summary" in msg) {
-			text = `[Branch summary: ${msg.summary}]`;
-		} else if (msg.role === "compactionSummary" && "summary" in msg) {
-			text = `[Session summary: ${msg.summary}]`;
-		} else if (msg.role === "hookMessage" && "content" in msg) {
-			if (typeof msg.content === "string") {
-				text = msg.content;
-			} else if (Array.isArray(msg.content)) {
-				text = msg.content
-					.filter((c): c is { type: "text"; text: string } => c.type === "text")
-					.map((c) => c.text)
-					.join("");
-			}
-		}
-
-		if (text) {
-			parts.push(`${msg.role}: ${text}`);
-		}
-	}
-
-	return parts.join("\n\n");
-}
-
-/**
  * Generate a summary of abandoned branch entries.
  *
  * @param entries - Session entries to summarize (chronological order)
@@ -355,25 +316,24 @@ export async function generateBranchSummary(
 		return { summary: "No content to summarize" };
 	}
 
+	// Transform to LLM-compatible messages (preserves tool calls, etc.)
+	const transformedMessages = convertToLlm(messages);
+
 	// Build prompt
-	const conversationText = messagesToText(messages);
 	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
-	const prompt = `${instructions}\n\nConversation:\n${conversationText}`;
+
+	// Append summarization prompt as final user message
+	const summarizationMessages = [
+		...transformedMessages,
+		{
+			role: "user" as const,
+			content: [{ type: "text" as const, text: instructions }],
+			timestamp: Date.now(),
+		},
+	];
 
 	// Call LLM for summarization
-	const response = await complete(
-		model,
-		{
-			messages: [
-				{
-					role: "user",
-					content: [{ type: "text", text: prompt }],
-					timestamp: Date.now(),
-				},
-			],
-		},
-		{ apiKey, signal, maxTokens: 2048 },
-	);
+	const response = await complete(model, { messages: summarizationMessages }, { apiKey, signal, maxTokens: 2048 });
 
 	// Check if aborted or errored
 	if (response.stopReason === "aborted") {
