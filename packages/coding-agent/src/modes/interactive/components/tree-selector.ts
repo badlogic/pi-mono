@@ -23,6 +23,12 @@ interface FlatNode {
 	node: SessionTreeNode;
 	/** Indentation level (each level = 2 spaces) */
 	indent: number;
+	/** Whether to show connector (├─ or └─) - true if parent has multiple children */
+	showConnector: boolean;
+	/** If showConnector, true = last sibling (└─), false = not last (├─) */
+	isLast: boolean;
+	/** For each ancestor branch point, true = show │ (more siblings below), false = show space */
+	gutters: boolean[];
 }
 
 /** Filter mode for tree display */
@@ -77,21 +83,20 @@ class TreeList implements Component {
 		// - At indent 1: children always go to indent 2 (visual grouping of subtree)
 		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
 
-		// Stack items: [node, indent, justBranched]
-		// justBranched: true if parent had multiple children (used for indent 1 -> 2 transition)
-		type StackItem = [SessionTreeNode, number, boolean];
+		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters]
+		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, boolean[]];
 		const stack: StackItem[] = [];
 
 		// Add roots in reverse order
 		// If multiple roots, treat them as children of a virtual root that branches
-		// So they start at indent 1 with justBranched=true
 		const multipleRoots = roots.length > 1;
 		for (let i = roots.length - 1; i >= 0; i--) {
-			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots]);
+			const isLast = i === roots.length - 1;
+			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, []]);
 		}
 
 		while (stack.length > 0) {
-			const [node, indent, justBranched] = stack.pop()!;
+			const [node, indent, justBranched, showConnector, isLast, gutters] = stack.pop()!;
 
 			// Extract tool calls from assistant messages for later lookup
 			const entry = node.entry;
@@ -107,7 +112,7 @@ class TreeList implements Component {
 				}
 			}
 
-			result.push({ node, indent });
+			result.push({ node, indent, showConnector, isLast, gutters });
 
 			const children = node.children;
 			const multipleChildren = children.length > 1;
@@ -125,9 +130,14 @@ class TreeList implements Component {
 				childIndent = indent;
 			}
 
+			// Build gutters for children
+			// If this node showed a connector, add a gutter entry for descendants
+			const childGutters = showConnector ? [...gutters, !isLast] : gutters;
+
 			// Add children in reverse order
 			for (let i = children.length - 1; i >= 0; i--) {
-				stack.push([children[i], childIndent, multipleChildren]);
+				const childIsLast = i === children.length - 1;
+				stack.push([children[i], childIndent, multipleChildren, multipleChildren, childIsLast, childGutters]);
 			}
 		}
 
@@ -305,16 +315,27 @@ class TreeList implements Component {
 			const isSelected = i === this.selectedIndex;
 			const isCurrentLeaf = entry.id === this.currentLeafId;
 
-			// Build line: cursor + indent + label + content + suffix
+			// Build line: cursor + gutters + connector + extra indent + label + content + suffix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			// If multiple roots, shift indent down by 1 for display (roots at 0, not 1)
+
+			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
-			const indentStr = "  ".repeat(displayIndent);
+			// Also shift gutters for multiple roots (skip first gutter which is the virtual root level)
+			const displayGutters = this.multipleRoots ? flatNode.gutters.slice(1) : flatNode.gutters;
+
+			// Build prefix: gutters + connector + extra spaces
+			const gutterStr = displayGutters.map((g) => (g ? "│ " : "  ")).join("");
+			const connector = flatNode.showConnector ? (flatNode.isLast ? "└─" : "├─") : "";
+			// Extra indent for visual grouping beyond gutters/connector
+			const prefixLevels = displayGutters.length + (flatNode.showConnector ? 1 : 0);
+			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
+			const prefix = gutterStr + connector + extraIndent;
+
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + indentStr + label + content + suffix;
+			const line = cursor + theme.fg("dim", prefix) + label + content + suffix;
 			lines.push(truncateToWidth(line, width));
 		}
 
