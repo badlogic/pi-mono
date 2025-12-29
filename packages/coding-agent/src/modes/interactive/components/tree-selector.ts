@@ -21,10 +21,8 @@ import { DynamicBorder } from "./dynamic-border.js";
 /** Flattened tree node for navigation */
 interface FlatNode {
 	node: SessionTreeNode;
-	/** For each indent level, true = show │ gutter, false = show spaces */
-	gutterLevels: boolean[];
-	/** none = no connector, branch = ├─, last = └─ */
-	connector: "none" | "branch" | "last";
+	/** Indentation level (each level = 2 spaces) */
+	indent: number;
 }
 
 /** Filter mode for tree display */
@@ -72,26 +70,23 @@ class TreeList implements Component {
 		const result: FlatNode[] = [];
 		this.toolCallMap.clear();
 
-		// Iterative traversal to avoid stack overflow
-		// Stack items: [node, gutterLevels, connector]
-		// gutterLevels: for each indent level, true = show │, false = show spaces
-		// connector: none/branch/last
-		type StackItem = [SessionTreeNode, boolean[], "none" | "branch" | "last"];
+		// Indentation rules:
+		// - At indent 0: stay at 0 unless parent has >1 children (then +1)
+		// - At indent 1: children always go to indent 2 (visual grouping of subtree)
+		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
+
+		// Stack items: [node, indent, justBranched]
+		// justBranched: true if parent had multiple children (used for indent 1 -> 2 transition)
+		type StackItem = [SessionTreeNode, number, boolean];
 		const stack: StackItem[] = [];
 
 		// Add roots in reverse order
-		const multipleRoots = roots.length > 1;
 		for (let i = roots.length - 1; i >= 0; i--) {
-			const connector: "none" | "branch" | "last" = multipleRoots
-				? i === roots.length - 1
-					? "last"
-					: "branch"
-				: "none";
-			stack.push([roots[i], [], connector]);
+			stack.push([roots[i], 0, roots.length > 1]);
 		}
 
 		while (stack.length > 0) {
-			const [node, gutterLevels, connector] = stack.pop()!;
+			const [node, indent, justBranched] = stack.pop()!;
 
 			// Extract tool calls from assistant messages for later lookup
 			const entry = node.entry;
@@ -107,32 +102,27 @@ class TreeList implements Component {
 				}
 			}
 
-			result.push({ node, gutterLevels, connector });
+			result.push({ node, indent });
 
 			const children = node.children;
 			const multipleChildren = children.length > 1;
 
-			// Build gutterLevels for children
-			// Only add a gutter level if THIS node had a connector (was in a branch)
-			let childGutterLevels: boolean[];
-			if (connector !== "none") {
-				// We showed a connector, so children get a gutter level
-				// If we're not last, show │; if we are last, show spaces
-				childGutterLevels = [...gutterLevels, connector !== "last"];
+			// Calculate child indent
+			let childIndent: number;
+			if (multipleChildren) {
+				// Parent branches: children get +1
+				childIndent = indent + 1;
+			} else if (justBranched && indent > 0) {
+				// First generation after a branch: +1 for visual grouping
+				childIndent = indent + 1;
 			} else {
-				// No connector, children inherit same gutter levels
-				childGutterLevels = gutterLevels;
+				// Single-child chain: stay flat
+				childIndent = indent;
 			}
 
 			// Add children in reverse order
 			for (let i = children.length - 1; i >= 0; i--) {
-				const child = children[i];
-				const childConnector: "none" | "branch" | "last" = multipleChildren
-					? i === children.length - 1
-						? "last"
-						: "branch"
-					: "none";
-				stack.push([child, childGutterLevels, childConnector]);
+				stack.push([children[i], childIndent, multipleChildren]);
 			}
 		}
 
@@ -310,16 +300,14 @@ class TreeList implements Component {
 			const isSelected = i === this.selectedIndex;
 			const isCurrentLeaf = entry.id === this.currentLeafId;
 
-			// Build line: cursor + gutter + connector + label + content + suffix
+			// Build line: cursor + indent + label + content + suffix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const gutter = flatNode.gutterLevels.map((show) => (show ? "│  " : "   ")).join("");
-			const connector = flatNode.connector === "branch" ? "├─ " : flatNode.connector === "last" ? "└─ " : "";
-			const prefix = gutter || connector ? theme.fg("dim", gutter + connector) : "";
+			const indentStr = "  ".repeat(flatNode.indent);
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + prefix + label + content + suffix;
+			const line = cursor + indentStr + label + content + suffix;
 			lines.push(truncateToWidth(line, width));
 		}
 
