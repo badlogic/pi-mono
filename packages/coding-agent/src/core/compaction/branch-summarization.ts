@@ -251,17 +251,17 @@ function formatFileOperations(fileOps: FileOperations): string {
 	const sections: string[] = [];
 
 	if (readOnly.length > 0) {
-		sections.push(`**Read:** ${readOnly.join(", ")}`);
+		sections.push(`<read-files>\n${readOnly.join("\n")}\n</read-files>`);
 	}
 
 	if (modified.size > 0) {
 		const files = [...modified].sort();
-		sections.push(`**Modified:** ${files.join(", ")}`);
+		sections.push(`<modified-files>\n${files.join("\n")}\n</modified-files>`);
 	}
 
 	if (sections.length === 0) return "";
 
-	return `\n\n---\n**Files:**\n${sections.join("\n")}`;
+	return `\n\n${sections.join("\n\n")}`;
 }
 
 /**
