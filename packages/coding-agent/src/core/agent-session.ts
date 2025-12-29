@@ -21,6 +21,7 @@ import { type BashResult, executeBash as executeBashCommand } from "./bash-execu
 import {
 	type CompactionResult,
 	calculateContextTokens,
+	collectEntriesForBranchSummary,
 	compact,
 	generateBranchSummary,
 	prepareCompaction,
@@ -42,7 +43,7 @@ import type {
 } from "./hooks/index.js";
 import type { BashExecutionMessage, HookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -1601,30 +1602,12 @@ export class AgentSession {
 			throw new Error(`Entry ${targetId} not found`);
 		}
 
-		// Find common ancestor (if oldLeafId is null, there's no old path)
-		const oldPath = oldLeafId ? new Set(this.sessionManager.getPath(oldLeafId).map((e) => e.id)) : new Set<string>();
-		const targetPath = this.sessionManager.getPath(targetId);
-		let commonAncestorId: string | null = null;
-		for (const entry of targetPath) {
-			if (oldPath.has(entry.id)) {
-				commonAncestorId = entry.id;
-				break;
-			}
-		}
-
-		// Collect entries to summarize (old leaf back to common ancestor, stop at compaction)
-		const entriesToSummarize: SessionEntry[] = [];
-		if (options.summarize && oldLeafId) {
-			let current: string | null = oldLeafId;
-			while (current && current !== commonAncestorId) {
-				const entry = this.sessionManager.getEntry(current);
-				if (!entry) break;
-				if (entry.type === "compaction") break;
-				entriesToSummarize.push(entry);
-				current = entry.parentId;
-			}
-			entriesToSummarize.reverse(); // Chronological order
-		}
+		// Collect entries to summarize (from old leaf to common ancestor)
+		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
+			this.sessionManager,
+			oldLeafId,
+			targetId,
+		);
 
 		// Prepare event data
 		const preparation: TreePreparation = {
@@ -1667,13 +1650,12 @@ export class AgentSession {
 			if (!apiKey) {
 				throw new Error(`No API key for ${model.provider}`);
 			}
-			const result = await generateBranchSummary(
-				entriesToSummarize,
+			const result = await generateBranchSummary(entriesToSummarize, {
 				model,
 				apiKey,
-				this._branchSummaryAbortController.signal,
-				options.customInstructions,
-			);
+				signal: this._branchSummaryAbortController.signal,
+				customInstructions: options.customInstructions,
+			});
 			this._branchSummaryAbortController = undefined;
 			if (result.aborted) {
 				return { cancelled: true, aborted: true };

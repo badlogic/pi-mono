@@ -7,7 +7,7 @@
 
 import type { Model } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
-import type { SessionEntry } from "../session-manager.js";
+import type { ReadonlySessionManager, SessionEntry } from "../session-manager.js";
 
 // ============================================================================
 // Types
@@ -26,17 +26,99 @@ export interface FileOperations {
 }
 
 export interface BranchPreparation {
-	/** Messages extracted for summarization */
-	messages: Array<{ role: string; content: string }>;
+	/** Messages extracted for summarization, in chronological order */
+	messages: Array<{ role: string; content: string; tokens: number }>;
 	/** File operations extracted from tool calls */
 	fileOps: FileOperations;
-	/** Previous summaries found in entries */
-	previousSummaries: string[];
+	/** Total tokens in messages */
+	totalTokens: number;
+}
+
+export interface CollectEntriesResult {
+	/** Entries to summarize, in chronological order */
+	entries: SessionEntry[];
+	/** Common ancestor between old and new position, if any */
+	commonAncestorId: string | null;
+}
+
+export interface GenerateBranchSummaryOptions {
+	/** Model to use for summarization */
+	model: Model<any>;
+	/** API key for the model */
+	apiKey: string;
+	/** Abort signal for cancellation */
+	signal: AbortSignal;
+	/** Optional custom instructions for summarization */
+	customInstructions?: string;
+	/** Reserve this fraction of context window for summary (default 0.2) */
+	reserveFraction?: number;
+}
+
+// ============================================================================
+// Entry Collection
+// ============================================================================
+
+/**
+ * Collect entries that should be summarized when navigating from one position to another.
+ *
+ * Walks from oldLeafId back to the common ancestor with targetId, collecting entries
+ * along the way. Does NOT stop at compaction boundaries - those are included and their
+ * summaries become context.
+ *
+ * @param session - Session manager (read-only access)
+ * @param oldLeafId - Current position (where we're navigating from)
+ * @param targetId - Target position (where we're navigating to)
+ * @returns Entries to summarize and the common ancestor
+ */
+export function collectEntriesForBranchSummary(
+	session: ReadonlySessionManager,
+	oldLeafId: string | null,
+	targetId: string,
+): CollectEntriesResult {
+	// If no old position, nothing to summarize
+	if (!oldLeafId) {
+		return { entries: [], commonAncestorId: null };
+	}
+
+	// Find common ancestor
+	const oldPath = new Set(session.getPath(oldLeafId).map((e) => e.id));
+	const targetPath = session.getPath(targetId);
+
+	let commonAncestorId: string | null = null;
+	for (const entry of targetPath) {
+		if (oldPath.has(entry.id)) {
+			commonAncestorId = entry.id;
+			break;
+		}
+	}
+
+	// Collect entries from old leaf back to common ancestor
+	const entries: SessionEntry[] = [];
+	let current: string | null = oldLeafId;
+
+	while (current && current !== commonAncestorId) {
+		const entry = session.getEntry(current);
+		if (!entry) break;
+		entries.push(entry);
+		current = entry.parentId;
+	}
+
+	// Reverse to get chronological order
+	entries.reverse();
+
+	return { entries, commonAncestorId };
 }
 
 // ============================================================================
 // Entry Parsing
 // ============================================================================
+
+/**
+ * Estimate token count for a string using chars/4 heuristic.
+ */
+function estimateStringTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
 
 /**
  * Extract text content from any message type.
@@ -84,44 +166,55 @@ function extractFileOpsFromToolCalls(message: any, fileOps: FileOperations): voi
 }
 
 /**
- * Prepare entries for summarization.
+ * Prepare entries for summarization with token budget.
  *
- * Extracts:
- * - Messages (user, assistant text, custom_message)
- * - File operations from tool calls
- * - Previous branch summaries
+ * Walks entries from NEWEST to OLDEST, adding messages until we hit the token budget.
+ * This ensures we keep the most recent context when the branch is too long.
+ *
+ * Handles:
+ * - message (user, assistant) - extracts text, counts tokens
+ * - custom_message - treated as user message
+ * - branch_summary - included as context
+ * - compaction - includes summary as context
  *
  * Skips:
- * - toolResult messages (context already in assistant message)
+ * - toolResult messages (context already in assistant's tool call)
  * - thinking_level_change, model_change, custom, label entries
- * - compaction entries (these are boundaries, shouldn't be in the input)
+ *
+ * @param entries - Entries in chronological order
+ * @param tokenBudget - Maximum tokens to include (0 = no limit)
  */
-export function prepareBranchEntries(entries: SessionEntry[]): BranchPreparation {
-	const messages: Array<{ role: string; content: string }> = [];
+export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: number = 0): BranchPreparation {
+	const messages: Array<{ role: string; content: string; tokens: number }> = [];
 	const fileOps: FileOperations = {
 		read: new Set(),
 		written: new Set(),
 		edited: new Set(),
 	};
-	const previousSummaries: string[] = [];
+	let totalTokens = 0;
 
-	for (const entry of entries) {
+	// Walk from newest to oldest to prioritize recent context
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		let role: string | undefined;
+		let content: string | undefined;
+
 		switch (entry.type) {
 			case "message": {
-				const role = entry.message.role;
+				const msgRole = entry.message.role;
 
-				// Skip tool results - the context is in the assistant's tool call
-				if (role === "toolResult") continue;
+				// Skip tool results - context is in assistant's tool call
+				if (msgRole === "toolResult") continue;
 
 				// Extract file ops from assistant tool calls
-				if (role === "assistant") {
+				if (msgRole === "assistant") {
 					extractFileOpsFromToolCalls(entry.message, fileOps);
 				}
 
-				// Extract text content
 				const text = extractMessageText(entry.message);
 				if (text) {
-					messages.push({ role, content: text });
+					role = msgRole;
+					content = text;
 				}
 				break;
 			}
@@ -135,27 +228,56 @@ export function prepareBranchEntries(entries: SessionEntry[]): BranchPreparation
 								.map((c) => c.text)
 								.join("");
 				if (text) {
-					messages.push({ role: "user", content: text });
+					role = "user";
+					content = text;
 				}
 				break;
 			}
 
 			case "branch_summary": {
-				previousSummaries.push(entry.summary);
+				role = "context";
+				content = `[Branch summary: ${entry.summary}]`;
 				break;
 			}
 
-			// Skip these entry types - they don't contribute to conversation content
-			case "compaction":
+			case "compaction": {
+				role = "context";
+				content = `[Session summary: ${entry.summary}]`;
+				break;
+			}
+
+			// Skip these - don't contribute to conversation content
 			case "thinking_level_change":
 			case "model_change":
 			case "custom":
 			case "label":
+				continue;
+		}
+
+		if (role && content) {
+			const tokens = estimateStringTokens(content);
+
+			// Check budget before adding
+			if (tokenBudget > 0 && totalTokens + tokens > tokenBudget) {
+				// If this is a summary entry, try to fit it anyway as it's important context
+				if (entry.type === "compaction" || entry.type === "branch_summary") {
+					// Add truncated version or skip
+					if (totalTokens < tokenBudget * 0.9) {
+						// Still have some room, add it
+						messages.unshift({ role, content, tokens });
+						totalTokens += tokens;
+					}
+				}
+				// Stop - we've hit the budget
 				break;
+			}
+
+			messages.unshift({ role, content, tokens });
+			totalTokens += tokens;
 		}
 	}
 
-	return { messages, fileOps, previousSummaries };
+	return { messages, fileOps, totalTokens };
 }
 
 // ============================================================================
@@ -202,37 +324,27 @@ function formatFileOperations(fileOps: FileOperations): string {
 /**
  * Generate a summary of abandoned branch entries.
  *
- * @param entries - Session entries to summarize
- * @param model - Model to use for summarization
- * @param apiKey - API key for the model
- * @param signal - Abort signal for cancellation
- * @param customInstructions - Optional custom instructions for summarization
+ * @param entries - Session entries to summarize (chronological order)
+ * @param options - Generation options
  */
 export async function generateBranchSummary(
 	entries: SessionEntry[],
-	model: Model<any>,
-	apiKey: string,
-	signal: AbortSignal,
-	customInstructions?: string,
+	options: GenerateBranchSummaryOptions,
 ): Promise<BranchSummaryResult> {
-	const { messages, fileOps, previousSummaries } = prepareBranchEntries(entries);
+	const { model, apiKey, signal, customInstructions, reserveFraction = 0.2 } = options;
+
+	// Calculate token budget (leave room for summary generation)
+	const contextWindow = model.contextWindow || 128000;
+	const tokenBudget = Math.floor(contextWindow * (1 - reserveFraction));
+
+	const { messages, fileOps } = prepareBranchEntries(entries, tokenBudget);
 
 	if (messages.length === 0) {
 		return { summary: "No content to summarize" };
 	}
 
 	// Build conversation text
-	const parts: string[] = [];
-
-	// Include previous summaries as context
-	if (previousSummaries.length > 0) {
-		parts.push(`[Previous context: ${previousSummaries.join(" | ")}]`);
-	}
-
-	// Add conversation
-	parts.push(messages.map((m) => `${m.role}: ${m.content}`).join("\n\n"));
-
-	const conversationText = parts.join("\n\n");
+	const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
 	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
 	const prompt = `${instructions}\n\nConversation:\n${conversationText}`;
 
@@ -248,7 +360,7 @@ export async function generateBranchSummary(
 				},
 			],
 		},
-		{ apiKey, signal, maxTokens: 1024 },
+		{ apiKey, signal, maxTokens: 2048 },
 	);
 
 	// Check if aborted or errored

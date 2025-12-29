@@ -155,6 +155,20 @@ export interface SessionInfo {
 	allMessagesText: string;
 }
 
+/**
+ * Read-only interface for SessionManager.
+ * Used by compaction/summarization utilities that only need to read session data.
+ */
+export interface ReadonlySessionManager {
+	getLeafId(): string | null;
+	getEntry(id: string): SessionEntry | undefined;
+	getPath(fromId?: string): SessionEntry[];
+	getEntries(): SessionEntry[];
+	getChildren(parentId: string): SessionEntry[];
+	getTree(): SessionTreeNode[];
+	getLabel(id: string): string | undefined;
+}
+
 /** Generate a unique short ID (8 hex chars, collision-checked) */
 function generateId(byId: { has(id: string): boolean }): string {
 	for (let i = 0; i < 100; i++) {
