@@ -556,7 +556,7 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5-air");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -572,11 +572,11 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skip("should handle thinking mode", { retry: 3 }, async () => {
-			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await handleThinking(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await multiTurn(llm, { reasoningEffort: "medium" });
 		});
 	});
 
