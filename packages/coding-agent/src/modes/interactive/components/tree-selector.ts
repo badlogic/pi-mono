@@ -21,12 +21,10 @@ import { DynamicBorder } from "./dynamic-border.js";
 /** Flattened tree node for navigation */
 interface FlatNode {
 	node: SessionTreeNode;
-	depth: number;
-	isLast: boolean;
-	/** Prefix chars showing tree structure (│ and spaces for gutter) */
-	prefix: string;
-	/** Whether to show ├─/└─ connector (true at branch points) */
-	showConnector: boolean;
+	/** For each indent level, true = show │ gutter, false = show spaces */
+	gutterLevels: boolean[];
+	/** none = no connector, branch = ├─, last = └─ */
+	connector: "none" | "branch" | "last";
 }
 
 /** Filter mode for tree display */
@@ -74,18 +72,26 @@ class TreeList implements Component {
 		const result: FlatNode[] = [];
 		this.toolCallMap.clear();
 
-		// Use iterative approach to avoid stack overflow on deep trees
-		// Stack items: [node, prefix, isLast, showConnector]
-		const stack: [SessionTreeNode, string, boolean, boolean][] = [];
+		// Iterative traversal to avoid stack overflow
+		// Stack items: [node, gutterLevels, connector]
+		// gutterLevels: for each indent level, true = show │, false = show spaces
+		// connector: none/branch/last
+		type StackItem = [SessionTreeNode, boolean[], "none" | "branch" | "last"];
+		const stack: StackItem[] = [];
 
-		// Add roots in reverse order so first root is processed first
+		// Add roots in reverse order
 		const multipleRoots = roots.length > 1;
 		for (let i = roots.length - 1; i >= 0; i--) {
-			stack.push([roots[i], "", i === roots.length - 1, multipleRoots]);
+			const connector: "none" | "branch" | "last" = multipleRoots
+				? i === roots.length - 1
+					? "last"
+					: "branch"
+				: "none";
+			stack.push([roots[i], [], connector]);
 		}
 
 		while (stack.length > 0) {
-			const [node, prefix, isLast, showConnector] = stack.pop()!;
+			const [node, gutterLevels, connector] = stack.pop()!;
 
 			// Extract tool calls from assistant messages for later lookup
 			const entry = node.entry;
@@ -101,27 +107,32 @@ class TreeList implements Component {
 				}
 			}
 
-			const depth = prefix.length / 3 + (showConnector ? 1 : 0);
-			result.push({ node, depth, isLast, prefix, showConnector });
+			result.push({ node, gutterLevels, connector });
 
 			const children = node.children;
 			const multipleChildren = children.length > 1;
 
-			// Build prefix for children
-			let childPrefix: string;
-			if (showConnector) {
-				childPrefix = prefix + (isLast ? "   " : "│  ");
-			} else if (multipleChildren) {
-				childPrefix = prefix;
+			// Build gutterLevels for children
+			// Only add a gutter level if THIS node had a connector (was in a branch)
+			let childGutterLevels: boolean[];
+			if (connector !== "none") {
+				// We showed a connector, so children get a gutter level
+				// If we're not last, show │; if we are last, show spaces
+				childGutterLevels = [...gutterLevels, connector !== "last"];
 			} else {
-				childPrefix = prefix;
+				// No connector, children inherit same gutter levels
+				childGutterLevels = gutterLevels;
 			}
 
-			// Add children in reverse order so first child is processed first
+			// Add children in reverse order
 			for (let i = children.length - 1; i >= 0; i--) {
 				const child = children[i];
-				const childIsLast = i === children.length - 1;
-				stack.push([child, childPrefix, childIsLast, multipleChildren]);
+				const childConnector: "none" | "branch" | "last" = multipleChildren
+					? i === children.length - 1
+						? "last"
+						: "branch"
+					: "none";
+				stack.push([child, childGutterLevels, childConnector]);
 			}
 		}
 
@@ -301,13 +312,14 @@ class TreeList implements Component {
 
 			// Build line: cursor + gutter + connector + label + content + suffix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const gutter = flatNode.prefix ? theme.fg("dim", flatNode.prefix) : "";
-			const connector = flatNode.showConnector ? theme.fg("dim", flatNode.isLast ? "└─ " : "├─ ") : "";
+			const gutter = flatNode.gutterLevels.map((show) => (show ? "│  " : "   ")).join("");
+			const connector = flatNode.connector === "branch" ? "├─ " : flatNode.connector === "last" ? "└─ " : "";
+			const prefix = gutter || connector ? theme.fg("dim", gutter + connector) : "";
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + gutter + connector + label + content + suffix;
+			const line = cursor + prefix + label + content + suffix;
 			lines.push(truncateToWidth(line, width));
 		}
 
