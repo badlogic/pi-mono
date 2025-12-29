@@ -12,6 +12,7 @@ export {
 export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
 // Compaction
 export {
+	type BranchPreparation,
 	type BranchSummaryResult,
 	type CompactionResult,
 	type CutPointResult,
@@ -19,11 +20,13 @@ export {
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateTokens,
+	type FileOperations,
 	findCutPoint,
 	findTurnStartIndex,
 	generateBranchSummary,
 	generateSummary,
 	getLastAssistantUsage,
+	prepareBranchEntries,
 	shouldCompact,
 } from "./core/compaction/index.js";
 // Custom tools
