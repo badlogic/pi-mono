@@ -7029,9 +7029,10 @@ export const MODELS = {
 		"glm-4.5v": {
 			id: "glm-4.5v",
 			name: "GLM-4.5V",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "zai",
-			baseUrl: "https://api.z.ai/api/anthropic",
+			baseUrl: "https://api.z.ai/api/coding/paas/v4",
+			compat: {"supportsDeveloperRole":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -7042,7 +7043,7 @@ export const MODELS = {
 			},
 			contextWindow: 64000,
 			maxTokens: 16384,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"glm-4.6": {
 			id: "glm-4.6",
 			name: "GLM-4.6",
@@ -7063,9 +7064,10 @@ export const MODELS = {
 		"glm-4.6v": {
 			id: "glm-4.6v",
 			name: "GLM-4.6V",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "zai",
-			baseUrl: "https://api.z.ai/api/anthropic",
+			baseUrl: "https://api.z.ai/api/coding/paas/v4",
+			compat: {"supportsDeveloperRole":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -7076,7 +7078,7 @@ export const MODELS = {
 			},
 			contextWindow: 128000,
 			maxTokens: 32768,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"glm-4.7": {
 			id: "glm-4.7",
 			name: "GLM-4.7",

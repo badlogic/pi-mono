@@ -474,10 +474,14 @@ function convertMessages(
 
 			// Handle thinking blocks
 			const thinkingBlocks = msg.content.filter((b) => b.type === "thinking") as ThinkingContent[];
-			if (thinkingBlocks.length > 0) {
+			// Filter out empty thinking blocks to avoid API validation errors
+			const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
+			if (nonEmptyThinkingBlocks.length > 0) {
 				if (compat.requiresThinkingAsText) {
 					// Convert thinking blocks to text with <thinking> delimiters
-					const thinkingText = thinkingBlocks.map((b) => `<thinking>\n${b.thinking}\n</thinking>`).join("\n");
+					const thinkingText = nonEmptyThinkingBlocks
+						.map((b) => `<thinking>\n${b.thinking}\n</thinking>`)
+						.join("\n");
 					const textContent = assistantMsg.content as Array<{ type: "text"; text: string }> | null;
 					if (textContent) {
 						textContent.unshift({ type: "text", text: thinkingText });
@@ -486,9 +490,9 @@ function convertMessages(
 					}
 				} else {
 					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
-					const signature = thinkingBlocks[0].thinkingSignature;
+					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
 					if (signature && signature.length > 0) {
-						(assistantMsg as any)[signature] = thinkingBlocks.map((b) => b.thinking).join("\n");
+						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
 					}
 				}
 			}
