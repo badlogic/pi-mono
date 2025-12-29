@@ -6,8 +6,8 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
-import { complete } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model, Usage, UserMessage } from "@mariozechner/pi-ai";
+import { complete, completeSimple } from "@mariozechner/pi-ai";
 import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 
@@ -441,7 +441,11 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = `Create a structured context checkpoint summary. Another LLM will use this to continue the work.
+const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified.
+
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
+
+const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 
 Use this EXACT format:
 
@@ -474,9 +478,9 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
-const UPDATE_SUMMARIZATION_PROMPT = `Update the existing structured summary with new information from the conversation.
+const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
 
-RULES:
+Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
 - ADD new progress, decisions, and context from the new messages
 - UPDATE the Progress section: move items from "In Progress" to "Done" when completed
@@ -540,31 +544,26 @@ export async function generateSummary(
 	// Build summarization messages
 	const summarizationMessages = [];
 
-	// If we have a previous summary, include it as context
-	if (previousSummary) {
-		summarizationMessages.push({
-			role: "user" as const,
-			content: [{ type: "text" as const, text: `PREVIOUS SUMMARY:\n\n${previousSummary}` }],
-			timestamp: Date.now(),
-		});
-		summarizationMessages.push({
-			role: "user" as const,
-			content: [{ type: "text" as const, text: "NEW MESSAGES TO INCORPORATE:" }],
-			timestamp: Date.now(),
-		});
-	}
-
 	// Add the conversation messages
 	summarizationMessages.push(...transformedMessages);
 
 	// Add the prompt
-	summarizationMessages.push({
+	const prompt = {
 		role: "user" as const,
 		content: [{ type: "text" as const, text: basePrompt }],
 		timestamp: Date.now(),
-	});
+	} satisfies UserMessage;
+	summarizationMessages.push(prompt);
 
-	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
+	if (previousSummary) {
+		prompt.content.push({ type: "text" as const, text: `<previous-summary>${previousSummary}</previous-summary>` });
+	}
+
+	const response = await completeSimple(
+		model,
+		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{ maxTokens, signal, apiKey, reasoning: "high" },
+	);
 
 	if (response.stopReason === "error") {
 		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
@@ -716,9 +715,7 @@ export async function compact(
 	let previousSummary: string | undefined;
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
-		if (!prevCompaction.fromHook) {
-			previousSummary = prevCompaction.summary;
-		}
+		previousSummary = prevCompaction.summary;
 	}
 
 	// Extract file operations from messages and previous compaction
