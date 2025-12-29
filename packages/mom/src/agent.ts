@@ -39,10 +39,14 @@ export interface AgentRunner {
 	abort(): void;
 }
 
-function getAnthropicApiKey(): string {
-	const key = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+async function getAnthropicApiKey(authStorage: AuthStorage): Promise<string> {
+	const key = await authStorage.getApiKey("anthropic");
 	if (!key) {
-		throw new Error("ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY must be set");
+		throw new Error(
+			"No API key found for anthropic.\n\n" +
+				"Set an API key environment variable, or use /login with Anthropic and link to auth.json from " +
+				join(homedir(), ".pi", "mom", "auth.json"),
+		);
 	}
 	return key;
 }
@@ -417,6 +421,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const sessionManager = new MomSessionManager(channelDir);
 	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
 
+	// Create AuthStorage and ModelRegistry
+	// Auth stored outside workspace so agent can't access it
+	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const modelRegistry = new ModelRegistry(authStorage);
+
 	// Create agent
 	const agent = new Agent({
 		initialState: {
@@ -427,7 +436,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		},
 		messageTransformer,
 		transport: new ProviderTransport({
-			getApiKey: async () => getAnthropicApiKey(),
+			getApiKey: async () => getAnthropicApiKey(authStorage),
 		}),
 	});
 
@@ -437,11 +446,6 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		agent.replaceMessages(loadedSession.messages);
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
 	}
-
-	// Create AuthStorage and ModelRegistry for AgentSession
-	// Auth stored outside workspace so agent can't access it
-	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
-	const modelRegistry = new ModelRegistry(authStorage);
 
 	// Create AgentSession wrapper
 	const session = new AgentSession({
