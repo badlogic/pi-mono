@@ -29,6 +29,7 @@
 		"muted": "gray",
 		"dim": "dimGray",
 		"text": "",
+		"thinkingText": "#c0c0c0",
 
 		"selectedBg": "selectedBg",
 		"userMessageBg": "userMsgBg",

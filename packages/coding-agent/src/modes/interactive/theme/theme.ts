@@ -34,6 +34,8 @@ const ThemeJsonSchema = Type.Object({
 		muted: ColorValueSchema,
 		dim: ColorValueSchema,
 		text: ColorValueSchema,
+		// Thinking traces (assistant reasoning)
+		thinkingText: ColorValueSchema,
 		// Backgrounds & Content Text (11 colors)
 		selectedBg: ColorValueSchema,
 		userMessageBg: ColorValueSchema,
@@ -98,6 +100,7 @@ export type ThemeColor =
 	| "muted"
 	| "dim"
 	| "text"
+	| "thinkingText"
 	| "userMessageText"
 	| "customMessageText"
 	| "customMessageLabel"
@@ -466,7 +469,11 @@ function loadThemeJson(name: string): ThemeJson {
 		for (const e of errors) {
 			// Check for missing required color properties
 			const match = e.path.match(/^\/colors\/(\w+)$/);
-			if (match && e.message.includes("Required")) {
+			const isMissingRequired =
+				e.message.includes("Required") ||
+				e.message.includes("required property") ||
+				e.message.includes("Expected required property");
+			if (match && isMissingRequired) {
 				missingColors.push(match[1]);
 			} else {
 				otherErrors.push(`  - ${e.path}: ${e.message}`);
@@ -509,7 +516,12 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
 			fgColors[key as ThemeColor] = value;
 		}
 	}
-	return new Theme(fgColors, bgColors, colorMode);
+
+	return new Theme(
+		fgColors as Record<ThemeColor, string | number>,
+		bgColors as Record<ThemeBg, string | number>,
+		colorMode,
+	);
 }
 
 function loadTheme(name: string, mode?: ColorMode): Theme {
