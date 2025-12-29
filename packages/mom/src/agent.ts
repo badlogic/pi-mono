@@ -434,10 +434,8 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			thinkingLevel: "off",
 			tools,
 		},
-		messageTransformer,
-		transport: new ProviderTransport({
-			getApiKey: async () => getAnthropicApiKey(authStorage),
-		}),
+		convertToLlm,
+		getApiKey: async () => getAnthropicApiKey(authStorage),
 	});
 
 	// Load existing messages
