@@ -91,14 +91,15 @@ export function collectEntriesForBranchSummary(
 		return { entries: [], commonAncestorId: null };
 	}
 
-	// Find common ancestor
+	// Find common ancestor (deepest node that's on both paths)
 	const oldPath = new Set(session.getPath(oldLeafId).map((e) => e.id));
 	const targetPath = session.getPath(targetId);
 
+	// targetPath is root-first, so iterate backwards to find deepest common ancestor
 	let commonAncestorId: string | null = null;
-	for (const entry of targetPath) {
-		if (oldPath.has(entry.id)) {
-			commonAncestorId = entry.id;
+	for (let i = targetPath.length - 1; i >= 0; i--) {
+		if (oldPath.has(targetPath[i].id)) {
+			commonAncestorId = targetPath[i].id;
 			break;
 		}
 	}
