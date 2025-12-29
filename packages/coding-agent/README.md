@@ -793,7 +793,17 @@ pi @screenshot.png "What's in this image?"
 pi @requirements.md @design.png "Implement this"
 ```
 
-Text files wrapped in `<file name="path">content</file>`. Images attached as base64.
+Text files wrapped in XML with CDATA for content preservation:
+```xml
+<files>
+  <file path="..." language="...">
+<![CDATA[
+content
+]]>
+  </file>
+</files>
+```
+Images attached as base64.
 
 ### Examples
 

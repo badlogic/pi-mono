@@ -43,6 +43,17 @@ export interface MarkdownTheme {
 	highlightCode?: (code: string, lang?: string) => string[];
 }
 
+/** Get literal text content from a token, preferring text over raw */
+function getTokenLiteralText(token: Token): string {
+	if ("text" in token && typeof token.text === "string") {
+		return token.text;
+	}
+	if ("raw" in token && typeof token.raw === "string") {
+		return token.raw;
+	}
+	return "";
+}
+
 export class Markdown implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
@@ -316,9 +327,23 @@ export class Markdown implements Component {
 				}
 				break;
 
-			case "html":
-				// Skip HTML for terminal output
+			case "html": {
+				// Render HTML as literal text
+				const htmlText = getTokenLiteralText(token);
+				const htmlLines = htmlText.split("\n");
+				// Pop trailing empty line if present
+				if (htmlLines.length > 0 && htmlLines[htmlLines.length - 1] === "") {
+					htmlLines.pop();
+				}
+				for (const htmlLine of htmlLines) {
+					lines.push(this.applyDefaultStyle(htmlLine));
+				}
+				// Don't add spacing if next token is space or list (consistent with paragraph handling)
+				if (nextTokenType && nextTokenType !== "list" && nextTokenType !== "space") {
+					lines.push("");
+				}
 				break;
+			}
 
 			case "space":
 				// Space tokens represent blank lines in markdown
@@ -391,6 +416,13 @@ export class Markdown implements Component {
 				case "del": {
 					const delContent = this.renderInlineTokens(token.tokens || []);
 					result += this.theme.strikethrough(delContent) + this.getDefaultStylePrefix();
+					break;
+				}
+
+				case "html": {
+					// Render inline HTML as literal text
+					const htmlText = getTokenLiteralText(token);
+					result += this.applyDefaultStyle(htmlText);
 					break;
 				}
 

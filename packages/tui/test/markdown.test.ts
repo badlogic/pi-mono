@@ -594,5 +594,33 @@ again, hello world`,
 				"Should render HTML in code blocks",
 			);
 		});
+
+		it("should render block HTML token as literal text", () => {
+			// Block HTML like <div>content</div> on its own line
+			const markdown = new Markdown("<div>block content</div>", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			assert.ok(
+				joinedPlain.includes("<div>block content</div>"),
+				`Should render block HTML as literal text, got: ${joinedPlain}`,
+			);
+		});
+
+		it("should render inline HTML in paragraph as literal text", () => {
+			// Inline HTML within a paragraph
+			const markdown = new Markdown("This has <span>inline html</span> in it", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			assert.ok(
+				joinedPlain.includes("<span>") && joinedPlain.includes("</span>"),
+				`Should render inline HTML as literal text, got: ${joinedPlain}`,
+			);
+		});
 	});
 });
