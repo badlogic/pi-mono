@@ -1656,7 +1656,7 @@ export class AgentSession {
 				apiKey,
 				signal: this._branchSummaryAbortController.signal,
 				customInstructions: options.customInstructions,
-				maxTokens: branchSummarySettings.maxTokens,
+				reserveTokens: branchSummarySettings.reserveTokens,
 			});
 			this._branchSummaryAbortController = undefined;
 			if (result.aborted) {

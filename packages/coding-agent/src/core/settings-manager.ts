@@ -9,7 +9,7 @@ export interface CompactionSettings {
 }
 
 export interface BranchSummarySettings {
-	maxTokens?: number; // default: 100000 (max tokens to include in branch summary context)
+	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 }
 
 export interface RetrySettings {
@@ -260,9 +260,9 @@ export class SettingsManager {
 		};
 	}
 
-	getBranchSummarySettings(): { maxTokens: number } {
+	getBranchSummarySettings(): { reserveTokens: number } {
 		return {
-			maxTokens: this.settings.branchSummary?.maxTokens ?? 100000,
+			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
 		};
 	}
 
