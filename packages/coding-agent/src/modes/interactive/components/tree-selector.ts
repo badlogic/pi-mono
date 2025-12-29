@@ -136,9 +136,11 @@ class TreeList implements Component {
 
 		this.filteredNodes = this.flatNodes.filter((flatNode) => {
 			const entry = flatNode.node.entry;
+			const isCurrentLeaf = entry.id === this.currentLeafId;
 
 			// Skip assistant messages with failed stopReason or no text content
-			if (entry.type === "message" && entry.message.role === "assistant") {
+			// BUT always show the current leaf so active position is visible
+			if (entry.type === "message" && entry.message.role === "assistant" && !isCurrentLeaf) {
 				const msg = entry.message as { stopReason?: string; content?: unknown };
 				// Skip aborted/error messages
 				if (msg.stopReason && msg.stopReason !== "stop" && msg.stopReason !== "toolUse") {
@@ -337,10 +339,18 @@ class TreeList implements Component {
 					const content = normalize(this.extractContent(msgWithContent.content));
 					result = theme.fg("accent", "user: ") + content;
 				} else if (role === "assistant") {
-					// Assistant messages without text content are filtered out, so we always have text here
-					const msgWithContent = msg as { content?: unknown };
+					const msgWithContent = msg as { content?: unknown; stopReason?: string; errorMessage?: string };
 					const textContent = normalize(this.extractContent(msgWithContent.content));
-					result = theme.fg("success", "assistant: ") + textContent;
+					if (textContent) {
+						result = theme.fg("success", "assistant: ") + textContent;
+					} else if (msgWithContent.stopReason === "aborted") {
+						result = theme.fg("warning", "assistant: ") + theme.fg("muted", "(aborted)");
+					} else if (msgWithContent.errorMessage) {
+						const errMsg = normalize(msgWithContent.errorMessage).slice(0, 80);
+						result = theme.fg("error", "assistant: ") + errMsg;
+					} else {
+						result = theme.fg("muted", "assistant: (no content)");
+					}
 				} else if (role === "toolResult") {
 					const toolMsg = msg as { toolCallId?: string; toolName?: string };
 					const toolCall = toolMsg.toolCallId ? this.toolCallMap.get(toolMsg.toolCallId) : undefined;
