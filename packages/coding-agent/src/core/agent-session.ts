@@ -1650,11 +1650,13 @@ export class AgentSession {
 			if (!apiKey) {
 				throw new Error(`No API key for ${model.provider}`);
 			}
+			const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
 			const result = await generateBranchSummary(entriesToSummarize, {
 				model,
 				apiKey,
 				signal: this._branchSummaryAbortController.signal,
 				customInstructions: options.customInstructions,
+				reserveFraction: branchSummarySettings.reserveFraction,
 			});
 			this._branchSummaryAbortController = undefined;
 			if (result.aborted) {

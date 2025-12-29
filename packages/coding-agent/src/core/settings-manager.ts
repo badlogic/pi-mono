@@ -8,6 +8,10 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export interface BranchSummarySettings {
+	reserveFraction?: number; // default: 0.2 (fraction of context window reserved for summary)
+}
+
 export interface RetrySettings {
 	enabled?: boolean; // default: true
 	maxRetries?: number; // default: 3
@@ -38,6 +42,7 @@ export interface Settings {
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
@@ -252,6 +257,12 @@ export class SettingsManager {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+		};
+	}
+
+	getBranchSummarySettings(): { reserveFraction: number } {
+		return {
+			reserveFraction: this.settings.branchSummary?.reserveFraction ?? 0.2,
 		};
 	}
 

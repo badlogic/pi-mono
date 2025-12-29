@@ -5,9 +5,12 @@
  * a summary of the branch being left so context isn't lost.
  */
 
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
+import { createBranchSummaryMessage, createCompactionSummaryMessage, createHookMessage } from "../messages.js";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.js";
+import { estimateTokens } from "./compaction.js";
 
 // ============================================================================
 // Types
@@ -27,10 +30,10 @@ export interface FileOperations {
 
 export interface BranchPreparation {
 	/** Messages extracted for summarization, in chronological order */
-	messages: Array<{ role: string; content: string; tokens: number }>;
+	messages: AgentMessage[];
 	/** File operations extracted from tool calls */
 	fileOps: FileOperations;
-	/** Total tokens in messages */
+	/** Total estimated tokens in messages */
 	totalTokens: number;
 }
 
@@ -110,40 +113,49 @@ export function collectEntriesForBranchSummary(
 }
 
 // ============================================================================
-// Entry Parsing
+// Entry to Message Conversion
 // ============================================================================
 
 /**
- * Estimate token count for a string using chars/4 heuristic.
+ * Extract AgentMessage from a session entry.
+ * Similar to getMessageFromEntry in compaction.ts but also handles compaction entries.
  */
-function estimateStringTokens(text: string): number {
-	return Math.ceil(text.length / 4);
-}
+function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
+	switch (entry.type) {
+		case "message":
+			// Skip tool results - context is in assistant's tool call
+			if (entry.message.role === "toolResult") return undefined;
+			return entry.message;
 
-/**
- * Extract text content from any message type.
- */
-function extractMessageText(message: any): string {
-	if (!message.content) return "";
-	if (typeof message.content === "string") return message.content;
-	if (Array.isArray(message.content)) {
-		return message.content
-			.filter((c: any) => c.type === "text")
-			.map((c: any) => c.text)
-			.join("");
+		case "custom_message":
+			return createHookMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
+
+		case "branch_summary":
+			return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
+
+		case "compaction":
+			return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+
+		// These don't contribute to conversation content
+		case "thinking_level_change":
+		case "model_change":
+		case "custom":
+		case "label":
+			return undefined;
 	}
-	return "";
 }
 
 /**
  * Extract file operations from tool calls in an assistant message.
  */
-function extractFileOpsFromToolCalls(message: any, fileOps: FileOperations): void {
-	if (!message.content || !Array.isArray(message.content)) return;
+function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
+	if (message.role !== "assistant") return;
+	if (!("content" in message) || !Array.isArray(message.content)) return;
 
 	for (const block of message.content) {
 		if (typeof block !== "object" || block === null) continue;
-		if (block.type !== "toolCall") continue;
+		if (!("type" in block) || block.type !== "toolCall") continue;
+		if (!("arguments" in block) || !("name" in block)) continue;
 
 		const args = block.arguments as Record<string, unknown> | undefined;
 		if (!args) continue;
@@ -171,21 +183,11 @@ function extractFileOpsFromToolCalls(message: any, fileOps: FileOperations): voi
  * Walks entries from NEWEST to OLDEST, adding messages until we hit the token budget.
  * This ensures we keep the most recent context when the branch is too long.
  *
- * Handles:
- * - message (user, assistant) - extracts text, counts tokens
- * - custom_message - treated as user message
- * - branch_summary - included as context
- * - compaction - includes summary as context
- *
- * Skips:
- * - toolResult messages (context already in assistant's tool call)
- * - thinking_level_change, model_change, custom, label entries
- *
  * @param entries - Entries in chronological order
  * @param tokenBudget - Maximum tokens to include (0 = no limit)
  */
 export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: number = 0): BranchPreparation {
-	const messages: Array<{ role: string; content: string; tokens: number }> = [];
+	const messages: AgentMessage[] = [];
 	const fileOps: FileOperations = {
 		read: new Set(),
 		written: new Set(),
@@ -196,85 +198,29 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 	// Walk from newest to oldest to prioritize recent context
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
-		let role: string | undefined;
-		let content: string | undefined;
+		const message = getMessageFromEntry(entry);
+		if (!message) continue;
 
-		switch (entry.type) {
-			case "message": {
-				const msgRole = entry.message.role;
+		// Extract file ops from assistant messages
+		extractFileOpsFromMessage(message, fileOps);
 
-				// Skip tool results - context is in assistant's tool call
-				if (msgRole === "toolResult") continue;
+		const tokens = estimateTokens(message);
 
-				// Extract file ops from assistant tool calls
-				if (msgRole === "assistant") {
-					extractFileOpsFromToolCalls(entry.message, fileOps);
+		// Check budget before adding
+		if (tokenBudget > 0 && totalTokens + tokens > tokenBudget) {
+			// If this is a summary entry, try to fit it anyway as it's important context
+			if (entry.type === "compaction" || entry.type === "branch_summary") {
+				if (totalTokens < tokenBudget * 0.9) {
+					messages.unshift(message);
+					totalTokens += tokens;
 				}
-
-				const text = extractMessageText(entry.message);
-				if (text) {
-					role = msgRole;
-					content = text;
-				}
-				break;
 			}
-
-			case "custom_message": {
-				const text =
-					typeof entry.content === "string"
-						? entry.content
-						: entry.content
-								.filter((c): c is { type: "text"; text: string } => c.type === "text")
-								.map((c) => c.text)
-								.join("");
-				if (text) {
-					role = "user";
-					content = text;
-				}
-				break;
-			}
-
-			case "branch_summary": {
-				role = "context";
-				content = `[Branch summary: ${entry.summary}]`;
-				break;
-			}
-
-			case "compaction": {
-				role = "context";
-				content = `[Session summary: ${entry.summary}]`;
-				break;
-			}
-
-			// Skip these - don't contribute to conversation content
-			case "thinking_level_change":
-			case "model_change":
-			case "custom":
-			case "label":
-				continue;
+			// Stop - we've hit the budget
+			break;
 		}
 
-		if (role && content) {
-			const tokens = estimateStringTokens(content);
-
-			// Check budget before adding
-			if (tokenBudget > 0 && totalTokens + tokens > tokenBudget) {
-				// If this is a summary entry, try to fit it anyway as it's important context
-				if (entry.type === "compaction" || entry.type === "branch_summary") {
-					// Add truncated version or skip
-					if (totalTokens < tokenBudget * 0.9) {
-						// Still have some room, add it
-						messages.unshift({ role, content, tokens });
-						totalTokens += tokens;
-					}
-				}
-				// Stop - we've hit the budget
-				break;
-			}
-
-			messages.unshift({ role, content, tokens });
-			totalTokens += tokens;
-		}
+		messages.unshift(message);
+		totalTokens += tokens;
 	}
 
 	return { messages, fileOps, totalTokens };
@@ -322,6 +268,50 @@ function formatFileOperations(fileOps: FileOperations): string {
 }
 
 /**
+ * Convert messages to text for the summarization prompt.
+ */
+function messagesToText(messages: AgentMessage[]): string {
+	const parts: string[] = [];
+
+	for (const msg of messages) {
+		let text = "";
+
+		if (msg.role === "user" && typeof msg.content === "string") {
+			text = msg.content;
+		} else if (msg.role === "user" && Array.isArray(msg.content)) {
+			text = msg.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+		} else if (msg.role === "assistant" && "content" in msg && Array.isArray(msg.content)) {
+			text = msg.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+		} else if (msg.role === "branchSummary" && "summary" in msg) {
+			text = `[Branch summary: ${msg.summary}]`;
+		} else if (msg.role === "compactionSummary" && "summary" in msg) {
+			text = `[Session summary: ${msg.summary}]`;
+		} else if (msg.role === "hookMessage" && "content" in msg) {
+			if (typeof msg.content === "string") {
+				text = msg.content;
+			} else if (Array.isArray(msg.content)) {
+				text = msg.content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("");
+			}
+		}
+
+		if (text) {
+			parts.push(`${msg.role}: ${text}`);
+		}
+	}
+
+	return parts.join("\n\n");
+}
+
+/**
  * Generate a summary of abandoned branch entries.
  *
  * @param entries - Session entries to summarize (chronological order)
@@ -343,8 +333,8 @@ export async function generateBranchSummary(
 		return { summary: "No content to summarize" };
 	}
 
-	// Build conversation text
-	const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
+	// Build prompt
+	const conversationText = messagesToText(messages);
 	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
 	const prompt = `${instructions}\n\nConversation:\n${conversationText}`;
 
