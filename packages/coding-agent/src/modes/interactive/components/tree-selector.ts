@@ -35,6 +35,12 @@ type FilterMode = "default" | "user-only" | "labeled-only" | "all";
 /**
  * Tree list component with selection and ASCII art visualization
  */
+/** Tool call info for lookup */
+interface ToolCallInfo {
+	name: string;
+	arguments: Record<string, unknown>;
+}
+
 class TreeList implements Component {
 	private flatNodes: FlatNode[] = [];
 	private filteredNodes: FlatNode[] = [];
@@ -43,6 +49,7 @@ class TreeList implements Component {
 	private maxVisibleLines: number;
 	private filterMode: FilterMode = "default";
 	private searchQuery = "";
+	private toolCallMap: Map<string, ToolCallInfo> = new Map();
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -65,6 +72,7 @@ class TreeList implements Component {
 
 	private flattenTree(roots: SessionTreeNode[]): FlatNode[] {
 		const result: FlatNode[] = [];
+		this.toolCallMap.clear();
 
 		// Use iterative approach to avoid stack overflow on deep trees
 		// Stack items: [node, prefix, isLast, showConnector]
@@ -78,6 +86,20 @@ class TreeList implements Component {
 
 		while (stack.length > 0) {
 			const [node, prefix, isLast, showConnector] = stack.pop()!;
+
+			// Extract tool calls from assistant messages for later lookup
+			const entry = node.entry;
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const content = (entry.message as { content?: unknown }).content;
+				if (Array.isArray(content)) {
+					for (const block of content) {
+						if (typeof block === "object" && block !== null && "type" in block && block.type === "toolCall") {
+							const tc = block as { id: string; name: string; arguments: Record<string, unknown> };
+							this.toolCallMap.set(tc.id, { name: tc.name, arguments: tc.arguments });
+						}
+					}
+				}
+			}
 
 			const depth = prefix.length / 3 + (showConnector ? 1 : 0);
 			result.push({ node, depth, isLast, prefix, showConnector });
@@ -115,7 +137,21 @@ class TreeList implements Component {
 		this.filteredNodes = this.flatNodes.filter((flatNode) => {
 			const entry = flatNode.node.entry;
 
-			// Apply filter mode first
+			// Skip assistant messages with failed stopReason or no text content
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const msg = entry.message as { stopReason?: string; content?: unknown };
+				// Skip aborted/error messages
+				if (msg.stopReason && msg.stopReason !== "stop" && msg.stopReason !== "toolUse") {
+					return false;
+				}
+				// Skip messages with only tool calls (no text content)
+				const hasText = this.hasTextContent(msg.content);
+				if (!hasText) {
+					return false;
+				}
+			}
+
+			// Apply filter mode
 			let passesFilter = true;
 			if (this.filterMode === "user-only") {
 				passesFilter =
@@ -296,15 +332,23 @@ class TreeList implements Component {
 			case "message": {
 				const msg = entry.message;
 				const role = msg.role;
-				if (role === "user" || role === "assistant") {
+				if (role === "user") {
 					const msgWithContent = msg as { content?: unknown };
 					const content = normalize(this.extractContent(msgWithContent.content));
-					const roleColor = role === "user" ? "accent" : "success";
-					result = theme.fg(roleColor, `${role}: `) + content;
+					result = theme.fg("accent", "user: ") + content;
+				} else if (role === "assistant") {
+					// Assistant messages without text content are filtered out, so we always have text here
+					const msgWithContent = msg as { content?: unknown };
+					const textContent = normalize(this.extractContent(msgWithContent.content));
+					result = theme.fg("success", "assistant: ") + textContent;
 				} else if (role === "toolResult") {
-					const toolMsg = msg as { toolName?: string };
-					const toolName = toolMsg.toolName ?? "tool";
-					result = theme.fg("muted", `[${toolName}]`);
+					const toolMsg = msg as { toolCallId?: string; toolName?: string };
+					const toolCall = toolMsg.toolCallId ? this.toolCallMap.get(toolMsg.toolCallId) : undefined;
+					if (toolCall) {
+						result = theme.fg("muted", this.formatToolCall(toolCall.name, toolCall.arguments));
+					} else {
+						result = theme.fg("muted", `[${toolMsg.toolName ?? "tool"}]`);
+					}
 				} else if (role === "bashExecution") {
 					const bashMsg = msg as { command?: string };
 					result = theme.fg("dim", `[bash]: ${normalize(bashMsg.command ?? "")}`);
@@ -365,6 +409,73 @@ class TreeList implements Component {
 			return result;
 		}
 		return "";
+	}
+
+	private hasTextContent(content: unknown): boolean {
+		if (typeof content === "string") return content.trim().length > 0;
+		if (Array.isArray(content)) {
+			for (const c of content) {
+				if (typeof c === "object" && c !== null && "type" in c && c.type === "text") {
+					const text = (c as { text?: string }).text;
+					if (text && text.trim().length > 0) return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private formatToolCall(name: string, args: Record<string, unknown>): string {
+		const shortenPath = (p: string): string => {
+			const home = process.env.HOME || process.env.USERPROFILE || "";
+			if (home && p.startsWith(home)) return `~${p.slice(home.length)}`;
+			return p;
+		};
+
+		switch (name) {
+			case "read": {
+				const path = shortenPath(String(args.path || args.file_path || ""));
+				const offset = args.offset as number | undefined;
+				const limit = args.limit as number | undefined;
+				let display = path;
+				if (offset !== undefined || limit !== undefined) {
+					const start = offset ?? 1;
+					const end = limit !== undefined ? start + limit - 1 : "";
+					display += `:${start}${end ? `-${end}` : ""}`;
+				}
+				return `[read: ${display}]`;
+			}
+			case "write": {
+				const path = shortenPath(String(args.path || args.file_path || ""));
+				return `[write: ${path}]`;
+			}
+			case "edit": {
+				const path = shortenPath(String(args.path || args.file_path || ""));
+				return `[edit: ${path}]`;
+			}
+			case "bash": {
+				const cmd = String(args.command || "").slice(0, 50);
+				return `[bash: ${cmd}${(args.command as string)?.length > 50 ? "..." : ""}]`;
+			}
+			case "grep": {
+				const pattern = String(args.pattern || "");
+				const path = shortenPath(String(args.path || "."));
+				return `[grep: /${pattern}/ in ${path}]`;
+			}
+			case "find": {
+				const pattern = String(args.pattern || "");
+				const path = shortenPath(String(args.path || "."));
+				return `[find: ${pattern} in ${path}]`;
+			}
+			case "ls": {
+				const path = shortenPath(String(args.path || "."));
+				return `[ls: ${path}]`;
+			}
+			default: {
+				// Custom tool - show name and truncated JSON args
+				const argsStr = JSON.stringify(args).slice(0, 40);
+				return `[${name}: ${argsStr}${JSON.stringify(args).length > 40 ? "..." : ""}]`;
+			}
+		}
 	}
 
 	handleInput(keyData: string): void {
