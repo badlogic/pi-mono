@@ -106,7 +106,7 @@ describe("SessionManager append and tree traversal", () => {
 		it("leaf pointer advances after each append", () => {
 			const session = SessionManager.inMemory();
 
-			expect(session.getLeafId()).toBe("");
+			expect(session.getLeafId()).toBeNull();
 
 			const id1 = session.appendMessage(userMsg("1"));
 			expect(session.getLeafId()).toBe(id1);
