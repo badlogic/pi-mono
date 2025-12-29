@@ -1644,6 +1644,7 @@ export class AgentSession {
 
 		// Run default summarizer if needed
 		let summaryText: string | undefined;
+		let summaryDetails: unknown;
 		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
 			const model = this.model!;
 			const apiKey = await this._modelRegistry.getApiKey(model);
@@ -1666,8 +1667,13 @@ export class AgentSession {
 				throw new Error(result.error);
 			}
 			summaryText = result.summary;
+			summaryDetails = {
+				readFiles: result.readFiles || [],
+				modifiedFiles: result.modifiedFiles || [],
+			};
 		} else if (hookSummary) {
 			summaryText = hookSummary.summary;
+			summaryDetails = hookSummary.details;
 		}
 
 		// Determine the new leaf position based on target type
@@ -1698,7 +1704,7 @@ export class AgentSession {
 		let summaryEntry: BranchSummaryEntry | undefined;
 		if (summaryText) {
 			// Create summary at target position (can be null for root)
-			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText);
+			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf

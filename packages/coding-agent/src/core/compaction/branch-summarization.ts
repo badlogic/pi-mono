@@ -18,8 +18,16 @@ import { estimateTokens } from "./compaction.js";
 
 export interface BranchSummaryResult {
 	summary?: string;
+	readFiles?: string[];
+	modifiedFiles?: string[];
 	aborted?: boolean;
 	error?: string;
+}
+
+/** Details stored in BranchSummaryEntry.details for file tracking */
+export interface BranchSummaryDetails {
+	readFiles: string[];
+	modifiedFiles: string[];
 }
 
 export interface FileOperations {
@@ -183,6 +191,10 @@ function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperation
  * Walks entries from NEWEST to OLDEST, adding messages until we hit the token budget.
  * This ensures we keep the most recent context when the branch is too long.
  *
+ * Also collects file operations from:
+ * - Tool calls in assistant messages
+ * - Existing branch_summary entries' details (for cumulative tracking)
+ *
  * @param entries - Entries in chronological order
  * @param tokenBudget - Maximum tokens to include (0 = no limit)
  */
@@ -195,13 +207,30 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 	};
 	let totalTokens = 0;
 
-	// Walk from newest to oldest to prioritize recent context
+	// First pass: collect file ops from ALL entries (even if they don't fit in token budget)
+	// This ensures we capture cumulative file tracking from nested branch summaries
+	for (const entry of entries) {
+		if (entry.type === "branch_summary" && entry.details) {
+			const details = entry.details as BranchSummaryDetails;
+			if (Array.isArray(details.readFiles)) {
+				for (const f of details.readFiles) fileOps.read.add(f);
+			}
+			if (Array.isArray(details.modifiedFiles)) {
+				// Modified files go into both edited and written for proper deduplication
+				for (const f of details.modifiedFiles) {
+					fileOps.edited.add(f);
+				}
+			}
+		}
+	}
+
+	// Second pass: walk from newest to oldest, adding messages until token budget
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		const message = getMessageFromEntry(entry);
 		if (!message) continue;
 
-		// Extract file ops from assistant messages
+		// Extract file ops from assistant messages (tool calls)
 		extractFileOpsFromMessage(message, fileOps);
 
 		const tokens = estimateTokens(message);
@@ -237,32 +266,6 @@ const BRANCH_SUMMARY_PROMPT = `Summarize this conversation branch concisely for 
 - Critical information needed to continue from a different point
 
 Be brief and focused on what matters for future reference.`;
-
-/**
- * Format file operations as a static section to append to summary.
- */
-function formatFileOperations(fileOps: FileOperations): string {
-	// Combine edited and written into "modified"
-	const modified = new Set([...fileOps.edited, ...fileOps.written]);
-
-	// Read-only = read but not modified
-	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
-
-	const sections: string[] = [];
-
-	if (readOnly.length > 0) {
-		sections.push(`<read-files>\n${readOnly.join("\n")}\n</read-files>`);
-	}
-
-	if (modified.size > 0) {
-		const files = [...modified].sort();
-		sections.push(`<modified-files>\n${files.join("\n")}\n</modified-files>`);
-	}
-
-	if (sections.length === 0) return "";
-
-	return `\n\n${sections.join("\n\n")}`;
-}
 
 /**
  * Convert messages to text for the summarization prompt.
@@ -358,13 +361,19 @@ export async function generateBranchSummary(
 		return { error: response.errorMessage || "Summarization failed" };
 	}
 
-	let summary = response.content
+	const summary = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
 
-	// Append static file operations section
-	summary += formatFileOperations(fileOps);
+	// Compute file lists for details
+	const modified = new Set([...fileOps.edited, ...fileOps.written]);
+	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
+	const modifiedFiles = [...modified].sort();
 
-	return { summary: summary || "No summary generated" };
+	return {
+		summary: summary || "No summary generated",
+		readFiles: readOnly,
+		modifiedFiles,
+	};
 }

@@ -872,7 +872,7 @@ export class SessionManager {
 	 * Same as branch(), but also appends a branch_summary entry that captures
 	 * context from the abandoned conversation path.
 	 */
-	branchWithSummary(branchFromId: string | null, summary: string): string {
+	branchWithSummary(branchFromId: string | null, summary: string, details?: unknown): string {
 		if (branchFromId !== null && !this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
@@ -884,6 +884,7 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			fromId: branchFromId ?? "root",
 			summary,
+			details,
 		};
 		this._appendEntry(entry);
 		return entry.id;
