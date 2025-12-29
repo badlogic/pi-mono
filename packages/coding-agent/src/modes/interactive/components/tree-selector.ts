@@ -55,6 +55,7 @@ class TreeList implements Component {
 	private searchQuery = "";
 	private toolCallMap: Map<string, ToolCallInfo> = new Map();
 	private multipleRoots = false;
+	private activePathIds: Set<string> = new Set();
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -65,6 +66,7 @@ class TreeList implements Component {
 		this.maxVisibleLines = maxVisibleLines;
 		this.multipleRoots = tree.length > 1;
 		this.flatNodes = this.flattenTree(tree);
+		this.buildActivePath();
 		this.applyFilter();
 
 		// Start with current leaf selected
@@ -73,6 +75,27 @@ class TreeList implements Component {
 			this.selectedIndex = leafIndex;
 		} else {
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
+		}
+	}
+
+	/** Build the set of entry IDs on the path from root to current leaf */
+	private buildActivePath(): void {
+		this.activePathIds.clear();
+		if (!this.currentLeafId) return;
+
+		// Build a map of id -> entry for parent lookup
+		const entryMap = new Map<string, FlatNode>();
+		for (const flatNode of this.flatNodes) {
+			entryMap.set(flatNode.node.entry.id, flatNode);
+		}
+
+		// Walk from leaf to root
+		let currentId: string | null = this.currentLeafId;
+		while (currentId) {
+			this.activePathIds.add(currentId);
+			const node = entryMap.get(currentId);
+			if (!node) break;
+			currentId = node.node.entry.parentId ?? null;
 		}
 	}
 
@@ -340,11 +363,15 @@ class TreeList implements Component {
 			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
 			const prefix = gutterStr + connector + extraIndent;
 
+			// Active path marker
+			const isOnActivePath = this.activePathIds.has(entry.id);
+			const pathMarker = isOnActivePath ? theme.fg("accent", "● ") : "  ";
+
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + theme.fg("dim", prefix) + label + content + suffix;
+			const line = cursor + pathMarker + theme.fg("dim", prefix) + label + content + suffix;
 			lines.push(truncateToWidth(line, width));
 		}
 
