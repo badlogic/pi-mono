@@ -1528,8 +1528,9 @@ export class AgentSession {
 			.find((m) => {
 				if (m.role !== "assistant") return false;
 				const msg = m as AssistantMessage;
-				// Skip aborted messages with no content
-				if (msg.stopReason === "aborted" && msg.content.length === 0) return false;
+				// Skip messages with no actual text content (e.g., aborted early, or only tool calls)
+				const hasText = msg.content.some((c) => c.type === "text" && c.text.trim());
+				if (!hasText) return false;
 				return true;
 			});
 

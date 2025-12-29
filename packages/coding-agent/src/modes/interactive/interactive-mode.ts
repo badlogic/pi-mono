@@ -813,9 +813,14 @@ export class InteractiveMode {
 
 			// Handle script commands (loaded from .ts files)
 			if (text.startsWith("/")) {
+				const editorTextBefore = this.editor.getText();
 				const handled = await this.tryExecuteScriptCommand(text);
 				if (handled) {
-					this.editor.setText("");
+					// Only clear if the command didn't change editor text
+					// (Commands like /qna set editor text that should be preserved)
+					if (this.editor.getText() === editorTextBefore) {
+						this.editor.setText("");
+					}
 					return;
 				}
 			}

@@ -15,34 +15,31 @@
 
 import type { ScriptCommandFactory } from "@mariozechner/pi-coding-agent";
 
-const QNA_SYSTEM_PROMPT = `You are a text formatter that extracts questions from assistant messages and reformats them for user responses.
+const QNA_SYSTEM_PROMPT = `You extract questions from text and reformat them for easy answering.
 
-Given an assistant message, identify all questions or points that need user input/clarification.
-Format them as a markdown document with:
-- Numbered sections for each question/topic
-- The original question in a blockquote
-- An "**Answer:**" placeholder after each question
+TASK: Find ALL questions, decision points, or items needing user input in the given text. Format each as a numbered section with the question in a blockquote and an "Answer:" placeholder.
 
-Rules:
-- Preserve the original question text in blockquotes
-- Group related sub-questions under one section
-- Keep the formatting clean and scannable
-- Only include actual questions or points needing input, not rhetorical questions
-- If there are no questions, output exactly: "No questions found in the last message."
+Look for:
+- Direct questions (sentences ending with ?)
+- Numbered lists asking for choices or decisions
+- Bullet points requesting input or clarification
+- "Should we...", "Do you want...", "Which..." patterns
+- Options labeled (a), (b), (c) etc.
 
-Example output:
-## 1. Database Configuration
+Output format (no title/header, start directly with the first section):
+## 1. [Topic]
 
-> What database should we use - PostgreSQL or SQLite?
-> Do you need connection pooling?
+> [Original question text]
 
-**Answer:**
+Answer:
 
-## 2. Authentication
+## 2. [Topic]
 
-> Should we use JWT or session-based auth?
+> [Original question text]
 
-**Answer:**`;
+Answer:
+
+IMPORTANT: Be thorough. If the text contains ANY questions or decision points, extract them. Only output "NO_QUESTIONS_FOUND" (exactly this, nothing else) if the text truly contains zero questions or points needing input.`;
 
 const command: ScriptCommandFactory = (pi) => ({
 	description: "Extract questions from last message into editor",
@@ -80,7 +77,7 @@ const command: ScriptCommandFactory = (pi) => ({
 				return;
 			}
 
-			if (formattedText.includes("No questions found")) {
+			if (formattedText.trim() === "NO_QUESTIONS_FOUND") {
 				pi.showStatus("No questions found in the last message.");
 				return;
 			}
