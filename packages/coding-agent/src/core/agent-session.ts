@@ -1582,7 +1582,7 @@ export class AgentSession {
 	async navigateTree(
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string } = {},
-	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean }> {
+	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
 		// No-op if already at target
@@ -1735,7 +1735,7 @@ export class AgentSession {
 		await this._emitToolSessionEvent("tree", this.sessionFile);
 
 		this._branchSummaryAbortController = undefined;
-		return { editorText, cancelled: false };
+		return { editorText, cancelled: false, summaryEntry };
 	}
 
 	/**

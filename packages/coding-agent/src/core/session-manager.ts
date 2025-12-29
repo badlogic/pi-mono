@@ -697,6 +697,19 @@ export class SessionManager {
 	}
 
 	/**
+	 * Get all direct children of an entry.
+	 */
+	getChildren(parentId: string): SessionEntry[] {
+		const children: SessionEntry[] = [];
+		for (const entry of this.byId.values()) {
+			if (entry.parentId === parentId) {
+				children.push(entry);
+			}
+		}
+		return children;
+	}
+
+	/**
 	 * Get the label for an entry, if any.
 	 */
 	getLabel(id: string): string | undefined {
