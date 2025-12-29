@@ -34,12 +34,14 @@ import type {
 	SessionBeforeCompactResult,
 	SessionBeforeNewResult,
 	SessionBeforeSwitchResult,
+	SessionBeforeTreeResult,
+	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./hooks/index.js";
 import type { BashExecutionMessage, HookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type { CompactionEntry, SessionManager } from "./session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -1552,6 +1554,261 @@ export class AgentSession {
 		}
 
 		return { selectedText, cancelled: false };
+	}
+
+	// =========================================================================
+	// Tree Navigation
+	// =========================================================================
+
+	/**
+	 * Navigate to a different node in the session tree.
+	 * Unlike branch() which creates a new session file, this stays in the same file.
+	 *
+	 * @param targetId The entry ID to navigate to
+	 * @param options.summarize Whether user wants to summarize abandoned branch
+	 * @param options.customInstructions Custom instructions for summarizer
+	 * @returns Result with editorText (if user message) and cancelled status
+	 */
+	async navigateTree(
+		targetId: string,
+		options: { summarize?: boolean; customInstructions?: string } = {},
+	): Promise<{ editorText?: string; cancelled: boolean }> {
+		const oldLeafId = this.sessionManager.getLeafUuid();
+
+		// No-op if already at target
+		if (targetId === oldLeafId) {
+			return { cancelled: false };
+		}
+
+		// Model required for summarization
+		if (options.summarize && !this.model) {
+			throw new Error("No model available for summarization");
+		}
+
+		const targetEntry = this.sessionManager.getEntry(targetId);
+		if (!targetEntry) {
+			throw new Error(`Entry ${targetId} not found`);
+		}
+
+		// Find common ancestor (if oldLeafId is null, there's no old path)
+		const oldPath = oldLeafId ? new Set(this.sessionManager.getPath(oldLeafId).map((e) => e.id)) : new Set<string>();
+		const targetPath = this.sessionManager.getPath(targetId);
+		let commonAncestorId: string | null = null;
+		for (const entry of targetPath) {
+			if (oldPath.has(entry.id)) {
+				commonAncestorId = entry.id;
+				break;
+			}
+		}
+
+		// Collect entries to summarize (old leaf back to common ancestor, stop at compaction)
+		const entriesToSummarize: SessionEntry[] = [];
+		if (options.summarize && oldLeafId) {
+			let current: string | null = oldLeafId;
+			while (current && current !== commonAncestorId) {
+				const entry = this.sessionManager.getEntry(current);
+				if (!entry) break;
+				if (entry.type === "compaction") break;
+				entriesToSummarize.push(entry);
+				current = entry.parentId;
+			}
+			entriesToSummarize.reverse(); // Chronological order
+		}
+
+		// Prepare event data
+		const preparation: TreePreparation = {
+			targetId,
+			oldLeafId,
+			commonAncestorId,
+			entriesToSummarize,
+			userWantsSummary: options.summarize ?? false,
+		};
+
+		// Set up abort controller for summarization
+		const abortController = new AbortController();
+		let hookSummary: { summary: string; details?: unknown } | undefined;
+		let fromHook = false;
+
+		// Emit session_before_tree event
+		if (this._hookRunner?.hasHandlers("session_before_tree")) {
+			const result = (await this._hookRunner.emit({
+				type: "session_before_tree",
+				preparation,
+				model: this.model!, // Checked above if summarize is true
+				signal: abortController.signal,
+			})) as SessionBeforeTreeResult | undefined;
+
+			if (result?.cancel) {
+				return { cancelled: true };
+			}
+
+			if (result?.summary && options.summarize) {
+				hookSummary = result.summary;
+				fromHook = true;
+			}
+		}
+
+		// Run default summarizer if needed
+		let summaryText: string | undefined;
+		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
+			try {
+				summaryText = await this._generateBranchSummary(
+					entriesToSummarize,
+					options.customInstructions,
+					abortController.signal,
+				);
+			} catch {
+				// Summarization failed - cancel navigation
+				return { cancelled: true };
+			}
+		} else if (hookSummary) {
+			summaryText = hookSummary.summary;
+		}
+
+		// Determine the new leaf position based on target type
+		let newLeafId: string | null;
+		let editorText: string | undefined;
+
+		if (targetEntry.type === "message" && targetEntry.message.role === "user") {
+			// User message: leaf = parent (null if root), text goes to editor
+			newLeafId = targetEntry.parentId;
+			editorText = this._extractUserMessageText(targetEntry.message.content);
+		} else if (targetEntry.type === "custom_message") {
+			// Custom message: leaf = parent (null if root), text goes to editor
+			newLeafId = targetEntry.parentId;
+			editorText =
+				typeof targetEntry.content === "string"
+					? targetEntry.content
+					: targetEntry.content
+							.filter((c): c is { type: "text"; text: string } => c.type === "text")
+							.map((c) => c.text)
+							.join("");
+		} else {
+			// Non-user message: leaf = selected node
+			newLeafId = targetId;
+		}
+
+		// Switch leaf (with or without summary)
+		let summaryEntry: BranchSummaryEntry | undefined;
+		if (newLeafId === null) {
+			// Navigating to root user message - reset leaf to empty
+			this.sessionManager.resetLeaf();
+		} else if (summaryText) {
+			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText);
+			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+		} else {
+			this.sessionManager.branch(newLeafId);
+		}
+
+		// Update agent state
+		const sessionContext = this.sessionManager.buildSessionContext();
+		this.agent.replaceMessages(sessionContext.messages);
+
+		// Emit session_tree event
+		if (this._hookRunner) {
+			await this._hookRunner.emit({
+				type: "session_tree",
+				newLeafId: this.sessionManager.getLeafUuid(),
+				oldLeafId,
+				summaryEntry,
+				fromHook: summaryText ? fromHook : undefined,
+			});
+		}
+
+		// Emit to custom tools
+		await this._emitToolSessionEvent("tree", this.sessionFile);
+
+		return { editorText, cancelled: false };
+	}
+
+	/**
+	 * Generate a summary of abandoned branch entries.
+	 */
+	private async _generateBranchSummary(
+		entries: SessionEntry[],
+		customInstructions: string | undefined,
+		signal: AbortSignal,
+	): Promise<string> {
+		// Convert entries to messages for summarization
+		const messages: Array<{ role: string; content: string }> = [];
+		for (const entry of entries) {
+			if (entry.type === "message") {
+				const text = this._extractMessageText(entry.message);
+				if (text) {
+					messages.push({ role: entry.message.role, content: text });
+				}
+			} else if (entry.type === "custom_message") {
+				const text =
+					typeof entry.content === "string"
+						? entry.content
+						: entry.content
+								.filter((c): c is { type: "text"; text: string } => c.type === "text")
+								.map((c) => c.text)
+								.join("");
+				if (text) {
+					messages.push({ role: "user", content: text });
+				}
+			} else if (entry.type === "branch_summary") {
+				messages.push({ role: "system", content: `[Previous branch summary: ${entry.summary}]` });
+			}
+		}
+
+		if (messages.length === 0) {
+			return "No content to summarize";
+		}
+
+		// Build prompt for summarization
+		const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
+		const instructions = customInstructions
+			? `${customInstructions}\n\n`
+			: "Summarize this conversation branch concisely, capturing key decisions, actions taken, and outcomes.\n\n";
+
+		const prompt = `${instructions}Conversation:\n${conversationText}`;
+
+		// Get API key for current model (model is checked in navigateTree before calling this)
+		const model = this.model!;
+		const apiKey = await this._modelRegistry.getApiKey(model);
+		if (!apiKey) {
+			throw new Error(`No API key for ${model.provider}`);
+		}
+
+		// Call LLM for summarization
+		const { complete } = await import("@mariozechner/pi-ai");
+		const response = await complete(
+			model,
+			{
+				messages: [
+					{
+						role: "user",
+						content: [{ type: "text", text: prompt }],
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{ apiKey, signal, maxTokens: 1024 },
+		);
+
+		const summary = response.content
+			.filter((c): c is { type: "text"; text: string } => c.type === "text")
+			.map((c) => c.text)
+			.join("\n");
+
+		return summary || "No summary generated";
+	}
+
+	/**
+	 * Extract text content from any message type.
+	 */
+	private _extractMessageText(message: any): string {
+		if (!message.content) return "";
+		if (typeof message.content === "string") return message.content;
+		if (Array.isArray(message.content)) {
+			return message.content
+				.filter((c: any) => c.type === "text")
+				.map((c: any) => c.text)
+				.join("");
+		}
+		return "";
 	}
 
 	/**

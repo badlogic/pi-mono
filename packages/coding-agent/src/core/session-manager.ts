@@ -252,7 +252,7 @@ export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEnt
  */
 export function buildSessionContext(
 	entries: SessionEntry[],
-	leafId?: string,
+	leafId?: string | null,
 	byId?: Map<string, SessionEntry>,
 ): SessionContext {
 	// Build uuid index if not available
@@ -265,11 +265,15 @@ export function buildSessionContext(
 
 	// Find leaf
 	let leaf: SessionEntry | undefined;
+	if (leafId === null) {
+		// Explicitly null - return no messages (navigated to before first entry)
+		return { messages: [], thinkingLevel: "off", model: null };
+	}
 	if (leafId) {
 		leaf = byId.get(leafId);
 	}
 	if (!leaf) {
-		// Fallback to last entry
+		// Fallback to last entry (when leafId is undefined)
 		leaf = entries[entries.length - 1];
 	}
 
@@ -448,7 +452,7 @@ export class SessionManager {
 	private fileEntries: FileEntry[] = [];
 	private byId: Map<string, SessionEntry> = new Map();
 	private labelsById: Map<string, string> = new Map();
-	private leafId: string = "";
+	private leafId: string | null = null;
 
 	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
 		this.cwd = cwd;
@@ -496,7 +500,7 @@ export class SessionManager {
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
-		this.leafId = "";
+		this.leafId = null;
 		this.flushed = false;
 		// Only generate filename if persisting and not already set (e.g., via --session flag)
 		if (this.persist && !this.sessionFile) {
@@ -509,7 +513,7 @@ export class SessionManager {
 	private _buildIndex(): void {
 		this.byId.clear();
 		this.labelsById.clear();
-		this.leafId = "";
+		this.leafId = null;
 		for (const entry of this.fileEntries) {
 			if (entry.type === "session") continue;
 			this.byId.set(entry.id, entry);
@@ -583,7 +587,7 @@ export class SessionManager {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 			message,
 		};
@@ -596,7 +600,7 @@ export class SessionManager {
 		const entry: ThinkingLevelChangeEntry = {
 			type: "thinking_level_change",
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 			thinkingLevel,
 		};
@@ -609,7 +613,7 @@ export class SessionManager {
 		const entry: ModelChangeEntry = {
 			type: "model_change",
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 			provider,
 			modelId,
@@ -623,7 +627,7 @@ export class SessionManager {
 		const entry: CompactionEntry<T> = {
 			type: "compaction",
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 			summary,
 			firstKeptEntryId,
@@ -641,7 +645,7 @@ export class SessionManager {
 			customType,
 			data,
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 		};
 		this._appendEntry(entry);
@@ -669,7 +673,7 @@ export class SessionManager {
 			display,
 			details,
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 		};
 		this._appendEntry(entry);
@@ -680,12 +684,12 @@ export class SessionManager {
 	// Tree Traversal
 	// =========================================================================
 
-	getLeafUuid(): string {
+	getLeafUuid(): string | null {
 		return this.leafId;
 	}
 
 	getLeafEntry(): SessionEntry | undefined {
-		return this.byId.get(this.leafId);
+		return this.leafId ? this.byId.get(this.leafId) : undefined;
 	}
 
 	getEntry(id: string): SessionEntry | undefined {
@@ -711,7 +715,7 @@ export class SessionManager {
 		const entry: LabelEntry = {
 			type: "label",
 			id: generateId(this.byId),
-			parentId: this.leafId || null,
+			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
 			targetId,
 			label,
@@ -732,7 +736,8 @@ export class SessionManager {
 	 */
 	getPath(fromId?: string): SessionEntry[] {
 		const path: SessionEntry[] = [];
-		let current = this.byId.get(fromId ?? this.leafId);
+		const startId = fromId ?? this.leafId;
+		let current = startId ? this.byId.get(startId) : undefined;
 		while (current) {
 			path.unshift(current);
 			current = current.parentId ? this.byId.get(current.parentId) : undefined;
@@ -797,6 +802,13 @@ export class SessionManager {
 			}
 		}
 
+		// Sort children by timestamp (oldest first, newest at bottom)
+		const sortChildren = (node: SessionTreeNode): void => {
+			node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
+			node.children.forEach(sortChildren);
+		};
+		roots.forEach(sortChildren);
+
 		return roots;
 	}
 
@@ -815,6 +827,15 @@ export class SessionManager {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
 		this.leafId = branchFromId;
+	}
+
+	/**
+	 * Reset the leaf pointer to null (before any entries).
+	 * The next appendXXX() call will create a new root entry (parentId = null).
+	 * Use this when navigating to re-edit the first user message.
+	 */
+	resetLeaf(): void {
+		this.leafId = null;
 	}
 
 	/**

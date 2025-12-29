@@ -13,7 +13,7 @@ import type { CompactionPreparation, CompactionResult } from "../compaction.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { CompactionEntry, SessionManager } from "../session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "../session-manager.js";
 
 /**
  * Read-only view of SessionManager for hooks.
@@ -177,6 +177,44 @@ export interface SessionShutdownEvent {
 	type: "session_shutdown";
 }
 
+/** Preparation data for tree navigation (used by session_before_tree event) */
+export interface TreePreparation {
+	/** Node being switched to */
+	targetId: string;
+	/** Current active leaf (being abandoned), null if no current position */
+	oldLeafId: string | null;
+	/** Common ancestor of target and old leaf, null if no common ancestor */
+	commonAncestorId: string | null;
+	/** Entries to summarize (old leaf back to common ancestor or compaction) */
+	entriesToSummarize: SessionEntry[];
+	/** Whether user chose to summarize */
+	userWantsSummary: boolean;
+}
+
+/** Fired before navigating to a different node in the session tree (can be cancelled) */
+export interface SessionBeforeTreeEvent {
+	type: "session_before_tree";
+	/** Preparation data for the navigation */
+	preparation: TreePreparation;
+	/** Model to use for summarization (conversation model) */
+	model: Model<any>;
+	/** Abort signal - honors Escape during summarization */
+	signal: AbortSignal;
+}
+
+/** Fired after navigating to a different node in the session tree */
+export interface SessionTreeEvent {
+	type: "session_tree";
+	/** The new active leaf, null if navigated to before first entry */
+	newLeafId: string | null;
+	/** Previous active leaf, null if there was no position */
+	oldLeafId: string | null;
+	/** Branch summary entry if one was created */
+	summaryEntry?: BranchSummaryEntry;
+	/** Whether summary came from hook */
+	fromHook?: boolean;
+}
+
 /** Union of all session event types */
 export type SessionEvent =
 	| SessionStartEvent
@@ -188,7 +226,9 @@ export type SessionEvent =
 	| SessionBranchEvent
 	| SessionBeforeCompactEvent
 	| SessionCompactEvent
-	| SessionShutdownEvent;
+	| SessionShutdownEvent
+	| SessionBeforeTreeEvent
+	| SessionTreeEvent;
 
 /**
  * Event data for context event.
@@ -466,6 +506,20 @@ export interface SessionBeforeCompactResult {
 	compaction?: CompactionResult;
 }
 
+/** Return type for session_before_tree handlers */
+export interface SessionBeforeTreeResult {
+	/** If true, cancel the navigation entirely */
+	cancel?: boolean;
+	/**
+	 * Custom summary (skips default summarizer).
+	 * Only used if preparation.userWantsSummary is true.
+	 */
+	summary?: {
+		summary: string;
+		details?: unknown;
+	};
+}
+
 // ============================================================================
 // Hook API
 // ============================================================================
@@ -539,6 +593,8 @@ export interface HookAPI {
 	): void;
 	on(event: "session_compact", handler: HookHandler<SessionCompactEvent>): void;
 	on(event: "session_shutdown", handler: HookHandler<SessionShutdownEvent>): void;
+	on(event: "session_before_tree", handler: HookHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
+	on(event: "session_tree", handler: HookHandler<SessionTreeEvent>): void;
 
 	// Context and agent events
 	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult>): void;

@@ -51,6 +51,7 @@ import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
+import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
@@ -155,6 +156,7 @@ export class InteractiveMode {
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 			{ name: "branch", description: "Create a new branch from a previous message" },
+			{ name: "tree", description: "Navigate session tree (switch branches)" },
 			{ name: "login", description: "Login with OAuth provider" },
 			{ name: "logout", description: "Logout from OAuth provider" },
 			{ name: "new", description: "Start a new session" },
@@ -676,6 +678,11 @@ export class InteractiveMode {
 			}
 			if (text === "/branch") {
 				this.showUserMessageSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/tree") {
+				this.showTreeSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -1582,6 +1589,63 @@ export class InteractiveMode {
 				},
 			);
 			return { component: selector, focus: selector.getMessageList() };
+		});
+	}
+
+	private showTreeSelector(): void {
+		const tree = this.sessionManager.getTree();
+		const currentLeafId = this.sessionManager.getLeafUuid();
+
+		if (tree.length === 0) {
+			this.showStatus("No entries in session");
+			return;
+		}
+
+		this.showSelector((done) => {
+			const selector = new TreeSelectorComponent(
+				tree,
+				currentLeafId,
+				this.ui.terminal.rows,
+				async (entryId) => {
+					// Check if selecting current leaf (no-op)
+					if (entryId === currentLeafId) {
+						done();
+						this.showStatus("Already at this point");
+						return;
+					}
+
+					// Ask about summarization
+					done(); // Close selector first
+
+					const wantsSummary = await this.showHookConfirm(
+						"Summarize branch?",
+						"Create a summary of the branch you're leaving?",
+					);
+
+					try {
+						const result = await this.session.navigateTree(entryId, { summarize: wantsSummary });
+						if (result.cancelled) {
+							this.showStatus("Navigation cancelled");
+							return;
+						}
+
+						// Update UI
+						this.chatContainer.clear();
+						this.renderInitialMessages();
+						if (result.editorText) {
+							this.editor.setText(result.editorText);
+						}
+						this.showStatus("Navigated to selected point");
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					}
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getTreeList() };
 		});
 	}
 

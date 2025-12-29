@@ -43,7 +43,7 @@ export interface SessionEvent {
 	/** Previous session file path, or undefined for "start" and "new" */
 	previousSessionFile: string | undefined;
 	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "new";
+	reason: "start" | "switch" | "branch" | "new" | "tree";
 }
 
 /** Rendering options passed to renderResult */
