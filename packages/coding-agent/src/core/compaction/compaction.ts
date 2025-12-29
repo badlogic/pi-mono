@@ -120,6 +120,62 @@ function formatFileOperations(readFiles: string[], modifiedFiles: string[]): str
 	return `\n\n${sections.join("\n\n")}`;
 }
 
+/**
+ * Serialize conversation messages to text for summarization.
+ * This prevents the model from treating it as a conversation to continue.
+ */
+function serializeConversation(messages: AgentMessage[]): string {
+	const parts: string[] = [];
+
+	for (const msg of messages) {
+		if (msg.role === "user") {
+			const content =
+				typeof msg.content === "string"
+					? msg.content
+					: msg.content
+							.filter((c): c is { type: "text"; text: string } => c.type === "text")
+							.map((c) => c.text)
+							.join("");
+			if (content) parts.push(`[User]: ${content}`);
+		} else if (msg.role === "assistant" && "content" in msg && Array.isArray(msg.content)) {
+			const textParts: string[] = [];
+			const toolCalls: string[] = [];
+
+			for (const block of msg.content) {
+				if (block.type === "text") {
+					textParts.push(block.text);
+				} else if (block.type === "toolCall") {
+					const args = block.arguments as Record<string, unknown>;
+					const argsStr = Object.entries(args)
+						.map(([k, v]) => `${k}=${JSON.stringify(v).slice(0, 100)}`)
+						.join(", ");
+					toolCalls.push(`${block.name}(${argsStr})`);
+				}
+			}
+
+			if (textParts.length > 0) {
+				parts.push(`[Assistant]: ${textParts.join("\n")}`);
+			}
+			if (toolCalls.length > 0) {
+				parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
+			}
+		} else if (msg.role === "toolResult" && "content" in msg) {
+			// Summarize tool results briefly
+			const content = Array.isArray(msg.content)
+				? msg.content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text.slice(0, 500))
+						.join("")
+				: "";
+			if (content) {
+				parts.push(`[Tool result]: ${content.slice(0, 1000)}${content.length > 1000 ? "..." : ""}`);
+			}
+		}
+	}
+
+	return parts.join("\n\n");
+}
+
 // ============================================================================
 // Message Extraction
 // ============================================================================
@@ -538,26 +594,23 @@ export async function generateSummary(
 		basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
 	}
 
-	// Transform custom messages (like bashExecution) to LLM-compatible messages
-	const transformedMessages = convertToLlm(currentMessages);
+	// Serialize conversation to text so model doesn't try to continue it
+	const conversationText = serializeConversation(currentMessages);
 
-	// Build summarization messages
-	const summarizationMessages = [];
-
-	// Add the conversation messages
-	summarizationMessages.push(...transformedMessages);
-
-	// Add the prompt
-	const prompt = {
-		role: "user" as const,
-		content: [{ type: "text" as const, text: basePrompt }],
-		timestamp: Date.now(),
-	} satisfies UserMessage;
-	summarizationMessages.push(prompt);
-
+	// Build the prompt with conversation wrapped in tags
+	let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
 	if (previousSummary) {
-		prompt.content.push({ type: "text" as const, text: `<previous-summary>${previousSummary}</previous-summary>` });
+		promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
 	}
+	promptText += basePrompt;
+
+	const summarizationMessages = [
+		{
+			role: "user" as const,
+			content: [{ type: "text" as const, text: promptText }],
+			timestamp: Date.now(),
+		},
+	];
 
 	const response = await completeSimple(
 		model,
