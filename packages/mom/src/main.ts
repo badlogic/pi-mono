@@ -16,8 +16,6 @@ import { ChannelStore } from "./store.js";
 
 const MOM_SLACK_APP_TOKEN = process.env.MOM_SLACK_APP_TOKEN;
 const MOM_SLACK_BOT_TOKEN = process.env.MOM_SLACK_BOT_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_OAUTH_TOKEN = process.env.ANTHROPIC_OAUTH_TOKEN;
 
 interface ParsedArgs {
 	workingDir?: string;
@@ -74,8 +72,8 @@ if (!parsedArgs.workingDir) {
 
 const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
 
-if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
-	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN, ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
+if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN) {
+	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN");
 	process.exit(1);
 }
 
