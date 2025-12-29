@@ -330,15 +330,13 @@ class TreeList implements Component {
 
 			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
-			// Also shift gutters for multiple roots (skip first gutter which is the virtual root level)
-			const displayGutters = this.multipleRoots ? flatNode.gutters.slice(1) : flatNode.gutters;
 
 			// Build prefix: gutters + connector + extra spaces
-			const gutterStr = displayGutters.map((g) => (g ? "│ " : "  ")).join("");
+			const gutterStr = flatNode.gutters.map((g) => (g ? "│ " : "  ")).join("");
 			const connector =
 				flatNode.showConnector && !flatNode.isVirtualRootChild ? (flatNode.isLast ? "└─" : "├─") : "";
 			// Extra indent for visual grouping beyond gutters/connector
-			const prefixLevels = displayGutters.length + (connector ? 1 : 0);
+			const prefixLevels = flatNode.gutters.length + (connector ? 1 : 0);
 			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
 			const prefix = gutterStr + connector + extraIndent;
 
