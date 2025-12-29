@@ -22,9 +22,10 @@ import {
 	type CompactionResult,
 	calculateContextTokens,
 	compact,
+	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
-} from "./compaction.js";
+} from "./compaction/index.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type {
@@ -1661,10 +1662,17 @@ export class AgentSession {
 		// Run default summarizer if needed
 		let summaryText: string | undefined;
 		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
-			const result = await this._generateBranchSummary(
+			const model = this.model!;
+			const apiKey = await this._modelRegistry.getApiKey(model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${model.provider}`);
+			}
+			const result = await generateBranchSummary(
 				entriesToSummarize,
-				options.customInstructions,
+				model,
+				apiKey,
 				this._branchSummaryAbortController.signal,
+				options.customInstructions,
 			);
 			this._branchSummaryAbortController = undefined;
 			if (result.aborted) {
@@ -1736,104 +1744,6 @@ export class AgentSession {
 
 		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false, summaryEntry };
-	}
-
-	/**
-	 * Generate a summary of abandoned branch entries.
-	 */
-	private async _generateBranchSummary(
-		entries: SessionEntry[],
-		customInstructions: string | undefined,
-		signal: AbortSignal,
-	): Promise<{ summary?: string; aborted?: boolean; error?: string }> {
-		// Convert entries to messages for summarization
-		const messages: Array<{ role: string; content: string }> = [];
-		for (const entry of entries) {
-			if (entry.type === "message") {
-				const text = this._extractMessageText(entry.message);
-				if (text) {
-					messages.push({ role: entry.message.role, content: text });
-				}
-			} else if (entry.type === "custom_message") {
-				const text =
-					typeof entry.content === "string"
-						? entry.content
-						: entry.content
-								.filter((c): c is { type: "text"; text: string } => c.type === "text")
-								.map((c) => c.text)
-								.join("");
-				if (text) {
-					messages.push({ role: "user", content: text });
-				}
-			} else if (entry.type === "branch_summary") {
-				messages.push({ role: "system", content: `[Previous branch summary: ${entry.summary}]` });
-			}
-		}
-
-		if (messages.length === 0) {
-			return { summary: "No content to summarize" };
-		}
-
-		// Build prompt for summarization
-		const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
-		const instructions = customInstructions
-			? `${customInstructions}\n\n`
-			: "Summarize this conversation branch concisely, capturing key decisions, actions taken, and outcomes.\n\n";
-
-		const prompt = `${instructions}Conversation:\n${conversationText}`;
-
-		// Get API key for current model (model is checked in navigateTree before calling this)
-		const model = this.model!;
-		const apiKey = await this._modelRegistry.getApiKey(model);
-		if (!apiKey) {
-			throw new Error(`No API key for ${model.provider}`);
-		}
-
-		// Call LLM for summarization
-		const { complete } = await import("@mariozechner/pi-ai");
-		const response = await complete(
-			model,
-			{
-				messages: [
-					{
-						role: "user",
-						content: [{ type: "text", text: prompt }],
-						timestamp: Date.now(),
-					},
-				],
-			},
-			{ apiKey, signal, maxTokens: 1024 },
-		);
-
-		// Check if aborted or errored
-		if (response.stopReason === "aborted") {
-			return { aborted: true };
-		}
-		if (response.stopReason === "error") {
-			return { error: response.errorMessage || "Summarization failed" };
-		}
-
-		const summary = response.content
-			.filter((c): c is { type: "text"; text: string } => c.type === "text")
-			.map((c) => c.text)
-			.join("\n");
-
-		return { summary: summary || "No summary generated" };
-	}
-
-	/**
-	 * Extract text content from any message type.
-	 */
-	private _extractMessageText(message: any): string {
-		if (!message.content) return "";
-		if (typeof message.content === "string") return message.content;
-		if (Array.isArray(message.content)) {
-			return message.content
-				.filter((c: any) => c.type === "text")
-				.map((c: any) => c.text)
-				.join("");
-		}
-		return "";
 	}
 
 	/**

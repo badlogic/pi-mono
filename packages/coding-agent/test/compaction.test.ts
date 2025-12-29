@@ -12,7 +12,7 @@ import {
 	findCutPoint,
 	getLastAssistantUsage,
 	shouldCompact,
-} from "../src/core/compaction.js";
+} from "../src/core/compaction/index.js";
 import {
 	buildSessionContext,
 	type CompactionEntry,

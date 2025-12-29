@@ -12,7 +12,7 @@ export {
 	type SessionStats,
 } from "./agent-session.js";
 export { type BashExecutorOptions, type BashResult, executeBash } from "./bash-executor.js";
-export type { CompactionResult } from "./compaction.js";
+export type { CompactionResult } from "./compaction/index.js";
 export {
 	type CustomAgentTool,
 	type CustomToolFactory,

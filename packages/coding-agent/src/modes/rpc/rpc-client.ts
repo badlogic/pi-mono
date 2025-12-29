@@ -10,7 +10,7 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-a
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
-import type { CompactionResult } from "../../core/compaction.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // ============================================================================

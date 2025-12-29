@@ -9,7 +9,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
-import type { CompactionPreparation, CompactionResult } from "../compaction.js";
+import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
