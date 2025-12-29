@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Model, Usage, UserMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Model, Usage } from "@mariozechner/pi-ai";
 import { complete, completeSimple } from "@mariozechner/pi-ai";
 import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
@@ -121,10 +121,11 @@ function formatFileOperations(readFiles: string[], modifiedFiles: string[]): str
 }
 
 /**
- * Serialize conversation messages to text for summarization.
+ * Serialize LLM messages to text for summarization.
  * This prevents the model from treating it as a conversation to continue.
+ * Call convertToLlm() first to handle custom message types.
  */
-function serializeConversation(messages: AgentMessage[]): string {
+function serializeConversation(messages: Message[]): string {
 	const parts: string[] = [];
 
 	for (const msg of messages) {
@@ -137,38 +138,41 @@ function serializeConversation(messages: AgentMessage[]): string {
 							.map((c) => c.text)
 							.join("");
 			if (content) parts.push(`[User]: ${content}`);
-		} else if (msg.role === "assistant" && "content" in msg && Array.isArray(msg.content)) {
+		} else if (msg.role === "assistant") {
 			const textParts: string[] = [];
+			const thinkingParts: string[] = [];
 			const toolCalls: string[] = [];
 
 			for (const block of msg.content) {
 				if (block.type === "text") {
 					textParts.push(block.text);
+				} else if (block.type === "thinking") {
+					thinkingParts.push(block.thinking);
 				} else if (block.type === "toolCall") {
 					const args = block.arguments as Record<string, unknown>;
 					const argsStr = Object.entries(args)
-						.map(([k, v]) => `${k}=${JSON.stringify(v).slice(0, 100)}`)
+						.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
 						.join(", ");
 					toolCalls.push(`${block.name}(${argsStr})`);
 				}
 			}
 
+			if (thinkingParts.length > 0) {
+				parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
+			}
 			if (textParts.length > 0) {
 				parts.push(`[Assistant]: ${textParts.join("\n")}`);
 			}
 			if (toolCalls.length > 0) {
 				parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
 			}
-		} else if (msg.role === "toolResult" && "content" in msg) {
-			// Summarize tool results briefly
-			const content = Array.isArray(msg.content)
-				? msg.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text.slice(0, 500))
-						.join("")
-				: "";
+		} else if (msg.role === "toolResult") {
+			const content = msg.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("");
 			if (content) {
-				parts.push(`[Tool result]: ${content.slice(0, 1000)}${content.length > 1000 ? "..." : ""}`);
+				parts.push(`[Tool result]: ${content}`);
 			}
 		}
 	}
@@ -595,7 +599,9 @@ export async function generateSummary(
 	}
 
 	// Serialize conversation to text so model doesn't try to continue it
-	const conversationText = serializeConversation(currentMessages);
+	// Convert to LLM messages first (handles custom types like bashExecution, hookMessage, etc.)
+	const llmMessages = convertToLlm(currentMessages);
+	const conversationText = serializeConversation(llmMessages);
 
 	// Build the prompt with conversation wrapped in tags
 	let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
