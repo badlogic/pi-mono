@@ -81,8 +81,11 @@ class TreeList implements Component {
 		const stack: StackItem[] = [];
 
 		// Add roots in reverse order
+		// If multiple roots, treat them as children of a virtual root that branches
+		// So they start at indent 1 with justBranched=true
+		const multipleRoots = roots.length > 1;
 		for (let i = roots.length - 1; i >= 0; i--) {
-			stack.push([roots[i], 0, roots.length > 1]);
+			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots]);
 		}
 
 		while (stack.length > 0) {
