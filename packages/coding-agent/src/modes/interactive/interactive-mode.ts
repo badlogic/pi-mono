@@ -1587,8 +1587,9 @@ export class InteractiveMode {
 							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
 								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
-									this.chatContainer.addChild(new Text(theme.fg("accent", "Opening browser to:"), 1, 0));
-									this.chatContainer.addChild(new Text(theme.fg("accent", info.url), 1, 0));
+									// Use OSC 8 hyperlink escape sequence for clickable link
+									const hyperlink = `\x1b]8;;${info.url}\x07Click here to login\x1b]8;;\x07`;
+									this.chatContainer.addChild(new Text(theme.fg("accent", hyperlink), 1, 0));
 									if (info.instructions) {
 										this.chatContainer.addChild(new Spacer(1));
 										this.chatContainer.addChild(new Text(theme.fg("warning", info.instructions), 1, 0));
