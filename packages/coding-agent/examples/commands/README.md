@@ -68,13 +68,16 @@ const command: ScriptCommandFactory = (pi) => ({
 export default command;
 ```
 
-## CommandAPI
+## ToolAPI
 
-The factory receives a `CommandAPI` object:
+The factory receives a `ToolAPI` object:
 
 ```typescript
-interface CommandAPI {
+interface ToolAPI {
   cwd: string;                              // Current working directory
+  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+  ui: ToolUIContext;                        // UI methods (select, confirm, input, notify)
+  hasUI: boolean;                           // Whether UI is available
   getLastAssistantText(): string | null;    // Last assistant message text
   setEditorText(text: string): void;        // Set editor content
   getEditorText(): string;                  // Get editor content

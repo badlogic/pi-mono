@@ -8,13 +8,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { CONFIG_DIR_NAME, getAgentDir, getCommandsDir, isBunBinary } from "../../config.js";
-import type {
-	CommandAPI,
-	LoadedScriptCommand,
-	ScriptCommand,
-	ScriptCommandFactory,
-	ScriptCommandsLoadResult,
-} from "./types.js";
+import type { ToolAPI, ToolUIContext } from "../custom-tools/types.js";
+import type { LoadedScriptCommand, ScriptCommand, ScriptCommandFactory, ScriptCommandsLoadResult } from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -66,9 +61,14 @@ function getAliases(): Record<string, string> {
 }
 
 /** Create a no-op API for initial loading */
-function createNoOpAPI(): CommandAPI {
+function createNoOpAPI(): ToolAPI {
 	return {
 		cwd: process.cwd(),
+		exec: async () => {
+			throw new Error("exec() not available - API not initialized");
+		},
+		ui: createNoOpUIContext(),
+		hasUI: false,
 		getLastAssistantText: () => null,
 		setEditorText: () => {},
 		getEditorText: () => "",
@@ -81,13 +81,22 @@ function createNoOpAPI(): CommandAPI {
 	};
 }
 
+function createNoOpUIContext(): ToolUIContext {
+	return {
+		select: async () => null,
+		confirm: async () => false,
+		input: async () => null,
+		notify: () => {},
+	};
+}
+
 /**
  * Load a single script command from a .ts file.
  */
 async function loadScriptCommand(
 	filePath: string,
 	cwd: string,
-	api: CommandAPI,
+	api: ToolAPI,
 	source: "user" | "project",
 ): Promise<{ command: LoadedScriptCommand | null; error: string | null }> {
 	const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
@@ -189,9 +198,16 @@ export async function discoverAndLoadScriptCommands(
 	sharedAPI.cwd = cwd;
 
 	// Wrapper API that delegates to sharedAPI (so commands get updated API)
-	const apiWrapper: CommandAPI = {
+	const apiWrapper: ToolAPI = {
 		get cwd() {
 			return sharedAPI.cwd;
+		},
+		exec: (command, args, options) => sharedAPI.exec(command, args, options),
+		get ui() {
+			return sharedAPI.ui;
+		},
+		get hasUI() {
+			return sharedAPI.hasUI;
 		},
 		getLastAssistantText: () => sharedAPI.getLastAssistantText(),
 		setEditorText: (text) => sharedAPI.setEditorText(text),
@@ -241,7 +257,7 @@ export async function discoverAndLoadScriptCommands(
 	return {
 		commands,
 		errors,
-		setAPI(api: CommandAPI) {
+		setAPI(api: ToolAPI) {
 			sharedAPI = api;
 		},
 	};

@@ -4,8 +4,6 @@
 
 export { discoverAndLoadScriptCommands } from "./loader.js";
 export type {
-	CommandAPI,
-	CompleteOptions,
 	LoadedScriptCommand,
 	ScriptCommand,
 	ScriptCommandFactory,

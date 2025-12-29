@@ -27,15 +27,17 @@ import {
 import { exec, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
-import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
+import type {
+	CompleteOptions,
+	ExecOptions,
+	LoadedCustomTool,
+	ToolAPI,
+	SessionEvent as ToolSessionEvent,
+} from "../../core/custom-tools/index.js";
+import { execCommand } from "../../core/exec.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { isBashExecutionMessage } from "../../core/messages.js";
-import {
-	type CommandAPI,
-	type CompleteOptions,
-	discoverAndLoadScriptCommands,
-	type LoadedScriptCommand,
-} from "../../core/script-commands/index.js";
+import { discoverAndLoadScriptCommands, type LoadedScriptCommand } from "../../core/script-commands/index.js";
 import {
 	getLatestCompactionEntry,
 	SessionManager,
@@ -452,11 +454,16 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Create the CommandAPI for script commands.
+	 * Create the ToolAPI for script commands.
 	 */
-	private createCommandAPI(): CommandAPI {
+	private createCommandAPI(): ToolAPI {
 		return {
 			cwd: process.cwd(),
+			exec: (command: string, args: string[], options?: ExecOptions) => {
+				return execCommand(command, args, process.cwd(), options);
+			},
+			ui: this.createHookUIContext(),
+			hasUI: true,
 			getLastAssistantText: () => this.session.getLastAssistantText(),
 			setEditorText: (text: string) => {
 				this.editor.setText(text);

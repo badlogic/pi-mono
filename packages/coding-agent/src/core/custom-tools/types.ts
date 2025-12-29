@@ -5,7 +5,7 @@
  * They can provide custom rendering for tool calls and results in the TUI.
  */
 
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback, AssistantMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
@@ -33,6 +33,18 @@ export interface ExecOptions {
 	timeout?: number;
 }
 
+/** Options for complete() API call */
+export interface CompleteOptions {
+	/** Model ID to use (e.g., "claude-haiku-4-5", "gpt-4o-mini"). Defaults to current session model. */
+	model?: string;
+	/** System prompt for the completion */
+	systemPrompt?: string;
+	/** Maximum tokens in response */
+	maxTokens?: number;
+	/** AbortSignal to cancel the request */
+	signal?: AbortSignal;
+}
+
 /** API passed to custom tool factory (stable across session changes) */
 export interface ToolAPI {
 	/** Current working directory */
@@ -43,6 +55,26 @@ export interface ToolAPI {
 	ui: ToolUIContext;
 	/** Whether UI is available (false in print/RPC mode) */
 	hasUI: boolean;
+	/** Get text content of the last assistant message, or null if none */
+	getLastAssistantText(): string | null;
+	/** Set the editor text content */
+	setEditorText(text: string): void;
+	/** Get current editor text content */
+	getEditorText(): string;
+	/**
+	 * Make an LLM completion call.
+	 * Uses the session's model registry to resolve API keys.
+	 * @param prompt The user prompt to send
+	 * @param options Optional model, system prompt, max tokens
+	 * @returns The assistant message response
+	 */
+	complete(prompt: string, options?: CompleteOptions): Promise<AssistantMessage>;
+	/** Show a status message */
+	showStatus(message: string): void;
+	/** Show an error message */
+	showError(message: string): void;
+	/** Copy text to clipboard */
+	copyToClipboard(text: string): void;
 }
 
 /** Session event passed to onSession callback */

@@ -23,9 +23,9 @@ Commands are `.ts` files in the commands directory (same locations as `.md` file
 
 ```typescript
 // ~/.pi/agent/commands/qna.ts
-import type { CommandFactory } from "@mariozechner/pi-coding-agent";
+import type { ScriptCommandFactory } from "@mariozechner/pi-coding-agent";
 
-const command: CommandFactory = (pi) => ({
+const command: ScriptCommandFactory = (pi) => ({
   description: "Extract questions from last message into editor",
   
   async execute(args) {
@@ -57,14 +57,23 @@ const command: CommandFactory = (pi) => ({
 export default command;
 ```
 
-### 2. CommandAPI Interface
+### 2. ToolAPI Interface
 
 The API passed to script commands:
 
 ```typescript
-interface CommandAPI {
+interface ToolAPI {
   /** Current working directory */
   cwd: string;
+  
+  /** Execute a command */
+  exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+  
+  /** UI methods for user interaction */
+  ui: ToolUIContext;
+  
+  /** Whether UI is available */
+  hasUI: boolean;
   
   /** Get text content of the last assistant message, or null if none */
   getLastAssistantText(): string | null;
@@ -149,7 +158,7 @@ if (text.startsWith("/")) {
 
 ### 5. API Implementation
 
-The `CommandAPI` methods need to be wired up similar to how `ToolAPI` callbacks work:
+The `ToolAPI` methods need to be wired up similar to how `ToolAPI` callbacks work:
 
 1. Create the API object with placeholder methods in the loader
 2. Call `setAPI(realApi)` when interactive mode initializes
@@ -162,7 +171,7 @@ The `CommandAPI` methods need to be wired up similar to how `ToolAPI` callbacks 
 ## Implementation Steps
 
 1. **Define types** in `src/core/script-commands/types.ts`:
-   - `CommandAPI` interface
+   - `ToolAPI` interface
    - `CompleteOptions` interface  
    - `ScriptCommandFactory` type
    - `LoadedScriptCommand` interface
@@ -184,7 +193,7 @@ The `CommandAPI` methods need to be wired up similar to how `ToolAPI` callbacks 
 5. **Handle in interactive-mode.ts**:
    - Check for script commands in submit handler
    - Execute with proper API
-   - Implement `CommandAPI` methods
+   - Implement `ToolAPI` methods
 
 6. **Export types** from package index for command authors
 
