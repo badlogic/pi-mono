@@ -3,6 +3,7 @@ import {
 	Container,
 	isArrowDown,
 	isArrowUp,
+	isBackspace,
 	isCtrlC,
 	isCtrlO,
 	isCtrlU,
@@ -38,6 +39,7 @@ class TreeList implements Component {
 	private currentLeafId: string | null;
 	private maxVisibleLines: number;
 	private filterMode: FilterMode = "default";
+	private searchQuery = "";
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -80,22 +82,32 @@ class TreeList implements Component {
 	}
 
 	private applyFilter(): void {
+		// Parse search tokens (lowercase, split by whitespace)
+		const searchTokens = this.searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+
 		this.filteredNodes = this.flatNodes.filter((flatNode) => {
 			const entry = flatNode.node.entry;
 
-			if (this.filterMode === "all") {
-				return true;
-			}
-
+			// Apply filter mode first
+			let passesFilter = true;
 			if (this.filterMode === "user-only") {
-				return (
+				passesFilter =
 					(entry.type === "message" && entry.message.role === "user") ||
-					(entry.type === "custom_message" && entry.display)
-				);
+					(entry.type === "custom_message" && entry.display);
+			} else if (this.filterMode !== "all") {
+				// Default mode: hide label and custom entries
+				passesFilter = entry.type !== "label" && entry.type !== "custom";
 			}
 
-			// Default mode: hide label and custom entries
-			return entry.type !== "label" && entry.type !== "custom";
+			if (!passesFilter) return false;
+
+			// Apply search filter
+			if (searchTokens.length > 0) {
+				const nodeText = this.getSearchableText(flatNode.node).toLowerCase();
+				return searchTokens.every((token) => nodeText.includes(token));
+			}
+
+			return true;
 		});
 
 		// Adjust selected index if needed
@@ -104,8 +116,68 @@ class TreeList implements Component {
 		}
 	}
 
+	/** Get searchable text content from a node */
+	private getSearchableText(node: SessionTreeNode): string {
+		const entry = node.entry;
+		const parts: string[] = [];
+
+		// Add label if present
+		if (node.label) {
+			parts.push(node.label);
+		}
+
+		switch (entry.type) {
+			case "message": {
+				const msg = entry.message;
+				parts.push(msg.role);
+				if ("content" in msg && msg.content) {
+					parts.push(this.extractContent(msg.content));
+				}
+				if (msg.role === "bashExecution") {
+					const bashMsg = msg as { command?: string };
+					if (bashMsg.command) parts.push(bashMsg.command);
+				}
+				break;
+			}
+			case "custom_message": {
+				parts.push(entry.customType);
+				if (typeof entry.content === "string") {
+					parts.push(entry.content);
+				} else {
+					parts.push(this.extractContent(entry.content));
+				}
+				break;
+			}
+			case "compaction":
+				parts.push("compaction");
+				break;
+			case "branch_summary":
+				parts.push("branch summary", entry.summary);
+				break;
+			case "model_change":
+				parts.push("model", entry.modelId);
+				break;
+			case "thinking_level_change":
+				parts.push("thinking", entry.thinkingLevel);
+				break;
+			case "custom":
+				parts.push("custom", entry.customType);
+				break;
+			case "label":
+				parts.push("label", entry.label ?? "");
+				break;
+		}
+
+		return parts.join(" ");
+	}
+
 	invalidate(): void {
 		// No cached state to invalidate
+	}
+
+	/** Get current search query for external rendering */
+	getSearchQuery(): string {
+		return this.searchQuery;
 	}
 
 	render(width: number): string[] {
@@ -113,6 +185,10 @@ class TreeList implements Component {
 
 		if (this.filteredNodes.length === 0) {
 			lines.push(theme.fg("muted", "  No entries found"));
+			// Still show status with filter info
+			const filterLabel =
+				this.filterMode === "default" ? "" : this.filterMode === "user-only" ? " [user only]" : " [all]";
+			lines.push(theme.fg("muted", `  (0/0)${filterLabel}`));
 			return lines;
 		}
 
@@ -158,7 +234,7 @@ class TreeList implements Component {
 			lines.push(line);
 		}
 
-		// Add scroll and filter info
+		// Add scroll and filter info (search shown separately above)
 		const filterLabel =
 			this.filterMode === "default" ? "" : this.filterMode === "user-only" ? " [user only]" : " [all]";
 		const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${filterLabel}`);
@@ -252,7 +328,15 @@ class TreeList implements Component {
 			if (selected && this.onSelect) {
 				this.onSelect(selected.node.entry.id);
 			}
-		} else if (isEscape(keyData) || isCtrlC(keyData)) {
+		} else if (isEscape(keyData)) {
+			// Escape: clear search first, then cancel
+			if (this.searchQuery) {
+				this.searchQuery = "";
+				this.applyFilter();
+			} else {
+				this.onCancel?.();
+			}
+		} else if (isCtrlC(keyData)) {
 			this.onCancel?.();
 		} else if (isCtrlU(keyData)) {
 			// Toggle user-only filter
@@ -262,8 +346,41 @@ class TreeList implements Component {
 			// Toggle show-all filter
 			this.filterMode = this.filterMode === "all" ? "default" : "all";
 			this.applyFilter();
+		} else if (isBackspace(keyData)) {
+			// Remove last character from search
+			if (this.searchQuery.length > 0) {
+				this.searchQuery = this.searchQuery.slice(0, -1);
+				this.applyFilter();
+			}
+		} else {
+			// Check for printable characters (reject control chars)
+			const hasControlChars = [...keyData].some((ch) => {
+				const code = ch.charCodeAt(0);
+				return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f);
+			});
+			if (!hasControlChars && keyData.length > 0) {
+				this.searchQuery += keyData;
+				this.applyFilter();
+			}
 		}
 	}
+}
+
+/** Component that displays the current search query */
+class SearchLine implements Component {
+	constructor(private treeList: TreeList) {}
+
+	invalidate(): void {}
+
+	render(_width: number): string[] {
+		const query = this.treeList.getSearchQuery();
+		if (query) {
+			return [`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`];
+		}
+		return [`  ${theme.fg("muted", "Search:")}`];
+	}
+
+	handleInput(_keyData: string): void {}
 }
 
 /**
@@ -284,22 +401,28 @@ export class TreeSelectorComponent extends Container {
 		// Cap at half terminal height
 		const maxVisibleLines = Math.max(5, Math.floor(terminalHeight / 2));
 
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Session Tree"), 1, 0));
-		this.addChild(new Text(theme.fg("muted", "Navigate to a different point. Ctrl+U: user only, Ctrl+O: all"), 1, 0));
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-
-		// Create tree list
+		// Create tree list first (needed by SearchLine)
 		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines);
 		this.treeList.onSelect = onSelect;
 		this.treeList.onCancel = onCancel;
 
-		this.addChild(this.treeList);
+		// Layout:
+		// Title
+		// Border
+		// Help text
+		// Search field
+		// Border
+		// Tree entries
+		// Border
 
-		// Add bottom border
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.bold("Session Tree"), 1, 0));
+		this.addChild(new DynamicBorder());
+		this.addChild(new Text(theme.fg("muted", "  Type to search. Ctrl+U: user only, Ctrl+O: all"), 0, 0));
+		this.addChild(new SearchLine(this.treeList));
+		this.addChild(new DynamicBorder());
+		this.addChild(new Spacer(1));
+		this.addChild(this.treeList);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
