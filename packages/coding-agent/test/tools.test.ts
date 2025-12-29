@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -363,5 +363,74 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain(".hidden-file");
 			expect(output).toContain(".hidden-dir/");
 		});
+	});
+});
+
+describe("edit tool CRLF handling", () => {
+	let testDir: string;
+
+	beforeEach(() => {
+		testDir = join(tmpdir(), `coding-agent-crlf-test-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(testDir, { recursive: true, force: true });
+	});
+
+	it("should match LF oldText against CRLF file content", async () => {
+		const testFile = join(testDir, "crlf-test.txt");
+
+		writeFileSync(testFile, "line one\r\nline two\r\nline three\r\n");
+
+		const result = await editTool.execute("test-crlf-1", {
+			path: testFile,
+			oldText: "line two\n",
+			newText: "replaced line\n",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+	});
+
+	it("should preserve CRLF line endings after edit", async () => {
+		const testFile = join(testDir, "crlf-preserve.txt");
+		writeFileSync(testFile, "first\r\nsecond\r\nthird\r\n");
+
+		await editTool.execute("test-crlf-2", {
+			path: testFile,
+			oldText: "second\n",
+			newText: "REPLACED\n",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("first\r\nREPLACED\r\nthird\r\n");
+	});
+
+	it("should preserve LF line endings for LF files", async () => {
+		const testFile = join(testDir, "lf-preserve.txt");
+		writeFileSync(testFile, "first\nsecond\nthird\n");
+
+		await editTool.execute("test-lf-1", {
+			path: testFile,
+			oldText: "second\n",
+			newText: "REPLACED\n",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("first\nREPLACED\nthird\n");
+	});
+
+	it("should detect duplicates across CRLF/LF variants", async () => {
+		const testFile = join(testDir, "mixed-endings.txt");
+
+		writeFileSync(testFile, "hello\r\nworld\r\n---\r\nhello\nworld\n");
+
+		await expect(
+			editTool.execute("test-crlf-dup", {
+				path: testFile,
+				oldText: "hello\nworld\n",
+				newText: "replaced\n",
+			}),
+		).rejects.toThrow(/Found 2 occurrences/);
 	});
 });
