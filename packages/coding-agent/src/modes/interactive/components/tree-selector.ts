@@ -3,6 +3,8 @@ import {
 	Container,
 	Input,
 	isArrowDown,
+	isArrowLeft,
+	isArrowRight,
 	isArrowUp,
 	isBackspace,
 	isCtrlC,
@@ -18,17 +20,23 @@ import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
+/** Gutter info: position (displayIndent where connector was) and whether to show │ */
+interface GutterInfo {
+	position: number; // displayIndent level where the connector was shown
+	show: boolean; // true = show │, false = show spaces
+}
+
 /** Flattened tree node for navigation */
 interface FlatNode {
 	node: SessionTreeNode;
-	/** Indentation level (each level = 2 spaces) */
+	/** Indentation level (each level = 3 chars) */
 	indent: number;
 	/** Whether to show connector (├─ or └─) - true if parent has multiple children */
 	showConnector: boolean;
 	/** If showConnector, true = last sibling (└─), false = not last (├─) */
 	isLast: boolean;
-	/** For each ancestor branch point, true = show │ (more siblings below), false = show space */
-	gutters: boolean[];
+	/** Gutter info for each ancestor branch point */
+	gutters: GutterInfo[];
 	/** True if this node is a root under a virtual branching root (multiple roots) */
 	isVirtualRootChild: boolean;
 }
@@ -109,24 +117,36 @@ class TreeList implements Component {
 		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
 
 		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
-		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, boolean[], boolean];
+		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, GutterInfo[], boolean];
 		const stack: StackItem[] = [];
 
 		// Determine which subtrees contain the active leaf (to sort current branch first)
+		// Use iterative post-order traversal to avoid stack overflow
 		const containsActive = new Map<SessionTreeNode, boolean>();
 		const leafId = this.currentLeafId;
-		const markContains = (node: SessionTreeNode): boolean => {
-			let has = leafId !== null && node.entry.id === leafId;
-			for (const child of node.children) {
-				if (markContains(child)) {
-					has = true;
+		{
+			// Build list in pre-order, then process in reverse for post-order effect
+			const allNodes: SessionTreeNode[] = [];
+			const preOrderStack: SessionTreeNode[] = [...roots];
+			while (preOrderStack.length > 0) {
+				const node = preOrderStack.pop()!;
+				allNodes.push(node);
+				// Push children in reverse so they're processed left-to-right
+				for (let i = node.children.length - 1; i >= 0; i--) {
+					preOrderStack.push(node.children[i]);
 				}
 			}
-			containsActive.set(node, has);
-			return has;
-		};
-		for (const root of roots) {
-			markContains(root);
+			// Process in reverse (post-order): children before parents
+			for (let i = allNodes.length - 1; i >= 0; i--) {
+				const node = allNodes[i];
+				let has = leafId !== null && node.entry.id === leafId;
+				for (const child of node.children) {
+					if (containsActive.get(child)) {
+						has = true;
+					}
+				}
+				containsActive.set(node, has);
+			}
 		}
 
 		// Add roots in reverse order, prioritizing the one containing the active leaf
@@ -189,7 +209,15 @@ class TreeList implements Component {
 
 			// Build gutters for children
 			// If this node showed a connector, add a gutter entry for descendants
-			const childGutters = showConnector ? [...gutters, !isLast] : gutters;
+			// Only add gutter if connector is actually displayed (not suppressed for virtual root children)
+			const connectorDisplayed = showConnector && !isVirtualRootChild;
+			// When connector is displayed, add a gutter entry at the connector's position
+			// Connector is at position (displayIndent - 1), so gutter should be there too
+			const currentDisplayIndent = this.multipleRoots ? Math.max(0, indent - 1) : indent;
+			const connectorPosition = Math.max(0, currentDisplayIndent - 1);
+			const childGutters: GutterInfo[] = connectorDisplayed
+				? [...gutters, { position: connectorPosition, show: !isLast }]
+				: gutters;
 
 			// Add children in reverse order
 			for (let i = orderedChildren.length - 1; i >= 0; i--) {
@@ -378,22 +406,48 @@ class TreeList implements Component {
 			const flatNode = this.filteredNodes[i];
 			const entry = flatNode.node.entry;
 			const isSelected = i === this.selectedIndex;
-			const isCurrentLeaf = entry.id === this.currentLeafId;
 
-			// Build line: cursor + gutters + connector + extra indent + label + content + suffix
+			// Build line: cursor + prefix + path marker + label + content
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
 
 			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
 
-			// Build prefix: gutters + connector + extra spaces
-			const gutterStr = flatNode.gutters.map((g) => (g ? "│  " : "   ")).join("");
+			// Build prefix with gutters at their correct positions
+			// Each gutter has a position (displayIndent where its connector was shown)
 			const connector =
 				flatNode.showConnector && !flatNode.isVirtualRootChild ? (flatNode.isLast ? "└─ " : "├─ ") : "";
-			// Extra indent for visual grouping beyond gutters/connector
-			const prefixLevels = flatNode.gutters.length + (connector ? 1 : 0);
-			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
-			const prefix = gutterStr + connector + extraIndent;
+			const connectorPosition = connector ? displayIndent - 1 : -1;
+
+			// Build prefix char by char, placing gutters and connector at their positions
+			const totalChars = displayIndent * 3;
+			const prefixChars: string[] = [];
+			for (let i = 0; i < totalChars; i++) {
+				const level = Math.floor(i / 3);
+				const posInLevel = i % 3;
+
+				// Check if there's a gutter at this level
+				const gutter = flatNode.gutters.find((g) => g.position === level);
+				if (gutter) {
+					if (posInLevel === 0) {
+						prefixChars.push(gutter.show ? "│" : " ");
+					} else {
+						prefixChars.push(" ");
+					}
+				} else if (connector && level === connectorPosition) {
+					// Connector at this level
+					if (posInLevel === 0) {
+						prefixChars.push(flatNode.isLast ? "└" : "├");
+					} else if (posInLevel === 1) {
+						prefixChars.push("─");
+					} else {
+						prefixChars.push(" ");
+					}
+				} else {
+					prefixChars.push(" ");
+				}
+			}
+			const prefix = prefixChars.join("");
 
 			// Active path marker - shown right before the entry text
 			const isOnActivePath = this.activePathIds.has(entry.id);
@@ -401,9 +455,8 @@ class TreeList implements Component {
 
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
-			const suffix = isCurrentLeaf ? theme.fg("accent", " *") : "";
 
-			const line = cursor + theme.fg("dim", prefix) + pathMarker + label + content + suffix;
+			const line = cursor + theme.fg("dim", prefix) + pathMarker + label + content;
 			lines.push(truncateToWidth(line, width));
 		}
 
@@ -437,12 +490,12 @@ class TreeList implements Component {
 					if (textContent) {
 						result = theme.fg("success", "assistant: ") + textContent;
 					} else if (msgWithContent.stopReason === "aborted") {
-						result = theme.fg("warning", "assistant: ") + theme.fg("muted", "(aborted)");
+						result = theme.fg("success", "assistant: ") + theme.fg("muted", "(aborted)");
 					} else if (msgWithContent.errorMessage) {
 						const errMsg = normalize(msgWithContent.errorMessage).slice(0, 80);
-						result = theme.fg("error", "assistant: ") + errMsg;
+						result = theme.fg("success", "assistant: ") + theme.fg("error", errMsg);
 					} else {
-						result = theme.fg("muted", "assistant: (no content)");
+						result = theme.fg("success", "assistant: ") + theme.fg("muted", "(no content)");
 					}
 				} else if (role === "toolResult") {
 					const toolMsg = msg as { toolCallId?: string; toolName?: string };
@@ -586,6 +639,12 @@ class TreeList implements Component {
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredNodes.length - 1 : this.selectedIndex - 1;
 		} else if (isArrowDown(keyData)) {
 			this.selectedIndex = this.selectedIndex === this.filteredNodes.length - 1 ? 0 : this.selectedIndex + 1;
+		} else if (isArrowLeft(keyData)) {
+			// Page up
+			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisibleLines);
+		} else if (isArrowRight(keyData)) {
+			// Page down
+			this.selectedIndex = Math.min(this.filteredNodes.length - 1, this.selectedIndex + this.maxVisibleLines);
 		} else if (isEnter(keyData)) {
 			const selected = this.filteredNodes[this.selectedIndex];
 			if (selected && this.onSelect) {
@@ -719,9 +778,11 @@ export class TreeSelectorComponent extends Container {
 		this.labelInputContainer = new Container();
 
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Session Tree"), 1, 0));
 		this.addChild(new DynamicBorder());
-		this.addChild(new TruncatedText(theme.fg("muted", "  Type to search. l: label. ^O: cycle filter"), 0, 0));
+		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
+		this.addChild(
+			new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ^O: filter. Type to search"), 0, 0),
+		);
 		this.addChild(new SearchLine(this.treeList));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));

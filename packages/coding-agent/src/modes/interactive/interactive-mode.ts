@@ -56,6 +56,15 @@ import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
+/** Interface for components that can be expanded/collapsed */
+interface Expandable {
+	setExpanded(expanded: boolean): void;
+}
+
+function isExpandable(obj: unknown): obj is Expandable {
+	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+}
+
 export class InteractiveMode {
 	private session: AgentSession;
 	private ui: TUI;
@@ -1303,13 +1312,7 @@ export class InteractiveMode {
 	private toggleToolOutputExpansion(): void {
 		this.toolOutputExpanded = !this.toolOutputExpanded;
 		for (const child of this.chatContainer.children) {
-			if (child instanceof ToolExecutionComponent) {
-				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof CompactionSummaryMessageComponent) {
-				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof BashExecutionComponent) {
-				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof HookMessageComponent) {
+			if (isExpandable(child)) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}
