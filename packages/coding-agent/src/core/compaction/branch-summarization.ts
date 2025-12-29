@@ -242,24 +242,21 @@ Be brief and focused on what matters for future reference.`;
  * Format file operations as a static section to append to summary.
  */
 function formatFileOperations(fileOps: FileOperations): string {
+	// Combine edited and written into "modified"
+	const modified = new Set([...fileOps.edited, ...fileOps.written]);
+
+	// Read-only = read but not modified
+	const readOnly = [...fileOps.read].filter((f) => !modified.has(f)).sort();
+
 	const sections: string[] = [];
 
-	if (fileOps.read.size > 0) {
-		const files = [...fileOps.read].sort();
-		sections.push(`**Read:** ${files.join(", ")}`);
+	if (readOnly.length > 0) {
+		sections.push(`**Read:** ${readOnly.join(", ")}`);
 	}
 
-	if (fileOps.edited.size > 0) {
-		const files = [...fileOps.edited].sort();
-		sections.push(`**Edited:** ${files.join(", ")}`);
-	}
-
-	if (fileOps.written.size > 0) {
-		// Exclude files that were also edited (edit implies write)
-		const writtenOnly = [...fileOps.written].filter((f) => !fileOps.edited.has(f)).sort();
-		if (writtenOnly.length > 0) {
-			sections.push(`**Created:** ${writtenOnly.join(", ")}`);
-		}
+	if (modified.size > 0) {
+		const files = [...modified].sort();
+		sections.push(`**Modified:** ${files.join(", ")}`);
 	}
 
 	if (sections.length === 0) return "";
