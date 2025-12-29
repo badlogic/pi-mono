@@ -992,15 +992,13 @@ export class InteractiveMode {
 					// Rebuild chat to show compacted state
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
-					// Add compaction component (same as manual /compact)
-					const compactionComponent = new CompactionSummaryMessageComponent({
+					// Add compaction component at bottom so user sees it without scrolling
+					this.addMessageToChat({
 						role: "compactionSummary",
 						tokensBefore: event.result.tokensBefore,
 						summary: event.result.summary,
 						timestamp: Date.now(),
 					});
-					compactionComponent.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
 				}
 				this.ui.requestRender();
@@ -2128,11 +2126,9 @@ export class InteractiveMode {
 			// Rebuild UI
 			this.rebuildChatFromMessages();
 
-			// Add compaction component
+			// Add compaction component at bottom so user sees it without scrolling
 			const msg = createCompactionSummaryMessage(result.summary, result.tokensBefore, new Date().toISOString());
-			const compactionComponent = new CompactionSummaryMessageComponent(msg);
-			compactionComponent.setExpanded(this.toolOutputExpanded);
-			this.chatContainer.addChild(compactionComponent);
+			this.addMessageToChat(msg);
 
 			this.footer.updateState(this.session.state);
 		} catch (error) {
