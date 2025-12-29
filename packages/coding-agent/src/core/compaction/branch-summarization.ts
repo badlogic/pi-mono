@@ -265,6 +265,11 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 // Summary Generation
 // ============================================================================
 
+const BRANCH_SUMMARY_PREAMBLE = `The user explored a different conversation branch before returning here.
+Summary of that exploration:
+
+`;
+
 const BRANCH_SUMMARY_PROMPT = `Create a structured summary of this conversation branch for context when returning later.
 
 Use this EXACT format:
@@ -347,6 +352,9 @@ export async function generateBranchSummary(
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
+
+	// Prepend preamble to provide context about the branch summary
+	summary = BRANCH_SUMMARY_PREAMBLE + summary;
 
 	// Compute file lists
 	const modified = new Set([...fileOps.edited, ...fileOps.written]);
