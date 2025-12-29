@@ -50,6 +50,7 @@ export {
 	isEnter,
 	isEscape,
 	isHome,
+	isShiftCtrlD,
 	isShiftCtrlP,
 	isShiftEnter,
 	isShiftTab,

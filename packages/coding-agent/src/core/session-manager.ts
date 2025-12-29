@@ -789,7 +789,7 @@ export class SessionManager {
 		// Build tree
 		for (const entry of entries) {
 			const node = nodeMap.get(entry.id)!;
-			if (entry.parentId === null) {
+			if (entry.parentId === null || entry.parentId === entry.id) {
 				roots.push(node);
 			} else {
 				const parent = nodeMap.get(entry.parentId);
@@ -803,11 +803,13 @@ export class SessionManager {
 		}
 
 		// Sort children by timestamp (oldest first, newest at bottom)
-		const sortChildren = (node: SessionTreeNode): void => {
+		// Use iterative approach to avoid stack overflow on deep trees
+		const stack: SessionTreeNode[] = [...roots];
+		while (stack.length > 0) {
+			const node = stack.pop()!;
 			node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
-			node.children.forEach(sortChildren);
-		};
-		roots.forEach(sortChildren);
+			stack.push(...node.children);
+		}
 
 		return roots;
 	}

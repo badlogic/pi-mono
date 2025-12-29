@@ -621,6 +621,9 @@ export class InteractiveMode {
 		this.editor.onShiftTab = () => this.cycleThinkingLevel();
 		this.editor.onCtrlP = () => this.cycleModel("forward");
 		this.editor.onShiftCtrlP = () => this.cycleModel("backward");
+
+		// Global debug handler on TUI (works regardless of focus)
+		this.ui.onDebug = () => this.handleDebugCommand();
 		this.editor.onCtrlL = () => this.showModelSelector();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
@@ -1645,7 +1648,7 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				},
 			);
-			return { component: selector, focus: selector.getTreeList() };
+			return { component: selector, focus: selector };
 		});
 	}
 

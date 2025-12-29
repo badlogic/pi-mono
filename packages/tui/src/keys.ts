@@ -321,6 +321,14 @@ export function isShiftCtrlP(data: string): boolean {
 }
 
 /**
+ * Check if input matches Shift+Ctrl+D (Kitty protocol only, for debug).
+ * Ignores lock key bits.
+ */
+export function isShiftCtrlD(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.d, MODIFIERS.shift + MODIFIERS.ctrl);
+}
+
+/**
  * Check if input matches Ctrl+T (raw byte or Kitty protocol).
  * Ignores lock key bits.
  */
