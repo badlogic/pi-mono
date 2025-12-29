@@ -17,19 +17,29 @@ import { truncateToVisualLines } from "./visual-truncate.js";
 // Preview line limit when not expanded (matches tool execution behavior)
 const PREVIEW_LINES = 20;
 
+export interface BashExecutionComponentOptions {
+	/**
+	 * Whether to show an inline loader/spinner inside the component while running.
+	 *
+	 * InteractiveMode already shows a global status line spinner, so for manual `!` commands
+	 * this can be disabled to avoid duplicate "running" indicators.
+	 */
+	showLoader?: boolean;
+}
+
 export class BashExecutionComponent extends Container {
 	private command: string;
 	private outputLines: string[] = [];
 	private status: "running" | "complete" | "cancelled" | "error" = "running";
 	private exitCode: number | null = null;
-	private loader: Loader;
+	private loader: Loader | null;
 	private truncationResult?: TruncationResult;
 	private fullOutputPath?: string;
 	private expanded = false;
 	private contentContainer: Container;
 	private ui: TUI;
 
-	constructor(command: string, ui: TUI) {
+	constructor(command: string, ui: TUI, options: BashExecutionComponentOptions = {}) {
 		super();
 		this.command = command;
 		this.ui = ui;
@@ -50,14 +60,18 @@ export class BashExecutionComponent extends Container {
 		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${command}`)), 1, 0);
 		this.contentContainer.addChild(header);
 
-		// Loader
-		this.loader = new Loader(
-			ui,
-			(spinner) => theme.fg("bashMode", spinner),
-			(text) => theme.fg("muted", text),
-			"Running... (esc to cancel)",
-		);
-		this.contentContainer.addChild(this.loader);
+		const showLoader = options.showLoader ?? true;
+		this.loader = showLoader
+			? new Loader(
+					ui,
+					(spinner) => theme.fg("bashMode", spinner),
+					(text) => theme.fg("muted", text),
+					"Running... (esc to cancel)",
+				)
+			: null;
+		if (this.loader) {
+			this.contentContainer.addChild(this.loader);
+		}
 
 		// Bottom border
 		this.addChild(new DynamicBorder(borderColor));
@@ -101,7 +115,7 @@ export class BashExecutionComponent extends Container {
 		this.fullOutputPath = fullOutputPath;
 
 		// Stop loader
-		this.loader.stop();
+		this.loader?.stop();
 
 		this.updateDisplay();
 	}
@@ -149,7 +163,8 @@ export class BashExecutionComponent extends Container {
 
 		// Loader or status
 		if (this.status === "running") {
-			this.contentContainer.addChild(this.loader);
+			// The global status line shows "Running..." while executing, so this can be disabled.
+			if (this.loader) this.contentContainer.addChild(this.loader);
 		} else {
 			const statusParts: string[] = [];
 

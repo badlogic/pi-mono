@@ -58,6 +58,16 @@ import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
 
+interface RunningToolEntry {
+	toolName: string;
+	args: unknown;
+	source: "agent" | "manual";
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export class InteractiveMode {
 	private session: AgentSession;
 	private ui: TUI;
@@ -70,7 +80,18 @@ export class InteractiveMode {
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
+
+	// Status line loader shown above the editor.
 	private loadingAnimation: Loader | null = null;
+
+	// Track whether an agent turn is active (agent_start..agent_end).
+	private isAgentActive = false;
+
+	// Track currently running tool calls / commands so the status line can
+	// differentiate between "agent thinking" vs "command running".
+	private runningTools = new Map<string, RunningToolEntry>();
+
+	private static readonly TOOL_SPINNER_FRAMES = ["◴", "◷", "◶", "◵"];
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -552,7 +573,7 @@ export class InteractiveMode {
 
 	private setupKeyHandlers(): void {
 		this.editor.onEscape = () => {
-			if (this.loadingAnimation) {
+			if (this.isAgentActive) {
 				// Abort and restore queued messages to editor
 				const queuedMessages = this.session.clearQueue();
 				const queuedText = queuedMessages.join("\n\n");
@@ -745,18 +766,12 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
+				this.isAgentActive = true;
+				// Clear any stale agent tool entries (manual entries should remain).
+				for (const [id, entry] of this.runningTools.entries()) {
+					if (entry.source === "agent") this.runningTools.delete(id);
 				}
-				this.statusContainer.clear();
-				this.loadingAnimation = new Loader(
-					this.ui,
-					(spinner) => theme.fg("accent", spinner),
-					(text) => theme.fg("muted", text),
-					"Working... (esc to interrupt)",
-				);
-				this.statusContainer.addChild(this.loadingAnimation);
-				this.ui.requestRender();
+				this.updateWorkingStatus();
 				break;
 
 			case "message_start":
@@ -829,6 +844,8 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				this.runningTools.set(event.toolCallId, { toolName: event.toolName, args: event.args, source: "agent" });
+				this.updateWorkingStatus();
 				if (!this.pendingTools.has(event.toolCallId)) {
 					const component = new ToolExecutionComponent(
 						event.toolName,
@@ -862,20 +879,23 @@ export class InteractiveMode {
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
+				this.runningTools.delete(event.toolCallId);
+				this.updateWorkingStatus();
 				break;
 			}
 
 			case "agent_end":
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
-					this.loadingAnimation = null;
-					this.statusContainer.clear();
+				this.isAgentActive = false;
+				// Drop any remaining agent tool entries (e.g. if we aborted mid-tool).
+				for (const [id, entry] of this.runningTools.entries()) {
+					if (entry.source === "agent") this.runningTools.delete(id);
 				}
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = null;
 				}
 				this.pendingTools.clear();
+				this.updateWorkingStatus();
 				this.ui.requestRender();
 				break;
 
@@ -888,6 +908,7 @@ export class InteractiveMode {
 					this.session.abortCompaction();
 				};
 				// Show compacting indicator with reason
+				this.stopStatusLoader();
 				this.statusContainer.clear();
 				const reasonText = event.reason === "overflow" ? "Context overflow detected, " : "";
 				this.autoCompactionLoader = new Loader(
@@ -928,6 +949,7 @@ export class InteractiveMode {
 					this.chatContainer.addChild(compactionComponent);
 					this.footer.updateState(this.session.state);
 				}
+				this.updateWorkingStatus();
 				this.ui.requestRender();
 				break;
 			}
@@ -939,6 +961,7 @@ export class InteractiveMode {
 					this.session.abortRetry();
 				};
 				// Show retry indicator
+				this.stopStatusLoader();
 				this.statusContainer.clear();
 				const delaySeconds = Math.round(event.delayMs / 1000);
 				this.retryLoader = new Loader(
@@ -968,10 +991,141 @@ export class InteractiveMode {
 				if (!event.success) {
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
+				this.updateWorkingStatus();
 				this.ui.requestRender();
 				break;
 			}
 		}
+	}
+
+	// =========================================================================
+	// Status / Activity Indicator
+	// =========================================================================
+
+	private stopStatusLoader(): void {
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = null;
+		}
+	}
+
+	private clearStatus(): void {
+		this.stopStatusLoader();
+		this.statusContainer.clear();
+	}
+
+	private truncateMiddle(text: string, max = 70): string {
+		if (!text) return "";
+		if (text.length <= max) return text;
+		if (max <= 3) return text.slice(0, max);
+		const head = Math.ceil((max - 1) / 2);
+		const tail = Math.floor((max - 1) / 2);
+		return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+	}
+
+	private shortenPathForStatus(p: string): string {
+		if (!p) return "";
+		const home = os.homedir();
+		return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+	}
+
+	private formatToolStatusLine(
+		entry: RunningToolEntry,
+		toolCount: number,
+	): { spinnerColor: (s: string) => string; message: string } {
+		const suffix = theme.fg("muted", entry.source === "manual" ? " (esc to cancel)" : " (esc to interrupt)");
+		const extra = toolCount > 1 ? theme.fg("muted", ` (+${toolCount - 1} more)`) : "";
+		const args = isPlainObject(entry.args) ? entry.args : undefined;
+
+		if (entry.toolName === "bash") {
+			const cmdValue = args?.command;
+			const cmd = typeof cmdValue === "string" ? cmdValue : "";
+			const cmdPretty = cmd ? this.truncateMiddle(cmd, 80) : "...";
+			return {
+				spinnerColor: (s) => theme.fg("bashMode", s),
+				message:
+					theme.fg("muted", "Running ") +
+					theme.fg("bashMode", "bash") +
+					theme.fg("muted", ": ") +
+					theme.fg("bashMode", cmdPretty) +
+					extra +
+					suffix,
+			};
+		}
+
+		const toolLabel = theme.fg("accent", entry.toolName);
+		let detail = "";
+		if (entry.toolName === "read" || entry.toolName === "write" || entry.toolName === "edit") {
+			const pathValue = args?.file_path ?? args?.path;
+			if (typeof pathValue === "string" && pathValue) {
+				detail =
+					theme.fg("muted", " ") +
+					theme.fg("accent", this.truncateMiddle(this.shortenPathForStatus(pathValue), 70));
+			}
+		} else if (entry.toolName === "grep") {
+			const patValue = args?.pattern;
+			if (typeof patValue === "string" && patValue) {
+				detail = theme.fg("muted", " ") + theme.fg("accent", `/${this.truncateMiddle(patValue, 50)}/`);
+			}
+		} else if (entry.toolName === "find") {
+			const patValue = args?.pattern;
+			if (typeof patValue === "string" && patValue) {
+				detail = theme.fg("muted", " ") + theme.fg("accent", this.truncateMiddle(patValue, 60));
+			}
+		}
+
+		return {
+			spinnerColor: (s) => theme.fg("border", s),
+			message: theme.fg("muted", "Running ") + toolLabel + detail + extra + suffix,
+		};
+	}
+
+	private showAgentWorkingStatus(): void {
+		// Don't stomp auto-compaction/retry loaders.
+		if (this.autoCompactionLoader || this.retryLoader) return;
+
+		this.clearStatus();
+		this.loadingAnimation = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			"Working... (esc to interrupt)",
+		);
+		this.statusContainer.addChild(this.loadingAnimation);
+		this.ui.requestRender();
+	}
+
+	private showToolWorkingStatus(): void {
+		// Don't stomp auto-compaction/retry loaders.
+		if (this.autoCompactionLoader || this.retryLoader) return;
+		if (this.runningTools.size === 0) return;
+
+		const last = Array.from(this.runningTools.values()).at(-1)!;
+		const { spinnerColor, message } = this.formatToolStatusLine(last, this.runningTools.size);
+
+		this.clearStatus();
+		// message already includes its own styling
+		this.loadingAnimation = new Loader(this.ui, spinnerColor, (t) => t, message, {
+			frames: InteractiveMode.TOOL_SPINNER_FRAMES,
+			intervalMs: 100,
+		});
+		this.statusContainer.addChild(this.loadingAnimation);
+		this.ui.requestRender();
+	}
+
+	private updateWorkingStatus(): void {
+		// Keep auto-compaction/retry status visible.
+		if (this.autoCompactionLoader || this.retryLoader) return;
+
+		if (this.runningTools.size > 0) {
+			this.showToolWorkingStatus();
+			return;
+		}
+		if (this.isAgentActive) {
+			this.showAgentWorkingStatus();
+			return;
+		}
+		this.clearStatus();
 	}
 
 	/** Extract text content from a user message */
@@ -1864,7 +2018,7 @@ export class InteractiveMode {
 
 	private async handleBashCommand(command: string): Promise<void> {
 		const isDeferred = this.session.isStreaming;
-		this.bashComponent = new BashExecutionComponent(command, this.ui);
+		this.bashComponent = new BashExecutionComponent(command, this.ui, { showLoader: false });
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
@@ -1875,6 +2029,10 @@ export class InteractiveMode {
 			this.chatContainer.addChild(this.bashComponent);
 		}
 		this.ui.requestRender();
+
+		const activityId = `manual-bash:${Date.now()}`;
+		this.runningTools.set(activityId, { toolName: "bash", args: { command }, source: "manual" });
+		this.updateWorkingStatus();
 
 		try {
 			const result = await this.session.executeBash(command, (chunk) => {
@@ -1897,6 +2055,9 @@ export class InteractiveMode {
 				this.bashComponent.setComplete(null, false);
 			}
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+		} finally {
+			this.runningTools.delete(activityId);
+			this.updateWorkingStatus();
 		}
 
 		this.bashComponent = null;
