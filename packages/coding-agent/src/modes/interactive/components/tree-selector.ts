@@ -29,6 +29,8 @@ interface FlatNode {
 	isLast: boolean;
 	/** For each ancestor branch point, true = show │ (more siblings below), false = show space */
 	gutters: boolean[];
+	/** True if this node is a root under a virtual branching root (multiple roots) */
+	isVirtualRootChild: boolean;
 }
 
 /** Filter mode for tree display */
@@ -84,7 +86,7 @@ class TreeList implements Component {
 		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
 
 		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters]
-		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, boolean[]];
+		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, boolean[], boolean];
 		const stack: StackItem[] = [];
 
 		// Add roots in reverse order
@@ -92,11 +94,11 @@ class TreeList implements Component {
 		const multipleRoots = roots.length > 1;
 		for (let i = roots.length - 1; i >= 0; i--) {
 			const isLast = i === roots.length - 1;
-			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, []]);
+			stack.push([roots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, [], multipleRoots]);
 		}
 
 		while (stack.length > 0) {
-			const [node, indent, justBranched, showConnector, isLast, gutters] = stack.pop()!;
+			const [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild] = stack.pop()!;
 
 			// Extract tool calls from assistant messages for later lookup
 			const entry = node.entry;
@@ -112,7 +114,7 @@ class TreeList implements Component {
 				}
 			}
 
-			result.push({ node, indent, showConnector, isLast, gutters });
+			result.push({ node, indent, showConnector, isLast, gutters, isVirtualRootChild });
 
 			const children = node.children;
 			const multipleChildren = children.length > 1;
@@ -137,7 +139,15 @@ class TreeList implements Component {
 			// Add children in reverse order
 			for (let i = children.length - 1; i >= 0; i--) {
 				const childIsLast = i === children.length - 1;
-				stack.push([children[i], childIndent, multipleChildren, multipleChildren, childIsLast, childGutters]);
+				stack.push([
+					children[i],
+					childIndent,
+					multipleChildren,
+					multipleChildren,
+					childIsLast,
+					childGutters,
+					false,
+				]);
 			}
 		}
 
@@ -325,9 +335,10 @@ class TreeList implements Component {
 
 			// Build prefix: gutters + connector + extra spaces
 			const gutterStr = displayGutters.map((g) => (g ? "│ " : "  ")).join("");
-			const connector = flatNode.showConnector ? (flatNode.isLast ? "└─" : "├─") : "";
+			const connector =
+				flatNode.showConnector && !flatNode.isVirtualRootChild ? (flatNode.isLast ? "└─" : "├─") : "";
 			// Extra indent for visual grouping beyond gutters/connector
-			const prefixLevels = displayGutters.length + (flatNode.showConnector ? 1 : 0);
+			const prefixLevels = displayGutters.length + (connector ? 1 : 0);
 			const extraIndent = "  ".repeat(Math.max(0, displayIndent - prefixLevels));
 			const prefix = gutterStr + connector + extraIndent;
 
