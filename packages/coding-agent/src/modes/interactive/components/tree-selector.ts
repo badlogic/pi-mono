@@ -365,7 +365,7 @@ class TreeList implements Component {
 
 			// Active path marker - shown right before the entry text
 			const isOnActivePath = this.activePathIds.has(entry.id);
-			const pathMarker = isOnActivePath ? theme.fg("accent", "●") : "";
+			const pathMarker = isOnActivePath ? theme.fg("accent", "• ") : "";
 
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
