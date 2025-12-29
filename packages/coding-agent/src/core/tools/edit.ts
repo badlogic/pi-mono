@@ -5,6 +5,22 @@ import { constants } from "fs";
 import { access, readFile, writeFile } from "fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 
+function detectLineEnding(content: string): "\r\n" | "\n" {
+	const crlfIdx = content.indexOf("\r\n");
+	const lfIdx = content.indexOf("\n");
+	if (lfIdx === -1) return "\n";
+	if (crlfIdx === -1) return "\n";
+	return crlfIdx < lfIdx ? "\r\n" : "\n";
+}
+
+function normalizeToLF(text: string): string {
+	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string {
+	return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+}
+
 /**
  * Generate a unified diff string with line numbers and context
  */
@@ -169,8 +185,13 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							return;
 						}
 
+						const originalEnding = detectLineEnding(content);
+						const normalizedContent = normalizeToLF(content);
+						const normalizedOldText = normalizeToLF(oldText);
+						const normalizedNewText = normalizeToLF(newText);
+
 						// Check if old text exists
-						if (!content.includes(oldText)) {
+						if (!normalizedContent.includes(normalizedOldText)) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
@@ -183,7 +204,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						// Count occurrences
-						const occurrences = content.split(oldText).length - 1;
+						const occurrences = normalizedContent.split(normalizedOldText).length - 1;
 
 						if (occurrences > 1) {
 							if (signal) {
@@ -204,11 +225,14 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 
 						// Perform replacement using indexOf + substring (raw string replace, no special character interpretation)
 						// String.replace() interprets $ in the replacement string, so we do manual replacement
-						const index = content.indexOf(oldText);
-						const newContent = content.substring(0, index) + newText + content.substring(index + oldText.length);
+						const index = normalizedContent.indexOf(normalizedOldText);
+						const normalizedNewContent =
+							normalizedContent.substring(0, index) +
+							normalizedNewText +
+							normalizedContent.substring(index + normalizedOldText.length);
 
 						// Verify the replacement actually changed something
-						if (content === newContent) {
+						if (normalizedContent === normalizedNewContent) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
@@ -220,7 +244,8 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							return;
 						}
 
-						await writeFile(absolutePath, newContent, "utf-8");
+						const finalContent = restoreLineEndings(normalizedNewContent, originalEnding);
+						await writeFile(absolutePath, finalContent, "utf-8");
 
 						// Check if aborted after writing
 						if (aborted) {
@@ -236,10 +261,10 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							content: [
 								{
 									type: "text",
-									text: `Successfully replaced text in ${path}. Changed ${oldText.length} characters to ${newText.length} characters.`,
+									text: `Successfully replaced text in ${path}.`,
 								},
 							],
-							details: { diff: generateDiffString(content, newContent) },
+							details: { diff: generateDiffString(normalizedContent, normalizedNewContent) },
 						});
 					} catch (error: any) {
 						// Clean up abort handler
