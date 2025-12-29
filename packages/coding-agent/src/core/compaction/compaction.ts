@@ -328,16 +328,38 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+const SUMMARIZATION_PROMPT = `Create a structured context checkpoint summary. Another LLM will use this to continue the work.
 
-Include:
-- Current progress and key decisions made
-- Important context, constraints, or user preferences
-- Absolute file paths of any relevant files that were read or modified
-- What remains to be done (clear next steps)
-- Any critical data, examples, or references needed to continue
+Use this EXACT format:
 
-Be concise, structured, and focused on helping the next LLM seamlessly continue the work.`;
+## Goal
+[1-2 sentences: What is the user trying to accomplish?]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
 /**
  * Generate a summary of the conversation using the LLM.
@@ -451,15 +473,20 @@ export function prepareCompaction(
 // Main compaction function
 // ============================================================================
 
-const TURN_PREFIX_SUMMARIZATION_PROMPT = `You are performing a CONTEXT CHECKPOINT COMPACTION for a split turn.
-This is the PREFIX of a turn that was too large to keep in full. The SUFFIX (recent work) is being kept.
+const TURN_PREFIX_SUMMARIZATION_PROMPT = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
 
-Create a handoff summary that captures:
-- What the user originally asked for in this turn
-- Key decisions and progress made early in this turn
-- Important context needed to understand the kept suffix
+Summarize the prefix to provide context for the retained suffix:
 
-Be concise. Focus on information needed to understand the retained recent work.`;
+## Original Request
+[What did the user ask for in this turn?]
+
+## Early Progress
+- [Key decisions and work done in the prefix]
+
+## Context for Suffix
+- [Information needed to understand the retained recent work]
+
+Be concise. Focus on what's needed to understand the kept suffix.`;
 
 /**
  * Calculate compaction and generate summary.

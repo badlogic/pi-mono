@@ -259,13 +259,34 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 // Summary Generation
 // ============================================================================
 
-const BRANCH_SUMMARY_PROMPT = `Summarize this conversation branch concisely for context when returning later:
-- Key decisions made and actions taken
-- Important context, constraints, or preferences discovered
-- Current state and any pending work
-- Critical information needed to continue from a different point
+const BRANCH_SUMMARY_PROMPT = `Create a structured summary of this conversation branch for context when returning later.
 
-Be brief and focused on what matters for future reference.`;
+Use this EXACT format:
+
+## Goal
+[1-2 sentences: What was the user trying to accomplish in this branch?]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Work that was started but not finished]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [What should happen next to continue this work]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
 /**
  * Convert messages to text for the summarization prompt.
