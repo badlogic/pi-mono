@@ -88,6 +88,8 @@ Common operations:
   - `messages_uncached_append`
 - options:
   - `options_set`
+- compaction:
+  - `compaction_apply`
 
 See `ContextPatchOp` in `@mariozechner/pi-agent-core` for the authoritative list.
 
