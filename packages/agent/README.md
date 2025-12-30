@@ -22,11 +22,9 @@ const agent = new Agent({
 });
 
 agent.subscribe((event) => {
-  if (event.type === "message_update") {
-    // Stream assistant response
-    for (const block of event.message.content) {
-      if (block.type === "text") process.stdout.write(block.text);
-    }
+  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+    // Stream just the new text chunk
+    process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
 
@@ -121,7 +119,7 @@ The last message in context must be `user` or `toolResult` (not `assistant`).
 | `turn_start` | New turn begins (one LLM call + tool executions) |
 | `turn_end` | Turn completes with assistant message and tool results |
 | `message_start` | Any message begins (user, assistant, toolResult) |
-| `message_update` | **Assistant only.** Partial message during streaming |
+| `message_update` | **Assistant only.** Includes `assistantMessageEvent` with delta |
 | `message_end` | Message completes |
 | `tool_execution_start` | Tool begins |
 | `tool_execution_update` | Tool streams progress |
