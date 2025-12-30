@@ -106,8 +106,10 @@ export type TurnEndCallback = (ctx: TurnEndContext) => Promise<TurnEndResult | u
 
 /**
  * Interceptor invoked for finalized messages (message_end).
- * Return a replacement message to mutate what gets persisted / used as future context.
- * Return null/undefined to keep the original message.
+ *
+ * - return a replacement message to mutate what gets persisted / used as future context
+ * - return null to filter the message entirely (only supported for non-assistant, non-toolResult messages)
+ * - return undefined to keep the original message
  */
 export type MessageInterceptor = (
 	message: AgentMessage,

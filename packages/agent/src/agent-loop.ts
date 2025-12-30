@@ -45,6 +45,7 @@ export function agentLoop(
 		stream.push({ type: "turn_start" });
 		for (const prompt of prompts) {
 			const intercepted = await interceptFinalMessage(prompt, config.messageInterceptor);
+			if (intercepted === null) continue;
 			stream.push({ type: "message_start", message: intercepted });
 			stream.push({ type: "message_end", message: intercepted });
 			currentContext.messages.push(intercepted);
@@ -104,10 +105,12 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 async function interceptFinalMessage(
 	message: AgentMessage,
 	interceptor: AgentLoopConfig["messageInterceptor"] | undefined,
-): Promise<AgentMessage> {
+): Promise<AgentMessage | null> {
 	if (!interceptor) return message;
 	const out = await interceptor(message);
-	return out ?? message;
+	if (out === null) return null;
+	if (out === undefined) return message;
+	return out;
 }
 
 /**
@@ -139,6 +142,7 @@ async function runLoop(
 		if (queuedMessages.length > 0) {
 			for (const message of queuedMessages) {
 				const intercepted = await interceptFinalMessage(message, config.messageInterceptor);
+				if (intercepted === null) continue;
 				stream.push({ type: "message_start", message: intercepted });
 				stream.push({ type: "message_end", message: intercepted });
 				currentContext.messages.push(intercepted);
@@ -370,7 +374,10 @@ async function streamAssistantResponse(
 			case "done":
 			case "error": {
 				const finalMessage = await response.result();
-				const intercepted = (await interceptFinalMessage(finalMessage, config.messageInterceptor)) as AgentMessage;
+				const intercepted = await interceptFinalMessage(finalMessage, config.messageInterceptor);
+				if (intercepted === null) {
+					throw new Error("messageInterceptor must not filter assistant messages");
+				}
 
 				if (intercepted.role !== "assistant") {
 					throw new Error(
@@ -468,6 +475,9 @@ async function executeToolCalls(
 
 		if (messageInterceptor) {
 			const intercepted = await interceptFinalMessage(toolResultMessage, messageInterceptor);
+			if (intercepted === null) {
+				throw new Error("messageInterceptor must not filter toolResult messages");
+			}
 			if ((intercepted as any).role !== "toolResult") {
 				throw new Error(
 					`messageInterceptor must not change toolResult message role (got: ${(intercepted as any).role ?? "unknown"})`,
@@ -533,6 +543,9 @@ async function skipToolCall(
 
 	if (messageInterceptor) {
 		const intercepted = await interceptFinalMessage(toolResultMessage, messageInterceptor);
+		if (intercepted === null) {
+			throw new Error("messageInterceptor must not filter toolResult messages");
+		}
 		if ((intercepted as any).role !== "toolResult") {
 			throw new Error(
 				`messageInterceptor must not change toolResult message role (got: ${(intercepted as any).role ?? "unknown"})`,
