@@ -118,13 +118,29 @@ If you patch tools:
 
 Patches returned from `context(before_request)` and `context(turn_end)` are stored in the session as `context_transform` entries.
 
-When rebuilding the envelope for a new request, Pi:
+When rebuilding the envelope for a new request, Pi walks the active session path and applies transforms in a deterministic way:
 
-1. walks the active session path
-2. applies the last `compaction` entry (if any)
-3. replays `context_transform` patches in order
+- `context_transform` entries are replayed in order (hook code is not rerun)
+- compaction is represented as a `compaction_apply` patch op (either stored in a `context_transform` entry or derived from legacy `compaction` entries)
+- request-only context is logged as `ephemeral` entries but **never** replayed
 
-Hook code is not rerun during replay; only the stored patches are applied.
+## The `message_end` hook
+
+Hooks can also mutate (or filter) finalized messages before they are persisted and become future context:
+
+```ts
+interface MessageEndEvent {
+  type: "message_end";
+  message: AgentMessage;
+}
+
+interface MessageEndResult {
+  // Replace the message, or return null to filter it.
+  message?: AgentMessage | null;
+}
+```
+
+This is useful for redaction/normalization of tool output and other policies.
 
 ## Examples
 

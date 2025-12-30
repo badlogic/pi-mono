@@ -61,6 +61,34 @@ Emitted when the user changes the thinking/reasoning level.
 {"type":"thinking_level_change","timestamp":"2024-12-03T14:06:00.000Z","thinkingLevel":"high"}
 ```
 
+### ContextTransformEntry
+
+Persisted context engineering transforms (patch-only replay).
+
+```json
+{
+  "type": "context_transform",
+  "schemaVersion": 1,
+  "transformerName": "my-hook",
+  "timestamp": "2025-12-28T00:00:00.000Z",
+  "patch": [ ... ]
+}
+```
+
+### EphemeralEntry
+
+Request-only context injected at call time.
+
+These entries are logged for debugging/observability and are **not** replayed when rebuilding context.
+
+```json
+{
+  "type": "ephemeral",
+  "timestamp": "2025-12-28T00:00:00.000Z",
+  "messages": [ ... ]
+}
+```
+
 ## Parsing Example
 
 ```typescript

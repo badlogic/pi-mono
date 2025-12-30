@@ -147,6 +147,31 @@ Response:
 
 Messages are `AppMessage` objects (see [Message Types](#message-types)).
 
+#### get_context
+
+Render the effective provider request context (ContextEnvelope) as markdown.
+
+```json
+{"type": "get_context"}
+```
+
+Optionally include request-only ephemeral transforms:
+
+```json
+{"type": "get_context", "includeEphemeral": true}
+```
+
+Response:
+
+```json
+{
+  "type": "response",
+  "command": "get_context",
+  "success": true,
+  "data": { "markdown": "..." }
+}
+```
+
 ### Model
 
 #### set_model

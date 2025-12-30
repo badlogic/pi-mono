@@ -309,6 +309,20 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
+### message_end
+
+Fired for every finalized message (user prompts, assistant messages, tool results) before it is persisted and becomes future context.
+
+Handlers can mutate the message, or filter it (return `null`) for non-assistant, non-toolResult messages.
+
+```typescript
+pi.on("message_end", async (event, ctx) => {
+  // event.message: AgentMessage
+  // Return a replacement message, or { message: null } to filter.
+  return { message: event.message };
+});
+```
+
 ### tool_call
 
 Fired before tool executes. **Can block.** No timeout (user prompts can take any time).
