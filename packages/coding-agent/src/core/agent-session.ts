@@ -254,6 +254,19 @@ export class AgentSession {
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
+
+				// Reset retry counter on any successful (non-error) assistant response
+				// This ensures the counter doesn't persist across long tool-using sessions
+				const msg = event.message as AssistantMessage;
+				if (msg.stopReason !== "error" && this._retryAttempt > 0) {
+					this._emit({
+						type: "auto_retry_end",
+						success: true,
+						attempt: this._retryAttempt,
+					});
+					this._retryAttempt = 0;
+					this._resolveRetry();
+				}
 			}
 		}
 
