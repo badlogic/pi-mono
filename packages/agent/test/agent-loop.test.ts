@@ -308,6 +308,99 @@ describe("agentLoop with AgentMessage", () => {
 		}
 	});
 
+	it("should apply messageInterceptor to finalized assistant and toolResult messages", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("echo something");
+
+		let callIndex = 0;
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			messageInterceptor: async (message) => {
+				if (message.role === "toolResult") {
+					return {
+						...message,
+						content: [{ type: "text", text: "TOOL_REDACTED" }],
+					};
+				}
+				if (message.role === "assistant") {
+					const assistant = message as AssistantMessage;
+					const hasToolCall = assistant.content.some((c) => c.type === "toolCall");
+					if (hasToolCall) return message;
+					return {
+						...assistant,
+						content: [{ type: "text", text: "ASSISTANT_REDACTED" }],
+					};
+				}
+				return message;
+			},
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hello" } }],
+						"toolUse",
+					);
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		});
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const toolResultEnd = events.find((e) => e.type === "message_end" && e.message.role === "toolResult");
+		expect(toolResultEnd).toBeDefined();
+		if (toolResultEnd?.type === "message_end" && toolResultEnd.message.role === "toolResult") {
+			const first = toolResultEnd.message.content[0];
+			expect(first?.type).toBe("text");
+			if (first?.type === "text") {
+				expect(first.text).toBe("TOOL_REDACTED");
+			}
+		}
+
+		const assistantEnds = events.filter((e) => e.type === "message_end" && e.message.role === "assistant");
+		expect(assistantEnds.length).toBe(2);
+		const finalAssistantEvent = assistantEnds[assistantEnds.length - 1];
+		if (finalAssistantEvent?.type === "message_end" && finalAssistantEvent.message.role === "assistant") {
+			const first = (finalAssistantEvent.message as AssistantMessage).content[0];
+			expect(first?.type).toBe("text");
+			if (first?.type === "text") {
+				expect(first.text).toBe("ASSISTANT_REDACTED");
+			}
+		}
+	});
+
 	it("should inject queued messages and skip remaining tool calls", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];

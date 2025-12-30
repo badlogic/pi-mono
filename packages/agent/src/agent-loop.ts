@@ -35,17 +35,20 @@ export function agentLoop(
 	const stream = createAgentStream();
 
 	(async () => {
-		const newMessages: AgentMessage[] = [...prompts];
+		const newMessages: AgentMessage[] = [];
 		const currentContext: AgentContext = {
 			...context,
-			messages: [...context.messages, ...prompts],
+			messages: [...context.messages],
 		};
 
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
 		for (const prompt of prompts) {
-			stream.push({ type: "message_start", message: prompt });
-			stream.push({ type: "message_end", message: prompt });
+			const intercepted = await interceptFinalMessage(prompt, config.messageInterceptor);
+			stream.push({ type: "message_start", message: intercepted });
+			stream.push({ type: "message_end", message: intercepted });
+			currentContext.messages.push(intercepted);
+			newMessages.push(intercepted);
 		}
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
@@ -98,6 +101,15 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 	);
 }
 
+async function interceptFinalMessage(
+	message: AgentMessage,
+	interceptor: AgentLoopConfig["messageInterceptor"] | undefined,
+): Promise<AgentMessage> {
+	if (!interceptor) return message;
+	const out = await interceptor(message);
+	return out ?? message;
+}
+
 /**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
@@ -126,10 +138,11 @@ async function runLoop(
 		// Process queued messages (inject before next assistant response)
 		if (queuedMessages.length > 0) {
 			for (const message of queuedMessages) {
-				stream.push({ type: "message_start", message });
-				stream.push({ type: "message_end", message });
-				currentContext.messages.push(message);
-				newMessages.push(message);
+				const intercepted = await interceptFinalMessage(message, config.messageInterceptor);
+				stream.push({ type: "message_start", message: intercepted });
+				stream.push({ type: "message_end", message: intercepted });
+				currentContext.messages.push(intercepted);
+				newMessages.push(intercepted);
 			}
 			queuedMessages = [];
 		}
@@ -168,6 +181,7 @@ async function runLoop(
 				signal,
 				stream,
 				config.getQueuedMessages,
+				config.messageInterceptor,
 			);
 			toolResults.push(...toolExecution.toolResults);
 			queuedAfterTools = toolExecution.queuedMessages ?? null;
@@ -356,16 +370,26 @@ async function streamAssistantResponse(
 			case "done":
 			case "error": {
 				const finalMessage = await response.result();
+				const intercepted = (await interceptFinalMessage(finalMessage, config.messageInterceptor)) as AgentMessage;
+
+				if (intercepted.role !== "assistant") {
+					throw new Error(
+						`messageInterceptor must not change assistant message role (got: ${"role" in intercepted ? (intercepted as any).role : "unknown"})`,
+					);
+				}
+
+				const finalAssistantMessage = intercepted as AssistantMessage;
+
 				if (addedPartial) {
-					context.messages[context.messages.length - 1] = finalMessage;
+					context.messages[context.messages.length - 1] = finalAssistantMessage;
 				} else {
-					context.messages.push(finalMessage);
+					context.messages.push(finalAssistantMessage);
 				}
 				if (!addedPartial) {
-					stream.push({ type: "message_start", message: { ...finalMessage } });
+					stream.push({ type: "message_start", message: { ...finalAssistantMessage } });
 				}
-				stream.push({ type: "message_end", message: finalMessage });
-				return finalMessage;
+				stream.push({ type: "message_end", message: finalAssistantMessage });
+				return finalAssistantMessage;
 			}
 		}
 	}
@@ -381,7 +405,8 @@ async function executeToolCalls(
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
-	getQueuedMessages?: AgentLoopConfig["getQueuedMessages"],
+	getQueuedMessages: AgentLoopConfig["getQueuedMessages"] | undefined,
+	messageInterceptor: AgentLoopConfig["messageInterceptor"] | undefined,
 ): Promise<{ toolResults: ToolResultMessage[]; queuedMessages?: AgentMessage[] }> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
 	const results: ToolResultMessage[] = [];
@@ -431,7 +456,7 @@ async function executeToolCalls(
 			isError,
 		});
 
-		const toolResultMessage: ToolResultMessage = {
+		let toolResultMessage: ToolResultMessage = {
 			role: "toolResult",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
@@ -440,6 +465,16 @@ async function executeToolCalls(
 			isError,
 			timestamp: Date.now(),
 		};
+
+		if (messageInterceptor) {
+			const intercepted = await interceptFinalMessage(toolResultMessage, messageInterceptor);
+			if ((intercepted as any).role !== "toolResult") {
+				throw new Error(
+					`messageInterceptor must not change toolResult message role (got: ${(intercepted as any).role ?? "unknown"})`,
+				);
+			}
+			toolResultMessage = intercepted as ToolResultMessage;
+		}
 
 		results.push(toolResultMessage);
 		stream.push({ type: "message_start", message: toolResultMessage });
@@ -452,7 +487,7 @@ async function executeToolCalls(
 				queuedMessages = queued;
 				const remainingCalls = toolCalls.slice(index + 1);
 				for (const skipped of remainingCalls) {
-					results.push(skipToolCall(skipped, stream));
+					results.push(await skipToolCall(skipped, stream, messageInterceptor));
 				}
 				break;
 			}
@@ -462,10 +497,11 @@ async function executeToolCalls(
 	return { toolResults: results, queuedMessages };
 }
 
-function skipToolCall(
+async function skipToolCall(
 	toolCall: Extract<AssistantMessage["content"][number], { type: "toolCall" }>,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
-): ToolResultMessage {
+	messageInterceptor: AgentLoopConfig["messageInterceptor"] | undefined,
+): Promise<ToolResultMessage> {
 	const result: AgentToolResult<any> = {
 		content: [{ type: "text", text: "Skipped due to queued user message." }],
 		details: {},
@@ -485,7 +521,7 @@ function skipToolCall(
 		isError: true,
 	});
 
-	const toolResultMessage: ToolResultMessage = {
+	let toolResultMessage: ToolResultMessage = {
 		role: "toolResult",
 		toolCallId: toolCall.id,
 		toolName: toolCall.name,
@@ -494,6 +530,16 @@ function skipToolCall(
 		isError: true,
 		timestamp: Date.now(),
 	};
+
+	if (messageInterceptor) {
+		const intercepted = await interceptFinalMessage(toolResultMessage, messageInterceptor);
+		if ((intercepted as any).role !== "toolResult") {
+			throw new Error(
+				`messageInterceptor must not change toolResult message role (got: ${(intercepted as any).role ?? "unknown"})`,
+			);
+		}
+		toolResultMessage = intercepted as ToolResultMessage;
+	}
 
 	stream.push({ type: "message_start", message: toolResultMessage });
 	stream.push({ type: "message_end", message: toolResultMessage });

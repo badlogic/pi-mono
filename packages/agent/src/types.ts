@@ -104,8 +104,14 @@ export interface TurnEndResult {
 /** Callback invoked after each turn_end is emitted. */
 export type TurnEndCallback = (ctx: TurnEndContext) => Promise<TurnEndResult | undefined> | TurnEndResult | undefined;
 
-/** Interceptor invoked for finalized messages (message_end). Return null to filter out the message. */
-export type MessageInterceptor = (message: AgentMessage) => Promise<AgentMessage | null> | AgentMessage | null;
+/**
+ * Interceptor invoked for finalized messages (message_end).
+ * Return a replacement message to mutate what gets persisted / used as future context.
+ * Return null/undefined to keep the original message.
+ */
+export type MessageInterceptor = (
+	message: AgentMessage,
+) => Promise<AgentMessage | null | undefined> | AgentMessage | null | undefined;
 
 /**
  * Configuration for the agent loop.
