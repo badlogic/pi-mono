@@ -51,7 +51,7 @@ Tool **implementations** include executable functions, which are not serializabl
 - patch ops operate on tool **definitions** (serializable)
 - at runtime, definitions are **rehydrated** to implementations by tool name
 
-If a patched definition references a tool name that has no implementation loaded, the tool is omitted and any call will fail at runtime.
+If a patched definition references a tool name that has no implementation loaded, Pi fails fast (throws) before issuing the provider request.
 
 ## Cached vs uncached (and why you must care)
 
@@ -113,14 +113,16 @@ For the lifecycle diagram, see [hooks.md – Lifecycle](./hooks.md#lifecycle).
 
 The important ordering rules are:
 
-1) **Patch replay** (persistent) — deterministic; does not execute hook code
-2) `context(before_request)` (persistent) — cached patch ops; persisted
-3) Built-in compaction preflight (optional; persistent)
-4) `context(ephemeral)` (request-only) — applied to request-local envelope
-5) Provider call
-6) `message` hook — runs on finalized messages (`message_end`)
-7) `context(turn_end)` (persistent) — cached patch ops; persisted
-8) Built-in compaction evaluation (overflow/threshold) (optional)
+1) **Deterministic replay** (persistent) — rebuild the envelope from the session path:
+   - apply the last `compaction` entry (if any)
+   - apply persisted `context_transform` patches in order
+   (no hook code runs here)
+2) `context(before_request)` (persistent) — cached patch ops; persisted as `context_transform` entries
+3) `context(ephemeral)` (request-only) — applied to a request-local envelope (never replayed)
+4) Provider call (+ tool followups)
+5) `context(turn_end)` (persistent) — cached patch ops; persisted as `context_transform` entries
+
+(`message` hook support is planned but not yet implemented.)
 
 ## The `context` hook API
 
@@ -185,7 +187,7 @@ Common operations:
 - compaction:
   - `compaction_apply` (built-in)
 
-See `ContextPatchOp` in `@mariozechner/pi-ai` for the authoritative list.
+See `ContextPatchOp` in `@mariozechner/pi-agent-core` for the authoritative list.
 
 ## Examples
 
