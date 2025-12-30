@@ -4,7 +4,7 @@
  * Uses the Cloud Code Assist API endpoint to access Gemini and Claude models.
  */
 
-import type { Content, ThinkingConfig, ThinkingLevel } from "@google/genai";
+import type { Content, ThinkingConfig } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
@@ -21,6 +21,12 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { convertMessages, convertTools, mapStopReasonString, mapToolChoice } from "./google-shared.js";
 
+/**
+ * Thinking level for Gemini 3 models.
+ * Mirrors Google's ThinkingLevel enum values.
+ */
+export type GoogleThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+
 export interface GoogleGeminiCliOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
 	/**
@@ -35,7 +41,7 @@ export interface GoogleGeminiCliOptions extends StreamOptions {
 		/** Thinking budget in tokens. Use for Gemini 2.x models. */
 		budgetTokens?: number;
 		/** Thinking level. Use for Gemini 3 models (LOW/HIGH for Pro, MINIMAL/LOW/MEDIUM/HIGH for Flash). */
-		level?: ThinkingLevel;
+		level?: GoogleThinkingLevel;
 	};
 	projectId?: string;
 }
@@ -436,7 +442,8 @@ function buildRequest(
 		};
 		// Gemini 3 models use thinkingLevel, older models use thinkingBudget
 		if (options.thinking.level !== undefined) {
-			generationConfig.thinkingConfig.thinkingLevel = options.thinking.level;
+			// Cast to any since our GoogleThinkingLevel mirrors Google's ThinkingLevel enum values
+			generationConfig.thinkingConfig.thinkingLevel = options.thinking.level as any;
 		} else if (options.thinking.budgetTokens !== undefined) {
 			generationConfig.thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}

@@ -1,8 +1,11 @@
-import { ThinkingLevel } from "@google/genai";
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
-import { type GoogleGeminiCliOptions, streamGoogleGeminiCli } from "./providers/google-gemini-cli.js";
+import {
+	type GoogleGeminiCliOptions,
+	type GoogleThinkingLevel,
+	streamGoogleGeminiCli,
+} from "./providers/google-gemini-cli.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
@@ -256,53 +259,56 @@ function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
 	return model.id.includes("3-flash");
 }
 
-function getGemini3ThinkingLevel(effort: ClampedReasoningEffort, model: Model<"google-generative-ai">): ThinkingLevel {
+function getGemini3ThinkingLevel(
+	effort: ClampedReasoningEffort,
+	model: Model<"google-generative-ai">,
+): GoogleThinkingLevel {
 	if (isGemini3ProModel(model)) {
 		// Gemini 3 Pro only supports LOW/HIGH (for now)
 		switch (effort) {
 			case "minimal":
 			case "low":
-				return ThinkingLevel.LOW;
+				return "LOW";
 			case "medium":
 			case "high":
-				return ThinkingLevel.HIGH;
+				return "HIGH";
 		}
 	}
 	// Gemini 3 Flash supports all four levels
 	switch (effort) {
 		case "minimal":
-			return ThinkingLevel.MINIMAL;
+			return "MINIMAL";
 		case "low":
-			return ThinkingLevel.LOW;
+			return "LOW";
 		case "medium":
-			return ThinkingLevel.MEDIUM;
+			return "MEDIUM";
 		case "high":
-			return ThinkingLevel.HIGH;
+			return "HIGH";
 	}
 }
 
-function getGeminiCliThinkingLevel(effort: ClampedReasoningEffort, modelId: string): ThinkingLevel {
+function getGeminiCliThinkingLevel(effort: ClampedReasoningEffort, modelId: string): GoogleThinkingLevel {
 	if (modelId.includes("3-pro")) {
 		// Gemini 3 Pro only supports LOW/HIGH (for now)
 		switch (effort) {
 			case "minimal":
 			case "low":
-				return ThinkingLevel.LOW;
+				return "LOW";
 			case "medium":
 			case "high":
-				return ThinkingLevel.HIGH;
+				return "HIGH";
 		}
 	}
 	// Gemini 3 Flash supports all four levels
 	switch (effort) {
 		case "minimal":
-			return ThinkingLevel.MINIMAL;
+			return "MINIMAL";
 		case "low":
-			return ThinkingLevel.LOW;
+			return "LOW";
 		case "medium":
-			return ThinkingLevel.MEDIUM;
+			return "MEDIUM";
 		case "high":
-			return ThinkingLevel.HIGH;
+			return "HIGH";
 	}
 }
 
