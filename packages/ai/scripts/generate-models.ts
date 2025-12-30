@@ -258,7 +258,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process xAi models
+		// Process zAi models
 		if (data.zai?.models) {
       for (const [modelId, model] of Object.entries(data.zai.models)) {
         const m = model as ModelsDevModel;
@@ -268,9 +268,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
         models.push({
           id: modelId,
           name: m.name || modelId,
-          api: supportsImage ? "openai-completions" : "anthropic-messages",
+          api: "openai-completions",
           provider: "zai",
-          baseUrl: supportsImage ? "https://api.z.ai/api/coding/paas/v4" : "https://api.z.ai/api/anthropic",
+          baseUrl: "https://api.z.ai/api/coding/paas/v4",
           reasoning: m.reasoning === true,
           input: supportsImage ? ["text", "image"] : ["text"],
           cost: {
@@ -279,11 +279,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
             cacheRead: m.cost?.cache_read || 0,
             cacheWrite: m.cost?.cache_write || 0,
           },
-          ...(supportsImage ? {
-            compat: {
-              supportsDeveloperRole: false,
-            },
-          } : {}),
+          compat: {
+            supportsDeveloperRole: false,
+          },
           contextWindow: m.limit?.context || 4096,
           maxTokens: m.limit?.output || 4096,
         });
