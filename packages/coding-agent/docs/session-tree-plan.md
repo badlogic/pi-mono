@@ -373,10 +373,11 @@ interface BeforeAgentStartResult {
   - Shows current position
   - Generates branch summaries when switching branches
 
-### Tree Selector Improvements
+### Tree Selector Improvements ✅
 
-- [ ] Active line highlight (background color) - currently bold but hard to see
-- [ ] Filter out tool calls - add as another filter type to cycle through via `^O`
+- [x] Active line highlight (inverse background) - much more visible
+- [x] Filter out tool calls - `no-tools` filter mode via `^O`
+- [x] `Shift+^O` cycles filters backwards
 
 ### Documentation
 
