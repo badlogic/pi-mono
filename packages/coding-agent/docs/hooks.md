@@ -260,18 +260,30 @@ See [src/core/compaction.ts](../src/core/compaction.ts) for the full implementat
 
 | Field | Description |
 |-------|-------------|
-| `entries` | All session entries (header, messages, model changes, previous compactions). Use this for custom schemes that need full session history. |
-| `cutPoint` | Where default compaction would cut. `firstKeptEntryIndex` is the entry index where kept messages start. `isSplitTurn` indicates if cutting mid-turn. |
-| `previousSummary` | Summary from the last compaction, if any. Include this in your summary to preserve accumulated context. |
-| `messagesToSummarize` | Messages that will be summarized and discarded (from after last compaction to cut point). |
-| `messagesToKeep` | Messages that will be kept verbatim after the summary (from cut point to end). |
-| `tokensBefore` | Current context token count (why compaction triggered). |
+| `preparation` | Compaction preparation with `firstKeptEntryId`, `messagesToSummarize`, `messagesToKeep`, `tokensBefore`, `isSplitTurn`. |
+| `previousCompactions` | Array of previous `CompactionEntry` objects (newest first). Access summaries for accumulated context. |
 | `model` | Model to use for summarization. |
-| `resolveApiKey` | Function to resolve API key for any model: `await resolveApiKey(model)` |
 | `customInstructions` | Optional focus for summary (from `/compact <instructions>`). |
 | `signal` | AbortSignal for cancellation. Pass to LLM calls and check periodically. |
 
+Access session entries via `ctx.sessionManager.getEntries()` and API keys via `ctx.modelRegistry.getApiKey(model)`.
+
 Custom compaction hooks should honor the abort signal by passing it to `complete()` calls. This allows users to cancel compaction (e.g., via Ctrl+C during `/compact`).
+
+**Returning custom compaction:**
+
+```typescript
+return {
+  compaction: {
+    summary: "Your summary...",
+    firstKeptEntryId: preparation.firstKeptEntryId,
+    tokensBefore: preparation.tokensBefore,
+    details: { /* optional hook-specific data */ },
+  }
+};
+```
+
+The `details` field persists hook-specific metadata (e.g., artifact index, version markers) in the compaction entry.
 
 See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) for a complete example.
 
@@ -437,6 +449,61 @@ export default function (pi: HookAPI) {
 
 **Note:** If you modify `content`, you should also update `details` accordingly. The TUI uses `details` (e.g., truncation info) for rendering, so inconsistent values will cause display issues.
 
+### context
+
+Fired before each LLM call, allowing non-destructive message modification. The original session is not modified.
+
+```typescript
+pi.on("context", async (event, ctx) => {
+  // event.messages: AgentMessage[] (deep copy, safe to modify)
+  
+  // Return modified messages, or undefined to keep original
+  return { messages: modifiedMessages };
+});
+```
+
+Use case: Dynamic context pruning without modifying session history.
+
+```typescript
+export default function (pi: HookAPI) {
+  pi.on("context", async (event, ctx) => {
+    // Find all pruning decisions stored as custom entries
+    const entries = ctx.sessionManager.getEntries();
+    const pruningRules = entries
+      .filter(e => e.type === "custom" && e.customType === "prune-rules")
+      .flatMap(e => e.data as PruneRule[]);
+    
+    // Apply pruning to messages (e.g., truncate old tool results)
+    const prunedMessages = applyPruning(event.messages, pruningRules);
+    return { messages: prunedMessages };
+  });
+}
+```
+
+### before_agent_start
+
+Fired once when user submits a prompt, before `agent_start`. Allows injecting a message that gets persisted.
+
+```typescript
+pi.on("before_agent_start", async (event, ctx) => {
+  // event.userMessage: the user's message
+  
+  // Return a message to inject, or undefined to skip
+  return {
+    message: {
+      customType: "context-injection",
+      content: "Additional context...",
+      display: true,  // Show in TUI
+    }
+  };
+});
+```
+
+The injected message is:
+- Persisted to session as a `CustomMessageEntry`
+- Sent to the LLM as a user message
+- Visible in TUI (if `display: true`)
+
 ## Context API
 
 Every event handler receives a context object with these methods:
@@ -480,23 +547,42 @@ ctx.ui.notify("Operation complete", "info");
 ctx.ui.notify("Something went wrong", "error");
 ```
 
-### ctx.exec(command, args, options?)
+### ctx.ui.custom(component, done)
 
-Execute a command and get the result. Supports cancellation via `AbortSignal` and timeout.
+Show a custom TUI component with keyboard focus. Call `done()` when finished.
 
 ```typescript
-const result = await ctx.exec("git", ["status"]);
-// result.stdout: string
-// result.stderr: string
-// result.code: number
-// result.killed?: boolean  // True if killed by signal/timeout
+import { Container, Text } from "@mariozechner/pi-tui";
 
-// With timeout (5 seconds)
-const result = await ctx.exec("slow-command", [], { timeout: 5000 });
+const myComponent = new Container(0, 0, [
+  new Text("Custom UI - press ESC to close", 0, 0),
+]);
 
-// With abort signal
-const controller = new AbortController();
-const result = await ctx.exec("long-command", [], { signal: controller.signal });
+ctx.ui.custom(myComponent, () => {
+  // Cleanup when component is dismissed
+});
+```
+
+See `examples/hooks/snake.ts` for a complete example with keyboard handling.
+
+### ctx.sessionManager
+
+Access to the session manager for reading session state.
+
+```typescript
+const entries = ctx.sessionManager.getEntries();
+const path = ctx.sessionManager.getPath();
+const tree = ctx.sessionManager.getTree();
+const label = ctx.sessionManager.getLabel(entryId);
+```
+
+### ctx.modelRegistry
+
+Access to model registry for model discovery and API keys.
+
+```typescript
+const apiKey = ctx.modelRegistry.getApiKey(model);
+const models = ctx.modelRegistry.getAvailableModels();
 ```
 
 ### ctx.cwd
@@ -529,19 +615,152 @@ if (ctx.hasUI) {
 }
 ```
 
-## Sending Messages
+## Hook API Methods
 
-Hooks can inject messages into the agent session using `pi.send()`. This is useful for:
+The `pi` object provides methods for interacting with the agent:
 
-- Waking up the agent when an external event occurs (file change, CI result, etc.)
-- Async debugging (inject debug output from other processes)
-- Triggering agent actions from external systems
+### pi.sendMessage(message, triggerTurn?)
+
+Inject a message into the session. Creates a `CustomMessageEntry` (not a user message).
 
 ```typescript
-pi.send(text: string, attachments?: Attachment[]): void
+pi.sendMessage(message: HookMessage, triggerTurn?: boolean): void
+
+// HookMessage structure:
+interface HookMessage {
+  customType: string;  // Your hook's identifier
+  content: string | (TextContent | ImageContent)[];
+  display: boolean;    // true = show in TUI, false = hidden
+  details?: unknown;   // Hook-specific metadata (not sent to LLM)
+}
 ```
 
-If the agent is currently streaming, the message is queued. Otherwise, a new agent loop starts immediately.
+- If `triggerTurn` is true (default), starts an agent turn after injecting
+- If streaming, message is queued until current turn ends
+- Messages are persisted to session and sent to LLM as user messages
+
+```typescript
+pi.sendMessage({
+  customType: "my-hook",
+  content: "External trigger: build failed",
+  display: true,
+}, true);  // Trigger agent response
+```
+
+### pi.appendEntry(customType, data?)
+
+Persist hook state to session. Does NOT participate in LLM context.
+
+```typescript
+pi.appendEntry(customType: string, data?: unknown): void
+```
+
+Use for storing state that survives session reload. Scan entries on reload to reconstruct state:
+
+```typescript
+pi.on("session", async (event, ctx) => {
+  if (event.reason === "start" || event.reason === "switch") {
+    const entries = ctx.sessionManager.getEntries();
+    for (const entry of entries) {
+      if (entry.type === "custom" && entry.customType === "my-hook") {
+        // Reconstruct state from entry.data
+      }
+    }
+  }
+});
+
+// Later, save state
+pi.appendEntry("my-hook", { count: 42 });
+```
+
+### pi.registerCommand(name, options)
+
+Register a custom slash command.
+
+```typescript
+pi.registerCommand(name: string, options: {
+  description?: string;
+  handler: (ctx: HookCommandContext) => Promise<void>;
+}): void
+```
+
+The handler receives:
+- `ctx.args`: Everything after `/commandname`
+- `ctx.ui`: UI methods (select, confirm, input, notify, custom)
+- `ctx.hasUI`: Whether interactive UI is available
+- `ctx.cwd`: Current working directory
+- `ctx.sessionManager`: Session access
+- `ctx.modelRegistry`: Model access
+
+```typescript
+pi.registerCommand("stats", {
+  description: "Show session statistics",
+  handler: async (ctx) => {
+    const entries = ctx.sessionManager.getEntries();
+    const messages = entries.filter(e => e.type === "message").length;
+    ctx.ui.notify(`${messages} messages in session`, "info");
+  }
+});
+```
+
+To prompt the LLM after a command, use `pi.sendMessage()` with `triggerTurn: true`.
+
+### pi.registerMessageRenderer(customType, renderer)
+
+Register a custom TUI renderer for `CustomMessageEntry` messages.
+
+```typescript
+pi.registerMessageRenderer(customType: string, renderer: HookMessageRenderer): void
+
+type HookMessageRenderer = (
+  message: HookMessage,
+  options: { expanded: boolean; width: number },
+  theme: Theme
+) => Component | null;
+```
+
+Return a TUI Component for the inner content. Pi wraps it in a styled box.
+
+```typescript
+import { Text } from "@mariozechner/pi-tui";
+
+pi.registerMessageRenderer("my-hook", (message, options, theme) => {
+  return new Text(theme.fg("accent", `[MY-HOOK] ${message.content}`), 0, 0);
+});
+```
+
+### pi.exec(command, args, options?)
+
+Execute a shell command.
+
+```typescript
+const result = await pi.exec(command: string, args: string[], options?: {
+  signal?: AbortSignal;
+  timeout?: number;
+}): Promise<ExecResult>;
+
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+  killed?: boolean;  // True if killed by signal/timeout
+}
+```
+
+```typescript
+const result = await pi.exec("git", ["status"]);
+if (result.code === 0) {
+  console.log(result.stdout);
+}
+
+// With timeout
+const result = await pi.exec("slow-command", [], { timeout: 5000 });
+if (result.killed) {
+  console.log("Command timed out");
+}
+```
+
+## Sending Messages (Examples)
 
 ### Example: File Watcher
 
@@ -553,15 +772,18 @@ export default function (pi: HookAPI) {
   pi.on("session", async (event, ctx) => {
     if (event.reason !== "start") return;
 
-    // Watch a trigger file
     const triggerFile = "/tmp/agent-trigger.txt";
 
     fs.watch(triggerFile, () => {
       try {
         const content = fs.readFileSync(triggerFile, "utf-8").trim();
         if (content) {
-          pi.send(`External trigger: ${content}`);
-          fs.writeFileSync(triggerFile, ""); // Clear after reading
+          pi.sendMessage({
+            customType: "file-trigger",
+            content: `External trigger: ${content}`,
+            display: true,
+          }, true);
+          fs.writeFileSync(triggerFile, "");
         }
       } catch {
         // File might not exist yet
@@ -572,8 +794,6 @@ export default function (pi: HookAPI) {
   });
 }
 ```
-
-To trigger: `echo "Run the tests" > /tmp/agent-trigger.txt`
 
 ### Example: HTTP Webhook
 
@@ -589,7 +809,11 @@ export default function (pi: HookAPI) {
       let body = "";
       req.on("data", chunk => body += chunk);
       req.on("end", () => {
-        pi.send(body || "Webhook triggered");
+        pi.sendMessage({
+          customType: "webhook",
+          content: body || "Webhook triggered",
+          display: true,
+        }, true);
         res.writeHead(200);
         res.end("OK");
       });
@@ -602,9 +826,7 @@ export default function (pi: HookAPI) {
 }
 ```
 
-To trigger: `curl -X POST http://localhost:3333 -d "CI build failed"`
-
-**Note:** `pi.send()` is not supported in print mode (single-shot execution).
+**Note:** `pi.sendMessage()` is not supported in print mode (single-shot execution).
 
 ## Examples
 

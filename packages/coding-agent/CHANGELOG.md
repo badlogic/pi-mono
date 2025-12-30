@@ -42,11 +42,18 @@
   - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
-- **Themes**: Custom themes must add `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens
+- **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
 
 ### Added
 
+- **`/tree` command**: Navigate the session tree in-place. Shows full tree structure with labels, supports search (type to filter), page navigation (←/→), and filter modes (Ctrl+O cycles: default → no-tools → user-only → labeled-only → all, Shift+Ctrl+O cycles backwards). Selecting a branch generates a summary and switches context. Press `l` to label entries.
+- **`context` hook event**: Fires before each LLM call, allowing hooks to non-destructively modify messages. Returns `{ messages }` to override. Useful for dynamic context pruning without modifying session history.
+- **`before_agent_start` hook event**: Fires once when user submits a prompt, before `agent_start`. Hooks can return `{ message }` to inject a `CustomMessageEntry` that gets persisted and sent to the LLM.
+- **`ui.custom()` for hooks**: Show arbitrary TUI components with keyboard focus. Call `done()` when finished: `ctx.ui.custom(component, done)`.
+- **Branch summarization**: When switching branches via `/tree`, generates a summary of the abandoned branch including file operations (read/modified files). Summaries are stored as `BranchSummaryEntry` with cumulative file tracking in `details`.
+- **`selectedBg` theme color**: Background color for selected/active lines in tree selector and other components.
 - **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
+- **Snake game example hook**: Added `examples/hooks/snake.ts` demonstrating `ui.custom()`, `registerCommand()`, and session persistence.
 
 ### Changed
 
@@ -61,7 +68,10 @@
 
 ### Fixed
 
-- **Edit tool fails on Windows due to CRLF line endings**: Files with CRLF line endings now match correctly when LLMs send LF-only text. Line endings are normalized before matching and restored to original style on write. ([#355](https://github.com/badlogic/pi-mono/issues/355))
+- **Edit tool fails on Windows due to CRLF line endings**: Files with CRLF line endings now match correctly when LLMs send LF-only text. Line endings are normalized before matching and restored to original style on write. ([#355](https://github.com/badlogic/pi-mono/issues/355) by [@Pratham-Dubey](https://github.com/Pratham-Dubey))
+- **Use bash instead of sh on Unix**: Fixed shell commands using `/bin/sh` instead of `/bin/bash` on Unix systems. ([#328](https://github.com/badlogic/pi-mono/pull/328) by [@dnouri](https://github.com/dnouri))
+- **OAuth login URL clickable**: Made OAuth login URLs clickable in terminal. ([#349](https://github.com/badlogic/pi-mono/pull/349) by [@Cursivez](https://github.com/Cursivez))
+- **Improved error messages**: Better error messages when `apiKey` or `model` are missing. ([#346](https://github.com/badlogic/pi-mono/pull/346) by [@ronyrus](https://github.com/ronyrus))
 - **Session file validation**: `findMostRecentSession()` now validates session headers before returning, preventing non-session JSONL files from being loaded
 - **Compaction error handling**: `generateSummary()` and `generateTurnPrefixSummary()` now throw on LLM errors instead of returning empty strings
 
