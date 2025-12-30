@@ -332,6 +332,16 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
 				api.on(eventType as any, handler as any);
 			}
 		}
+
+		for (const [customType, renderer] of loaded.messageRenderers) {
+			api.registerMessageRenderer(customType, renderer as any);
+		}
+		for (const [rendererId, renderer] of loaded.contextTransformRenderers) {
+			api.registerContextTransformRenderer(rendererId, renderer as any);
+		}
+		for (const [name, cmd] of loaded.commands) {
+			api.registerCommand(name, { description: cmd.description, handler: cmd.handler } as any);
+		}
 	};
 }
 

@@ -175,6 +175,7 @@ export default function (pi: HookAPI) {
 - `display` is persisted on the `context_transform` entry.
 - Hooks register renderers by ID via `pi.registerContextTransformRenderer(rendererId, renderer)`.
 - The interactive `/context` command enumerates `context_transform` entries on the active session path and calls the renderer for any entry whose `display.rendererId` matches a registered renderer.
+- Other surfaces (RPC/HTML/tree) cannot render interactive TUI components, so they fall back to `display.title`/`display.summary`/`display.markdown`.
 
 ## The `message_end` hook
 

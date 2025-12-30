@@ -33,7 +33,21 @@ interface CompactionEvent {
 	tokensBefore: number;
 }
 
-type SessionEvent = MessageEvent | ModelChangeEvent | CompactionEvent;
+interface ContextTransformEvent {
+	type: "context_transform";
+	timestamp: string;
+	transformerName: string;
+	display?: { title?: string; summary?: string; markdown?: string; rendererId?: string };
+	patch?: unknown;
+}
+
+interface EphemeralEvent {
+	type: "ephemeral";
+	timestamp: string;
+	messages: Message[];
+}
+
+type SessionEvent = MessageEvent | ModelChangeEvent | CompactionEvent | ContextTransformEvent | EphemeralEvent;
 
 interface ParsedSessionData {
 	sessionId: string;
@@ -591,6 +605,24 @@ function parseSessionManagerFormat(lines: string[]): ParsedSessionData {
 					tokensBefore: entry.tokensBefore as number,
 				});
 				break;
+
+			case "context_transform":
+				data.sessionEvents.push({
+					type: "context_transform",
+					timestamp: entry.timestamp as string,
+					transformerName: (entry.transformerName as string) || "(unknown)",
+					display: entry.display as any,
+					patch: entry.patch as any,
+				});
+				break;
+
+			case "ephemeral":
+				data.sessionEvents.push({
+					type: "ephemeral",
+					timestamp: entry.timestamp as string,
+					messages: (entry.messages as Message[]) || [],
+				});
+				break;
 		}
 	}
 
@@ -989,6 +1021,57 @@ function formatCompaction(event: CompactionEvent): string {
 	</div>`;
 }
 
+function formatContextTransform(event: ContextTransformEvent, colors: ThemeColors): string {
+	const timestamp = formatTimestamp(event.timestamp);
+	const timestampHtml = timestamp ? `<div class="message-timestamp">${timestamp}</div>` : "";
+	const title = event.display?.title ?? event.transformerName;
+	const summary = event.display?.summary ? ` — ${escapeHtml(event.display.summary)}` : "";
+	const details = event.display?.markdown
+		? escapeHtml(event.display.markdown)
+		: event.patch
+			? escapeHtml(JSON.stringify(event.patch, null, 2))
+			: "";
+
+	const rendererId = event.display?.rendererId
+		? `<div class="transform-renderer">rendererId: <span style="color:${colors.text}">${escapeHtml(event.display.rendererId)}</span></div>`
+		: "";
+
+	return `<div class="transform-container">
+		<div class="transform-header" onclick="this.parentElement.classList.toggle('expanded')">
+			${timestampHtml}
+			<div class="transform-header-row">
+				<span class="transform-toggle">▶</span>
+				<span class="transform-title">${escapeHtml(title)}</span>
+				<span class="transform-summary">${summary}</span>
+				<span class="transform-hint">(click to expand)</span>
+			</div>
+		</div>
+		<div class="transform-content">
+			${rendererId}
+			<pre class="transform-details">${details}</pre>
+		</div>
+	</div>`;
+}
+
+function formatEphemeral(event: EphemeralEvent): string {
+	const timestamp = formatTimestamp(event.timestamp);
+	const timestampHtml = timestamp ? `<div class="message-timestamp">${timestamp}</div>` : "";
+	const details = escapeHtml(JSON.stringify(event.messages, null, 2));
+	return `<div class="transform-container">
+		<div class="transform-header" onclick="this.parentElement.classList.toggle('expanded')">
+			${timestampHtml}
+			<div class="transform-header-row">
+				<span class="transform-toggle">▶</span>
+				<span class="transform-title">ephemeral</span>
+				<span class="transform-hint">(request-only, not replayed)</span>
+			</div>
+		</div>
+		<div class="transform-content">
+			<pre class="transform-details">${details}</pre>
+		</div>
+	</div>`;
+}
+
 // ============================================================================
 // HTML generation
 // ============================================================================
@@ -1038,6 +1121,12 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
 				break;
 			case "compaction":
 				messagesHtml += formatCompaction(event);
+				break;
+			case "context_transform":
+				messagesHtml += formatContextTransform(event, colors);
+				break;
+			case "ephemeral":
+				messagesHtml += formatEphemeral(event);
 				break;
 		}
 	}
@@ -1148,6 +1237,20 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .compaction-summary { background: rgba(0, 0, 0, 0.1); border-radius: 4px; padding: 12px; }
         .compaction-summary-header { font-weight: bold; color: ${colors.borderAccent}; margin-bottom: 8px; font-size: 11px; }
         .compaction-summary-content { color: ${colors.text}; white-space: pre-wrap; word-wrap: break-word; }
+
+        .transform-container { background: ${systemPromptBg}; border-radius: 4px; overflow: hidden; margin-top: 12px; }
+        .transform-header { padding: 12px 16px; cursor: pointer; }
+        .transform-header:hover { background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.05); }
+        .transform-header-row { display: flex; align-items: center; gap: 8px; }
+        .transform-toggle { color: ${colors.borderAccent}; font-size: 10px; transition: transform 0.2s; }
+        .transform-container.expanded .transform-toggle { transform: rotate(90deg); }
+        .transform-title { color: ${colors.text}; font-weight: bold; }
+        .transform-summary { color: ${colors.dim}; }
+        .transform-hint { color: ${colors.dim}; font-size: 11px; }
+        .transform-content { display: none; padding: 0 16px 16px 16px; }
+        .transform-container.expanded .transform-content { display: block; }
+        .transform-details { margin: 8px 0 0 0; font-family: inherit; font-size: 11px; color: ${colors.dim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
+        .transform-renderer { margin-top: 8px; font-size: 11px; color: ${colors.dim}; }
         .tool-execution { padding: 12px 16px; border-radius: 4px; margin-top: 8px; }
         .tool-execution.user-bash { background: ${userBashBg}; }
         .tool-execution.user-bash-error { background: ${userBashErrorBg}; }

@@ -267,7 +267,9 @@ class TreeList implements Component {
 				entry.type === "label" ||
 				entry.type === "custom" ||
 				entry.type === "model_change" ||
-				entry.type === "thinking_level_change";
+				entry.type === "thinking_level_change" ||
+				entry.type === "context_transform" ||
+				entry.type === "ephemeral";
 
 			switch (this.filterMode) {
 				case "user-only":
@@ -367,6 +369,23 @@ class TreeList implements Component {
 			case "label":
 				parts.push("label", entry.label ?? "");
 				break;
+			case "context_transform": {
+				const t = entry as any;
+				parts.push("context_transform", t.transformerName ?? "");
+				if (t.display?.title) parts.push(String(t.display.title));
+				if (t.display?.summary) parts.push(String(t.display.summary));
+				break;
+			}
+			case "ephemeral": {
+				const e = entry as any;
+				parts.push("ephemeral");
+				if (Array.isArray(e.messages)) {
+					for (const m of e.messages) {
+						if (typeof m?.content === "string") parts.push(m.content);
+					}
+				}
+				break;
+			}
 		}
 
 		return parts.join(" ");
@@ -569,6 +588,17 @@ class TreeList implements Component {
 			case "label":
 				result = theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
 				break;
+			case "context_transform": {
+				const t = entry as any;
+				const title = t.display?.title ?? t.transformerName ?? "context_transform";
+				const summary = t.display?.summary ? ` — ${String(t.display.summary)}` : "";
+				result = theme.fg("borderAccent", `[transform] `) + theme.fg("dim", `${title}${summary}`);
+				break;
+			}
+			case "ephemeral": {
+				result = theme.fg("dim", "[ephemeral]");
+				break;
+			}
 			default:
 				result = "";
 		}

@@ -2310,6 +2310,42 @@ export class AgentSession {
 		renderMessages("cached", envelope.messages.cached);
 		renderMessages("uncached", envelope.messages.uncached);
 
+		// Persisted transforms on the active path (debugging / auditing)
+		const transforms = this.sessionManager.getPath().filter((e) => e.type === "context_transform") as Array<any>;
+		if (transforms.length > 0) {
+			lines.push("## Context transforms (persisted)");
+			lines.push("");
+			for (const t of transforms) {
+				const title = t.display?.title ?? t.transformerName ?? "(unknown)";
+				lines.push(`### ${title}`);
+				lines.push("");
+				if (t.display?.summary) {
+					lines.push(t.display.summary);
+					lines.push("");
+				}
+				if (t.display?.rendererId) {
+					lines.push(`rendererId: \`${t.display.rendererId}\``);
+					lines.push("");
+				}
+				if (t.display?.markdown) {
+					lines.push(t.display.markdown);
+					lines.push("");
+				} else if (Array.isArray(t.patch)) {
+					const ops = t.patch.map((p: any) => p.op).join(", ");
+					lines.push(`ops: ${ops}`);
+					lines.push("");
+				}
+			}
+		}
+
+		const ephemerals = this.sessionManager.getPath().filter((e) => e.type === "ephemeral") as Array<any>;
+		if (ephemerals.length > 0) {
+			lines.push("## Ephemeral (request-only log)");
+			lines.push("");
+			lines.push(`count: ${ephemerals.length}`);
+			lines.push("");
+		}
+
 		return lines.join("\n");
 	}
 
