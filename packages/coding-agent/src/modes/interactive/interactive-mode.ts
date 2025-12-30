@@ -1027,12 +1027,12 @@ export class InteractiveMode {
 				};
 				// Show retry indicator
 				this.statusContainer.clear();
-				const delaySeconds = Math.round(event.delayMs / 1000);
+				const retryTime = new Date(Date.now() + event.delayMs).toLocaleTimeString("en-GB");
 				this.retryLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("warning", spinner),
 					(text) => theme.fg("muted", text),
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (esc to cancel)`,
+					`Retrying (${event.attempt}/${event.maxAttempts}) at ${retryTime} (esc to cancel)`,
 				);
 				this.statusContainer.addChild(this.retryLoader);
 				this.ui.requestRender();
