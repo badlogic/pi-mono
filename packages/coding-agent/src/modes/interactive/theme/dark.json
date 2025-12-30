@@ -11,6 +11,7 @@
 		"dimGray": "#666666",
 		"darkGray": "#505050",
 		"accent": "#8abeb7",
+		"selectedBg": "#3a3a4a",
 		"userMsgBg": "#343541",
 		"toolPendingBg": "#282832",
 		"toolSuccessBg": "#283228",
@@ -29,6 +30,7 @@
 		"dim": "dimGray",
 		"text": "",
 
+		"selectedBg": "selectedBg",
 		"userMessageBg": "userMsgBg",
 		"userMessageText": "",
 		"customMessageBg": "customMsgBg",

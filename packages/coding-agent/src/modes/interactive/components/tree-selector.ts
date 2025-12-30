@@ -262,18 +262,30 @@ class TreeList implements Component {
 
 			// Apply filter mode
 			let passesFilter = true;
-			if (this.filterMode === "user-only") {
-				passesFilter =
-					(entry.type === "message" && entry.message.role === "user") ||
-					(entry.type === "custom_message" && entry.display);
-			} else if (this.filterMode === "no-tools") {
-				// Hide tool results
-				passesFilter = !(entry.type === "message" && entry.message.role === "toolResult");
-			} else if (this.filterMode === "labeled-only") {
-				passesFilter = flatNode.node.label !== undefined;
-			} else if (this.filterMode !== "all") {
-				// Default mode: hide label and custom entries
-				passesFilter = entry.type !== "label" && entry.type !== "custom";
+			switch (this.filterMode) {
+				case "user-only":
+					// Just user messages
+					passesFilter = entry.type === "message" && entry.message.role === "user";
+					break;
+				case "no-tools":
+					// Default minus tool results (still hide label/custom entries)
+					passesFilter =
+						entry.type !== "label" &&
+						entry.type !== "custom" &&
+						!(entry.type === "message" && entry.message.role === "toolResult");
+					break;
+				case "labeled-only":
+					// Just labeled entries
+					passesFilter = flatNode.node.label !== undefined;
+					break;
+				case "all":
+					// Show everything
+					passesFilter = true;
+					break;
+				default:
+					// Default mode: hide label and custom entries
+					passesFilter = entry.type !== "label" && entry.type !== "custom";
+					break;
 			}
 
 			if (!passesFilter) return false;
@@ -464,7 +476,7 @@ class TreeList implements Component {
 
 			let line = cursor + theme.fg("dim", prefix) + pathMarker + label + content;
 			if (isSelected) {
-				line = theme.inverse(line);
+				line = theme.bg("selectedBg", line);
 			}
 			lines.push(truncateToWidth(line, width));
 		}
