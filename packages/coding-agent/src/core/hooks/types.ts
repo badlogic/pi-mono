@@ -5,10 +5,37 @@
  * and interact with the user via UI primitives.
  */
 
-import type { AppMessage, Attachment } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { CutPointResult } from "../compaction.js";
-import type { CompactionEntry, SessionEntry } from "../session-manager.js";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { Component } from "@mariozechner/pi-tui";
+import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
+import type { ExecOptions, ExecResult } from "../exec.js";
+import type { HookMessage } from "../messages.js";
+import type { ModelRegistry } from "../model-registry.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "../session-manager.js";
+
+/**
+ * Read-only view of SessionManager for hooks.
+ * Hooks should use pi.sendMessage() and pi.appendEntry() for writes.
+ */
+export type ReadonlySessionManager = Pick<
+	SessionManager,
+	| "getCwd"
+	| "getSessionDir"
+	| "getSessionId"
+	| "getSessionFile"
+	| "getLeafId"
+	| "getLeafEntry"
+	| "getEntry"
+	| "getLabel"
+	| "getPath"
+	| "getHeader"
+	| "getEntries"
+	| "getTree"
+>;
+
+import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
 	FindToolDetails,
@@ -17,27 +44,8 @@ import type {
 	ReadToolDetails,
 } from "../tools/index.js";
 
-// ============================================================================
-// Execution Context
-// ============================================================================
-
-/**
- * Result of executing a command via ctx.exec()
- */
-export interface ExecResult {
-	stdout: string;
-	stderr: string;
-	code: number;
-	/** True if the process was killed due to signal or timeout */
-	killed?: boolean;
-}
-
-export interface ExecOptions {
-	/** AbortSignal to cancel the process */
-	signal?: AbortSignal;
-	/** Timeout in milliseconds */
-	timeout?: number;
-}
+// Re-export for backward compatibility
+export type { ExecOptions, ExecResult } from "../exec.js";
 
 /**
  * UI context for hooks to request interactive UI from the harness.
@@ -50,7 +58,7 @@ export interface HookUIContext {
 	 * @param options - Array of string options
 	 * @returns Selected option string, or null if cancelled
 	 */
-	select(title: string, options: string[]): Promise<string | null>;
+	select(title: string, options: string[]): Promise<string | undefined>;
 
 	/**
 	 * Show a confirmation dialog.
@@ -60,97 +68,191 @@ export interface HookUIContext {
 
 	/**
 	 * Show a text input dialog.
-	 * @returns User input, or null if cancelled
+	 * @returns User input, or undefined if cancelled
 	 */
-	input(title: string, placeholder?: string): Promise<string | null>;
+	input(title: string, placeholder?: string): Promise<string | undefined>;
 
 	/**
 	 * Show a notification to the user.
 	 */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
+
+	/**
+	 * Show a custom component with keyboard focus.
+	 * The component receives keyboard input via handleInput() if implemented.
+	 *
+	 * @param component - Component to display (implement handleInput for keyboard, dispose for cleanup)
+	 * @returns Object with close() to restore normal UI and requestRender() to trigger redraw
+	 */
+	custom(component: Component & { dispose?(): void }): { close: () => void; requestRender: () => void };
 }
 
 /**
  * Context passed to hook event handlers.
  */
 export interface HookEventContext {
-	/** Execute a command and return stdout/stderr/code */
-	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 	/** UI methods for user interaction */
 	ui: HookUIContext;
 	/** Whether UI is available (false in print mode) */
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
-	/** Path to session file, or null if --no-session */
-	sessionFile: string | null;
+	/** Session manager (read-only) - use pi.sendMessage()/pi.appendEntry() for writes */
+	sessionManager: ReadonlySessionManager;
+	/** Model registry - use for API key resolution and model retrieval */
+	modelRegistry: ModelRegistry;
 }
 
 // ============================================================================
-// Events
+// Session Events
 // ============================================================================
 
-/**
- * Base fields shared by all session events.
- */
-interface SessionEventBase {
-	type: "session";
-	/** All session entries (including pre-compaction history) */
-	entries: SessionEntry[];
-	/** Current session file path, or null in --no-session mode */
-	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "new" */
-	previousSessionFile: string | null;
+/** Fired on initial session load */
+export interface SessionStartEvent {
+	type: "session_start";
 }
 
-/**
- * Event data for session events.
- * Discriminated union based on reason.
- *
- * Lifecycle:
- * - start: Initial session load
- * - before_switch / switch: Session switch (e.g., /resume command)
- * - before_new / new: New session (e.g., /new command)
- * - before_branch / branch: Session branch (e.g., /branch command)
- * - before_compact / compact: Before/after context compaction
- * - shutdown: Process exit (SIGINT/SIGTERM)
- *
- * "before_*" events fire before the action and can be cancelled via SessionEventResult.
- * Other events fire after the action completes.
- */
+/** Fired before switching to another session (can be cancelled) */
+export interface SessionBeforeSwitchEvent {
+	type: "session_before_switch";
+	/** Session file we're switching to */
+	targetSessionFile: string;
+}
+
+/** Fired after switching to another session */
+export interface SessionSwitchEvent {
+	type: "session_switch";
+	/** Session file we came from */
+	previousSessionFile: string | undefined;
+}
+
+/** Fired before creating a new session (can be cancelled) */
+export interface SessionBeforeNewEvent {
+	type: "session_before_new";
+}
+
+/** Fired after creating a new session */
+export interface SessionNewEvent {
+	type: "session_new";
+}
+
+/** Fired before branching a session (can be cancelled) */
+export interface SessionBeforeBranchEvent {
+	type: "session_before_branch";
+	/** Index of the entry in the session (SessionManager.getEntries()) to branch from */
+	entryIndex: number;
+}
+
+/** Fired after branching a session */
+export interface SessionBranchEvent {
+	type: "session_branch";
+	previousSessionFile: string | undefined;
+}
+
+/** Fired before context compaction (can be cancelled or customized) */
+export interface SessionBeforeCompactEvent {
+	type: "session_before_compact";
+	/** Compaction preparation with cut point, messages to summarize/keep, etc. */
+	preparation: CompactionPreparation;
+	/** Previous compaction entries, newest first. Use for iterative summarization. */
+	previousCompactions: CompactionEntry[];
+	/** Optional user-provided instructions for the summary */
+	customInstructions?: string;
+	/** Current model */
+	model: Model<any>;
+	/** Abort signal - hooks should pass this to LLM calls and check it periodically */
+	signal: AbortSignal;
+}
+
+/** Fired after context compaction */
+export interface SessionCompactEvent {
+	type: "session_compact";
+	compactionEntry: CompactionEntry;
+	/** Whether the compaction entry was provided by a hook */
+	fromHook: boolean;
+}
+
+/** Fired on process exit (SIGINT/SIGTERM) */
+export interface SessionShutdownEvent {
+	type: "session_shutdown";
+}
+
+/** Preparation data for tree navigation (used by session_before_tree event) */
+export interface TreePreparation {
+	/** Node being switched to */
+	targetId: string;
+	/** Current active leaf (being abandoned), null if no current position */
+	oldLeafId: string | null;
+	/** Common ancestor of target and old leaf, null if no common ancestor */
+	commonAncestorId: string | null;
+	/** Entries to summarize (old leaf back to common ancestor or compaction) */
+	entriesToSummarize: SessionEntry[];
+	/** Whether user chose to summarize */
+	userWantsSummary: boolean;
+}
+
+/** Fired before navigating to a different node in the session tree (can be cancelled) */
+export interface SessionBeforeTreeEvent {
+	type: "session_before_tree";
+	/** Preparation data for the navigation */
+	preparation: TreePreparation;
+	/** Model to use for summarization (conversation model) */
+	model: Model<any>;
+	/** Abort signal - honors Escape during summarization */
+	signal: AbortSignal;
+}
+
+/** Fired after navigating to a different node in the session tree */
+export interface SessionTreeEvent {
+	type: "session_tree";
+	/** The new active leaf, null if navigated to before first entry */
+	newLeafId: string | null;
+	/** Previous active leaf, null if there was no position */
+	oldLeafId: string | null;
+	/** Branch summary entry if one was created */
+	summaryEntry?: BranchSummaryEntry;
+	/** Whether summary came from hook */
+	fromHook?: boolean;
+}
+
+/** Union of all session event types */
 export type SessionEvent =
-	| (SessionEventBase & {
-			reason: "start" | "switch" | "new" | "before_switch" | "before_new" | "shutdown";
-	  })
-	| (SessionEventBase & {
-			reason: "branch" | "before_branch";
-			/** Index of the turn to branch from */
-			targetTurnIndex: number;
-	  })
-	| (SessionEventBase & {
-			reason: "before_compact";
-			cutPoint: CutPointResult;
-			/** Summary from previous compaction, if any. Include this in your summary to preserve context. */
-			previousSummary?: string;
-			/** Messages that will be summarized and discarded */
-			messagesToSummarize: AppMessage[];
-			/** Messages that will be kept after the summary (recent turns) */
-			messagesToKeep: AppMessage[];
-			tokensBefore: number;
-			customInstructions?: string;
-			model: Model<any>;
-			/** Resolve API key for any model (checks settings, OAuth, env vars) */
-			resolveApiKey: (model: Model<any>) => Promise<string | undefined>;
-			/** Abort signal - hooks should pass this to LLM calls and check it periodically */
-			signal: AbortSignal;
-	  })
-	| (SessionEventBase & {
-			reason: "compact";
-			compactionEntry: CompactionEntry;
-			tokensBefore: number;
-			/** Whether the compaction entry was provided by a hook */
-			fromHook: boolean;
-	  });
+	| SessionStartEvent
+	| SessionBeforeSwitchEvent
+	| SessionSwitchEvent
+	| SessionBeforeNewEvent
+	| SessionNewEvent
+	| SessionBeforeBranchEvent
+	| SessionBranchEvent
+	| SessionBeforeCompactEvent
+	| SessionCompactEvent
+	| SessionShutdownEvent
+	| SessionBeforeTreeEvent
+	| SessionTreeEvent;
+
+/**
+ * Event data for context event.
+ * Fired before each LLM call, allowing hooks to modify context non-destructively.
+ * Original session messages are NOT modified - only the messages sent to the LLM are affected.
+ */
+export interface ContextEvent {
+	type: "context";
+	/** Messages about to be sent to the LLM (deep copy, safe to modify) */
+	messages: AgentMessage[];
+}
+
+/**
+ * Event data for before_agent_start event.
+ * Fired after user submits a prompt but before the agent loop starts.
+ * Allows hooks to inject context that will be persisted and visible in TUI.
+ */
+export interface BeforeAgentStartEvent {
+	type: "before_agent_start";
+	/** The user's prompt text */
+	prompt: string;
+	/** Any images attached to the prompt */
+	images?: ImageContent[];
+}
 
 /**
  * Event data for agent_start event.
@@ -165,7 +267,7 @@ export interface AgentStartEvent {
  */
 export interface AgentEndEvent {
 	type: "agent_end";
-	messages: AppMessage[];
+	messages: AgentMessage[];
 }
 
 /**
@@ -183,7 +285,7 @@ export interface TurnStartEvent {
 export interface TurnEndEvent {
 	type: "turn_end";
 	turnIndex: number;
-	message: AppMessage;
+	message: AgentMessage;
 	toolResults: ToolResultMessage[];
 }
 
@@ -231,7 +333,7 @@ export interface ReadToolResultEvent extends ToolResultEventBase {
 /** Tool result event for edit tool */
 export interface EditToolResultEvent extends ToolResultEventBase {
 	toolName: "edit";
-	details: undefined;
+	details: EditToolDetails | undefined;
 }
 
 /** Tool result event for write tool */
@@ -307,6 +409,8 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
  */
 export type HookEvent =
 	| SessionEvent
+	| ContextEvent
+	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
 	| TurnStartEvent
@@ -317,6 +421,15 @@ export type HookEvent =
 // ============================================================================
 // Event Results
 // ============================================================================
+
+/**
+ * Return type for context event handlers.
+ * Allows hooks to modify messages before they're sent to the LLM.
+ */
+export interface ContextEventResult {
+	/** Modified messages to send instead of the original */
+	messages?: Message[];
+}
 
 /**
  * Return type for tool_call event handlers.
@@ -343,16 +456,68 @@ export interface ToolResultEventResult {
 }
 
 /**
- * Return type for session event handlers.
- * Allows hooks to cancel "before_*" actions.
+ * Return type for before_agent_start event handlers.
+ * Allows hooks to inject context before the agent runs.
  */
-export interface SessionEventResult {
-	/** If true, cancel the pending action (switch, clear, or branch) */
+export interface BeforeAgentStartEventResult {
+	/** Message to inject into context (persisted to session, visible in TUI) */
+	message?: Pick<HookMessage, "customType" | "content" | "display" | "details">;
+}
+
+/** Return type for session_before_switch handlers */
+export interface SessionBeforeSwitchResult {
+	/** If true, cancel the switch */
 	cancel?: boolean;
-	/** If true (for before_branch only), skip restoring conversation to branch point while still creating the branched session file */
+}
+
+/** Return type for session_before_new handlers */
+export interface SessionBeforeNewResult {
+	/** If true, cancel the new session */
+	cancel?: boolean;
+}
+
+/** Return type for session_before_branch handlers */
+export interface SessionBeforeBranchResult {
+	/**
+	 * If true, abort the branch entirely. No new session file is created,
+	 * conversation stays unchanged.
+	 */
+	cancel?: boolean;
+	/**
+	 * If true, the branch proceeds (new session file created, session state updated)
+	 * but the in-memory conversation is NOT rewound to the branch point.
+	 *
+	 * Use case: git-checkpoint hook that restores code state separately.
+	 * The hook handles state restoration itself, so it doesn't want the
+	 * agent's conversation to be rewound (which would lose recent context).
+	 *
+	 * - `cancel: true` → nothing happens, user stays in current session
+	 * - `skipConversationRestore: true` → branch happens, but messages stay as-is
+	 * - neither → branch happens AND messages rewind to branch point (default)
+	 */
 	skipConversationRestore?: boolean;
-	/** Custom compaction entry (for before_compact event) */
-	compactionEntry?: CompactionEntry;
+}
+
+/** Return type for session_before_compact handlers */
+export interface SessionBeforeCompactResult {
+	/** If true, cancel the compaction */
+	cancel?: boolean;
+	/** Custom compaction result - SessionManager adds id/parentId */
+	compaction?: CompactionResult;
+}
+
+/** Return type for session_before_tree handlers */
+export interface SessionBeforeTreeResult {
+	/** If true, cancel the navigation entirely */
+	cancel?: boolean;
+	/**
+	 * Custom summary (skips default summarizer).
+	 * Only used if preparation.userWantsSummary is true.
+	 */
+	summary?: {
+		summary: string;
+		details?: unknown;
+	};
 }
 
 // ============================================================================
@@ -361,29 +526,152 @@ export interface SessionEventResult {
 
 /**
  * Handler function type for each event.
+ * Handlers can return R, undefined, or void (bare return statements).
  */
-export type HookHandler<E, R = void> = (event: E, ctx: HookEventContext) => Promise<R>;
+// biome-ignore lint/suspicious/noConfusingVoidType: void allows bare return statements in handlers
+export type HookHandler<E, R = undefined> = (event: E, ctx: HookEventContext) => Promise<R | void> | R | void;
+
+export interface HookMessageRenderOptions {
+	/** Whether the view is expanded */
+	expanded: boolean;
+}
+
+/**
+ * Renderer for hook messages.
+ * Hooks register these to provide custom TUI rendering for their message types.
+ */
+export type HookMessageRenderer<T = unknown> = (
+	message: HookMessage<T>,
+	options: HookMessageRenderOptions,
+	theme: Theme,
+) => Component | undefined;
+
+/**
+ * Context passed to hook command handlers.
+ */
+export interface HookCommandContext {
+	/** Arguments after the command name */
+	args: string;
+	/** UI methods for user interaction */
+	ui: HookUIContext;
+	/** Whether UI is available (false in print mode) */
+	hasUI: boolean;
+	/** Current working directory */
+	cwd: string;
+	/** Session manager (read-only) - use pi.sendMessage()/pi.appendEntry() for writes */
+	sessionManager: ReadonlySessionManager;
+	/** Model registry for API keys */
+	modelRegistry: ModelRegistry;
+}
+
+/**
+ * Command registration options.
+ */
+export interface RegisteredCommand {
+	name: string;
+	description?: string;
+
+	handler: (ctx: HookCommandContext) => Promise<void>;
+}
 
 /**
  * HookAPI passed to hook factory functions.
- * Hooks use pi.on() to subscribe to events and pi.send() to inject messages.
+ * Hooks use pi.on() to subscribe to events and pi.sendMessage() to inject messages.
  */
 export interface HookAPI {
-	// biome-ignore lint/suspicious/noConfusingVoidType: void allows handlers to not return anything
-	on(event: "session", handler: HookHandler<SessionEvent, SessionEventResult | void>): void;
+	// Session events
+	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
+	on(event: "session_before_switch", handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
+	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
+	on(event: "session_before_new", handler: HookHandler<SessionBeforeNewEvent, SessionBeforeNewResult>): void;
+	on(event: "session_new", handler: HookHandler<SessionNewEvent>): void;
+	on(event: "session_before_branch", handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>): void;
+	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): void;
+	on(
+		event: "session_before_compact",
+		handler: HookHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
+	): void;
+	on(event: "session_compact", handler: HookHandler<SessionCompactEvent>): void;
+	on(event: "session_shutdown", handler: HookHandler<SessionShutdownEvent>): void;
+	on(event: "session_before_tree", handler: HookHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
+	on(event: "session_tree", handler: HookHandler<SessionTreeEvent>): void;
+
+	// Context and agent events
+	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult>): void;
+	on(event: "before_agent_start", handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
-	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult | undefined>): void;
-	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult | undefined>): void;
+	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
+	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
 
 	/**
-	 * Send a message to the agent.
-	 * If the agent is streaming, the message is queued.
-	 * If the agent is idle, a new agent loop is started.
+	 * Send a custom message to the session. Creates a CustomMessageEntry that
+	 * participates in LLM context and can be displayed in the TUI.
+	 *
+	 * Use this when you want the LLM to see the message content.
+	 * For hook state that should NOT be sent to the LLM, use appendEntry() instead.
+	 *
+	 * @param message - The message to send
+	 * @param message.customType - Identifier for your hook (used for filtering on reload)
+	 * @param message.content - Message content (string or TextContent/ImageContent array)
+	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
+	 * @param message.details - Optional hook-specific metadata (not sent to LLM)
+	 * @param triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
+	 *                      If agent is streaming, message is queued and triggerTurn is ignored.
 	 */
-	send(text: string, attachments?: Attachment[]): void;
+	sendMessage<T = unknown>(
+		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		triggerTurn?: boolean,
+	): void;
+
+	/**
+	 * Append a custom entry to the session for hook state persistence.
+	 * Creates a CustomEntry that does NOT participate in LLM context.
+	 *
+	 * Use this to store hook-specific data that should persist across session reloads
+	 * but should NOT be sent to the LLM. On reload, scan session entries for your
+	 * customType to reconstruct hook state.
+	 *
+	 * For messages that SHOULD be sent to the LLM, use sendMessage() instead.
+	 *
+	 * @param customType - Identifier for your hook (used for filtering on reload)
+	 * @param data - Hook-specific data to persist (must be JSON-serializable)
+	 *
+	 * @example
+	 * // Store permission state
+	 * pi.appendEntry("permissions", { level: "full", grantedAt: Date.now() });
+	 *
+	 * // On reload, reconstruct state from entries
+	 * pi.on("session", async (event, ctx) => {
+	 *   if (event.reason === "start") {
+	 *     const entries = event.sessionManager.getEntries();
+	 *     const myEntries = entries.filter(e => e.type === "custom" && e.customType === "permissions");
+	 *     // Reconstruct state from myEntries...
+	 *   }
+	 * });
+	 */
+	appendEntry<T = unknown>(customType: string, data?: T): void;
+
+	/**
+	 * Register a custom renderer for CustomMessageEntry with a specific customType.
+	 * The renderer is called when rendering the entry in the TUI.
+	 * Return nothing to use the default renderer.
+	 */
+	registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void;
+
+	/**
+	 * Register a custom slash command.
+	 * Handler receives HookCommandContext.
+	 */
+	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+
+	/**
+	 * Execute a shell command and return stdout/stderr/code.
+	 * Supports timeout and abort signal.
+	 */
+	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 }
 
 /**

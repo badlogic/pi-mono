@@ -1,12 +1,10 @@
 import { getModel } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
-import { Agent, ProviderTransport } from "../src/index.js";
+import { Agent } from "../src/index.js";
 
 describe("Agent", () => {
 	it("should create an agent instance with default state", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		expect(agent.state).toBeDefined();
 		expect(agent.state.systemPrompt).toBe("");
@@ -23,7 +21,6 @@ describe("Agent", () => {
 	it("should create an agent instance with custom initial state", () => {
 		const customModel = getModel("openai", "gpt-4o-mini");
 		const agent = new Agent({
-			transport: new ProviderTransport(),
 			initialState: {
 				systemPrompt: "You are a helpful assistant.",
 				model: customModel,
@@ -37,9 +34,7 @@ describe("Agent", () => {
 	});
 
 	it("should subscribe to events", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		let eventCount = 0;
 		const unsubscribe = agent.subscribe((_event) => {
@@ -61,9 +56,7 @@ describe("Agent", () => {
 	});
 
 	it("should update state with mutators", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		// Test setSystemPrompt
 		agent.setSystemPrompt("Custom prompt");
@@ -101,38 +94,19 @@ describe("Agent", () => {
 	});
 
 	it("should support message queueing", async () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		const message = { role: "user" as const, content: "Queued message", timestamp: Date.now() };
-		await agent.queueMessage(message);
+		agent.queueMessage(message);
 
 		// The message is queued but not yet in state.messages
 		expect(agent.state.messages).not.toContainEqual(message);
 	});
 
 	it("should handle abort controller", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		// Should not throw even if nothing is running
 		expect(() => agent.abort()).not.toThrow();
-	});
-});
-
-describe("ProviderTransport", () => {
-	it("should create a provider transport instance", () => {
-		const transport = new ProviderTransport();
-		expect(transport).toBeDefined();
-	});
-
-	it("should create a provider transport with options", () => {
-		const transport = new ProviderTransport({
-			getApiKey: async (provider) => `test-key-${provider}`,
-			corsProxyUrl: "https://proxy.example.com",
-		});
-		expect(transport).toBeDefined();
 	});
 });

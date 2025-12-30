@@ -1,15 +1,15 @@
-import { Agent, type AgentEvent, type Attachment, ProviderTransport } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import { getModel, type ImageContent } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
 	AuthStorage,
+	convertToLlm,
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
 	ModelRegistry,
-	messageTransformer,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
@@ -434,14 +434,12 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			thinkingLevel: "off",
 			tools,
 		},
-		messageTransformer,
-		transport: new ProviderTransport({
-			getApiKey: async () => getAnthropicApiKey(authStorage),
-		}),
+		convertToLlm,
+		getApiKey: async () => getAnthropicApiKey(authStorage),
 	});
 
 	// Load existing messages
-	const loadedSession = sessionManager.loadSession();
+	const loadedSession = sessionManager.buildSessionContex();
 	if (loadedSession.messages.length > 0) {
 		agent.replaceMessages(loadedSession.messages);
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
@@ -628,7 +626,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 			// Reload messages from context.jsonl
 			// This picks up any messages synced from log.jsonl before this run
-			const reloadedSession = sessionManager.loadSession();
+			const reloadedSession = sessionManager.buildSessionContex();
 			if (reloadedSession.messages.length > 0) {
 				agent.replaceMessages(reloadedSession.messages);
 				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);
@@ -716,7 +714,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offsetSign}${offsetHours}:${offsetMins}`;
 			let userMessage = `[${timestamp}] [${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
-			const imageAttachments: Attachment[] = [];
+			const imageAttachments: ImageContent[] = [];
 			const nonImagePaths: string[] = [];
 
 			for (const a of ctx.message.attachments || []) {
@@ -725,14 +723,10 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 				if (mimeType && existsSync(fullPath)) {
 					try {
-						const stats = statSync(fullPath);
 						imageAttachments.push({
-							id: a.local,
 							type: "image",
-							fileName: a.local.split("/").pop() || a.local,
 							mimeType,
-							size: stats.size,
-							content: readFileSync(fullPath).toString("base64"),
+							data: readFileSync(fullPath).toString("base64"),
 						});
 					} catch {
 						nonImagePaths.push(fullPath);
@@ -755,7 +749,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			};
 			await writeFile(join(channelDir, "last_prompt.jsonl"), JSON.stringify(debugContext, null, 2));
 
-			await session.prompt(userMessage, imageAttachments.length > 0 ? { attachments: imageAttachments } : undefined);
+			await session.prompt(userMessage, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
 
 			// Wait for queued messages
 			await queueChain;

@@ -4,7 +4,6 @@ export {
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
-	type CompactionResult,
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
@@ -13,17 +12,26 @@ export {
 export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
 // Compaction
 export {
+	type BranchPreparation,
+	type BranchSummaryResult,
+	type CollectEntriesResult,
+	type CompactionResult,
 	type CutPointResult,
 	calculateContextTokens,
+	collectEntriesForBranchSummary,
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateTokens,
+	type FileOperations,
 	findCutPoint,
 	findTurnStartIndex,
+	type GenerateBranchSummaryOptions,
+	generateBranchSummary,
 	generateSummary,
 	getLastAssistantUsage,
+	prepareBranchEntries,
 	shouldCompact,
-} from "./core/compaction.js";
+} from "./core/compaction/index.js";
 // Custom tools
 export type {
 	AgentToolUpdateCallback,
@@ -38,31 +46,7 @@ export type {
 	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
-export type {
-	AgentEndEvent,
-	AgentStartEvent,
-	BashToolResultEvent,
-	CustomToolResultEvent,
-	EditToolResultEvent,
-	FindToolResultEvent,
-	GrepToolResultEvent,
-	HookAPI,
-	HookEvent,
-	HookEventContext,
-	HookFactory,
-	HookUIContext,
-	LsToolResultEvent,
-	ReadToolResultEvent,
-	SessionEvent,
-	SessionEventResult,
-	ToolCallEvent,
-	ToolCallEventResult,
-	ToolResultEvent,
-	ToolResultEventResult,
-	TurnEndEvent,
-	TurnStartEvent,
-	WriteToolResultEvent,
-} from "./core/hooks/index.js";
+export type * from "./core/hooks/index.js";
 // Hook system types and type guards
 export {
 	isBashToolResult,
@@ -73,7 +57,7 @@ export {
 	isReadToolResult,
 	isWriteToolResult,
 } from "./core/hooks/index.js";
-export { messageTransformer } from "./core/messages.js";
+export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 // SDK for programmatic usage
 export {
@@ -107,20 +91,24 @@ export {
 	readOnlyTools,
 } from "./core/sdk.js";
 export {
+	type BranchSummaryEntry,
 	buildSessionContext,
 	type CompactionEntry,
-	createSummaryMessage,
+	CURRENT_SESSION_VERSION,
+	type CustomEntry,
+	type CustomMessageEntry,
+	type FileEntry,
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
+	migrateSessionEntries,
 	parseSessionEntries,
-	type SessionContext as LoadedSession,
+	type SessionContext,
 	type SessionEntry,
+	type SessionEntryBase,
 	type SessionHeader,
 	type SessionInfo,
 	SessionManager,
 	type SessionMessageEntry,
-	SUMMARY_PREFIX,
-	SUMMARY_SUFFIX,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
 export {

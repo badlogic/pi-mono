@@ -8,11 +8,9 @@
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "shutdown") return;
-
+	pi.on("session_shutdown", async (_event, ctx) => {
 		// Check for uncommitted changes
-		const { stdout: status, code } = await ctx.exec("git", ["status", "--porcelain"]);
+		const { stdout: status, code } = await pi.exec("git", ["status", "--porcelain"]);
 
 		if (code !== 0 || status.trim().length === 0) {
 			// Not a git repo or no changes
@@ -20,9 +18,10 @@ export default function (pi: HookAPI) {
 		}
 
 		// Find the last assistant message for commit context
+		const entries = ctx.sessionManager.getEntries();
 		let lastAssistantText = "";
-		for (let i = event.entries.length - 1; i >= 0; i--) {
-			const entry = event.entries[i];
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
 			if (entry.type === "message" && entry.message.role === "assistant") {
 				const content = entry.message.content;
 				if (Array.isArray(content)) {
@@ -40,8 +39,8 @@ export default function (pi: HookAPI) {
 		const commitMessage = `[pi] ${firstLine.slice(0, 50)}${firstLine.length > 50 ? "..." : ""}`;
 
 		// Stage and commit
-		await ctx.exec("git", ["add", "-A"]);
-		const { code: commitCode } = await ctx.exec("git", ["commit", "-m", commitMessage]);
+		await pi.exec("git", ["add", "-A"]);
+		const { code: commitCode } = await pi.exec("git", ["commit", "-m", commitMessage]);
 
 		if (commitCode === 0 && ctx.hasUI) {
 			ctx.ui.notify(`Auto-committed: ${commitMessage}`, "info");

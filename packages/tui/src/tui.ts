@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isShiftCtrlD } from "./keys.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, setCellDimensions } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
@@ -78,6 +79,9 @@ export class TUI extends Container {
 	private previousLines: string[] = [];
 	private previousWidth = 0;
 	private focusedComponent: Component | null = null;
+
+	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
+	public onDebug?: () => void;
 	private renderRequested = false;
 	private cursorRow = 0; // Track where cursor is (0-indexed, relative to our first line)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
@@ -139,6 +143,12 @@ export class TUI extends Container {
 			const filtered = this.parseCellSizeResponse();
 			if (filtered.length === 0) return;
 			data = filtered;
+		}
+
+		// Global debug key handler (Shift+Ctrl+D)
+		if (isShiftCtrlD(data) && this.onDebug) {
+			this.onDebug();
+			return;
 		}
 
 		// Pass input to focused component (including Ctrl+C)

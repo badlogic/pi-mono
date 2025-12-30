@@ -1,4 +1,4 @@
-import type { ToolResultMessage, Usage } from "@mariozechner/pi-ai";
+import { streamSimple, type ToolResultMessage, type Usage } from "@mariozechner/pi-ai";
 import { html, LitElement } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
 import { ModelSelector } from "../dialogs/ModelSelector.js";
@@ -6,12 +6,14 @@ import type { MessageEditor } from "./MessageEditor.js";
 import "./MessageEditor.js";
 import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
-import type { Agent, AgentEvent } from "../agent/agent.js";
 import { getAppStorage } from "../storage/app-storage.js";
 import "./StreamingMessageContainer.js";
+import type { Agent, AgentEvent } from "@mariozechner/pi-agent-core";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
+import { createStreamFn } from "../utils/proxy-utils.js";
+import type { UserMessageWithAttachments } from "./Messages.js";
 import type { StreamingMessageContainer } from "./StreamingMessageContainer.js";
 
 @customElement("agent-interface")
@@ -129,17 +131,48 @@ export class AgentInterface extends LitElement {
 			this._unsubscribeSession = undefined;
 		}
 		if (!this.session) return;
+
+		// Set default streamFn with proxy support if not already set
+		if (this.session.streamFn === streamSimple) {
+			this.session.streamFn = createStreamFn(async () => {
+				const enabled = await getAppStorage().settings.get<boolean>("proxy.enabled");
+				return enabled ? (await getAppStorage().settings.get<string>("proxy.url")) || undefined : undefined;
+			});
+		}
+
+		// Set default getApiKey if not already set
+		if (!this.session.getApiKey) {
+			this.session.getApiKey = async (provider: string) => {
+				const key = await getAppStorage().providerKeys.get(provider);
+				return key ?? undefined;
+			};
+		}
+
 		this._unsubscribeSession = this.session.subscribe(async (ev: AgentEvent) => {
-			if (ev.type === "state-update") {
-				if (this._streamingContainer) {
-					this._streamingContainer.isStreaming = ev.state.isStreaming;
-					this._streamingContainer.setMessage(ev.state.streamMessage, !ev.state.isStreaming);
-				}
-				this.requestUpdate();
-			} else if (ev.type === "error-no-model") {
-				// TODO show some UI feedback
-			} else if (ev.type === "error-no-api-key") {
-				// Handled by onApiKeyRequired callback
+			switch (ev.type) {
+				case "message_start":
+				case "message_end":
+				case "turn_start":
+				case "turn_end":
+				case "agent_start":
+					this.requestUpdate();
+					break;
+				case "agent_end":
+					// Clear streaming container when agent finishes
+					if (this._streamingContainer) {
+						this._streamingContainer.isStreaming = false;
+						this._streamingContainer.setMessage(null, true);
+					}
+					this.requestUpdate();
+					break;
+				case "message_update":
+					if (this._streamingContainer) {
+						const isStreaming = this.session?.state.isStreaming || false;
+						this._streamingContainer.isStreaming = isStreaming;
+						this._streamingContainer.setMessage(ev.message, !isStreaming);
+					}
+					this.requestUpdate();
+					break;
 			}
 		});
 	}
@@ -205,7 +238,18 @@ export class AgentInterface extends LitElement {
 		this._messageEditor.attachments = [];
 		this._autoScroll = true; // Enable auto-scroll when sending a message
 
-		await this.session?.prompt(input, attachments);
+		// Compose message with attachments if any
+		if (attachments && attachments.length > 0) {
+			const message: UserMessageWithAttachments = {
+				role: "user-with-attachments",
+				content: input,
+				attachments,
+				timestamp: Date.now(),
+			};
+			await this.session?.prompt(message);
+		} else {
+			await this.session?.prompt(input);
+		}
 	}
 
 	private renderMessages() {

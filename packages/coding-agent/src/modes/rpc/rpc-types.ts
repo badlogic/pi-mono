@@ -5,10 +5,11 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
-import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ImageContent, Model } from "@mariozechner/pi-ai";
+import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -16,7 +17,7 @@ import type { BashResult } from "../../core/bash-executor.js";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; attachments?: Attachment[] }
+	| { id?: string; type: "prompt"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "queue_message"; message: string }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "reset" }
@@ -64,12 +65,12 @@ export type RpcCommand =
 // ============================================================================
 
 export interface RpcSessionState {
-	model: Model<any> | null;
+	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	queueMode: "all" | "one-at-a-time";
-	sessionFile: string | null;
+	sessionFile?: string;
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
@@ -160,7 +161,7 @@ export type RpcResponse =
 	  }
 
 	// Messages
-	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AppMessage[] } }
+	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

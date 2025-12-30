@@ -5,10 +5,11 @@
  * They can provide custom rendering for tool calls and results in the TUI.
  */
 
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type { SessionEntry } from "../session-manager.js";
 
@@ -18,20 +19,8 @@ export type ToolUIContext = HookUIContext;
 /** Re-export for custom tools to use in execute signature */
 export type { AgentToolUpdateCallback };
 
-export interface ExecResult {
-	stdout: string;
-	stderr: string;
-	code: number;
-	/** True if the process was killed due to signal or timeout */
-	killed?: boolean;
-}
-
-export interface ExecOptions {
-	/** AbortSignal to cancel the process */
-	signal?: AbortSignal;
-	/** Timeout in milliseconds */
-	timeout?: number;
-}
+// Re-export for backward compatibility
+export type { ExecOptions, ExecResult } from "../exec.js";
 
 /** API passed to custom tool factory (stable across session changes) */
 export interface ToolAPI {
@@ -49,12 +38,12 @@ export interface ToolAPI {
 export interface SessionEvent {
 	/** All session entries (including pre-compaction history) */
 	entries: SessionEntry[];
-	/** Current session file path, or null in --no-session mode */
-	sessionFile: string | null;
-	/** Previous session file path, or null for "start" and "new" */
-	previousSessionFile: string | null;
+	/** Current session file path, or undefined in --no-session mode */
+	sessionFile: string | undefined;
+	/** Previous session file path, or undefined for "start" and "new" */
+	previousSessionFile: string | undefined;
 	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "new";
+	reason: "start" | "switch" | "branch" | "new" | "tree";
 }
 
 /** Rendering options passed to renderResult */

@@ -29,8 +29,8 @@ export interface BashExecutorOptions {
 export interface BashResult {
 	/** Combined stdout + stderr output (sanitized, possibly truncated) */
 	output: string;
-	/** Process exit code (null if killed/cancelled) */
-	exitCode: number | null;
+	/** Process exit code (undefined if killed/cancelled) */
+	exitCode: number | undefined;
 	/** Whether the command was cancelled via signal */
 	cancelled: boolean;
 	/** Whether the output was truncated */
@@ -88,7 +88,7 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 				child.kill();
 				resolve({
 					output: "",
-					exitCode: null,
+					exitCode: undefined,
 					cancelled: true,
 					truncated: false,
 				});
@@ -154,7 +154,7 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 
 			resolve({
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
-				exitCode: code,
+				exitCode: cancelled ? undefined : code,
 				cancelled,
 				truncated: truncationResult.truncated,
 				fullOutputPath: tempFilePath,

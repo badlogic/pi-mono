@@ -3,7 +3,6 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type ThinkingConfig,
-	type ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import { getEnvApiKey } from "../stream.js";
@@ -20,6 +19,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
 import { convertMessages, convertTools, mapStopReason, mapToolChoice } from "./google-shared.js";
 
 export interface GoogleOptions extends StreamOptions {
@@ -27,7 +27,7 @@ export interface GoogleOptions extends StreamOptions {
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
-		level?: ThinkingLevel;
+		level?: GoogleThinkingLevel;
 	};
 }
 
@@ -299,7 +299,8 @@ function buildParams(
 	if (options.thinking?.enabled && model.reasoning) {
 		const thinkingConfig: ThinkingConfig = { includeThoughts: true };
 		if (options.thinking.level !== undefined) {
-			thinkingConfig.thinkingLevel = options.thinking.level;
+			// Cast to any since our GoogleThinkingLevel mirrors Google's ThinkingLevel enum values
+			thinkingConfig.thinkingLevel = options.thinking.level as any;
 		} else if (options.thinking.budgetTokens !== undefined) {
 			thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}

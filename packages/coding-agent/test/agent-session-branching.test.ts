@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, ProviderTransport } from "@mariozechner/pi-agent-core";
+import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
@@ -19,8 +19,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_OAUTH_TOKEN;
+import { API_KEY } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession branching", () => {
 	let session: AgentSession;
@@ -44,13 +43,8 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 
 	function createSession(noSession: boolean = false) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-
-		const transport = new ProviderTransport({
-			getApiKey: () => API_KEY,
-		});
-
 		const agent = new Agent({
-			transport,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be extremely concise, reply with just a few words.",
@@ -105,7 +99,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		createSession(true);
 
 		// Verify sessions are disabled
-		expect(session.sessionFile).toBeNull();
+		expect(session.sessionFile).toBeUndefined();
 
 		// Send one message
 		await session.prompt("Say hi");
@@ -126,8 +120,8 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		// After branching, conversation should be empty
 		expect(session.messages.length).toBe(0);
 
-		// Session file should still be null (no file created)
-		expect(session.sessionFile).toBeNull();
+		// Session file should still be undefined (no file created)
+		expect(session.sessionFile).toBeUndefined();
 	});
 
 	it("should branch from middle of conversation", async () => {

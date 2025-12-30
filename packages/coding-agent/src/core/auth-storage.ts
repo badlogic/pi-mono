@@ -94,8 +94,8 @@ export class AuthStorage {
 	/**
 	 * Get credential for a provider.
 	 */
-	get(provider: string): AuthCredential | null {
-		return this.data[provider] ?? null;
+	get(provider: string): AuthCredential | undefined {
+		return this.data[provider] ?? undefined;
 	}
 
 	/**
@@ -191,7 +191,7 @@ export class AuthStorage {
 	 * 4. Environment variable
 	 * 5. Fallback resolver (models.json custom providers)
 	 */
-	async getApiKey(provider: string): Promise<string | null> {
+	async getApiKey(provider: string): Promise<string | undefined> {
 		// Runtime override takes highest priority
 		const runtimeKey = this.runtimeOverrides.get(provider);
 		if (runtimeKey) {
@@ -230,6 +230,6 @@ export class AuthStorage {
 		if (envKey) return envKey;
 
 		// Fall back to custom resolver (e.g., models.json custom providers)
-		return this.fallbackResolver?.(provider) ?? null;
+		return this.fallbackResolver?.(provider) ?? undefined;
 	}
 }

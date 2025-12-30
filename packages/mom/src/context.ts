@@ -10,13 +10,15 @@
  * - MomSettingsManager: Simple settings for mom (compaction, retry, model preferences)
  */
 
-import type { AppMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	buildSessionContext,
 	type CompactionEntry,
-	type LoadedSession,
+	type FileEntry,
 	type ModelChangeEntry,
+	type SessionContext,
 	type SessionEntry,
+	type SessionEntryBase,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
 } from "@mariozechner/pi-coding-agent";
@@ -48,7 +50,8 @@ export class MomSessionManager {
 	private logFile: string;
 	private channelDir: string;
 	private flushed: boolean = false;
-	private inMemoryEntries: SessionEntry[] = [];
+	private inMemoryEntries: FileEntry[] = [];
+	private leafId: string | null = null;
 
 	constructor(channelDir: string) {
 		this.channelDir = channelDir;
@@ -64,12 +67,14 @@ export class MomSessionManager {
 		if (existsSync(this.contextFile)) {
 			this.inMemoryEntries = this.loadEntriesFromFile();
 			this.sessionId = this.extractSessionId() || uuidv4();
+			this._updateLeafId();
 			this.flushed = true;
 		} else {
 			this.sessionId = uuidv4();
 			this.inMemoryEntries = [
 				{
 					type: "session",
+					version: 2,
 					id: this.sessionId,
 					timestamp: new Date().toISOString(),
 					cwd: this.channelDir,
@@ -77,6 +82,28 @@ export class MomSessionManager {
 			];
 		}
 		// Note: syncFromLog() is called explicitly from agent.ts with excludeTimestamp
+	}
+
+	private _updateLeafId(): void {
+		for (let i = this.inMemoryEntries.length - 1; i >= 0; i--) {
+			const entry = this.inMemoryEntries[i];
+			if (entry.type !== "session") {
+				this.leafId = entry.id;
+				return;
+			}
+		}
+		this.leafId = null;
+	}
+
+	private _createEntryBase(): Omit<SessionEntryBase, "type"> {
+		const id = uuidv4();
+		const base = {
+			id,
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+		};
+		this.leafId = id;
+		return base;
 	}
 
 	private _persist(entry: SessionEntry): void {
@@ -126,7 +153,7 @@ export class MomSessionManager {
 				contextSlackTimestamps.add(entry.timestamp);
 
 				// Also store message text to catch duplicates added via prompt()
-				// AppMessage has different shapes, check for content property
+				// AgentMessage has different shapes, check for content property
 				const msg = msgEntry.message as { role: string; content?: unknown };
 				if (msg.role === "user" && msg.content !== undefined) {
 					const content = msg.content;
@@ -162,7 +189,7 @@ export class MomSessionManager {
 			isBot?: boolean;
 		}
 
-		const newMessages: Array<{ timestamp: string; slackTs: string; message: AppMessage }> = [];
+		const newMessages: Array<{ timestamp: string; slackTs: string; message: AgentMessage }> = [];
 
 		for (const line of logLines) {
 			try {
@@ -188,7 +215,7 @@ export class MomSessionManager {
 				if (contextMessageTexts.has(messageText)) continue;
 
 				const msgTime = new Date(date).getTime() || Date.now();
-				const userMessage: AppMessage = {
+				const userMessage: AgentMessage = {
 					role: "user",
 					content: messageText,
 					timestamp: msgTime,
@@ -206,11 +233,15 @@ export class MomSessionManager {
 		newMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
 		for (const { timestamp, message } of newMessages) {
+			const id = uuidv4();
 			const entry: SessionMessageEntry = {
 				type: "message",
+				id,
+				parentId: this.leafId,
 				timestamp, // Use log date as entry timestamp for consistent deduplication
 				message,
 			};
+			this.leafId = id;
 
 			this.inMemoryEntries.push(entry);
 			appendFileSync(this.contextFile, `${JSON.stringify(entry)}\n`);
@@ -226,17 +257,17 @@ export class MomSessionManager {
 		return null;
 	}
 
-	private loadEntriesFromFile(): SessionEntry[] {
+	private loadEntriesFromFile(): FileEntry[] {
 		if (!existsSync(this.contextFile)) return [];
 
 		const content = readFileSync(this.contextFile, "utf8");
-		const entries: SessionEntry[] = [];
+		const entries: FileEntry[] = [];
 		const lines = content.trim().split("\n");
 
 		for (const line of lines) {
 			if (!line.trim()) continue;
 			try {
-				const entry = JSON.parse(line) as SessionEntry;
+				const entry = JSON.parse(line) as FileEntry;
 				entries.push(entry);
 			} catch {
 				// Skip malformed lines
@@ -246,20 +277,16 @@ export class MomSessionManager {
 		return entries;
 	}
 
-	saveMessage(message: AppMessage): void {
-		const entry: SessionMessageEntry = {
-			type: "message",
-			timestamp: new Date().toISOString(),
-			message,
-		};
+	saveMessage(message: AgentMessage): void {
+		const entry: SessionMessageEntry = { ...this._createEntryBase(), type: "message", message };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
 
 	saveThinkingLevelChange(thinkingLevel: string): void {
 		const entry: ThinkingLevelChangeEntry = {
+			...this._createEntryBase(),
 			type: "thinking_level_change",
-			timestamp: new Date().toISOString(),
 			thinkingLevel,
 		};
 		this.inMemoryEntries.push(entry);
@@ -267,12 +294,7 @@ export class MomSessionManager {
 	}
 
 	saveModelChange(provider: string, modelId: string): void {
-		const entry: ModelChangeEntry = {
-			type: "model_change",
-			timestamp: new Date().toISOString(),
-			provider,
-			modelId,
-		};
+		const entry: ModelChangeEntry = { ...this._createEntryBase(), type: "model_change", provider, modelId };
 		this.inMemoryEntries.push(entry);
 		this._persist(entry);
 	}
@@ -283,17 +305,15 @@ export class MomSessionManager {
 	}
 
 	/** Load session with compaction support */
-	loadSession(): LoadedSession {
+	buildSessionContex(): SessionContext {
 		const entries = this.loadEntries();
 		return buildSessionContext(entries);
 	}
 
 	loadEntries(): SessionEntry[] {
 		// Re-read from file to get latest state
-		if (existsSync(this.contextFile)) {
-			return this.loadEntriesFromFile();
-		}
-		return [...this.inMemoryEntries];
+		const entries = existsSync(this.contextFile) ? this.loadEntriesFromFile() : this.inMemoryEntries;
+		return entries.filter((e): e is SessionEntry => e.type !== "session");
 	}
 
 	getSessionId(): string {
@@ -332,15 +352,15 @@ export class MomSessionManager {
 	}
 
 	loadModel(): { provider: string; modelId: string } | null {
-		return this.loadSession().model;
+		return this.buildSessionContex().model;
 	}
 
 	loadThinkingLevel(): string {
-		return this.loadSession().thinkingLevel;
+		return this.buildSessionContex().thinkingLevel;
 	}
 
 	/** Not used by mom but required by AgentSession interface */
-	createBranchedSessionFromEntries(_entries: SessionEntry[], _branchBeforeIndex: number): string | null {
+	createBranchedSession(_leafId: string): string | null {
 		return null; // Mom doesn't support branching
 	}
 }

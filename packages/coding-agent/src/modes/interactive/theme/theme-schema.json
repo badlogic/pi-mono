@@ -47,6 +47,9 @@
 				"text",
 				"userMessageBg",
 				"userMessageText",
+				"customMessageBg",
+				"customMessageText",
+				"customMessageLabel",
 				"toolPendingBg",
 				"toolSuccessBg",
 				"toolErrorBg",
@@ -121,6 +124,18 @@
 				"userMessageText": {
 					"$ref": "#/$defs/colorValue",
 					"description": "User message text color"
+				},
+				"customMessageBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message background (hook-injected messages)"
+				},
+				"customMessageText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message text color"
+				},
+				"customMessageLabel": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message type label color"
 				},
 				"toolPendingBg": {
 					"$ref": "#/$defs/colorValue",

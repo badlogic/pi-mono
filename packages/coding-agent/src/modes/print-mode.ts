@@ -6,8 +6,7 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
-import type { Attachment } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
 
 /**
@@ -18,14 +17,14 @@ import type { AgentSession } from "../core/agent-session.js";
  * @param mode Output mode: "text" for final response only, "json" for all events
  * @param messages Array of prompts to send
  * @param initialMessage Optional first message (may contain @file content)
- * @param initialAttachments Optional attachments for the initial message
+ * @param initialImages Optional images for the initial message
  */
 export async function runPrintMode(
 	session: AgentSession,
 	mode: "text" | "json",
 	messages: string[],
 	initialMessage?: string,
-	initialAttachments?: Attachment[],
+	initialImages?: ImageContent[],
 ): Promise<void> {
 	// Load entries once for session start events
 	const entries = session.sessionManager.getEntries();
@@ -34,22 +33,21 @@ export async function runPrintMode(
 	// Set up hooks for print mode (no UI)
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		// Use actual session file if configured (via --session), otherwise null
-		hookRunner.setSessionFile(session.sessionFile);
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);
 		});
-		// No-op send handler for print mode (single-shot, no async messages)
-		hookRunner.setSendHandler(() => {
-			console.error("Warning: pi.send() is not supported in print mode");
+		// Set up handlers - sendHookMessage handles queuing/direct append as needed
+		hookRunner.setSendMessageHandler((message, triggerTurn) => {
+			session.sendHookMessage(message, triggerTurn).catch((e) => {
+				console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+			});
 		});
-		// Emit session event
+		hookRunner.setAppendEntryHandler((customType, data) => {
+			session.sessionManager.appendCustomEntry(customType, data);
+		});
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			entries,
-			sessionFile: session.sessionFile,
-			previousSessionFile: null,
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -60,7 +58,7 @@ export async function runPrintMode(
 				await tool.onSession({
 					entries,
 					sessionFile: session.sessionFile,
-					previousSessionFile: null,
+					previousSessionFile: undefined,
 					reason: "start",
 				});
 			} catch (_err) {
@@ -79,7 +77,7 @@ export async function runPrintMode(
 
 	// Send initial message with attachments
 	if (initialMessage) {
-		await session.prompt(initialMessage, { attachments: initialAttachments });
+		await session.prompt(initialMessage, { images: initialImages });
 	}
 
 	// Send remaining messages

@@ -752,13 +752,11 @@ describe("Generate E2E Tests", () => {
 		const llm = getModel("google-gemini-cli", "gemini-3-flash-preview");
 
 		it.skipIf(!geminiCliToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.LOW } });
+			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: "LOW" } });
 		});
 
 		it.skipIf(!geminiCliToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
+			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: "MEDIUM" } });
 		});
 	});
 
@@ -778,17 +776,15 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
 			// gemini-3-flash supports all four levels: MINIMAL, LOW, MEDIUM, HIGH
 			await handleThinking(llm, {
 				apiKey: antigravityToken,
-				thinking: { enabled: true, level: ThinkingLevel.LOW },
+				thinking: { enabled: true, level: "LOW" },
 			});
 		});
 
 		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
+			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: "MEDIUM" } });
 		});
 
 		it.skipIf(!antigravityToken)("should handle image input", { retry: 3 }, async () => {
@@ -800,11 +796,10 @@ describe("Generate E2E Tests", () => {
 		const llm = getModel("google-antigravity", "gemini-3-pro-high");
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel HIGH", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
 			// gemini-3-pro only supports LOW/HIGH
 			await handleThinking(llm, {
 				apiKey: antigravityToken,
-				thinking: { enabled: true, level: ThinkingLevel.HIGH },
+				thinking: { enabled: true, level: "HIGH" },
 			});
 		});
 	});

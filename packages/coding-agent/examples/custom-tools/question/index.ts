@@ -41,7 +41,7 @@ const factory: CustomToolFactory = (pi) => {
 
 			const answer = await pi.ui.select(params.question, params.options);
 
-			if (answer === null) {
+			if (answer === undefined) {
 				return {
 					content: [{ type: "text", text: "User cancelled the selection" }],
 					details: { question: params.question, options: params.options, answer: null },

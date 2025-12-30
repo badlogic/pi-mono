@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentState, AppMessage, Attachment } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -28,13 +28,8 @@ import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
-import { isBashExecutionMessage } from "../../core/messages.js";
-import {
-	getLatestCompactionEntry,
-	SessionManager,
-	SUMMARY_PREFIX,
-	SUMMARY_SUFFIX,
-} from "../../core/session-manager.js";
+import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -43,20 +38,32 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
-import { CompactionComponent } from "./components/compaction.js";
+import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
+import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { HookInputComponent } from "./components/hook-input.js";
+import { HookMessageComponent } from "./components/hook-message.js";
 import { HookSelectorComponent } from "./components/hook-selector.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
+import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+
+/** Interface for components that can be expanded/collapsed */
+interface Expandable {
+	setExpanded(expanded: boolean): void;
+}
+
+function isExpandable(obj: unknown): obj is Expandable {
+	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+}
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -70,20 +77,17 @@ export class InteractiveMode {
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
-	private loadingAnimation: Loader | null = null;
+	private loadingAnimation: Loader | undefined = undefined;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
-	private changelogMarkdown: string | null = null;
+	private changelogMarkdown: string | undefined = undefined;
 
 	// Streaming message tracking
-	private streamingComponent: AssistantMessageComponent | null = null;
+	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Track if this is the first user message (to skip spacer)
-	private isFirstUserMessage = true;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -98,22 +102,22 @@ export class InteractiveMode {
 	private isBashMode = false;
 
 	// Track current bash execution component
-	private bashComponent: BashExecutionComponent | null = null;
+	private bashComponent: BashExecutionComponent | undefined = undefined;
 
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
 	// Auto-compaction state
-	private autoCompactionLoader: Loader | null = null;
+	private autoCompactionLoader: Loader | undefined = undefined;
 	private autoCompactionEscapeHandler?: () => void;
 
 	// Auto-retry state
-	private retryLoader: Loader | null = null;
+	private retryLoader: Loader | undefined = undefined;
 	private retryEscapeHandler?: () => void;
 
 	// Hook UI state
-	private hookSelector: HookSelectorComponent | null = null;
-	private hookInput: HookInputComponent | null = null;
+	private hookSelector: HookSelectorComponent | undefined = undefined;
+	private hookInput: HookInputComponent | undefined = undefined;
 
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
@@ -132,10 +136,10 @@ export class InteractiveMode {
 	constructor(
 		session: AgentSession,
 		version: string,
-		changelogMarkdown: string | null = null,
+		changelogMarkdown: string | undefined = undefined,
 		customTools: LoadedCustomTool[] = [],
 		private setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void = () => {},
-		fdPath: string | null = null,
+		fdPath: string | undefined = undefined,
 	) {
 		this.session = session;
 		this.version = version;
@@ -161,6 +165,7 @@ export class InteractiveMode {
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 			{ name: "branch", description: "Create a new branch from a previous message" },
+			{ name: "tree", description: "Navigate session tree (switch branches)" },
 			{ name: "login", description: "Login with OAuth provider" },
 			{ name: "logout", description: "Logout from OAuth provider" },
 			{ name: "new", description: "Start a new session" },
@@ -177,9 +182,15 @@ export class InteractiveMode {
 			description: cmd.description,
 		}));
 
+		// Convert hook commands to SlashCommand format
+		const hookCommands: SlashCommand[] = (this.session.hookRunner?.getRegisteredCommands() ?? []).map((cmd) => ({
+			name: cmd.name,
+			description: cmd.description ?? "(hook command)",
+		}));
+
 		// Setup autocomplete
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...fileSlashCommands],
+			[...slashCommands, ...fileSlashCommands, ...hookCommands],
 			process.cwd(),
 			fdPath,
 		);
@@ -350,7 +361,7 @@ export class InteractiveMode {
 		await this.emitToolSessionEvent({
 			entries,
 			sessionFile: this.session.sessionFile,
-			previousSessionFile: null,
+			previousSessionFile: undefined,
 			reason: "start",
 		});
 
@@ -361,16 +372,30 @@ export class InteractiveMode {
 
 		// Set UI context on hook runner
 		hookRunner.setUIContext(uiContext, true);
-		hookRunner.setSessionFile(this.session.sessionFile);
 
 		// Subscribe to hook errors
 		hookRunner.onError((error) => {
 			this.showHookError(error.hookPath, error.error);
 		});
 
-		// Set up send handler for pi.send()
-		hookRunner.setSendHandler((text, attachments) => {
-			this.handleHookSend(text, attachments);
+		// Set up handlers for pi.sendMessage() and pi.appendEntry()
+		hookRunner.setSendMessageHandler((message, triggerTurn) => {
+			const wasStreaming = this.session.isStreaming;
+			this.session
+				.sendHookMessage(message, triggerTurn)
+				.then(() => {
+					// For non-streaming cases with display=true, update UI
+					// (streaming cases update via message_end event)
+					if (!wasStreaming && message.display) {
+						this.rebuildChatFromMessages();
+					}
+				})
+				.catch((err) => {
+					this.showError(`Hook sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+				});
+		});
+		hookRunner.setAppendEntryHandler((customType, data) => {
+			this.sessionManager.appendCustomEntry(customType, data);
 		});
 
 		// Show loaded hooks
@@ -381,13 +406,9 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Emit session event
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			entries,
-			sessionFile: this.session.sessionFile,
-			previousSessionFile: null,
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -424,13 +445,14 @@ export class InteractiveMode {
 			confirm: (title, message) => this.showHookConfirm(title, message),
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
+			custom: (component) => this.showHookCustom(component),
 		};
 	}
 
 	/**
 	 * Show a selector for hooks.
 	 */
-	private showHookSelector(title: string, options: string[]): Promise<string | null> {
+	private showHookSelector(title: string, options: string[]): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.hookSelector = new HookSelectorComponent(
 				title,
@@ -441,7 +463,7 @@ export class InteractiveMode {
 				},
 				() => {
 					this.hideHookSelector();
-					resolve(null);
+					resolve(undefined);
 				},
 			);
 
@@ -458,7 +480,7 @@ export class InteractiveMode {
 	private hideHookSelector(): void {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
-		this.hookSelector = null;
+		this.hookSelector = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -474,7 +496,7 @@ export class InteractiveMode {
 	/**
 	 * Show a text input for hooks.
 	 */
-	private showHookInput(title: string, placeholder?: string): Promise<string | null> {
+	private showHookInput(title: string, placeholder?: string): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.hookInput = new HookInputComponent(
 				title,
@@ -485,7 +507,7 @@ export class InteractiveMode {
 				},
 				() => {
 					this.hideHookInput();
-					resolve(null);
+					resolve(undefined);
 				},
 			);
 
@@ -502,7 +524,7 @@ export class InteractiveMode {
 	private hideHookInput(): void {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
-		this.hookInput = null;
+		this.hookInput = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -521,6 +543,42 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Show a custom component with keyboard focus.
+	 * Returns a function to call when done.
+	 */
+	private showHookCustom(component: Component & { dispose?(): void }): {
+		close: () => void;
+		requestRender: () => void;
+	} {
+		// Store current editor content
+		const savedText = this.editor.getText();
+
+		// Replace editor with custom component
+		this.editorContainer.clear();
+		this.editorContainer.addChild(component);
+		this.ui.setFocus(component);
+		this.ui.requestRender();
+
+		// Return control object
+		return {
+			close: () => {
+				// Call dispose if available
+				component.dispose?.();
+
+				// Restore editor
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.editor.setText(savedText);
+				this.ui.setFocus(this.editor);
+				this.ui.requestRender();
+			},
+			requestRender: () => {
+				this.ui.requestRender();
+			},
+		};
+	}
+
+	/**
 	 * Show a hook error in the UI.
 	 */
 	private showHookError(hookPath: string, error: string): void {
@@ -533,19 +591,6 @@ export class InteractiveMode {
 	 * Handle pi.send() from hooks.
 	 * If streaming, queue the message. Otherwise, start a new agent loop.
 	 */
-	private handleHookSend(text: string, attachments?: Attachment[]): void {
-		if (this.session.isStreaming) {
-			// Queue the message for later (note: attachments are lost when queuing)
-			this.session.queueMessage(text);
-			this.updatePendingMessagesDisplay();
-		} else {
-			// Start a new agent loop immediately
-			this.session.prompt(text, { attachments }).catch((err) => {
-				this.showError(err instanceof Error ? err.message : String(err));
-			});
-		}
-	}
-
 	// =========================================================================
 	// Key Handlers
 	// =========================================================================
@@ -585,6 +630,9 @@ export class InteractiveMode {
 		this.editor.onShiftTab = () => this.cycleThinkingLevel();
 		this.editor.onCtrlP = () => this.cycleModel("forward");
 		this.editor.onShiftCtrlP = () => this.cycleModel("backward");
+
+		// Global debug handler on TUI (works regardless of focus)
+		this.ui.onDebug = () => this.handleDebugCommand();
 		this.editor.onCtrlL = () => this.showModelSelector();
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
@@ -642,6 +690,11 @@ export class InteractiveMode {
 			}
 			if (text === "/branch") {
 				this.showUserMessageSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/tree") {
+				this.showTreeSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -709,7 +762,21 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Queue message if agent is streaming
+			// Hook commands always run immediately, even during streaming
+			// (if they need to interact with LLM, they use pi.sendMessage which handles queueing)
+			if (text.startsWith("/") && this.session.hookRunner) {
+				const spaceIndex = text.indexOf(" ");
+				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+				const command = this.session.hookRunner.getCommand(commandName);
+				if (command) {
+					this.editor.addToHistory(text);
+					this.editor.setText("");
+					await this.session.prompt(text);
+					return;
+				}
+			}
+
+			// Queue regular messages if agent is streaming
 			if (this.session.isStreaming) {
 				await this.session.queueMessage(text);
 				this.updatePendingMessagesDisplay();
@@ -760,7 +827,10 @@ export class InteractiveMode {
 				break;
 
 			case "message_start":
-				if (event.message.role === "user") {
+				if (event.message.role === "hookMessage") {
+					this.addMessageToChat(event.message);
+					this.ui.requestRender();
+				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
 					this.editor.setText("");
 					this.updatePendingMessagesDisplay();
@@ -768,7 +838,7 @@ export class InteractiveMode {
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(event.message as AssistantMessage);
+					this.streamingComponent.updateContent(event.message);
 					this.ui.requestRender();
 				}
 				break;
@@ -822,7 +892,7 @@ export class InteractiveMode {
 						}
 						this.pendingTools.clear();
 					}
-					this.streamingComponent = null;
+					this.streamingComponent = undefined;
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -868,12 +938,12 @@ export class InteractiveMode {
 			case "agent_end":
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
-					this.loadingAnimation = null;
+					this.loadingAnimation = undefined;
 					this.statusContainer.clear();
 				}
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
-					this.streamingComponent = null;
+					this.streamingComponent = undefined;
 				}
 				this.pendingTools.clear();
 				this.ui.requestRender();
@@ -912,7 +982,7 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.autoCompactionLoader) {
 					this.autoCompactionLoader.stop();
-					this.autoCompactionLoader = null;
+					this.autoCompactionLoader = undefined;
 					this.statusContainer.clear();
 				}
 				// Handle result
@@ -922,10 +992,13 @@ export class InteractiveMode {
 					// Rebuild chat to show compacted state
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
-					// Add compaction component (same as manual /compact)
-					const compactionComponent = new CompactionComponent(event.result.tokensBefore, event.result.summary);
-					compactionComponent.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(compactionComponent);
+					// Add compaction component at bottom so user sees it without scrolling
+					this.addMessageToChat({
+						role: "compactionSummary",
+						tokensBefore: event.result.tokensBefore,
+						summary: event.result.summary,
+						timestamp: Date.now(),
+					});
 					this.footer.updateState(this.session.state);
 				}
 				this.ui.requestRender();
@@ -961,7 +1034,7 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.retryLoader) {
 					this.retryLoader.stop();
-					this.retryLoader = null;
+					this.retryLoader = undefined;
 					this.statusContainer.clear();
 				}
 				// Show error only on final failure (success shows normal response)
@@ -991,46 +1064,79 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: Message | AppMessage): void {
-		if (isBashExecutionMessage(message)) {
-			const component = new BashExecutionComponent(message.command, this.ui);
-			if (message.output) {
-				component.appendOutput(message.output);
+	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+		switch (message.role) {
+			case "bashExecution": {
+				const component = new BashExecutionComponent(message.command, this.ui);
+				if (message.output) {
+					component.appendOutput(message.output);
+				}
+				component.setComplete(
+					message.exitCode,
+					message.cancelled,
+					message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
+					message.fullOutputPath,
+				);
+				this.chatContainer.addChild(component);
+				break;
 			}
-			component.setComplete(
-				message.exitCode,
-				message.cancelled,
-				message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
-				message.fullOutputPath,
-			);
-			this.chatContainer.addChild(component);
-			return;
-		}
-
-		if (message.role === "user") {
-			const textContent = this.getUserMessageText(message);
-			if (textContent) {
-				const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-				this.chatContainer.addChild(userComponent);
-				this.isFirstUserMessage = false;
+			case "hookMessage": {
+				if (message.display) {
+					const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
+					this.chatContainer.addChild(new HookMessageComponent(message, renderer));
+				}
+				break;
 			}
-		} else if (message.role === "assistant") {
-			const assistantComponent = new AssistantMessageComponent(message as AssistantMessage, this.hideThinkingBlock);
-			this.chatContainer.addChild(assistantComponent);
+			case "compactionSummary": {
+				this.chatContainer.addChild(new Spacer(1));
+				const component = new CompactionSummaryMessageComponent(message);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+				break;
+			}
+			case "branchSummary": {
+				this.chatContainer.addChild(new Spacer(1));
+				const component = new BranchSummaryMessageComponent(message);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+				break;
+			}
+			case "user": {
+				const textContent = this.getUserMessageText(message);
+				if (textContent) {
+					const userComponent = new UserMessageComponent(textContent);
+					this.chatContainer.addChild(userComponent);
+					if (options?.populateHistory) {
+						this.editor.addToHistory(textContent);
+					}
+				}
+				break;
+			}
+			case "assistant": {
+				const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock);
+				this.chatContainer.addChild(assistantComponent);
+				break;
+			}
+			case "toolResult": {
+				// Tool results are rendered inline with tool calls, handled separately
+				break;
+			}
+			default: {
+				const _exhaustive: never = message;
+			}
 		}
 	}
 
 	/**
-	 * Render messages to chat. Used for initial load and rebuild after compaction.
-	 * @param messages Messages to render
+	 * Render session context to chat. Used for initial load and rebuild after compaction.
+	 * @param sessionContext Session context to render
 	 * @param options.updateFooter Update footer state
 	 * @param options.populateHistory Add user messages to editor history
 	 */
-	private renderMessages(
-		messages: readonly (Message | AppMessage)[],
+	private renderSessionContext(
+		sessionContext: SessionContext,
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
-		this.isFirstUserMessage = true;
 		this.pendingTools.clear();
 
 		if (options.updateFooter) {
@@ -1038,54 +1144,25 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getEntries());
-
-		for (const message of messages) {
-			if (isBashExecutionMessage(message)) {
+		for (const message of sessionContext.messages) {
+			// Assistant messages need special handling for tool calls
+			if (message.role === "assistant") {
 				this.addMessageToChat(message);
-				continue;
-			}
-
-			if (message.role === "user") {
-				const textContent = this.getUserMessageText(message);
-				if (textContent) {
-					if (textContent.startsWith(SUMMARY_PREFIX) && compactionEntry) {
-						const summary = textContent.slice(SUMMARY_PREFIX.length, -SUMMARY_SUFFIX.length);
-						const component = new CompactionComponent(compactionEntry.tokensBefore, summary);
-						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
-					} else {
-						const userComponent = new UserMessageComponent(textContent, this.isFirstUserMessage);
-						this.chatContainer.addChild(userComponent);
-						this.isFirstUserMessage = false;
-						if (options.populateHistory) {
-							this.editor.addToHistory(textContent);
-						}
-					}
-				}
-			} else if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				const assistantComponent = new AssistantMessageComponent(assistantMsg, this.hideThinkingBlock);
-				this.chatContainer.addChild(assistantComponent);
-
-				for (const content of assistantMsg.content) {
+				// Render tool call components
+				for (const content of message.content) {
 					if (content.type === "toolCall") {
 						const component = new ToolExecutionComponent(
 							content.name,
 							content.arguments,
-							{
-								showImages: this.settingsManager.getShowImages(),
-							},
+							{ showImages: this.settingsManager.getShowImages() },
 							this.customTools.get(content.name)?.tool,
 							this.ui,
 						);
 						this.chatContainer.addChild(component);
 
-						if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							const errorMessage =
-								assistantMsg.stopReason === "aborted"
-									? "Operation aborted"
-									: assistantMsg.errorMessage || "Error";
+								message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
 							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
 						} else {
 							this.pendingTools.set(content.id, component);
@@ -1093,23 +1170,33 @@ export class InteractiveMode {
 					}
 				}
 			} else if (message.role === "toolResult") {
+				// Match tool results to pending tool components
 				const component = this.pendingTools.get(message.toolCallId);
 				if (component) {
 					component.updateResult(message);
 					this.pendingTools.delete(message.toolCallId);
 				}
+			} else {
+				// All other messages use standard rendering
+				this.addMessageToChat(message, options);
 			}
 		}
+
 		this.pendingTools.clear();
 		this.ui.requestRender();
 	}
 
-	renderInitialMessages(state: AgentState): void {
-		this.renderMessages(state.messages, { updateFooter: true, populateHistory: true });
+	renderInitialMessages(): void {
+		// Get aligned messages and entries from session context
+		const context = this.sessionManager.buildSessionContext();
+		this.renderSessionContext(context, {
+			updateFooter: true,
+			populateHistory: true,
+		});
 
 		// Show compaction info if session was compacted
-		const entries = this.sessionManager.getEntries();
-		const compactionCount = entries.filter((e) => e.type === "compaction").length;
+		const allEntries = this.sessionManager.getEntries();
+		const compactionCount = allEntries.filter((e) => e.type === "compaction").length;
 		if (compactionCount > 0) {
 			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
 			this.showStatus(`Session compacted ${times}`);
@@ -1126,7 +1213,9 @@ export class InteractiveMode {
 	}
 
 	private rebuildChatFromMessages(): void {
-		this.renderMessages(this.session.messages);
+		this.chatContainer.clear();
+		const context = this.sessionManager.buildSessionContext();
+		this.renderSessionContext(context);
 	}
 
 	// =========================================================================
@@ -1155,14 +1244,9 @@ export class InteractiveMode {
 	private async shutdown(): Promise<void> {
 		// Emit shutdown event to hooks
 		const hookRunner = this.session.hookRunner;
-		if (hookRunner?.hasHandlers("session")) {
-			const entries = this.sessionManager.getEntries();
+		if (hookRunner?.hasHandlers("session_shutdown")) {
 			await hookRunner.emit({
-				type: "session",
-				entries,
-				sessionFile: this.session.sessionFile,
-				previousSessionFile: null,
-				reason: "shutdown",
+				type: "session_shutdown",
 			});
 		}
 
@@ -1196,7 +1280,7 @@ export class InteractiveMode {
 
 	private cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
-		if (newLevel === null) {
+		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
 			this.footer.updateState(this.session.state);
@@ -1208,7 +1292,7 @@ export class InteractiveMode {
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
 		try {
 			const result = await this.session.cycleModel(direction);
-			if (result === null) {
+			if (result === undefined) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
@@ -1226,11 +1310,7 @@ export class InteractiveMode {
 	private toggleToolOutputExpansion(): void {
 		this.toolOutputExpanded = !this.toolOutputExpanded;
 		for (const child of this.chatContainer.children) {
-			if (child instanceof ToolExecutionComponent) {
-				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof CompactionComponent) {
-				child.setExpanded(this.toolOutputExpanded);
-			} else if (child instanceof BashExecutionComponent) {
+			if (isExpandable(child)) {
 				child.setExpanded(this.toolOutputExpanded);
 			}
 		}
@@ -1502,8 +1582,7 @@ export class InteractiveMode {
 					}
 
 					this.chatContainer.clear();
-					this.isFirstUserMessage = true;
-					this.renderInitialMessages(this.session.state);
+					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
 					done();
 					this.showStatus("Branched to new session");
@@ -1514,6 +1593,108 @@ export class InteractiveMode {
 				},
 			);
 			return { component: selector, focus: selector.getMessageList() };
+		});
+	}
+
+	private showTreeSelector(): void {
+		const tree = this.sessionManager.getTree();
+		const realLeafId = this.sessionManager.getLeafId();
+
+		// Find the visible leaf for display (skip metadata entries like labels)
+		let visibleLeafId = realLeafId;
+		while (visibleLeafId) {
+			const entry = this.sessionManager.getEntry(visibleLeafId);
+			if (!entry) break;
+			if (entry.type !== "label" && entry.type !== "custom") break;
+			visibleLeafId = entry.parentId ?? null;
+		}
+
+		if (tree.length === 0) {
+			this.showStatus("No entries in session");
+			return;
+		}
+
+		this.showSelector((done) => {
+			const selector = new TreeSelectorComponent(
+				tree,
+				visibleLeafId,
+				this.ui.terminal.rows,
+				async (entryId) => {
+					// Selecting the visible leaf is a no-op (already there)
+					if (entryId === visibleLeafId) {
+						done();
+						this.showStatus("Already at this point");
+						return;
+					}
+
+					// Ask about summarization
+					done(); // Close selector first
+
+					const wantsSummary = await this.showHookConfirm(
+						"Summarize branch?",
+						"Create a summary of the branch you're leaving?",
+					);
+
+					// Set up escape handler and loader if summarizing
+					let summaryLoader: Loader | undefined;
+					const originalOnEscape = this.editor.onEscape;
+
+					if (wantsSummary) {
+						this.editor.onEscape = () => {
+							this.session.abortBranchSummary();
+						};
+						this.chatContainer.addChild(new Spacer(1));
+						summaryLoader = new Loader(
+							this.ui,
+							(spinner) => theme.fg("accent", spinner),
+							(text) => theme.fg("muted", text),
+							"Summarizing branch... (esc to cancel)",
+						);
+						this.statusContainer.addChild(summaryLoader);
+						this.ui.requestRender();
+					}
+
+					try {
+						const result = await this.session.navigateTree(entryId, { summarize: wantsSummary });
+
+						if (result.aborted) {
+							// Summarization aborted - re-show tree selector
+							this.showStatus("Branch summarization cancelled");
+							this.showTreeSelector();
+							return;
+						}
+						if (result.cancelled) {
+							this.showStatus("Navigation cancelled");
+							return;
+						}
+
+						// Update UI
+						this.chatContainer.clear();
+						this.renderInitialMessages();
+						if (result.editorText) {
+							this.editor.setText(result.editorText);
+						}
+						this.showStatus("Navigated to selected point");
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					} finally {
+						if (summaryLoader) {
+							summaryLoader.stop();
+							this.statusContainer.clear();
+						}
+						this.editor.onEscape = originalOnEscape;
+					}
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				(entryId, label) => {
+					this.sessionManager.appendLabelChange(entryId, label);
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
 		});
 	}
 
@@ -1542,13 +1723,13 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
-		this.streamingComponent = null;
+		this.streamingComponent = undefined;
 		this.pendingTools.clear();
 
 		// Switch session via AgentSession (emits hook and tool session events)
@@ -1556,8 +1737,7 @@ export class InteractiveMode {
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
-		this.isFirstUserMessage = true;
-		this.renderInitialMessages(this.session.state);
+		this.renderInitialMessages();
 		this.showStatus("Resumed session");
 	}
 
@@ -1805,7 +1985,7 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
@@ -1815,9 +1995,8 @@ export class InteractiveMode {
 		// Clear UI state
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
-		this.streamingComponent = null;
+		this.streamingComponent = undefined;
 		this.pendingTools.clear();
-		this.isFirstUserMessage = true;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
@@ -1894,12 +2073,12 @@ export class InteractiveMode {
 			}
 		} catch (error) {
 			if (this.bashComponent) {
-				this.bashComponent.setComplete(null, false);
+				this.bashComponent.setComplete(undefined, false);
 			}
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 
-		this.bashComponent = null;
+		this.bashComponent = undefined;
 		this.ui.requestRender();
 	}
 
@@ -1919,7 +2098,7 @@ export class InteractiveMode {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.statusContainer.clear();
 
@@ -1945,13 +2124,11 @@ export class InteractiveMode {
 			const result = await this.session.compact(customInstructions);
 
 			// Rebuild UI
-			this.chatContainer.clear();
 			this.rebuildChatFromMessages();
 
-			// Add compaction component
-			const compactionComponent = new CompactionComponent(result.tokensBefore, result.summary);
-			compactionComponent.setExpanded(this.toolOutputExpanded);
-			this.chatContainer.addChild(compactionComponent);
+			// Add compaction component at bottom so user sees it without scrolling
+			const msg = createCompactionSummaryMessage(result.summary, result.tokensBefore, new Date().toISOString());
+			this.addMessageToChat(msg);
 
 			this.footer.updateState(this.session.state);
 		} catch (error) {
@@ -1971,7 +2148,7 @@ export class InteractiveMode {
 	stop(): void {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
-			this.loadingAnimation = null;
+			this.loadingAnimation = undefined;
 		}
 		this.footer.dispose();
 		if (this.unsubscribe) {

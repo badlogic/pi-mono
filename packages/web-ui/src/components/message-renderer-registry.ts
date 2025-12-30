@@ -1,11 +1,11 @@
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { TemplateResult } from "lit";
-import type { AppMessage } from "./Messages.js";
 
 // Extract role type from AppMessage union
-export type MessageRole = AppMessage["role"];
+export type MessageRole = AgentMessage["role"];
 
 // Generic message renderer typed to specific message type
-export interface MessageRenderer<TMessage extends AppMessage = AppMessage> {
+export interface MessageRenderer<TMessage extends AgentMessage = AgentMessage> {
 	render(message: TMessage): TemplateResult;
 }
 
@@ -14,7 +14,7 @@ const messageRenderers = new Map<MessageRole, MessageRenderer<any>>();
 
 export function registerMessageRenderer<TRole extends MessageRole>(
 	role: TRole,
-	renderer: MessageRenderer<Extract<AppMessage, { role: TRole }>>,
+	renderer: MessageRenderer<Extract<AgentMessage, { role: TRole }>>,
 ): void {
 	messageRenderers.set(role, renderer);
 }
@@ -23,6 +23,6 @@ export function getMessageRenderer(role: MessageRole): MessageRenderer | undefin
 	return messageRenderers.get(role);
 }
 
-export function renderMessage(message: AppMessage): TemplateResult | undefined {
+export function renderMessage(message: AgentMessage): TemplateResult | undefined {
 	return messageRenderers.get(message.role)?.render(message);
 }

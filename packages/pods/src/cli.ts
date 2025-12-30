@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { listModels, startModel, stopModel, viewLogs } from "./commands/models.js";
+import { listModels, showKnownModels, startModel, stopAllModels, stopModel, viewLogs } from "./commands/models.js";
 import { listPods, removePodCommand, setupPod, switchActivePod } from "./commands/pods.js";
 import { promptModel } from "./commands/prompt.js";
 import { getActivePod, loadConfig } from "./config.js";
@@ -241,7 +241,6 @@ try {
 				const modelId = args[1];
 				if (!modelId) {
 					// Show available models
-					const { showKnownModels } = await import("./commands/models.js");
 					await showKnownModels();
 					process.exit(0);
 				}
@@ -306,7 +305,6 @@ try {
 				const name = args[1];
 				if (!name) {
 					// Stop all models on the active pod
-					const { stopAllModels } = await import("./commands/models.js");
 					await stopAllModels({ pod: podOverride });
 				} else {
 					await stopModel(name, { pod: podOverride });

@@ -1,4 +1,5 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
+import { streamSimple } from "@mariozechner/pi-ai";
 
 /**
  * Centralized proxy decision logic.
@@ -109,4 +110,25 @@ export function isCorsError(error: unknown): boolean {
 	}
 
 	return false;
+}
+
+/**
+ * Create a streamFn that applies CORS proxy when needed.
+ * Reads proxy settings from storage on each call.
+ *
+ * @param getProxyUrl - Async function to get current proxy URL (or undefined if disabled)
+ * @returns A streamFn compatible with Agent's streamFn option
+ */
+export function createStreamFn(getProxyUrl: () => Promise<string | undefined>) {
+	return async (model: Model<any>, context: Context, options?: SimpleStreamOptions) => {
+		const apiKey = options?.apiKey;
+		const proxyUrl = await getProxyUrl();
+
+		if (!apiKey || !proxyUrl) {
+			return streamSimple(model, context, options);
+		}
+
+		const proxiedModel = applyProxyIfNeeded(model, apiKey, proxyUrl);
+		return streamSimple(proxiedModel, context, options);
+	};
 }

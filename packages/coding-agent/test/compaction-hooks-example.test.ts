@@ -3,46 +3,45 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { HookAPI } from "../src/core/hooks/index.js";
-import type { CompactionEntry } from "../src/core/session-manager.js";
+import type { HookAPI, SessionBeforeCompactEvent, SessionCompactEvent } from "../src/core/hooks/index.js";
 
 describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {
 		// This is the example from hooks.md - verify it compiles
 		const exampleHook = (pi: HookAPI) => {
-			pi.on("session", async (event, _ctx) => {
-				if (event.reason !== "before_compact") return;
+			pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
+				// All these should be accessible on the event
+				const { preparation, previousCompactions, model } = event;
+				// sessionManager and modelRegistry come from ctx, not event
+				const { sessionManager, modelRegistry } = ctx;
+				const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId, cutPoint } = preparation;
 
-				// After narrowing, these should all be accessible
-				const messages = event.messagesToSummarize;
-				const messagesToKeep = event.messagesToKeep;
-				const cutPoint = event.cutPoint;
-				const tokensBefore = event.tokensBefore;
-				const model = event.model;
-				const resolveApiKey = event.resolveApiKey;
+				// Get previous summary from most recent compaction
+				const _previousSummary = previousCompactions[0]?.summary;
 
 				// Verify types
-				expect(Array.isArray(messages)).toBe(true);
+				expect(Array.isArray(messagesToSummarize)).toBe(true);
 				expect(Array.isArray(messagesToKeep)).toBe(true);
 				expect(typeof cutPoint.firstKeptEntryIndex).toBe("number");
 				expect(typeof tokensBefore).toBe("number");
 				expect(model).toBeDefined();
-				expect(typeof resolveApiKey).toBe("function");
+				expect(typeof sessionManager.getEntries).toBe("function");
+				expect(typeof modelRegistry.getApiKey).toBe("function");
+				expect(typeof firstKeptEntryId).toBe("string");
 
-				const summary = messages
+				const summary = messagesToSummarize
 					.filter((m) => m.role === "user")
 					.map((m) => `- ${typeof m.content === "string" ? m.content.slice(0, 100) : "[complex]"}`)
 					.join("\n");
 
-				const compactionEntry: CompactionEntry = {
-					type: "compaction",
-					timestamp: new Date().toISOString(),
-					summary: `User requests:\n${summary}`,
-					firstKeptEntryIndex: event.cutPoint.firstKeptEntryIndex,
-					tokensBefore: event.tokensBefore,
+				// Hooks return compaction content - SessionManager adds id/parentId
+				return {
+					compaction: {
+						summary: `User requests:\n${summary}`,
+						firstKeptEntryId,
+						tokensBefore,
+					},
 				};
-
-				return { compactionEntry };
 			});
 		};
 
@@ -50,19 +49,16 @@ describe("Documentation example", () => {
 		expect(typeof exampleHook).toBe("function");
 	});
 
-	it("compact event should have correct fields after narrowing", () => {
+	it("compact event should have correct fields", () => {
 		const checkCompactEvent = (pi: HookAPI) => {
-			pi.on("session", async (event, _ctx) => {
-				if (event.reason !== "compact") return;
-
-				// After narrowing, these should all be accessible
+			pi.on("session_compact", async (event: SessionCompactEvent) => {
+				// These should all be accessible
 				const entry = event.compactionEntry;
-				const tokensBefore = event.tokensBefore;
 				const fromHook = event.fromHook;
 
 				expect(entry.type).toBe("compaction");
 				expect(typeof entry.summary).toBe("string");
-				expect(typeof tokensBefore).toBe("number");
+				expect(typeof entry.tokensBefore).toBe("number");
 				expect(typeof fromHook).toBe("boolean");
 			});
 		};

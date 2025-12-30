@@ -2,17 +2,23 @@
  * Hook runner - executes hooks and manages their lifecycle.
  */
 
-import { spawn } from "node:child_process";
-import type { LoadedHook, SendHandler } from "./loader.js";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ModelRegistry } from "../model-registry.js";
+import type { SessionManager } from "../session-manager.js";
+import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
 import type {
-	ExecOptions,
-	ExecResult,
+	BeforeAgentStartEvent,
+	BeforeAgentStartEventResult,
+	ContextEvent,
+	ContextEventResult,
 	HookError,
 	HookEvent,
 	HookEventContext,
+	HookMessageRenderer,
 	HookUIContext,
-	SessionEvent,
-	SessionEventResult,
+	RegisteredCommand,
+	SessionBeforeCompactResult,
+	SessionBeforeTreeResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -28,73 +34,8 @@ const DEFAULT_TIMEOUT = 30000;
  */
 export type HookErrorListener = (error: HookError) => void;
 
-/**
- * Execute a command and return stdout/stderr/code.
- * Supports cancellation via AbortSignal and timeout.
- */
-async function exec(command: string, args: string[], cwd: string, options?: ExecOptions): Promise<ExecResult> {
-	return new Promise((resolve) => {
-		const proc = spawn(command, args, { cwd, shell: false });
-
-		let stdout = "";
-		let stderr = "";
-		let killed = false;
-		let timeoutId: NodeJS.Timeout | undefined;
-
-		const killProcess = () => {
-			if (!killed) {
-				killed = true;
-				proc.kill("SIGTERM");
-				// Force kill after 5 seconds if SIGTERM doesn't work
-				setTimeout(() => {
-					if (!proc.killed) {
-						proc.kill("SIGKILL");
-					}
-				}, 5000);
-			}
-		};
-
-		// Handle abort signal
-		if (options?.signal) {
-			if (options.signal.aborted) {
-				killProcess();
-			} else {
-				options.signal.addEventListener("abort", killProcess, { once: true });
-			}
-		}
-
-		// Handle timeout
-		if (options?.timeout && options.timeout > 0) {
-			timeoutId = setTimeout(() => {
-				killProcess();
-			}, options.timeout);
-		}
-
-		proc.stdout?.on("data", (data) => {
-			stdout += data.toString();
-		});
-
-		proc.stderr?.on("data", (data) => {
-			stderr += data.toString();
-		});
-
-		proc.on("close", (code) => {
-			if (timeoutId) clearTimeout(timeoutId);
-			if (options?.signal) {
-				options.signal.removeEventListener("abort", killProcess);
-			}
-			resolve({ stdout, stderr, code: code ?? 0, killed });
-		});
-
-		proc.on("error", (_err) => {
-			if (timeoutId) clearTimeout(timeoutId);
-			if (options?.signal) {
-				options.signal.removeEventListener("abort", killProcess);
-			}
-			resolve({ stdout, stderr, code: 1, killed });
-		});
-	});
-}
+// Re-export execCommand for backward compatibility
+export { execCommand } from "../exec.js";
 
 /**
  * Create a promise that rejects after a timeout.
@@ -112,10 +53,11 @@ function createTimeout(ms: number): { promise: Promise<never>; clear: () => void
 
 /** No-op UI context used when no UI is available */
 const noOpUIContext: HookUIContext = {
-	select: async () => null,
+	select: async () => undefined,
 	confirm: async () => false,
-	input: async () => null,
+	input: async () => undefined,
 	notify: () => {},
+	custom: () => ({ close: () => {}, requestRender: () => {} }),
 };
 
 /**
@@ -126,16 +68,24 @@ export class HookRunner {
 	private uiContext: HookUIContext;
 	private hasUI: boolean;
 	private cwd: string;
-	private sessionFile: string | null;
+	private sessionManager: SessionManager;
+	private modelRegistry: ModelRegistry;
 	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 
-	constructor(hooks: LoadedHook[], cwd: string, timeout: number = DEFAULT_TIMEOUT) {
+	constructor(
+		hooks: LoadedHook[],
+		cwd: string,
+		sessionManager: SessionManager,
+		modelRegistry: ModelRegistry,
+		timeout: number = DEFAULT_TIMEOUT,
+	) {
 		this.hooks = hooks;
 		this.uiContext = noOpUIContext;
 		this.hasUI = false;
 		this.cwd = cwd;
-		this.sessionFile = null;
+		this.sessionManager = sessionManager;
+		this.modelRegistry = modelRegistry;
 		this.timeout = timeout;
 	}
 
@@ -149,6 +99,20 @@ export class HookRunner {
 	}
 
 	/**
+	 * Get the UI context (set by mode).
+	 */
+	getUIContext(): HookUIContext | null {
+		return this.uiContext;
+	}
+
+	/**
+	 * Get whether UI is available.
+	 */
+	getHasUI(): boolean {
+		return this.hasUI;
+	}
+
+	/**
 	 * Get the paths of all loaded hooks.
 	 */
 	getHookPaths(): string[] {
@@ -156,19 +120,22 @@ export class HookRunner {
 	}
 
 	/**
-	 * Set the session file path.
+	 * Set the send message handler for all hooks' pi.sendMessage().
+	 * Call this when the mode initializes.
 	 */
-	setSessionFile(sessionFile: string | null): void {
-		this.sessionFile = sessionFile;
+	setSendMessageHandler(handler: SendMessageHandler): void {
+		for (const hook of this.hooks) {
+			hook.setSendMessageHandler(handler);
+		}
 	}
 
 	/**
-	 * Set the send handler for all hooks' pi.send().
+	 * Set the append entry handler for all hooks' pi.appendEntry().
 	 * Call this when the mode initializes.
 	 */
-	setSendHandler(handler: SendHandler): void {
+	setAppendEntryHandler(handler: AppendEntryHandler): void {
 		for (const hook of this.hooks) {
-			hook.setSendHandler(handler);
+			hook.setAppendEntryHandler(handler);
 		}
 	}
 
@@ -184,7 +151,10 @@ export class HookRunner {
 	/**
 	 * Emit an error to all listeners.
 	 */
-	private emitError(error: HookError): void {
+	/**
+	 * Emit an error to all error listeners.
+	 */
+	emitError(error: HookError): void {
 		for (const listener of this.errorListeners) {
 			listener(error);
 		}
@@ -204,25 +174,88 @@ export class HookRunner {
 	}
 
 	/**
+	 * Get a message renderer for the given customType.
+	 * Returns the first renderer found across all hooks, or undefined if none.
+	 */
+	getMessageRenderer(customType: string): HookMessageRenderer | undefined {
+		for (const hook of this.hooks) {
+			const renderer = hook.messageRenderers.get(customType);
+			if (renderer) {
+				return renderer;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Get all registered commands from all hooks.
+	 */
+	getRegisteredCommands(): RegisteredCommand[] {
+		const commands: RegisteredCommand[] = [];
+		for (const hook of this.hooks) {
+			for (const command of hook.commands.values()) {
+				commands.push(command);
+			}
+		}
+		return commands;
+	}
+
+	/**
+	 * Get a registered command by name.
+	 * Returns the first command found across all hooks, or undefined if none.
+	 */
+	getCommand(name: string): RegisteredCommand | undefined {
+		for (const hook of this.hooks) {
+			const command = hook.commands.get(name);
+			if (command) {
+				return command;
+			}
+		}
+		return undefined;
+	}
+
+	/**
 	 * Create the event context for handlers.
 	 */
 	private createContext(): HookEventContext {
 		return {
-			exec: (command: string, args: string[], options?: ExecOptions) => exec(command, args, this.cwd, options),
 			ui: this.uiContext,
 			hasUI: this.hasUI,
 			cwd: this.cwd,
-			sessionFile: this.sessionFile,
+			sessionManager: this.sessionManager,
+			modelRegistry: this.modelRegistry,
 		};
 	}
 
 	/**
-	 * Emit an event to all hooks.
-	 * Returns the result from session/tool_result events (if any handler returns one).
+	 * Check if event type is a session "before_*" event that can be cancelled.
 	 */
-	async emit(event: HookEvent): Promise<SessionEventResult | ToolResultEventResult | undefined> {
+	private isSessionBeforeEvent(
+		type: string,
+	): type is
+		| "session_before_switch"
+		| "session_before_new"
+		| "session_before_branch"
+		| "session_before_compact"
+		| "session_before_tree" {
+		return (
+			type === "session_before_switch" ||
+			type === "session_before_new" ||
+			type === "session_before_branch" ||
+			type === "session_before_compact" ||
+			type === "session_before_tree"
+		);
+	}
+
+	/**
+	 * Emit an event to all hooks.
+	 * Returns the result from session before_* / tool_result events (if any handler returns one).
+	 */
+	async emit(
+		event: HookEvent,
+	): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined> {
 		const ctx = this.createContext();
-		let result: SessionEventResult | ToolResultEventResult | undefined;
+		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined;
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get(event.type);
@@ -230,11 +263,10 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					// No timeout for before_compact events (like tool_call, they may take a while)
-					const isBeforeCompact = event.type === "session" && (event as SessionEvent).reason === "before_compact";
+					// No timeout for session_before_compact events (like tool_call, they may take a while)
 					let handlerResult: unknown;
 
-					if (isBeforeCompact) {
+					if (event.type === "session_before_compact") {
 						handlerResult = await handler(event, ctx);
 					} else {
 						const timeout = createTimeout(this.timeout);
@@ -242,9 +274,9 @@ export class HookRunner {
 						timeout.clear();
 					}
 
-					// For session events, capture the result (for before_* cancellation)
-					if (event.type === "session" && handlerResult) {
-						result = handlerResult as SessionEventResult;
+					// For session before_* events, capture the result (for cancellation)
+					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
+						result = handlerResult as SessionBeforeCompactResult | SessionBeforeTreeResult;
 						// If cancelled, stop processing further hooks
 						if (result.cancel) {
 							return result;
@@ -292,6 +324,85 @@ export class HookRunner {
 					if (result.block) {
 						return result;
 					}
+				}
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Emit a context event to all hooks.
+	 * Handlers are chained - each gets the previous handler's output (if any).
+	 * Returns the final modified messages, or the original if no modifications.
+	 *
+	 * Note: Messages are already deep-copied by the caller (pi-ai preprocessor).
+	 */
+	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
+		const ctx = this.createContext();
+		let currentMessages = messages;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("context");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: ContextEvent = { type: "context", messages: currentMessages };
+					const timeout = createTimeout(this.timeout);
+					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+					timeout.clear();
+
+					if (handlerResult && (handlerResult as ContextEventResult).messages) {
+						currentMessages = (handlerResult as ContextEventResult).messages!;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.emitError({
+						hookPath: hook.path,
+						event: "context",
+						error: message,
+					});
+				}
+			}
+		}
+
+		return currentMessages;
+	}
+
+	/**
+	 * Emit before_agent_start event to all hooks.
+	 * Returns the first message to inject (if any handler returns one).
+	 */
+	async emitBeforeAgentStart(
+		prompt: string,
+		images?: import("@mariozechner/pi-ai").ImageContent[],
+	): Promise<BeforeAgentStartEventResult | undefined> {
+		const ctx = this.createContext();
+		let result: BeforeAgentStartEventResult | undefined;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("before_agent_start");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
+					const timeout = createTimeout(this.timeout);
+					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+					timeout.clear();
+
+					// Take the first message returned
+					if (handlerResult && (handlerResult as BeforeAgentStartEventResult).message && !result) {
+						result = handlerResult as BeforeAgentStartEventResult;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.emitError({
+						hookPath: hook.path,
+						event: "before_agent_start",
+						error: message,
+					});
 				}
 			}
 		}

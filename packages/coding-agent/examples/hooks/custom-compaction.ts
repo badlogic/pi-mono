@@ -14,17 +14,18 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
-import { messageTransformer } from "@mariozechner/pi-coding-agent";
+import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "before_compact") return;
-
+	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, resolveApiKey, entries, signal } =
-			event;
+		const { preparation, previousCompactions, signal } = event;
+		const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId } = preparation;
+
+		// Get previous summary from most recent compaction (if any)
+		const previousSummary = previousCompactions[0]?.summary;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		const model = getModel("google", "gemini-2.5-flash");
@@ -34,7 +35,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Resolve API key for the summarization model
-		const apiKey = await resolveApiKey(model);
+		const apiKey = await ctx.modelRegistry.getApiKey(model);
 		if (!apiKey) {
 			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
 			return;
@@ -49,7 +50,7 @@ export default function (pi: HookAPI) {
 		);
 
 		// Transform app messages to pi-ai package format
-		const transformedMessages = messageTransformer(allMessages);
+		const transformedMessages = convertToLlm(allMessages);
 
 		// Include previous summary context if available
 		const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";
@@ -94,14 +95,12 @@ Format the summary as structured markdown with clear sections.`,
 				return;
 			}
 
-			// Return a compaction entry that discards ALL messages
-			// firstKeptEntryIndex points past all current entries
+			// Return compaction content - SessionManager adds id/parentId
+			// Use firstKeptEntryId from preparation to keep recent messages
 			return {
-				compactionEntry: {
-					type: "compaction" as const,
-					timestamp: new Date().toISOString(),
+				compaction: {
 					summary,
-					firstKeptEntryIndex: entries.length,
+					firstKeptEntryId,
 					tokensBefore,
 				},
 			};

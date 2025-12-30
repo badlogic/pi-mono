@@ -305,6 +305,14 @@ export function isCtrlO(data: string): boolean {
 }
 
 /**
+ * Check if input matches Shift+Ctrl+O (Kitty protocol only).
+ * Ignores lock key bits.
+ */
+export function isShiftCtrlO(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.o, MODIFIERS.shift + MODIFIERS.ctrl);
+}
+
+/**
  * Check if input matches Ctrl+P (raw byte or Kitty protocol).
  * Ignores lock key bits.
  */
@@ -318,6 +326,14 @@ export function isCtrlP(data: string): boolean {
  */
 export function isShiftCtrlP(data: string): boolean {
 	return matchesKittySequence(data, CODEPOINTS.p, MODIFIERS.shift + MODIFIERS.ctrl);
+}
+
+/**
+ * Check if input matches Shift+Ctrl+D (Kitty protocol only, for debug).
+ * Ignores lock key bits.
+ */
+export function isShiftCtrlD(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.d, MODIFIERS.shift + MODIFIERS.ctrl);
 }
 
 /**

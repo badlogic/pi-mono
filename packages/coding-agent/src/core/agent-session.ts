@@ -13,18 +13,37 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type { Agent, AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { Agent, AgentEvent, AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
-import { calculateContextTokens, compact, prepareCompaction, shouldCompact } from "./compaction.js";
+import {
+	type CompactionResult,
+	calculateContextTokens,
+	collectEntriesForBranchSummary,
+	compact,
+	generateBranchSummary,
+	prepareCompaction,
+	shouldCompact,
+} from "./compaction/index.js";
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
-import type { HookRunner, SessionEventResult, TurnEndEvent, TurnStartEvent } from "./hooks/index.js";
-import type { BashExecutionMessage } from "./messages.js";
+import type {
+	HookCommandContext,
+	HookRunner,
+	SessionBeforeBranchResult,
+	SessionBeforeCompactResult,
+	SessionBeforeNewResult,
+	SessionBeforeSwitchResult,
+	SessionBeforeTreeResult,
+	TreePreparation,
+	TurnEndEvent,
+	TurnStartEvent,
+} from "./hooks/index.js";
+import type { BashExecutionMessage, HookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type { CompactionEntry, SessionManager } from "./session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -32,7 +51,7 @@ import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | null; aborted: boolean; willRetry: boolean }
+	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -52,7 +71,7 @@ export interface AgentSessionConfig {
 	/** File-based slash commands for expansion */
 	fileCommands?: FileSlashCommand[];
 	/** Hook runner (created in main.ts with wrapped tools) */
-	hookRunner?: HookRunner | null;
+	hookRunner?: HookRunner;
 	/** Custom tools for session lifecycle events */
 	customTools?: LoadedCustomTool[];
 	skillsSettings?: Required<SkillsSettings>;
@@ -64,8 +83,8 @@ export interface AgentSessionConfig {
 export interface PromptOptions {
 	/** Whether to expand file-based slash commands (default: true) */
 	expandSlashCommands?: boolean;
-	/** Image/file attachments */
-	attachments?: Attachment[];
+	/** Image attachments */
+	images?: ImageContent[];
 }
 
 /** Result from cycleModel() */
@@ -76,15 +95,9 @@ export interface ModelCycleResult {
 	isScoped: boolean;
 }
 
-/** Result from compact() or checkAutoCompaction() */
-export interface CompactionResult {
-	tokensBefore: number;
-	summary: string;
-}
-
 /** Session statistics for /session command */
 export interface SessionStats {
-	sessionFile: string | null;
+	sessionFile: string | undefined;
 	sessionId: string;
 	userMessages: number;
 	assistantMessages: number;
@@ -101,6 +114,7 @@ export interface SessionStats {
 	cost: number;
 }
 
+/** Internal marker for hook messages queued through the agent loop */
 // ============================================================================
 // Constants
 // ============================================================================
@@ -131,21 +145,24 @@ export class AgentSession {
 	private _queuedMessages: string[] = [];
 
 	// Compaction state
-	private _compactionAbortController: AbortController | null = null;
-	private _autoCompactionAbortController: AbortController | null = null;
+	private _compactionAbortController: AbortController | undefined = undefined;
+	private _autoCompactionAbortController: AbortController | undefined = undefined;
+
+	// Branch summarization state
+	private _branchSummaryAbortController: AbortController | undefined = undefined;
 
 	// Retry state
-	private _retryAbortController: AbortController | null = null;
+	private _retryAbortController: AbortController | undefined = undefined;
 	private _retryAttempt = 0;
-	private _retryPromise: Promise<void> | null = null;
-	private _retryResolve: (() => void) | null = null;
+	private _retryPromise: Promise<void> | undefined = undefined;
+	private _retryResolve: (() => void) | undefined = undefined;
 
 	// Bash execution state
-	private _bashAbortController: AbortController | null = null;
+	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
 	// Hook system
-	private _hookRunner: HookRunner | null = null;
+	private _hookRunner: HookRunner | undefined = undefined;
 	private _turnIndex = 0;
 
 	// Custom tools for session lifecycle
@@ -162,10 +179,14 @@ export class AgentSession {
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._fileCommands = config.fileCommands ?? [];
-		this._hookRunner = config.hookRunner ?? null;
+		this._hookRunner = config.hookRunner;
 		this._customTools = config.customTools ?? [];
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
+
+		// Always subscribe to agent events for internal handling
+		// (session persistence, hooks, auto-compaction, retry logic)
+		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -185,7 +206,7 @@ export class AgentSession {
 	}
 
 	// Track last assistant message for auto-compaction check
-	private _lastAssistantMessage: AssistantMessage | null = null;
+	private _lastAssistantMessage: AssistantMessage | undefined = undefined;
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
@@ -211,7 +232,24 @@ export class AgentSession {
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			this.sessionManager.saveMessage(event.message);
+			// Check if this is a hook message
+			if (event.message.role === "hookMessage") {
+				// Persist as CustomMessageEntry
+				this.sessionManager.appendCustomMessageEntry(
+					event.message.customType,
+					event.message.content,
+					event.message.display,
+					event.message.details,
+				);
+			} else if (
+				event.message.role === "user" ||
+				event.message.role === "assistant" ||
+				event.message.role === "toolResult"
+			) {
+				// Regular LLM message - persist as SessionMessageEntry
+				this.sessionManager.appendMessage(event.message);
+			}
+			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
@@ -222,7 +260,7 @@ export class AgentSession {
 		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
-			this._lastAssistantMessage = null;
+			this._lastAssistantMessage = undefined;
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
 			if (this._isRetryableError(msg)) {
@@ -248,8 +286,8 @@ export class AgentSession {
 	private _resolveRetry(): void {
 		if (this._retryResolve) {
 			this._retryResolve();
-			this._retryResolve = null;
-			this._retryPromise = null;
+			this._retryResolve = undefined;
+			this._retryPromise = undefined;
 		}
 	}
 
@@ -263,7 +301,7 @@ export class AgentSession {
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */
-	private _findLastAssistantMessage(): AssistantMessage | null {
+	private _findLastAssistantMessage(): AssistantMessage | undefined {
 		const messages = this.agent.state.messages;
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
@@ -271,7 +309,7 @@ export class AgentSession {
 				return msg as AssistantMessage;
 			}
 		}
-		return null;
+		return undefined;
 	}
 
 	/** Emit hook events based on agent events */
@@ -309,11 +347,6 @@ export class AgentSession {
 	 */
 	subscribe(listener: AgentSessionEventListener): () => void {
 		this._eventListeners.push(listener);
-
-		// Set up agent subscription if not already done
-		if (!this._unsubscribeAgent) {
-			this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
-		}
 
 		// Return unsubscribe function for this specific listener
 		return () => {
@@ -363,8 +396,8 @@ export class AgentSession {
 		return this.agent.state;
 	}
 
-	/** Current model (may be null if not yet selected) */
-	get model(): Model<any> | null {
+	/** Current model (may be undefined if not yet selected) */
+	get model(): Model<any> | undefined {
 		return this.agent.state.model;
 	}
 
@@ -380,11 +413,11 @@ export class AgentSession {
 
 	/** Whether auto-compaction is currently running */
 	get isCompacting(): boolean {
-		return this._autoCompactionAbortController !== null || this._compactionAbortController !== null;
+		return this._autoCompactionAbortController !== undefined || this._compactionAbortController !== undefined;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
-	get messages(): AppMessage[] {
+	get messages(): AgentMessage[] {
 		return this.agent.state.messages;
 	}
 
@@ -393,9 +426,9 @@ export class AgentSession {
 		return this.agent.getQueueMode();
 	}
 
-	/** Current session file path, or null if sessions are disabled */
-	get sessionFile(): string | null {
-		return this.sessionManager.isPersisted() ? this.sessionManager.getSessionFile() : null;
+	/** Current session file path, or undefined if sessions are disabled */
+	get sessionFile(): string | undefined {
+		return this.sessionManager.getSessionFile();
 	}
 
 	/** Current session ID */
@@ -420,6 +453,7 @@ export class AgentSession {
 	/**
 	 * Send a prompt to the agent.
 	 * - Validates model and API key before sending
+	 * - Handles hook commands (registered via pi.registerCommand)
 	 * - Expands file-based slash commands by default
 	 * @throws Error if no model selected or no API key available
 	 */
@@ -428,6 +462,15 @@ export class AgentSession {
 		this._flushPendingBashMessages();
 
 		const expandCommands = options?.expandSlashCommands ?? true;
+
+		// Handle hook commands first (if enabled and text is a slash command)
+		if (expandCommands && text.startsWith("/")) {
+			const handled = await this._tryExecuteHookCommand(text);
+			if (handled) {
+				// Hook command executed, no prompt to send
+				return;
+			}
+		}
 
 		// Validate model
 		if (!this.model) {
@@ -453,11 +496,83 @@ export class AgentSession {
 			await this._checkCompaction(lastAssistant, false);
 		}
 
-		// Expand slash commands if requested
+		// Expand file-based slash commands if requested
 		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
-		await this.agent.prompt(expandedText, options?.attachments);
+		// Build messages array (hook message if any, then user message)
+		const messages: AgentMessage[] = [];
+
+		// Add user message
+		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+		if (options?.images) {
+			userContent.push(...options.images);
+		}
+		messages.push({
+			role: "user",
+			content: userContent,
+			timestamp: Date.now(),
+		});
+
+		// Emit before_agent_start hook event
+		if (this._hookRunner) {
+			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
+			if (result?.message) {
+				messages.push({
+					role: "hookMessage",
+					customType: result.message.customType,
+					content: result.message.content,
+					display: result.message.display,
+					details: result.message.details,
+					timestamp: Date.now(),
+				});
+			}
+		}
+
+		await this.agent.prompt(messages);
 		await this.waitForRetry();
+	}
+
+	/**
+	 * Try to execute a hook command. Returns true if command was found and executed.
+	 */
+	private async _tryExecuteHookCommand(text: string): Promise<boolean> {
+		if (!this._hookRunner) return false;
+
+		// Parse command name and args
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+
+		const command = this._hookRunner.getCommand(commandName);
+		if (!command) return false;
+
+		// Get UI context from hook runner (set by mode)
+		const uiContext = this._hookRunner.getUIContext();
+		if (!uiContext) return false;
+
+		// Build command context
+		const cwd = process.cwd();
+		const ctx: HookCommandContext = {
+			args,
+			ui: uiContext,
+			hasUI: this._hookRunner.getHasUI(),
+			cwd,
+			sessionManager: this.sessionManager,
+			modelRegistry: this._modelRegistry,
+		};
+
+		try {
+			await command.handler(ctx);
+			return true;
+		} catch (err) {
+			// Emit error via hook runner
+			this._hookRunner.emitError({
+				hookPath: `command:${commandName}`,
+				event: "command",
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return true;
+		}
 	}
 
 	/**
@@ -471,6 +586,47 @@ export class AgentSession {
 			content: [{ type: "text", text }],
 			timestamp: Date.now(),
 		});
+	}
+
+	/**
+	 * Send a hook message to the session. Creates a CustomMessageEntry.
+	 *
+	 * Handles three cases:
+	 * - Streaming: queues message, processed when loop pulls from queue
+	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
+	 * - Not streaming + no trigger: appends to state/session, no turn
+	 *
+	 * @param message Hook message with customType, content, display, details
+	 * @param triggerTurn If true and not streaming, triggers a new LLM turn
+	 */
+	async sendHookMessage<T = unknown>(
+		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		triggerTurn?: boolean,
+	): Promise<void> {
+		const appMessage = {
+			role: "hookMessage" as const,
+			customType: message.customType,
+			content: message.content,
+			display: message.display,
+			details: message.details,
+			timestamp: Date.now(),
+		} satisfies HookMessage<T>;
+		if (this.isStreaming) {
+			// Queue for processing by agent loop
+			await this.agent.queueMessage(appMessage);
+		} else if (triggerTurn) {
+			// Send as prompt - agent loop will emit message events
+			await this.agent.prompt(appMessage);
+		} else {
+			// Just append to agent state and session, no turn
+			this.agent.appendMessage(appMessage);
+			this.sessionManager.appendCustomMessageEntry(
+				message.customType,
+				message.content,
+				message.display,
+				message.details,
+			);
+		}
 	}
 
 	/**
@@ -515,17 +671,12 @@ export class AgentSession {
 	 */
 	async reset(): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
-		const entries = this.sessionManager.getEntries();
 
-		// Emit before_new event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_new event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_new")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				entries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
-				reason: "before_new",
-			})) as SessionEventResult | undefined;
+				type: "session_before_new",
+			})) as SessionBeforeNewResult | undefined;
 
 			if (result?.cancel) {
 				return false;
@@ -535,19 +686,14 @@ export class AgentSession {
 		this._disconnectFromAgent();
 		await this.abort();
 		this.agent.reset();
-		this.sessionManager.reset();
+		this.sessionManager.newSession();
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 
-		// Emit session event with reason "new" to hooks
+		// Emit session_new event to hooks
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(this.sessionFile);
 			await this._hookRunner.emit({
-				type: "session",
-				entries: [],
-				sessionFile: this.sessionFile,
-				previousSessionFile,
-				reason: "new",
+				type: "session_new",
 			});
 		}
 
@@ -572,7 +718,7 @@ export class AgentSession {
 		}
 
 		this.agent.setModel(model);
-		this.sessionManager.saveModelChange(model.provider, model.id);
+		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
@@ -583,17 +729,17 @@ export class AgentSession {
 	 * Cycle to next/previous model.
 	 * Uses scoped models (from --models flag) if available, otherwise all available models.
 	 * @param direction - "forward" (default) or "backward"
-	 * @returns The new model info, or null if only one model available
+	 * @returns The new model info, or undefined if only one model available
 	 */
-	async cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | null> {
+	async cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | undefined> {
 		if (this._scopedModels.length > 0) {
 			return this._cycleScopedModel(direction);
 		}
 		return this._cycleAvailableModel(direction);
 	}
 
-	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
-		if (this._scopedModels.length <= 1) return null;
+	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
+		if (this._scopedModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
 		let currentIndex = this._scopedModels.findIndex((sm) => modelsAreEqual(sm.model, currentModel));
@@ -611,7 +757,7 @@ export class AgentSession {
 
 		// Apply model
 		this.agent.setModel(next.model);
-		this.sessionManager.saveModelChange(next.model.provider, next.model.id);
+		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
 		// Apply thinking level (setThinkingLevel clamps to model capabilities)
@@ -620,9 +766,9 @@ export class AgentSession {
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
-	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | null> {
+	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
 		const availableModels = await this._modelRegistry.getAvailable();
-		if (availableModels.length <= 1) return null;
+		if (availableModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
 		let currentIndex = availableModels.findIndex((m) => modelsAreEqual(m, currentModel));
@@ -638,7 +784,7 @@ export class AgentSession {
 		}
 
 		this.agent.setModel(nextModel);
-		this.sessionManager.saveModelChange(nextModel.provider, nextModel.id);
+		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 		// Re-clamp thinking level for new model's capabilities
@@ -671,16 +817,16 @@ export class AgentSession {
 			effectiveLevel = "high";
 		}
 		this.agent.setThinkingLevel(effectiveLevel);
-		this.sessionManager.saveThinkingLevelChange(effectiveLevel);
+		this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
 	}
 
 	/**
 	 * Cycle to next thinking level.
-	 * @returns New level, or null if model doesn't support thinking
+	 * @returns New level, or undefined if model doesn't support thinking
 	 */
-	cycleThinkingLevel(): ThinkingLevel | null {
-		if (!this.supportsThinking()) return null;
+	cycleThinkingLevel(): ThinkingLevel | undefined {
+		if (!this.supportsThinking()) return undefined;
 
 		const levels = this.getAvailableThinkingLevels();
 		const currentIndex = levels.indexOf(this.thinkingLevel);
@@ -754,51 +900,54 @@ export class AgentSession {
 
 			const preparation = prepareCompaction(entries, settings);
 			if (!preparation) {
-				throw new Error("Already compacted");
-			}
-
-			// Find previous compaction summary if any
-			let previousSummary: string | undefined;
-			for (let i = entries.length - 1; i >= 0; i--) {
-				if (entries[i].type === "compaction") {
-					previousSummary = (entries[i] as CompactionEntry).summary;
-					break;
+				// Check why we can't compact
+				const lastEntry = entries[entries.length - 1];
+				if (lastEntry?.type === "compaction") {
+					throw new Error("Already compacted");
 				}
+				throw new Error("Nothing to compact (session too small)");
 			}
 
-			let compactionEntry: CompactionEntry | undefined;
+			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
-			if (this._hookRunner?.hasHandlers("session")) {
+			if (this._hookRunner?.hasHandlers("session_before_compact")) {
+				// Get previous compactions, newest first
+				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
+
 				const result = (await this._hookRunner.emit({
-					type: "session",
-					entries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
-					reason: "before_compact",
-					cutPoint: preparation.cutPoint,
-					previousSummary,
-					messagesToSummarize: [...preparation.messagesToSummarize],
-					messagesToKeep: [...preparation.messagesToKeep],
-					tokensBefore: preparation.tokensBefore,
+					type: "session_before_compact",
+					preparation,
+					previousCompactions,
 					customInstructions,
 					model: this.model,
-					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._compactionAbortController.signal,
-				})) as SessionEventResult | undefined;
+				})) as SessionBeforeCompactResult | undefined;
 
 				if (result?.cancel) {
 					throw new Error("Compaction cancelled");
 				}
 
-				if (result?.compactionEntry) {
-					compactionEntry = result.compactionEntry;
+				if (result?.compaction) {
+					hookCompaction = result.compaction;
 					fromHook = true;
 				}
 			}
 
-			if (!compactionEntry) {
-				compactionEntry = await compact(
+			let summary: string;
+			let firstKeptEntryId: string;
+			let tokensBefore: number;
+			let details: unknown;
+
+			if (hookCompaction) {
+				// Hook provided compaction content
+				summary = hookCompaction.summary;
+				firstKeptEntryId = hookCompaction.firstKeptEntryId;
+				tokensBefore = hookCompaction.tokensBefore;
+				details = hookCompaction.details;
+			} else {
+				// Generate compaction result
+				const result = await compact(
 					entries,
 					this.model,
 					settings,
@@ -806,36 +955,42 @@ export class AgentSession {
 					this._compactionAbortController.signal,
 					customInstructions,
 				);
+				summary = result.summary;
+				firstKeptEntryId = result.firstKeptEntryId;
+				tokensBefore = result.tokensBefore;
+				details = result.details;
 			}
 
 			if (this._compactionAbortController.signal.aborted) {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.saveCompaction(compactionEntry);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			if (this._hookRunner) {
+			// Get the saved compaction entry for the hook
+			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
+				| CompactionEntry
+				| undefined;
+
+			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
-					type: "session",
-					entries: newEntries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
-					reason: "compact",
-					compactionEntry,
-					tokensBefore: compactionEntry.tokensBefore,
+					type: "session_compact",
+					compactionEntry: savedCompactionEntry,
 					fromHook,
 				});
 			}
 
 			return {
-				tokensBefore: compactionEntry.tokensBefore,
-				summary: compactionEntry.summary,
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
 			};
 		} finally {
-			this._compactionAbortController = null;
+			this._compactionAbortController = undefined;
 			this._reconnectToAgent();
 		}
 	}
@@ -846,6 +1001,13 @@ export class AgentSession {
 	abortCompaction(): void {
 		this._compactionAbortController?.abort();
 		this._autoCompactionAbortController?.abort();
+	}
+
+	/**
+	 * Cancel in-progress branch summarization.
+	 */
+	abortBranchSummary(): void {
+		this._branchSummaryAbortController?.abort();
 	}
 
 	/**
@@ -901,13 +1063,13 @@ export class AgentSession {
 
 		try {
 			if (!this.model) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
 			const apiKey = await this._modelRegistry.getApiKey(this.model);
 			if (!apiKey) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
@@ -915,87 +1077,91 @@ export class AgentSession {
 
 			const preparation = prepareCompaction(entries, settings);
 			if (!preparation) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
 			}
 
-			// Find previous compaction summary if any
-			let previousSummary: string | undefined;
-			for (let i = entries.length - 1; i >= 0; i--) {
-				if (entries[i].type === "compaction") {
-					previousSummary = (entries[i] as CompactionEntry).summary;
-					break;
-				}
-			}
-
-			let compactionEntry: CompactionEntry | undefined;
+			let hookCompaction: CompactionResult | undefined;
 			let fromHook = false;
 
-			if (this._hookRunner?.hasHandlers("session")) {
+			if (this._hookRunner?.hasHandlers("session_before_compact")) {
+				// Get previous compactions, newest first
+				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
+
 				const hookResult = (await this._hookRunner.emit({
-					type: "session",
-					entries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
-					reason: "before_compact",
-					cutPoint: preparation.cutPoint,
-					previousSummary,
-					messagesToSummarize: [...preparation.messagesToSummarize],
-					messagesToKeep: [...preparation.messagesToKeep],
-					tokensBefore: preparation.tokensBefore,
+					type: "session_before_compact",
+					preparation,
+					previousCompactions,
 					customInstructions: undefined,
 					model: this.model,
-					resolveApiKey: async (m: Model<any>) => (await this._modelRegistry.getApiKey(m)) ?? undefined,
 					signal: this._autoCompactionAbortController.signal,
-				})) as SessionEventResult | undefined;
+				})) as SessionBeforeCompactResult | undefined;
 
 				if (hookResult?.cancel) {
-					this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
+					this._emit({ type: "auto_compaction_end", result: undefined, aborted: true, willRetry: false });
 					return;
 				}
 
-				if (hookResult?.compactionEntry) {
-					compactionEntry = hookResult.compactionEntry;
+				if (hookResult?.compaction) {
+					hookCompaction = hookResult.compaction;
 					fromHook = true;
 				}
 			}
 
-			if (!compactionEntry) {
-				compactionEntry = await compact(
+			let summary: string;
+			let firstKeptEntryId: string;
+			let tokensBefore: number;
+			let details: unknown;
+
+			if (hookCompaction) {
+				// Hook provided compaction content
+				summary = hookCompaction.summary;
+				firstKeptEntryId = hookCompaction.firstKeptEntryId;
+				tokensBefore = hookCompaction.tokensBefore;
+				details = hookCompaction.details;
+			} else {
+				// Generate compaction result
+				const compactResult = await compact(
 					entries,
 					this.model,
 					settings,
 					apiKey,
 					this._autoCompactionAbortController.signal,
 				);
+				summary = compactResult.summary;
+				firstKeptEntryId = compactResult.firstKeptEntryId;
+				tokensBefore = compactResult.tokensBefore;
+				details = compactResult.details;
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
-				this._emit({ type: "auto_compaction_end", result: null, aborted: true, willRetry: false });
+				this._emit({ type: "auto_compaction_end", result: undefined, aborted: true, willRetry: false });
 				return;
 			}
 
-			this.sessionManager.saveCompaction(compactionEntry);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			if (this._hookRunner) {
+			// Get the saved compaction entry for the hook
+			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
+				| CompactionEntry
+				| undefined;
+
+			if (this._hookRunner && savedCompactionEntry) {
 				await this._hookRunner.emit({
-					type: "session",
-					entries: newEntries,
-					sessionFile: this.sessionFile,
-					previousSessionFile: null,
-					reason: "compact",
-					compactionEntry,
-					tokensBefore: compactionEntry.tokensBefore,
+					type: "session_compact",
+					compactionEntry: savedCompactionEntry,
 					fromHook,
 				});
 			}
 
 			const result: CompactionResult = {
-				tokensBefore: compactionEntry.tokensBefore,
-				summary: compactionEntry.summary,
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
 			};
 			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
 
@@ -1011,7 +1177,7 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
-			this._emit({ type: "auto_compaction_end", result: null, aborted: false, willRetry: false });
+			this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 
 			if (reason === "overflow") {
 				throw new Error(
@@ -1019,7 +1185,7 @@ export class AgentSession {
 				);
 			}
 		} finally {
-			this._autoCompactionAbortController = null;
+			this._autoCompactionAbortController = undefined;
 		}
 	}
 
@@ -1111,7 +1277,7 @@ export class AgentSession {
 			// Aborted during sleep - emit end event so UI can clean up
 			const attempt = this._retryAttempt;
 			this._retryAttempt = 0;
-			this._retryAbortController = null;
+			this._retryAbortController = undefined;
 			this._emit({
 				type: "auto_retry_end",
 				success: false,
@@ -1121,7 +1287,7 @@ export class AgentSession {
 			this._resolveRetry();
 			return false;
 		}
-		this._retryAbortController = null;
+		this._retryAbortController = undefined;
 
 		// Retry via continue() - use setTimeout to break out of event handler chain
 		setTimeout(() => {
@@ -1173,7 +1339,7 @@ export class AgentSession {
 
 	/** Whether auto-retry is currently in progress */
 	get isRetrying(): boolean {
-		return this._retryPromise !== null;
+		return this._retryPromise !== undefined;
 	}
 
 	/** Whether auto-retry is enabled */
@@ -1228,12 +1394,12 @@ export class AgentSession {
 				this.agent.appendMessage(bashMessage);
 
 				// Save to session
-				this.sessionManager.saveMessage(bashMessage);
+				this.sessionManager.appendMessage(bashMessage);
 			}
 
 			return result;
 		} finally {
-			this._bashAbortController = null;
+			this._bashAbortController = undefined;
 		}
 	}
 
@@ -1246,7 +1412,7 @@ export class AgentSession {
 
 	/** Whether a bash command is currently running */
 	get isBashRunning(): boolean {
-		return this._bashAbortController !== null;
+		return this._bashAbortController !== undefined;
 	}
 
 	/** Whether there are pending bash messages waiting to be flushed */
@@ -1266,7 +1432,7 @@ export class AgentSession {
 			this.agent.appendMessage(bashMessage);
 
 			// Save to session
-			this.sessionManager.saveMessage(bashMessage);
+			this.sessionManager.appendMessage(bashMessage);
 		}
 
 		this._pendingBashMessages = [];
@@ -1283,18 +1449,14 @@ export class AgentSession {
 	 * @returns true if switch completed, false if cancelled by hook
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
-		const previousSessionFile = this.sessionFile;
-		const oldEntries = this.sessionManager.getEntries();
+		const previousSessionFile = this.sessionManager.getSessionFile();
 
-		// Emit before_switch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_switch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_switch")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				entries: oldEntries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
-				reason: "before_switch",
-			})) as SessionEventResult | undefined;
+				type: "session_before_switch",
+				targetSessionFile: sessionPath,
+			})) as SessionBeforeSwitchResult | undefined;
 
 			if (result?.cancel) {
 				return false;
@@ -1309,18 +1471,13 @@ export class AgentSession {
 		this.sessionManager.setSessionFile(sessionPath);
 
 		// Reload messages
-		const entries = this.sessionManager.getEntries();
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session event to hooks
+		// Emit session_switch event to hooks
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(sessionPath);
 			await this._hookRunner.emit({
-				type: "session",
-				entries,
-				sessionFile: sessionPath,
+				type: "session_switch",
 				previousSessionFile,
-				reason: "switch",
 			});
 		}
 
@@ -1371,16 +1528,12 @@ export class AgentSession {
 
 		let skipConversationRestore = false;
 
-		// Emit before_branch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session")) {
+		// Emit session_before_branch event (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_branch")) {
 			const result = (await this._hookRunner.emit({
-				type: "session",
-				entries,
-				sessionFile: this.sessionFile,
-				previousSessionFile: null,
-				reason: "before_branch",
-				targetTurnIndex: entryIndex,
-			})) as SessionEventResult | undefined;
+				type: "session_before_branch",
+				entryIndex: entryIndex,
+			})) as SessionBeforeBranchResult | undefined;
 
 			if (result?.cancel) {
 				return { selectedText, cancelled: true };
@@ -1388,28 +1541,20 @@ export class AgentSession {
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
-		// Create branched session (returns null in --no-session mode)
-		const newSessionFile = this.sessionManager.createBranchedSessionFromEntries(entries, entryIndex);
-
-		// Update session file if we have one (file-based mode)
-		if (newSessionFile !== null) {
-			this.sessionManager.setSessionFile(newSessionFile);
+		if (!selectedEntry.parentId) {
+			this.sessionManager.newSession();
+		} else {
+			this.sessionManager.createBranchedSession(selectedEntry.parentId);
 		}
 
 		// Reload messages from entries (works for both file and in-memory mode)
-		const newEntries = this.sessionManager.getEntries();
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit branch event to hooks (after branch completes)
+		// Emit session_branch event to hooks (after branch completes)
 		if (this._hookRunner) {
-			this._hookRunner.setSessionFile(newSessionFile);
 			await this._hookRunner.emit({
-				type: "session",
-				entries: newEntries,
-				sessionFile: newSessionFile,
+				type: "session_branch",
 				previousSessionFile,
-				reason: "branch",
-				targetTurnIndex: entryIndex,
 			});
 		}
 
@@ -1421,6 +1566,174 @@ export class AgentSession {
 		}
 
 		return { selectedText, cancelled: false };
+	}
+
+	// =========================================================================
+	// Tree Navigation
+	// =========================================================================
+
+	/**
+	 * Navigate to a different node in the session tree.
+	 * Unlike branch() which creates a new session file, this stays in the same file.
+	 *
+	 * @param targetId The entry ID to navigate to
+	 * @param options.summarize Whether user wants to summarize abandoned branch
+	 * @param options.customInstructions Custom instructions for summarizer
+	 * @returns Result with editorText (if user message) and cancelled status
+	 */
+	async navigateTree(
+		targetId: string,
+		options: { summarize?: boolean; customInstructions?: string } = {},
+	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
+		const oldLeafId = this.sessionManager.getLeafId();
+
+		// No-op if already at target
+		if (targetId === oldLeafId) {
+			return { cancelled: false };
+		}
+
+		// Model required for summarization
+		if (options.summarize && !this.model) {
+			throw new Error("No model available for summarization");
+		}
+
+		const targetEntry = this.sessionManager.getEntry(targetId);
+		if (!targetEntry) {
+			throw new Error(`Entry ${targetId} not found`);
+		}
+
+		// Collect entries to summarize (from old leaf to common ancestor)
+		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
+			this.sessionManager,
+			oldLeafId,
+			targetId,
+		);
+
+		// Prepare event data
+		const preparation: TreePreparation = {
+			targetId,
+			oldLeafId,
+			commonAncestorId,
+			entriesToSummarize,
+			userWantsSummary: options.summarize ?? false,
+		};
+
+		// Set up abort controller for summarization
+		this._branchSummaryAbortController = new AbortController();
+		let hookSummary: { summary: string; details?: unknown } | undefined;
+		let fromHook = false;
+
+		// Emit session_before_tree event
+		if (this._hookRunner?.hasHandlers("session_before_tree")) {
+			const result = (await this._hookRunner.emit({
+				type: "session_before_tree",
+				preparation,
+				model: this.model!, // Checked above if summarize is true
+				signal: this._branchSummaryAbortController.signal,
+			})) as SessionBeforeTreeResult | undefined;
+
+			if (result?.cancel) {
+				return { cancelled: true };
+			}
+
+			if (result?.summary && options.summarize) {
+				hookSummary = result.summary;
+				fromHook = true;
+			}
+		}
+
+		// Run default summarizer if needed
+		let summaryText: string | undefined;
+		let summaryDetails: unknown;
+		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
+			const model = this.model!;
+			const apiKey = await this._modelRegistry.getApiKey(model);
+			if (!apiKey) {
+				throw new Error(`No API key for ${model.provider}`);
+			}
+			const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
+			const result = await generateBranchSummary(entriesToSummarize, {
+				model,
+				apiKey,
+				signal: this._branchSummaryAbortController.signal,
+				customInstructions: options.customInstructions,
+				reserveTokens: branchSummarySettings.reserveTokens,
+			});
+			this._branchSummaryAbortController = undefined;
+			if (result.aborted) {
+				return { cancelled: true, aborted: true };
+			}
+			if (result.error) {
+				throw new Error(result.error);
+			}
+			summaryText = result.summary;
+			summaryDetails = {
+				readFiles: result.readFiles || [],
+				modifiedFiles: result.modifiedFiles || [],
+			};
+		} else if (hookSummary) {
+			summaryText = hookSummary.summary;
+			summaryDetails = hookSummary.details;
+		}
+
+		// Determine the new leaf position based on target type
+		let newLeafId: string | null;
+		let editorText: string | undefined;
+
+		if (targetEntry.type === "message" && targetEntry.message.role === "user") {
+			// User message: leaf = parent (null if root), text goes to editor
+			newLeafId = targetEntry.parentId;
+			editorText = this._extractUserMessageText(targetEntry.message.content);
+		} else if (targetEntry.type === "custom_message") {
+			// Custom message: leaf = parent (null if root), text goes to editor
+			newLeafId = targetEntry.parentId;
+			editorText =
+				typeof targetEntry.content === "string"
+					? targetEntry.content
+					: targetEntry.content
+							.filter((c): c is { type: "text"; text: string } => c.type === "text")
+							.map((c) => c.text)
+							.join("");
+		} else {
+			// Non-user message: leaf = selected node
+			newLeafId = targetId;
+		}
+
+		// Switch leaf (with or without summary)
+		// Summary is attached at the navigation target position (newLeafId), not the old branch
+		let summaryEntry: BranchSummaryEntry | undefined;
+		if (summaryText) {
+			// Create summary at target position (can be null for root)
+			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromHook);
+			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+		} else if (newLeafId === null) {
+			// No summary, navigating to root - reset leaf
+			this.sessionManager.resetLeaf();
+		} else {
+			// No summary, navigating to non-root
+			this.sessionManager.branch(newLeafId);
+		}
+
+		// Update agent state
+		const sessionContext = this.sessionManager.buildSessionContext();
+		this.agent.replaceMessages(sessionContext.messages);
+
+		// Emit session_tree event
+		if (this._hookRunner) {
+			await this._hookRunner.emit({
+				type: "session_tree",
+				newLeafId: this.sessionManager.getLeafId(),
+				oldLeafId,
+				summaryEntry,
+				fromHook: summaryText ? fromHook : undefined,
+			});
+		}
+
+		// Emit to custom tools
+		await this._emitToolSessionEvent("tree", this.sessionFile);
+
+		this._branchSummaryAbortController = undefined;
+		return { editorText, cancelled: false, summaryEntry };
 	}
 
 	/**
@@ -1519,9 +1832,9 @@ export class AgentSession {
 	/**
 	 * Get text content of last assistant message.
 	 * Useful for /copy command.
-	 * @returns Text content, or null if no assistant message exists
+	 * @returns Text content, or undefined if no assistant message exists
 	 */
-	getLastAssistantText(): string | null {
+	getLastAssistantText(): string | undefined {
 		const lastAssistant = this.messages
 			.slice()
 			.reverse()
@@ -1533,7 +1846,7 @@ export class AgentSession {
 				return true;
 			});
 
-		if (!lastAssistant) return null;
+		if (!lastAssistant) return undefined;
 
 		let text = "";
 		for (const content of (lastAssistant as AssistantMessage).content) {
@@ -1542,7 +1855,7 @@ export class AgentSession {
 			}
 		}
 
-		return text.trim() || null;
+		return text.trim() || undefined;
 	}
 
 	// =========================================================================
@@ -1559,7 +1872,7 @@ export class AgentSession {
 	/**
 	 * Get the hook runner (for setting UI context and error handlers).
 	 */
-	get hookRunner(): HookRunner | null {
+	get hookRunner(): HookRunner | undefined {
 		return this._hookRunner;
 	}
 
@@ -1576,7 +1889,7 @@ export class AgentSession {
 	 */
 	private async _emitToolSessionEvent(
 		reason: ToolSessionEvent["reason"],
-		previousSessionFile: string | null,
+		previousSessionFile: string | undefined,
 	): Promise<void> {
 		const event: ToolSessionEvent = {
 			entries: this.sessionManager.getEntries(),

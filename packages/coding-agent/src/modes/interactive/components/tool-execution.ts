@@ -415,10 +415,14 @@ export class ToolExecutionComponent extends Container {
 		} else if (this.toolName === "edit") {
 			const rawPath = this.args?.file_path || this.args?.path || "";
 			const path = shortenPath(rawPath);
-			text =
-				theme.fg("toolTitle", theme.bold("edit")) +
-				" " +
-				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
+
+			// Build path display, appending :line if we have a successful result with line info
+			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+			if (this.result && !this.result.isError && this.result.details?.firstChangedLine) {
+				pathDisplay += theme.fg("warning", `:${this.result.details.firstChangedLine}`);
+			}
+
+			text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 
 			if (this.result) {
 				if (this.result.isError) {

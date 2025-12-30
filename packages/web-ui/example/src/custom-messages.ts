@@ -1,7 +1,7 @@
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
 import type { Message } from "@mariozechner/pi-ai";
-import type { AppMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
-import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
+import type { AgentMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
+import { defaultConvertToLlm, registerMessageRenderer } from "@mariozechner/pi-web-ui";
 import { html } from "lit";
 
 // ============================================================================
@@ -16,9 +16,10 @@ export interface SystemNotificationMessage {
 	timestamp: string;
 }
 
-// Extend CustomMessages interface via declaration merging
-declare module "@mariozechner/pi-web-ui" {
-	interface CustomMessages {
+// Extend CustomAgentMessages interface via declaration merging
+// This must target pi-agent-core where CustomAgentMessages is defined
+declare module "@mariozechner/pi-agent-core" {
+	interface CustomAgentMessages {
 		"system-notification": SystemNotificationMessage;
 	}
 }
@@ -74,36 +75,25 @@ export function createSystemNotification(
 // 5. CUSTOM MESSAGE TRANSFORMER
 // ============================================================================
 
-// Transform custom messages to user messages with <system> tags so LLM can see them
-export function customMessageTransformer(messages: AppMessage[]): Message[] {
-	return messages
-		.filter((m) => {
-			// Filter out artifact messages - they're for session reconstruction only
-			if (m.role === "artifact") {
-				return false;
-			}
+/**
+ * Custom message transformer that extends defaultConvertToLlm.
+ * Handles system-notification messages by converting them to user messages.
+ */
+export function customConvertToLlm(messages: AgentMessage[]): Message[] {
+	// First, handle our custom system-notification type
+	const processed = messages.map((m): AgentMessage => {
+		if (m.role === "system-notification") {
+			const notification = m as SystemNotificationMessage;
+			// Convert to user message with <system> tags
+			return {
+				role: "user",
+				content: `<system>${notification.message}</system>`,
+				timestamp: Date.now(),
+			};
+		}
+		return m;
+	});
 
-			// Keep LLM-compatible messages + custom messages
-			return (
-				m.role === "user" || m.role === "assistant" || m.role === "toolResult" || m.role === "system-notification"
-			);
-		})
-		.map((m) => {
-			// Transform system notifications to user messages
-			if (m.role === "system-notification") {
-				const notification = m as SystemNotificationMessage;
-				return {
-					role: "user",
-					content: `<system>${notification.message}</system>`,
-				} as Message;
-			}
-
-			// Strip attachments from user messages
-			if (m.role === "user") {
-				const { attachments: _, ...rest } = m as any;
-				return rest as Message;
-			}
-
-			return m as Message;
-		});
+	// Then use defaultConvertToLlm for standard handling
+	return defaultConvertToLlm(processed);
 }
