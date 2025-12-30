@@ -22,9 +22,11 @@ export { TruncatedText } from "./components/truncated-text.js";
 // Kitty keyboard protocol helpers
 export {
 	isAltBackspace,
+	isAltDown,
 	isAltEnter,
 	isAltLeft,
 	isAltRight,
+	isAltUp,
 	isArrowDown,
 	isArrowLeft,
 	isArrowRight,

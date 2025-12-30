@@ -111,8 +111,20 @@ export interface CustomAgentMessages {
  * AgentMessage: Union of LLM messages + custom messages.
  * This abstraction allows apps to add custom message types while maintaining
  * type safety and compatibility with the base LLM messages.
+ *
+ * Note: All standard Message types (UserMessage, AssistantMessage, ToolResultMessage)
+ * have a required `timestamp: number` field. Custom messages added via CustomAgentMessages
+ * may or may not have timestamp.
  */
 export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
+
+/**
+ * Type guard to check if an AgentMessage has a timestamp.
+ * All standard LLM messages have timestamps; custom messages may not.
+ */
+export function hasTimestamp(m: AgentMessage): m is AgentMessage & { timestamp: number } {
+	return "timestamp" in m && typeof (m as any).timestamp === "number";
+}
 
 /**
  * Agent state containing all configuration and conversation data.

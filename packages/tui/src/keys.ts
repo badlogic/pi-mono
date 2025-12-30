@@ -105,7 +105,7 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 		const modValue = parseInt(arrowMatch[1]!, 10);
 		// Map arrow letters to virtual codepoints for easier matching
 		const arrowCodes: Record<string, number> = { A: -1, B: -2, C: -3, D: -4 };
-		const codepoint = arrowCodes[arrowMatch[2]!]!;
+		const codepoint = arrowCodes[arrowMatch[2]]!;
 		return { codepoint, modifier: modValue - 1 };
 	}
 
@@ -494,6 +494,26 @@ export function isAltLeft(data: string): boolean {
  */
 export function isAltRight(data: string): boolean {
 	return data === "\x1b[1;3C" || data === "\x1bf" || matchesKittySequence(data, ARROW_CODEPOINTS.right, MODIFIERS.alt);
+}
+
+/**
+ * Check if input matches Alt+Up (queue navigation).
+ * Handles legacy CSI, Alt-prefix fallback, and Kitty protocol.
+ */
+export function isAltUp(data: string): boolean {
+	return (
+		data === "\x1b[1;3A" || data === "\x1b\x1b[A" || matchesKittySequence(data, ARROW_CODEPOINTS.up, MODIFIERS.alt)
+	);
+}
+
+/**
+ * Check if input matches Alt+Down (queue navigation).
+ * Handles legacy CSI, Alt-prefix fallback, and Kitty protocol.
+ */
+export function isAltDown(data: string): boolean {
+	return (
+		data === "\x1b[1;3B" || data === "\x1b\x1b[B" || matchesKittySequence(data, ARROW_CODEPOINTS.down, MODIFIERS.alt)
+	);
 }
 
 /**

@@ -13,15 +13,16 @@ import {
 	type TextContent,
 } from "@mariozechner/pi-ai";
 import { agentLoop, agentLoopContinue } from "./agent-loop.js";
-import type {
-	AgentContext,
-	AgentEvent,
-	AgentLoopConfig,
-	AgentMessage,
-	AgentState,
-	AgentTool,
-	StreamFn,
-	ThinkingLevel,
+import {
+	type AgentContext,
+	type AgentEvent,
+	type AgentLoopConfig,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	hasTimestamp,
+	type StreamFn,
+	type ThinkingLevel,
 } from "./types.js";
 
 /**
@@ -144,6 +145,54 @@ export class Agent {
 
 	clearMessageQueue() {
 		this.messageQueue = [];
+	}
+
+	/**
+	 * Get a copy of the current message queue (for testing/debugging).
+	 */
+	getMessageQueue(): AgentMessage[] {
+		return this.messageQueue.slice();
+	}
+
+	/**
+	 * Update a queued user message by its timestamp.
+	 * Only matches messages with role === "user".
+	 * @returns true if found and updated, false otherwise
+	 */
+	updateQueuedUserMessageByTimestamp(timestamp: number, newText: string): boolean {
+		const index = this.messageQueue.findIndex(
+			(m) => m.role === "user" && hasTimestamp(m) && m.timestamp === timestamp,
+		);
+		if (index === -1) {
+			console.warn(`updateQueuedUserMessageByTimestamp: no user message found with timestamp ${timestamp}`);
+			return false;
+		}
+		const message = this.messageQueue[index];
+		if (message.role === "user") {
+			// Replace the content with new text, preserve the timestamp
+			this.messageQueue[index] = {
+				...message,
+				content: [{ type: "text" as const, text: newText }],
+			};
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Remove a queued user message by its timestamp.
+	 * Only matches messages with role === "user".
+	 * @returns true if found and removed, false otherwise
+	 */
+	removeQueuedUserMessageByTimestamp(timestamp: number): boolean {
+		const index = this.messageQueue.findIndex(
+			(m) => m.role === "user" && hasTimestamp(m) && m.timestamp === timestamp,
+		);
+		if (index === -1) {
+			return false;
+		}
+		this.messageQueue.splice(index, 1);
+		return true;
 	}
 
 	clearMessages() {
