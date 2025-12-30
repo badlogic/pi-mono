@@ -7,6 +7,7 @@
 - `isShiftCtrlO()` key detection function for Shift+Ctrl+O (Kitty protocol)
 - `isShiftCtrlD()` key detection function for Shift+Ctrl+D (Kitty protocol)
 - `TUI.onDebug` callback for global debug key handling (Shift+Ctrl+D)
+- `wrapTextWithAnsi()` utility now exported (wraps text to width, preserving ANSI codes)
 
 ### Changed
 

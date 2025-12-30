@@ -445,7 +445,7 @@ interface Terminal {
 ## Utilities
 
 ```typescript
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 // Get visible width of string (ignoring ANSI codes)
 const width = visibleWidth("\x1b[31mHello\x1b[0m"); // 5
@@ -455,11 +455,54 @@ const truncated = truncateToWidth("Hello World", 8); // "Hello..."
 
 // Truncate without ellipsis
 const truncatedNoEllipsis = truncateToWidth("Hello World", 8, ""); // "Hello Wo"
+
+// Wrap text to width (preserving ANSI codes across line breaks)
+const lines = wrapTextWithAnsi("This is a long line that needs wrapping", 20);
+// ["This is a long line", "that needs wrapping"]
 ```
 
 ## Creating Custom Components
 
 When creating custom components, **each line returned by `render()` must not exceed the `width` parameter**. The TUI will error if any line is wider than the terminal.
+
+### Handling Input
+
+Use the key detection utilities to handle keyboard input:
+
+```typescript
+import {
+  isEnter, isEscape, isArrowUp, isArrowDown,
+  isCtrlC, isTab, isBackspace
+} from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
+
+class MyInteractiveComponent implements Component {
+  private selectedIndex = 0;
+  private items = ["Option 1", "Option 2", "Option 3"];
+  
+  public onSelect?: (index: number) => void;
+  public onCancel?: () => void;
+
+  handleInput(data: string): void {
+    if (isArrowUp(data)) {
+      this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+    } else if (isArrowDown(data)) {
+      this.selectedIndex = Math.min(this.items.length - 1, this.selectedIndex + 1);
+    } else if (isEnter(data)) {
+      this.onSelect?.(this.selectedIndex);
+    } else if (isEscape(data) || isCtrlC(data)) {
+      this.onCancel?.();
+    }
+  }
+
+  render(width: number): string[] {
+    return this.items.map((item, i) => {
+      const prefix = i === this.selectedIndex ? "> " : "  ";
+      return truncateToWidth(prefix + item, width);
+    });
+  }
+}
+```
 
 ### Handling Line Width
 

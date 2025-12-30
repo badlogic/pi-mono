@@ -85,4 +85,4 @@ export {
 } from "./terminal-image.js";
 export { type Component, Container, TUI } from "./tui.js";
 // Utilities
-export { truncateToWidth, visibleWidth } from "./utils.js";
+export { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";
