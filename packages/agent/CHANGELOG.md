@@ -4,66 +4,35 @@
 
 ### Breaking Changes
 
-- **Transport abstraction removed**: `ProviderTransport`, `AppTransport`, and `AgentTransport` interface have been removed. The `Agent` class now takes a `streamFn` option directly for custom streaming implementations.
+- **Transport abstraction removed**: `ProviderTransport`, `AppTransport`, and `AgentTransport` interface have been removed. Use the `streamFn` option directly for custom streaming implementations.
 
 - **Agent options renamed**:
   - `transport` → removed (use `streamFn` instead)
-  - `messageTransformer` → `convertToLlm` (converts `AgentMessage[]` to LLM-compatible `Message[]`)
-  - `preprocessor` → `transformContext` (transforms `AgentMessage[]` before `convertToLlm`)
+  - `messageTransformer` → `convertToLlm`
+  - `preprocessor` → `transformContext`
 
-- **AppMessage renamed to AgentMessage**: All references to `AppMessage` have been renamed to `AgentMessage` for consistency.
+- **`AppMessage` renamed to `AgentMessage`**: All references to `AppMessage` have been renamed to `AgentMessage` for consistency.
 
-- **Agent loop moved from pi-ai**: The `agentLoop`, `agentLoopContinue`, and related types (`AgentContext`, `AgentEvent`, `AgentTool`, `AgentToolResult`, `AgentToolUpdateCallback`, `AgentLoopConfig`) have moved from `@mariozechner/pi-ai` to this package.
+- **`CustomMessages` renamed to `CustomAgentMessages`**: The declaration merging interface has been renamed.
+
+- **`UserMessageWithAttachments` and `Attachment` types removed**: Attachment handling is now the responsibility of the `convertToLlm` function.
+
+- **Agent loop moved from `@mariozechner/pi-ai`**: The `agentLoop`, `agentLoopContinue`, and related types have moved to this package. Import from `@mariozechner/pi-agent` instead.
 
 ### Added
 
-- **`streamFn` option**: Pass a custom stream function to the Agent for proxy backends or custom implementations. Default uses `streamSimple` from pi-ai.
+- `streamFn` option on `Agent` for custom stream implementations. Default uses `streamSimple` from pi-ai.
 
-- **`streamProxy` utility**: New helper function for browser apps that need to proxy through a backend server. Replaces `AppTransport`.
+- `streamProxy()` utility function for browser apps that need to proxy LLM calls through a backend server. Replaces the removed `AppTransport`.
 
-- **`getApiKey` option**: Dynamic API key resolution for expiring OAuth tokens (e.g., GitHub Copilot).
+- `getApiKey` option for dynamic API key resolution (useful for expiring OAuth tokens like GitHub Copilot).
 
-- **`AgentLoopContext` and `AgentLoopConfig`**: Exported types for the low-level agent loop API.
+- `agentLoop()` and `agentLoopContinue()` low-level functions for running the agent loop without the `Agent` class wrapper.
 
-- **`agentLoop` and `agentLoopContinue`**: Low-level functions for running the agent loop directly without the `Agent` class wrapper.
+- New exported types: `AgentLoopConfig`, `AgentContext`, `AgentTool`, `AgentToolResult`, `AgentToolUpdateCallback`, `StreamFn`.
 
-### Migration Guide
+### Changed
 
-**Before (0.30.x):**
-```typescript
-import { Agent, ProviderTransport } from '@mariozechner/pi-agent-core';
+- `Agent` constructor now has all options optional (empty options use defaults).
 
-const agent = new Agent({
-  transport: new ProviderTransport({ apiKey: '...' }),
-  messageTransformer: (messages) => messages.filter(...),
-  preprocessor: async (messages) => compactMessages(messages)
-});
-```
-
-**After:**
-```typescript
-import { Agent } from '@mariozechner/pi-agent-core';
-import { streamSimple } from '@mariozechner/pi-ai';
-
-const agent = new Agent({
-  streamFn: streamSimple,  // or omit for default
-  convertToLlm: (messages) => messages.filter(...),
-  transformContext: async (messages) => compactMessages(messages),
-  getApiKey: async (provider) => resolveApiKey(provider)
-});
-```
-
-**For proxy usage (replaces AppTransport):**
-```typescript
-import { Agent, streamProxy } from '@mariozechner/pi-agent-core';
-
-const agent = new Agent({
-  streamFn: (model, context, options) => streamProxy(
-    '/api/agent',
-    model,
-    context,
-    options,
-    { 'Authorization': 'Bearer ...' }
-  )
-});
-```
+- `queueMessage()` is now synchronous (no longer returns a Promise).

@@ -318,10 +318,10 @@ const agent = new Agent({
 For more control, use `agentLoop` and `agentLoopContinue` directly:
 
 ```typescript
-import { agentLoop, agentLoopContinue, AgentLoopContext, AgentLoopConfig } from '@mariozechner/pi-agent-core';
+import { agentLoop, agentLoopContinue, AgentContext, AgentLoopConfig } from '@mariozechner/pi-agent-core';
 import { getModel, streamSimple } from '@mariozechner/pi-ai';
 
-const context: AgentLoopContext = {
+const context: AgentContext = {
   systemPrompt: 'You are helpful.',
   messages: [],
   tools: [myTool]
