@@ -364,6 +364,15 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_messages", { messages: session.messages });
 			}
 
+			// =================================================================
+			// Debugging
+			// =================================================================
+
+			case "get_context": {
+				const markdown = await session.renderContextMarkdown({ includeEphemeral: command.includeEphemeral });
+				return success(id, "get_context", { markdown });
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

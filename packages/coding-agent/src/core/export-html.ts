@@ -47,6 +47,7 @@ interface ParsedSessionData {
 	costStats: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	tools?: { name: string; description: string }[];
 	contextWindow?: number;
+	contextMarkdown?: string;
 	isStreamingFormat?: boolean;
 }
 
@@ -1057,6 +1058,13 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         </div>`
 		: "";
 
+	const contextMarkdownHtml = data.contextMarkdown
+		? `<div class="context-markdown">
+            <div class="context-markdown-header">Context Envelope</div>
+            <pre class="context-markdown-content">${escapeHtml(data.contextMarkdown)}</pre>
+        </div>`
+		: "";
+
 	const streamingNotice = data.isStreamingFormat
 		? `<div class="streaming-notice">
             <em>Note: This session was reconstructed from raw agent event logs, which do not contain system prompt or tool definitions.</em>
@@ -1166,9 +1174,9 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .tool-output.expandable.expanded .output-preview { display: none; }
         .tool-output.expandable.expanded .output-full { display: block; }
         .expand-hint { color: ${colors.borderAccent}; font-style: italic; margin-top: 4px; }
-        .system-prompt, .tools-list { background: ${systemPromptBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
-        .system-prompt-header, .tools-header { font-weight: bold; color: ${colors.warning}; margin-bottom: 8px; }
-        .system-prompt-content, .tools-content { color: ${colors.dim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; font-size: 11px; }
+        .system-prompt, .tools-list, .context-markdown { background: ${systemPromptBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
+        .system-prompt-header, .tools-header, .context-markdown-header { font-weight: bold; color: ${colors.warning}; margin-bottom: 8px; }
+        .system-prompt-content, .tools-content, .context-markdown-content { color: ${colors.dim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; font-size: 11px; }
         .tool-item { margin: 4px 0; }
         .tool-item-name { font-weight: bold; color: ${colors.text}; }
         .tool-diff { margin-top: 12px; font-size: 11px; font-family: inherit; overflow-x: auto; max-width: 100%; }
@@ -1331,6 +1339,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
 
         ${systemPromptHtml}
         ${toolsHtml}
+        ${contextMarkdownHtml}
         ${streamingNotice}
 
         <div class="messages">
@@ -1352,6 +1361,8 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
 export interface ExportOptions {
 	outputPath?: string;
 	themeName?: string;
+	/** Optional markdown to embed (e.g. rendered ContextEnvelope). */
+	contextMarkdown?: string;
 }
 
 /**
@@ -1375,6 +1386,10 @@ export function exportSessionToHtml(
 	}
 	const content = readFileSync(sessionFile, "utf8");
 	const data = parseSessionFile(content);
+
+	if (opts.contextMarkdown) {
+		data.contextMarkdown = opts.contextMarkdown;
+	}
 
 	// Enrich with data from AgentState (tools, context window)
 	data.tools = state.tools.map((t: { name: string; description: string }) => ({

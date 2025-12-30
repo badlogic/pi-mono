@@ -58,7 +58,10 @@ export type RpcCommand =
 	| { id?: string; type: "get_last_assistant_text" }
 
 	// Messages
-	| { id?: string; type: "get_messages" };
+	| { id?: string; type: "get_messages" }
+
+	// Debugging
+	| { id?: string; type: "get_context"; includeEphemeral?: boolean };
 
 // ============================================================================
 // RPC State
@@ -162,6 +165,9 @@ export type RpcResponse =
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+
+	// Debugging
+	| { id?: string; type: "response"; command: "get_context"; success: true; data: { markdown: string } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

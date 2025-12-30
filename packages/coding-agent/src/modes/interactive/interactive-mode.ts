@@ -162,6 +162,7 @@ export class InteractiveMode {
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
 			{ name: "session", description: "Show session info and stats" },
+			{ name: "context", description: "Show effective provider request context" },
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 			{ name: "branch", description: "Create a new branch from a previous message" },
@@ -676,6 +677,12 @@ export class InteractiveMode {
 			if (text === "/session") {
 				this.handleSessionCommand();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/context" || text.startsWith("/context ")) {
+				const includeEphemeral = text.includes("--ephemeral");
+				this.editor.setText("");
+				await this.handleContextCommand({ includeEphemeral });
 				return;
 			}
 			if (text === "/changelog") {
@@ -1914,6 +1921,23 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
 		this.ui.requestRender();
+	}
+
+	private async handleContextCommand(options: { includeEphemeral: boolean }): Promise<void> {
+		try {
+			const md = await this.session.renderContextMarkdown({ includeEphemeral: options.includeEphemeral });
+			const title = options.includeEphemeral ? "Context Envelope (including ephemerals)" : "Context Envelope";
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new DynamicBorder());
+			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Markdown(md, 1, 1, getMarkdownTheme()));
+			this.chatContainer.addChild(new DynamicBorder());
+			this.ui.requestRender();
+		} catch (error: unknown) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 	private handleChangelogCommand(): void {

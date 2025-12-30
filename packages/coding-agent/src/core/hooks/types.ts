@@ -458,8 +458,12 @@ export interface ContextEventResult {
 
 /** Return type for message_end handlers. */
 export interface MessageEndEventResult {
-	/** Replacement message to persist/use going forward. */
-	message?: AgentMessage;
+	/**
+	 * Replacement message to persist/use going forward.
+	 *
+	 * Return null to filter the message (supported only for non-assistant, non-toolResult messages).
+	 */
+	message?: AgentMessage | null;
 }
 
 /**

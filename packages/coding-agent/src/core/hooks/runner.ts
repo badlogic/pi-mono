@@ -409,7 +409,7 @@ export class HookRunner {
 	 *
 	 * Errors are swallowed and reported via HookErrorListener; the last good message is used.
 	 */
-	async emitMessageEnd(event: MessageEndEvent): Promise<MessageEndEvent["message"]> {
+	async emitMessageEnd(event: MessageEndEvent): Promise<MessageEndEvent["message"] | null> {
 		const ctx = this.createContext();
 		// Defensive copy: message hooks must never be able to mutate the agent loop's live message.
 		let currentMessage = structuredClone(event.message) as MessageEndEvent["message"];
@@ -429,6 +429,9 @@ export class HookRunner {
 					timeout.clear();
 
 					const result = handlerResult as MessageEndEventResult | undefined;
+					if (result?.message === null) {
+						return null;
+					}
 					if (result?.message) {
 						currentMessage = result.message;
 					}

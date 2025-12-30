@@ -242,6 +242,12 @@ describe("message mutation + ephemeral context", () => {
 			const lastUser = userMessages.at(-1);
 			expect(lastUser ? getUserText(lastUser) : undefined).toBe("EPH");
 
+			// Ephemeral messages are logged as a dedicated entry.
+			const ephemerals = sessionManager.getEntries().filter((e) => e.type === "ephemeral");
+			expect(ephemerals.length).toBe(1);
+			const ephEntry = ephemerals[0] as any;
+			expect(getUserText(ephEntry.messages[0] as UserMessage)).toBe("EPH");
+
 			// Ensure request-only message was not persisted into session history.
 			const persistedUserTexts = sessionManager
 				.getEntries()

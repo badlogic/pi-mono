@@ -71,12 +71,13 @@ import {
 	type HookMessage,
 } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type {
-	BranchSummaryEntry,
-	CompactionEntry,
-	ContextTransformEntry,
-	SessionEntry,
-	SessionManager,
+import {
+	type BranchSummaryEntry,
+	buildSessionContextWithProvenance,
+	type CompactionEntry,
+	type ContextTransformEntry,
+	type SessionEntry,
+	type SessionManager,
 } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
@@ -289,6 +290,9 @@ export class AgentSession {
 
 			this._systemPromptPartsCurrent = envelope.system.parts.map((p) => ({ ...p }));
 			this._pendingEphemeralMessages = envelope.messages.uncached.slice();
+			if (this._pendingEphemeralMessages.length > 0) {
+				this.sessionManager.appendEphemeralEntry(this._pendingEphemeralMessages);
+			}
 
 			// Mutate request-local LLM message array in-place.
 			// Do NOT return `messages` from beforeRequest, so the agent's persistent in-memory
@@ -385,86 +389,113 @@ export class AgentSession {
 		};
 
 		const path = this.sessionManager.getPath();
+		const byId = new Map<string, SessionEntry>();
+		for (const e of path) byId.set(e.id, e);
 
-		// Treat the last compaction entry on the current path as a reset point.
-		// We do not replay transforms that occurred before it.
-		let compactionIdx = -1;
-		for (let i = path.length - 1; i >= 0; i--) {
-			if (path[i].type === "compaction") {
-				compactionIdx = i;
-				break;
+		const formatCompactionSummary = (summary: string): Message => {
+			const msg = createCompactionSummaryMessage(summary, 0, new Date().toISOString());
+			const converted = convertToLlm([msg]);
+			const first = converted[0];
+			if (!first) {
+				throw new Error("Failed to format compaction summary message");
 			}
-		}
+			return first;
+		};
 
-		let startIdx = 0;
+		const applyPatch = (patch: ContextPatchOp[]) => {
+			const applied = applyContextPatch(envelope, patch, { formatCompactionSummary });
+			envelope = applied.envelope;
+		};
 
-		if (compactionIdx !== -1) {
-			const compaction = path[compactionIdx] as CompactionEntry;
-
-			envelope.messages.cached.push(
-				...convertToLlm([
-					createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp),
-				]),
+		const legacyCompaction = [...path].reverse().find((e): e is CompactionEntry => {
+			if (e.type !== "compaction") return false;
+			if (!e.parentId) return true;
+			const parent = byId.get(e.parentId);
+			return !(
+				parent?.type === "context_transform" && (parent as ContextTransformEntry).transformerName === "compaction"
 			);
+		});
+		const legacyCompactionId = legacyCompaction?.id;
 
-			const firstKeptIdx = path.findIndex((e) => e.id === compaction.firstKeptEntryId);
-			if (firstKeptIdx !== -1 && firstKeptIdx < compactionIdx) {
-				for (let i = firstKeptIdx; i < compactionIdx; i++) {
-					this._appendEntryToEnvelopeMessages(envelope, path[i]);
+		const entryIdToMessageIndex = new Map<string, number>();
+
+		for (const entry of path) {
+			switch (entry.type) {
+				case "message": {
+					const ms = convertToLlm([entry.message]);
+					if (ms.length > 0) {
+						entryIdToMessageIndex.set(entry.id, envelope.messages.cached.length);
+						envelope.messages.cached.push(...ms);
+					}
+					break;
 				}
+
+				case "custom_message": {
+					const msg = createHookMessage(
+						entry.customType,
+						entry.content,
+						entry.display,
+						entry.details,
+						entry.timestamp,
+					);
+					const ms = convertToLlm([msg]);
+					if (ms.length > 0) {
+						entryIdToMessageIndex.set(entry.id, envelope.messages.cached.length);
+						envelope.messages.cached.push(...ms);
+					}
+					break;
+				}
+
+				case "branch_summary": {
+					const msg = createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
+					const ms = convertToLlm([msg]);
+					if (ms.length > 0) {
+						entryIdToMessageIndex.set(entry.id, envelope.messages.cached.length);
+						envelope.messages.cached.push(...ms);
+					}
+					break;
+				}
+
+				case "context_transform": {
+					applyPatch(entry.patch);
+					break;
+				}
+
+				case "compaction": {
+					const parent = entry.parentId ? byId.get(entry.parentId) : undefined;
+					const shadowedByTransform =
+						parent?.type === "context_transform" &&
+						(parent as ContextTransformEntry).transformerName === "compaction";
+					if (shadowedByTransform) break;
+
+					// Legacy behavior: only the last compaction on the active path defines the reset point.
+					if (entry.id !== legacyCompactionId) break;
+
+					const firstKeptMessageIndex = entryIdToMessageIndex.get(entry.firstKeptEntryId) ?? 0;
+					applyPatch([
+						{
+							op: "compaction_apply",
+							scope: "cached",
+							summary: entry.summary,
+							timestamp: new Date(entry.timestamp).getTime(),
+							firstKeptMessageIndex,
+							tokensBefore: entry.tokensBefore,
+							invalidateCacheReason: "compaction",
+						},
+					]);
+					break;
+				}
+
+				case "thinking_level_change":
+				case "model_change":
+				case "custom":
+				case "label":
+				case "ephemeral":
+					break;
 			}
-
-			startIdx = compactionIdx + 1;
-		}
-
-		for (let i = startIdx; i < path.length; i++) {
-			const entry = path[i];
-
-			if (entry.type === "context_transform") {
-				const transform = entry as ContextTransformEntry;
-				const applied = applyContextPatch(envelope, transform.patch);
-				envelope = applied.envelope;
-				continue;
-			}
-
-			this._appendEntryToEnvelopeMessages(envelope, entry);
 		}
 
 		return envelope;
-	}
-
-	private _appendEntryToEnvelopeMessages(envelope: ContextEnvelope, entry: SessionEntry): void {
-		switch (entry.type) {
-			case "message":
-				envelope.messages.cached.push(...convertToLlm([entry.message]));
-				break;
-
-			case "custom_message": {
-				const msg = createHookMessage(
-					entry.customType,
-					entry.content,
-					entry.display,
-					entry.details,
-					entry.timestamp,
-				);
-				envelope.messages.cached.push(...convertToLlm([msg]));
-				break;
-			}
-
-			case "branch_summary": {
-				const msg = createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
-				envelope.messages.cached.push(...convertToLlm([msg]));
-				break;
-			}
-
-			case "thinking_level_change":
-			case "model_change":
-			case "compaction":
-			case "custom":
-			case "label":
-			case "context_transform":
-				break;
-		}
 	}
 
 	private _persistContextTransformResults(
@@ -486,6 +517,33 @@ export class AgentSession {
 				);
 			}
 		}
+	}
+
+	private _appendCompactionTransform(options: {
+		summary: string;
+		firstKeptEntryId: string;
+		tokensBefore: number;
+	}): string {
+		const ctx = buildSessionContextWithProvenance(this.sessionManager.getEntries(), this.sessionManager.getLeafId());
+
+		const firstKeptMessageIndex = Math.max(0, ctx.messageEntryIds.indexOf(options.firstKeptEntryId));
+
+		const patch: ContextPatchOp[] = [
+			{
+				op: "compaction_apply",
+				scope: "cached",
+				summary: options.summary,
+				timestamp: Date.now(),
+				firstKeptMessageIndex,
+				tokensBefore: options.tokensBefore,
+				invalidateCacheReason: "compaction",
+			},
+		];
+
+		return this.sessionManager.appendContextTransformEntry("compaction", patch, {
+			title: "Compaction",
+			summary: `Compacted context (kept from message index ${firstKeptMessageIndex})`,
+		});
 	}
 
 	private _toToolDefinitions(tools: AgentTool<any>[]): Tool[] {
@@ -1278,6 +1336,7 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
+			this._appendCompactionTransform({ summary, firstKeptEntryId, tokensBefore });
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
@@ -1452,6 +1511,7 @@ export class AgentSession {
 				return;
 			}
 
+			this._appendCompactionTransform({ summary, firstKeptEntryId, tokensBefore });
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
@@ -2128,6 +2188,153 @@ export class AgentSession {
 		};
 	}
 
+	// =========================================================================
+	// Context rendering (/context, RPC get_context, HTML export)
+	// =========================================================================
+
+	private _getReasoningEffort(): ReasoningEffort | undefined {
+		return this.thinkingLevel === "off"
+			? undefined
+			: this.thinkingLevel === "minimal"
+				? "low"
+				: (this.thinkingLevel as ReasoningEffort);
+	}
+
+	private async _getContextEnvelopeForDebug(options?: { includeEphemeral?: boolean }): Promise<ContextEnvelope> {
+		if (!this.model) {
+			throw new Error("No model selected");
+		}
+
+		const env = this._buildContextEnvelopeFromSession({
+			model: this.model,
+			tools: this.agent.state.tools,
+			turnIndex: 0,
+			requestIndex: 0,
+			signal: new AbortController().signal,
+			reasoning: this._getReasoningEffort(),
+		});
+
+		if (!options?.includeEphemeral) return env;
+		if (!this._hookRunner?.hasHandlers("context")) return env;
+
+		const emitted = await this._hookRunner.emitContext({
+			type: "context",
+			reason: "ephemeral",
+			state: { envelope: env },
+		});
+		return emitted.envelope;
+	}
+
+	private _messageToOneLine(message: Message): string {
+		switch (message.role) {
+			case "user": {
+				if (typeof message.content === "string") return message.content;
+				return message.content
+					.map((b) => (b.type === "text" ? b.text : b.type === "image" ? "[image]" : ""))
+					.join("");
+			}
+			case "assistant": {
+				return message.content
+					.map((b) => {
+						if (b.type === "text") return b.text;
+						if (b.type === "thinking") return "[thinking]";
+						if (b.type === "toolCall") return `[toolCall ${b.name}]`;
+						return "";
+					})
+					.join("");
+			}
+			case "toolResult": {
+				const text = message.content
+					.map((b) => (b.type === "text" ? b.text : b.type === "image" ? "[image]" : ""))
+					.join("");
+				return `[toolResult ${message.toolName}] ${text}`;
+			}
+		}
+	}
+
+	private _renderContextMarkdown(envelope: ContextEnvelope): string {
+		const lines: string[] = [];
+
+		lines.push("# Context Envelope");
+		lines.push("");
+
+		lines.push("## Meta");
+		lines.push("");
+		lines.push(`- model: ${envelope.meta.model.provider}/${envelope.meta.model.id}`);
+		lines.push(`- context window: ${envelope.meta.limit}`);
+		lines.push("");
+
+		lines.push("## Options");
+		lines.push("");
+		lines.push("```json");
+		lines.push(JSON.stringify(envelope.options, null, 2));
+		lines.push("```");
+		lines.push("");
+
+		lines.push("## System (parts)");
+		lines.push("");
+		for (const part of envelope.system.parts) {
+			lines.push(`### ${part.name}`);
+			lines.push("```text");
+			lines.push(part.text);
+			lines.push("```");
+			lines.push("");
+		}
+
+		lines.push("## Tools");
+		lines.push("");
+		if (envelope.tools.length === 0) {
+			lines.push("(none)");
+			lines.push("");
+		} else {
+			for (const tool of envelope.tools) {
+				lines.push(`- **${tool.name}**: ${tool.description}`);
+			}
+			lines.push("");
+		}
+
+		const renderMessages = (title: string, ms: Message[]) => {
+			lines.push(`## Messages (${title})`);
+			lines.push("");
+			lines.push(`count: ${ms.length}`);
+			lines.push("");
+			for (let i = 0; i < ms.length; i++) {
+				const m = ms[i]!;
+				const oneLine = this._messageToOneLine(m).trim();
+				const clipped = oneLine.length > 2000 ? `${oneLine.slice(0, 2000)}…` : oneLine;
+				lines.push(`${i}. **${m.role}** — ${clipped}`);
+			}
+			lines.push("");
+		};
+
+		renderMessages("cached", envelope.messages.cached);
+		renderMessages("uncached", envelope.messages.uncached);
+
+		return lines.join("\n");
+	}
+
+	/** Render the effective envelope as markdown for debugging (/context, RPC get_context). */
+	async renderContextMarkdown(options?: { includeEphemeral?: boolean }): Promise<string> {
+		const envelope = await this._getContextEnvelopeForDebug(options);
+		return this._renderContextMarkdown(envelope);
+	}
+
+	/** Deterministic-only context rendering (no hook execution). */
+	renderContextMarkdownDeterministic(): string {
+		if (!this.model) {
+			throw new Error("No model selected");
+		}
+		const envelope = this._buildContextEnvelopeFromSession({
+			model: this.model,
+			tools: this.agent.state.tools,
+			turnIndex: 0,
+			requestIndex: 0,
+			signal: new AbortController().signal,
+			reasoning: this._getReasoningEffort(),
+		});
+		return this._renderContextMarkdown(envelope);
+	}
+
 	/**
 	 * Export session to HTML.
 	 * @param outputPath Optional output path (defaults to session directory)
@@ -2135,7 +2342,11 @@ export class AgentSession {
 	 */
 	exportToHtml(outputPath?: string): string {
 		const themeName = this.settingsManager.getTheme();
-		return exportSessionToHtml(this.sessionManager, this.state, { outputPath, themeName });
+		return exportSessionToHtml(this.sessionManager, this.state, {
+			outputPath,
+			themeName,
+			contextMarkdown: this.renderContextMarkdownDeterministic(),
+		});
 	}
 
 	// =========================================================================

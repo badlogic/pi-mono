@@ -161,6 +161,7 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 		case "custom":
 		case "label":
 		case "context_transform":
+		case "ephemeral":
 			return undefined;
 	}
 }
