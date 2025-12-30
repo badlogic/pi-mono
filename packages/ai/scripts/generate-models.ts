@@ -260,32 +260,32 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 
 		// Process zAi models
 		if (data.zai?.models) {
-      for (const [modelId, model] of Object.entries(data.zai.models)) {
-        const m = model as ModelsDevModel;
-        if (m.tool_call !== true) continue;
-        const supportsImage = m.modalities?.input?.includes("image")
+			for (const [modelId, model] of Object.entries(data.zai.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+				const supportsImage = m.modalities?.input?.includes("image")
 
-        models.push({
-          id: modelId,
-          name: m.name || modelId,
-          api: "openai-completions",
-          provider: "zai",
-          baseUrl: "https://api.z.ai/api/coding/paas/v4",
-          reasoning: m.reasoning === true,
-          input: supportsImage ? ["text", "image"] : ["text"],
-          cost: {
-            input: m.cost?.input || 0,
-            output: m.cost?.output || 0,
-            cacheRead: m.cost?.cache_read || 0,
-            cacheWrite: m.cost?.cache_write || 0,
-          },
-          compat: {
-            supportsDeveloperRole: false,
-          },
-          contextWindow: m.limit?.context || 4096,
-          maxTokens: m.limit?.output || 4096,
-        });
-      }
+				models.push({
+				id: modelId,
+				name: m.name || modelId,
+				api: "openai-completions",
+				provider: "zai",
+				baseUrl: "https://api.z.ai/api/coding/paas/v4",
+				reasoning: m.reasoning === true,
+				input: supportsImage ? ["text", "image"] : ["text"],
+				cost: {
+					input: m.cost?.input || 0,
+					output: m.cost?.output || 0,
+					cacheRead: m.cost?.cache_read || 0,
+					cacheWrite: m.cost?.cache_write || 0,
+				},
+				compat: {
+					supportsDeveloperRole: false,
+				},
+				contextWindow: m.limit?.context || 4096,
+				maxTokens: m.limit?.output || 4096,
+				});
+			}
 		}
 
 		// Process Mistral models
