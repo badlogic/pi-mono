@@ -1,5 +1,7 @@
 import {
 	Editor,
+	isAltDown,
+	isAltUp,
 	isCtrlC,
 	isCtrlD,
 	isCtrlG,
@@ -28,8 +30,22 @@ export class CustomEditor extends Editor {
 	public onCtrlT?: () => void;
 	public onCtrlG?: () => void;
 	public onCtrlZ?: () => void;
+	public onAltUp?: () => void;
+	public onAltDown?: () => void;
 
 	handleInput(data: string): void {
+		// Intercept Alt+Up for queue edit navigation
+		if (isAltUp(data) && this.onAltUp) {
+			this.onAltUp();
+			return;
+		}
+
+		// Intercept Alt+Down for queue edit navigation
+		if (isAltDown(data) && this.onAltDown) {
+			this.onAltDown();
+			return;
+		}
+
 		// Intercept Ctrl+G for external editor
 		if (isCtrlG(data) && this.onCtrlG) {
 			this.onCtrlG();

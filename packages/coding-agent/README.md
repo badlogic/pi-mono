@@ -251,6 +251,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
+| Alt+Up / Alt+Down | Edit queued messages (navigate and replace) |
 
 ### Bash Mode
 

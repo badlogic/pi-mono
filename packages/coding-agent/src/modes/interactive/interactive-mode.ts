@@ -70,6 +70,8 @@ export class InteractiveMode {
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
+	private pendingQueuedMessagesContainer: Container;
+	private pendingBashContainer: Container;
 	private statusContainer: Container;
 	private editor: CustomEditor;
 	private editorContainer: Container;
@@ -119,6 +121,11 @@ export class InteractiveMode {
 	private hookSelector: HookSelectorComponent | undefined = undefined;
 	private hookInput: HookInputComponent | undefined = undefined;
 
+	// Queue edit mode state
+	private queueEditIndex = -1; // -1 = not editing
+	private queueEditTimestamp = -1; // timestamp of the message being edited (-1 = none)
+	private queueEditDraftText = ""; // saved editor text when entering queue edit mode
+
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
 
@@ -148,6 +155,10 @@ export class InteractiveMode {
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
+		this.pendingQueuedMessagesContainer = new Container();
+		this.pendingBashContainer = new Container();
+		this.pendingMessagesContainer.addChild(this.pendingQueuedMessagesContainer);
+		this.pendingMessagesContainer.addChild(this.pendingBashContainer);
 		this.statusContainer = new Container();
 		this.editor = new CustomEditor(getEditorTheme());
 		this.editorContainer = new Container();
@@ -195,6 +206,46 @@ export class InteractiveMode {
 			fdPath,
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
+	}
+
+	// =========================================================================
+	// Queue Edit Mode Helpers
+	// =========================================================================
+
+	private isQueueEditing(): boolean {
+		return this.queueEditIndex >= 0;
+	}
+
+	private enterQueueEditModeAt(index: number): void {
+		const queued = this.session.getQueuedUserMessages();
+		if (index < 0 || index >= queued.length) return;
+
+		// Save current editor text before entering edit mode
+		this.queueEditDraftText = this.editor.getText();
+		this.queueEditIndex = index;
+		this.queueEditTimestamp = queued[index].timestamp;
+		this.editor.setText(queued[index].text);
+	}
+
+	private exitQueueEditMode(): void {
+		// Restore saved draft
+		this.editor.setText(this.queueEditDraftText);
+		this.resetQueueEditState();
+	}
+
+	private setQueueEditIndex(index: number): void {
+		const queued = this.session.getQueuedUserMessages();
+		if (index < 0 || index >= queued.length) return;
+
+		this.queueEditIndex = index;
+		this.queueEditTimestamp = queued[index].timestamp;
+		this.editor.setText(queued[index].text);
+	}
+
+	private resetQueueEditState(): void {
+		this.queueEditIndex = -1;
+		this.queueEditTimestamp = -1;
+		this.queueEditDraftText = "";
 	}
 
 	async init(): Promise<void> {
@@ -590,6 +641,14 @@ export class InteractiveMode {
 
 	private setupKeyHandlers(): void {
 		this.editor.onEscape = () => {
+			// If editing a queued message, exit queue edit mode without aborting
+			if (this.isQueueEditing()) {
+				this.exitQueueEditMode();
+				this.updatePendingMessagesDisplay();
+				this.ui.requestRender();
+				return;
+			}
+
 			if (this.loadingAnimation) {
 				// Abort and restore queued messages to editor
 				const queuedMessages = this.session.clearQueue();
@@ -631,6 +690,40 @@ export class InteractiveMode {
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
 		this.editor.onCtrlG = () => this.openExternalEditor();
 
+		// Alt+Up: enter or navigate forward in queue edit mode
+		this.editor.onAltUp = () => {
+			const queued = this.session.getQueuedUserMessages();
+			if (queued.length === 0) return;
+
+			if (!this.isQueueEditing()) {
+				// Enter queue edit mode at first message
+				this.enterQueueEditModeAt(0);
+			} else if (this.queueEditIndex < queued.length - 1) {
+				// Navigate to next queued message
+				this.setQueueEditIndex(this.queueEditIndex + 1);
+			}
+			// At last message, Alt+Up does nothing
+
+			this.updatePendingMessagesDisplay();
+			this.ui.requestRender();
+		};
+
+		// Alt+Down: navigate backward in queue edit mode or exit
+		this.editor.onAltDown = () => {
+			if (!this.isQueueEditing()) return;
+
+			if (this.queueEditIndex > 0) {
+				// Navigate to previous queued message
+				this.setQueueEditIndex(this.queueEditIndex - 1);
+			} else {
+				// At first message, exit queue edit mode
+				this.exitQueueEditMode();
+			}
+
+			this.updatePendingMessagesDisplay();
+			this.ui.requestRender();
+		};
+
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
 			this.isBashMode = text.trimStart().startsWith("!");
@@ -643,6 +736,59 @@ export class InteractiveMode {
 	private setupEditorSubmitHandler(): void {
 		this.editor.onSubmit = async (text: string) => {
 			text = text.trim();
+
+			// Handle queue edit mode submission
+			if (this.isQueueEditing()) {
+				const queued = this.session.getQueuedUserMessages();
+
+				if (!text) {
+					// Empty submit = delete the queued message
+					const success = this.session.removeQueuedUserMessage(this.queueEditIndex);
+					if (!success) {
+						this.showStatus("Message already sent");
+						this.exitQueueEditMode();
+						this.updatePendingMessagesDisplay();
+						this.ui.requestRender();
+						return;
+					}
+
+					// Adjust index after deletion
+					const newQueued = this.session.getQueuedUserMessages();
+					if (newQueued.length === 0) {
+						// Queue is empty, exit edit mode
+						this.exitQueueEditMode();
+					} else if (this.queueEditIndex >= newQueued.length) {
+						// Was at end, move to new end
+						this.setQueueEditIndex(newQueued.length - 1);
+					} else {
+						// Stay at same index (shows next message)
+						this.setQueueEditIndex(this.queueEditIndex);
+					}
+				} else {
+					// Non-empty submit = update the queued message
+					// Capture original text BEFORE updating (getQueuedUserMessages may return references)
+					const originalText = queued[this.queueEditIndex]?.text;
+					const success = this.session.updateQueuedUserMessage(this.queueEditIndex, text);
+					if (!success) {
+						this.showStatus("Message already sent");
+						this.exitQueueEditMode();
+						this.updatePendingMessagesDisplay();
+						this.ui.requestRender();
+						return;
+					}
+
+					// Add original text to history (before edit)
+					if (originalText) {
+						this.editor.addToHistory(originalText);
+					}
+					this.exitQueueEditMode();
+				}
+
+				this.updatePendingMessagesDisplay();
+				this.ui.requestRender();
+				return;
+			}
+
 			if (!text) return;
 
 			// Handle slash commands
@@ -824,8 +970,37 @@ export class InteractiveMode {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
+					// Check if we're editing a message that just got consumed
+					// Note: The queue has already removed this message, so compare against stored timestamp
+					// Track whether we exited due to consumption so we don't clear the restored draft
+					let exitedDueToConsumption = false;
+					if (this.isQueueEditing()) {
+						if (event.message.timestamp === this.queueEditTimestamp) {
+							// The message we were editing got sent
+							this.showStatus("Message already sent");
+							this.exitQueueEditMode();
+							exitedDueToConsumption = true;
+						} else {
+							// A different message was consumed - re-sync queueEditIndex
+							// The queue has shifted, so find our edited message by timestamp
+							const newQueued = this.session.getQueuedUserMessages();
+							const newIndex = newQueued.findIndex((m) => m.timestamp === this.queueEditTimestamp);
+							if (newIndex === -1) {
+								// Should not happen, but handle gracefully
+								this.showStatus("Message already sent");
+								this.exitQueueEditMode();
+								exitedDueToConsumption = true;
+							} else {
+								// Update index to new position (don't call setQueueEditIndex since we don't want to change editor text)
+								this.queueEditIndex = newIndex;
+							}
+						}
+					}
 					this.addMessageToChat(event.message);
-					this.editor.setText("");
+					// Only clear editor if not in queue edit mode and we didn't just restore the draft
+					if (!this.isQueueEditing() && !exitedDueToConsumption) {
+						this.editor.setText("");
+					}
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
@@ -941,6 +1116,9 @@ export class InteractiveMode {
 					this.streamingComponent = undefined;
 				}
 				this.pendingTools.clear();
+				// Reset queue edit state when agent finishes
+				this.resetQueueEditState();
+				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				break;
 
@@ -1416,13 +1594,18 @@ export class InteractiveMode {
 	}
 
 	private updatePendingMessagesDisplay(): void {
-		this.pendingMessagesContainer.clear();
+		this.pendingQueuedMessagesContainer.clear();
 		const queuedMessages = this.session.getQueuedUserMessages();
 		if (queuedMessages.length > 0) {
-			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const queuedMessage of queuedMessages) {
-				const queuedText = theme.fg("dim", `Queued: ${queuedMessage.text}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
+			this.pendingQueuedMessagesContainer.addChild(new Spacer(1));
+			for (let i = 0; i < queuedMessages.length; i++) {
+				const queuedMessage = queuedMessages[i];
+				const isEditing = i === this.queueEditIndex;
+				const prefix = isEditing ? "Editing" : "Queued";
+				const styledText = isEditing
+					? theme.fg("accent", `${prefix}: ${queuedMessage.text}`)
+					: theme.fg("dim", `${prefix}: ${queuedMessage.text}`);
+				this.pendingQueuedMessagesContainer.addChild(new TruncatedText(styledText, 1, 0));
 			}
 		}
 	}
@@ -1430,7 +1613,7 @@ export class InteractiveMode {
 	/** Move pending bash components from pending area to chat */
 	private flushPendingBashComponents(): void {
 		for (const component of this.pendingBashComponents) {
-			this.pendingMessagesContainer.removeChild(component);
+			this.pendingBashContainer.removeChild(component);
 			this.chatContainer.addChild(component);
 		}
 		this.pendingBashComponents = [];
@@ -1727,9 +1910,12 @@ export class InteractiveMode {
 		this.statusContainer.clear();
 
 		// Clear UI state
-		this.pendingMessagesContainer.clear();
+		this.pendingQueuedMessagesContainer.clear();
+		this.pendingBashContainer.clear();
+		this.pendingBashComponents = [];
 		this.streamingComponent = undefined;
 		this.pendingTools.clear();
+		this.resetQueueEditState();
 
 		// Switch session via AgentSession (emits hook and tool session events)
 		await this.session.switchSession(sessionPath);
@@ -1968,6 +2154,7 @@ export class InteractiveMode {
 | \`Ctrl+O\` | Toggle tool output expansion |
 | \`Ctrl+T\` | Toggle thinking block visibility |
 | \`Ctrl+G\` | Edit message in external editor |
+| \`Alt+Up\` / \`Alt+Down\` | Edit queued messages |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 `;
@@ -1993,9 +2180,12 @@ export class InteractiveMode {
 
 		// Clear UI state
 		this.chatContainer.clear();
-		this.pendingMessagesContainer.clear();
+		this.pendingQueuedMessagesContainer.clear();
+		this.pendingBashContainer.clear();
+		this.pendingBashComponents = [];
 		this.streamingComponent = undefined;
 		this.pendingTools.clear();
+		this.resetQueueEditState();
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
@@ -2046,7 +2236,7 @@ export class InteractiveMode {
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
-			this.pendingMessagesContainer.addChild(this.bashComponent);
+			this.pendingBashContainer.addChild(this.bashComponent);
 			this.pendingBashComponents.push(this.bashComponent);
 		} else {
 			// Show in chat immediately when agent is idle

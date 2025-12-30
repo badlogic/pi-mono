@@ -190,6 +190,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 ### Added
 
 - **Snake game example hook**: Demonstrates `ui.custom()`, `registerCommand()`, and session persistence. See [examples/hooks/snake.ts](examples/hooks/snake.ts).
+- **Queue message editing**: Use Alt+Up/Down to navigate queued messages, edit in place, and replace on submit. Empty submit deletes the message.
 
 ### Changed
 
