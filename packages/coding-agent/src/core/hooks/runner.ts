@@ -21,6 +21,8 @@ import type {
 	HookEventContext,
 	HookMessageRenderer,
 	HookUIContext,
+	MessageEndEvent,
+	MessageEndEventResult,
 	RegisteredCommand,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
@@ -398,6 +400,50 @@ export class HookRunner {
 		}
 
 		return { envelope, results };
+	}
+
+	/**
+	 * Emit a message_end event to all hooks.
+	 *
+	 * Handlers are chained; each handler sees the message after previous mutations.
+	 *
+	 * Errors are swallowed and reported via HookErrorListener; the last good message is used.
+	 */
+	async emitMessageEnd(event: MessageEndEvent): Promise<MessageEndEvent["message"]> {
+		const ctx = this.createContext();
+		// Defensive copy: message hooks must never be able to mutate the agent loop's live message.
+		let currentMessage = structuredClone(event.message) as MessageEndEvent["message"];
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("message_end");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerEvent: MessageEndEvent = {
+						type: "message_end",
+						message: currentMessage,
+					};
+					const timeout = createTimeout(this.timeout);
+					const handlerResult = await Promise.race([handler(handlerEvent, ctx), timeout.promise]);
+					timeout.clear();
+
+					const result = handlerResult as MessageEndEventResult | undefined;
+					if (result?.message) {
+						currentMessage = result.message;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.emitError({
+						hookPath: hook.path,
+						event: "message_end",
+						error: message,
+					});
+				}
+			}
+		}
+
+		return currentMessage;
 	}
 
 	/**

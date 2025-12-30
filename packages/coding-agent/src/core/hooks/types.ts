@@ -303,6 +303,15 @@ export interface TurnEndEvent {
 }
 
 /**
+ * Event data for message_end event.
+ * Fired for every finalized message before it is persisted and becomes future context.
+ */
+export interface MessageEndEvent {
+	type: "message_end";
+	message: AgentMessage;
+}
+
+/**
  * Event data for tool_call event.
  * Fired before a tool is executed. Hooks can block execution.
  */
@@ -428,6 +437,7 @@ export type HookEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| MessageEndEvent
 	| ToolCallEvent
 	| ToolResultEvent;
 
@@ -444,6 +454,12 @@ export interface ContextEventResult {
 	display?: ContextTransformDisplay;
 	/** Optional stable identifier used for persistence / compaction logic. */
 	transformerName?: string;
+}
+
+/** Return type for message_end handlers. */
+export interface MessageEndEventResult {
+	/** Replacement message to persist/use going forward. */
+	message?: AgentMessage;
 }
 
 /**
@@ -618,6 +634,7 @@ export interface HookAPI {
 	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
+	on(event: "message_end", handler: HookHandler<MessageEndEvent, MessageEndEventResult>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
 

@@ -345,6 +345,11 @@ export class AgentSession {
 				maxTokens: envelope.options.maxTokens,
 			};
 		});
+
+		this.agent.setMessageInterceptor(async (message) => {
+			if (!this._hookRunner?.hasHandlers("message_end")) return message;
+			return await this._hookRunner.emitMessageEnd({ type: "message_end", message });
+		});
 	}
 
 	private _buildContextEnvelopeFromSession(options: {

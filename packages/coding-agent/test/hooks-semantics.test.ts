@@ -108,6 +108,7 @@ describe("hooks semantics", () => {
 				setBeforeRequest: () => {},
 				setEphemeral: () => {},
 				setOnTurnEnd: () => {},
+				setMessageInterceptor: () => {},
 				prompt: async (input: unknown) => {
 					capturedPrompts = input;
 				},
