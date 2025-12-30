@@ -14,6 +14,10 @@
 
 - **`CustomMessages` interface removed**: Use declaration merging on `CustomAgentMessages` from `@mariozechner/pi-agent-core` instead.
 
+- **`agent.appendMessage()` removed**: Use `agent.queueMessage()` instead.
+
+- **Agent event types changed**: `AgentInterface` now handles new event types from `@mariozechner/pi-agent-core`: `message_start`, `message_end`, `message_update`, `turn_start`, `turn_end`, `agent_start`, `agent_end`.
+
 ### Added
 
 - **`defaultConvertToLlm`**: Default message transformer that handles `UserMessageWithAttachments` and `ArtifactMessage`. Apps can extend this for custom message types.
@@ -38,6 +42,7 @@
 - `AgentTransport` interface
 - `AgentRunConfig` type
 - `ProxyAssistantMessageEvent` type
+- `test-sessions.ts` example file
 
 ### Migration Guide
 
