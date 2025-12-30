@@ -59,6 +59,24 @@ export interface ContextEnvelope {
 	};
 }
 
+/**
+ * Serializable metadata for how to display a persisted context transform in UIs / logs.
+ *
+ * This is never sent to the provider.
+ */
+export interface ContextTransformDisplay {
+	/** Short title, rendered prominently. */
+	title: string;
+	/** One-line summary suitable for a compact status line. */
+	summary?: string;
+	/** Rich fallback for non-interactive modes (markdown is fine). */
+	markdown?: string;
+	/** Optional custom renderer ID (interactive harness decides how to render). */
+	rendererId?: string;
+	/** Serializable props for the renderer. */
+	rendererProps?: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // Patch language (schemaVersioned at the entry layer)
 // ---------------------------------------------------------------------------
