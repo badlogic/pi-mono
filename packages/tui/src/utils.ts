@@ -4,6 +4,7 @@ import stringWidth from "string-width";
  * Calculate the visible width of a string in terminal columns.
  */
 export function visibleWidth(str: string): number {
+	if (!str) return 0;
 	const normalized = str.replace(/\t/g, "   ");
 	return stringWidth(normalized);
 }
@@ -472,6 +473,9 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 		}
 
 		const grapheme = seg.value;
+		// Skip empty graphemes to avoid issues with string-width calculation
+		if (!grapheme) continue;
+
 		const graphemeWidth = visibleWidth(grapheme);
 
 		if (currentWidth + graphemeWidth > width) {
@@ -576,6 +580,9 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 		}
 
 		const grapheme = seg.value;
+		// Skip empty graphemes to avoid issues with string-width calculation
+		if (!grapheme) continue;
+
 		const graphemeWidth = visibleWidth(grapheme);
 
 		if (currentWidth + graphemeWidth > targetWidth) {
