@@ -75,6 +75,8 @@ export interface ContextTransformDisplay {
 	rendererId?: string;
 	/** Serializable props for the renderer. */
 	rendererProps?: unknown;
+	/** If true, also emit a visible transcript item in the chat UI. */
+	showInChat?: boolean;
 }
 
 // ---------------------------------------------------------------------------

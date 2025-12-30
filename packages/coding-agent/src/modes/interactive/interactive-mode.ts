@@ -40,6 +40,7 @@ import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
+import { ContextTransformMessageComponent } from "./components/context-transform-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
@@ -834,7 +835,7 @@ export class InteractiveMode {
 				break;
 
 			case "message_start":
-				if (event.message.role === "hookMessage") {
+				if (event.message.role === "hookMessage" || event.message.role === "contextTransform") {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
@@ -1090,8 +1091,19 @@ export class InteractiveMode {
 			case "hookMessage": {
 				if (message.display) {
 					const renderer = this.session.hookRunner?.getMessageRenderer(message.customType);
-					this.chatContainer.addChild(new HookMessageComponent(message, renderer));
+					const component = new HookMessageComponent(message, renderer);
+					component.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(component);
 				}
+				break;
+			}
+			case "contextTransform": {
+				const renderer = message.display?.rendererId
+					? this.session.hookRunner?.getContextTransformRenderer(message.display.rendererId)
+					: undefined;
+				const component = new ContextTransformMessageComponent(message, renderer);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
 				break;
 			}
 			case "compactionSummary": {

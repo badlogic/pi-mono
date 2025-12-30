@@ -145,6 +145,9 @@ return {
   display: {
     title: "My Transform",
     summary: "…",
+    // Optional: also show a transcript item in the chat UI
+    // (this is NOT sent to the provider and is excluded from compaction/context).
+    showInChat: true,
     rendererId: "my-transform-renderer",
     rendererProps: { /* JSON-serializable */ },
   },
@@ -176,6 +179,7 @@ export default function (pi: HookAPI) {
 - Hooks register renderers by ID via `pi.registerContextTransformRenderer(rendererId, renderer)`.
 - The interactive `/context` command enumerates `context_transform` entries on the active session path and calls the renderer for any entry whose `display.rendererId` matches a registered renderer.
 - Other surfaces (RPC/HTML/tree) cannot render interactive TUI components, so they fall back to `display.title`/`display.summary`/`display.markdown`.
+- If `display.showInChat` is set, Pi also appends a transcript-only `contextTransform` message immediately after persisting the transform. This message is rendered in the chat UI (and HTML export), but is never sent to the provider.
 
 ## The `message_end` hook
 

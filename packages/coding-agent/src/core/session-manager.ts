@@ -15,13 +15,7 @@ import {
 } from "fs";
 import { join, resolve } from "path";
 import { getAgentDir as getDefaultAgentDir } from "../config.js";
-import {
-	type BashExecutionMessage,
-	createBranchSummaryMessage,
-	createCompactionSummaryMessage,
-	createHookMessage,
-	type HookMessage,
-} from "./messages.js";
+import { createBranchSummaryMessage, createCompactionSummaryMessage, createHookMessage } from "./messages.js";
 
 export const CURRENT_SESSION_VERSION = 2;
 
@@ -735,7 +729,13 @@ export class SessionManager {
 	 * so it is easier to find them.
 	 * These need to be appended via appendCompaction() and appendBranchSummary() methods.
 	 */
-	appendMessage(message: Message | HookMessage | BashExecutionMessage): string {
+	appendMessage(message: AgentMessage): string {
+		if (message.role === "compactionSummary" || message.role === "branchSummary") {
+			throw new Error(
+				`Cannot append message role "${message.role}" directly. Use appendCompaction()/appendBranchSummary().`,
+			);
+		}
+
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),

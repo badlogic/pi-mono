@@ -22,6 +22,7 @@ import {
 	applyContextPatch,
 	type ContextEnvelope,
 	type ContextPatchOp,
+	type ContextTransformDisplay,
 	compileSystemPrompt,
 	type SystemPromptPart,
 	type ThinkingLevel,
@@ -67,17 +68,17 @@ import {
 	convertToLlm,
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
+	createContextTransformMessage,
 	createHookMessage,
 	type HookMessage,
 } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import {
-	type BranchSummaryEntry,
-	buildSessionContextWithProvenance,
-	type CompactionEntry,
-	type ContextTransformEntry,
-	type SessionEntry,
-	type SessionManager,
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	ContextTransformEntry,
+	SessionEntry,
+	SessionManager,
 } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
@@ -505,7 +506,16 @@ export class AgentSession {
 		for (const result of results) {
 			const transformerName = result.transformerName ?? result.hookPath;
 			this._assertCachedOnlyPatch(result.patch, reason, transformerName);
-			this.sessionManager.appendContextTransformEntry(transformerName, result.patch, result.display);
+			const entryId = this.sessionManager.appendContextTransformEntry(transformerName, result.patch, result.display);
+
+			if (result.display?.showInChat) {
+				this._appendContextTransformTranscriptMessage({
+					transformerName,
+					transformEntryId: entryId,
+					patch: result.patch,
+					display: result.display,
+				});
+			}
 		}
 	}
 
@@ -519,14 +529,59 @@ export class AgentSession {
 		}
 	}
 
+	private _appendContextTransformTranscriptMessage(options: {
+		transformerName: string;
+		transformEntryId: string;
+		patch: ContextPatchOp[];
+		display?: ContextTransformDisplay;
+	}): void {
+		const msg = createContextTransformMessage({
+			transformerName: options.transformerName,
+			transformEntryId: options.transformEntryId,
+			patch: options.patch,
+			display: options.display,
+			timestamp: new Date().toISOString(),
+		});
+
+		// Persist + update agent state
+		this.agent.appendMessage(msg);
+		this.sessionManager.appendMessage(msg);
+
+		// Emit message events so UIs can show it in the transcript immediately.
+		this._emit({ type: "message_start", message: msg });
+		this._emit({ type: "message_end", message: msg });
+	}
+
 	private _appendCompactionTransform(options: {
 		summary: string;
 		firstKeptEntryId: string;
 		tokensBefore: number;
 	}): string {
-		const ctx = buildSessionContextWithProvenance(this.sessionManager.getEntries(), this.sessionManager.getLeafId());
+		if (!this.model) {
+			throw new Error("Cannot append compaction transform: no model selected");
+		}
 
-		const firstKeptMessageIndex = Math.max(0, ctx.messageEntryIds.indexOf(options.firstKeptEntryId));
+		// Compute the cut point in terms of the *provider cached message list*.
+		// Note: transcript-only messages (e.g. contextTransform) are filtered out by convertToLlm().
+		const envelope = this._buildContextEnvelopeFromSession({
+			model: this.model,
+			tools: this.agent.state.tools,
+			turnIndex: 0,
+			requestIndex: 0,
+			signal: new AbortController().signal,
+			reasoning: this._getReasoningEffort(),
+		});
+
+		const entry = this.sessionManager.getEntry(options.firstKeptEntryId);
+		const entryMessages = this._toLlmMessagesForEntry(entry);
+		const first = entryMessages[0];
+
+		const firstKeptMessageIndex = first
+			? Math.max(
+					0,
+					envelope.messages.cached.findIndex((m) => this._messagesEquivalent(m, first)),
+				)
+			: 0;
 
 		const patch: ContextPatchOp[] = [
 			{
@@ -542,8 +597,35 @@ export class AgentSession {
 
 		return this.sessionManager.appendContextTransformEntry("compaction", patch, {
 			title: "Compaction",
-			summary: `Compacted context (kept from message index ${firstKeptMessageIndex})`,
+			summary: `Compacted context (kept from provider message index ${firstKeptMessageIndex})`,
 		});
+	}
+
+	private _toLlmMessagesForEntry(entry: SessionEntry | undefined): Message[] {
+		if (!entry) return [];
+
+		switch (entry.type) {
+			case "message":
+				return convertToLlm([entry.message]);
+			case "custom_message":
+				return convertToLlm([
+					createHookMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp),
+				]);
+			case "branch_summary":
+				return convertToLlm([createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp)]);
+			case "compaction":
+				return convertToLlm([createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp)]);
+			default:
+				return [];
+		}
+	}
+
+	private _messagesEquivalent(a: Message, b: Message): boolean {
+		const normalize = (m: Message): unknown => {
+			const { timestamp: _timestamp, ...rest } = m as unknown as { timestamp?: number } & Record<string, unknown>;
+			return rest;
+		};
+		return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
 	}
 
 	private _toToolDefinitions(tools: AgentTool<any>[]): Tool[] {
@@ -615,9 +697,10 @@ export class AgentSession {
 			} else if (
 				event.message.role === "user" ||
 				event.message.role === "assistant" ||
-				event.message.role === "toolResult"
+				event.message.role === "toolResult" ||
+				event.message.role === "contextTransform"
 			) {
-				// Regular LLM message - persist as SessionMessageEntry
+				// Regular message entry (includes transcript-only contextTransform)
 				this.sessionManager.appendMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere

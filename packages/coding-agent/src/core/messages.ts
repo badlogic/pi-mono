@@ -5,7 +5,7 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ContextPatchOp, ContextTransformDisplay } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
@@ -64,6 +64,19 @@ export interface CompactionSummaryMessage {
 	timestamp: number;
 }
 
+/**
+ * Message representing a persisted context transform.
+ * This is intended for user visibility in the transcript and is NOT sent to the provider.
+ */
+export interface ContextTransformMessage {
+	role: "contextTransform";
+	transformerName: string;
+	transformEntryId: string;
+	patch: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+	timestamp: number;
+}
+
 // Extend CustomAgentMessages via declaration merging
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomAgentMessages {
@@ -71,6 +84,7 @@ declare module "@mariozechner/pi-agent-core" {
 		hookMessage: HookMessage;
 		branchSummary: BranchSummaryMessage;
 		compactionSummary: CompactionSummaryMessage;
+		contextTransform: ContextTransformMessage;
 	}
 }
 
@@ -114,6 +128,23 @@ export function createCompactionSummaryMessage(
 		summary: summary,
 		tokensBefore,
 		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
+export function createContextTransformMessage(options: {
+	transformerName: string;
+	transformEntryId: string;
+	patch: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+	timestamp: string;
+}): ContextTransformMessage {
+	return {
+		role: "contextTransform",
+		transformerName: options.transformerName,
+		transformEntryId: options.transformEntryId,
+		patch: options.patch,
+		display: options.display,
+		timestamp: new Date(options.timestamp).getTime(),
 	};
 }
 
@@ -175,6 +206,9 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						],
 						timestamp: m.timestamp,
 					};
+				case "contextTransform":
+					// Transcript-only message: never sent to the provider.
+					return undefined;
 				case "user":
 				case "assistant":
 				case "toolResult":

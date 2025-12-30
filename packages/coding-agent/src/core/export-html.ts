@@ -975,6 +975,17 @@ function formatMessage(
 				html += `<div class="hook-message">${timestampHtml}<div class="hook-type">[${escapeHtml(message.customType)}]</div><div class="markdown-content">${renderMarkdown(content)}</div></div>`;
 			}
 			break;
+		case "contextTransform": {
+			const title = message.display?.title ?? message.transformerName;
+			const summary = message.display?.summary;
+			const body = message.display?.markdown ?? `\`\`\`json\n${JSON.stringify(message.patch, null, 2)}\n\`\`\``;
+			html += `<div class="hook-message">${timestampHtml}<div class="hook-type">[context] ${escapeHtml(title)}</div>`;
+			if (summary) {
+				html += `<div class="hook-summary">${escapeHtml(summary)}</div>`;
+			}
+			html += `<div class="markdown-content">${renderMarkdown(body)}</div></div>`;
+			break;
+		}
 		case "compactionSummary":
 			// Rendered separately via formatCompaction
 			break;

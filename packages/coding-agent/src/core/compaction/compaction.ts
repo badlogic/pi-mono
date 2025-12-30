@@ -72,6 +72,7 @@ function extractFileOperations(
  */
 function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 	if (entry.type === "message") {
+		if (entry.message.role === "contextTransform") return undefined;
 		return entry.message;
 	}
 	if (entry.type === "custom_message") {
