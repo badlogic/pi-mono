@@ -107,6 +107,7 @@ export {
 	readOnlyTools,
 } from "./core/sdk.js";
 export {
+	type AppendSystemPromptEntry,
 	buildSessionContext,
 	type CompactionEntry,
 	createSummaryMessage,
@@ -121,6 +122,7 @@ export {
 	type SessionMessageEntry,
 	SUMMARY_PREFIX,
 	SUMMARY_SUFFIX,
+	type SystemPromptEntry,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
 export {

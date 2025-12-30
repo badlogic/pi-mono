@@ -249,13 +249,12 @@ function buildSessionOptions(
 	// API key from CLI - set in authStorage
 	// (handled by caller before createAgentSession)
 
-	// System prompt
-	if (resolvedSystemPrompt && resolvedAppendPrompt) {
-		options.systemPrompt = `${resolvedSystemPrompt}\n\n${resolvedAppendPrompt}`;
-	} else if (resolvedSystemPrompt) {
+	// System prompt and append prompt (passed separately for session persistence)
+	if (resolvedSystemPrompt) {
 		options.systemPrompt = resolvedSystemPrompt;
-	} else if (resolvedAppendPrompt) {
-		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${resolvedAppendPrompt}`;
+	}
+	if (resolvedAppendPrompt) {
+		options.appendPrompt = resolvedAppendPrompt;
 	}
 
 	// Tools
