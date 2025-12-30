@@ -589,11 +589,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: allToolsArray,
 		},
 		convertToLlm,
-		transformContext: hookRunner
-			? async (messages) => {
-					return hookRunner.emitContext(messages);
-				}
-			: undefined,
 		queueMode: settingsManager.getQueueMode(),
 		getApiKey: async () => {
 			const currentModel = agent.state.model;

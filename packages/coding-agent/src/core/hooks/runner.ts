@@ -2,7 +2,12 @@
  * Hook runner - executes hooks and manages their lifecycle.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import {
+	applyContextPatch,
+	type ContextEnvelope,
+	type ContextPatchOp,
+	type ContextTransformDisplay,
+} from "@mariozechner/pi-agent-core";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
@@ -33,6 +38,18 @@ const DEFAULT_TIMEOUT = 30000;
  * Listener for hook errors.
  */
 export type HookErrorListener = (error: HookError) => void;
+
+export interface ContextTransformResult {
+	hookPath: string;
+	patch: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+	transformerName?: string;
+}
+
+export interface EmitContextResult {
+	envelope: ContextEnvelope;
+	results: ContextTransformResult[];
+}
 
 // Re-export execCommand for backward compatibility
 export { execCommand } from "../exec.js";
@@ -333,16 +350,14 @@ export class HookRunner {
 
 	/**
 	 * Emit a context event to all hooks.
-	 * Handlers are chained - each gets the previous handler's output (if any).
-	 * Returns the final modified messages, or the original if no modifications.
 	 *
-	 * Note: Messages are already deep-copied by the caller (pi-ai preprocessor).
+	 * Handlers are chained: each handler sees the envelope after previous patches were applied.
+	 * Hooks do not mutate the live envelope directly; they return patch operations.
 	 */
-	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
+	async emitContext(event: ContextEvent): Promise<EmitContextResult> {
 		const ctx = this.createContext();
-		// Defensive copy: context hooks must never be able to mutate the agent loop's live context.
-		// Hooks may mutate this copy in-place.
-		let currentMessages = structuredClone(messages) as AgentMessage[];
+		let envelope: ContextEnvelope = structuredClone(event.state.envelope) as ContextEnvelope;
+		const results: ContextTransformResult[] = [];
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get("context");
@@ -350,13 +365,26 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					const event: ContextEvent = { type: "context", messages: currentMessages };
+					const handlerEvent: ContextEvent = {
+						type: "context",
+						reason: event.reason,
+						state: { envelope: structuredClone(envelope) as ContextEnvelope },
+					};
 					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
+					const handlerResult = await Promise.race([handler(handlerEvent, ctx), timeout.promise]);
 					timeout.clear();
 
-					if (handlerResult && (handlerResult as ContextEventResult).messages) {
-						currentMessages = (handlerResult as ContextEventResult).messages!;
+					const result = handlerResult as ContextEventResult | undefined;
+					if (result?.patch && result.patch.length > 0) {
+						const applied = applyContextPatch(envelope, result.patch);
+						envelope = applied.envelope;
+
+						results.push({
+							hookPath: hook.path,
+							patch: result.patch,
+							display: result.display,
+							transformerName: result.transformerName,
+						});
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -369,7 +397,7 @@ export class HookRunner {
 			}
 		}
 
-		return currentMessages;
+		return { envelope, results };
 	}
 
 	/**

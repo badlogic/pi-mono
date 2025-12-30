@@ -5,8 +5,13 @@
  * and interact with the user via UI primitives.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type {
+	AgentMessage,
+	ContextEnvelope,
+	ContextPatchOp,
+	ContextTransformDisplay,
+} from "@mariozechner/pi-agent-core";
+import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
@@ -231,14 +236,22 @@ export type SessionEvent =
 	| SessionTreeEvent;
 
 /**
- * Event data for context event.
- * Fired before each LLM call, allowing hooks to modify context non-destructively.
- * Original session messages are NOT modified - only the messages sent to the LLM are affected.
+ * Context transform hook.
+ *
+ * This is the canonical surface for context engineering.
+ * Hooks receive a full provider request envelope and return patch operations so transforms can be
+ * persisted and deterministically replayed.
  */
+export type ContextReason = "before_request" | "ephemeral" | "turn_end";
+
+export interface ContextState {
+	envelope: ContextEnvelope;
+}
+
 export interface ContextEvent {
 	type: "context";
-	/** Messages about to be sent to the LLM (deep copy, safe to modify) */
-	messages: AgentMessage[];
+	reason: ContextReason;
+	state: ContextState;
 }
 
 /**
@@ -424,11 +437,13 @@ export type HookEvent =
 
 /**
  * Return type for context event handlers.
- * Allows hooks to modify messages before they're sent to the LLM.
+ * Hooks return patch operations to apply to the envelope.
  */
 export interface ContextEventResult {
-	/** Modified messages to send instead of the original */
-	messages?: Message[];
+	patch?: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+	/** Optional stable identifier used for persistence / compaction logic. */
+	transformerName?: string;
 }
 
 /**

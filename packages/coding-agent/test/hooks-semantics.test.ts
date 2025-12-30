@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Agent } from "@mariozechner/pi-agent-core";
+import type { Agent, ContextEnvelope } from "@mariozechner/pi-agent-core";
 import { getModel, type Message } from "@mariozechner/pi-ai";
 import { describe, expect, test } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
@@ -55,9 +55,13 @@ function createHookRunner(
 	if (options.contextMutateInPlace) {
 		handlers.set("context", [
 			async (event: unknown) => {
-				// Mutate the messages in-place and return nothing.
-				const e = event as { messages: Message[] };
-				e.messages.push({ role: "user", content: [{ type: "text", text: "mutated" }], timestamp: 0 });
+				// Mutate the envelope in-place and return nothing.
+				const e = event as { state: { envelope: ContextEnvelope } };
+				e.state.envelope.messages.cached.push({
+					role: "user",
+					content: [{ type: "text", text: "mutated" }],
+					timestamp: 0,
+				});
 				return undefined;
 			},
 		]);
@@ -132,11 +136,33 @@ describe("hooks semantics", () => {
 		try {
 			const { hookRunner } = createHookRunner(tempDir, { contextMutateInPlace: true });
 
-			const original: Message[] = [{ role: "user", content: [{ type: "text", text: "a" }], timestamp: 1 }];
-			const result = await hookRunner.emitContext(original);
+			const model = getModel("anthropic", "claude-sonnet-4-5")!;
+			const originalMessages: Message[] = [{ role: "user", content: [{ type: "text", text: "a" }], timestamp: 1 }];
 
-			expect(original).toHaveLength(1);
-			expect(result).toHaveLength(2);
+			const originalEnvelope: ContextEnvelope = {
+				system: { parts: [{ name: "base", text: "sys" }], compiled: "sys" },
+				tools: [],
+				messages: { cached: originalMessages, uncached: [] },
+				options: {},
+				meta: {
+					model,
+					limit: 8192,
+					turnIndex: 0,
+					requestIndex: 0,
+					signal: new AbortController().signal,
+				},
+			};
+
+			const result = await hookRunner.emitContext({
+				type: "context",
+				reason: "before_request",
+				state: { envelope: originalEnvelope },
+			});
+
+			expect(originalMessages).toHaveLength(1);
+			expect(originalEnvelope.messages.cached).toHaveLength(1);
+			expect(result.envelope.messages.cached).toHaveLength(1);
+			expect(result.results).toHaveLength(0);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
