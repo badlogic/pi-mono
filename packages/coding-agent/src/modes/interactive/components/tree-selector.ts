@@ -262,17 +262,21 @@ class TreeList implements Component {
 
 			// Apply filter mode
 			let passesFilter = true;
+			// Entry types hidden in default view (settings/bookkeeping)
+			const isSettingsEntry =
+				entry.type === "label" ||
+				entry.type === "custom" ||
+				entry.type === "model_change" ||
+				entry.type === "thinking_level_change";
+
 			switch (this.filterMode) {
 				case "user-only":
 					// Just user messages
 					passesFilter = entry.type === "message" && entry.message.role === "user";
 					break;
 				case "no-tools":
-					// Default minus tool results (still hide label/custom entries)
-					passesFilter =
-						entry.type !== "label" &&
-						entry.type !== "custom" &&
-						!(entry.type === "message" && entry.message.role === "toolResult");
+					// Default minus tool results
+					passesFilter = !isSettingsEntry && !(entry.type === "message" && entry.message.role === "toolResult");
 					break;
 				case "labeled-only":
 					// Just labeled entries
@@ -283,8 +287,8 @@ class TreeList implements Component {
 					passesFilter = true;
 					break;
 				default:
-					// Default mode: hide label and custom entries
-					passesFilter = entry.type !== "label" && entry.type !== "custom";
+					// Default mode: hide settings/bookkeeping entries
+					passesFilter = !isSettingsEntry;
 					break;
 			}
 
