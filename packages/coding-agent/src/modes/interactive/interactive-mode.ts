@@ -21,6 +21,7 @@ import {
 	Text,
 	TruncatedText,
 	TUI,
+	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { exec, spawnSync } from "child_process";
@@ -63,6 +64,84 @@ interface Expandable {
 
 function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+}
+
+class RightAlignedHintLine implements Component {
+	constructor(
+		private readonly leftText: string,
+		private readonly rightText: string,
+		private readonly paddingX: number = 0,
+		private readonly paddingY: number = 0,
+		private readonly minPadding: number = 1,
+	) {}
+
+	invalidate(): void {
+		// No cached state to invalidate
+	}
+
+	render(width: number): string[] {
+		const result: string[] = [];
+		const emptyLine = " ".repeat(width);
+
+		for (let i = 0; i < this.paddingY; i++) {
+			result.push(emptyLine);
+		}
+
+		const availableWidth = Math.max(1, width - this.paddingX * 2);
+
+		let leftSingleLine = this.leftText;
+		const leftNewlineIndex = leftSingleLine.indexOf("\n");
+		if (leftNewlineIndex !== -1) {
+			leftSingleLine = leftSingleLine.substring(0, leftNewlineIndex);
+		}
+
+		let rightSingleLine = this.rightText;
+		const rightNewlineIndex = rightSingleLine.indexOf("\n");
+		if (rightNewlineIndex !== -1) {
+			rightSingleLine = rightSingleLine.substring(0, rightNewlineIndex);
+		}
+
+		// Prioritize the left content. The hint on the right is low priority and will be truncated or dropped first.
+		const leftDisplay = truncateToWidth(leftSingleLine, availableWidth);
+		const leftWidth = visibleWidth(leftDisplay);
+
+		let content: string;
+		if (visibleWidth(rightSingleLine) === 0) {
+			content = leftDisplay;
+		} else {
+			// Only enforce a minimum padding when we actually render both sides.
+			const minPadding = leftWidth > 0 ? this.minPadding : 0;
+			const maxRightWidth = availableWidth - leftWidth - minPadding;
+
+			if (maxRightWidth <= 0) {
+				content = leftDisplay;
+			} else {
+				const rightDisplay = truncateToWidth(rightSingleLine, maxRightWidth);
+				const rightWidth = visibleWidth(rightDisplay);
+
+				if (rightWidth <= 0) {
+					content = leftDisplay;
+				} else {
+					// Right-align the hint in the remaining space.
+					const paddingBetween = Math.max(0, availableWidth - leftWidth - rightWidth);
+					content = leftDisplay + " ".repeat(paddingBetween) + rightDisplay;
+				}
+			}
+		}
+
+		const leftPadding = " ".repeat(this.paddingX);
+		const rightPadding = " ".repeat(this.paddingX);
+		const lineWithPadding = leftPadding + content + rightPadding;
+
+		const paddingNeeded = Math.max(0, width - visibleWidth(lineWithPadding));
+		result.push(lineWithPadding + " ".repeat(paddingNeeded));
+
+		for (let i = 0; i < this.paddingY; i++) {
+			result.push(emptyLine);
+		}
+
+		return result;
+	}
 }
 
 export class InteractiveMode {
@@ -289,6 +368,9 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "ctrl+g") +
 			theme.fg("muted", " for external editor") +
+			"\n" +
+			theme.fg("dim", "alt+up/down") +
+			theme.fg("muted", " to edit queued messages") +
 			"\n" +
 			theme.fg("dim", "/") +
 			theme.fg("muted", " for commands") +
@@ -690,33 +772,34 @@ export class InteractiveMode {
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
 		this.editor.onCtrlG = () => this.openExternalEditor();
 
-		// Alt+Up: enter or navigate forward in queue edit mode
+		// Alt+Up: enter queue edit mode at newest message, then move to older messages
 		this.editor.onAltUp = () => {
 			const queued = this.session.getQueuedUserMessages();
 			if (queued.length === 0) return;
 
 			if (!this.isQueueEditing()) {
-				// Enter queue edit mode at first message
-				this.enterQueueEditModeAt(0);
-			} else if (this.queueEditIndex < queued.length - 1) {
-				// Navigate to next queued message
-				this.setQueueEditIndex(this.queueEditIndex + 1);
+				// Enter queue edit mode at newest message (last index)
+				this.enterQueueEditModeAt(queued.length - 1);
+			} else if (this.queueEditIndex > 0) {
+				// Move to older queued message
+				this.setQueueEditIndex(this.queueEditIndex - 1);
 			}
-			// At last message, Alt+Up does nothing
+			// At oldest message, Alt+Up does nothing
 
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		};
 
-		// Alt+Down: navigate backward in queue edit mode or exit
+		// Alt+Down: move to newer messages, exit edit mode when reaching newest
 		this.editor.onAltDown = () => {
+			const queued = this.session.getQueuedUserMessages();
 			if (!this.isQueueEditing()) return;
 
-			if (this.queueEditIndex > 0) {
-				// Navigate to previous queued message
-				this.setQueueEditIndex(this.queueEditIndex - 1);
+			if (this.queueEditIndex < queued.length - 1) {
+				// Move to newer queued message
+				this.setQueueEditIndex(this.queueEditIndex + 1);
 			} else {
-				// At first message, exit queue edit mode
+				// At newest message, exit queue edit mode
 				this.exitQueueEditMode();
 			}
 
@@ -1598,6 +1681,10 @@ export class InteractiveMode {
 		const queuedMessages = this.session.getQueuedUserMessages();
 		if (queuedMessages.length > 0) {
 			this.pendingQueuedMessagesContainer.addChild(new Spacer(1));
+
+			const hint = theme.fg("dim", "(Alt+Up/Down to edit)");
+			const lastIndex = queuedMessages.length - 1;
+
 			for (let i = 0; i < queuedMessages.length; i++) {
 				const queuedMessage = queuedMessages[i];
 				const isEditing = i === this.queueEditIndex;
@@ -1605,7 +1692,12 @@ export class InteractiveMode {
 				const styledText = isEditing
 					? theme.fg("accent", `${prefix}: ${queuedMessage.text}`)
 					: theme.fg("dim", `${prefix}: ${queuedMessage.text}`);
-				this.pendingQueuedMessagesContainer.addChild(new TruncatedText(styledText, 1, 0));
+
+				if (i === lastIndex) {
+					this.pendingQueuedMessagesContainer.addChild(new RightAlignedHintLine(styledText, hint, 1, 0));
+				} else {
+					this.pendingQueuedMessagesContainer.addChild(new TruncatedText(styledText, 1, 0));
+				}
 			}
 		}
 	}
