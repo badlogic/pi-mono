@@ -313,7 +313,7 @@ export async function main(args: string[]) {
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
-		const sessions = SessionManager.list(cwd, parsed.sessionDir);
+		const sessions = SessionManager.list(cwd, parsed.sessionDir, 128 * 1024); // Chunk files above 128KB
 		time("SessionManager.list");
 		if (sessions.length === 0) {
 			console.log(chalk.dim("No sessions found"));

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `truncateToWidth` optimization for large strings
+
 ## [0.42.0] - 2026-01-09
 
 ## [0.41.0] - 2026-01-09
@@ -145,6 +147,16 @@
 - Markdown component now renders HTML tags as plain text instead of silently dropping them ([#359](https://github.com/badlogic/pi-mono/issues/359))
 - Crash in `visibleWidth()` and grapheme iteration when encountering undefined code points ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))
 - ZWJ emoji sequences (rainbow flag, family, etc.) now render with correct width instead of being split into multiple characters ([#369](https://github.com/badlogic/pi-mono/pull/369) by [@nathyong](https://github.com/nathyong))
+||||||| parent of fce32e38 (feat: Add session preview pane to resume selector)
+=======
+### Added
+
+- **SplitPane component**: New component for rendering two child components side by side with configurable ratio, divider, and padding.
+
+### Changed
+
+- **`truncateToWidth` optimization**: Improved performance by processing text in chunks and handling edge cases (zero/negative width) more efficiently.
+>>>>>>> fce32e38 (feat: Add session preview pane to resume selector)
 
 ## [0.29.0] - 2025-12-25
 

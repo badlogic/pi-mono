@@ -161,6 +161,7 @@ export interface SessionInfo {
 	messageCount: number;
 	firstMessage: string;
 	allMessagesText: string;
+	entries: SessionEntry[];
 }
 
 export type ReadonlySessionManager = Pick<
@@ -1057,11 +1058,67 @@ export class SessionManager {
 	}
 
 	/**
+	 * Read lines from a session file, optionally chunking large files to read head and tail.
+	 * Used for efficient session listing without loading entire large files into memory.
+	 */
+	static _readLines(file: string, chunkAfter?: number): string[] {
+		const fileSize = statSync(file).size;
+		const readAllLines = () => readFileSync(file, "utf8").trim().split("\n");
+
+		// No chunking needed, or file is small enough not to need it
+		if (!chunkAfter || fileSize <= chunkAfter) return readAllLines();
+
+		const fd = openSync(file, "r");
+
+		const messagePrefix = '{"type":"message"';
+		let msgCount = 0; // How many match the message prefix?
+
+		const chunkSize = Math.floor(chunkAfter / 2);
+
+		const head = { start: 0, end: Math.min(chunkSize, fileSize), lines: [] as string[] },
+			tail = { start: Math.max(0, fileSize - chunkSize), end: fileSize, lines: [] as string[] };
+
+		try {
+			// We scan `chunkAfter` in two passes: head and tail.
+			// If the file read so far does not have 2 messages, we move head and tail and read again.
+			// Loop exits when the full file is read or we have 2 messages
+			while (head.start < tail.end && msgCount < 2) {
+				const headBuf = Buffer.alloc(head.end - head.start);
+				readSync(fd, headBuf, 0, headBuf.length, head.start);
+				const headRaw = headBuf.toString("utf8").split("\n");
+				headRaw.pop(); // Remove potentially truncated last line
+				head.lines.push(...headRaw);
+				for (const l of headRaw) if (l.startsWith(messagePrefix)) msgCount++;
+
+				if (tail.start >= head.end) {
+					const tailBuf = Buffer.alloc(tail.end - tail.start);
+					readSync(fd, tailBuf, 0, tailBuf.length, tail.start);
+					const tailRaw = tailBuf.toString("utf8").split("\n");
+					tailRaw.shift(); // Remove potentially truncated first line
+					tail.lines.unshift(...tailRaw);
+					for (const l of tailRaw) if (l.startsWith(messagePrefix)) msgCount++;
+				}
+
+				head.start = head.end;
+				head.end = Math.min(head.end + chunkSize, fileSize);
+				tail.end = tail.start;
+				tail.start = Math.max(0, tail.start - chunkSize);
+			}
+		} finally {
+			closeSync(fd);
+		}
+
+		return [...head.lines, ...tail.lines];
+	}
+
+	/**
 	 * List all sessions.
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param chunkAfter Optional byte threshold. If the file exceeds this size, only head and tail chunks are read.
+	 * @returns A list of session information.
 	 */
-	static list(cwd: string, sessionDir?: string): SessionInfo[] {
+	static list(cwd: string, sessionDir?: string, chunkAfter?: number): SessionInfo[] {
 		const dir = sessionDir ?? getDefaultSessionDir(cwd);
 		const sessions: SessionInfo[] = [];
 
@@ -1072,14 +1129,13 @@ export class SessionManager {
 
 			for (const file of files) {
 				try {
-					const content = readFileSync(file, "utf8");
-					const lines = content.trim().split("\n");
+					const lines = SessionManager._readLines(file, chunkAfter);
 					if (lines.length === 0) continue;
 
 					// Check first line for valid session header
 					let header: { type: string; id: string; timestamp: string } | null = null;
 					try {
-						const first = JSON.parse(lines[0]);
+						const first: SessionEntry = JSON.parse(lines[0]);
 						if (first.type === "session" && first.id) {
 							header = first;
 						}
@@ -1092,19 +1148,25 @@ export class SessionManager {
 					let messageCount = 0;
 					let firstMessage = "";
 					const allMessages: string[] = [];
+					const entries: SessionEntry[] = [];
 
 					for (let i = 1; i < lines.length; i++) {
 						try {
-							const entry = JSON.parse(lines[i]);
+							const entry: SessionEntry = JSON.parse(lines[i]);
+							entries.push(entry);
 
 							if (entry.type === "message") {
 								messageCount++;
 
 								if (entry.message.role === "user" || entry.message.role === "assistant") {
-									const textContent = entry.message.content
-										.filter((c: any) => c.type === "text")
-										.map((c: any) => c.text)
-										.join(" ");
+									const content = entry.message.content;
+									const textContent =
+										typeof content === "string"
+											? content
+											: content
+													.filter((c) => c.type === "text")
+													.map((c) => c.text)
+													.join(" ");
 
 									if (textContent) {
 										allMessages.push(textContent);
@@ -1128,6 +1190,7 @@ export class SessionManager {
 						messageCount,
 						firstMessage: firstMessage || "(no messages)",
 						allMessagesText: allMessages.join(" "),
+						entries: entries,
 					});
 				} catch {
 					// Skip files that can't be read
