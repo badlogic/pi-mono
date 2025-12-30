@@ -36,9 +36,9 @@ Send a user prompt to the agent. Returns immediately; events stream asynchronous
 {"id": "req-1", "type": "prompt", "message": "Hello, world!"}
 ```
 
-With attachments:
+With images:
 ```json
-{"type": "prompt", "message": "What's in this image?", "attachments": [...]}
+{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "source": {"type": "base64", "mediaType": "image/png", "data": "..."}}]}
 ```
 
 Response:
@@ -46,7 +46,7 @@ Response:
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
 ```
 
-The `attachments` field is optional. See [Attachments](#attachments) for the schema.
+The `images` field is optional. Each image uses `ImageContent` format with base64 or URL source.
 
 #### queue_message
 

@@ -76,12 +76,13 @@ The session manages the agent lifecycle, message history, and event streaming.
 interface AgentSession {
   // Send a prompt and wait for completion
   prompt(text: string, options?: PromptOptions): Promise<void>;
+  prompt(message: AppMessage): Promise<void>;  // For HookMessage, etc.
   
   // Subscribe to events (returns unsubscribe function)
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   
   // Session info
-  sessionFile: string | null;
+  sessionFile: string | undefined;  // undefined for in-memory
   sessionId: string;
   
   // Model control
@@ -98,9 +99,14 @@ interface AgentSession {
   isStreaming: boolean;
   
   // Session management
-  reset(): Promise<void>;
-  branch(entryIndex: number): Promise<{ selectedText: string; skipped: boolean }>;
-  switchSession(sessionPath: string): Promise<void>;
+  newSession(): Promise<boolean>;  // Returns false if cancelled by hook
+  switchSession(sessionPath: string): Promise<boolean>;
+  
+  // Branching (tree-based)
+  branch(entryId: string): Promise<{ cancelled: boolean }>;
+  
+  // Hook message injection
+  sendHookMessage(message: HookMessage, triggerTurn?: boolean): void;
   
   // Compaction
   compact(customInstructions?: string): Promise<CompactionResult>;
@@ -436,18 +442,38 @@ import { createAgentSession, discoverHooks, type HookFactory } from "@mariozechn
 
 // Inline hook
 const loggingHook: HookFactory = (api) => {
+  // Log tool calls
   api.on("tool_call", async (event) => {
     console.log(`Tool: ${event.toolName}`);
     return undefined; // Don't block
   });
   
+  // Block dangerous commands
   api.on("tool_call", async (event) => {
-    // Block dangerous commands
     if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
       return { block: true, reason: "Dangerous command" };
     }
     return undefined;
   });
+  
+  // Register custom slash command
+  api.registerCommand("stats", {
+    description: "Show session stats",
+    handler: async (ctx) => {
+      const entries = ctx.sessionManager.getEntries();
+      ctx.ui.notify(`${entries.length} entries`, "info");
+    },
+  });
+  
+  // Inject messages
+  api.sendMessage({
+    customType: "my-hook",
+    content: "Hook initialized",
+    display: false,  // Hidden from TUI
+  }, false);  // Don't trigger agent turn
+  
+  // Persist hook state
+  api.appendEntry("my-hook", { initialized: true });
 };
 
 // Replace discovery
@@ -472,7 +498,15 @@ const { session } = await createAgentSession({
 });
 ```
 
-> See [examples/sdk/06-hooks.ts](../examples/sdk/06-hooks.ts)
+Hook API methods:
+- `api.on(event, handler)` - Subscribe to events
+- `api.sendMessage(message, triggerTurn?)` - Inject message (creates `CustomMessageEntry`)
+- `api.appendEntry(customType, data?)` - Persist hook state (not in LLM context)
+- `api.registerCommand(name, options)` - Register custom slash command
+- `api.registerMessageRenderer(customType, renderer)` - Custom TUI rendering
+- `api.exec(command, args, options?)` - Execute shell commands
+
+> See [examples/sdk/06-hooks.ts](../examples/sdk/06-hooks.ts) and [docs/hooks.md](hooks.md)
 
 ### Skills
 
@@ -560,6 +594,8 @@ const { session } = await createAgentSession({
 
 ### Session Management
 
+Sessions use a tree structure with `id`/`parentId` linking, enabling in-place branching.
+
 ```typescript
 import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
 
@@ -597,12 +633,32 @@ const customDir = "/path/to/my-sessions";
 const { session } = await createAgentSession({
   sessionManager: SessionManager.create(process.cwd(), customDir),
 });
-// Also works with list and continueRecent:
-// SessionManager.list(process.cwd(), customDir);
-// SessionManager.continueRecent(process.cwd(), customDir);
 ```
 
-> See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts)
+**SessionManager tree API:**
+
+```typescript
+const sm = SessionManager.open("/path/to/session.jsonl");
+
+// Tree traversal
+const entries = sm.getEntries();        // All entries (excludes header)
+const tree = sm.getTree();              // Full tree structure
+const path = sm.getPath();              // Path from root to current leaf
+const leaf = sm.getLeafEntry();         // Current leaf entry
+const entry = sm.getEntry(id);          // Get entry by ID
+const children = sm.getChildren(id);    // Direct children of entry
+
+// Labels
+const label = sm.getLabel(id);          // Get label for entry
+sm.appendLabelChange(id, "checkpoint"); // Set label
+
+// Branching
+sm.branch(entryId);                     // Move leaf to earlier entry
+sm.branchWithSummary(id, "Summary...");  // Branch with context summary
+sm.createBranchedSession(leafId);       // Extract path to new file
+```
+
+> See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts) and [docs/session.md](session.md)
 
 ### Settings Management
 
@@ -888,7 +944,21 @@ type Tool
 For hook types, import from the hooks subpath:
 
 ```typescript
-import type { HookAPI, HookEvent, ToolCallEvent } from "@mariozechner/pi-coding-agent/hooks";
+import type {
+  HookAPI,
+  HookMessage,
+  HookFactory,
+  HookEventContext,
+  HookCommandContext,
+  ToolCallEvent,
+  ToolResultEvent,
+} from "@mariozechner/pi-coding-agent/hooks";
+```
+
+For message utilities:
+
+```typescript
+import { isHookMessage, createHookMessage } from "@mariozechner/pi-coding-agent";
 ```
 
 For config utilities:
