@@ -13,8 +13,28 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type { Agent, AgentEvent, AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import {
+	type Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	applyContextPatch,
+	type ContextEnvelope,
+	type ContextPatchOp,
+	compileSystemPrompt,
+	type SystemPromptPart,
+	type ThinkingLevel,
+} from "@mariozechner/pi-agent-core";
+import type {
+	AssistantMessage,
+	ImageContent,
+	Message,
+	Model,
+	ReasoningEffort,
+	TextContent,
+	Tool,
+} from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
@@ -30,6 +50,7 @@ import {
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type {
+	ContextTransformResult,
 	HookCommandContext,
 	HookRunner,
 	SessionBeforeBranchResult,
@@ -41,9 +62,22 @@ import type {
 	TurnEndEvent,
 	TurnStartEvent,
 } from "./hooks/index.js";
-import type { BashExecutionMessage, HookMessage } from "./messages.js";
+import {
+	type BashExecutionMessage,
+	convertToLlm,
+	createBranchSummaryMessage,
+	createCompactionSummaryMessage,
+	createHookMessage,
+	type HookMessage,
+} from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	ContextTransformEntry,
+	SessionEntry,
+	SessionManager,
+} from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -66,6 +100,8 @@ export interface AgentSessionConfig {
 	agent: Agent;
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
+	/** Baseline system prompt as structured parts (for context engineering). */
+	systemPromptParts?: SystemPromptPart[];
 	/** Models to cycle through with Ctrl+P (from --models flag) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 	/** File-based slash commands for expansion */
@@ -165,6 +201,11 @@ export class AgentSession {
 	private _hookRunner: HookRunner | undefined = undefined;
 	private _turnIndex = 0;
 
+	// Context engineering (system prompt parts)
+	private _systemPromptPartsBaseline: SystemPromptPart[];
+	private _systemPromptPartsCurrent: SystemPromptPart[];
+	private _pendingEphemeralMessages: Message[] = [];
+
 	// Custom tools for session lifecycle
 	private _customTools: LoadedCustomTool[] = [];
 
@@ -184,14 +225,281 @@ export class AgentSession {
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
 
+		this._systemPromptPartsBaseline = config.systemPromptParts ?? [
+			{ name: "base", text: this.agent.state.systemPrompt },
+		];
+		this._systemPromptPartsCurrent = this._systemPromptPartsBaseline.map((p) => ({ ...p }));
+
 		// Always subscribe to agent events for internal handling
 		// (session persistence, hooks, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+
+		this._installContextEngineeringCallbacks();
 	}
 
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	/** Current system prompt parts after applying persisted context transforms. */
+	get systemPromptParts(): SystemPromptPart[] {
+		return this._systemPromptPartsCurrent.map((p) => ({ ...p }));
+	}
+
+	// =========================================================================
+	// Context engineering (envelope/patch replay)
+	// =========================================================================
+
+	private _installContextEngineeringCallbacks(): void {
+		this.agent.setBeforeRequest(async (ctx) => {
+			const signal = ctx.signal ?? new AbortController().signal;
+
+			let envelope = this._buildContextEnvelopeFromSession({
+				model: ctx.model,
+				tools: ctx.tools ?? [],
+				turnIndex: ctx.turnIndex,
+				requestIndex: ctx.requestIndex,
+				signal,
+				reasoning: ctx.reasoning,
+				temperature: ctx.temperature,
+				maxTokens: ctx.maxTokens,
+			});
+
+			// Persistent transforms (before_request): applied + persisted as context_transform entries.
+			if (this._hookRunner?.hasHandlers("context")) {
+				const emitted = await this._hookRunner.emitContext({
+					type: "context",
+					reason: "before_request",
+					state: { envelope },
+				});
+				envelope = emitted.envelope;
+				this._persistContextTransformResults("before_request", emitted.results);
+			}
+
+			// Request-only transforms (ephemeral): applied, not persisted.
+			if (this._hookRunner?.hasHandlers("context")) {
+				const emitted = await this._hookRunner.emitContext({
+					type: "context",
+					reason: "ephemeral",
+					state: { envelope },
+				});
+				envelope = emitted.envelope;
+			}
+
+			this._systemPromptPartsCurrent = envelope.system.parts.map((p) => ({ ...p }));
+			this._pendingEphemeralMessages = envelope.messages.uncached.slice();
+
+			// Mutate request-local LLM message array in-place.
+			// Do NOT return `messages` from beforeRequest, so the agent's persistent in-memory
+			// context stays as raw session history.
+			ctx.messages.length = 0;
+			ctx.messages.push(...envelope.messages.cached);
+
+			return {
+				systemPrompt: envelope.system.compiled,
+				tools: this._rehydrateTools(envelope.tools, ctx.tools ?? []),
+				reasoning: envelope.options.reasoning,
+				temperature: envelope.options.temperature,
+				maxTokens: envelope.options.maxTokens,
+			};
+		});
+
+		this.agent.setEphemeral(() => {
+			const out = this._pendingEphemeralMessages;
+			this._pendingEphemeralMessages = [];
+			return out.length > 0 ? out : undefined;
+		});
+
+		this.agent.setOnTurnEnd(async (ctx) => {
+			const signal = ctx.signal ?? new AbortController().signal;
+
+			let envelope = this._buildContextEnvelopeFromSession({
+				model: ctx.model,
+				tools: ctx.tools ?? [],
+				turnIndex: ctx.turnIndex,
+				requestIndex: ctx.requestIndex,
+				signal,
+				reasoning: ctx.reasoning,
+				temperature: ctx.temperature,
+				maxTokens: ctx.maxTokens,
+			});
+
+			if (this._hookRunner?.hasHandlers("context")) {
+				const emitted = await this._hookRunner.emitContext({
+					type: "context",
+					reason: "turn_end",
+					state: { envelope },
+				});
+				envelope = emitted.envelope;
+				this._persistContextTransformResults("turn_end", emitted.results);
+			}
+
+			this._systemPromptPartsCurrent = envelope.system.parts.map((p) => ({ ...p }));
+
+			return {
+				systemPrompt: envelope.system.compiled,
+				tools: this._rehydrateTools(envelope.tools, ctx.tools ?? []),
+				reasoning: envelope.options.reasoning,
+				temperature: envelope.options.temperature,
+				maxTokens: envelope.options.maxTokens,
+			};
+		});
+	}
+
+	private _buildContextEnvelopeFromSession(options: {
+		model: Model<any>;
+		tools: AgentTool<any>[];
+		turnIndex: number;
+		requestIndex: number;
+		signal: AbortSignal;
+		reasoning?: ReasoningEffort;
+		temperature?: number;
+		maxTokens?: number;
+	}): ContextEnvelope {
+		const baseParts = this._systemPromptPartsBaseline.map((p) => ({ ...p }));
+		let envelope: ContextEnvelope = {
+			system: {
+				parts: baseParts,
+				compiled: compileSystemPrompt(baseParts),
+			},
+			tools: this._toToolDefinitions(options.tools),
+			messages: { cached: [], uncached: [] },
+			options: {
+				reasoning: options.reasoning,
+				temperature: options.temperature,
+				maxTokens: options.maxTokens,
+			},
+			meta: {
+				model: options.model,
+				limit: options.model.contextWindow,
+				turnIndex: options.turnIndex,
+				requestIndex: options.requestIndex,
+				signal: options.signal,
+			},
+		};
+
+		const path = this.sessionManager.getPath();
+
+		// Treat the last compaction entry on the current path as a reset point.
+		// We do not replay transforms that occurred before it.
+		let compactionIdx = -1;
+		for (let i = path.length - 1; i >= 0; i--) {
+			if (path[i].type === "compaction") {
+				compactionIdx = i;
+				break;
+			}
+		}
+
+		let startIdx = 0;
+
+		if (compactionIdx !== -1) {
+			const compaction = path[compactionIdx] as CompactionEntry;
+
+			envelope.messages.cached.push(
+				...convertToLlm([
+					createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp),
+				]),
+			);
+
+			const firstKeptIdx = path.findIndex((e) => e.id === compaction.firstKeptEntryId);
+			if (firstKeptIdx !== -1 && firstKeptIdx < compactionIdx) {
+				for (let i = firstKeptIdx; i < compactionIdx; i++) {
+					this._appendEntryToEnvelopeMessages(envelope, path[i]);
+				}
+			}
+
+			startIdx = compactionIdx + 1;
+		}
+
+		for (let i = startIdx; i < path.length; i++) {
+			const entry = path[i];
+
+			if (entry.type === "context_transform") {
+				const transform = entry as ContextTransformEntry;
+				const applied = applyContextPatch(envelope, transform.patch);
+				envelope = applied.envelope;
+				continue;
+			}
+
+			this._appendEntryToEnvelopeMessages(envelope, entry);
+		}
+
+		return envelope;
+	}
+
+	private _appendEntryToEnvelopeMessages(envelope: ContextEnvelope, entry: SessionEntry): void {
+		switch (entry.type) {
+			case "message":
+				envelope.messages.cached.push(...convertToLlm([entry.message]));
+				break;
+
+			case "custom_message": {
+				const msg = createHookMessage(
+					entry.customType,
+					entry.content,
+					entry.display,
+					entry.details,
+					entry.timestamp,
+				);
+				envelope.messages.cached.push(...convertToLlm([msg]));
+				break;
+			}
+
+			case "branch_summary": {
+				const msg = createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
+				envelope.messages.cached.push(...convertToLlm([msg]));
+				break;
+			}
+
+			case "thinking_level_change":
+			case "model_change":
+			case "compaction":
+			case "custom":
+			case "label":
+			case "context_transform":
+				break;
+		}
+	}
+
+	private _persistContextTransformResults(
+		reason: "before_request" | "turn_end",
+		results: ContextTransformResult[],
+	): void {
+		for (const result of results) {
+			const transformerName = result.transformerName ?? result.hookPath;
+			this._assertCachedOnlyPatch(result.patch, reason, transformerName);
+			this.sessionManager.appendContextTransformEntry(transformerName, result.patch, result.display);
+		}
+	}
+
+	private _assertCachedOnlyPatch(patch: ContextPatchOp[], reason: string, transformerName: string): void {
+		for (const op of patch) {
+			if (op.scope !== "cached") {
+				throw new Error(
+					`context(${reason}) persisted patch from "${transformerName}" contained non-cached op "${op.op}"`,
+				);
+			}
+		}
+	}
+
+	private _toToolDefinitions(tools: AgentTool<any>[]): Tool[] {
+		return tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+	}
+
+	private _rehydrateTools(definitions: Tool[], implementations: AgentTool<any>[]): AgentTool<any>[] {
+		const byName = new Map<string, AgentTool<any>>();
+		for (const t of implementations) byName.set(t.name, t);
+
+		const out: AgentTool<any>[] = [];
+		for (const def of definitions) {
+			const impl = byName.get(def.name);
+			if (!impl) {
+				throw new Error(`Context envelope references unknown tool "${def.name}"`);
+			}
+			out.push({ ...impl, description: def.description, parameters: def.parameters });
+		}
+		return out;
 	}
 
 	// =========================================================================

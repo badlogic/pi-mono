@@ -105,6 +105,9 @@ describe("hooks semantics", () => {
 					error: undefined,
 				},
 				subscribe: () => () => {},
+				setBeforeRequest: () => {},
+				setEphemeral: () => {},
+				setOnTurnEnd: () => {},
 				prompt: async (input: unknown) => {
 					capturedPrompts = input;
 				},

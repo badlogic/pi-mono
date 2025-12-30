@@ -29,7 +29,7 @@
  * ```
  */
 
-import { Agent, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type SystemPromptPart, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
@@ -47,6 +47,7 @@ import { loadSkills as loadSkillsInternal, type Skill } from "./skills.js";
 import { type FileSlashCommand, loadSlashCommands as loadSlashCommandsInternal } from "./slash-commands.js";
 import {
 	buildSystemPrompt as buildSystemPromptInternal,
+	buildSystemPromptParts as buildSystemPromptPartsInternal,
 	loadProjectContextFiles as loadContextFilesInternal,
 } from "./system-prompt.js";
 import { time } from "./timings.js";
@@ -556,26 +557,34 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	let systemPrompt: string;
-	const defaultPrompt = buildSystemPromptInternal({
+	let systemPromptParts: SystemPromptPart[];
+
+	const defaultBuilt = buildSystemPromptPartsInternal({
 		cwd,
 		agentDir,
 		skills,
 		contextFiles,
 	});
+	const defaultPrompt = defaultBuilt.compiled;
+	const defaultPromptParts = defaultBuilt.parts;
 	time("buildSystemPrompt");
 
 	if (options.systemPrompt === undefined) {
 		systemPrompt = defaultPrompt;
+		systemPromptParts = defaultPromptParts;
 	} else if (typeof options.systemPrompt === "string") {
-		systemPrompt = buildSystemPromptInternal({
+		const built = buildSystemPromptPartsInternal({
 			cwd,
 			agentDir,
 			skills,
 			contextFiles,
 			customPrompt: options.systemPrompt,
 		});
+		systemPrompt = built.compiled;
+		systemPromptParts = built.parts;
 	} else {
 		systemPrompt = options.systemPrompt(defaultPrompt);
+		systemPromptParts = [{ name: "base", text: systemPrompt }];
 	}
 
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
@@ -613,6 +622,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		agent,
 		sessionManager,
 		settingsManager,
+		systemPromptParts,
 		scopedModels: options.scopedModels,
 		fileCommands: slashCommands,
 		hookRunner,

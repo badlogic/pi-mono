@@ -2,6 +2,7 @@
  * System prompt construction and project context loading
  */
 
+import type { SystemPromptPart } from "@mariozechner/pi-agent-core";
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
@@ -304,4 +305,56 @@ Documentation:
 	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 	return prompt;
+}
+
+export interface BuiltSystemPrompt {
+	parts: SystemPromptPart[];
+	compiled: string;
+}
+
+/**
+ * Build the system prompt as structured parts.
+ *
+ * This uses buildSystemPrompt() output as the source of truth and splits it into stable sections.
+ * The compiled string is returned unmodified.
+ */
+export function buildSystemPromptParts(options: BuildSystemPromptOptions = {}): BuiltSystemPrompt {
+	const compiled = buildSystemPrompt(options);
+	const parts: SystemPromptPart[] = [];
+
+	// Preserve exact formatting.
+	//
+	// These parts are intended to be concatenated verbatim (no trimming, no added separators)
+	// so that the compiled prompt is identical when no patches have been applied.
+	let remaining = compiled;
+
+	const runtimeMarker = "\nCurrent date and time:";
+	const runtimeIdx = remaining.lastIndexOf(runtimeMarker);
+	if (runtimeIdx !== -1) {
+		const runtimeText = remaining.slice(runtimeIdx);
+		remaining = remaining.slice(0, runtimeIdx);
+		parts.unshift({ name: "runtime", text: runtimeText });
+	}
+
+	const skillsMarker = "\n\nThe following skills provide specialized instructions for specific tasks.";
+	const skillsIdx = remaining.lastIndexOf(skillsMarker);
+	if (skillsIdx !== -1) {
+		const skillsText = remaining.slice(skillsIdx);
+		remaining = remaining.slice(0, skillsIdx);
+		parts.unshift({ name: "skills", text: skillsText });
+	}
+
+	const projectMarker = "\n\n# Project Context\n\n";
+	const projectIdx = remaining.lastIndexOf(projectMarker);
+	if (projectIdx !== -1) {
+		const projectText = remaining.slice(projectIdx);
+		remaining = remaining.slice(0, projectIdx);
+		parts.unshift({ name: "project_context", text: projectText });
+	}
+
+	if (remaining.length > 0) {
+		parts.unshift({ name: "base", text: remaining });
+	}
+
+	return { parts, compiled };
 }

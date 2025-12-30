@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ContextPatchOp, ContextTransformDisplay } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 import { randomUUID } from "crypto";
 import {
@@ -78,6 +78,15 @@ export interface BranchSummaryEntry<T = unknown> extends SessionEntryBase {
 	fromHook?: boolean;
 }
 
+/** Persisted context transform (schemaVersioned patch-only replay). */
+export interface ContextTransformEntry extends SessionEntryBase {
+	type: "context_transform";
+	schemaVersion: 1;
+	transformerName: string;
+	patch: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+}
+
 /**
  * Custom entry for hooks to store hook-specific data in the session.
  * Use customType to identify your hook's entries.
@@ -128,6 +137,7 @@ export type SessionEntry =
 	| ModelChangeEntry
 	| CompactionEntry
 	| BranchSummaryEntry
+	| ContextTransformEntry
 	| CustomEntry
 	| CustomMessageEntry
 	| LabelEntry;
@@ -658,6 +668,26 @@ export class SessionManager {
 			tokensBefore,
 			details,
 			fromHook,
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/** Append a persisted context transform (patch-only replay). Returns entry id. */
+	appendContextTransformEntry(
+		transformerName: string,
+		patch: ContextPatchOp[],
+		display?: ContextTransformDisplay,
+	): string {
+		const entry: ContextTransformEntry = {
+			type: "context_transform",
+			schemaVersion: 1,
+			transformerName,
+			patch,
+			display,
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
 		};
 		this._appendEntry(entry);
 		return entry.id;

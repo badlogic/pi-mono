@@ -160,6 +160,7 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 		case "model_change":
 		case "custom":
 		case "label":
+		case "context_transform":
 			return undefined;
 	}
 }
