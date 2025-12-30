@@ -11,6 +11,7 @@ import {
 	isCtrlO,
 	isEnter,
 	isEscape,
+	isShiftCtrlO,
 	Spacer,
 	Text,
 	TruncatedText,
@@ -42,7 +43,7 @@ interface FlatNode {
 }
 
 /** Filter mode for tree display */
-type FilterMode = "default" | "user-only" | "labeled-only" | "all";
+type FilterMode = "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 
 /**
  * Tree list component with selection and ASCII art visualization
@@ -265,6 +266,9 @@ class TreeList implements Component {
 				passesFilter =
 					(entry.type === "message" && entry.message.role === "user") ||
 					(entry.type === "custom_message" && entry.display);
+			} else if (this.filterMode === "no-tools") {
+				// Hide tool results
+				passesFilter = !(entry.type === "message" && entry.message.role === "toolResult");
 			} else if (this.filterMode === "labeled-only") {
 				passesFilter = flatNode.node.label !== undefined;
 			} else if (this.filterMode !== "all") {
@@ -373,6 +377,8 @@ class TreeList implements Component {
 
 	private getFilterLabel(): string {
 		switch (this.filterMode) {
+			case "no-tools":
+				return " [no-tools]";
 			case "user-only":
 				return " [user]";
 			case "labeled-only":
@@ -456,7 +462,10 @@ class TreeList implements Component {
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 
-			const line = cursor + theme.fg("dim", prefix) + pathMarker + label + content;
+			let line = cursor + theme.fg("dim", prefix) + pathMarker + label + content;
+			if (isSelected) {
+				line = theme.inverse(line);
+			}
 			lines.push(truncateToWidth(line, width));
 		}
 
@@ -663,9 +672,15 @@ class TreeList implements Component {
 			}
 		} else if (isCtrlC(keyData)) {
 			this.onCancel?.();
+		} else if (isShiftCtrlO(keyData)) {
+			// Cycle filter backwards
+			const modes: FilterMode[] = ["default", "no-tools", "user-only", "labeled-only", "all"];
+			const currentIndex = modes.indexOf(this.filterMode);
+			this.filterMode = modes[(currentIndex - 1 + modes.length) % modes.length];
+			this.applyFilter();
 		} else if (isCtrlO(keyData)) {
-			// Cycle filter: default → user-only → labeled-only → all → default
-			const modes: FilterMode[] = ["default", "user-only", "labeled-only", "all"];
+			// Cycle filter forwards: default → no-tools → user-only → labeled-only → all → default
+			const modes: FilterMode[] = ["default", "no-tools", "user-only", "labeled-only", "all"];
 			const currentIndex = modes.indexOf(this.filterMode);
 			this.filterMode = modes[(currentIndex + 1) % modes.length];
 			this.applyFilter();
