@@ -812,7 +812,7 @@ export class TreeSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
 		this.addChild(
-			new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ^O: filter. Type to search"), 0, 0),
+			new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ^O/⇧^O: filter. Type to search"), 0, 0),
 		);
 		this.addChild(new SearchLine(this.treeList));
 		this.addChild(new DynamicBorder());
