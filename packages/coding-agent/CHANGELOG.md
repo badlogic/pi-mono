@@ -217,6 +217,10 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - **Compaction with branched sessions**: Fixed compaction incorrectly including entries from abandoned branches, causing token overflow errors. Compaction now uses `sessionManager.getPath()` to work only on the current branch path, eliminating 80+ lines of duplicate entry collection logic between `prepareCompaction()` and `compact()`
 - **enabledModels glob patterns**: `--models` and `enabledModels` now support glob patterns like `github-copilot/*` or `*sonnet*`. Previously, patterns were only matched literally or via substring search. ([#337](https://github.com/badlogic/pi-mono/issues/337))
 
+### Improved
+
+- **Auto-retry uses server-provided delay for rate limits**: When Gemini returns a retry delay in the error (e.g., "Your quota will reset after 39s", "Please retry in Xs", or `retryDelay` in error details), the retry now waits for that duration instead of using exponential backoff. Falls back to exponential backoff if no delay is found. ([#370](https://github.com/badlogic/pi-mono/issues/370))
+
 ## [0.30.2] - 2025-12-26
 
 ### Changed

@@ -1208,14 +1208,67 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error/i.test(
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error, resource exhausted
+		return /overloaded|rate.?limit|too many requests|resource.?exhausted|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error/i.test(
 			err,
 		);
 	}
 
 	/**
+	 * Extract retry delay from error message (in milliseconds).
+	 *
+	 * Parses patterns from:
+	 * - Gemini CLI (gemini-cli/packages/core/src/utils/googleQuotaErrors.ts):
+	 *   - RetryInfo.retryDelay: "34.074824224s", "0.539477544s"
+	 *   - Message pattern: "Please retry in Xs" or "Please retry in Xms"
+	 *   - Message pattern: "Your quota will reset after Xs"
+	 *   - Message pattern: "Your quota will reset after XhYmZs" (daily quota)
+	 *
+	 * @returns delay in milliseconds, or undefined if not found
+	 */
+	private _extractRetryDelay(errorMessage: string): number | undefined {
+		// Pattern 1: Gemini "Please retry in X[ms|s]" (from googleQuotaErrors.ts line 105)
+		const geminiMatch = errorMessage.match(/Please retry in ([0-9.]+)(ms|s)/i);
+		if (geminiMatch?.[1]) {
+			const value = parseFloat(geminiMatch[1]);
+			if (!Number.isNaN(value) && value > 0) {
+				const ms = geminiMatch[2].toLowerCase() === "ms" ? value : value * 1000;
+				return Math.ceil(ms + 1000); // Add 1s buffer
+			}
+		}
+
+		// Pattern 2: Gemini "Your quota will reset after ..." (from actual API responses)
+		// Formats: "18h31m10s", "10m15s", "6s", "39s"
+		const durationMatch = errorMessage.match(/reset after (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
+		if (durationMatch) {
+			const hours = durationMatch[1] ? parseInt(durationMatch[1], 10) : 0;
+			const minutes = durationMatch[2] ? parseInt(durationMatch[2], 10) : 0;
+			const seconds = parseFloat(durationMatch[3]);
+			if (!Number.isNaN(seconds)) {
+				const totalMs = ((hours * 60 + minutes) * 60 + seconds) * 1000;
+				if (totalMs > 0) {
+					return Math.ceil(totalMs + 1000); // Add 1s buffer
+				}
+			}
+		}
+
+		// Pattern 3: RetryInfo.retryDelay in JSON (e.g., "retryDelay": "34.074824224s")
+		// This handles when the full error JSON is in the message
+		const retryDelayMatch = errorMessage.match(/"retryDelay":\s*"([0-9.]+)(ms|s)"/i);
+		if (retryDelayMatch?.[1]) {
+			const value = parseFloat(retryDelayMatch[1]);
+			if (!Number.isNaN(value) && value > 0) {
+				const ms = retryDelayMatch[2].toLowerCase() === "ms" ? value : value * 1000;
+				return Math.ceil(ms + 1000); // Add 1s buffer
+			}
+		}
+
+		return undefined;
+	}
+
+	/**
 	 * Handle retryable errors with exponential backoff.
+	 * Uses server-provided retry delay when available (e.g., from Gemini rate limit errors).
 	 * @returns true if retry was initiated, false if max retries exceeded or disabled
 	 */
 	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
@@ -1244,7 +1297,9 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		// Use server-provided delay if available, otherwise use exponential backoff
+		const serverDelay = message.errorMessage ? this._extractRetryDelay(message.errorMessage) : undefined;
+		const delayMs = serverDelay ?? settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
 
 		this._emit({
 			type: "auto_retry_start",
