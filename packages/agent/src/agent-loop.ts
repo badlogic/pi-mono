@@ -111,6 +111,8 @@ async function runLoop(
 ): Promise<void> {
 	let hasMoreToolCalls = true;
 	let firstTurn = true;
+	let turnIndex = 0;
+	let requestIndex = 0;
 	let queuedMessages: AgentMessage[] = (await config.getQueuedMessages?.()) || [];
 	let queuedAfterTools: AgentMessage[] | null = null;
 
@@ -132,8 +134,19 @@ async function runLoop(
 			queuedMessages = [];
 		}
 
+		const currentTurnIndex = turnIndex;
+		const currentRequestIndex = requestIndex++;
+
 		// Stream assistant response
-		const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+		const message = await streamAssistantResponse(
+			currentContext,
+			config,
+			signal,
+			stream,
+			streamFn,
+			currentTurnIndex,
+			currentRequestIndex,
+		);
 		newMessages.push(message);
 
 		if (message.stopReason === "error" || message.stopReason === "aborted") {
@@ -165,7 +178,36 @@ async function runLoop(
 			}
 		}
 
+		// onTurnEnd callback (awaited inside the agent loop)
+		if (config.onTurnEnd) {
+			const llmContextMessages = await config.convertToLlm(currentContext.messages);
+			const result = await config.onTurnEnd({
+				turnIndex: currentTurnIndex,
+				requestIndex: currentRequestIndex,
+				assistantMessage: message,
+				toolResults,
+				messages: llmContextMessages,
+				systemPrompt: currentContext.systemPrompt,
+				tools: currentContext.tools,
+				model: config.model,
+				reasoning: config.reasoning,
+				temperature: config.temperature,
+				maxTokens: config.maxTokens,
+				signal,
+			});
+
+			if (result) {
+				if (result.messages) currentContext.messages = result.messages.slice();
+				if (result.systemPrompt !== undefined) currentContext.systemPrompt = result.systemPrompt;
+				if (result.tools) currentContext.tools = result.tools;
+				if (result.reasoning !== undefined) config.reasoning = result.reasoning;
+				if (result.temperature !== undefined) config.temperature = result.temperature;
+				if (result.maxTokens !== undefined) config.maxTokens = result.maxTokens;
+			}
+		}
+
 		stream.push({ type: "turn_end", message, toolResults });
+		turnIndex++;
 
 		// Get queued messages after turn completes
 		if (queuedAfterTools && queuedAfterTools.length > 0) {
@@ -189,7 +231,9 @@ async function streamAssistantResponse(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
-	streamFn?: StreamFn,
+	streamFn: StreamFn | undefined,
+	turnIndex: number,
+	requestIndex: number,
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -198,13 +242,71 @@ async function streamAssistantResponse(
 	}
 
 	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
-	const llmMessages = await config.convertToLlm(messages);
+	let llmMessages = await config.convertToLlm(messages);
+
+	let systemPrompt = context.systemPrompt;
+	let tools = context.tools;
+
+	// beforeRequest callback (awaited inside the agent loop)
+	if (config.beforeRequest) {
+		const result = await config.beforeRequest({
+			systemPrompt,
+			messages: llmMessages,
+			tools,
+			model: config.model,
+			reasoning: config.reasoning,
+			temperature: config.temperature,
+			maxTokens: config.maxTokens,
+			turnIndex,
+			requestIndex,
+			signal,
+		});
+
+		if (result) {
+			if (result.messages) {
+				llmMessages = result.messages;
+				// Replace persistent loop context going forward.
+				context.messages = result.messages.slice();
+			}
+			if (result.systemPrompt !== undefined) {
+				systemPrompt = result.systemPrompt;
+				context.systemPrompt = result.systemPrompt;
+			}
+			if (result.tools) {
+				tools = result.tools;
+				context.tools = result.tools;
+			}
+			if (result.reasoning !== undefined) config.reasoning = result.reasoning;
+			if (result.temperature !== undefined) config.temperature = result.temperature;
+			if (result.maxTokens !== undefined) config.maxTokens = result.maxTokens;
+		}
+	}
+
+	// ephemeral callback (request-only; not persisted)
+	if (config.ephemeral) {
+		const eph = await config.ephemeral({
+			systemPrompt,
+			messages: llmMessages,
+			tools,
+			model: config.model,
+			reasoning: config.reasoning,
+			temperature: config.temperature,
+			maxTokens: config.maxTokens,
+			turnIndex,
+			requestIndex,
+			signal,
+		});
+		const ephMessages = eph ? (Array.isArray(eph) ? eph : [eph]) : [];
+		if (ephMessages.length > 0) {
+			llmMessages = [...llmMessages, ...ephMessages];
+		}
+	}
 
 	// Build LLM context
 	const llmContext: Context = {
-		systemPrompt: context.systemPrompt,
+		systemPrompt,
 		messages: llmMessages,
-		tools: context.tools,
+		tools,
 	};
 
 	const streamFunction = streamFn || streamSimple;

@@ -20,8 +20,12 @@ import type {
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	BeforeRequestCallback,
+	EphemeralCallback,
+	MessageInterceptor,
 	StreamFn,
 	ThinkingLevel,
+	TurnEndCallback,
 } from "./types.js";
 
 /**
@@ -61,6 +65,18 @@ export interface AgentOptions {
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/** Optional callback invoked before each assistant LLM request. */
+	beforeRequest?: BeforeRequestCallback;
+
+	/** Optional callback invoked before each assistant LLM request to append ephemeral content. */
+	ephemeral?: EphemeralCallback;
+
+	/** Optional callback invoked after each turn completes. */
+	onTurnEnd?: TurnEndCallback;
+
+	/** Optional interceptor invoked for finalized messages (message_end). */
+	messageInterceptor?: MessageInterceptor;
 }
 
 export class Agent {
@@ -80,6 +96,10 @@ export class Agent {
 	private abortController?: AbortController;
 	private convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	private transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	private beforeRequest?: BeforeRequestCallback;
+	private ephemeral?: EphemeralCallback;
+	private onTurnEnd?: TurnEndCallback;
+	private messageInterceptor?: MessageInterceptor;
 	private messageQueue: AgentMessage[] = [];
 	private queueMode: "all" | "one-at-a-time";
 	public streamFn: StreamFn;
@@ -91,6 +111,10 @@ export class Agent {
 		this._state = { ...this._state, ...opts.initialState };
 		this.convertToLlm = opts.convertToLlm || defaultConvertToLlm;
 		this.transformContext = opts.transformContext;
+		this.beforeRequest = opts.beforeRequest;
+		this.ephemeral = opts.ephemeral;
+		this.onTurnEnd = opts.onTurnEnd;
+		this.messageInterceptor = opts.messageInterceptor;
 		this.queueMode = opts.queueMode || "one-at-a-time";
 		this.streamFn = opts.streamFn || streamSimple;
 		this.getApiKey = opts.getApiKey;
@@ -128,6 +152,26 @@ export class Agent {
 
 	setTools(t: AgentTool<any>[]) {
 		this._state.tools = t;
+	}
+
+	/** Set callback invoked before each assistant LLM request. */
+	setBeforeRequest(callback: BeforeRequestCallback | undefined) {
+		this.beforeRequest = callback;
+	}
+
+	/** Set callback invoked before each assistant LLM request to append ephemeral content. */
+	setEphemeral(callback: EphemeralCallback | undefined) {
+		this.ephemeral = callback;
+	}
+
+	/** Set callback invoked after each turn completes. */
+	setOnTurnEnd(callback: TurnEndCallback | undefined) {
+		this.onTurnEnd = callback;
+	}
+
+	/** Set interceptor invoked for finalized messages (message_end). */
+	setMessageInterceptor(callback: MessageInterceptor | undefined) {
+		this.messageInterceptor = callback;
 	}
 
 	replaceMessages(ms: AgentMessage[]) {
@@ -246,6 +290,10 @@ export class Agent {
 			reasoning,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
+			beforeRequest: this.beforeRequest,
+			ephemeral: this.ephemeral,
+			onTurnEnd: this.onTurnEnd,
+			messageInterceptor: this.messageInterceptor,
 			getApiKey: this.getApiKey,
 			getQueuedMessages: async () => {
 				if (this.queueMode === "one-at-a-time") {

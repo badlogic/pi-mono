@@ -1,6 +1,7 @@
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
+	type Context,
 	EventStream,
 	type Message,
 	type Model,
@@ -531,5 +532,53 @@ describe("agentLoopContinue with AgentMessage", () => {
 		const messages = await stream.result();
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
+	});
+
+	it("should apply beforeRequest + ephemeral callbacks before provider call", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		let seenProviderContext: Context | undefined;
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			beforeRequest: async () => {
+				return {
+					systemPrompt: "NEW",
+					messages: [createUserMessage("patched")],
+				};
+			},
+			ephemeral: async () => {
+				return createUserMessage("ephemeral");
+			},
+		};
+
+		const streamFn = (_model: Model<any>, ctx: Context) => {
+			seenProviderContext = ctx;
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "ok" }]);
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const _event of stream) {
+			// Drain
+		}
+
+		expect(seenProviderContext?.systemPrompt).toBe("NEW");
+		const userTexts = (seenProviderContext?.messages ?? [])
+			.filter((m) => m.role === "user")
+			.map((m) => (m as UserMessage).content);
+		expect(userTexts).toEqual(["patched", "ephemeral"]);
 	});
 });

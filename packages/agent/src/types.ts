@@ -1,8 +1,10 @@
 import type {
+	AssistantMessage,
 	AssistantMessageEvent,
 	ImageContent,
 	Message,
 	Model,
+	ReasoningEffort,
 	SimpleStreamOptions,
 	streamSimple,
 	TextContent,
@@ -15,6 +17,95 @@ import type { Static, TSchema } from "@sinclair/typebox";
 export type StreamFn = (
 	...args: Parameters<typeof streamSimple>
 ) => ReturnType<typeof streamSimple> | Promise<ReturnType<typeof streamSimple>>;
+
+// ---------------------------------------------------------------------------
+// Per-request / per-turn callbacks (executed inside the agent loop)
+// ---------------------------------------------------------------------------
+
+/** Context passed to beforeRequest/ephemeral callbacks before each LLM call. */
+export interface BeforeRequestContext {
+	systemPrompt: string;
+	/** Messages that would be sent to the LLM (may be mutated by beforeRequest). */
+	messages: Message[];
+	/** Tool implementations available for tool execution. */
+	tools?: AgentTool<any>[];
+	model: Model<any>;
+	reasoning?: ReasoningEffort;
+	temperature?: number;
+	maxTokens?: number;
+	turnIndex: number;
+	requestIndex: number;
+	signal?: AbortSignal;
+}
+
+/** Result from beforeRequest callback. */
+export interface BeforeRequestResult {
+	/** Replace the persistent loop context messages going forward. */
+	messages?: Message[];
+	/** Replace the persistent system prompt going forward. */
+	systemPrompt?: string;
+	/** Replace the persistent tool list going forward. */
+	tools?: AgentTool<any>[];
+	/** Replace reasoning effort going forward. */
+	reasoning?: ReasoningEffort;
+	/** Replace temperature going forward. */
+	temperature?: number;
+	/** Replace max tokens going forward. */
+	maxTokens?: number;
+}
+
+/** Callback invoked immediately before each LLM request. */
+export type BeforeRequestCallback = (
+	context: BeforeRequestContext,
+) => Promise<BeforeRequestResult | undefined> | BeforeRequestResult | undefined;
+
+/**
+ * Callback invoked immediately before each LLM request to inject ephemeral content.
+ * The returned message(s) are appended to the request only and are NOT persisted.
+ */
+export type EphemeralCallback = (
+	context: BeforeRequestContext,
+) => Promise<Message | Message[] | undefined> | Message | Message[] | undefined;
+
+/** Context passed to onTurnEnd callback after each turn completes. */
+export interface TurnEndContext {
+	turnIndex: number;
+	requestIndex: number;
+	assistantMessage: AssistantMessage;
+	toolResults: ToolResultMessage[];
+	/** Current persistent loop context messages (LLM format). */
+	messages: Message[];
+	/** Current persistent system prompt. */
+	systemPrompt: string;
+	/** Current persistent tools. */
+	tools?: AgentTool<any>[];
+	model: Model<any>;
+	reasoning?: ReasoningEffort;
+	temperature?: number;
+	maxTokens?: number;
+	signal?: AbortSignal;
+}
+
+export interface TurnEndResult {
+	/** Replace the persistent loop context messages going forward. */
+	messages?: Message[];
+	/** Replace the persistent system prompt going forward. */
+	systemPrompt?: string;
+	/** Replace the persistent tool list going forward. */
+	tools?: AgentTool<any>[];
+	/** Replace reasoning effort going forward. */
+	reasoning?: ReasoningEffort;
+	/** Replace temperature going forward. */
+	temperature?: number;
+	/** Replace max tokens going forward. */
+	maxTokens?: number;
+}
+
+/** Callback invoked after each turn_end is emitted. */
+export type TurnEndCallback = (ctx: TurnEndContext) => Promise<TurnEndResult | undefined> | TurnEndResult | undefined;
+
+/** Interceptor invoked for finalized messages (message_end). Return null to filter out the message. */
+export type MessageInterceptor = (message: AgentMessage) => Promise<AgentMessage | null> | AgentMessage | null;
 
 /**
  * Configuration for the agent loop.
@@ -65,6 +156,18 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * ```
 	 */
 	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+
+	/** Optional callback invoked before each assistant LLM request. */
+	beforeRequest?: BeforeRequestCallback;
+
+	/** Optional callback invoked before each assistant LLM request to append ephemeral content. */
+	ephemeral?: EphemeralCallback;
+
+	/** Optional callback invoked after each turn completes. */
+	onTurnEnd?: TurnEndCallback;
+
+	/** Optional interceptor invoked for finalized messages (message_end). */
+	messageInterceptor?: MessageInterceptor;
 
 	/**
 	 * Resolves an API key dynamically for each LLM call.
