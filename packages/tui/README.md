@@ -68,6 +68,12 @@ interface Component {
 }
 ```
 
+| Method | Description |
+|--------|-------------|
+| `render(width)` | Returns an array of strings, one per line. Each line **must not exceed `width`** or the TUI will error. Use `truncateToWidth()` or manual wrapping to ensure this. |
+| `handleInput?(data)` | Called when the component has focus and receives keyboard input. The `data` string contains raw terminal input (may include ANSI escape sequences). |
+| `invalidate?()` | Called to clear any cached render state. Components should re-render from scratch on the next `render()` call. |
+
 ## Built-in Components
 
 ### Container
@@ -444,8 +450,90 @@ import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 // Get visible width of string (ignoring ANSI codes)
 const width = visibleWidth("\x1b[31mHello\x1b[0m"); // 5
 
-// Truncate string to width (preserving ANSI codes)
+// Truncate string to width (preserving ANSI codes, adds ellipsis)
 const truncated = truncateToWidth("Hello World", 8); // "Hello..."
+
+// Truncate without ellipsis
+const truncatedNoEllipsis = truncateToWidth("Hello World", 8, ""); // "Hello Wo"
+```
+
+## Creating Custom Components
+
+When creating custom components, **each line returned by `render()` must not exceed the `width` parameter**. The TUI will error if any line is wider than the terminal.
+
+### Handling Line Width
+
+Use the provided utilities to ensure lines fit:
+
+```typescript
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
+
+class MyComponent implements Component {
+  private text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+
+  render(width: number): string[] {
+    // Option 1: Truncate long lines
+    return [truncateToWidth(this.text, width)];
+
+    // Option 2: Check and pad to exact width
+    const line = this.text;
+    const visible = visibleWidth(line);
+    if (visible > width) {
+      return [truncateToWidth(line, width)];
+    }
+    // Pad to exact width (optional, for backgrounds)
+    return [line + " ".repeat(width - visible)];
+  }
+}
+```
+
+### ANSI Code Considerations
+
+Both `visibleWidth()` and `truncateToWidth()` correctly handle ANSI escape codes:
+
+- `visibleWidth()` ignores ANSI codes when calculating width
+- `truncateToWidth()` preserves ANSI codes and properly closes them when truncating
+
+```typescript
+import chalk from "chalk";
+
+const styled = chalk.red("Hello") + " " + chalk.blue("World");
+const width = visibleWidth(styled); // 11 (not counting ANSI codes)
+const truncated = truncateToWidth(styled, 8); // Red "Hello" + " W..." with proper reset
+```
+
+### Caching
+
+For performance, components should cache their rendered output and only re-render when necessary:
+
+```typescript
+class CachedComponent implements Component {
+  private text: string;
+  private cachedWidth?: number;
+  private cachedLines?: string[];
+
+  render(width: number): string[] {
+    if (this.cachedLines && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+
+    const lines = [truncateToWidth(this.text, width)];
+
+    this.cachedWidth = width;
+    this.cachedLines = lines;
+    return lines;
+  }
+
+  invalidate(): void {
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+  }
+}
 ```
 
 ## Example
