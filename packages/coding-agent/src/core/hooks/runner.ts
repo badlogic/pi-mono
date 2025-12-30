@@ -340,7 +340,9 @@ export class HookRunner {
 	 */
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
-		let currentMessages = messages;
+		// Defensive copy: context hooks must never be able to mutate the agent loop's live context.
+		// Hooks may mutate this copy in-place.
+		let currentMessages = structuredClone(messages) as AgentMessage[];
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get("context");
