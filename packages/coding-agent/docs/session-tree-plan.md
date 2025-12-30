@@ -375,9 +375,13 @@ interface BeforeAgentStartResult {
 
 ### Tree Selector Improvements ✅
 
-- [x] Active line highlight (inverse background) - much more visible
-- [x] Filter out tool calls - `no-tools` filter mode via `^O`
-- [x] `Shift+^O` cycles filters backwards
+- [x] Active line highlight using `selectedBg` theme color
+- [x] Filter modes via `^O` (forward) / `Shift+^O` (backward):
+  - `default`: hides label/custom entries
+  - `no-tools`: default minus tool results
+  - `user-only`: just user messages
+  - `labeled-only`: just labeled entries
+  - `all`: everything
 
 ### Documentation
 
@@ -402,7 +406,7 @@ Review and update all docs:
 - [ ] `docs/rpc.md` - Check if hook commands work in RPC mode
 - [ ] `docs/skills.md` - Review for any hook-related updates
 - [ ] `docs/extension-loading.md` - Review
-- [ ] `docs/theme.md` - Add customMessageBg/Text/Label color tokens
+- [x] `docs/theme.md` - Added selectedBg, customMessageBg/Text/Label color tokens (50 total)
 - [ ] `README.md` - Update hook examples if any
 
 ### Examples
@@ -416,6 +420,14 @@ Review and update examples:
   - [ ] Add `registerCustomMessageRenderer()` example
 - [ ] `examples/sdk/` - Update for new session/hook APIs
 - [ ] `examples/custom-tools/` - Review for compatibility
+
+---
+
+## Before Release
+
+- [ ] Run full automated test suite: `npm test`
+- [ ] Manual testing of tree navigation and branch summarization
+- [ ] Verify compaction with file tracking works correctly
 
 ---
 
