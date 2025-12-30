@@ -270,7 +270,7 @@ const agent = new Agent({
 
 ## Tools
 
-Tools extend `Tool` from pi-ai with an `execute` function:
+Define tools using `AgentTool`:
 
 ```typescript
 import { Type } from "@sinclair/typebox";
