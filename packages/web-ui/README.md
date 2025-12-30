@@ -126,16 +126,16 @@ const chatPanel = new ChatPanel();
 await chatPanel.setAgent(agent, {
   // Prompt for API key when needed
   onApiKeyRequired: async (provider) => ApiKeyPromptDialog.prompt(provider),
-  
+
   // Hook before sending messages
   onBeforeSend: async () => { /* save draft, etc. */ },
-  
+
   // Handle cost display click
   onCostClick: () => { /* show cost breakdown */ },
-  
+
   // Custom sandbox URL for browser extensions
   sandboxUrlProvider: () => chrome.runtime.getURL('sandbox.html'),
-  
+
   // Add custom tools
   toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
     const replTool = createJavaScriptReplTool();
@@ -590,7 +590,7 @@ console.log(i18n('Loading...')); // "Laden..."
 ## Examples
 
 - [example/](./example) - Complete web app with sessions, artifacts, custom messages
-- [sitegeist](https://github.com/badlogic/sitegeist) - Browser extension using pi-web-ui
+- [sitegeist](https://sitegeist.ai) - Browser extension using pi-web-ui
 
 ## Known Issues
 
