@@ -373,6 +373,11 @@ interface BeforeAgentStartResult {
   - Shows current position
   - Generates branch summaries when switching branches
 
+### Tree Selector Improvements
+
+- [ ] Active line highlight (background color) - currently bold but hard to see
+- [ ] Filter out tool calls - add as another filter type to cycle through via `^O`
+
 ### Documentation
 
 Review and update all docs:
