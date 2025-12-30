@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { isAltUp, isAltDown } from "../src/keys.js";
+import { isAltDown, isAltUp } from "../src/keys.js";
 
 describe("isAltUp", () => {
 	it("detects xterm CSI sequence", () => {

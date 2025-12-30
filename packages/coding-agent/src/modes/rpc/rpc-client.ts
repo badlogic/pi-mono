@@ -443,6 +443,7 @@ export class RpcClient {
 
 		const id = `req_${++this.requestId}`;
 		const fullCommand = { ...command, id } as RpcCommand;
+		const stdin = this.process.stdin;
 
 		return new Promise((resolve, reject) => {
 			this.pendingRequests.set(id, { resolve, reject });
@@ -463,7 +464,7 @@ export class RpcClient {
 				},
 			});
 
-			this.process!.stdin!.write(`${JSON.stringify(fullCommand)}\n`);
+			stdin.write(`${JSON.stringify(fullCommand)}\n`);
 		});
 	}
 

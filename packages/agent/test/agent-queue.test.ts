@@ -1,5 +1,5 @@
 import { getModel, type Message } from "@mariozechner/pi-ai";
-import { describe, expect, it, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Agent } from "../src/index.js";
 
 describe("Agent message queue", () => {

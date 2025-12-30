@@ -1417,11 +1417,11 @@ export class InteractiveMode {
 
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const queuedMessages = this.session.getQueuedMessages();
+		const queuedMessages = this.session.getQueuedUserMessages();
 		if (queuedMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const message of queuedMessages) {
-				const queuedText = theme.fg("dim", `Queued: ${message}`);
+			for (const queuedMessage of queuedMessages) {
+				const queuedText = theme.fg("dim", `Queued: ${queuedMessage.text}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
 			}
 		}

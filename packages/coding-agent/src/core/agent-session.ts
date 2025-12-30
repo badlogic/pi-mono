@@ -55,6 +55,12 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
+/** A queued user message with a stable timestamp identifier */
+export interface QueuedUserMessage {
+	text: string;
+	timestamp: number;
+}
+
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
@@ -142,7 +148,8 @@ export class AgentSession {
 	private _eventListeners: AgentSessionEventListener[] = [];
 
 	// Message queue state
-	private _queuedMessages: string[] = [];
+	private _queuedUserMessages: QueuedUserMessage[] = [];
+	private _lastQueuedTimestamp = 0;
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -212,14 +219,13 @@ export class AgentSession {
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
 		// When a user message starts, check if it's from the queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
-		if (event.type === "message_start" && event.message.role === "user" && this._queuedMessages.length > 0) {
-			// Extract text content from the message
-			const messageText = this._getUserMessageText(event.message);
-			if (messageText && this._queuedMessages.includes(messageText)) {
-				// Remove the first occurrence of this message from the queue
-				const index = this._queuedMessages.indexOf(messageText);
+		if (event.type === "message_start" && event.message.role === "user" && this._queuedUserMessages.length > 0) {
+			// Use timestamp to find and remove the queued message
+			const timestamp = event.message.timestamp;
+			if (timestamp !== undefined) {
+				const index = this._queuedUserMessages.findIndex((m) => m.timestamp === timestamp);
 				if (index !== -1) {
-					this._queuedMessages.splice(index, 1);
+					this._queuedUserMessages.splice(index, 1);
 				}
 			}
 		}
@@ -289,15 +295,6 @@ export class AgentSession {
 			this._retryResolve = undefined;
 			this._retryPromise = undefined;
 		}
-	}
-
-	/** Extract text content from a message */
-	private _getUserMessageText(message: Message): string {
-		if (message.role !== "user") return "";
-		const content = message.content;
-		if (typeof content === "string") return content;
-		const textBlocks = content.filter((c) => c.type === "text");
-		return textBlocks.map((c) => (c as TextContent).text).join("");
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */
@@ -575,16 +572,32 @@ export class AgentSession {
 		}
 	}
 
+	// =========================================================================
+	// Message Queue
+	// =========================================================================
+
+	/**
+	 * Generate a monotonically increasing timestamp for queue messages.
+	 * Ensures uniqueness even if multiple messages are queued in the same millisecond.
+	 */
+	private _nextQueuedTimestamp(): number {
+		const now = Date.now();
+		const ts = now <= this._lastQueuedTimestamp ? this._lastQueuedTimestamp + 1 : now;
+		this._lastQueuedTimestamp = ts;
+		return ts;
+	}
+
 	/**
 	 * Queue a message to be sent after the current response completes.
 	 * Use when agent is currently streaming.
 	 */
 	async queueMessage(text: string): Promise<void> {
-		this._queuedMessages.push(text);
+		const timestamp = this._nextQueuedTimestamp();
+		this._queuedUserMessages.push({ text, timestamp });
 		await this.agent.queueMessage({
 			role: "user",
 			content: [{ type: "text", text }],
-			timestamp: Date.now(),
+			timestamp,
 		});
 	}
 
@@ -630,24 +643,60 @@ export class AgentSession {
 	}
 
 	/**
-	 * Clear queued messages and return them.
+	 * Clear queued messages and return their texts.
 	 * Useful for restoring to editor when user aborts.
 	 */
 	clearQueue(): string[] {
-		const queued = [...this._queuedMessages];
-		this._queuedMessages = [];
+		const queued = this._queuedUserMessages.map((m) => m.text);
+		this._queuedUserMessages = [];
 		this.agent.clearMessageQueue();
 		return queued;
 	}
 
 	/** Number of messages currently queued */
 	get queuedMessageCount(): number {
-		return this._queuedMessages.length;
+		return this._queuedUserMessages.length;
 	}
 
-	/** Get queued messages (read-only) */
-	getQueuedMessages(): readonly string[] {
-		return this._queuedMessages;
+	/** Get queued user messages (read-only) */
+	getQueuedUserMessages(): readonly QueuedUserMessage[] {
+		return this._queuedUserMessages.slice();
+	}
+
+	/**
+	 * Update a queued user message at the given index.
+	 * @param index Index into the queue
+	 * @param newText New text for the message
+	 * @returns true if updated, false if index out of bounds or already consumed by agent
+	 */
+	updateQueuedUserMessage(index: number, newText: string): boolean {
+		if (index < 0 || index >= this._queuedUserMessages.length) {
+			return false;
+		}
+		const timestamp = this._queuedUserMessages[index].timestamp;
+		const success = this.agent.updateQueuedUserMessageByTimestamp(timestamp, newText);
+		if (!success) {
+			// Message was already consumed - remove from our queue
+			this._queuedUserMessages.splice(index, 1);
+			return false;
+		}
+		this._queuedUserMessages[index].text = newText;
+		return true;
+	}
+
+	/**
+	 * Remove a queued user message at the given index.
+	 * @param index Index into the queue
+	 * @returns true if removed, false if index out of bounds
+	 */
+	removeQueuedUserMessage(index: number): boolean {
+		if (index < 0 || index >= this._queuedUserMessages.length) {
+			return false;
+		}
+		const timestamp = this._queuedUserMessages[index].timestamp;
+		this._queuedUserMessages.splice(index, 1);
+		this.agent.removeQueuedUserMessageByTimestamp(timestamp);
+		return true;
 	}
 
 	get skillsSettings(): Required<SkillsSettings> | undefined {
@@ -687,7 +736,7 @@ export class AgentSession {
 		await this.abort();
 		this.agent.reset();
 		this.sessionManager.newSession();
-		this._queuedMessages = [];
+		this._queuedUserMessages = [];
 		this._reconnectToAgent();
 
 		// Emit session_new event to hooks
@@ -1456,7 +1505,9 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
-		this._queuedMessages = [];
+		this._queuedUserMessages = [];
+		this.agent.clearMessageQueue();
+		this._lastQueuedTimestamp = 0;
 
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
