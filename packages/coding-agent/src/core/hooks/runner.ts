@@ -16,6 +16,7 @@ import type {
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
+	ContextTransformRenderer,
 	HookError,
 	HookEvent,
 	HookEventContext,
@@ -202,6 +203,14 @@ export class HookRunner {
 			if (renderer) {
 				return renderer;
 			}
+		}
+		return undefined;
+	}
+
+	getContextTransformRenderer(rendererId: string): ContextTransformRenderer | undefined {
+		for (const hook of this.hooks) {
+			const renderer = hook.contextTransformRenderers.get(rendererId);
+			if (renderer) return renderer;
 		}
 		return undefined;
 	}

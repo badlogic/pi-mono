@@ -581,6 +581,31 @@ export type HookMessageRenderer<T = unknown> = (
 	theme: Theme,
 ) => Component | undefined;
 
+export interface ContextTransformRenderOptions {
+	/** Whether the view is expanded */
+	expanded: boolean;
+}
+
+export interface ContextTransformRenderTarget {
+	transformerName: string;
+	patch: ContextPatchOp[];
+	display?: ContextTransformDisplay;
+	timestamp: string;
+	id: string;
+	parentId: string | null;
+}
+
+/**
+ * Renderer for persisted context transforms.
+ *
+ * This is used by interactive debug views (e.g. /context) to let hooks render their transforms.
+ */
+export type ContextTransformRenderer = (
+	transform: ContextTransformRenderTarget,
+	options: ContextTransformRenderOptions,
+	theme: Theme,
+) => Component | undefined;
+
 /**
  * Context passed to hook command handlers.
  */
@@ -696,6 +721,9 @@ export interface HookAPI {
 	 * Return nothing to use the default renderer.
 	 */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void;
+
+	/** Register a custom renderer for a persisted context transform (by rendererId). */
+	registerContextTransformRenderer(rendererId: string, renderer: ContextTransformRenderer): void;
 
 	/**
 	 * Register a custom slash command.

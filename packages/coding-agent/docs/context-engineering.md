@@ -4,6 +4,9 @@ Pi supports **context engineering** via hooks that can shape what is sent to the
 
 This document focuses on **how to use** the hook surface (what events exist, what data you get, what you can return).
 
+If you’re building custom context strategies, `/context` is the primary debugging surface.
+It renders the effective ContextEnvelope, and it can optionally render persisted transforms via hook-provided renderers (see [ContextTransformDisplay renderers](#contexttransformdisplay-renderers)).
+
 ## Key idea: the Context Envelope
 
 Every provider request is modeled as a single **`ContextEnvelope`**:
@@ -125,6 +128,53 @@ When rebuilding the envelope for a new request, Pi walks the active session path
 - `context_transform` entries are replayed in order (hook code is not rerun)
 - compaction is represented as a `compaction_apply` patch op (either stored in a `context_transform` entry or derived from legacy `compaction` entries)
 - request-only context is logged as `ephemeral` entries but **never** replayed
+
+## ContextTransformDisplay renderers
+
+Persisted `context_transform` entries can carry optional `display` metadata.
+
+If a transform sets `display.rendererId`, interactive `/context` can call a hook-registered renderer to show a richer view than plain markdown.
+
+### End-user / hook-author workflow
+
+1) Return `display` from your `context` handler (for persisted transforms):
+
+```ts
+return {
+  transformerName: "my-transform",
+  display: {
+    title: "My Transform",
+    summary: "…",
+    rendererId: "my-transform-renderer",
+    rendererProps: { /* JSON-serializable */ },
+  },
+  patch: [ ... ],
+};
+```
+
+2) Register the renderer in your hook:
+
+```ts
+import { Text } from "@mariozechner/pi-tui";
+import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+
+export default function (pi: HookAPI) {
+  pi.registerContextTransformRenderer("my-transform-renderer", (transform, options, theme) => {
+    return new Text(theme.bold(transform.display?.title ?? transform.transformerName), 1, 0);
+  });
+}
+```
+
+3) Run `/context` in interactive mode.
+
+- If a renderer is registered and the transform’s `display.rendererId` matches, Pi renders that component.
+- Otherwise, Pi falls back to the markdown envelope view.
+
+### How it’s implemented
+
+- `display` is persisted on the `context_transform` entry.
+- Hooks register renderers by ID via `pi.registerContextTransformRenderer(rendererId, renderer)`.
+- The interactive `/context` command enumerates `context_transform` entries on the active session path and calls the renderer for any entry whose `display.rendererId` matches a registered renderer.
 
 ## The `message_end` hook
 

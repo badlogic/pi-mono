@@ -124,6 +124,7 @@ describe("context transform replay", () => {
 				resolvedPath: "<inline>",
 				handlers,
 				messageRenderers: new Map(),
+				contextTransformRenderers: new Map(),
 				commands: new Map(),
 				setSendMessageHandler: () => {},
 				setAppendEntryHandler: () => {},

@@ -1933,6 +1933,46 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(new Markdown(md, 1, 1, getMarkdownTheme()));
+
+			// If hooks registered custom context transform renderers, render them as a follow-up section.
+			const transforms = this.session.sessionManager
+				.getPath()
+				.filter((e) => e.type === "context_transform") as Array<any>;
+			const hasCustom = transforms.some(
+				(t) => t.display?.rendererId && this.session.hookRunner?.getContextTransformRenderer(t.display.rendererId),
+			);
+
+			if (hasCustom) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Context Transform Renderers")), 1, 0));
+				this.chatContainer.addChild(new Spacer(1));
+
+				for (const t of transforms) {
+					const rendererId = t.display?.rendererId;
+					if (!rendererId) continue;
+
+					const renderer = this.session.hookRunner?.getContextTransformRenderer(rendererId);
+					if (!renderer) continue;
+
+					const component = renderer(
+						{
+							id: t.id,
+							parentId: t.parentId,
+							timestamp: t.timestamp,
+							transformerName: t.transformerName,
+							patch: t.patch,
+							display: t.display,
+						},
+						{ expanded: true },
+						theme,
+					);
+					if (component) {
+						this.chatContainer.addChild(component);
+						this.chatContainer.addChild(new Spacer(1));
+					}
+				}
+			}
+
 			this.chatContainer.addChild(new DynamicBorder());
 			this.ui.requestRender();
 		} catch (error: unknown) {

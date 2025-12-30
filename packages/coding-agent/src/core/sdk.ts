@@ -342,6 +342,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 	return definitions.map((def) => {
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 		const messageRenderers = new Map<string, any>();
+		const contextTransformRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
 		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
@@ -361,6 +362,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			registerMessageRenderer: (customType: string, renderer: any) => {
 				messageRenderers.set(customType, renderer);
 			},
+			registerContextTransformRenderer: (rendererId: string, renderer: any) => {
+				contextTransformRenderers.set(rendererId, renderer);
+			},
 			registerCommand: (name: string, options: any) => {
 				commands.set(name, { name, ...options });
 			},
@@ -373,6 +377,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			resolvedPath: def.path ?? "<inline>",
 			handlers,
 			messageRenderers,
+			contextTransformRenderers,
 			commands,
 			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
 				sendMessageHandler = handler;

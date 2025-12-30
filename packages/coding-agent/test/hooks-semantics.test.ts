@@ -72,6 +72,7 @@ function createHookRunner(
 		resolvedPath: "<inline>",
 		handlers,
 		messageRenderers: new Map(),
+		contextTransformRenderers: new Map(),
 		commands: new Map(),
 		setSendMessageHandler: () => {},
 		setAppendEntryHandler: () => {},
