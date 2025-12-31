@@ -1,3 +1,5 @@
+> pi can create custom tools. Ask it to build one for your use case.
+
 # Custom Tools
 
 Custom tools are additional tools that the LLM can call directly, just like the built-in `read`, `write`, `edit`, and `bash` tools. They are TypeScript modules that define callable functions with parameters, return values, and optional TUI rendering.

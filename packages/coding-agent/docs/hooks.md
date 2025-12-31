@@ -1,3 +1,5 @@
+> pi can create hooks. Ask it to build one for your use case.
+
 # Hooks
 
 Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. They can intercept tool calls, prompt the user, modify results, inject messages, and more.

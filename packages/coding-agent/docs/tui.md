@@ -1,3 +1,5 @@
+> pi can create TUI components. Ask it to build one for your use case.
+
 # TUI Components
 
 Hooks and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
