@@ -253,40 +253,37 @@ pi.registerCommand("pick", {
 
 ## Theming
 
-Components accept theme objects for styling. Use ANSI color functions (e.g., from `chalk` or pi's theme):
+Components accept theme objects for styling.
+
+**In `renderCall`/`renderResult`**, use the `theme` parameter:
 
 ```typescript
-// In hooks, use the theme from renderResult/renderCall
 renderResult(result, options, theme) {
+  // Use theme for foreground colors
   return new Text(theme.fg("success", "Done!"), 0, 0);
-}
-
-// For custom components, define your own theme interface
-interface MyTheme {
-  selected: (s: string) => string;
-  normal: (s: string) => string;
 }
 ```
 
-### MarkdownTheme
+Available theme colors: `"toolTitle"`, `"accent"`, `"success"`, `"error"`, `"warning"`, `"muted"`, `"dim"`, `"toolOutput"`.
+
+**For Markdown**, use `getMarkdownTheme()`:
 
 ```typescript
-interface MarkdownTheme {
-  heading: (text: string) => string;
-  link: (text: string) => string;
-  linkUrl: (text: string) => string;
-  code: (text: string) => string;
-  codeBlock: (text: string) => string;
-  codeBlockBorder: (text: string) => string;
-  quote: (text: string) => string;
-  quoteBorder: (text: string) => string;
-  hr: (text: string) => string;
-  listBullet: (text: string) => string;
-  bold: (text: string) => string;
-  italic: (text: string) => string;
-  strikethrough: (text: string) => string;
-  underline: (text: string) => string;
-  highlightCode?: (code: string, lang?: string) => string[];
+import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
+import { Markdown } from "@mariozechner/pi-tui";
+
+renderResult(result, options, theme) {
+  const mdTheme = getMarkdownTheme();
+  return new Markdown(result.details.markdown, 0, 0, mdTheme);
+}
+```
+
+**For custom components**, define your own theme interface:
+
+```typescript
+interface MyTheme {
+  selected: (s: string) => string;
+  normal: (s: string) => string;
 }
 ```
 
