@@ -2408,51 +2408,53 @@ export class AgentSession {
 		let uncachedTokens = 0;
 		for (const m of envelope.messages.uncached) uncachedTokens += this._estimateTokensForProviderMessage(m);
 
-		const used = systemTokens + toolsTokens + cachedTokens + uncachedTokens;
+		const messagesTokens = cachedTokens + uncachedTokens;
+		const used = systemTokens + toolsTokens + messagesTokens;
 		const usedPct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-		const free = Math.max(0, limit - used);
+
+		const formatTokens = (t: number): string => {
+			if (t >= 1000000) return `${(t / 1000000).toFixed(1).replace(/\.0$/, "")}m`;
+			if (t >= 1000) return `${(t / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+			return `${t}`;
+		};
+		const formatPct = (t: number): string => {
+			if (limit <= 0) return "";
+			return ` (${((t / limit) * 100).toFixed(1)}%)`;
+		};
 
 		const barWidth = 20;
 		const filled = limit > 0 ? Math.max(0, Math.min(barWidth, Math.round((used / limit) * barWidth))) : 0;
-		const bar = `[${"#".repeat(filled)}${"-".repeat(barWidth - filled)}]`;
+		const bar = `[${"█".repeat(filled)}${"░".repeat(barWidth - filled)}]`;
 
-		lines.push("# Context Usage (est.)");
+		lines.push("# Context Usage");
 		lines.push("");
 		lines.push(
-			`${bar} ${envelope.meta.model.provider}/${envelope.meta.model.id} · ${used.toLocaleString()}/${limit.toLocaleString()} tokens (${usedPct}%)`,
+			`${bar} ${envelope.meta.model.provider}/${envelope.meta.model.id} · ~${formatTokens(used)}/${formatTokens(limit)} tokens (${usedPct}%)`,
+		);
+		lines.push("");
+
+		lines.push(`- system: ~${formatTokens(systemTokens)}${formatPct(systemTokens)}`);
+
+		const toolNames = envelope.tools.map((t) => t.name);
+		const toolPreview = toolNames.slice(0, 12).join(", ");
+		lines.push(
+			`- tools (${toolNames.length}): ~${formatTokens(toolsTokens)}${formatPct(toolsTokens)}${
+				toolNames.length > 0 ? ` — ${toolPreview}${toolNames.length > 12 ? ", …" : ""}` : ""
+			}`,
 		);
 
-		const formatLine = (label: string, tokens: number) => {
-			const pct = limit > 0 ? ((tokens / limit) * 100).toFixed(1) : "0.0";
-			return `- ${label}: ${tokens.toLocaleString()} tokens (${pct}%)`;
-		};
+		const cachedCount = envelope.messages.cached.length;
+		const uncachedCount = envelope.messages.uncached.length;
+		const messagesExtra =
+			uncachedCount > 0 ? ` (cached ${cachedCount}, uncached ${uncachedCount})` : ` (cached ${cachedCount})`;
+		lines.push(`- messages: ~${formatTokens(messagesTokens)}${formatPct(messagesTokens)}${messagesExtra}`);
 
-		lines.push(formatLine("System prompt", systemTokens));
-		lines.push(formatLine(`Tools (${envelope.tools.length})`, toolsTokens));
-		lines.push(formatLine(`Messages cached (${envelope.messages.cached.length})`, cachedTokens));
-		if (envelope.messages.uncached.length > 0) {
-			lines.push(formatLine(`Messages uncached (${envelope.messages.uncached.length})`, uncachedTokens));
+		if (options.includeEphemeral && uncachedCount > 0) {
+			lines.push(`- ephemerals: yes (${uncachedCount} message${uncachedCount === 1 ? "" : "s"})`);
 		}
-		lines.push(`- Free: ${free.toLocaleString()} tokens`);
-
-		const compaction = this.settingsManager.getCompactionSettings();
-		if (compaction.enabled) {
-			const reserve = compaction.reserveTokens;
-			const reservePct = limit > 0 ? ((reserve / limit) * 100).toFixed(1) : "0.0";
-			lines.push(`- Auto-compaction reserve: ${reserve.toLocaleString()} tokens (${reservePct}%)`);
-		}
-
-		const transforms = this.sessionManager.getPath().filter((e) => e.type === "context_transform") as Array<any>;
-		lines.push(`- Transforms (persisted): ${transforms.length}`);
-
-		const ephEntries = this.sessionManager.getPath().filter((e) => e.type === "ephemeral") as Array<any>;
-		if (ephEntries.length > 0) {
-			lines.push(`- Ephemeral log entries: ${ephEntries.length}`);
-		}
-		lines.push(`- Ephemerals applied: ${options.includeEphemeral ? "yes" : "no"}`);
 
 		lines.push("");
-		lines.push("Use `/tree` to inspect history. Use `/context --full` for the full envelope.");
+		lines.push("Use `/tree` for message history. Use `/context --full` for the full envelope.");
 		return lines.join("\n");
 	}
 
