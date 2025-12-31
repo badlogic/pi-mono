@@ -43,6 +43,23 @@
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 - **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
+- **Renamed exports**:
+  - `messageTransformer` → `convertToLlm`
+  - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
+- **Removed exports**:
+  - `createSummaryMessage()` - replaced by internal compaction logic
+  - `SUMMARY_PREFIX`, `SUMMARY_SUFFIX` - no longer used
+  - `Attachment` type - use `ImageContent` from `@mariozechner/pi-ai` instead
+- **New exports**:
+  - `BranchSummaryEntry`, `CustomEntry`, `CustomMessageEntry`, `LabelEntry` - new session entry types
+  - `SessionEntryBase`, `FileEntry` - base types for session entries
+  - `CURRENT_SESSION_VERSION`, `migrateSessionEntries` - session migration utilities
+  - `BranchPreparation`, `BranchSummaryResult`, `CollectEntriesResult`, `GenerateBranchSummaryOptions` - branch summarization types
+  - `FileOperations`, `collectEntriesForBranchSummary`, `prepareBranchEntries`, `generateBranchSummary` - branch summarization utilities
+  - `CompactionPreparation`, `CompactionDetails` - compaction preparation types
+  - `ReadonlySessionManager` - read-only session manager interface for hooks
+  - `HookMessage`, `HookCommandContext`, `HookMessageRenderOptions` - hook types
+  - `isHookMessage`, `createHookMessage` - hook message utilities
 
 ### Added
 
@@ -51,7 +68,10 @@
 - **`before_agent_start` hook event**: Fires once when user submits a prompt, before `agent_start`. Hooks can return `{ message }` to inject a `CustomMessageEntry` that gets persisted and sent to the LLM.
 - **`ui.custom()` for hooks**: Show arbitrary TUI components with keyboard focus. Call `done()` when finished: `ctx.ui.custom(component, done)`.
 - **Branch summarization**: When switching branches via `/tree`, generates a summary of the abandoned branch including file operations (read/modified files). Summaries are stored as `BranchSummaryEntry` with cumulative file tracking in `details`.
+- **Structured compaction**: Both compaction and branch summarization now use structured output format with clear sections (Goal, Progress, Key Information, File Operations). Conversations are serialized to text before summarization to prevent the model from "continuing" conversations.
+- **File tracking in summaries**: Compaction and branch summaries now track `readFiles` and `modifiedFiles` arrays in the `details` field, accumulated across multiple compactions/summaries. This provides cumulative file operation history.
 - **`selectedBg` theme color**: Background color for selected/active lines in tree selector and other components.
+- **Entry labels**: Label any session entry with `/tree` → select entry → press `l`. Labels appear in tree view and are persisted as `LabelEntry` in the session. Use `labeled-only` filter mode to show only labeled entries.
 - **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
 - **Snake game example hook**: Added `examples/hooks/snake.ts` demonstrating `ui.custom()`, `registerCommand()`, and session persistence.
 
@@ -60,7 +80,6 @@
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
 - **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `CustomMessageEntry<T>` for hook-injected context messages, `LabelEntry` for user-defined bookmarks
-- **Entry labels**: New `getLabel(id)` and `appendLabelChange(targetId, label)` methods for labeling entries. Labels are included in `SessionTreeNode` for UI/export.
 - **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
 - **AgentSession**: New `sendHookMessage(message, triggerTurn?)` method for hooks to inject messages. Handles queuing during streaming, direct append when idle, and optional turn triggering.
 - **HookMessage**: New message type with `role: "hookMessage"` for hook-injected messages in agent events. Use `isHookMessage(msg)` type guard to identify them. These are converted to user messages for LLM context via `messageTransformer`.
