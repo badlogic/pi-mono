@@ -491,7 +491,7 @@ If a hook cancelled the switch:
 Create a new branch from a previous user message. Can be cancelled by a `before_branch` hook. Returns the text of the message being branched from.
 
 ```json
-{"type": "branch", "entryIndex": 2}
+{"type": "branch", "entryId": "abc123"}
 ```
 
 Response:
@@ -530,8 +530,8 @@ Response:
   "success": true,
   "data": {
     "messages": [
-      {"entryIndex": 0, "text": "First prompt..."},
-      {"entryIndex": 2, "text": "Second prompt..."}
+      {"entryId": "abc123", "text": "First prompt..."},
+      {"entryId": "def456", "text": "Second prompt..."}
     ]
   }
 }

@@ -78,7 +78,6 @@ The session manages the agent lifecycle, message history, and event streaming.
 interface AgentSession {
   // Send a prompt and wait for completion
   prompt(text: string, options?: PromptOptions): Promise<void>;
-  prompt(message: AppMessage): Promise<void>;  // For HookMessage, etc.
   
   // Subscribe to events (returns unsubscribe function)
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
@@ -90,14 +89,14 @@ interface AgentSession {
   // Model control
   setModel(model: Model): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): void;
-  cycleModel(): Promise<ModelCycleResult | null>;
-  cycleThinkingLevel(): ThinkingLevel | null;
+  cycleModel(): Promise<ModelCycleResult | undefined>;
+  cycleThinkingLevel(): ThinkingLevel | undefined;
   
   // State access
   agent: Agent;
-  model: Model | null;
+  model: Model | undefined;
   thinkingLevel: ThinkingLevel;
-  messages: AppMessage[];
+  messages: AgentMessage[];
   isStreaming: boolean;
   
   // Session management
@@ -109,7 +108,7 @@ interface AgentSession {
   navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
-  sendHookMessage(message: HookMessage, triggerTurn?: boolean): void;
+  sendHookMessage(message: HookMessage, triggerTurn?: boolean): Promise<void>;
   
   // Compaction
   compact(customInstructions?: string): Promise<CompactionResult>;
@@ -131,7 +130,7 @@ The `Agent` class (from `@mariozechner/pi-agent-core`) handles the core LLM inte
 // Access current state
 const state = session.agent.state;
 
-// state.messages: AppMessage[] - conversation history
+// state.messages: AgentMessage[] - conversation history
 // state.model: Model - current model
 // state.thinkingLevel: ThinkingLevel - current thinking level
 // state.systemPrompt: string - system prompt
