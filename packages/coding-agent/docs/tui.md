@@ -259,12 +259,32 @@ Components accept theme objects for styling.
 
 ```typescript
 renderResult(result, options, theme) {
-  // Use theme for foreground colors
+  // Use theme.fg() for foreground colors
   return new Text(theme.fg("success", "Done!"), 0, 0);
+  
+  // Use theme.bg() for background colors
+  const styled = theme.bg("toolPendingBg", theme.fg("accent", "text"));
 }
 ```
 
-Available theme colors: `"toolTitle"`, `"accent"`, `"success"`, `"error"`, `"warning"`, `"muted"`, `"dim"`, `"toolOutput"`.
+**Foreground colors** (`theme.fg(color, text)`):
+
+| Category | Colors |
+|----------|--------|
+| General | `text`, `accent`, `muted`, `dim` |
+| Status | `success`, `error`, `warning` |
+| Borders | `border`, `borderAccent`, `borderMuted` |
+| Messages | `userMessageText`, `customMessageText`, `customMessageLabel` |
+| Tools | `toolTitle`, `toolOutput` |
+| Diffs | `toolDiffAdded`, `toolDiffRemoved`, `toolDiffContext` |
+| Markdown | `mdHeading`, `mdLink`, `mdLinkUrl`, `mdCode`, `mdCodeBlock`, `mdCodeBlockBorder`, `mdQuote`, `mdQuoteBorder`, `mdHr`, `mdListBullet` |
+| Syntax | `syntaxComment`, `syntaxKeyword`, `syntaxFunction`, `syntaxVariable`, `syntaxString`, `syntaxNumber`, `syntaxType`, `syntaxOperator`, `syntaxPunctuation` |
+| Thinking | `thinkingOff`, `thinkingMinimal`, `thinkingLow`, `thinkingMedium`, `thinkingHigh`, `thinkingXhigh` |
+| Modes | `bashMode` |
+
+**Background colors** (`theme.bg(color, text)`):
+
+`selectedBg`, `userMessageBg`, `customMessageBg`, `toolPendingBg`, `toolSuccessBg`, `toolErrorBg`
 
 **For Markdown**, use `getMarkdownTheme()`:
 
