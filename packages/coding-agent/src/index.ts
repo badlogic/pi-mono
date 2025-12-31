@@ -30,6 +30,7 @@ export {
 	generateSummary,
 	getLastAssistantUsage,
 	prepareBranchEntries,
+	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.js";
 // Custom tools

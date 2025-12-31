@@ -298,6 +298,38 @@ pi.on("session_before_compact", async (event, ctx) => {
 });
 ```
 
+#### Converting Messages to Text
+
+To generate a summary with your own model, convert messages to text using `serializeConversation`:
+
+```typescript
+import { serializeConversation } from "@mariozechner/pi-coding-agent";
+
+pi.on("session_before_compact", async (event, ctx) => {
+  const { preparation } = event;
+  
+  // Convert messages to readable text format
+  const conversationText = serializeConversation(preparation.messagesToSummarize);
+  // Returns:
+  // [User]: message text
+  // [Assistant thinking]: thinking content
+  // [Assistant]: response text
+  // [Assistant tool calls]: read(path="..."); bash(command="...")
+  // [Tool result]: output text
+
+  // Now send to your model for summarization
+  const summary = await myModel.summarize(conversationText);
+  
+  return {
+    compaction: {
+      summary,
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      tokensBefore: preparation.tokensBefore,
+    }
+  };
+});
+```
+
 See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) for a complete example using a different model.
 
 ### session_before_tree
