@@ -67,7 +67,7 @@ import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
   pi.on("session", async (event, ctx) => {
-    ctx.ui.notify(`Session ${event.reason}: ${ctx.sessionFile ?? "ephemeral"}`, "info");
+    ctx.ui.notify(`Session ${event.reason}: ${ctx.sessionManager.getSessionFile() ?? "ephemeral"}`, "info");
   });
 }
 ```
@@ -148,9 +148,8 @@ Fired on session lifecycle events. The `before_*` variants fire before the actio
 
 ```typescript
 pi.on("session", async (event, ctx) => {
-  // event.entries: SessionEntry[] - all session entries
-  // event.sessionFile: string | null - current session file (null with --no-session)
-  // event.previousSessionFile: string | null - previous session file
+  // Access session file: ctx.sessionManager.getSessionFile() (undefined with --no-session)
+  // event.previousSessionFile: string | undefined - previous session file (for switch events)
   // event.reason: "start" | "before_switch" | "switch" | "before_new" | "new" |
   //               "before_branch" | "branch" | "before_compact" | "compact" | "shutdown"
   // event.targetTurnIndex: number - only for "before_branch" and "branch"
@@ -200,9 +199,9 @@ Session entries (before compaction):
         │ hdr │ cmp │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool │
         └─────┴─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴──────┘
                 ↑     └───────┬───────┘ └────────────┬────────────┘
-         previousSummary  messagesToSummarize     messagesToKeep
+         previousSummary  messagesToSummarize     kept (firstKeptEntryId = "...")
                                    ↑
-                    cutPoint.firstKeptEntryIndex = 5
+                         firstKeptEntryIndex = 5
 
 After compaction (new entry appended):
 
@@ -213,7 +212,7 @@ After compaction (new entry appended):
                └──────────┬───────────┘ └────────────────────────┬─────────────────┘
                   not sent to LLM                           sent to LLM
                                           ↑
-                                firstKeptEntryIndex = 5
+                                firstKeptEntryId = "..."
                                   (stored in new cmp)
 ```
 
@@ -243,15 +242,16 @@ Split turn example (one huge turn that exceeds keepRecentTokens):
                 ↑                                       ↑
          turnStartIndex = 1                   firstKeptEntryIndex = 7
                 │                                       │ (must be usr/ass/bash, not tool)
-                └─────────── turn prefix ───────────────┘ (idx 1-6, summarized separately)
+                └──────── turnPrefixMessages ───────────┘ (idx 1-6, summarized separately)
                                                         └── kept messages (idx 7-9)
 
+  isSplitTurn = true
   messagesToSummarize = []  (no complete turns before this one)
-  messagesToKeep = [ass idx 7, tool idx 8, ass idx 9]
+  turnPrefixMessages = [usr idx 1, ass idx 2, tool idx 3, ass idx 4, tool idx 5, tool idx 6]
 
 The default compaction generates TWO summaries that get merged:
 1. History summary (previousSummary + messagesToSummarize)
-2. Turn prefix summary (messages from turnStartIndex to firstKeptEntryIndex)
+2. Turn prefix summary (turnPrefixMessages)
 ```
 
 See [src/core/compaction.ts](../src/core/compaction.ts) for the full implementation.
@@ -260,13 +260,12 @@ See [src/core/compaction.ts](../src/core/compaction.ts) for the full implementat
 
 | Field | Description |
 |-------|-------------|
-| `preparation` | Compaction preparation with `firstKeptEntryId`, `messagesToSummarize`, `messagesToKeep`, `tokensBefore`, `isSplitTurn`. |
-| `previousCompactions` | Array of previous `CompactionEntry` objects (newest first). Access summaries for accumulated context. |
-| `model` | Model to use for summarization. |
+| `preparation` | Compaction preparation with `firstKeptEntryId`, `messagesToSummarize`, `turnPrefixMessages`, `isSplitTurn`, `previousSummary`, `fileOps`, `tokensBefore`, `settings`. |
+| `branchEntries` | All entries on current branch (root to leaf). Use to find previous compactions or hook state. |
 | `customInstructions` | Optional focus for summary (from `/compact <instructions>`). |
 | `signal` | AbortSignal for cancellation. Pass to LLM calls and check periodically. |
 
-Access session entries via `ctx.sessionManager.getEntries()` and API keys via `ctx.modelRegistry.getApiKey(model)`.
+Access session entries via `ctx.sessionManager.getEntries()`, API keys via `ctx.modelRegistry.getApiKey(model)`, and the current model via `ctx.model`.
 
 Custom compaction hooks should honor the abort signal by passing it to `complete()` calls. This allows users to cancel compaction (e.g., via Ctrl+C during `/compact`).
 
@@ -593,13 +592,25 @@ The current working directory.
 console.log(`Working in: ${ctx.cwd}`);
 ```
 
-### ctx.sessionFile
+### ctx.model
 
-Path to the current session file, or `null` when running with `--no-session` (ephemeral mode).
+The current model, or `undefined` if no model is selected yet.
 
 ```typescript
-if (ctx.sessionFile) {
-  console.log(`Session: ${ctx.sessionFile}`);
+if (ctx.model) {
+  const apiKey = ctx.modelRegistry.getApiKey(ctx.model);
+  // Use for LLM calls
+}
+```
+
+### ctx.sessionManager.getSessionFile()
+
+Path to the current session file, or `undefined` when running with `--no-session` (ephemeral mode).
+
+```typescript
+const sessionFile = ctx.sessionManager.getSessionFile();
+if (sessionFile) {
+  console.log(`Session: ${sessionFile}`);
 }
 ```
 
@@ -680,22 +691,23 @@ Register a custom slash command.
 ```typescript
 pi.registerCommand(name: string, options: {
   description?: string;
-  handler: (ctx: HookCommandContext) => Promise<void>;
+  handler: (args: string, ctx: HookContext) => Promise<void>;
 }): void
 ```
 
 The handler receives:
-- `ctx.args`: Everything after `/commandname`
+- `args`: Everything after `/commandname` (e.g., `/stats foo` → `"foo"`)
 - `ctx.ui`: UI methods (select, confirm, input, notify, custom)
 - `ctx.hasUI`: Whether interactive UI is available
 - `ctx.cwd`: Current working directory
+- `ctx.model`: Current model (may be undefined)
 - `ctx.sessionManager`: Session access
 - `ctx.modelRegistry`: Model access
 
 ```typescript
 pi.registerCommand("stats", {
   description: "Show session statistics",
-  handler: async (ctx) => {
+  handler: async (args, ctx) => {
     const entries = ctx.sessionManager.getEntries();
     const messages = entries.filter(e => e.type === "message").length;
     ctx.ui.notify(`${messages} messages in session`, "info");
@@ -876,7 +888,7 @@ export default function (pi: HookAPI) {
 
   pi.on("turn_start", async (event, ctx) => {
     // Create a git stash entry before LLM makes changes
-    const { stdout } = await ctx.exec("git", ["stash", "create"]);
+    const { stdout } = await pi.exec("git", ["stash", "create"]);
     const ref = stdout.trim();
     if (ref) {
       checkpoints.set(event.turnIndex, ref);
@@ -896,7 +908,7 @@ export default function (pi: HookAPI) {
     ]);
 
     if (choice?.startsWith("Yes")) {
-      await ctx.exec("git", ["stash", "apply", ref]);
+      await pi.exec("git", ["stash", "apply", ref]);
       ctx.ui.notify("Code restored to checkpoint", "info");
     }
   });
