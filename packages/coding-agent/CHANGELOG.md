@@ -23,7 +23,8 @@ The hooks API has been restructured with more granular events and better session
 - `HookCommandContext` removed (use `HookContext` for command handlers)
 
 **Event changes:**
-- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_new`, `session_new`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_before_tree`, `session_tree`, `session_shutdown`
+- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_new`, `session_new`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
+- New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
 - New `before_agent_start` event: inject messages before the agent loop starts
 - New `context` event: modify messages non-destructively before each LLM call
 - Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
@@ -68,7 +69,7 @@ The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, and
 **Session event changes:**
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
 - Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` to reconstruct state
-- New `reason: "tree"` for `/tree` navigation, `reason: "shutdown"` for cleanup
+- New reasons: `"tree"` (for `/tree` navigation) and `"shutdown"` (for cleanup on exit)
 - `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
 
 See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/) for the current API.
