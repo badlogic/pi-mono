@@ -98,6 +98,8 @@ export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 // Types
 // ============================================================================
 
+type ContextMarkdownFormat = "summary" | "full";
+
 export interface AgentSessionConfig {
 	agent: Agent;
 	sessionManager: SessionManager;
@@ -2335,7 +2337,87 @@ export class AgentSession {
 		}
 	}
 
-	private _renderContextMarkdown(envelope: ContextEnvelope): string {
+	private _renderContextMarkdown(
+		envelope: ContextEnvelope,
+		options: { format: ContextMarkdownFormat; includeEphemeral: boolean },
+	): string {
+		return options.format === "full"
+			? this._renderContextMarkdownFull(envelope, options)
+			: this._renderContextMarkdownSummary(envelope, options);
+	}
+
+	private _renderContextMarkdownSummary(envelope: ContextEnvelope, options: { includeEphemeral: boolean }): string {
+		const lines: string[] = [];
+
+		lines.push("# Context (summary)");
+		lines.push("");
+		lines.push(`- model: ${envelope.meta.model.provider}/${envelope.meta.model.id}`);
+		lines.push(`- context window: ${envelope.meta.limit}`);
+		lines.push(
+			`- options: reasoning=${envelope.options.reasoning ?? "(default)"}, temperature=${
+				envelope.options.temperature ?? "(default)"
+			}, maxTokens=${envelope.options.maxTokens ?? "(default)"}`,
+		);
+
+		const parts = envelope.system.parts.map((p) => `${p.name} (${p.text.length.toLocaleString()} chars)`).slice(0, 6);
+		lines.push(`- system parts: ${parts.join(", ")}${envelope.system.parts.length > 6 ? ", …" : ""}`);
+
+		const toolNames = envelope.tools.map((t) => t.name);
+		const toolPreview = toolNames.slice(0, 10).join(", ");
+		lines.push(
+			`- tools: ${toolNames.length}${toolNames.length > 0 ? ` [${toolPreview}${toolNames.length > 10 ? ", …" : ""}]` : ""}`,
+		);
+
+		lines.push(
+			`- messages: cached=${envelope.messages.cached.length}, uncached=${envelope.messages.uncached.length}`,
+		);
+		lines.push(`- ephemerals applied: ${options.includeEphemeral ? "yes" : "no"}`);
+		lines.push("");
+
+		const transforms = this.sessionManager.getPath().filter((e) => e.type === "context_transform") as Array<any>;
+		if (transforms.length > 0) {
+			const titles = transforms
+				.map((t) => t.display?.title ?? t.transformerName ?? "(unknown)")
+				.slice(0, 4)
+				.join(", ");
+			lines.push(`- transforms (persisted): ${transforms.length} [${titles}${transforms.length > 4 ? ", …" : ""}]`);
+		} else {
+			lines.push("- transforms (persisted): 0");
+		}
+
+		const ephemerals = this.sessionManager.getPath().filter((e) => e.type === "ephemeral") as Array<any>;
+		if (ephemerals.length > 0) {
+			lines.push(`- ephemeral log entries: ${ephemerals.length}`);
+		}
+
+		lines.push("");
+
+		const clipLine = (s: string) => {
+			const oneLine = s.replace(/\s+/g, " ").trim();
+			return oneLine.length > 140 ? `${oneLine.slice(0, 140)}…` : oneLine;
+		};
+
+		const renderRecent = (title: string, ms: Message[], max: number) => {
+			if (ms.length === 0) return;
+			lines.push(`Recent messages (${title}):`);
+			const startIndex = Math.max(0, ms.length - max);
+			for (let i = startIndex; i < ms.length; i++) {
+				const m = ms[i]!;
+				lines.push(`- ${i}. ${m.role}: ${clipLine(this._messageToOneLine(m))}`);
+			}
+		};
+
+		renderRecent("cached", envelope.messages.cached, 5);
+		if (envelope.messages.uncached.length > 0) {
+			renderRecent("uncached", envelope.messages.uncached, 2);
+		}
+
+		lines.push("");
+		lines.push("Tip: use `/context --full` for the full envelope dump.");
+		return lines.join("\n");
+	}
+
+	private _renderContextMarkdownFull(envelope: ContextEnvelope, _options: { includeEphemeral: boolean }): string {
 		const lines: string[] = [];
 
 		lines.push("# Context Envelope");
@@ -2393,7 +2475,6 @@ export class AgentSession {
 		renderMessages("cached", envelope.messages.cached);
 		renderMessages("uncached", envelope.messages.uncached);
 
-		// Persisted transforms on the active path (debugging / auditing)
 		const transforms = this.sessionManager.getPath().filter((e) => e.type === "context_transform") as Array<any>;
 		if (transforms.length > 0) {
 			lines.push("## Context transforms (persisted)");
@@ -2433,16 +2514,22 @@ export class AgentSession {
 	}
 
 	/** Render the effective envelope as markdown for debugging (/context, RPC get_context). */
-	async renderContextMarkdown(options?: { includeEphemeral?: boolean }): Promise<string> {
-		const envelope = await this._getContextEnvelopeForDebug(options);
-		return this._renderContextMarkdown(envelope);
+	async renderContextMarkdown(options?: {
+		includeEphemeral?: boolean;
+		format?: ContextMarkdownFormat;
+	}): Promise<string> {
+		const includeEphemeral = options?.includeEphemeral ?? false;
+		const format = options?.format ?? "summary";
+		const envelope = await this._getContextEnvelopeForDebug({ includeEphemeral });
+		return this._renderContextMarkdown(envelope, { format, includeEphemeral });
 	}
 
 	/** Deterministic-only context rendering (no hook execution). */
-	renderContextMarkdownDeterministic(): string {
+	renderContextMarkdownDeterministic(options?: { format?: ContextMarkdownFormat }): string {
 		if (!this.model) {
 			throw new Error("No model selected");
 		}
+		const format = options?.format ?? "full";
 		const envelope = this._buildContextEnvelopeFromSession({
 			model: this.model,
 			tools: this.agent.state.tools,
@@ -2451,7 +2538,7 @@ export class AgentSession {
 			signal: new AbortController().signal,
 			reasoning: this._getReasoningEffort(),
 		});
-		return this._renderContextMarkdown(envelope);
+		return this._renderContextMarkdown(envelope, { format, includeEphemeral: false });
 	}
 
 	/**
@@ -2464,7 +2551,7 @@ export class AgentSession {
 		return exportSessionToHtml(this.sessionManager, this.state, {
 			outputPath,
 			themeName,
-			contextMarkdown: this.renderContextMarkdownDeterministic(),
+			contextMarkdown: this.renderContextMarkdownDeterministic({ format: "full" }),
 		});
 	}
 

@@ -358,8 +358,12 @@ export class RpcClient {
 	/**
 	 * Render the current provider context (debug view) to markdown.
 	 */
-	async getContext(options?: { includeEphemeral?: boolean }): Promise<string> {
-		const response = await this.send({ type: "get_context", includeEphemeral: options?.includeEphemeral });
+	async getContext(options?: { includeEphemeral?: boolean; format?: "summary" | "full" }): Promise<string> {
+		const response = await this.send({
+			type: "get_context",
+			includeEphemeral: options?.includeEphemeral,
+			format: options?.format,
+		});
 		return this.getData<{ markdown: string }>(response).markdown;
 	}
 

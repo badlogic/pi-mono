@@ -369,7 +369,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// =================================================================
 
 			case "get_context": {
-				const markdown = await session.renderContextMarkdown({ includeEphemeral: command.includeEphemeral });
+				const markdown = await session.renderContextMarkdown({
+					includeEphemeral: command.includeEphemeral,
+					format: command.format,
+				});
 				return success(id, "get_context", { markdown });
 			}
 

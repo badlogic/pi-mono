@@ -61,7 +61,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Debugging
-	| { id?: string; type: "get_context"; includeEphemeral?: boolean };
+	| { id?: string; type: "get_context"; includeEphemeral?: boolean; format?: "summary" | "full" };
 
 // ============================================================================
 // RPC State

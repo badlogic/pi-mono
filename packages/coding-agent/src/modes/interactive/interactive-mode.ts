@@ -682,8 +682,9 @@ export class InteractiveMode {
 			}
 			if (text === "/context" || text.startsWith("/context ")) {
 				const includeEphemeral = text.includes("--ephemeral");
+				const format = text.includes("--full") || text.includes("--verbose") ? "full" : "summary";
 				this.editor.setText("");
-				await this.handleContextCommand({ includeEphemeral });
+				await this.handleContextCommand({ includeEphemeral, format });
 				return;
 			}
 			if (text === "/changelog") {
@@ -1935,10 +1936,17 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleContextCommand(options: { includeEphemeral: boolean }): Promise<void> {
+	private async handleContextCommand(options: {
+		includeEphemeral: boolean;
+		format: "summary" | "full";
+	}): Promise<void> {
 		try {
-			const md = await this.session.renderContextMarkdown({ includeEphemeral: options.includeEphemeral });
-			const title = options.includeEphemeral ? "Context Envelope (including ephemerals)" : "Context Envelope";
+			const md = await this.session.renderContextMarkdown({
+				includeEphemeral: options.includeEphemeral,
+				format: options.format,
+			});
+			const titleBase = options.format === "full" ? "Context (full)" : "Context (summary)";
+			const title = options.includeEphemeral ? `${titleBase} (including ephemerals)` : titleBase;
 
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(new DynamicBorder());
@@ -1947,12 +1955,16 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Markdown(md, 1, 1, getMarkdownTheme()));
 
 			// If hooks registered custom context transform renderers, render them as a follow-up section.
+			// Keep summary view concise: only render custom components in --full/--verbose mode.
 			const transforms = this.session.sessionManager
 				.getPath()
 				.filter((e) => e.type === "context_transform") as Array<any>;
-			const hasCustom = transforms.some(
-				(t) => t.display?.rendererId && this.session.hookRunner?.getContextTransformRenderer(t.display.rendererId),
-			);
+			const hasCustom =
+				options.format === "full" &&
+				transforms.some(
+					(t) =>
+						t.display?.rendererId && this.session.hookRunner?.getContextTransformRenderer(t.display.rendererId),
+				);
 
 			if (hasCustom) {
 				this.chatContainer.addChild(new Spacer(1));

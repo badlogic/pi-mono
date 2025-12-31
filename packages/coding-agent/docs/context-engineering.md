@@ -5,6 +5,11 @@ Pi supports **context engineering** via hooks that can shape what is sent to the
 This document focuses on **how to use** the hook surface (what events exist, what data you get, what you can return).
 
 If you’re building custom context strategies, `/context` is the primary debugging surface.
+
+- `/context` shows a **concise summary** by default.
+- `/context --full` shows the full envelope dump.
+- `/context --ephemeral` includes request-only ephemeral hook application.
+
 It renders the effective ContextEnvelope, and it can optionally render persisted transforms via hook-provided renderers (see [ContextTransformDisplay renderers](#contexttransformdisplay-renderers)).
 
 ## Key idea: the Context Envelope
