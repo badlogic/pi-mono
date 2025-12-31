@@ -14,7 +14,6 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
-import type { CompactionEntry } from "@mariozechner/pi-coding-agent";
 import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
@@ -22,7 +21,7 @@ export default function (pi: HookAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { preparation, branchEntries, signal } = event;
+		const { preparation, branchEntries: _, signal } = event;
 		const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)

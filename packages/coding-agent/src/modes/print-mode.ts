@@ -26,24 +26,23 @@ export async function runPrintMode(
 	initialMessage?: string,
 	initialImages?: ImageContent[],
 ): Promise<void> {
-	// Load entries once for session start events
-	const entries = session.sessionManager.getEntries();
-
 	// Hook runner already has no-op UI context by default (set in main.ts)
 	// Set up hooks for print mode (no UI)
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
+		hookRunner.initialize({
+			getModel: () => session.model,
+			sendMessageHandler: (message, triggerTurn) => {
+				session.sendHookMessage(message, triggerTurn).catch((e) => {
+					console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+				});
+			},
+			appendEntryHandler: (customType, data) => {
+				session.sessionManager.appendCustomEntry(customType, data);
+			},
+		});
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);
-		});
-		// Set up handlers - sendHookMessage handles queuing/direct append as needed
-		hookRunner.setSendMessageHandler((message, triggerTurn) => {
-			session.sendHookMessage(message, triggerTurn).catch((e) => {
-				console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
-			});
-		});
-		hookRunner.setAppendEntryHandler((customType, data) => {
-			session.sessionManager.appendCustomEntry(customType, data);
 		});
 		// Emit session_start event
 		await hookRunner.emit({
@@ -55,12 +54,17 @@ export async function runPrintMode(
 	for (const { tool } of session.customTools) {
 		if (tool.onSession) {
 			try {
-				await tool.onSession({
-					entries,
-					sessionFile: session.sessionFile,
-					previousSessionFile: undefined,
-					reason: "start",
-				});
+				await tool.onSession(
+					{
+						reason: "start",
+						previousSessionFile: undefined,
+					},
+					{
+						sessionManager: session.sessionManager,
+						modelRegistry: session.modelRegistry,
+						model: session.model,
+					},
+				);
 			} catch (_err) {
 				// Silently ignore tool errors
 			}

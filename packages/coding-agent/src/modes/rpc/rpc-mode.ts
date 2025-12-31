@@ -125,24 +125,24 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 	});
 
-	// Load entries once for session start events
-	const entries = session.sessionManager.getEntries();
-
 	// Set up hooks with RPC-based UI context
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		hookRunner.setUIContext(createHookUIContext(), false);
+		hookRunner.initialize({
+			getModel: () => session.agent.state.model,
+			sendMessageHandler: (message, triggerTurn) => {
+				session.sendHookMessage(message, triggerTurn).catch((e) => {
+					output(error(undefined, "hook_send", e.message));
+				});
+			},
+			appendEntryHandler: (customType, data) => {
+				session.sessionManager.appendCustomEntry(customType, data);
+			},
+			uiContext: createHookUIContext(),
+			hasUI: false,
+		});
 		hookRunner.onError((err) => {
 			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
-		});
-		// Set up handlers for pi.sendMessage() and pi.appendEntry()
-		hookRunner.setSendMessageHandler((message, triggerTurn) => {
-			session.sendHookMessage(message, triggerTurn).catch((e) => {
-				output(error(undefined, "hook_send", e.message));
-			});
-		});
-		hookRunner.setAppendEntryHandler((customType, data) => {
-			session.sessionManager.appendCustomEntry(customType, data);
 		});
 		// Emit session_start event
 		await hookRunner.emit({
@@ -155,12 +155,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	for (const { tool } of session.customTools) {
 		if (tool.onSession) {
 			try {
-				await tool.onSession({
-					entries,
-					sessionFile: session.sessionFile,
-					previousSessionFile: undefined,
-					reason: "start",
-				});
+				await tool.onSession(
+					{
+						previousSessionFile: undefined,
+						reason: "start",
+					},
+					{
+						sessionManager: session.sessionManager,
+						modelRegistry: session.modelRegistry,
+						model: session.model,
+					},
+				);
 			} catch (_err) {
 				// Silently ignore tool errors
 			}

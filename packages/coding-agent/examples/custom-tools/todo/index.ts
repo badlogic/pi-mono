@@ -9,7 +9,12 @@
  */
 
 import { StringEnum } from "@mariozechner/pi-ai";
-import type { CustomAgentTool, CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";
+import type {
+	CustomTool,
+	CustomToolContext,
+	CustomToolFactory,
+	CustomToolSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -43,11 +48,12 @@ const factory: CustomToolFactory = (_pi) => {
 	 * Reconstruct state from session entries.
 	 * Scans tool results for this tool and applies them in order.
 	 */
-	const reconstructState = (event: ToolSessionEvent) => {
+	const reconstructState = (_event: CustomToolSessionEvent, ctx: CustomToolContext) => {
 		todos = [];
 		nextId = 1;
 
-		for (const entry of event.entries) {
+		// Use getBranch() to get entries on the current branch
+		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type !== "message") continue;
 			const msg = entry.message;
 
@@ -63,7 +69,7 @@ const factory: CustomToolFactory = (_pi) => {
 		}
 	};
 
-	const tool: CustomAgentTool<typeof TodoParams, TodoDetails> = {
+	const tool: CustomTool<typeof TodoParams, TodoDetails> = {
 		name: "todo",
 		label: "Todo",
 		description: "Manage a todo list. Actions: list, add (text), toggle (id), clear",

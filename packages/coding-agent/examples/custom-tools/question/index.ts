@@ -2,7 +2,7 @@
  * Question Tool - Let the LLM ask the user a question with options
  */
 
-import type { CustomAgentTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
+import type { CustomTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -18,7 +18,7 @@ const QuestionParams = Type.Object({
 });
 
 const factory: CustomToolFactory = (pi) => {
-	const tool: CustomAgentTool<typeof QuestionParams, QuestionDetails> = {
+	const tool: CustomTool<typeof QuestionParams, QuestionDetails> = {
 		name: "question",
 		label: "Question",
 		description: "Ask the user a question and let them pick from options. Use when you need user input to proceed.",

@@ -20,10 +20,10 @@ import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { Message } from "@mariozechner/pi-ai";
 import { StringEnum } from "@mariozechner/pi-ai";
 import {
-	type CustomAgentTool,
+	type CustomTool,
+	type CustomToolAPI,
 	type CustomToolFactory,
 	getMarkdownTheme,
-	type ToolAPI,
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
@@ -224,7 +224,7 @@ function writePromptToTempFile(agentName: string, prompt: string): { dir: string
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
 async function runSingleAgent(
-	pi: ToolAPI,
+	pi: CustomToolAPI,
 	agents: AgentConfig[],
 	agentName: string,
 	task: string,
@@ -411,7 +411,7 @@ const SubagentParams = Type.Object({
 });
 
 const factory: CustomToolFactory = (pi) => {
-	const tool: CustomAgentTool<typeof SubagentParams, SubagentDetails> = {
+	const tool: CustomTool<typeof SubagentParams, SubagentDetails> = {
 		name: "subagent",
 		label: "Subagent",
 		get description() {
@@ -433,7 +433,7 @@ const factory: CustomToolFactory = (pi) => {
 		},
 		parameters: SubagentParams,
 
-		async execute(_toolCallId, params, signal, onUpdate) {
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const discovery = discoverAgents(pi.cwd, agentScope);
 			const agents = discovery.agents;

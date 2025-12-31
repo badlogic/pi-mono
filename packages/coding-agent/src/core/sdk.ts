@@ -35,8 +35,13 @@ import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
-import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./custom-tools/index.js";
-import type { CustomAgentTool } from "./custom-tools/types.js";
+import {
+	type CustomToolsLoadResult,
+	discoverAndLoadCustomTools,
+	type LoadedCustomTool,
+	wrapCustomTools,
+} from "./custom-tools/index.js";
+import type { CustomTool } from "./custom-tools/types.js";
 import { discoverAndLoadHooks, HookRunner, type LoadedHook, wrapToolsWithHooks } from "./hooks/index.js";
 import type { HookFactory } from "./hooks/types.js";
 import { convertToLlm } from "./messages.js";
@@ -99,7 +104,7 @@ export interface CreateAgentSessionOptions {
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools (replaces discovery). */
-	customTools?: Array<{ path?: string; tool: CustomAgentTool }>;
+	customTools?: Array<{ path?: string; tool: CustomTool }>;
 	/** Additional custom tool paths to load (merged with discovery). */
 	additionalCustomToolPaths?: string[];
 
@@ -127,17 +132,14 @@ export interface CreateAgentSessionResult {
 	/** The created session */
 	session: AgentSession;
 	/** Custom tools result (for UI context setup in interactive mode) */
-	customToolsResult: {
-		tools: LoadedCustomTool[];
-		setUIContext: (uiContext: any, hasUI: boolean) => void;
-	};
+	customToolsResult: CustomToolsLoadResult;
 	/** Warning if session was restored with a different model than saved */
 	modelFallbackMessage?: string;
 }
 
 // Re-exports
 
-export type { CustomAgentTool } from "./custom-tools/types.js";
+export type { CustomTool } from "./custom-tools/types.js";
 export type { HookAPI, HookFactory } from "./hooks/types.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
@@ -219,7 +221,7 @@ export async function discoverHooks(
 export async function discoverCustomTools(
 	cwd?: string,
 	agentDir?: string,
-): Promise<Array<{ path: string; tool: CustomAgentTool }>> {
+): Promise<Array<{ path: string; tool: CustomTool }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 
@@ -507,7 +509,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const builtInTools = options.tools ?? createCodingTools(cwd);
 	time("createCodingTools");
 
-	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
+	let customToolsResult: CustomToolsLoadResult;
 	if (options.customTools !== undefined) {
 		// Use provided custom tools
 		const loadedTools: LoadedCustomTool[] = options.customTools.map((ct) => ({
@@ -517,17 +519,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}));
 		customToolsResult = {
 			tools: loadedTools,
+			errors: [],
 			setUIContext: () => {},
 		};
 	} else {
 		// Discover custom tools, merging with additional paths
 		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
-		const result = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
+		customToolsResult = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
 		time("discoverAndLoadCustomTools");
-		for (const { path, error } of result.errors) {
+		for (const { path, error } of customToolsResult.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
 		}
-		customToolsResult = result;
 	}
 
 	let hookRunner: HookRunner | undefined;
@@ -549,7 +551,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
+	// Wrap custom tools with context getter (agent is assigned below, accessed at execute time)
+	let agent: Agent;
+	const wrappedCustomTools = wrapCustomTools(customToolsResult.tools, () => ({
+		sessionManager,
+		modelRegistry,
+		model: agent.state.model,
+	}));
+
+	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
 	time("combineTools");
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
@@ -581,7 +591,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
 
-	const agent = new Agent({
+	agent = new Agent({
 		initialState: {
 			systemPrompt,
 			model,

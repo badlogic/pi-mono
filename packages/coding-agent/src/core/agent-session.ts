@@ -27,7 +27,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
+import type { CustomToolContext, CustomToolSessionEvent, LoadedCustomTool } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type {
 	HookContext,
@@ -698,7 +698,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitToolSessionEvent("new", previousSessionFile);
+		await this.emitCustomToolSessionEvent("new", previousSessionFile);
 		return true;
 	}
 
@@ -895,7 +895,7 @@ export class AgentSession {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
 
-			const pathEntries = this.sessionManager.getPath();
+			const pathEntries = this.sessionManager.getBranch();
 			const settings = this.settingsManager.getCompactionSettings();
 
 			const preparation = prepareCompaction(pathEntries, settings);
@@ -1068,7 +1068,7 @@ export class AgentSession {
 				return;
 			}
 
-			const pathEntries = this.sessionManager.getPath();
+			const pathEntries = this.sessionManager.getBranch();
 
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
@@ -1473,7 +1473,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitToolSessionEvent("switch", previousSessionFile);
+		await this.emitCustomToolSessionEvent("switch", previousSessionFile);
 
 		this.agent.replaceMessages(sessionContext.messages);
 
@@ -1550,7 +1550,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools (with reason "branch")
-		await this.emitToolSessionEvent("branch", previousSessionFile);
+		await this.emitCustomToolSessionEvent("branch", previousSessionFile);
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1720,7 +1720,7 @@ export class AgentSession {
 		}
 
 		// Emit to custom tools
-		await this.emitToolSessionEvent("tree", this.sessionFile);
+		await this.emitCustomToolSessionEvent("tree", this.sessionFile);
 
 		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false, summaryEntry };
@@ -1877,20 +1877,23 @@ export class AgentSession {
 	 * Emit session event to all custom tools.
 	 * Called on session switch, branch, tree navigation, and shutdown.
 	 */
-	async emitToolSessionEvent(
-		reason: ToolSessionEvent["reason"],
+	async emitCustomToolSessionEvent(
+		reason: CustomToolSessionEvent["reason"],
 		previousSessionFile?: string | undefined,
 	): Promise<void> {
-		const event: ToolSessionEvent = {
-			entries: this.sessionManager.getEntries(),
-			sessionFile: this.sessionFile,
-			previousSessionFile,
-			reason,
+		if (!this._customTools) return;
+
+		const event: CustomToolSessionEvent = { reason, previousSessionFile };
+		const ctx: CustomToolContext = {
+			sessionManager: this.sessionManager,
+			modelRegistry: this._modelRegistry,
+			model: this.agent.state.model,
 		};
+
 		for (const { tool } of this._customTools) {
 			if (tool.onSession) {
 				try {
-					await tool.onSession(event);
+					await tool.onSession(event, ctx);
 				} catch (_err) {
 					// Silently ignore tool errors during session events
 				}

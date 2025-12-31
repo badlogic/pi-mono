@@ -99,16 +99,19 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		const modelRegistry = new ModelRegistry(authStorage);
 
 		hookRunner = new HookRunner(hooks, tempDir, sessionManager, modelRegistry);
-		hookRunner.setUIContext(
-			{
+		hookRunner.initialize({
+			getModel: () => session.model,
+			sendMessageHandler: async () => {},
+			appendEntryHandler: async () => {},
+			uiContext: {
 				select: async () => undefined,
 				confirm: async () => false,
 				input: async () => undefined,
 				notify: () => {},
 				custom: () => ({ close: () => {}, requestRender: () => {} }),
 			},
-			false,
-		);
+			hasUI: false,
+		});
 
 		session = new AgentSession({
 			agent,

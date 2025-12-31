@@ -11,7 +11,7 @@
 import { Type } from "@sinclair/typebox";
 import {
 	bashTool, // read, bash, edit, write - uses process.cwd()
-	type CustomAgentTool,
+	type CustomTool,
 	createAgentSession,
 	createBashTool,
 	createCodingTools, // Factory: creates tools for specific cwd
@@ -55,7 +55,7 @@ await createAgentSession({
 console.log("Specific tools with custom cwd session created");
 
 // Inline custom tool (needs TypeBox schema)
-const weatherTool: CustomAgentTool = {
+const weatherTool: CustomTool = {
 	name: "get_weather",
 	label: "Get Weather",
 	description: "Get current weather for a city",

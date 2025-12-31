@@ -26,7 +26,7 @@ import {
 import { exec, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
-import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "../../core/custom-tools/index.js";
+import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -350,19 +350,20 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Load session entries if any
-		const entries = this.session.sessionManager.getEntries();
-
-		// Set TUI-based UI context for custom tools
-		const uiContext = this.createHookUIContext();
+		// Create and set hook & tool UI context
+		const uiContext: HookUIContext = {
+			select: (title, options) => this.showHookSelector(title, options),
+			confirm: (title, message) => this.showHookConfirm(title, message),
+			input: (title, placeholder) => this.showHookInput(title, placeholder),
+			notify: (message, type) => this.showHookNotify(message, type),
+			custom: (component) => this.showHookCustom(component),
+		};
 		this.setToolUIContext(uiContext, true);
 
 		// Notify custom tools of session start
-		await this.emitToolSessionEvent({
-			entries,
-			sessionFile: this.session.sessionFile,
-			previousSessionFile: undefined,
+		await this.emitCustomToolSessionEvent({
 			reason: "start",
+			previousSessionFile: undefined,
 		});
 
 		const hookRunner = this.session.hookRunner;
@@ -370,32 +371,33 @@ export class InteractiveMode {
 			return; // No hooks loaded
 		}
 
-		// Set UI context on hook runner
-		hookRunner.setUIContext(uiContext, true);
+		hookRunner.initialize({
+			getModel: () => this.session.model,
+			sendMessageHandler: (message, triggerTurn) => {
+				const wasStreaming = this.session.isStreaming;
+				this.session
+					.sendHookMessage(message, triggerTurn)
+					.then(() => {
+						// For non-streaming cases with display=true, update UI
+						// (streaming cases update via message_end event)
+						if (!wasStreaming && message.display) {
+							this.rebuildChatFromMessages();
+						}
+					})
+					.catch((err) => {
+						this.showError(`Hook sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+					});
+			},
+			appendEntryHandler: (customType, data) => {
+				this.sessionManager.appendCustomEntry(customType, data);
+			},
+			uiContext,
+			hasUI: true,
+		});
 
 		// Subscribe to hook errors
 		hookRunner.onError((error) => {
 			this.showHookError(error.hookPath, error.error);
-		});
-
-		// Set up handlers for pi.sendMessage() and pi.appendEntry()
-		hookRunner.setSendMessageHandler((message, triggerTurn) => {
-			const wasStreaming = this.session.isStreaming;
-			this.session
-				.sendHookMessage(message, triggerTurn)
-				.then(() => {
-					// For non-streaming cases with display=true, update UI
-					// (streaming cases update via message_end event)
-					if (!wasStreaming && message.display) {
-						this.rebuildChatFromMessages();
-					}
-				})
-				.catch((err) => {
-					this.showError(`Hook sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
-				});
-		});
-		hookRunner.setAppendEntryHandler((customType, data) => {
-			this.sessionManager.appendCustomEntry(customType, data);
 		});
 
 		// Show loaded hooks
@@ -415,11 +417,15 @@ export class InteractiveMode {
 	/**
 	 * Emit session event to all custom tools.
 	 */
-	private async emitToolSessionEvent(event: ToolSessionEvent): Promise<void> {
+	private async emitCustomToolSessionEvent(event: CustomToolSessionEvent): Promise<void> {
 		for (const { tool } of this.customTools.values()) {
 			if (tool.onSession) {
 				try {
-					await tool.onSession(event);
+					await tool.onSession(event, {
+						sessionManager: this.session.sessionManager,
+						modelRegistry: this.session.modelRegistry,
+						model: this.session.model,
+					});
 				} catch (err) {
 					this.showToolError(tool.name, err instanceof Error ? err.message : String(err));
 				}
@@ -434,19 +440,6 @@ export class InteractiveMode {
 		const errorText = new Text(theme.fg("error", `Tool "${toolName}" error: ${error}`), 1, 0);
 		this.chatContainer.addChild(errorText);
 		this.ui.requestRender();
-	}
-
-	/**
-	 * Create the UI context for hooks.
-	 */
-	private createHookUIContext(): HookUIContext {
-		return {
-			select: (title, options) => this.showHookSelector(title, options),
-			confirm: (title, message) => this.showHookConfirm(title, message),
-			input: (title, placeholder) => this.showHookInput(title, placeholder),
-			notify: (message, type) => this.showHookNotify(message, type),
-			custom: (component) => this.showHookCustom(component),
-		};
 	}
 
 	/**
@@ -861,6 +854,7 @@ export class InteractiveMode {
 									this.customTools.get(content.name)?.tool,
 									this.ui,
 								);
+								component.setExpanded(this.toolOutputExpanded);
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -909,6 +903,7 @@ export class InteractiveMode {
 						this.customTools.get(event.toolName)?.tool,
 						this.ui,
 					);
+					component.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();
@@ -1158,6 +1153,7 @@ export class InteractiveMode {
 							this.customTools.get(content.name)?.tool,
 							this.ui,
 						);
+						component.setExpanded(this.toolOutputExpanded);
 						this.chatContainer.addChild(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
@@ -1251,7 +1247,7 @@ export class InteractiveMode {
 		}
 
 		// Emit shutdown event to custom tools
-		await this.session.emitToolSessionEvent("shutdown");
+		await this.session.emitCustomToolSessionEvent("shutdown");
 
 		this.stop();
 		process.exit(0);

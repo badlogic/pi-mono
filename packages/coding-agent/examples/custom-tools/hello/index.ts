@@ -10,9 +10,10 @@ const factory: CustomToolFactory = (_pi) => ({
 	}),
 
 	async execute(_toolCallId, params) {
+		const { name } = params as { name: string };
 		return {
-			content: [{ type: "text", text: `Hello, ${params.name}!` }],
-			details: { greeted: params.name },
+			content: [{ type: "text", text: `Hello, ${name}!` }],
+			details: { greeted: name },
 		};
 	},
 });

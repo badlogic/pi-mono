@@ -108,20 +108,12 @@ export class HookRunner {
 		hasUI?: boolean;
 	}): void {
 		this.getModel = options.getModel;
-		this.setSendMessageHandler(options.sendMessageHandler);
-		this.setAppendEntryHandler(options.appendEntryHandler);
-		if (options.uiContext) {
-			this.setUIContext(options.uiContext, options.hasUI ?? false);
+		for (const hook of this.hooks) {
+			hook.setSendMessageHandler(options.sendMessageHandler);
+			hook.setAppendEntryHandler(options.appendEntryHandler);
 		}
-	}
-
-	/**
-	 * Set the UI context for hooks.
-	 * Call this when the mode initializes and UI is available.
-	 */
-	setUIContext(uiContext: HookUIContext, hasUI: boolean): void {
-		this.uiContext = uiContext;
-		this.hasUI = hasUI;
+		this.uiContext = options.uiContext ?? noOpUIContext;
+		this.hasUI = options.hasUI ?? false;
 	}
 
 	/**
@@ -143,26 +135,6 @@ export class HookRunner {
 	 */
 	getHookPaths(): string[] {
 		return this.hooks.map((h) => h.path);
-	}
-
-	/**
-	 * Set the send message handler for all hooks' pi.sendMessage().
-	 * Call this when the mode initializes.
-	 */
-	setSendMessageHandler(handler: SendMessageHandler): void {
-		for (const hook of this.hooks) {
-			hook.setSendMessageHandler(handler);
-		}
-	}
-
-	/**
-	 * Set the append entry handler for all hooks' pi.appendEntry().
-	 * Call this when the mode initializes.
-	 */
-	setAppendEntryHandler(handler: AppendEntryHandler): void {
-		for (const hook of this.hooks) {
-			hook.setAppendEntryHandler(handler);
-		}
 	}
 
 	/**

@@ -122,14 +122,14 @@ describe("SessionManager append and tree traversal", () => {
 	describe("getPath", () => {
 		it("returns empty array for empty session", () => {
 			const session = SessionManager.inMemory();
-			expect(session.getPath()).toEqual([]);
+			expect(session.getBranch()).toEqual([]);
 		});
 
 		it("returns single entry path", () => {
 			const session = SessionManager.inMemory();
 			const id = session.appendMessage(userMsg("hello"));
 
-			const path = session.getPath();
+			const path = session.getBranch();
 			expect(path).toHaveLength(1);
 			expect(path[0].id).toBe(id);
 		});
@@ -142,7 +142,7 @@ describe("SessionManager append and tree traversal", () => {
 			const id3 = session.appendThinkingLevelChange("high");
 			const id4 = session.appendMessage(userMsg("3"));
 
-			const path = session.getPath();
+			const path = session.getBranch();
 			expect(path).toHaveLength(4);
 			expect(path.map((e) => e.id)).toEqual([id1, id2, id3, id4]);
 		});
@@ -155,7 +155,7 @@ describe("SessionManager append and tree traversal", () => {
 			const _id3 = session.appendMessage(userMsg("3"));
 			const _id4 = session.appendMessage(assistantMsg("4"));
 
-			const path = session.getPath(id2);
+			const path = session.getBranch(id2);
 			expect(path).toHaveLength(2);
 			expect(path.map((e) => e.id)).toEqual([id1, id2]);
 		});
