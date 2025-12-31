@@ -1,3 +1,5 @@
+> pi can help you use the SDK. Ask it to build an integration for your use case.
+
 # SDK
 
 The SDK provides programmatic access to pi's agent capabilities. Use it to embed pi in other applications, build custom interfaces, or integrate with automated workflows.

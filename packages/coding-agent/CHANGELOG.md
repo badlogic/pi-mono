@@ -57,6 +57,7 @@
   - `CustomToolContext` provides `sessionManager: ReadonlySessionManager`, `modelRegistry`, and `model`
   - `dispose()` method removed - use `onSession` with `reason: "shutdown"` for cleanup
   - `CustomToolFactory` return type changed to `CustomTool<any, any>` for type compatibility
+- **AgentSession.branch()**: Now takes `entryId: string` instead of `entryIndex: number`. `SessionBeforeBranchEvent.entryId` replaces `entryIndex`. `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`.
 - **Renamed exports**:
   - `messageTransformer` → `convertToLlm`
   - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
