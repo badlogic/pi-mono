@@ -128,13 +128,12 @@ interface CompactionDetails {
 ```
 
 Hooks can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom compaction hooks can use their own structure.
-```
 
 ## Branch Summarization
 
 ### When It Triggers
 
-When you use `/tree` to navigate to a different branch, pi offers to summarize the work you're leaving. This preserves context so you can return later.
+When you use `/tree` to navigate to a different branch, pi offers to summarize the work you're leaving. This injects context from the left branch into the new branch.
 
 ### How It Works
 
@@ -163,11 +162,11 @@ After navigation with summary:
 
 ### Cumulative File Tracking
 
-Branch summaries track files cumulatively. When generating a new summary, pi extracts file operations from:
+Both compaction and branch summarization track files cumulatively. When generating a summary, pi extracts file operations from:
 - Tool calls in the messages being summarized
-- Previous branch summary `details` (if any)
+- Previous compaction or branch summary `details` (if any)
 
-This means nested summaries accumulate file tracking across the entire abandoned branch.
+This means file tracking accumulates across multiple compactions or nested branch summaries, preserving the full history of read and modified files.
 
 ### BranchSummaryEntry Structure
 
@@ -257,7 +256,7 @@ Fired before auto-compaction or `/compact`. Can cancel or provide custom summary
 ```typescript
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation, branchEntries, customInstructions, signal } = event;
-  
+
   // preparation.messagesToSummarize - messages to summarize
   // preparation.turnPrefixMessages - split turn prefix (if isSplitTurn)
   // preparation.previousSummary - previous compaction summary
@@ -265,13 +264,13 @@ pi.on("session_before_compact", async (event, ctx) => {
   // preparation.tokensBefore - context tokens before compaction
   // preparation.firstKeptEntryId - where kept messages start
   // preparation.settings - compaction settings
-  
+
   // branchEntries - all entries on current branch (for custom state)
   // signal - AbortSignal (pass to LLM calls)
-  
+
   // Cancel:
   return { cancel: true };
-  
+
   // Custom summary:
   return {
     compaction: {
@@ -293,16 +292,16 @@ Fired before `/tree` navigation with summarization. Can cancel or provide custom
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
-  
+
   // preparation.targetId - where we're navigating to
   // preparation.oldLeafId - current position (being abandoned)
   // preparation.commonAncestorId - shared ancestor
   // preparation.entriesToSummarize - entries to summarize
   // preparation.userWantsSummary - whether user chose to summarize
-  
+
   // Cancel navigation:
   return { cancel: true };
-  
+
   // Custom summary (only if userWantsSummary):
   return {
     summary: {
