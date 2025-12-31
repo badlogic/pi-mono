@@ -58,6 +58,11 @@ interface ThemeJson {
 	name: string;
 	vars?: Record<string, string | number>;
 	colors: Record<string, string | number>;
+	export?: {
+		pageBg?: string | number;
+		cardBg?: string | number;
+		infoBg?: string | number;
+	};
 }
 
 interface ThemeColors {
@@ -72,6 +77,7 @@ interface ThemeColors {
 	dim: string;
 	text: string;
 	// Backgrounds
+	selectedBg: string;
 	userMessageBg: string;
 	userMessageText: string;
 	toolPendingBg: string;
@@ -103,6 +109,10 @@ interface ThemeColors {
 	syntaxType: string;
 	syntaxOperator: string;
 	syntaxPunctuation: string;
+	// Export-specific (HTML export only)
+	exportPageBg: string;
+	exportCardBg: string;
+	exportInfoBg: string;
 }
 
 /** Resolve a theme color value, following variable references until we get a final value. */
@@ -118,6 +128,78 @@ function resolveColorValue(
 	if (!(value in vars)) return value; // Return as-is (hex colors work in CSS)
 	visited.add(value);
 	return resolveColorValue(vars[value], vars, defaultValue, visited);
+}
+
+/** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
+function parseColor(color: string): { r: number; g: number; b: number } | undefined {
+	// Handle hex colors
+	const hexMatch = color.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+	if (hexMatch) {
+		return {
+			r: Number.parseInt(hexMatch[1], 16),
+			g: Number.parseInt(hexMatch[2], 16),
+			b: Number.parseInt(hexMatch[3], 16),
+		};
+	}
+	// Handle rgb() format
+	const rgbMatch = color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+	if (rgbMatch) {
+		return {
+			r: Number.parseInt(rgbMatch[1], 10),
+			g: Number.parseInt(rgbMatch[2], 10),
+			b: Number.parseInt(rgbMatch[3], 10),
+		};
+	}
+	return undefined;
+}
+
+/** Calculate relative luminance of a color (0-1, higher = lighter). */
+function getLuminance(r: number, g: number, b: number): number {
+	// sRGB to linear
+	const toLinear = (c: number) => {
+		const s = c / 255;
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/** Adjust color brightness. Factor > 1 lightens, < 1 darkens. */
+function adjustBrightness(color: string, factor: number): string {
+	const parsed = parseColor(color);
+	if (!parsed) return color;
+	const adjust = (c: number) => Math.min(255, Math.max(0, Math.round(c * factor)));
+	return `rgb(${adjust(parsed.r)}, ${adjust(parsed.g)}, ${adjust(parsed.b)})`;
+}
+
+/** Derive export background colors from a base color (e.g., userMessageBg). */
+function deriveExportColors(baseColor: string): { pageBg: string; cardBg: string; infoBg: string } {
+	const parsed = parseColor(baseColor);
+	if (!parsed) {
+		// Fallback to dark theme defaults
+		return {
+			pageBg: "rgb(24, 24, 30)",
+			cardBg: "rgb(30, 30, 36)",
+			infoBg: "rgb(60, 55, 40)",
+		};
+	}
+
+	const luminance = getLuminance(parsed.r, parsed.g, parsed.b);
+	const isLight = luminance > 0.5;
+
+	if (isLight) {
+		// Light theme: page is slightly darker than card, info has warm tint
+		return {
+			pageBg: adjustBrightness(baseColor, 0.96),
+			cardBg: baseColor,
+			infoBg: `rgb(${Math.min(255, parsed.r + 10)}, ${Math.min(255, parsed.g + 5)}, ${Math.max(0, parsed.b - 20)})`,
+		};
+	}
+	// Dark theme: page is darker than card, info has warm/yellow tint
+	return {
+		pageBg: adjustBrightness(baseColor, 0.7),
+		cardBg: adjustBrightness(baseColor, 0.85),
+		infoBg: `rgb(${Math.min(255, parsed.r + 20)}, ${Math.min(255, parsed.g + 15)}, ${parsed.b})`,
+	};
 }
 
 /** Load theme JSON from built-in or custom themes directory. */
@@ -164,6 +246,7 @@ function getThemeColors(themeName?: string): ThemeColors {
 				muted: "rgb(108, 108, 108)",
 				dim: "rgb(138, 138, 138)",
 				text: "rgb(0, 0, 0)",
+				selectedBg: "rgb(220, 220, 225)",
 				userMessageBg: "rgb(232, 232, 232)",
 				userMessageText: "rgb(0, 0, 0)",
 				toolPendingBg: "rgb(232, 232, 240)",
@@ -192,6 +275,9 @@ function getThemeColors(themeName?: string): ThemeColors {
 				syntaxType: "rgb(38, 127, 153)",
 				syntaxOperator: "rgb(0, 0, 0)",
 				syntaxPunctuation: "rgb(0, 0, 0)",
+				exportPageBg: "rgb(248, 248, 248)",
+				exportCardBg: "rgb(255, 255, 255)",
+				exportInfoBg: "rgb(255, 250, 230)",
 			}
 		: {
 				// Dark theme defaults
@@ -204,6 +290,7 @@ function getThemeColors(themeName?: string): ThemeColors {
 				muted: "rgb(128, 128, 128)",
 				dim: "rgb(102, 102, 102)",
 				text: "rgb(229, 229, 231)",
+				selectedBg: "rgb(60, 60, 70)",
 				userMessageBg: "rgb(52, 53, 65)",
 				userMessageText: "rgb(229, 229, 231)",
 				toolPendingBg: "rgb(40, 40, 50)",
@@ -232,6 +319,9 @@ function getThemeColors(themeName?: string): ThemeColors {
 				syntaxType: "rgb(78, 201, 176)",
 				syntaxOperator: "rgb(212, 212, 212)",
 				syntaxPunctuation: "rgb(212, 212, 212)",
+				exportPageBg: "rgb(24, 24, 30)",
+				exportCardBg: "rgb(30, 30, 36)",
+				exportInfoBg: "rgb(60, 55, 40)",
 			};
 
 	if (!themeName) return defaultColors;
@@ -241,12 +331,37 @@ function getThemeColors(themeName?: string): ThemeColors {
 
 	const vars = themeJson.vars || {};
 	const colors = themeJson.colors;
+	const exportColors = themeJson.export;
 
 	const resolve = (key: keyof ThemeColors): string => {
 		const value = colors[key];
 		if (value === undefined) return defaultColors[key];
 		return resolveColorValue(value, vars, defaultColors[key]);
 	};
+
+	// Resolve export colors: use theme's export section if available, otherwise derive from userMessageBg
+	const userMessageBg = resolve("userMessageBg");
+	let exportPageBg: string;
+	let exportCardBg: string;
+	let exportInfoBg: string;
+
+	if (exportColors?.pageBg !== undefined) {
+		exportPageBg = resolveColorValue(exportColors.pageBg, vars, defaultColors.exportPageBg);
+	} else {
+		exportPageBg = deriveExportColors(userMessageBg).pageBg;
+	}
+
+	if (exportColors?.cardBg !== undefined) {
+		exportCardBg = resolveColorValue(exportColors.cardBg, vars, defaultColors.exportCardBg);
+	} else {
+		exportCardBg = deriveExportColors(userMessageBg).cardBg;
+	}
+
+	if (exportColors?.infoBg !== undefined) {
+		exportInfoBg = resolveColorValue(exportColors.infoBg, vars, defaultColors.exportInfoBg);
+	} else {
+		exportInfoBg = deriveExportColors(userMessageBg).infoBg;
+	}
 
 	return {
 		accent: resolve("accent"),
@@ -258,7 +373,8 @@ function getThemeColors(themeName?: string): ThemeColors {
 		muted: resolve("muted"),
 		dim: resolve("dim"),
 		text: resolve("text"),
-		userMessageBg: resolve("userMessageBg"),
+		selectedBg: resolve("selectedBg"),
+		userMessageBg,
 		userMessageText: resolve("userMessageText"),
 		toolPendingBg: resolve("toolPendingBg"),
 		toolSuccessBg: resolve("toolSuccessBg"),
@@ -286,6 +402,9 @@ function getThemeColors(themeName?: string): ThemeColors {
 		syntaxType: resolve("syntaxType"),
 		syntaxOperator: resolve("syntaxOperator"),
 		syntaxPunctuation: resolve("syntaxPunctuation"),
+		exportPageBg,
+		exportCardBg,
+		exportInfoBg,
 	};
 }
 
@@ -992,7 +1111,7 @@ function formatCompaction(event: CompactionEvent): string {
 // HTML generation
 // ============================================================================
 
-function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeColors, isLight: boolean): string {
+function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeColors): string {
 	const userMessages = data.messages.filter((m) => m.role === "user").length;
 	const assistantMessages = data.messages.filter((m) => m.role === "assistant").length;
 
@@ -1067,15 +1186,13 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
 		? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${contextPercent}%) - ${escapeHtml(lastModelInfo)}`
 		: `${contextTokens.toLocaleString()} tokens (last turn) - ${escapeHtml(lastModelInfo)}`;
 
-	// Compute body background based on theme
-	const bodyBg = isLight ? "rgb(248, 248, 248)" : "rgb(24, 24, 30)";
-	const containerBg = isLight ? "rgb(255, 255, 255)" : "rgb(30, 30, 36)";
-	const compactionBg = isLight ? "rgb(255, 248, 220)" : "rgb(60, 55, 35)";
-	const systemPromptBg = isLight ? "rgb(255, 250, 230)" : "rgb(60, 55, 40)";
-	const streamingNoticeBg = isLight ? "rgb(250, 245, 235)" : "rgb(50, 45, 35)";
-	const modelChangeBg = isLight ? "rgb(240, 240, 250)" : "rgb(40, 40, 50)";
-	const userBashBg = isLight ? "rgb(255, 250, 240)" : "rgb(50, 48, 35)";
-	const userBashErrorBg = isLight ? "rgb(255, 245, 235)" : "rgb(60, 45, 35)";
+	// Use export-specific colors from theme (or derived defaults)
+	const bodyBg = colors.exportPageBg;
+	const containerBg = colors.exportCardBg;
+	const infoBg = colors.exportInfoBg;
+	// Tool-related backgrounds still use tool colors
+	const userBashBg = colors.toolPendingBg;
+	const userBashErrorBg = colors.toolErrorBg;
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -1124,12 +1241,12 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
             padding: 12px 16px;
         }
         .thinking-text { color: ${colors.dim}; font-style: italic; white-space: pre-wrap; }
-        .model-change { padding: 8px 16px; background: ${modelChangeBg}; border-radius: 4px; }
+        .model-change { padding: 8px 16px; background: ${infoBg}; border-radius: 4px; }
         .model-change-text { color: ${colors.dim}; font-size: 11px; }
         .model-name { color: ${colors.borderAccent}; font-weight: bold; }
-        .compaction-container { background: ${compactionBg}; border-radius: 4px; overflow: hidden; }
+        .compaction-container { background: ${infoBg}; border-radius: 4px; overflow: hidden; }
         .compaction-header { padding: 12px 16px; cursor: pointer; }
-        .compaction-header:hover { background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.05); }
+        .compaction-header:hover { background: ${colors.selectedBg}; }
         .compaction-header-row { display: flex; align-items: center; gap: 8px; }
         .compaction-toggle { color: ${colors.borderAccent}; font-size: 10px; transition: transform 0.2s; }
         .compaction-container.expanded .compaction-toggle { transform: rotate(90deg); }
@@ -1137,7 +1254,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .compaction-hint { color: ${colors.dim}; font-size: 11px; }
         .compaction-content { display: none; padding: 0 16px 16px 16px; }
         .compaction-container.expanded .compaction-content { display: block; }
-        .compaction-summary { background: rgba(0, 0, 0, 0.1); border-radius: 4px; padding: 12px; }
+        .compaction-summary { background: ${colors.selectedBg}; border-radius: 4px; padding: 12px; }
         .compaction-summary-header { font-weight: bold; color: ${colors.borderAccent}; margin-bottom: 8px; font-size: 11px; }
         .compaction-summary-content { color: ${colors.text}; white-space: pre-wrap; word-wrap: break-word; }
         .tool-execution { padding: 12px 16px; border-radius: 4px; margin-top: 8px; }
@@ -1166,7 +1283,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .tool-output.expandable.expanded .output-preview { display: none; }
         .tool-output.expandable.expanded .output-full { display: block; }
         .expand-hint { color: ${colors.borderAccent}; font-style: italic; margin-top: 4px; }
-        .system-prompt, .tools-list { background: ${systemPromptBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
+        .system-prompt, .tools-list { background: ${infoBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
         .system-prompt-header, .tools-header { font-weight: bold; color: ${colors.warning}; margin-bottom: 8px; }
         .system-prompt-content, .tools-content { color: ${colors.dim}; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; font-size: 11px; }
         .tool-item { margin: 4px 0; }
@@ -1180,7 +1297,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .bash-status.error { color: ${colors.error}; }
         .bash-truncation.warning { color: ${colors.warning}; }
         .footer { margin-top: 48px; padding: 20px; text-align: center; color: ${colors.dim}; font-size: 10px; }
-        .streaming-notice { background: ${streamingNoticeBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; color: ${colors.dim}; font-size: 11px; }
+        .streaming-notice { background: ${infoBg}; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; color: ${colors.dim}; font-size: 11px; }
 
         /* Image styles */
         .message-images { margin-bottom: 12px; }
@@ -1200,7 +1317,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .markdown-content a { color: ${colors.mdLink}; text-decoration: underline; }
         .markdown-content a:hover { opacity: 0.8; }
         .markdown-content code {
-            background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.1);
+            background: ${colors.selectedBg};
             color: ${colors.mdCode};
             padding: 2px 6px;
             border-radius: 3px;
@@ -1260,7 +1377,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
             text-align: left;
         }
         .markdown-content th {
-            background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.05);
+            background: ${colors.selectedBg};
             font-weight: bold;
         }
         .markdown-content img {
@@ -1279,7 +1396,7 @@ function generateHtml(data: ParsedSessionData, filename: string, colors: ThemeCo
         .hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-params { color: ${colors.syntaxVariable}; }
         .hljs-attribute { color: ${colors.syntaxVariable}; }
         .hljs-meta { color: ${colors.syntaxKeyword}; }
-        .hljs-formula { background: rgba(${isLight ? "0, 0, 0" : "255, 255, 255"}, 0.05); }
+        .hljs-formula { background: ${colors.selectedBg}; }
         .hljs-deletion { color: ${colors.toolDiffRemoved}; }
         .hljs-emphasis { font-style: italic; }
         .hljs-strong { font-weight: bold; }
@@ -1393,8 +1510,7 @@ export function exportSessionToHtml(
 	}
 
 	const colors = getThemeColors(opts.themeName);
-	const isLight = isLightTheme(opts.themeName);
-	const html = generateHtml(data, basename(sessionFile), colors, isLight);
+	const html = generateHtml(data, basename(sessionFile), colors);
 	writeFileSync(outputPath, html, "utf8");
 	return outputPath;
 }
@@ -1424,8 +1540,7 @@ export function exportFromFile(inputPath: string, options?: ExportOptions | stri
 	}
 
 	const colors = getThemeColors(opts.themeName);
-	const isLight = isLightTheme(opts.themeName);
-	const html = generateHtml(data, basename(inputPath), colors, isLight);
+	const html = generateHtml(data, basename(inputPath), colors);
 	writeFileSync(outputPath, html, "utf8");
 	return outputPath;
 }
