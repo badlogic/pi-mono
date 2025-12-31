@@ -432,7 +432,7 @@ Your component can:
 - Call `handle.requestRender()` to trigger re-render
 - Call `handle.close()` when done to restore normal UI
 
-See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example with game loop, keyboard handling, and state persistence.
+See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example with game loop, keyboard handling, and state persistence. See [tui.md](tui.md) for the full component API.
 
 ### ctx.hasUI
 

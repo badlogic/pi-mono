@@ -2,12 +2,18 @@
 
 Custom tools are additional tools that the LLM can call directly, just like the built-in `read`, `write`, `edit`, and `bash` tools. They are TypeScript modules that define callable functions with parameters, return values, and optional TUI rendering.
 
+**Key capabilities:**
+- **User interaction** - Prompt users via `pi.ui` (select, confirm, input dialogs)
+- **Custom rendering** - Control how tool calls and results appear via `renderCall`/`renderResult`
+- **TUI components** - Render custom components with `pi.ui.custom()` (see [tui.md](tui.md))
+- **State management** - Persist state in tool result `details` for proper branching support
+- **Streaming results** - Send partial updates via `onUpdate` callback
+
 **Example use cases:**
-- Ask the user questions with selectable options
-- Maintain state across calls (todo lists, connection pools)
-- Custom TUI rendering (progress indicators, structured output)
-- Integrate external services with proper error handling
-- Tools that need user confirmation before proceeding
+- Interactive dialogs (questions with selectable options)
+- Stateful tools (todo lists, connection pools)
+- Rich output rendering (progress indicators, structured views)
+- External service integrations with confirmation flows
 
 **When to use custom tools vs. alternatives:**
 
@@ -283,7 +289,7 @@ This pattern ensures:
 
 ## Custom Rendering
 
-Custom tools can provide `renderCall` and `renderResult` methods to control how they appear in the TUI. Both are optional.
+Custom tools can provide `renderCall` and `renderResult` methods to control how they appear in the TUI. Both are optional. See [tui.md](tui.md) for the full component API.
 
 ### How It Works
 
