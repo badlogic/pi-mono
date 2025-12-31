@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage, AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -165,7 +165,7 @@ export class InteractiveMode {
 		this.editor = new CustomEditor(getEditorTheme());
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
-		this.footer = new FooterComponent(session.state, session.modelRegistry);
+		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Define slash commands for autocomplete
@@ -806,16 +806,16 @@ export class InteractiveMode {
 
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
-			await this.handleEvent(event, this.session.state);
+			await this.handleEvent(event);
 		});
 	}
 
-	private async handleEvent(event: AgentSessionEvent, state: AgentState): Promise<void> {
+	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}
 
-		this.footer.updateState(state);
+		this.footer.invalidate();
 
 		switch (event.type) {
 			case "agent_start":
@@ -1013,7 +1013,7 @@ export class InteractiveMode {
 						summary: event.result.summary,
 						timestamp: Date.now(),
 					});
-					this.footer.updateState(this.session.state);
+					this.footer.invalidate();
 				}
 				this.ui.requestRender();
 				break;
@@ -1173,7 +1173,7 @@ export class InteractiveMode {
 		this.pendingTools.clear();
 
 		if (options.updateFooter) {
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 			this.updateEditorBorderColor();
 		}
 
@@ -1320,7 +1320,7 @@ export class InteractiveMode {
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
 		}
@@ -1333,7 +1333,7 @@ export class InteractiveMode {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
-				this.footer.updateState(this.session.state);
+				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
@@ -1530,7 +1530,7 @@ export class InteractiveMode {
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
-						this.footer.updateState(this.session.state);
+						this.footer.invalidate();
 						this.updateEditorBorderColor();
 					},
 					onThemeChange: (themeName) => {
@@ -1583,7 +1583,7 @@ export class InteractiveMode {
 				async (model) => {
 					try {
 						await this.session.setModel(model);
-						this.footer.updateState(this.session.state);
+						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
 						this.showStatus(`Model: ${model.id}`);
@@ -2172,7 +2172,7 @@ export class InteractiveMode {
 			const msg = createCompactionSummaryMessage(result.summary, result.tokensBefore, new Date().toISOString());
 			this.addMessageToChat(msg);
 
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {
