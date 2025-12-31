@@ -280,7 +280,7 @@ ${guidelines}
 Documentation:
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
-- Examples: ${examplesPath}
+- Examples: ${examplesPath} (hooks, custom tools, SDK)
 - When asked about: custom models/providers (README sufficient), themes (docs/theme.md), skills (docs/skills.md), hooks (docs/hooks.md), custom tools (docs/custom-tools.md), RPC (docs/rpc.md)`;
 
 	if (appendSection) {
