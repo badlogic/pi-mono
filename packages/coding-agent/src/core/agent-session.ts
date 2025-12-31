@@ -698,7 +698,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this._emitToolSessionEvent("new", previousSessionFile);
+		await this.emitToolSessionEvent("new", previousSessionFile);
 		return true;
 	}
 
@@ -1473,7 +1473,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this._emitToolSessionEvent("switch", previousSessionFile);
+		await this.emitToolSessionEvent("switch", previousSessionFile);
 
 		this.agent.replaceMessages(sessionContext.messages);
 
@@ -1550,7 +1550,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools (with reason "branch")
-		await this._emitToolSessionEvent("branch", previousSessionFile);
+		await this.emitToolSessionEvent("branch", previousSessionFile);
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1720,7 +1720,7 @@ export class AgentSession {
 		}
 
 		// Emit to custom tools
-		await this._emitToolSessionEvent("tree", this.sessionFile);
+		await this.emitToolSessionEvent("tree", this.sessionFile);
 
 		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false, summaryEntry };
@@ -1875,11 +1875,11 @@ export class AgentSession {
 
 	/**
 	 * Emit session event to all custom tools.
-	 * Called on session switch, branch, and clear.
+	 * Called on session switch, branch, tree navigation, and shutdown.
 	 */
-	private async _emitToolSessionEvent(
+	async emitToolSessionEvent(
 		reason: ToolSessionEvent["reason"],
-		previousSessionFile: string | undefined,
+		previousSessionFile?: string | undefined,
 	): Promise<void> {
 		const event: ToolSessionEvent = {
 			entries: this.sessionManager.getEntries(),

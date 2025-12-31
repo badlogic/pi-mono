@@ -40,10 +40,10 @@ export interface SessionEvent {
 	entries: SessionEntry[];
 	/** Current session file path, or undefined in --no-session mode */
 	sessionFile: string | undefined;
-	/** Previous session file path, or undefined for "start" and "new" */
+	/** Previous session file path, or undefined for "start", "new", and "shutdown" */
 	previousSessionFile: string | undefined;
 	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "new" | "tree";
+	reason: "start" | "switch" | "branch" | "new" | "tree" | "shutdown";
 }
 
 /** Rendering options passed to renderResult */
@@ -85,14 +85,12 @@ export interface RenderResultOptions {
  */
 export interface CustomAgentTool<TParams extends TSchema = TSchema, TDetails = any>
 	extends AgentTool<TParams, TDetails> {
-	/** Called on session start/switch/branch/clear - use to reconstruct state from entries */
+	/** Called on session lifecycle events - use to reconstruct state or cleanup resources */
 	onSession?: (event: SessionEvent) => void | Promise<void>;
 	/** Custom rendering for tool call display - return a Component */
 	renderCall?: (args: Static<TParams>, theme: Theme) => Component;
 	/** Custom rendering for tool result display - return a Component */
 	renderResult?: (result: AgentToolResult<TDetails>, options: RenderResultOptions, theme: Theme) => Component;
-	/** Called when session ends - cleanup resources */
-	dispose?: () => Promise<void> | void;
 }
 
 /** Factory function that creates a custom tool or array of tools */

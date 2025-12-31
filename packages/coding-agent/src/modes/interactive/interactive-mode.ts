@@ -1239,7 +1239,7 @@ export class InteractiveMode {
 
 	/**
 	 * Gracefully shutdown the agent.
-	 * Emits shutdown event to hooks, then exits.
+	 * Emits shutdown event to hooks and tools, then exits.
 	 */
 	private async shutdown(): Promise<void> {
 		// Emit shutdown event to hooks
@@ -1249,6 +1249,9 @@ export class InteractiveMode {
 				type: "session_shutdown",
 			});
 		}
+
+		// Emit shutdown event to custom tools
+		await this.session.emitToolSessionEvent("shutdown");
 
 		this.stop();
 		process.exit(0);

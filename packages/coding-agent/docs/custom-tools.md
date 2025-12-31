@@ -82,7 +82,7 @@ Custom tools can import from these packages (automatically resolved by pi):
 | Package | Purpose |
 |---------|---------|
 | `@sinclair/typebox` | Schema definitions (`Type.Object`, `Type.String`, etc.) |
-| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `ToolSessionEvent`, etc.) |
+| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `ToolSessionEvent` (alias for `SessionEvent`), etc.) |
 | `@mariozechner/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
 | `@mariozechner/pi-tui` | TUI components (`Text`, `Box`, etc. for custom rendering) |
 
@@ -116,14 +116,17 @@ const factory: CustomToolFactory = (pi) => ({
   },
 
   // Optional: Session lifecycle callback
-  onSession(event) { /* reconstruct state from entries */ },
+  onSession(event) {
+    if (event.reason === "shutdown") {
+      // Cleanup resources (close connections, save state, etc.)
+      return;
+    }
+    // Reconstruct state from entries for other events
+  },
 
   // Optional: Custom rendering
   renderCall(args, theme) { /* return Component */ },
   renderResult(result, options, theme) { /* return Component */ },
-
-  // Optional: Cleanup on session end
-  dispose() { /* save state, close connections */ },
 });
 
 export default factory;
@@ -139,13 +142,16 @@ The factory receives a `ToolAPI` object (named `pi` by convention):
 interface ToolAPI {
   cwd: string;  // Current working directory
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
-  ui: {
-    select(title: string, options: string[]): Promise<string | null>;
-    confirm(title: string, message: string): Promise<boolean>;
-    input(title: string, placeholder?: string): Promise<string | null>;
-    notify(message: string, type?: "info" | "warning" | "error"): void;
-  };
+  ui: ToolUIContext;
   hasUI: boolean;  // false in --print or --mode rpc
+}
+
+interface ToolUIContext {
+  select(title: string, options: string[]): Promise<string | undefined>;
+  confirm(title: string, message: string): Promise<boolean>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
+  notify(message: string, type?: "info" | "warning" | "error"): void;
+  custom(component: Component & { dispose?(): void }): { close: () => void; requestRender: () => void };
 }
 
 interface ExecOptions {
@@ -182,11 +188,11 @@ async execute(toolCallId, params, signal) {
 Tools can implement `onSession` to react to session changes:
 
 ```typescript
-interface ToolSessionEvent {
+interface SessionEvent {
   entries: SessionEntry[];      // All session entries
-  sessionFile: string | null;   // Current session file
-  previousSessionFile: string | null;  // Previous session file
-  reason: "start" | "switch" | "branch" | "new";
+  sessionFile: string | undefined;   // Current session file (undefined with --no-session)
+  previousSessionFile: string | undefined;  // Previous session file
+  reason: "start" | "switch" | "branch" | "new" | "tree";
 }
 ```
 
@@ -195,6 +201,8 @@ interface ToolSessionEvent {
 - `switch`: User switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
 - `new`: User started a new session (`/new`)
+- `tree`: User navigated to a different point in the session tree (`/tree`)
+- `shutdown`: Process is exiting (Ctrl+C, Ctrl+D, or SIGTERM) - use to cleanup resources
 
 ### State Management Pattern
 
@@ -387,13 +395,16 @@ const factory: CustomToolFactory = (pi) => {
   // Shared state
   let connection = null;
 
+  const handleSession = (event: ToolSessionEvent) => {
+    if (event.reason === "shutdown") {
+      connection?.close();
+    }
+  };
+
   return [
-    { name: "db_connect", ... },
-    { name: "db_query", ... },
-    {
-      name: "db_close",
-      dispose() { connection?.close(); }
-    },
+    { name: "db_connect", onSession: handleSession, ... },
+    { name: "db_query", onSession: handleSession, ... },
+    { name: "db_close", onSession: handleSession, ... },
   ];
 };
 ```
