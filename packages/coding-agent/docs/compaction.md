@@ -2,6 +2,13 @@
 
 LLMs have limited context windows. When conversations grow too long, pi uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
 
+**Source files:**
+- [`src/core/compaction/compaction.ts`](../src/core/compaction/compaction.ts) - Auto-compaction logic
+- [`src/core/compaction/branch-summarization.ts`](../src/core/compaction/branch-summarization.ts) - Branch summarization
+- [`src/core/compaction/utils.ts`](../src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
+- [`src/core/session-manager.ts`](../src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
+- [`src/core/hooks/types.ts`](../src/core/hooks/types.ts) - Hook event types
+
 ## Overview
 
 Pi has two summarization mechanisms:
@@ -23,13 +30,13 @@ Auto-compaction triggers when:
 contextTokens > contextWindow - reserveTokens
 ```
 
-By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json`). This leaves room for the LLM's response.
+By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
 ### How It Works
 
-1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.pi/agent/settings.json`) is reached
+1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`) is reached
 2. **Extract messages**: Collect messages from previous compaction (or start) up to cut point
 3. **Generate summary**: Call LLM to summarize with structured format
 4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
@@ -107,6 +114,8 @@ Never cut at tool results (they must stay with their tool call).
 
 ### CompactionEntry Structure
 
+Defined in [`src/core/session-manager.ts`](../src/core/session-manager.ts):
+
 ```typescript
 interface CompactionEntry<T = unknown> {
   type: "compaction";
@@ -120,7 +129,7 @@ interface CompactionEntry<T = unknown> {
   details?: T;         // hook-specific data
 }
 
-// Default compaction uses this for details:
+// Default compaction uses this for details (from compaction.ts):
 interface CompactionDetails {
   readFiles: string[];
   modifiedFiles: string[];
@@ -128,6 +137,8 @@ interface CompactionDetails {
 ```
 
 Hooks can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom compaction hooks can use their own structure.
+
+See [`prepareCompaction()`](../src/core/compaction/compaction.ts) and [`compact()`](../src/core/compaction/compaction.ts) for the implementation.
 
 ## Branch Summarization
 
@@ -170,6 +181,8 @@ This means file tracking accumulates across multiple compactions or nested branc
 
 ### BranchSummaryEntry Structure
 
+Defined in [`src/core/session-manager.ts`](../src/core/session-manager.ts):
+
 ```typescript
 interface BranchSummaryEntry<T = unknown> {
   type: "branch_summary";
@@ -182,7 +195,7 @@ interface BranchSummaryEntry<T = unknown> {
   details?: T;         // hook-specific data
 }
 
-// Default branch summarization uses this for details:
+// Default branch summarization uses this for details (from branch-summarization.ts):
 interface BranchSummaryDetails {
   readFiles: string[];
   modifiedFiles: string[];
@@ -190,6 +203,8 @@ interface BranchSummaryDetails {
 ```
 
 Same as compaction, hooks can store custom data in `details`.
+
+See [`collectEntriesForBranchSummary()`](../src/core/compaction/branch-summarization.ts), [`prepareBranchEntries()`](../src/core/compaction/branch-summarization.ts), and [`generateBranchSummary()`](../src/core/compaction/branch-summarization.ts) for the implementation.
 
 ## Summary Format
 
@@ -233,7 +248,7 @@ path/to/changed.ts
 
 ### Message Serialization
 
-Before summarization, messages are serialized to text:
+Before summarization, messages are serialized to text via [`serializeConversation()`](../src/core/compaction/utils.ts):
 
 ```
 [User]: What they said
@@ -247,11 +262,11 @@ This prevents the model from treating it as a conversation to continue.
 
 ## Custom Summarization via Hooks
 
-Hooks can intercept and customize both compaction and branch summarization.
+Hooks can intercept and customize both compaction and branch summarization. See [`src/core/hooks/types.ts`](../src/core/hooks/types.ts) for event type definitions.
 
 ### session_before_compact
 
-Fired before auto-compaction or `/compact`. Can cancel or provide custom summary.
+Fired before auto-compaction or `/compact`. Can cancel or provide custom summary. See `SessionBeforeCompactEvent` and `CompactionPreparation` in the types file.
 
 ```typescript
 pi.on("session_before_compact", async (event, ctx) => {
@@ -287,7 +302,7 @@ See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts
 
 ### session_before_tree
 
-Fired before `/tree` navigation with summarization. Can cancel or provide custom summary.
+Fired before `/tree` navigation. Always fires regardless of whether user chose to summarize. Can cancel navigation or provide custom summary.
 
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
@@ -296,25 +311,29 @@ pi.on("session_before_tree", async (event, ctx) => {
   // preparation.targetId - where we're navigating to
   // preparation.oldLeafId - current position (being abandoned)
   // preparation.commonAncestorId - shared ancestor
-  // preparation.entriesToSummarize - entries to summarize
+  // preparation.entriesToSummarize - entries that would be summarized
   // preparation.userWantsSummary - whether user chose to summarize
 
-  // Cancel navigation:
+  // Cancel navigation entirely:
   return { cancel: true };
 
-  // Custom summary (only if userWantsSummary):
-  return {
-    summary: {
-      summary: "Your summary...",
-      details: { /* custom data */ },
-    }
-  };
+  // Provide custom summary (only used if userWantsSummary is true):
+  if (preparation.userWantsSummary) {
+    return {
+      summary: {
+        summary: "Your summary...",
+        details: { /* custom data */ },
+      }
+    };
+  }
 });
 ```
 
+See `SessionBeforeTreeEvent` and `TreePreparation` in the types file.
+
 ## Settings
 
-Configure compaction in `~/.pi/agent/settings.json`:
+Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`:
 
 ```json
 {
