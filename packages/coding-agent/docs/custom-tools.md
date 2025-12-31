@@ -36,10 +36,11 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
+    const { name } = params as { name: string };
     return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
+      content: [{ type: "text", text: `Hello, ${name}!` }],
+      details: { greeted: name },
     };
   },
 });
@@ -82,7 +83,7 @@ Custom tools can import from these packages (automatically resolved by pi):
 | Package | Purpose |
 |---------|---------|
 | `@sinclair/typebox` | Schema definitions (`Type.Object`, `Type.String`, etc.) |
-| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `ToolSessionEvent` (alias for `SessionEvent`), etc.) |
+| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `CustomTool`, `CustomToolContext`, etc.) |
 | `@mariozechner/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
 | `@mariozechner/pi-tui` | TUI components (`Text`, `Box`, etc. for custom rendering) |
 
@@ -94,7 +95,12 @@ Node.js built-in modules (`node:fs`, `node:path`, etc.) are also available.
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
-import type { CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  CustomTool,
+  CustomToolContext,
+  CustomToolFactory,
+  CustomToolSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 
 const factory: CustomToolFactory = (pi) => ({
   name: "my_tool",
@@ -106,9 +112,10 @@ const factory: CustomToolFactory = (pi) => ({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, signal, onUpdate) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     // signal - AbortSignal for cancellation
     // onUpdate - Callback for streaming partial results
+    // ctx - CustomToolContext with sessionManager, modelRegistry, model
     return {
       content: [{ type: "text", text: "Result for LLM" }],
       details: { /* structured data for rendering */ },
@@ -116,12 +123,12 @@ const factory: CustomToolFactory = (pi) => ({
   },
 
   // Optional: Session lifecycle callback
-  onSession(event) {
+  onSession(event, ctx) {
     if (event.reason === "shutdown") {
       // Cleanup resources (close connections, save state, etc.)
       return;
     }
-    // Reconstruct state from entries for other events
+    // Reconstruct state from ctx.sessionManager.getBranch()
   },
 
   // Optional: Custom rendering
@@ -134,12 +141,12 @@ export default factory;
 
 **Important:** Use `StringEnum` from `@mariozechner/pi-ai` instead of `Type.Union`/`Type.Literal` for string enums. The latter doesn't work with Google's API.
 
-## ToolAPI Object
+## CustomToolAPI Object
 
-The factory receives a `ToolAPI` object (named `pi` by convention):
+The factory receives a `CustomToolAPI` object (named `pi` by convention):
 
 ```typescript
-interface ToolAPI {
+interface CustomToolAPI {
   cwd: string;  // Current working directory
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   ui: ToolUIContext;
@@ -174,7 +181,7 @@ Always check `pi.hasUI` before using UI methods.
 Pass the `signal` from `execute` to `pi.exec` to support cancellation:
 
 ```typescript
-async execute(toolCallId, params, signal) {
+async execute(toolCallId, params, signal, onUpdate, ctx) {
   const result = await pi.exec("long-running-command", ["arg"], { signal });
   if (result.killed) {
     return { content: [{ type: "text", text: "Cancelled" }] };
@@ -183,16 +190,28 @@ async execute(toolCallId, params, signal) {
 }
 ```
 
+## CustomToolContext
+
+The `execute` and `onSession` callbacks receive a `CustomToolContext`:
+
+```typescript
+interface CustomToolContext {
+  sessionManager: ReadonlySessionManager;  // Read-only access to session
+  modelRegistry: ModelRegistry;            // For API key resolution
+  model: Model | undefined;                // Current model (may be undefined)
+}
+```
+
+Use `ctx.sessionManager.getBranch()` to get entries on the current branch for state reconstruction.
+
 ## Session Lifecycle
 
 Tools can implement `onSession` to react to session changes:
 
 ```typescript
-interface SessionEvent {
-  entries: SessionEntry[];      // All session entries
-  sessionFile: string | undefined;   // Current session file (undefined with --no-session)
-  previousSessionFile: string | undefined;  // Previous session file
-  reason: "start" | "switch" | "branch" | "new" | "tree";
+interface CustomToolSessionEvent {
+  reason: "start" | "switch" | "branch" | "new" | "tree" | "shutdown";
+  previousSessionFile: string | undefined;
 }
 ```
 
@@ -218,9 +237,11 @@ const factory: CustomToolFactory = (pi) => {
   let items: string[] = [];
 
   // Reconstruct state from session entries
-  const reconstructState = (event: ToolSessionEvent) => {
+  const reconstructState = (event: CustomToolSessionEvent, ctx: CustomToolContext) => {
+    if (event.reason === "shutdown") return;
+    
     items = [];
-    for (const entry of event.entries) {
+    for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== "message") continue;
       const msg = entry.message;
       if (msg.role !== "toolResult") continue;
@@ -241,7 +262,7 @@ const factory: CustomToolFactory = (pi) => {
     
     onSession: reconstructState,
     
-    async execute(toolCallId, params) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       // Modify items...
       items.push("new item");
       
@@ -363,7 +384,7 @@ If `renderCall` or `renderResult` is not defined or throws an error:
 ## Execute Function
 
 ```typescript
-async execute(toolCallId, args, signal, onUpdate) {
+async execute(toolCallId, args, signal, onUpdate, ctx) {
   // Type assertion for params (TypeBox schema doesn't flow through)
   const params = args as { action: "list" | "add"; text?: string };
 
@@ -395,7 +416,7 @@ const factory: CustomToolFactory = (pi) => {
   // Shared state
   let connection = null;
 
-  const handleSession = (event: ToolSessionEvent) => {
+  const handleSession = (event: CustomToolSessionEvent, ctx: CustomToolContext) => {
     if (event.reason === "shutdown") {
       connection?.close();
     }

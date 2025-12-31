@@ -45,7 +45,17 @@
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 - **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
-- **Custom tools**: `dispose()` method removed from `CustomAgentTool`. Use `onSession` with `reason: "shutdown"` instead for cleanup. `SessionEvent.reason` now includes `"shutdown"`.
+- **Custom tools API**:
+  - `CustomAgentTool` renamed to `CustomTool`
+  - `ToolAPI` renamed to `CustomToolAPI`
+  - `ToolContext` renamed to `CustomToolContext`
+  - `ToolSessionEvent` renamed to `CustomToolSessionEvent`
+  - `execute()` signature changed: now takes `(toolCallId, params, signal, onUpdate, ctx: CustomToolContext)`
+  - `onSession()` signature changed: now takes `(event: CustomToolSessionEvent, ctx: CustomToolContext)`
+  - `CustomToolSessionEvent` simplified: only has `reason` and `previousSessionFile` (use `ctx.sessionManager.getBranch()` to get entries)
+  - `CustomToolContext` provides `sessionManager: ReadonlySessionManager`, `modelRegistry`, and `model`
+  - `dispose()` method removed - use `onSession` with `reason: "shutdown"` for cleanup
+  - `CustomToolFactory` return type changed to `CustomTool<any, any>` for type compatibility
 - **Renamed exports**:
   - `messageTransformer` → `convertToLlm`
   - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
