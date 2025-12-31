@@ -2356,6 +2356,67 @@ export class AgentSession {
 		return this._estimateTokensFromChars(tool.name.length + desc.length + params.length);
 	}
 
+	async getContextUsageSummary(options?: { includeEphemeral?: boolean }): Promise<{
+		model: { provider: string; id: string };
+		limit: number;
+		used: number;
+		usedPct: number;
+		system: { tokens: number; pct: number; partCount: number };
+		tools: { tokens: number; pct: number; count: number; names: string[] };
+		messages: { tokens: number; pct: number; cachedCount: number; uncachedCount: number };
+		remainingPct: number;
+		ephemeralUncachedCount: number;
+	}> {
+		const includeEphemeral = options?.includeEphemeral ?? false;
+		const envelope = await this._getContextEnvelopeForDebug({ includeEphemeral });
+
+		const limit = envelope.meta.limit;
+
+		const systemChars = envelope.system.parts.reduce((acc, p) => acc + p.text.length, 0);
+		const systemTokens = this._estimateTokensFromChars(systemChars);
+
+		let toolsTokens = 0;
+		for (const t of envelope.tools) toolsTokens += this._estimateTokensForTool(t);
+
+		let cachedTokens = 0;
+		for (const m of envelope.messages.cached) cachedTokens += this._estimateTokensForProviderMessage(m);
+
+		let uncachedTokens = 0;
+		for (const m of envelope.messages.uncached) uncachedTokens += this._estimateTokensForProviderMessage(m);
+
+		const messagesTokens = cachedTokens + uncachedTokens;
+		const used = systemTokens + toolsTokens + messagesTokens;
+		const usedPct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+		const remainingPct = limit > 0 ? Math.max(0, 100 - usedPct) : 0;
+
+		const pct = (tokens: number): number => {
+			if (limit <= 0) return 0;
+			return Number(((tokens / limit) * 100).toFixed(1));
+		};
+
+		return {
+			model: { provider: envelope.meta.model.provider, id: envelope.meta.model.id },
+			limit,
+			used,
+			usedPct,
+			system: { tokens: systemTokens, pct: pct(systemTokens), partCount: envelope.system.parts.length },
+			tools: {
+				tokens: toolsTokens,
+				pct: pct(toolsTokens),
+				count: envelope.tools.length,
+				names: envelope.tools.map((t) => t.name),
+			},
+			messages: {
+				tokens: messagesTokens,
+				pct: pct(messagesTokens),
+				cachedCount: envelope.messages.cached.length,
+				uncachedCount: envelope.messages.uncached.length,
+			},
+			remainingPct,
+			ephemeralUncachedCount: includeEphemeral ? envelope.messages.uncached.length : 0,
+		};
+	}
+
 	private _estimateTokensForProviderMessage(message: Message): number {
 		let chars = 0;
 

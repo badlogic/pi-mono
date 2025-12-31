@@ -1941,10 +1941,6 @@ export class InteractiveMode {
 		format: "summary" | "full";
 	}): Promise<void> {
 		try {
-			const md = await this.session.renderContextMarkdown({
-				includeEphemeral: options.includeEphemeral,
-				format: options.format,
-			});
 			const titleBase = options.format === "full" ? "Context (full)" : "Context Usage";
 			const title = options.includeEphemeral ? `${titleBase} (including ephemerals)` : titleBase;
 
@@ -1952,7 +1948,104 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new DynamicBorder());
 			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
 			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Markdown(md, 1, 1, getMarkdownTheme()));
+
+			if (options.format === "summary") {
+				const usage = await this.session.getContextUsageSummary({ includeEphemeral: options.includeEphemeral });
+
+				const totalCells = 40;
+				const limit = Math.max(1, usage.limit);
+
+				const rawSegments = [
+					{ key: "system", tokens: usage.system.tokens },
+					{ key: "tools", tokens: usage.tools.tokens },
+					{ key: "messages", tokens: usage.messages.tokens },
+					{ key: "remaining", tokens: Math.max(0, limit - usage.used) },
+				];
+
+				const cells = rawSegments.map((s) => {
+					const raw = (s.tokens / limit) * totalCells;
+					return { key: s.key, raw, base: Math.floor(raw), frac: raw - Math.floor(raw) };
+				});
+
+				const usedCells = cells.reduce((acc, c) => acc + c.base, 0);
+				let remainingCells = Math.max(0, totalCells - usedCells);
+				cells
+					.slice()
+					.sort((a, b) => b.frac - a.frac)
+					.forEach((c) => {
+						if (remainingCells <= 0) return;
+						c.base += 1;
+						remainingCells -= 1;
+					});
+
+				const getCells = (key: string) => cells.find((c) => c.key === key)?.base ?? 0;
+				const systemCells = getCells("system");
+				const toolsCells = getCells("tools");
+				const messagesCells = getCells("messages");
+				const remainingFill = Math.max(0, totalCells - (systemCells + toolsCells + messagesCells));
+
+				const bar =
+					"[" +
+					theme.fg("accent", "█".repeat(systemCells)) +
+					theme.fg("warning", "█".repeat(toolsCells)) +
+					theme.fg("success", "█".repeat(messagesCells)) +
+					theme.fg("dim", "░".repeat(remainingFill)) +
+					"]";
+
+				const fmt = (t: number) =>
+					t >= 1000000
+						? `${(t / 1000000).toFixed(1).replace(/\.0$/, "")}m`
+						: t >= 1000
+							? `${(t / 1000).toFixed(1).replace(/\.0$/, "")}k`
+							: `${t}`;
+
+				this.chatContainer.addChild(
+					new Text(
+						`${bar} ${usage.model.provider}/${usage.model.id} · ~${fmt(usage.used)}/${fmt(usage.limit)} (${usage.usedPct}% used, ${usage.remainingPct}% remaining)`,
+						1,
+						0,
+					),
+				);
+				this.chatContainer.addChild(new Spacer(1));
+
+				this.chatContainer.addChild(
+					new Text(`${theme.fg("accent", "system")}  ~${fmt(usage.system.tokens)} (${usage.system.pct}%)`, 1, 0),
+				);
+
+				const toolNames = usage.tools.names.slice(0, 12);
+				const toolsSuffix =
+					toolNames.length > 0
+						? ` — ${toolNames.join(", ")}${usage.tools.names.length > toolNames.length ? ", …" : ""}`
+						: "";
+				this.chatContainer.addChild(
+					new Text(
+						`${theme.fg("warning", `tools (${usage.tools.count})`)}  ~${fmt(usage.tools.tokens)} (${usage.tools.pct}%)${toolsSuffix}`,
+						1,
+						0,
+					),
+				);
+
+				const uncachedStr = usage.messages.uncachedCount > 0 ? `, uncached ${usage.messages.uncachedCount}` : "";
+				this.chatContainer.addChild(
+					new Text(
+						`${theme.fg("success", "messages")}  ~${fmt(usage.messages.tokens)} (${usage.messages.pct}%) (cached ${usage.messages.cachedCount}${uncachedStr})`,
+						1,
+						0,
+					),
+				);
+
+				if (usage.ephemeralUncachedCount > 0) {
+					this.chatContainer.addChild(
+						new Text(theme.fg("muted", `ephemeral: ${usage.ephemeralUncachedCount} message(s)`), 1, 0),
+					);
+				}
+			} else {
+				const md = await this.session.renderContextMarkdown({
+					includeEphemeral: options.includeEphemeral,
+					format: options.format,
+				});
+				this.chatContainer.addChild(new Markdown(md, 1, 1, getMarkdownTheme()));
+			}
 
 			// If hooks registered custom context transform renderers, render them as a follow-up section.
 			// Keep summary view concise: only render custom components in --full/--verbose mode.
