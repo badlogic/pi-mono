@@ -310,7 +310,7 @@ export default function (pi: HookAPI) {
 	pi.registerCommand("snake", {
 		description: "Play Snake!",
 
-		handler: async (ctx) => {
+		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("Snake requires interactive mode", "error");
 				return;

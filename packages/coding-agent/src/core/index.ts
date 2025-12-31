@@ -27,9 +27,9 @@ export {
 } from "./custom-tools/index.js";
 export {
 	type HookAPI,
+	type HookContext,
 	type HookError,
 	type HookEvent,
-	type HookEventContext,
 	type HookFactory,
 	HookRunner,
 	type HookUIContext,

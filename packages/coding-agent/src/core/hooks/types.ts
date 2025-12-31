@@ -88,9 +88,9 @@ export interface HookUIContext {
 }
 
 /**
- * Context passed to hook event handlers.
+ * Context passed to hook event and command handlers.
  */
-export interface HookEventContext {
+export interface HookContext {
 	/** UI methods for user interaction */
 	ui: HookUIContext;
 	/** Whether UI is available (false in print mode) */
@@ -101,6 +101,8 @@ export interface HookEventContext {
 	sessionManager: ReadonlySessionManager;
 	/** Model registry - use for API key resolution and model retrieval */
 	modelRegistry: ModelRegistry;
+	/** Current model (may be undefined if no model is selected yet) */
+	model: Model<any> | undefined;
 }
 
 // ============================================================================
@@ -152,14 +154,12 @@ export interface SessionBranchEvent {
 /** Fired before context compaction (can be cancelled or customized) */
 export interface SessionBeforeCompactEvent {
 	type: "session_before_compact";
-	/** Compaction preparation with cut point, messages to summarize/keep, etc. */
+	/** Compaction preparation with messages to summarize, file ops, previous summary, etc. */
 	preparation: CompactionPreparation;
-	/** Previous compaction entries, newest first. Use for iterative summarization. */
-	previousCompactions: CompactionEntry[];
+	/** Branch entries (root to current leaf). Use to inspect custom state or previous compactions. */
+	branchEntries: SessionEntry[];
 	/** Optional user-provided instructions for the summary */
 	customInstructions?: string;
-	/** Current model */
-	model: Model<any>;
 	/** Abort signal - hooks should pass this to LLM calls and check it periodically */
 	signal: AbortSignal;
 }
@@ -196,9 +196,7 @@ export interface SessionBeforeTreeEvent {
 	type: "session_before_tree";
 	/** Preparation data for the navigation */
 	preparation: TreePreparation;
-	/** Model to use for summarization (conversation model) */
-	model: Model<any>;
-	/** Abort signal - honors Escape during summarization */
+	/** Abort signal - honors Escape during summarization (model available via ctx.model) */
 	signal: AbortSignal;
 }
 
@@ -529,7 +527,7 @@ export interface SessionBeforeTreeResult {
  * Handlers can return R, undefined, or void (bare return statements).
  */
 // biome-ignore lint/suspicious/noConfusingVoidType: void allows bare return statements in handlers
-export type HookHandler<E, R = undefined> = (event: E, ctx: HookEventContext) => Promise<R | void> | R | void;
+export type HookHandler<E, R = undefined> = (event: E, ctx: HookContext) => Promise<R | void> | R | void;
 
 export interface HookMessageRenderOptions {
 	/** Whether the view is expanded */
@@ -547,31 +545,13 @@ export type HookMessageRenderer<T = unknown> = (
 ) => Component | undefined;
 
 /**
- * Context passed to hook command handlers.
- */
-export interface HookCommandContext {
-	/** Arguments after the command name */
-	args: string;
-	/** UI methods for user interaction */
-	ui: HookUIContext;
-	/** Whether UI is available (false in print mode) */
-	hasUI: boolean;
-	/** Current working directory */
-	cwd: string;
-	/** Session manager (read-only) - use pi.sendMessage()/pi.appendEntry() for writes */
-	sessionManager: ReadonlySessionManager;
-	/** Model registry for API keys */
-	modelRegistry: ModelRegistry;
-}
-
-/**
  * Command registration options.
  */
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
 
-	handler: (ctx: HookCommandContext) => Promise<void>;
+	handler: (args: string, ctx: HookContext) => Promise<void>;
 }
 
 /**

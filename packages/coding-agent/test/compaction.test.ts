@@ -11,6 +11,7 @@ import {
 	DEFAULT_COMPACTION_SETTINGS,
 	findCutPoint,
 	getLastAssistantUsage,
+	prepareCompaction,
 	shouldCompact,
 } from "../src/core/compaction/index.js";
 import {
@@ -398,12 +399,10 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 		const entries = loadLargeSessionEntries();
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
-		const compactionResult = await compact(
-			entries,
-			model,
-			DEFAULT_COMPACTION_SETTINGS,
-			process.env.ANTHROPIC_OAUTH_TOKEN!,
-		);
+		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(preparation).toBeDefined();
+
+		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
 
 		expect(compactionResult.summary.length).toBeGreaterThan(100);
 		expect(compactionResult.firstKeptEntryId).toBeTruthy();
@@ -421,12 +420,10 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 		const loaded = buildSessionContext(entries);
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
-		const compactionResult = await compact(
-			entries,
-			model,
-			DEFAULT_COMPACTION_SETTINGS,
-			process.env.ANTHROPIC_OAUTH_TOKEN!,
-		);
+		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(preparation).toBeDefined();
+
+		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
 
 		// Simulate appending compaction to entries by creating a proper entry
 		const lastEntry = entries[entries.length - 1];

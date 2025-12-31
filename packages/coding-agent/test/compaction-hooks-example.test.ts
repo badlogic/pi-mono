@@ -11,23 +11,27 @@ describe("Documentation example", () => {
 		const exampleHook = (pi: HookAPI) => {
 			pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
 				// All these should be accessible on the event
-				const { preparation, previousCompactions, model } = event;
-				// sessionManager and modelRegistry come from ctx, not event
-				const { sessionManager, modelRegistry } = ctx;
-				const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId, cutPoint } = preparation;
-
-				// Get previous summary from most recent compaction
-				const _previousSummary = previousCompactions[0]?.summary;
+				const { preparation, branchEntries, signal } = event;
+				// sessionManager, modelRegistry, and model come from ctx
+				const { sessionManager, modelRegistry, model } = ctx;
+				const {
+					messagesToSummarize,
+					turnPrefixMessages,
+					tokensBefore,
+					firstKeptEntryId,
+					isSplitTurn,
+					previousSummary,
+				} = preparation;
 
 				// Verify types
 				expect(Array.isArray(messagesToSummarize)).toBe(true);
-				expect(Array.isArray(messagesToKeep)).toBe(true);
-				expect(typeof cutPoint.firstKeptEntryIndex).toBe("number");
+				expect(Array.isArray(turnPrefixMessages)).toBe(true);
+				expect(typeof isSplitTurn).toBe("boolean");
 				expect(typeof tokensBefore).toBe("number");
-				expect(model).toBeDefined();
 				expect(typeof sessionManager.getEntries).toBe("function");
 				expect(typeof modelRegistry.getApiKey).toBe("function");
 				expect(typeof firstKeptEntryId).toBe("string");
+				expect(Array.isArray(branchEntries)).toBe(true);
 
 				const summary = messagesToSummarize
 					.filter((m) => m.role === "user")

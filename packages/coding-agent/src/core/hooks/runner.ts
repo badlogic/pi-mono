@@ -3,6 +3,7 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
@@ -11,9 +12,9 @@ import type {
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
+	HookContext,
 	HookError,
 	HookEvent,
-	HookEventContext,
 	HookMessageRenderer,
 	HookUIContext,
 	RegisteredCommand,
@@ -72,6 +73,7 @@ export class HookRunner {
 	private modelRegistry: ModelRegistry;
 	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
+	private getModel: () => Model<any> | undefined = () => undefined;
 
 	constructor(
 		hooks: LoadedHook[],
@@ -87,6 +89,30 @@ export class HookRunner {
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
 		this.timeout = timeout;
+	}
+
+	/**
+	 * Initialize HookRunner with all required context.
+	 * Modes call this once the agent session is fully set up.
+	 */
+	initialize(options: {
+		/** Function to get the current model */
+		getModel: () => Model<any> | undefined;
+		/** Handler for hooks to send messages */
+		sendMessageHandler: SendMessageHandler;
+		/** Handler for hooks to append entries */
+		appendEntryHandler: AppendEntryHandler;
+		/** UI context for interactive prompts */
+		uiContext?: HookUIContext;
+		/** Whether UI is available */
+		hasUI?: boolean;
+	}): void {
+		this.getModel = options.getModel;
+		this.setSendMessageHandler(options.sendMessageHandler);
+		this.setAppendEntryHandler(options.appendEntryHandler);
+		if (options.uiContext) {
+			this.setUIContext(options.uiContext, options.hasUI ?? false);
+		}
 	}
 
 	/**
@@ -217,13 +243,14 @@ export class HookRunner {
 	/**
 	 * Create the event context for handlers.
 	 */
-	private createContext(): HookEventContext {
+	private createContext(): HookContext {
 		return {
 			ui: this.uiContext,
 			hasUI: this.hasUI,
 			cwd: this.cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
+			model: this.getModel(),
 		};
 	}
 

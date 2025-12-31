@@ -20,13 +20,15 @@
   - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore, details? }`) instead of `CompactionEntry`
   - `appendCompaction()` now accepts optional `details` parameter
   - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
-  - `prepareCompaction()` now returns `firstKeptEntryId` in its result
+  - `prepareCompaction(pathEntries, settings)` now takes path entries (from `getPath()`) and settings only
+  - `CompactionPreparation` restructured: removed `cutPoint`, `messagesToKeep`, `boundaryStart`; added `turnPrefixMessages`, `isSplitTurn`, `previousSummary`, `fileOps`, `settings`
+  - `compact(preparation, model, apiKey, customInstructions?, signal?)` now takes preparation and execution context separately
 - **Hook types**:
-  - `SessionEventBase` no longer has `sessionManager`/`modelRegistry` - access them via `HookEventContext` instead
-  - `HookEventContext` now has `sessionManager` and `modelRegistry` (moved from events)
-  - `HookEventContext` no longer has `exec()` - use `pi.exec()` instead
-  - `HookCommandContext` no longer has `exec()` - use `pi.exec()` instead
-  - `before_compact` event passes `preparation: CompactionPreparation` and `previousCompactions: CompactionEntry[]` (newest first)
+  - `HookEventContext` renamed to `HookContext`
+  - `HookContext` now has `sessionManager`, `modelRegistry`, and `model` (current model, may be undefined)
+  - `HookCommandContext` removed - `RegisteredCommand.handler` now takes `(args: string, ctx: HookContext)`
+  - `before_compact` event: removed `previousCompactions` and `model`, added `branchEntries: SessionEntry[]` (hooks extract what they need)
+  - `before_tree` event: removed `model` (use `ctx.model` instead)
   - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
   - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
   - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
@@ -38,7 +40,7 @@
   - New `pi.exec(command, args, options?)` to execute shell commands (moved from `HookEventContext`/`HookCommandContext`)
   - `HookMessageRenderer` type: `(message: HookMessage, options, theme) => Component | null`
   - Renderers return inner content; the TUI wraps it in a styled Box
-  - New types: `HookMessage<T>`, `RegisteredCommand`, `HookCommandContext`
+  - New types: `HookMessage<T>`, `RegisteredCommand`, `HookContext`
   - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
@@ -58,7 +60,7 @@
   - `FileOperations`, `collectEntriesForBranchSummary`, `prepareBranchEntries`, `generateBranchSummary` - branch summarization utilities
   - `CompactionPreparation`, `CompactionDetails` - compaction preparation types
   - `ReadonlySessionManager` - read-only session manager interface for hooks
-  - `HookMessage`, `HookCommandContext`, `HookMessageRenderOptions` - hook types
+  - `HookMessage`, `HookContext`, `HookMessageRenderOptions` - hook types
   - `isHookMessage`, `createHookMessage` - hook message utilities
 
 ### Added
@@ -93,6 +95,7 @@
 - **Improved error messages**: Better error messages when `apiKey` or `model` are missing. ([#346](https://github.com/badlogic/pi-mono/pull/346) by [@ronyrus](https://github.com/ronyrus))
 - **Session file validation**: `findMostRecentSession()` now validates session headers before returning, preventing non-session JSONL files from being loaded
 - **Compaction error handling**: `generateSummary()` and `generateTurnPrefixSummary()` now throw on LLM errors instead of returning empty strings
+- **Compaction with branched sessions**: Fixed compaction incorrectly including entries from abandoned branches, causing token overflow errors. Compaction now uses `sessionManager.getPath()` to work only on the current branch path, eliminating 80+ lines of duplicate entry collection logic between `prepareCompaction()` and `compact()`
 
 ## [0.30.2] - 2025-12-26
 

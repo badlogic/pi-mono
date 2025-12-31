@@ -143,12 +143,12 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		const beforeEvent = beforeCompactEvents[0];
 		expect(beforeEvent.preparation).toBeDefined();
-		expect(beforeEvent.preparation.cutPoint.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
 		expect(beforeEvent.preparation.messagesToSummarize).toBeDefined();
-		expect(beforeEvent.preparation.messagesToKeep).toBeDefined();
+		expect(beforeEvent.preparation.turnPrefixMessages).toBeDefined();
 		expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
-		expect(beforeEvent.model).toBeDefined();
-		// sessionManager and modelRegistry are now on ctx, not event
+		expect(typeof beforeEvent.preparation.isSplitTurn).toBe("boolean");
+		expect(beforeEvent.branchEntries).toBeDefined();
+		// sessionManager, modelRegistry, and model are now on ctx, not event
 
 		const afterEvent = compactEvents[0];
 		expect(afterEvent.compactionEntry).toBeDefined();
@@ -363,19 +363,17 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 
 		expect(capturedBeforeEvent).not.toBeNull();
 		const event = capturedBeforeEvent!;
-		expect(event.preparation.cutPoint).toHaveProperty("firstKeptEntryIndex");
-		expect(event.preparation.cutPoint).toHaveProperty("isSplitTurn");
-		expect(event.preparation.cutPoint).toHaveProperty("turnStartIndex");
+		expect(typeof event.preparation.isSplitTurn).toBe("boolean");
+		expect(event.preparation.firstKeptEntryId).toBeDefined();
 
 		expect(Array.isArray(event.preparation.messagesToSummarize)).toBe(true);
-		expect(Array.isArray(event.preparation.messagesToKeep)).toBe(true);
+		expect(Array.isArray(event.preparation.turnPrefixMessages)).toBe(true);
 
 		expect(typeof event.preparation.tokensBefore).toBe("number");
 
-		expect(event.model).toHaveProperty("provider");
-		expect(event.model).toHaveProperty("id");
+		expect(Array.isArray(event.branchEntries)).toBe(true);
 
-		// sessionManager and modelRegistry are now on ctx, not event
+		// sessionManager, modelRegistry, and model are now on ctx, not event
 		// Verify they're accessible via session
 		expect(typeof session.sessionManager.getEntries).toBe("function");
 		expect(typeof session.modelRegistry.getApiKey).toBe("function");

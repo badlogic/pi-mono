@@ -519,42 +519,48 @@ export async function generateSummary(
 // ============================================================================
 
 export interface CompactionPreparation {
-	cutPoint: CutPointResult;
 	/** UUID of first entry to keep */
 	firstKeptEntryId: string;
 	/** Messages that will be summarized and discarded */
 	messagesToSummarize: AgentMessage[];
-	/** Messages that will be kept after the summary (recent turns) */
-	messagesToKeep: AgentMessage[];
+	/** Messages that will be turned into turn prefix summary (if splitting) */
+	turnPrefixMessages: AgentMessage[];
+	/** Whether this is a split turn (cut point in middle of turn) */
+	isSplitTurn: boolean;
 	tokensBefore: number;
-	boundaryStart: number;
+	/** Summary from previous compaction, for iterative update */
+	previousSummary?: string;
+	/** File operations extracted from messagesToSummarize */
+	fileOps: FileOperations;
+	/** Compaction settions from settings.jsonl	*/
+	settings: CompactionSettings;
 }
 
 export function prepareCompaction(
-	entries: SessionEntry[],
+	pathEntries: SessionEntry[],
 	settings: CompactionSettings,
 ): CompactionPreparation | undefined {
-	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
+	if (pathEntries.length > 0 && pathEntries[pathEntries.length - 1].type === "compaction") {
 		return undefined;
 	}
 
 	let prevCompactionIndex = -1;
-	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i].type === "compaction") {
+	for (let i = pathEntries.length - 1; i >= 0; i--) {
+		if (pathEntries[i].type === "compaction") {
 			prevCompactionIndex = i;
 			break;
 		}
 	}
 	const boundaryStart = prevCompactionIndex + 1;
-	const boundaryEnd = entries.length;
+	const boundaryEnd = pathEntries.length;
 
-	const lastUsage = getLastAssistantUsage(entries);
+	const lastUsage = getLastAssistantUsage(pathEntries);
 	const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
 
-	const cutPoint = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
 	// Get UUID of first kept entry
-	const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
+	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
 	if (!firstKeptEntry?.id) {
 		return undefined; // Session needs migration
 	}
@@ -565,18 +571,46 @@ export function prepareCompaction(
 	// Messages to summarize (will be discarded after summary)
 	const messagesToSummarize: AgentMessage[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
-		const msg = getMessageFromEntry(entries[i]);
+		const msg = getMessageFromEntry(pathEntries[i]);
 		if (msg) messagesToSummarize.push(msg);
 	}
 
-	// Messages to keep (recent turns, kept after summary)
-	const messagesToKeep: AgentMessage[] = [];
-	for (let i = cutPoint.firstKeptEntryIndex; i < boundaryEnd; i++) {
-		const msg = getMessageFromEntry(entries[i]);
-		if (msg) messagesToKeep.push(msg);
+	// Messages for turn prefix summary (if splitting a turn)
+	const turnPrefixMessages: AgentMessage[] = [];
+	if (cutPoint.isSplitTurn) {
+		for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++) {
+			const msg = getMessageFromEntry(pathEntries[i]);
+			if (msg) turnPrefixMessages.push(msg);
+		}
 	}
 
-	return { cutPoint, firstKeptEntryId, messagesToSummarize, messagesToKeep, tokensBefore, boundaryStart };
+	// Get previous summary for iterative update
+	let previousSummary: string | undefined;
+	if (prevCompactionIndex >= 0) {
+		const prevCompaction = pathEntries[prevCompactionIndex] as CompactionEntry;
+		previousSummary = prevCompaction.summary;
+	}
+
+	// Extract file operations from messages and previous compaction
+	const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);
+
+	// Also extract file ops from turn prefix if splitting
+	if (cutPoint.isSplitTurn) {
+		for (const msg of turnPrefixMessages) {
+			extractFileOpsFromMessage(msg, fileOps);
+		}
+	}
+
+	return {
+		firstKeptEntryId,
+		messagesToSummarize,
+		turnPrefixMessages,
+		isSplitTurn: cutPoint.isSplitTurn,
+		tokensBefore,
+		previousSummary,
+		fileOps,
+		settings,
+	};
 }
 
 // ============================================================================
@@ -599,87 +633,39 @@ Summarize the prefix to provide context for the retained suffix:
 Be concise. Focus on what's needed to understand the kept suffix.`;
 
 /**
- * Calculate compaction and generate summary.
+ * Generate summaries for compaction using prepared data.
  * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
  *
- * @param entries - All session entries (must have uuid fields for v2)
- * @param model - Model to use for summarization
- * @param settings - Compaction settings
- * @param apiKey - API key for LLM
- * @param signal - Optional abort signal
+ * @param preparation - Pre-calculated preparation from prepareCompaction()
  * @param customInstructions - Optional custom focus for the summary
  */
 export async function compact(
-	entries: SessionEntry[],
+	preparation: CompactionPreparation,
 	model: Model<any>,
-	settings: CompactionSettings,
 	apiKey: string,
-	signal?: AbortSignal,
 	customInstructions?: string,
+	signal?: AbortSignal,
 ): Promise<CompactionResult> {
-	// Don't compact if the last entry is already a compaction
-	if (entries.length > 0 && entries[entries.length - 1].type === "compaction") {
-		throw new Error("Already compacted");
-	}
-
-	// Find previous compaction boundary
-	let prevCompactionIndex = -1;
-	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i].type === "compaction") {
-			prevCompactionIndex = i;
-			break;
-		}
-	}
-	const boundaryStart = prevCompactionIndex + 1;
-	const boundaryEnd = entries.length;
-
-	// Get token count before compaction
-	const lastUsage = getLastAssistantUsage(entries);
-	const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
-
-	// Find cut point (entry index) within the valid range
-	const cutResult = findCutPoint(entries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
-
-	// Extract messages for history summary (before the turn that contains the cut point)
-	const historyEnd = cutResult.isSplitTurn ? cutResult.turnStartIndex : cutResult.firstKeptEntryIndex;
-	const historyMessages: AgentMessage[] = [];
-	for (let i = boundaryStart; i < historyEnd; i++) {
-		const msg = getMessageFromEntry(entries[i]);
-		if (msg) historyMessages.push(msg);
-	}
-
-	// Get previous summary for iterative update (if not from hook)
-	let previousSummary: string | undefined;
-	if (prevCompactionIndex >= 0) {
-		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
-		previousSummary = prevCompaction.summary;
-	}
-
-	// Extract file operations from messages and previous compaction
-	const fileOps = extractFileOperations(historyMessages, entries, prevCompactionIndex);
-
-	// Extract messages for turn prefix summary (if splitting a turn)
-	const turnPrefixMessages: AgentMessage[] = [];
-	if (cutResult.isSplitTurn) {
-		for (let i = cutResult.turnStartIndex; i < cutResult.firstKeptEntryIndex; i++) {
-			const msg = getMessageFromEntry(entries[i]);
-			if (msg) turnPrefixMessages.push(msg);
-		}
-		// Also extract file ops from turn prefix
-		for (const msg of turnPrefixMessages) {
-			extractFileOpsFromMessage(msg, fileOps);
-		}
-	}
+	const {
+		firstKeptEntryId,
+		messagesToSummarize,
+		turnPrefixMessages,
+		isSplitTurn,
+		tokensBefore,
+		previousSummary,
+		fileOps,
+		settings,
+	} = preparation;
 
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
 
-	if (cutResult.isSplitTurn && turnPrefixMessages.length > 0) {
+	if (isSplitTurn && turnPrefixMessages.length > 0) {
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
-			historyMessages.length > 0
+			messagesToSummarize.length > 0
 				? generateSummary(
-						historyMessages,
+						messagesToSummarize,
 						model,
 						settings.reserveTokens,
 						apiKey,
@@ -695,7 +681,7 @@ export async function compact(
 	} else {
 		// Just generate history summary
 		summary = await generateSummary(
-			historyMessages,
+			messagesToSummarize,
 			model,
 			settings.reserveTokens,
 			apiKey,
@@ -709,9 +695,6 @@ export async function compact(
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
 	summary += formatFileOperations(readFiles, modifiedFiles);
 
-	// Get UUID of first kept entry
-	const firstKeptEntry = entries[cutResult.firstKeptEntryIndex];
-	const firstKeptEntryId = firstKeptEntry.id;
 	if (!firstKeptEntryId) {
 		throw new Error("First kept entry has no UUID - session may need migration");
 	}

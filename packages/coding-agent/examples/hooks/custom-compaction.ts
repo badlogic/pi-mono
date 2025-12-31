@@ -3,7 +3,7 @@
  *
  * Replaces the default compaction behavior with a full summary of the entire context.
  * Instead of keeping the last 20k tokens of conversation turns, this hook:
- * 1. Summarizes ALL messages (both messagesToSummarize and messagesToKeep and previousSummary)
+ * 1. Summarizes ALL messages (messagesToSummarize + turnPrefixMessages)
  * 2. Discards all old turns completely, keeping only the summary
  *
  * This example also demonstrates using a different model (Gemini Flash) for summarization,
@@ -14,6 +14,7 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
+import type { CompactionEntry } from "@mariozechner/pi-coding-agent";
 import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
@@ -21,11 +22,8 @@ export default function (pi: HookAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { preparation, previousCompactions, signal } = event;
-		const { messagesToSummarize, messagesToKeep, tokensBefore, firstKeptEntryId } = preparation;
-
-		// Get previous summary from most recent compaction (if any)
-		const previousSummary = previousCompactions[0]?.summary;
+		const { preparation, branchEntries, signal } = event;
+		const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		const model = getModel("google", "gemini-2.5-flash");
@@ -42,7 +40,7 @@ export default function (pi: HookAPI) {
 		}
 
 		// Combine all messages for full summary
-		const allMessages = [...messagesToSummarize, ...messagesToKeep];
+		const allMessages = [...messagesToSummarize, ...turnPrefixMessages];
 
 		ctx.ui.notify(
 			`Custom compaction: summarizing ${allMessages.length} messages (${tokensBefore.toLocaleString()} tokens) with ${model.id}...`,

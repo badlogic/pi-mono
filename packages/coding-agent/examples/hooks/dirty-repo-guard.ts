@@ -5,13 +5,9 @@
  * Useful to ensure work is committed before switching context.
  */
 
-import type { HookAPI, HookEventContext } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent/hooks";
 
-async function checkDirtyRepo(
-	pi: HookAPI,
-	ctx: HookEventContext,
-	action: string,
-): Promise<{ cancel: boolean } | undefined> {
+async function checkDirtyRepo(pi: HookAPI, ctx: HookContext, action: string): Promise<{ cancel: boolean } | undefined> {
 	// Check for uncommitted changes
 	const { stdout, code } = await pi.exec("git", ["status", "--porcelain"]);
 

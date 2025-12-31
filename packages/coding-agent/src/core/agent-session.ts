@@ -30,7 +30,7 @@ import {
 import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type {
-	HookCommandContext,
+	HookContext,
 	HookRunner,
 	SessionBeforeBranchResult,
 	SessionBeforeCompactResult,
@@ -552,17 +552,17 @@ export class AgentSession {
 
 		// Build command context
 		const cwd = process.cwd();
-		const ctx: HookCommandContext = {
-			args,
+		const ctx: HookContext = {
 			ui: uiContext,
 			hasUI: this._hookRunner.getHasUI(),
 			cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this._modelRegistry,
+			model: this.model,
 		};
 
 		try {
-			await command.handler(ctx);
+			await command.handler(args, ctx);
 			return true;
 		} catch (err) {
 			// Emit error via hook runner
@@ -895,13 +895,13 @@ export class AgentSession {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
 
-			const entries = this.sessionManager.getEntries();
+			const pathEntries = this.sessionManager.getPath();
 			const settings = this.settingsManager.getCompactionSettings();
 
-			const preparation = prepareCompaction(entries, settings);
+			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
 				// Check why we can't compact
-				const lastEntry = entries[entries.length - 1];
+				const lastEntry = pathEntries[pathEntries.length - 1];
 				if (lastEntry?.type === "compaction") {
 					throw new Error("Already compacted");
 				}
@@ -912,15 +912,11 @@ export class AgentSession {
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session_before_compact")) {
-				// Get previous compactions, newest first
-				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
-
 				const result = (await this._hookRunner.emit({
 					type: "session_before_compact",
 					preparation,
-					previousCompactions,
+					branchEntries: pathEntries,
 					customInstructions,
-					model: this.model,
 					signal: this._compactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
 
@@ -948,12 +944,11 @@ export class AgentSession {
 			} else {
 				// Generate compaction result
 				const result = await compact(
-					entries,
+					preparation,
 					this.model,
-					settings,
 					apiKey,
-					this._compactionAbortController.signal,
 					customInstructions,
+					this._compactionAbortController.signal,
 				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
@@ -1073,9 +1068,9 @@ export class AgentSession {
 				return;
 			}
 
-			const entries = this.sessionManager.getEntries();
+			const pathEntries = this.sessionManager.getPath();
 
-			const preparation = prepareCompaction(entries, settings);
+			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
 				this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
 				return;
@@ -1085,15 +1080,11 @@ export class AgentSession {
 			let fromHook = false;
 
 			if (this._hookRunner?.hasHandlers("session_before_compact")) {
-				// Get previous compactions, newest first
-				const previousCompactions = entries.filter((e): e is CompactionEntry => e.type === "compaction").reverse();
-
 				const hookResult = (await this._hookRunner.emit({
 					type: "session_before_compact",
 					preparation,
-					previousCompactions,
+					branchEntries: pathEntries,
 					customInstructions: undefined,
-					model: this.model,
 					signal: this._autoCompactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
 
@@ -1122,10 +1113,10 @@ export class AgentSession {
 			} else {
 				// Generate compaction result
 				const compactResult = await compact(
-					entries,
+					preparation,
 					this.model,
-					settings,
 					apiKey,
+					undefined,
 					this._autoCompactionAbortController.signal,
 				);
 				summary = compactResult.summary;
@@ -1628,7 +1619,6 @@ export class AgentSession {
 			const result = (await this._hookRunner.emit({
 				type: "session_before_tree",
 				preparation,
-				model: this.model!, // Checked above if summarize is true
 				signal: this._branchSummaryAbortController.signal,
 			})) as SessionBeforeTreeResult | undefined;
 
