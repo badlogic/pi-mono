@@ -232,15 +232,16 @@ pi.on("session_compact", async (event, ctx) => {
 
 #### session_before_tree / session_tree
 
-Fired on `/tree` navigation. See [compaction.md](compaction.md) for details.
+Fired on `/tree` navigation. Always fires regardless of user's summarization choice. See [compaction.md](compaction.md) for details.
 
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
-  // preparation.targetId, oldLeafId, commonAncestorId, entriesToSummarize, userWantsSummary
+  // preparation.targetId, oldLeafId, commonAncestorId, entriesToSummarize
+  // preparation.userWantsSummary - whether user chose to summarize
   
   return { cancel: true };
-  // OR (if userWantsSummary):
+  // OR provide custom summary (only used if userWantsSummary is true):
   return { summary: { summary: "...", details: {} } };
 });
 
@@ -433,26 +434,27 @@ Current working directory.
 
 ### ctx.sessionManager
 
-Read-only access to session state:
+Read-only access to session state. See `ReadonlySessionManager` in [`src/core/session-manager.ts`](../src/core/session-manager.ts).
 
 ```typescript
-// Get all entries (excludes header)
-const entries = ctx.sessionManager.getEntries();
+// Session info
+ctx.sessionManager.getCwd()           // Working directory
+ctx.sessionManager.getSessionDir()    // Session directory (~/.pi/agent/sessions)
+ctx.sessionManager.getSessionId()     // Current session ID
+ctx.sessionManager.getSessionFile()   // Session file path (undefined with --no-session)
 
-// Get current branch (root to leaf)
-const branch = ctx.sessionManager.getBranch();
+// Entries
+ctx.sessionManager.getEntries()       // All entries (excludes header)
+ctx.sessionManager.getHeader()        // Session header entry
+ctx.sessionManager.getEntry(id)       // Specific entry by ID
+ctx.sessionManager.getLabel(id)       // Entry label (if any)
 
-// Get specific entry by ID
-const entry = ctx.sessionManager.getEntry(id);
-
-// Get session file (undefined with --no-session)
-const file = ctx.sessionManager.getSessionFile();
-
-// Get tree structure
-const tree = ctx.sessionManager.getTree();
-
-// Get entry label
-const label = ctx.sessionManager.getLabel(entryId);
+// Tree navigation
+ctx.sessionManager.getBranch()        // Current branch (root to leaf)
+ctx.sessionManager.getBranch(leafId)  // Specific branch
+ctx.sessionManager.getTree()          // Full tree structure
+ctx.sessionManager.getLeafId()        // Current leaf entry ID
+ctx.sessionManager.getLeafEntry()     // Current leaf entry
 ```
 
 Use `pi.sendMessage()` or `pi.appendEntry()` for writes.
