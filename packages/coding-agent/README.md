@@ -293,7 +293,7 @@ Toggle inline images via `/settings` or set `terminal.showImages: false` in sett
 
 ## Sessions
 
-Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file. Old linear sessions are auto-migrated on load.
+Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
 
 See [docs/session.md](docs/session.md) for the file format and programmatic API.
 
@@ -325,14 +325,6 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 When disabled, neither case triggers automatic compaction (use `/compact` manually if needed).
 
-**How it works:**
-1. Cut point calculated to keep ~20k tokens of recent messages
-2. Messages before cut point are summarized
-3. Summary replaces old messages as "context handoff"
-4. Previous compaction summaries chain into new ones
-
-Compaction does not create a new session, but continues the existing one, with a marker in the `.jsonl` file that encodes the compaction point.
-
 **Configuration** (`~/.pi/agent/settings.json`):
 
 ```json
@@ -345,7 +337,9 @@ Compaction does not create a new session, but continues the existing one, with a
 }
 ```
 
-> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
+> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/tree` to revisit any previous point.
+
+See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via hooks.
 
 ### Branching
 
@@ -354,7 +348,7 @@ Compaction does not create a new session, but continues the existing one, with a
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
 - Press `l` to label entries as bookmarks
-- Selecting a branch generates a summary and switches context
+- When switching branches, you're prompted whether to generate a summary of the abandoned branch (messages up to the common ancestor)
 
 **Create new session (`/branch`):** Branch to a new session file:
 
