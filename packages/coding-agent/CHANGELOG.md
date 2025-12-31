@@ -92,6 +92,43 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 **Hook integration:**
 - New `sendHookMessage(message, triggerTurn?)` for hook message injection
 
+**SessionManager API:**
+- Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
+- `branchInPlace()` → `branch()`
+- `reset()` → `newSession()`
+- `createBranchedSessionFromEntries(entries, index)` → `createBranchedSession(leafId)`
+- `saveCompaction(entry)` → `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?)`
+- `getEntries()` now excludes the session header (use `getHeader()` separately)
+- `getSessionFile()` returns `string | undefined` (undefined for in-memory sessions)
+- New tree methods: `getTree()`, `getPath()`, `getLeafId()`, `getLeafEntry()`, `getEntry()`, `getChildren()`, `getLabel()`
+- New append methods: `appendCustomEntry()`, `appendCustomMessageEntry()`, `appendLabelChange()`
+- New branch methods: `branch(entryId)`, `branchWithSummary()`
+
+**ModelRegistry (new):**
+
+`ModelRegistry` is a new class that manages model discovery and API key resolution. It combines built-in models with custom models from `models.json` and resolves API keys via `AuthStorage`.
+
+```typescript
+import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+
+const authStorage = discoverAuthStorage();  // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage);  // + ~/.pi/agent/models.json
+
+// Get all models (built-in + custom)
+const allModels = modelRegistry.getAll();
+
+// Get only models with valid API keys
+const available = await modelRegistry.getAvailable();
+
+// Find specific model
+const model = modelRegistry.find("anthropic", "claude-sonnet-4-20250514");
+
+// Get API key for a model
+const apiKey = await modelRegistry.getApiKey(model);
+```
+
+This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools access it via `ctx.modelRegistry`.
+
 **Renamed exports:**
 - `messageTransformer` → `convertToLlm`
 - `SessionContext` alias `LoadedSession` removed
