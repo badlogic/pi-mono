@@ -100,7 +100,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `saveCompaction(entry)` → `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?)`
 - `getEntries()` now excludes the session header (use `getHeader()` separately)
 - `getSessionFile()` returns `string | undefined` (undefined for in-memory sessions)
-- New tree methods: `getTree()`, `getPath()`, `getLeafId()`, `getLeafEntry()`, `getEntry()`, `getChildren()`, `getLabel()`
+- New tree methods: `getTree()`, `getBranch()`, `getLeafId()`, `getLeafEntry()`, `getEntry()`, `getChildren()`, `getLabel()`
 - New append methods: `appendCustomEntry()`, `appendCustomMessageEntry()`, `appendLabelChange()`
 - New branch methods: `branch(entryId)`, `branchWithSummary()`
 
