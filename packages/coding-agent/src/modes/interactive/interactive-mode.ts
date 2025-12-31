@@ -1937,8 +1937,8 @@ export class InteractiveMode {
 			}
 
 			// Create the preview URL
-			const previewUrl = `https://gistpreview.github.io/?${gistId}/session.html`;
-			this.showStatus(`Share URL: ${previewUrl}`);
+			const previewUrl = `https://shittycodingagent.ai/session?${gistId}`;
+			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
 			this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
 		} finally {
