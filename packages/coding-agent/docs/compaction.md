@@ -108,7 +108,7 @@ Never cut at tool results (they must stay with their tool call).
 ### CompactionEntry Structure
 
 ```typescript
-interface CompactionEntry {
+interface CompactionEntry<T = unknown> {
   type: "compaction";
   id: string;
   parentId: string;
@@ -116,14 +116,18 @@ interface CompactionEntry {
   summary: string;
   firstKeptEntryId: string;
   tokensBefore: number;
-  fromHook?: boolean;
-  details?: CompactionDetails;
+  fromHook?: boolean;  // true if hook provided the compaction
+  details?: T;         // hook-specific data
 }
 
+// Default compaction uses this for details:
 interface CompactionDetails {
   readFiles: string[];
   modifiedFiles: string[];
 }
+```
+
+Hooks can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom compaction hooks can use their own structure.
 ```
 
 ## Branch Summarization
@@ -168,22 +172,25 @@ This means nested summaries accumulate file tracking across the entire abandoned
 ### BranchSummaryEntry Structure
 
 ```typescript
-interface BranchSummaryEntry {
+interface BranchSummaryEntry<T = unknown> {
   type: "branch_summary";
   id: string;
   parentId: string;
   timestamp: number;
   summary: string;
-  fromId: string;  // Entry we navigated from
-  fromHook?: boolean;
-  details?: BranchSummaryDetails;
+  fromId: string;      // Entry we navigated from
+  fromHook?: boolean;  // true if hook provided the summary
+  details?: T;         // hook-specific data
 }
 
+// Default branch summarization uses this for details:
 interface BranchSummaryDetails {
   readFiles: string[];
   modifiedFiles: string[];
 }
 ```
+
+Same as compaction, hooks can store custom data in `details`.
 
 ## Summary Format
 
