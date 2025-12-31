@@ -1955,33 +1955,66 @@ export class InteractiveMode {
 				const totalCells = 40;
 				const limit = Math.max(1, usage.limit);
 
-				const rawSegments = [
+				const fmt = (t: number) =>
+					t >= 1000000
+						? `${(t / 1000000).toFixed(1).replace(/\.0$/, "")}M`
+						: t >= 1000
+							? `${(t / 1000).toFixed(1).replace(/\.0$/, "")}k`
+							: `${t}`;
+
+				const allocate = (segments: Array<{ key: string; tokens: number; min?: number }>) => {
+					const prelim = segments.map((s) => {
+						const raw = (s.tokens / limit) * totalCells;
+						let base = Math.floor(raw);
+						if (s.tokens > 0 && base === 0) base = s.min ?? 1;
+						return { ...s, raw, base, frac: raw - Math.floor(raw) };
+					});
+
+					let sum = prelim.reduce((acc, s) => acc + s.base, 0);
+					if (sum > totalCells) {
+						let over = sum - totalCells;
+						const order = prelim
+							.slice()
+							.sort(
+								(a, b) =>
+									(a.key === "remaining" ? -1 : 0) - (b.key === "remaining" ? -1 : 0) || b.base - a.base,
+							);
+						for (const s of order) {
+							if (over <= 0) break;
+							const min = s.tokens > 0 ? (s.min ?? 1) : 0;
+							const canRemove = Math.max(0, s.base - min);
+							const remove = Math.min(over, canRemove);
+							s.base -= remove;
+							over -= remove;
+						}
+					}
+
+					sum = prelim.reduce((acc, s) => acc + s.base, 0);
+					let remaining = Math.max(0, totalCells - sum);
+					prelim
+						.slice()
+						.sort((a, b) => b.frac - a.frac)
+						.forEach((s) => {
+							if (remaining <= 0) return;
+							s.base += 1;
+							remaining -= 1;
+						});
+
+					const out = new Map<string, number>();
+					for (const s of prelim) out.set(s.key, s.base);
+					return out;
+				};
+
+				const allocations = allocate([
 					{ key: "system", tokens: usage.system.tokens },
 					{ key: "tools", tokens: usage.tools.tokens },
 					{ key: "messages", tokens: usage.messages.tokens },
-					{ key: "remaining", tokens: Math.max(0, limit - usage.used) },
-				];
+					{ key: "remaining", tokens: Math.max(0, limit - usage.used), min: 0 },
+				]);
 
-				const cells = rawSegments.map((s) => {
-					const raw = (s.tokens / limit) * totalCells;
-					return { key: s.key, raw, base: Math.floor(raw), frac: raw - Math.floor(raw) };
-				});
-
-				const usedCells = cells.reduce((acc, c) => acc + c.base, 0);
-				let remainingCells = Math.max(0, totalCells - usedCells);
-				cells
-					.slice()
-					.sort((a, b) => b.frac - a.frac)
-					.forEach((c) => {
-						if (remainingCells <= 0) return;
-						c.base += 1;
-						remainingCells -= 1;
-					});
-
-				const getCells = (key: string) => cells.find((c) => c.key === key)?.base ?? 0;
-				const systemCells = getCells("system");
-				const toolsCells = getCells("tools");
-				const messagesCells = getCells("messages");
+				const systemCells = allocations.get("system") ?? 0;
+				const toolsCells = allocations.get("tools") ?? 0;
+				const messagesCells = allocations.get("messages") ?? 0;
 				const remainingFill = Math.max(0, totalCells - (systemCells + toolsCells + messagesCells));
 
 				const bar =
@@ -1992,20 +2025,7 @@ export class InteractiveMode {
 					theme.fg("dim", "░".repeat(remainingFill)) +
 					"]";
 
-				const fmt = (t: number) =>
-					t >= 1000000
-						? `${(t / 1000000).toFixed(1).replace(/\.0$/, "")}m`
-						: t >= 1000
-							? `${(t / 1000).toFixed(1).replace(/\.0$/, "")}k`
-							: `${t}`;
-
-				this.chatContainer.addChild(
-					new Text(
-						`${bar} ${usage.model.provider}/${usage.model.id} · ~${fmt(usage.used)}/${fmt(usage.limit)} (${usage.usedPct}% used, ${usage.remainingPct}% remaining)`,
-						1,
-						0,
-					),
-				);
+				this.chatContainer.addChild(new Text(`${bar} ${usage.usedPct.toFixed(1)}%/${fmt(usage.limit)}`, 1, 0));
 				this.chatContainer.addChild(new Spacer(1));
 
 				this.chatContainer.addChild(
@@ -2036,7 +2056,7 @@ export class InteractiveMode {
 
 				if (usage.ephemeralUncachedCount > 0) {
 					this.chatContainer.addChild(
-						new Text(theme.fg("muted", `ephemeral: ${usage.ephemeralUncachedCount} message(s)`), 1, 0),
+						new Text(theme.fg("muted", `ephemeral: ${usage.ephemeralUncachedCount}`), 1, 0),
 					);
 				}
 			} else {
