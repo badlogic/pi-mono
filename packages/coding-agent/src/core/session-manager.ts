@@ -210,6 +210,7 @@ function migrateV1ToV2(entries: FileEntry[]): void {
 		}
 
 		entry.id = generateId(ids);
+		ids.add(entry.id);
 		entry.parentId = prevId;
 		prevId = entry.id;
 
@@ -227,6 +228,78 @@ function migrateV1ToV2(entries: FileEntry[]): void {
 	}
 }
 
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.length > 0;
+}
+
+/**
+ * Repair sessions that claim to be v2 (or newer), but contain entries missing id/parentId.
+ * This can happen if a v1 writer appends to an already-migrated file.
+ */
+function repairMissingIdsAndParents(entries: FileEntry[]): boolean {
+	const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
+
+	let changed = false;
+	const used = new Set<string>();
+	const seen = new Set<string>();
+
+	for (const entry of entries) {
+		if (entry.type === "session") continue;
+		const id = (entry as unknown as { id?: unknown }).id;
+		if (isNonEmptyString(id)) {
+			used.add(id);
+		}
+	}
+
+	let prevId: string | null = null;
+	for (const entry of entries) {
+		if (entry.type === "session") continue;
+		const mutable = entry as unknown as { id?: unknown; parentId?: unknown };
+
+		let id = mutable.id;
+		if (!isNonEmptyString(id) || seen.has(id)) {
+			const newId = generateId({ has: (v) => used.has(v) });
+			mutable.id = newId;
+			used.add(newId);
+			id = newId;
+			changed = true;
+		} else {
+			seen.add(id);
+		}
+
+		// Only repair missing/invalid parentId; do not overwrite existing valid tree structure.
+		const parentId = mutable.parentId;
+		if (parentId === undefined) {
+			mutable.parentId = prevId;
+			changed = true;
+		} else if (parentId !== null && !isNonEmptyString(parentId)) {
+			mutable.parentId = prevId;
+			changed = true;
+		}
+
+		prevId = mutable.id as string;
+
+		if (entry.type === "compaction") {
+			const comp = entry as unknown as { firstKeptEntryId?: unknown; firstKeptEntryIndex?: unknown };
+			if (!isNonEmptyString(comp.firstKeptEntryId) && typeof comp.firstKeptEntryIndex === "number") {
+				const target = entries[comp.firstKeptEntryIndex];
+				const targetId = (target as unknown as { id?: unknown }).id;
+				if (target && target.type !== "session" && isNonEmptyString(targetId)) {
+					(comp as unknown as { firstKeptEntryId: string }).firstKeptEntryId = targetId;
+					changed = true;
+				}
+				delete (comp as unknown as { firstKeptEntryIndex?: unknown }).firstKeptEntryIndex;
+			}
+		}
+	}
+
+	if (changed && header) {
+		header.version = CURRENT_SESSION_VERSION;
+	}
+
+	return changed;
+}
+
 // Add future migrations here:
 // function migrateV2ToV3(entries: FileEntry[]): void { ... }
 
@@ -238,12 +311,19 @@ function migrateToCurrentVersion(entries: FileEntry[]): boolean {
 	const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 	const version = header?.version ?? 1;
 
-	if (version >= CURRENT_SESSION_VERSION) return false;
+	let changed = false;
 
-	if (version < 2) migrateV1ToV2(entries);
-	// if (version < 3) migrateV2ToV3(entries);
+	if (version < 2) {
+		migrateV1ToV2(entries);
+		changed = true;
+	}
 
-	return true;
+	// Repair malformed entries even when the session claims to already be at the current version.
+	if (repairMissingIdsAndParents(entries)) {
+		changed = true;
+	}
+
+	return changed;
 }
 
 /** Exported for testing */
