@@ -12,6 +12,7 @@
 ### Changed
 
 - README.md completely rewritten with accurate component documentation, theme interfaces, and examples
+- Editor component now uses word wrapping instead of character-level wrapping for better readability
 
 ### Fixed
 

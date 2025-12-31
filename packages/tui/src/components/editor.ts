@@ -31,6 +31,186 @@ import { SelectList, type SelectListTheme } from "./select-list.js";
 
 const segmenter = getSegmenter();
 
+/**
+ * Represents a chunk of text for word-wrap layout.
+ * Tracks both the text content and its position in the original line.
+ */
+interface TextChunk {
+	text: string;
+	startIndex: number;
+	endIndex: number;
+}
+
+/**
+ * Split a line into word-wrapped chunks.
+ * Wraps at word boundaries when possible, falling back to character-level
+ * wrapping for words longer than the available width.
+ *
+ * @param line - The text line to wrap
+ * @param maxWidth - Maximum visible width per chunk
+ * @returns Array of chunks with text and position information
+ */
+function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
+	if (!line || maxWidth <= 0) {
+		return [{ text: "", startIndex: 0, endIndex: 0 }];
+	}
+
+	const lineWidth = visibleWidth(line);
+	if (lineWidth <= maxWidth) {
+		return [{ text: line, startIndex: 0, endIndex: line.length }];
+	}
+
+	const chunks: TextChunk[] = [];
+
+	// Split into tokens (words and whitespace runs)
+	const tokens: { text: string; startIndex: number; endIndex: number; isWhitespace: boolean }[] = [];
+	let currentToken = "";
+	let tokenStart = 0;
+	let inWhitespace = false;
+	let charIndex = 0;
+
+	for (const seg of segmenter.segment(line)) {
+		const grapheme = seg.segment;
+		const graphemeIsWhitespace = isWhitespaceChar(grapheme);
+
+		if (currentToken === "") {
+			inWhitespace = graphemeIsWhitespace;
+			tokenStart = charIndex;
+		} else if (graphemeIsWhitespace !== inWhitespace) {
+			// Token type changed - save current token
+			tokens.push({
+				text: currentToken,
+				startIndex: tokenStart,
+				endIndex: charIndex,
+				isWhitespace: inWhitespace,
+			});
+			currentToken = "";
+			tokenStart = charIndex;
+			inWhitespace = graphemeIsWhitespace;
+		}
+
+		currentToken += grapheme;
+		charIndex += grapheme.length;
+	}
+
+	// Push final token
+	if (currentToken) {
+		tokens.push({
+			text: currentToken,
+			startIndex: tokenStart,
+			endIndex: charIndex,
+			isWhitespace: inWhitespace,
+		});
+	}
+
+	// Build chunks using word wrapping
+	let currentChunk = "";
+	let currentWidth = 0;
+	let chunkStartIndex = 0;
+	let atLineStart = true; // Track if we're at the start of a line (for skipping whitespace)
+
+	for (const token of tokens) {
+		const tokenWidth = visibleWidth(token.text);
+
+		// Skip leading whitespace at line start
+		if (atLineStart && token.isWhitespace) {
+			chunkStartIndex = token.endIndex;
+			continue;
+		}
+		atLineStart = false;
+
+		// If this single token is wider than maxWidth, we need to break it
+		if (tokenWidth > maxWidth) {
+			// First, push any accumulated chunk
+			if (currentChunk) {
+				chunks.push({
+					text: currentChunk,
+					startIndex: chunkStartIndex,
+					endIndex: token.startIndex,
+				});
+				currentChunk = "";
+				currentWidth = 0;
+				chunkStartIndex = token.startIndex;
+			}
+
+			// Break the long token by grapheme
+			let tokenChunk = "";
+			let tokenChunkWidth = 0;
+			let tokenChunkStart = token.startIndex;
+			let tokenCharIndex = token.startIndex;
+
+			for (const seg of segmenter.segment(token.text)) {
+				const grapheme = seg.segment;
+				const graphemeWidth = visibleWidth(grapheme);
+
+				if (tokenChunkWidth + graphemeWidth > maxWidth && tokenChunk) {
+					chunks.push({
+						text: tokenChunk,
+						startIndex: tokenChunkStart,
+						endIndex: tokenCharIndex,
+					});
+					tokenChunk = grapheme;
+					tokenChunkWidth = graphemeWidth;
+					tokenChunkStart = tokenCharIndex;
+				} else {
+					tokenChunk += grapheme;
+					tokenChunkWidth += graphemeWidth;
+				}
+				tokenCharIndex += grapheme.length;
+			}
+
+			// Keep remainder as start of next chunk
+			if (tokenChunk) {
+				currentChunk = tokenChunk;
+				currentWidth = tokenChunkWidth;
+				chunkStartIndex = tokenChunkStart;
+			}
+			continue;
+		}
+
+		// Check if adding this token would exceed width
+		if (currentWidth + tokenWidth > maxWidth) {
+			// Push current chunk (trimming trailing whitespace for display)
+			const trimmedChunk = currentChunk.trimEnd();
+			if (trimmedChunk || chunks.length === 0) {
+				chunks.push({
+					text: trimmedChunk,
+					startIndex: chunkStartIndex,
+					endIndex: chunkStartIndex + currentChunk.length,
+				});
+			}
+
+			// Start new line - skip leading whitespace
+			atLineStart = true;
+			if (token.isWhitespace) {
+				currentChunk = "";
+				currentWidth = 0;
+				chunkStartIndex = token.endIndex;
+			} else {
+				currentChunk = token.text;
+				currentWidth = tokenWidth;
+				chunkStartIndex = token.startIndex;
+				atLineStart = false;
+			}
+		} else {
+			// Add token to current chunk
+			currentChunk += token.text;
+			currentWidth += tokenWidth;
+		}
+	}
+
+	// Push final chunk
+	if (currentChunk) {
+		chunks.push({
+			text: currentChunk,
+			startIndex: chunkStartIndex,
+			endIndex: line.length,
+		});
+	}
+
+	return chunks.length > 0 ? chunks : [{ text: "", startIndex: 0, endIndex: 0 }];
+}
+
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
@@ -543,42 +723,8 @@ export class Editor implements Component {
 					});
 				}
 			} else {
-				// Line needs wrapping - use grapheme-aware chunking
-				const chunks: { text: string; startIndex: number; endIndex: number }[] = [];
-				let currentChunk = "";
-				let currentWidth = 0;
-				let chunkStartIndex = 0;
-				let currentIndex = 0;
-
-				for (const seg of segmenter.segment(line)) {
-					const grapheme = seg.segment;
-					const graphemeWidth = visibleWidth(grapheme);
-
-					if (currentWidth + graphemeWidth > contentWidth && currentChunk !== "") {
-						// Start a new chunk
-						chunks.push({
-							text: currentChunk,
-							startIndex: chunkStartIndex,
-							endIndex: currentIndex,
-						});
-						currentChunk = grapheme;
-						currentWidth = graphemeWidth;
-						chunkStartIndex = currentIndex;
-					} else {
-						currentChunk += grapheme;
-						currentWidth += graphemeWidth;
-					}
-					currentIndex += grapheme.length;
-				}
-
-				// Push the last chunk
-				if (currentChunk !== "") {
-					chunks.push({
-						text: currentChunk,
-						startIndex: chunkStartIndex,
-						endIndex: currentIndex,
-					});
-				}
+				// Line needs wrapping - use word-aware wrapping
+				const chunks = wordWrapLine(line, contentWidth);
 
 				for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
 					const chunk = chunks[chunkIndex];
@@ -586,17 +732,37 @@ export class Editor implements Component {
 
 					const cursorPos = this.state.cursorCol;
 					const isLastChunk = chunkIndex === chunks.length - 1;
-					// For non-last chunks, cursor at endIndex belongs to the next chunk
-					const hasCursorInChunk =
-						isCurrentLine &&
-						cursorPos >= chunk.startIndex &&
-						(isLastChunk ? cursorPos <= chunk.endIndex : cursorPos < chunk.endIndex);
+
+					// Determine if cursor is in this chunk
+					// For word-wrapped chunks, we need to handle the case where
+					// cursor might be in trimmed whitespace at end of chunk
+					let hasCursorInChunk = false;
+					let adjustedCursorPos = 0;
+
+					if (isCurrentLine) {
+						if (isLastChunk) {
+							// Last chunk: cursor belongs here if >= startIndex
+							hasCursorInChunk = cursorPos >= chunk.startIndex;
+							adjustedCursorPos = cursorPos - chunk.startIndex;
+						} else {
+							// Non-last chunk: cursor belongs here if in range [startIndex, endIndex)
+							// But we need to handle the visual position in the trimmed text
+							hasCursorInChunk = cursorPos >= chunk.startIndex && cursorPos < chunk.endIndex;
+							if (hasCursorInChunk) {
+								adjustedCursorPos = cursorPos - chunk.startIndex;
+								// Clamp to text length (in case cursor was in trimmed whitespace)
+								if (adjustedCursorPos > chunk.text.length) {
+									adjustedCursorPos = chunk.text.length;
+								}
+							}
+						}
+					}
 
 					if (hasCursorInChunk) {
 						layoutLines.push({
 							text: chunk.text,
 							hasCursor: true,
-							cursorPos: cursorPos - chunk.startIndex,
+							cursorPos: adjustedCursorPos,
 						});
 					} else {
 						layoutLines.push({
@@ -997,36 +1163,13 @@ export class Editor implements Component {
 			} else if (lineVisWidth <= width) {
 				visualLines.push({ logicalLine: i, startCol: 0, length: line.length });
 			} else {
-				// Line needs wrapping - use grapheme-aware chunking
-				let currentWidth = 0;
-				let chunkStartIndex = 0;
-				let currentIndex = 0;
-
-				for (const seg of segmenter.segment(line)) {
-					const grapheme = seg.segment;
-					const graphemeWidth = visibleWidth(grapheme);
-
-					if (currentWidth + graphemeWidth > width && currentIndex > chunkStartIndex) {
-						// Start a new chunk
-						visualLines.push({
-							logicalLine: i,
-							startCol: chunkStartIndex,
-							length: currentIndex - chunkStartIndex,
-						});
-						chunkStartIndex = currentIndex;
-						currentWidth = graphemeWidth;
-					} else {
-						currentWidth += graphemeWidth;
-					}
-					currentIndex += grapheme.length;
-				}
-
-				// Push the last chunk
-				if (currentIndex > chunkStartIndex) {
+				// Line needs wrapping - use word-aware wrapping
+				const chunks = wordWrapLine(line, width);
+				for (const chunk of chunks) {
 					visualLines.push({
 						logicalLine: i,
-						startCol: chunkStartIndex,
-						length: currentIndex - chunkStartIndex,
+						startCol: chunk.startIndex,
+						length: chunk.endIndex - chunk.startIndex,
 					});
 				}
 			}

@@ -576,4 +576,99 @@ describe("Editor component", () => {
 			}
 		});
 	});
+
+	describe("Word wrapping", () => {
+		it("wraps at word boundaries instead of mid-word", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 40;
+
+			editor.setText("Hello world this is a test of word wrapping functionality");
+			const lines = editor.render(width);
+
+			// Get content lines (between borders)
+			const contentLines = lines.slice(1, -1).map((l) => stripVTControlCharacters(l).trim());
+
+			// Should NOT break mid-word
+			// Line 1 should end with a complete word
+			assert.ok(!contentLines[0]!.endsWith("-"), "Line should not end with hyphen (mid-word break)");
+
+			// Each content line should be complete words
+			for (const line of contentLines) {
+				// Words at end of line should be complete (no partial words)
+				const lastChar = line.trimEnd().slice(-1);
+				assert.ok(lastChar === "" || /[\w.,!?;:]/.test(lastChar), `Line ends unexpectedly with: "${lastChar}"`);
+			}
+		});
+
+		it("does not start lines with leading whitespace after word wrap", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 20;
+
+			editor.setText("Word1 Word2 Word3 Word4 Word5 Word6");
+			const lines = editor.render(width);
+
+			// Get content lines (between borders)
+			const contentLines = lines.slice(1, -1);
+
+			// No line should start with whitespace (except for padding at the end)
+			for (let i = 0; i < contentLines.length; i++) {
+				const line = stripVTControlCharacters(contentLines[i]!);
+				const trimmedStart = line.trimStart();
+				// The line should either be all padding or start with a word character
+				if (trimmedStart.length > 0) {
+					assert.ok(!/^\s+\S/.test(line.trimEnd()), `Line ${i} starts with unexpected whitespace before content`);
+				}
+			}
+		});
+
+		it("breaks long words (URLs) at character level", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 30;
+
+			editor.setText("Check https://example.com/very/long/path/that/exceeds/width here");
+			const lines = editor.render(width);
+
+			// All lines should fit within width
+			for (let i = 1; i < lines.length - 1; i++) {
+				const lineWidth = visibleWidth(lines[i]!);
+				assert.strictEqual(lineWidth, width, `Line ${i} has width ${lineWidth}, expected ${width}`);
+			}
+		});
+
+		it("preserves multiple spaces within words on same line", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 50;
+
+			editor.setText("Word1   Word2    Word3");
+			const lines = editor.render(width);
+
+			const contentLine = stripVTControlCharacters(lines[1]!).trim();
+			// Multiple spaces should be preserved
+			assert.ok(contentLine.includes("Word1   Word2"), "Multiple spaces should be preserved");
+		});
+
+		it("handles empty string", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 40;
+
+			editor.setText("");
+			const lines = editor.render(width);
+
+			// Should have border + empty content + border
+			assert.strictEqual(lines.length, 3);
+		});
+
+		it("handles single word that fits exactly", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 10;
+
+			editor.setText("1234567890");
+			const lines = editor.render(width);
+
+			// Should have exactly 3 lines (top border, content, bottom border)
+			assert.strictEqual(lines.length, 3);
+			const contentLine = stripVTControlCharacters(lines[1]!);
+			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
+		});
+	});
 });
