@@ -53,16 +53,15 @@ export class AssistantMessageComponent extends Container {
 
 				if (this.hideThinkingBlock) {
 					// Show static "Thinking..." label when hidden
-					this.contentContainer.addChild(new Text(theme.fg("muted", "Thinking..."), 1, 0));
+					this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "Thinking...")), 1, 0));
 					if (hasTextAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
 				} else {
-					// Thinking traces in muted color, italic
-					// Use Markdown component with default text style for consistent styling
+					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(
 						new Markdown(content.thinking.trim(), 1, 0, getMarkdownTheme(), {
-							color: (text: string) => theme.fg("muted", text),
+							color: (text: string) => theme.fg("thinkingText", text),
 							italic: true,
 						}),
 					);

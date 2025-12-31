@@ -93,6 +93,7 @@ export class InteractiveMode {
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
+	private streamingMessage: AssistantMessage | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -839,18 +840,19 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
+					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(event.message);
+					this.streamingComponent.updateContent(this.streamingMessage);
 					this.ui.requestRender();
 				}
 				break;
 
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
-					const assistantMsg = event.message as AssistantMessage;
-					this.streamingComponent.updateContent(assistantMsg);
+					this.streamingMessage = event.message;
+					this.streamingComponent.updateContent(this.streamingMessage);
 
-					for (const content of assistantMsg.content) {
+					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
 								this.chatContainer.addChild(new Text("", 0, 0));
@@ -881,12 +883,14 @@ export class InteractiveMode {
 			case "message_end":
 				if (event.message.role === "user") break;
 				if (this.streamingComponent && event.message.role === "assistant") {
-					const assistantMsg = event.message as AssistantMessage;
-					this.streamingComponent.updateContent(assistantMsg);
+					this.streamingMessage = event.message;
+					this.streamingComponent.updateContent(this.streamingMessage);
 
-					if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
 						const errorMessage =
-							assistantMsg.stopReason === "aborted" ? "Operation aborted" : assistantMsg.errorMessage || "Error";
+							this.streamingMessage.stopReason === "aborted"
+								? "Operation aborted"
+								: this.streamingMessage.errorMessage || "Error";
 						for (const [, component] of this.pendingTools.entries()) {
 							component.updateResult({
 								content: [{ type: "text", text: errorMessage }],
@@ -896,6 +900,7 @@ export class InteractiveMode {
 						this.pendingTools.clear();
 					}
 					this.streamingComponent = undefined;
+					this.streamingMessage = undefined;
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -948,6 +953,7 @@ export class InteractiveMode {
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
+					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
 				this.ui.requestRender();
@@ -1329,14 +1335,17 @@ export class InteractiveMode {
 		this.hideThinkingBlock = !this.hideThinkingBlock;
 		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
 
-		for (const child of this.chatContainer.children) {
-			if (child instanceof AssistantMessageComponent) {
-				child.setHideThinkingBlock(this.hideThinkingBlock);
-			}
-		}
-
+		// Rebuild chat from session messages
 		this.chatContainer.clear();
 		this.rebuildChatFromMessages();
+
+		// If streaming, re-add the streaming component with updated visibility and re-render
+		if (this.streamingComponent && this.streamingMessage) {
+			this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
+			this.streamingComponent.updateContent(this.streamingMessage);
+			this.chatContainer.addChild(this.streamingComponent);
+		}
+
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
@@ -1738,6 +1747,7 @@ export class InteractiveMode {
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
 		// Switch session via AgentSession (emits hook and tool session events)
@@ -2004,6 +2014,7 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
 		this.chatContainer.addChild(new Spacer(1));
