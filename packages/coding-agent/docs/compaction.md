@@ -1,0 +1,329 @@
+# Compaction & Branch Summarization
+
+LLMs have limited context windows. When conversations grow too long, pi uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
+
+## Overview
+
+Pi has two summarization mechanisms:
+
+| Mechanism | Trigger | Purpose |
+|-----------|---------|---------|
+| Compaction | Context exceeds threshold, or `/compact` | Summarize old messages to free up context |
+| Branch summarization | `/tree` navigation | Preserve context when switching branches |
+
+Both use the same structured summary format and track file operations cumulatively.
+
+## Compaction
+
+### When It Triggers
+
+Auto-compaction triggers when:
+
+```
+contextTokens > contextWindow - reserveTokens
+```
+
+By default, `reserveTokens` is 16384 tokens. This leaves room for the LLM's response.
+
+You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
+
+### How It Works
+
+1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k) is reached
+2. **Extract messages**: Collect messages from previous compaction (or start) up to cut point
+3. **Generate summary**: Call LLM to summarize with structured format
+4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
+5. **Reload**: Session reloads, using summary + messages from `firstKeptEntryId` onwards
+
+```
+Before compaction:
+
+  entry:  0     1     2     3      4     5     6      7      8     9
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┐
+        │ hdr │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool│
+        └─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴─────┘
+                └────────┬───────┘ └──────────────┬──────────────┘
+               messagesToSummarize            kept messages
+                                   ↑
+                          firstKeptEntryId (entry 4)
+
+After compaction (new entry appended):
+
+  entry:  0     1     2     3      4     5     6      7      8     9     10
+        ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┬─────┐
+        │ hdr │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool│ cmp │
+        └─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴─────┴─────┘
+               └──────────┬──────┘ └──────────────────────┬───────────────────┘
+                 not sent to LLM                    sent to LLM
+                                                         ↑
+                                              starts from firstKeptEntryId
+
+What the LLM sees:
+
+  ┌────────┬─────────┬─────┬─────┬──────┬──────┬─────┬──────┐
+  │ system │ summary │ usr │ ass │ tool │ tool │ ass │ tool │
+  └────────┴─────────┴─────┴─────┴──────┴──────┴─────┴──────┘
+       ↑         ↑      └─────────────────┬────────────────┘
+    prompt   from cmp          messages from firstKeptEntryId
+```
+
+### Split Turns
+
+A "turn" starts with a user message and includes all assistant responses and tool calls until the next user message. Normally, compaction cuts at turn boundaries.
+
+When a single turn exceeds `keepRecentTokens`, the cut point lands mid-turn at an assistant message. This is a "split turn":
+
+```
+Split turn (one huge turn exceeds budget):
+
+  entry:  0     1     2      3     4      5      6     7      8
+        ┌─────┬─────┬─────┬──────┬─────┬──────┬──────┬─────┬──────┐
+        │ hdr │ usr │ ass │ tool │ ass │ tool │ tool │ ass │ tool │
+        └─────┴─────┴─────┴──────┴─────┴──────┴──────┴─────┴──────┘
+                ↑                                     ↑
+         turnStartIndex = 1                  firstKeptEntryId = 7
+                │                                     │
+                └──── turnPrefixMessages (1-6) ───────┘
+                                                      └── kept (7-8)
+
+  isSplitTurn = true
+  messagesToSummarize = []  (no complete turns before)
+  turnPrefixMessages = [usr, ass, tool, ass, tool, tool]
+```
+
+For split turns, pi generates two summaries and merges them:
+1. **History summary**: Previous context (if any)
+2. **Turn prefix summary**: The early part of the split turn
+
+### Cut Point Rules
+
+Valid cut points are:
+- User messages
+- Assistant messages
+- BashExecution messages
+- Hook messages (custom_message, branch_summary)
+
+Never cut at tool results (they must stay with their tool call).
+
+### CompactionEntry Structure
+
+```typescript
+interface CompactionEntry {
+  type: "compaction";
+  id: string;
+  parentId: string;
+  timestamp: number;
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+  fromHook?: boolean;
+  details?: CompactionDetails;
+}
+
+interface CompactionDetails {
+  readFiles: string[];
+  modifiedFiles: string[];
+}
+```
+
+## Branch Summarization
+
+### When It Triggers
+
+When you use `/tree` to navigate to a different branch, pi offers to summarize the work you're leaving. This preserves context so you can return later.
+
+### How It Works
+
+1. **Find common ancestor**: Deepest node shared by old and new positions
+2. **Collect entries**: Walk from old leaf back to common ancestor
+3. **Prepare with budget**: Include messages up to token budget (newest first)
+4. **Generate summary**: Call LLM with structured format
+5. **Append entry**: Save `BranchSummaryEntry` at navigation point
+
+```
+Tree before navigation:
+
+         ┌─ B ─ C ─ D (old leaf, being abandoned)
+    A ───┤
+         └─ E ─ F (target)
+
+Common ancestor: A
+Entries to summarize: B, C, D
+
+After navigation with summary:
+
+         ┌─ B ─ C ─ D ─ [summary of B,C,D]
+    A ───┤
+         └─ E ─ F (new leaf)
+```
+
+### Cumulative File Tracking
+
+Branch summaries track files cumulatively. When generating a new summary, pi extracts file operations from:
+- Tool calls in the messages being summarized
+- Previous branch summary `details` (if any)
+
+This means nested summaries accumulate file tracking across the entire abandoned branch.
+
+### BranchSummaryEntry Structure
+
+```typescript
+interface BranchSummaryEntry {
+  type: "branch_summary";
+  id: string;
+  parentId: string;
+  timestamp: number;
+  summary: string;
+  fromId: string;  // Entry we navigated from
+  fromHook?: boolean;
+  details?: BranchSummaryDetails;
+}
+
+interface BranchSummaryDetails {
+  readFiles: string[];
+  modifiedFiles: string[];
+}
+```
+
+## Summary Format
+
+Both compaction and branch summarization use the same structured format:
+
+```markdown
+## Goal
+[What the user is trying to accomplish]
+
+## Constraints & Preferences
+- [Requirements mentioned by user]
+
+## Progress
+### Done
+- [x] [Completed tasks]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues, if any]
+
+## Key Decisions
+- **[Decision]**: [Rationale]
+
+## Next Steps
+1. [What should happen next]
+
+## Critical Context
+- [Data needed to continue]
+
+<read-files>
+path/to/file1.ts
+path/to/file2.ts
+</read-files>
+
+<modified-files>
+path/to/changed.ts
+</modified-files>
+```
+
+### Message Serialization
+
+Before summarization, messages are serialized to text:
+
+```
+[User]: What they said
+[Assistant thinking]: Internal reasoning
+[Assistant]: Response text
+[Assistant tool calls]: read(path="foo.ts"); edit(path="bar.ts", ...)
+[Tool result]: Output from tool
+```
+
+This prevents the model from treating it as a conversation to continue.
+
+## Custom Summarization via Hooks
+
+Hooks can intercept and customize both compaction and branch summarization.
+
+### session_before_compact
+
+Fired before auto-compaction or `/compact`. Can cancel or provide custom summary.
+
+```typescript
+pi.on("session_before_compact", async (event, ctx) => {
+  const { preparation, branchEntries, customInstructions, signal } = event;
+  
+  // preparation.messagesToSummarize - messages to summarize
+  // preparation.turnPrefixMessages - split turn prefix (if isSplitTurn)
+  // preparation.previousSummary - previous compaction summary
+  // preparation.fileOps - extracted file operations
+  // preparation.tokensBefore - context tokens before compaction
+  // preparation.firstKeptEntryId - where kept messages start
+  // preparation.settings - compaction settings
+  
+  // branchEntries - all entries on current branch (for custom state)
+  // signal - AbortSignal (pass to LLM calls)
+  
+  // Cancel:
+  return { cancel: true };
+  
+  // Custom summary:
+  return {
+    compaction: {
+      summary: "Your summary...",
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      tokensBefore: preparation.tokensBefore,
+      details: { /* custom data */ },
+    }
+  };
+});
+```
+
+See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) for a complete example using a different model.
+
+### session_before_tree
+
+Fired before `/tree` navigation with summarization. Can cancel or provide custom summary.
+
+```typescript
+pi.on("session_before_tree", async (event, ctx) => {
+  const { preparation, signal } = event;
+  
+  // preparation.targetId - where we're navigating to
+  // preparation.oldLeafId - current position (being abandoned)
+  // preparation.commonAncestorId - shared ancestor
+  // preparation.entriesToSummarize - entries to summarize
+  // preparation.userWantsSummary - whether user chose to summarize
+  
+  // Cancel navigation:
+  return { cancel: true };
+  
+  // Custom summary (only if userWantsSummary):
+  return {
+    summary: {
+      summary: "Your summary...",
+      details: { /* custom data */ },
+    }
+  };
+});
+```
+
+## Settings
+
+Configure compaction in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable auto-compaction |
+| `reserveTokens` | `16384` | Tokens to reserve for LLM response |
+| `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
+
+Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
