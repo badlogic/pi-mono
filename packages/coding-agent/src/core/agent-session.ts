@@ -2346,74 +2346,113 @@ export class AgentSession {
 			: this._renderContextMarkdownSummary(envelope, options);
 	}
 
+	private _estimateTokensFromChars(chars: number): number {
+		return Math.ceil(chars / 4);
+	}
+
+	private _estimateTokensForTool(tool: Tool): number {
+		const desc = tool.description ?? "";
+		const params = tool.parameters ? JSON.stringify(tool.parameters) : "";
+		return this._estimateTokensFromChars(tool.name.length + desc.length + params.length);
+	}
+
+	private _estimateTokensForProviderMessage(message: Message): number {
+		let chars = 0;
+
+		switch (message.role) {
+			case "user": {
+				if (typeof message.content === "string") {
+					chars += message.content.length;
+				} else {
+					for (const block of message.content) {
+						if (block.type === "text") chars += block.text.length;
+						if (block.type === "image") chars += 4800; // ~1200 tokens
+					}
+				}
+				break;
+			}
+			case "assistant": {
+				for (const block of message.content) {
+					if (block.type === "text") chars += block.text.length;
+					if (block.type === "thinking") chars += block.thinking.length;
+					if (block.type === "toolCall") chars += block.name.length + JSON.stringify(block.arguments).length;
+				}
+				break;
+			}
+			case "toolResult": {
+				for (const block of message.content) {
+					if (block.type === "text") chars += block.text.length;
+					if (block.type === "image") chars += 4800; // ~1200 tokens
+				}
+				break;
+			}
+		}
+
+		return this._estimateTokensFromChars(chars);
+	}
+
 	private _renderContextMarkdownSummary(envelope: ContextEnvelope, options: { includeEphemeral: boolean }): string {
 		const lines: string[] = [];
 
-		lines.push("# Context (summary)");
+		const limit = envelope.meta.limit;
+
+		const systemChars = envelope.system.parts.reduce((acc, p) => acc + p.text.length, 0);
+		const systemTokens = this._estimateTokensFromChars(systemChars);
+
+		let toolsTokens = 0;
+		for (const t of envelope.tools) toolsTokens += this._estimateTokensForTool(t);
+
+		let cachedTokens = 0;
+		for (const m of envelope.messages.cached) cachedTokens += this._estimateTokensForProviderMessage(m);
+
+		let uncachedTokens = 0;
+		for (const m of envelope.messages.uncached) uncachedTokens += this._estimateTokensForProviderMessage(m);
+
+		const used = systemTokens + toolsTokens + cachedTokens + uncachedTokens;
+		const usedPct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+		const free = Math.max(0, limit - used);
+
+		const barWidth = 20;
+		const filled = limit > 0 ? Math.max(0, Math.min(barWidth, Math.round((used / limit) * barWidth))) : 0;
+		const bar = `[${"#".repeat(filled)}${"-".repeat(barWidth - filled)}]`;
+
+		lines.push("# Context Usage (est.)");
 		lines.push("");
-		lines.push(`- model: ${envelope.meta.model.provider}/${envelope.meta.model.id}`);
-		lines.push(`- context window: ${envelope.meta.limit}`);
 		lines.push(
-			`- options: reasoning=${envelope.options.reasoning ?? "(default)"}, temperature=${
-				envelope.options.temperature ?? "(default)"
-			}, maxTokens=${envelope.options.maxTokens ?? "(default)"}`,
+			`${bar} ${envelope.meta.model.provider}/${envelope.meta.model.id} · ${used.toLocaleString()}/${limit.toLocaleString()} tokens (${usedPct}%)`,
 		);
 
-		const parts = envelope.system.parts.map((p) => `${p.name} (${p.text.length.toLocaleString()} chars)`).slice(0, 6);
-		lines.push(`- system parts: ${parts.join(", ")}${envelope.system.parts.length > 6 ? ", …" : ""}`);
+		const formatLine = (label: string, tokens: number) => {
+			const pct = limit > 0 ? ((tokens / limit) * 100).toFixed(1) : "0.0";
+			return `- ${label}: ${tokens.toLocaleString()} tokens (${pct}%)`;
+		};
 
-		const toolNames = envelope.tools.map((t) => t.name);
-		const toolPreview = toolNames.slice(0, 10).join(", ");
-		lines.push(
-			`- tools: ${toolNames.length}${toolNames.length > 0 ? ` [${toolPreview}${toolNames.length > 10 ? ", …" : ""}]` : ""}`,
-		);
+		lines.push(formatLine("System prompt", systemTokens));
+		lines.push(formatLine(`Tools (${envelope.tools.length})`, toolsTokens));
+		lines.push(formatLine(`Messages cached (${envelope.messages.cached.length})`, cachedTokens));
+		if (envelope.messages.uncached.length > 0) {
+			lines.push(formatLine(`Messages uncached (${envelope.messages.uncached.length})`, uncachedTokens));
+		}
+		lines.push(`- Free: ${free.toLocaleString()} tokens`);
 
-		lines.push(
-			`- messages: cached=${envelope.messages.cached.length}, uncached=${envelope.messages.uncached.length}`,
-		);
-		lines.push(`- ephemerals applied: ${options.includeEphemeral ? "yes" : "no"}`);
-		lines.push("");
+		const compaction = this.settingsManager.getCompactionSettings();
+		if (compaction.enabled) {
+			const reserve = compaction.reserveTokens;
+			const reservePct = limit > 0 ? ((reserve / limit) * 100).toFixed(1) : "0.0";
+			lines.push(`- Auto-compaction reserve: ${reserve.toLocaleString()} tokens (${reservePct}%)`);
+		}
 
 		const transforms = this.sessionManager.getPath().filter((e) => e.type === "context_transform") as Array<any>;
-		if (transforms.length > 0) {
-			const titles = transforms
-				.map((t) => t.display?.title ?? t.transformerName ?? "(unknown)")
-				.slice(0, 4)
-				.join(", ");
-			lines.push(`- transforms (persisted): ${transforms.length} [${titles}${transforms.length > 4 ? ", …" : ""}]`);
-		} else {
-			lines.push("- transforms (persisted): 0");
-		}
+		lines.push(`- Transforms (persisted): ${transforms.length}`);
 
-		const ephemerals = this.sessionManager.getPath().filter((e) => e.type === "ephemeral") as Array<any>;
-		if (ephemerals.length > 0) {
-			lines.push(`- ephemeral log entries: ${ephemerals.length}`);
+		const ephEntries = this.sessionManager.getPath().filter((e) => e.type === "ephemeral") as Array<any>;
+		if (ephEntries.length > 0) {
+			lines.push(`- Ephemeral log entries: ${ephEntries.length}`);
 		}
+		lines.push(`- Ephemerals applied: ${options.includeEphemeral ? "yes" : "no"}`);
 
 		lines.push("");
-
-		const clipLine = (s: string) => {
-			const oneLine = s.replace(/\s+/g, " ").trim();
-			return oneLine.length > 140 ? `${oneLine.slice(0, 140)}…` : oneLine;
-		};
-
-		const renderRecent = (title: string, ms: Message[], max: number) => {
-			if (ms.length === 0) return;
-			lines.push(`Recent messages (${title}):`);
-			const startIndex = Math.max(0, ms.length - max);
-			for (let i = startIndex; i < ms.length; i++) {
-				const m = ms[i]!;
-				lines.push(`- ${i}. ${m.role}: ${clipLine(this._messageToOneLine(m))}`);
-			}
-		};
-
-		renderRecent("cached", envelope.messages.cached, 5);
-		if (envelope.messages.uncached.length > 0) {
-			renderRecent("uncached", envelope.messages.uncached, 2);
-		}
-
-		lines.push("");
-		lines.push("Tip: use `/context --full` for the full envelope dump.");
+		lines.push("Use `/tree` to inspect history. Use `/context --full` for the full envelope.");
 		return lines.join("\n");
 	}
 

@@ -1945,7 +1945,7 @@ export class InteractiveMode {
 				includeEphemeral: options.includeEphemeral,
 				format: options.format,
 			});
-			const titleBase = options.format === "full" ? "Context (full)" : "Context (summary)";
+			const titleBase = options.format === "full" ? "Context (full)" : "Context Usage";
 			const title = options.includeEphemeral ? `${titleBase} (including ephemerals)` : titleBase;
 
 			this.chatContainer.addChild(new Spacer(1));

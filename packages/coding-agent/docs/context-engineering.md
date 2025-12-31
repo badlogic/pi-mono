@@ -6,7 +6,7 @@ This document focuses on **how to use** the hook surface (what events exist, wha
 
 If you’re building custom context strategies, `/context` is the primary debugging surface.
 
-- `/context` shows a **concise summary** by default.
+- `/context` shows a **concise usage summary** by default (use `/tree` for message history).
 - `/context --full` shows the full envelope dump.
 - `/context --ephemeral` includes request-only ephemeral hook application.
 
