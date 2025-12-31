@@ -36,7 +36,7 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params, signal, onUpdate, ctx) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
     const { name } = params as { name: string };
     return {
       content: [{ type: "text", text: `Hello, ${name}!` }],
@@ -112,7 +112,7 @@ const factory: CustomToolFactory = (pi) => ({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, signal, onUpdate, ctx) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
     // signal - AbortSignal for cancellation
     // onUpdate - Callback for streaming partial results
     // ctx - CustomToolContext with sessionManager, modelRegistry, model
@@ -181,7 +181,7 @@ Always check `pi.hasUI` before using UI methods.
 Pass the `signal` from `execute` to `pi.exec` to support cancellation:
 
 ```typescript
-async execute(toolCallId, params, signal, onUpdate, ctx) {
+async execute(toolCallId, params, onUpdate, ctx, signal) {
   const result = await pi.exec("long-running-command", ["arg"], { signal });
   if (result.killed) {
     return { content: [{ type: "text", text: "Cancelled" }] };
@@ -262,7 +262,7 @@ const factory: CustomToolFactory = (pi) => {
     
     onSession: reconstructState,
     
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
+    async execute(toolCallId, params, onUpdate, ctx, signal) {
       // Modify items...
       items.push("new item");
       
@@ -384,7 +384,7 @@ If `renderCall` or `renderResult` is not defined or throws an error:
 ## Execute Function
 
 ```typescript
-async execute(toolCallId, args, signal, onUpdate, ctx) {
+async execute(toolCallId, args, onUpdate, ctx, signal) {
   // Type assertion for params (TypeBox schema doesn't flow through)
   const params = args as { action: "list" | "add"; text?: string };
 

@@ -50,7 +50,7 @@
   - `ToolAPI` renamed to `CustomToolAPI`
   - `ToolContext` renamed to `CustomToolContext`
   - `ToolSessionEvent` renamed to `CustomToolSessionEvent`
-  - `execute()` signature changed: now takes `(toolCallId, params, signal, onUpdate, ctx: CustomToolContext)`
+  - `execute()` signature changed: now takes `(toolCallId, params, onUpdate, ctx: CustomToolContext, signal?)`
   - `onSession()` signature changed: now takes `(event: CustomToolSessionEvent, ctx: CustomToolContext)`
   - `CustomToolSessionEvent` simplified: only has `reason` and `previousSessionFile` (use `ctx.sessionManager.getBranch()` to get entries)
   - `CustomToolContext` provides `sessionManager: ReadonlySessionManager`, `modelRegistry`, and `model`

@@ -659,7 +659,7 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params, signal, onUpdate, ctx) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
     const { name } = params as { name: string };
     return {
       content: [{ type: "text", text: `Hello, ${name}!` }],

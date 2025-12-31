@@ -84,7 +84,7 @@ export type CustomToolResult<TDetails = any> = AgentToolResult<TDetails>;
  *   description: "Does something useful",
  *   parameters: Type.Object({ input: Type.String() }),
  *
- *   async execute(toolCallId, params, signal, onUpdate, ctx) {
+ *   async execute(toolCallId, params, onUpdate, ctx, signal) {
  *     // Access session state via ctx.sessionManager
  *     // Access model registry via ctx.modelRegistry
  *     // Current model via ctx.model
@@ -114,16 +114,16 @@ export interface CustomTool<TParams extends TSchema = TSchema, TDetails = any> {
 	 * Execute the tool.
 	 * @param toolCallId - Unique ID for this tool call
 	 * @param params - Parsed parameters matching the schema
-	 * @param signal - AbortSignal for cancellation
 	 * @param onUpdate - Callback for streaming partial results (for UI, not LLM)
 	 * @param ctx - Context with session manager, model registry, and current model
+	 * @param signal - Optional abort signal for cancellation
 	 */
 	execute(
 		toolCallId: string,
 		params: Static<TParams>,
-		signal: AbortSignal | undefined,
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: CustomToolContext,
+		signal?: AbortSignal,
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Called on session lifecycle events - use to reconstruct state or cleanup resources */

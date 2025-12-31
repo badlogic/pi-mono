@@ -433,7 +433,7 @@ const factory: CustomToolFactory = (pi) => {
 		},
 		parameters: SubagentParams,
 
-		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+		async execute(_toolCallId, params, onUpdate, _ctx, signal) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const discovery = discoverAgents(pi.cwd, agentScope);
 			const agents = discovery.agents;

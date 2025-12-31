@@ -78,7 +78,7 @@ const factory: CustomToolFactory = (_pi) => {
 		// Called on session start/switch/branch/clear
 		onSession: reconstructState,
 
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _onUpdate, _ctx, _signal) {
 			switch (params.action) {
 				case "list":
 					return {
