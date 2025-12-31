@@ -92,8 +92,8 @@ export class InteractiveMode {
 	private changelogMarkdown: string | undefined = undefined;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
-	private lastStatusSpacer: Spacer | null = null;
-	private lastStatusText: Text | null = null;
+	private lastStatusSpacer: Spacer | undefined = undefined;
+	private lastStatusText: Text | undefined = undefined;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;

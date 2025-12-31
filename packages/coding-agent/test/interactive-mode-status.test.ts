@@ -19,8 +19,8 @@ describe("InteractiveMode.showStatus", () => {
 		const fakeThis: any = {
 			chatContainer: new Container(),
 			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: null,
-			lastStatusText: null,
+			lastStatusSpacer: undefined,
+			lastStatusText: undefined,
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
@@ -38,8 +38,8 @@ describe("InteractiveMode.showStatus", () => {
 		const fakeThis: any = {
 			chatContainer: new Container(),
 			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: null,
-			lastStatusText: null,
+			lastStatusSpacer: undefined,
+			lastStatusText: undefined,
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
