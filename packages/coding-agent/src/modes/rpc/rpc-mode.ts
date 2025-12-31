@@ -347,7 +347,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "branch": {
-				const result = await session.branch(command.entryIndex);
+				const result = await session.branch(command.entryId);
 				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });
 			}
 

@@ -99,11 +99,12 @@ interface AgentSession {
   isStreaming: boolean;
   
   // Session management
-  newSession(): Promise<boolean>;  // Returns false if cancelled by hook
+  reset(): Promise<boolean>;  // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
   
-  // Branching (tree-based)
-  branch(entryId: string): Promise<{ cancelled: boolean }>;
+  // Branching
+  branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
+  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
   sendHookMessage(message: HookMessage, triggerTurn?: boolean): void;
@@ -400,10 +401,10 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, discoverCustomTools, type CustomAgentTool } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverCustomTools, type CustomTool } from "@mariozechner/pi-coding-agent";
 
 // Inline custom tool
-const myTool: CustomAgentTool = {
+const myTool: CustomTool = {
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
@@ -793,7 +794,7 @@ import {
   readTool,
   bashTool,
   type HookFactory,
-  type CustomAgentTool,
+  type CustomTool,
 } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage (custom location)
@@ -816,7 +817,7 @@ const auditHook: HookFactory = (api) => {
 };
 
 // Inline tool
-const statusTool: CustomAgentTool = {
+const statusTool: CustomTool = {
   name: "status",
   label: "Status",
   description: "Get system status",
@@ -932,7 +933,7 @@ createGrepTool, createFindTool, createLsTool
 // Types
 type CreateAgentSessionOptions
 type CreateAgentSessionResult
-type CustomAgentTool
+type CustomTool
 type HookFactory
 type Skill
 type FileSlashCommand

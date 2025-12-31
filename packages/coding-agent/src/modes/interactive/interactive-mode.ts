@@ -1570,9 +1570,9 @@ export class InteractiveMode {
 
 		this.showSelector((done) => {
 			const selector = new UserMessageSelectorComponent(
-				userMessages.map((m) => ({ index: m.entryIndex, text: m.text })),
-				async (entryIndex) => {
-					const result = await this.session.branch(entryIndex);
+				userMessages.map((m) => ({ id: m.entryId, text: m.text })),
+				async (entryId) => {
+					const result = await this.session.branch(entryId);
 					if (result.cancelled) {
 						// Hook cancelled the branch
 						done();

@@ -121,8 +121,8 @@ export interface SessionNewEvent {
 /** Fired before branching a session (can be cancelled) */
 export interface SessionBeforeBranchEvent {
 	type: "session_before_branch";
-	/** Index of the entry in the session (SessionManager.getEntries()) to branch from */
-	entryIndex: number;
+	/** ID of the entry to branch from */
+	entryId: string;
 }
 
 /** Fired after branching a session */

@@ -195,7 +195,7 @@ Fired when branching via `/branch`.
 
 ```typescript
 pi.on("session_before_branch", async (event, ctx) => {
-  // event.entryIndex - entry index being branched from
+  // event.entryId - ID of the entry being branched from
 
   return { cancel: true }; // Cancel branch
   // OR
@@ -634,15 +634,23 @@ export default function (pi: HookAPI) {
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  const checkpoints = new Map<number, string>();
+  const checkpoints = new Map<string, string>();
+  let currentEntryId: string | undefined;
 
-  pi.on("turn_start", async (event) => {
+  pi.on("tool_result", async (_event, ctx) => {
+    const leaf = ctx.sessionManager.getLeafEntry();
+    if (leaf) currentEntryId = leaf.id;
+  });
+
+  pi.on("turn_start", async () => {
     const { stdout } = await pi.exec("git", ["stash", "create"]);
-    if (stdout.trim()) checkpoints.set(event.turnIndex, stdout.trim());
+    if (stdout.trim() && currentEntryId) {
+      checkpoints.set(currentEntryId, stdout.trim());
+    }
   });
 
   pi.on("session_before_branch", async (event, ctx) => {
-    const ref = checkpoints.get(event.entryIndex);
+    const ref = checkpoints.get(event.entryId);
     if (!ref || !ctx.hasUI) return;
 
     const ok = await ctx.ui.confirm("Restore?", "Restore code to checkpoint?");
