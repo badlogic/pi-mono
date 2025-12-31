@@ -510,7 +510,7 @@ Subscribe to events. See [Events](#events) for all event types.
 
 ### pi.sendMessage(message, triggerTurn?)
 
-Inject a message into the session. Creates `CustomMessageEntry` (participates in LLM context).
+Inject a message into the session. Creates a `CustomMessageEntry` that participates in the LLM context.
 
 ```typescript
 pi.sendMessage({
@@ -520,6 +520,20 @@ pi.sendMessage({
   details: { ... },           // Optional metadata (not sent to LLM)
 }, triggerTurn);              // If true, triggers LLM response
 ```
+
+**Storage and timing:**
+- The message is appended to the session file immediately as a `CustomMessageEntry`
+- If the agent is currently streaming, the message is queued and appended after the current turn
+- If `triggerTurn` is true and the agent is idle, a new agent loop starts
+
+**LLM context:**
+- `CustomMessageEntry` is converted to a user message when building context for the LLM
+- Only `content` is sent to the LLM; `details` is for rendering/state only
+
+**TUI display:**
+- If `display: true`, the message appears in the chat with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors)
+- If `display: false`, the message is hidden from the TUI but still sent to the LLM
+- Use `pi.registerMessageRenderer()` to customize how your messages render (see below)
 
 ### pi.appendEntry(customType, data?)
 
@@ -558,17 +572,35 @@ To trigger LLM after command, call `pi.sendMessage(..., true)`.
 
 ### pi.registerMessageRenderer(customType, renderer)
 
-Custom TUI rendering for `CustomMessageEntry`:
+Register a custom TUI renderer for `CustomMessageEntry` messages with your `customType`. Without a custom renderer, messages display with default purple styling showing the content as-is.
 
 ```typescript
 import { Text } from "@mariozechner/pi-tui";
 
 pi.registerMessageRenderer("my-hook", (message, options, theme) => {
-  // message.content, message.details
-  // options.expanded (user pressed Ctrl+O)
-  return new Text(theme.fg("accent", `[MY-HOOK] ${message.content}`), 0, 0);
+  // message.content - the message content (string or content array)
+  // message.details - your custom metadata
+  // options.expanded - true if user pressed Ctrl+O
+  
+  const prefix = theme.fg("accent", `[${message.details?.label ?? "INFO"}] `);
+  const text = typeof message.content === "string" 
+    ? message.content 
+    : message.content.map(c => c.type === "text" ? c.text : "[image]").join("");
+  
+  return new Text(prefix + theme.fg("text", text), 0, 0);
 });
 ```
+
+**Renderer signature:**
+```typescript
+type HookMessageRenderer = (
+  message: CustomMessageEntry,
+  options: { expanded: boolean },
+  theme: Theme
+) => Component | null;
+```
+
+Return `null` to use default rendering. The returned component is wrapped in a styled Box by the TUI. See [tui.md](tui.md) for component details.
 
 ### pi.exec(command, args, options?)
 

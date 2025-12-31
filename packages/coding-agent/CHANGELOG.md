@@ -168,7 +168,7 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
 - Press `l` to label entries as bookmarks
-- Selecting a branch generates a summary and switches context
+- Selecting a branch switches context and optionally injects a summary of the abandoned branch
 
 **Entry labels:**
 - Bookmark any entry via `/tree` → select → `l`
