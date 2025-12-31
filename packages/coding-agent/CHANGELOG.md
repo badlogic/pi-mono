@@ -2,103 +2,153 @@
 
 ## [Unreleased]
 
-### Breaking Changes
+This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
 
-- **Session tree structure (v2)**: Sessions now store entries as a tree with `id`/`parentId` fields, enabling in-place branching without creating new files. Existing v1 sessions are auto-migrated on load.
-- **SessionManager API**:
-  - `saveXXX()` renamed to `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
-  - `branchInPlace()` renamed to `branch()`
-  - `reset()` renamed to `newSession()`
-  - `createBranchedSessionFromEntries(entries, index)` replaced with `createBranchedSession(leafId)`
-  - `saveCompaction(entry)` replaced with `appendCompaction(summary, firstKeptEntryId, tokensBefore)`
-  - `getEntries()` now excludes the session header (use `getHeader()` separately)
-  - New methods: `getTree()`, `getPath()`, `getLeafUuid()`, `getLeafEntry()`, `getEntry()`, `branchWithSummary()`
-  - New `appendCustomEntry(customType, data)` for hooks to store custom data (not in LLM context)
-  - New `appendCustomMessageEntry(customType, content, display, details?)` for hooks to inject messages into LLM context
-- **Compaction API**:
-  - `CompactionEntry<T>` and `CompactionResult<T>` are now generic with optional `details?: T` for hook-specific data
-  - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore, details? }`) instead of `CompactionEntry`
-  - `appendCompaction()` now accepts optional `details` parameter
-  - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
-  - `prepareCompaction(pathEntries, settings)` now takes path entries (from `getPath()`) and settings only
-  - `CompactionPreparation` restructured: removed `cutPoint`, `messagesToKeep`, `boundaryStart`; added `turnPrefixMessages`, `isSplitTurn`, `previousSummary`, `fileOps`, `settings`
-  - `compact(preparation, model, apiKey, customInstructions?, signal?)` now takes preparation and execution context separately
-- **Hook types**:
-  - `HookEventContext` renamed to `HookContext`
-  - `HookContext` now has `sessionManager`, `modelRegistry`, and `model` (current model, may be undefined)
-  - `HookCommandContext` removed - `RegisteredCommand.handler` now takes `(args: string, ctx: HookContext)`
-  - `before_compact` event: removed `previousCompactions` and `model`, added `branchEntries: SessionEntry[]` (hooks extract what they need)
-  - `before_tree` event: removed `model` (use `ctx.model` instead)
-  - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
-  - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
-  - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
-- **Hook API**:
-  - `pi.send(text, attachments?)` replaced with `pi.sendMessage(message, triggerTurn?)` which creates `CustomMessageEntry` instead of user messages
-  - New `pi.appendEntry(customType, data?)` to persist hook state (does NOT participate in LLM context)
-  - New `pi.registerCommand(name, options)` to register custom slash commands
-  - New `pi.registerMessageRenderer(customType, renderer)` to register custom renderers for hook messages
-  - New `pi.exec(command, args, options?)` to execute shell commands (moved from `HookEventContext`/`HookCommandContext`)
-  - `HookMessageRenderer` type: `(message: HookMessage, options, theme) => Component | null`
-  - Renderers return inner content; the TUI wraps it in a styled Box
-  - New types: `HookMessage<T>`, `RegisteredCommand`, `HookContext`
-  - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
-  - Removed `hookTimeout` setting - hooks no longer have execution timeouts (use Ctrl+C to abort hung hooks)
-- **SessionManager**:
-  - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
-- **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
-- **Custom tools API**:
-  - `CustomAgentTool` renamed to `CustomTool`
-  - `ToolAPI` renamed to `CustomToolAPI`
-  - `ToolContext` renamed to `CustomToolContext`
-  - `ToolSessionEvent` renamed to `CustomToolSessionEvent`
-  - `execute()` signature changed: now takes `(toolCallId, params, onUpdate, ctx: CustomToolContext, signal?)`
-  - `onSession()` signature changed: now takes `(event: CustomToolSessionEvent, ctx: CustomToolContext)`
-  - `CustomToolSessionEvent` simplified: only has `reason` and `previousSessionFile` (use `ctx.sessionManager.getBranch()` to get entries)
-  - `CustomToolContext` provides `sessionManager: ReadonlySessionManager`, `modelRegistry`, and `model`
-  - `dispose()` method removed - use `onSession` with `reason: "shutdown"` for cleanup
-  - `CustomToolFactory` return type changed to `CustomTool<any, any>` for type compatibility
-- **AgentSession.branch()**: Now takes `entryId: string` instead of `entryIndex: number`. `SessionBeforeBranchEvent.entryId` replaces `entryIndex`. `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`.
-- **Renamed exports**:
-  - `messageTransformer` → `convertToLlm`
-  - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
-- **Removed exports**:
-  - `createSummaryMessage()` - replaced by internal compaction logic
-  - `SUMMARY_PREFIX`, `SUMMARY_SUFFIX` - no longer used
-  - `Attachment` type - use `ImageContent` from `@mariozechner/pi-ai` instead
-- **New exports**:
-  - `BranchSummaryEntry`, `CustomEntry`, `CustomMessageEntry`, `LabelEntry` - new session entry types
-  - `SessionEntryBase`, `FileEntry` - base types for session entries
-  - `CURRENT_SESSION_VERSION`, `migrateSessionEntries` - session migration utilities
-  - `BranchPreparation`, `BranchSummaryResult`, `CollectEntriesResult`, `GenerateBranchSummaryOptions` - branch summarization types
-  - `FileOperations`, `collectEntriesForBranchSummary`, `prepareBranchEntries`, `generateBranchSummary` - branch summarization utilities
-  - `CompactionPreparation`, `CompactionDetails` - compaction preparation types
-  - `ReadonlySessionManager` - read-only session manager interface for hooks
-  - `HookMessage`, `HookContext`, `HookMessageRenderOptions` - hook types
-  - `isHookMessage`, `createHookMessage` - hook message utilities
+### Session Tree
+
+Sessions now use a tree structure with `id`/`parentId` fields. This enables in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+**Existing sessions are automatically migrated** (v1 → v2) on first load. No manual action required.
+
+New entry types: `BranchSummaryEntry` (context from abandoned branches), `CustomEntry` (hook state), `CustomMessageEntry` (hook-injected messages), `LabelEntry` (bookmarks).
+
+See [docs/session.md](docs/session.md) for the file format and `SessionManager` API.
+
+### Hooks Migration
+
+The hooks API has been restructured with more granular events and better session access.
+
+**Type renames:**
+- `HookEventContext` → `HookContext`
+- `HookCommandContext` removed (use `HookContext` for command handlers)
+
+**Event changes:**
+- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_new`, `session_new`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_before_tree`, `session_tree`, `session_shutdown`
+- New `before_agent_start` event: inject messages before the agent loop starts
+- New `context` event: modify messages non-destructively before each LLM call
+- Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
+
+**API changes:**
+- `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
+- New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
+- New `pi.registerCommand(name, options)` for custom slash commands
+- New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
+- New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
+- `ctx.exec()` moved to `pi.exec()`
+- `ctx.sessionFile` → `ctx.sessionManager.getSessionFile()`
+- New `ctx.modelRegistry` and `ctx.model` for API key resolution
+
+**Removed:**
+- `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)
+- `resolveApiKey` parameter (use `ctx.modelRegistry.getApiKey(model)`)
+
+See [docs/hooks.md](docs/hooks.md) and [examples/hooks/](examples/hooks/) for the current API.
+
+### Custom Tools Migration
+
+The custom tools API has been restructured to mirror the hooks pattern with a context object.
+
+**Type renames:**
+- `CustomAgentTool` → `CustomTool`
+- `ToolAPI` → `CustomToolAPI`
+- `ToolContext` → `CustomToolContext`
+- `ToolSessionEvent` → `CustomToolSessionEvent`
+
+**Execute signature changed:**
+```typescript
+// Before (v0.30.2)
+execute(toolCallId, params, signal, onUpdate)
+
+// After
+execute(toolCallId, params, onUpdate, ctx, signal?)
+```
+
+The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, and `model`.
+
+**Session event changes:**
+- `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
+- Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` to reconstruct state
+- New `reason: "tree"` for `/tree` navigation, `reason: "shutdown"` for cleanup
+- `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
+
+See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/) for the current API.
+
+### SDK Migration
+
+**Type changes:**
+- `CustomAgentTool` → `CustomTool`
+- `AppMessage` → `AgentMessage`
+- `sessionFile` returns `string | undefined` (was `string | null`)
+- `model` returns `Model | undefined` (was `Model | null`)
+
+**Branching API:**
+- `branch(entryIndex: number)` → `branch(entryId: string)`
+- `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
+- `reset()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
+- New `navigateTree(targetId, options?)` for in-place tree navigation
+
+**Hook integration:**
+- New `sendHookMessage(message, triggerTurn?)` for hook message injection
+
+**Renamed exports:**
+- `messageTransformer` → `convertToLlm`
+- `SessionContext` alias `LoadedSession` removed
+
+See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the current API.
+
+### RPC Migration
+
+**Branching commands:**
+- `branch` command: `entryIndex` → `entryId`
+- `get_branch_messages` response: `entryIndex` → `entryId`
+
+**Type changes:**
+- Messages are now `AgentMessage` (was `AppMessage`)
+
+**Compaction events:**
+- `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
+- `auto_compaction_end` now includes `willRetry` field
+- `compact` response includes full `CompactionResult` (`summary`, `firstKeptEntryId`, `tokensBefore`, `details`)
+
+See [docs/rpc.md](docs/rpc.md) for the current protocol.
+
+### Structured Compaction
+
+Compaction and branch summarization now use a structured output format:
+- Clear sections: Goal, Progress, Key Information, File Operations
+- File tracking: `readFiles` and `modifiedFiles` arrays in `details`, accumulated across compactions
+- Conversations are serialized to text before summarization to prevent the model from "continuing" them
+
+The `before_compact` and `before_tree` hook events allow custom compaction implementations. See [docs/compaction.md](docs/compaction.md).
+
+### Interactive Mode
+
+**`/tree` command:**
+- Navigate the full session tree in-place
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- Selecting a branch generates a summary and switches context
+
+**Entry labels:**
+- Bookmark any entry via `/tree` → select → `l`
+- Labels appear in tree view and persist as `LabelEntry`
+
+**Theme additions:**
+- `selectedBg`: background for selected items
+- `customMessageBg`, `customMessageText`, `customMessageLabel`: hook message styling
+
+**Settings:**
+- `enabledModels`: whitelist models in `settings.json` (same format as `--models` CLI)
 
 ### Added
 
-- **`/tree` command**: Navigate the session tree in-place. Shows full tree structure with labels, supports search (type to filter), page navigation (←/→), and filter modes (Ctrl+O cycles: default → no-tools → user-only → labeled-only → all, Shift+Ctrl+O cycles backwards). Selecting a branch generates a summary and switches context. Press `l` to label entries.
-- **`context` hook event**: Fires before each LLM call, allowing hooks to non-destructively modify messages. Returns `{ messages }` to override. Useful for dynamic context pruning without modifying session history.
-- **`before_agent_start` hook event**: Fires once when user submits a prompt, before `agent_start`. Hooks can return `{ message }` to inject a `CustomMessageEntry` that gets persisted and sent to the LLM.
-- **`ui.custom()` for hooks**: Show arbitrary TUI components with keyboard focus. Call `done()` when finished: `ctx.ui.custom(component, done)`.
-- **Branch summarization**: When switching branches via `/tree`, generates a summary of the abandoned branch including file operations (read/modified files). Summaries are stored as `BranchSummaryEntry` with cumulative file tracking in `details`.
-- **Structured compaction**: Both compaction and branch summarization now use structured output format with clear sections (Goal, Progress, Key Information, File Operations). Conversations are serialized to text before summarization to prevent the model from "continuing" conversations.
-- **File tracking in summaries**: Compaction and branch summaries now track `readFiles` and `modifiedFiles` arrays in the `details` field, accumulated across multiple compactions/summaries. This provides cumulative file operation history.
-- **`selectedBg` theme color**: Background color for selected/active lines in tree selector and other components.
-- **Entry labels**: Label any session entry with `/tree` → select entry → press `l`. Labels appear in tree view and are persisted as `LabelEntry` in the session. Use `labeled-only` filter mode to show only labeled entries.
-- **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
-- **Snake game example hook**: Added `examples/hooks/snake.ts` demonstrating `ui.custom()`, `registerCommand()`, and session persistence.
+- **Snake game example hook**: Demonstrates `ui.custom()`, `registerCommand()`, and session persistence. See [examples/hooks/snake.ts](examples/hooks/snake.ts).
 
 ### Changed
 
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
-- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `CustomMessageEntry<T>` for hook-injected context messages, `LabelEntry` for user-defined bookmarks
-- **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
-- **AgentSession**: New `sendHookMessage(message, triggerTurn?)` method for hooks to inject messages. Handles queuing during streaming, direct append when idle, and optional turn triggering.
-- **HookMessage**: New message type with `role: "hookMessage"` for hook-injected messages in agent events. Use `isHookMessage(msg)` type guard to identify them. These are converted to user messages for LLM context via `messageTransformer`.
-- **Agent.prompt()**: Now accepts `AppMessage` directly (in addition to `string, attachments?`) for custom message types like `HookMessage`.
 
 ### Fixed
 
