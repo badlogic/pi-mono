@@ -108,7 +108,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				confirm: async () => false,
 				input: async () => undefined,
 				notify: () => {},
-				custom: () => ({ close: () => {}, requestRender: () => {} }),
+				custom: async () => undefined as never,
+				setEditorText: () => {},
+				getEditorText: () => "",
 			},
 			hasUI: false,
 		});

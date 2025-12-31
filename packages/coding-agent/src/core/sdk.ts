@@ -140,7 +140,7 @@ export interface CreateAgentSessionResult {
 // Re-exports
 
 export type { CustomTool } from "./custom-tools/types.js";
-export type { HookAPI, HookFactory } from "./hooks/types.js";
+export type { HookAPI, HookContext, HookFactory } from "./hooks/types.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
 export type { FileSlashCommand } from "./slash-commands.js";

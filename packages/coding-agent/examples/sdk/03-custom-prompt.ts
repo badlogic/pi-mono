@@ -4,7 +4,7 @@
  * Shows how to replace or modify the default system prompt.
  */
 
-import { createAgentSession, SessionManager } from "../../src/index.js";
+import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Option 1: Replace prompt entirely
 const { session: session1 } = await createAgentSession({

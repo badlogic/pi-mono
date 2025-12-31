@@ -8,7 +8,6 @@
  * tools resolve paths relative to your cwd, not process.cwd().
  */
 
-import { Type } from "@sinclair/typebox";
 import {
 	bashTool, // read, bash, edit, write - uses process.cwd()
 	type CustomTool,
@@ -21,7 +20,8 @@ import {
 	readOnlyTools, // read, grep, find, ls - uses process.cwd()
 	readTool,
 	SessionManager,
-} from "../../src/index.js";
+} from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 
 // Read-only mode (no edit/write) - uses process.cwd()
 await createAgentSession({

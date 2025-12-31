@@ -54,7 +54,15 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import {
+	getAvailableThemes,
+	getEditorTheme,
+	getMarkdownTheme,
+	onThemeChange,
+	setTheme,
+	type Theme,
+	theme,
+} from "./theme/theme.js";
 
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
@@ -356,7 +364,9 @@ export class InteractiveMode {
 			confirm: (title, message) => this.showHookConfirm(title, message),
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
-			custom: (component) => this.showHookCustom(component),
+			custom: (factory) => this.showHookCustom(factory),
+			setEditorText: (text) => this.editor.setText(text),
+			getEditorText: () => this.editor.getText(),
 		};
 		this.setToolUIContext(uiContext, true);
 
@@ -537,38 +547,37 @@ export class InteractiveMode {
 
 	/**
 	 * Show a custom component with keyboard focus.
-	 * Returns a function to call when done.
 	 */
-	private showHookCustom(component: Component & { dispose?(): void }): {
-		close: () => void;
-		requestRender: () => void;
-	} {
-		// Store current editor content
+	private async showHookCustom<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+	): Promise<T> {
 		const savedText = this.editor.getText();
 
-		// Replace editor with custom component
-		this.editorContainer.clear();
-		this.editorContainer.addChild(component);
-		this.ui.setFocus(component);
-		this.ui.requestRender();
+		return new Promise((resolve) => {
+			let component: Component & { dispose?(): void };
 
-		// Return control object
-		return {
-			close: () => {
-				// Call dispose if available
+			const close = (result: T) => {
 				component.dispose?.();
-
-				// Restore editor
 				this.editorContainer.clear();
 				this.editorContainer.addChild(this.editor);
 				this.editor.setText(savedText);
 				this.ui.setFocus(this.editor);
 				this.ui.requestRender();
-			},
-			requestRender: () => {
+				resolve(result);
+			};
+
+			Promise.resolve(factory(this.ui, theme, close)).then((c) => {
+				component = c;
+				this.editorContainer.clear();
+				this.editorContainer.addChild(component);
+				this.ui.setFocus(component);
 				this.ui.requestRender();
-			},
-		};
+			});
+		});
 	}
 
 	/**

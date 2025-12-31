@@ -198,6 +198,29 @@ async execute(toolCallId, params, onUpdate, ctx, signal) {
 }
 ```
 
+### Error Handling
+
+**Throw an error** when the tool fails. Do not return an error message as content.
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  const { path } = params as { path: string };
+  
+  // Throw on error - pi will catch it and report to the LLM
+  if (!fs.existsSync(path)) {
+    throw new Error(`File not found: ${path}`);
+  }
+  
+  // Return content only on success
+  return { content: [{ type: "text", text: "Success" }] };
+}
+```
+
+Thrown errors are:
+- Reported to the LLM as tool errors (with `isError: true`)
+- Emitted to hooks via `tool_result` event (hooks can inspect `event.isError`)
+- Displayed in the TUI with error styling
+
 ## CustomToolContext
 
 The `execute` and `onSession` callbacks receive a `CustomToolContext`:
