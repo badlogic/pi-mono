@@ -42,6 +42,7 @@
   - Renderers return inner content; the TUI wraps it in a styled Box
   - New types: `HookMessage<T>`, `RegisteredCommand`, `HookContext`
   - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
+  - Removed `hookTimeout` setting - hooks no longer have execution timeouts (use Ctrl+C to abort hung hooks)
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 - **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)

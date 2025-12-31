@@ -51,12 +51,9 @@ Additional paths via `settings.json`:
 
 ```json
 {
-  "hooks": ["/path/to/hook.ts"],
-  "hookTimeout": 30000
+  "hooks": ["/path/to/hook.ts"]
 }
 ```
-
-The `hookTimeout` (default 30s) applies to most events. `tool_call` has no timeout since it may prompt the user.
 
 ## Available Imports
 
@@ -329,7 +326,7 @@ pi.on("context", async (event, ctx) => {
 
 #### tool_call
 
-Fired before tool executes. **Can block.** No timeout.
+Fired before tool executes. **Can block.**
 
 ```typescript
 pi.on("tool_call", async (event, ctx) => {
@@ -654,8 +651,8 @@ In print mode, `select()` returns `undefined`, `confirm()` returns `false`, `inp
 
 - Hook errors are logged, agent continues
 - `tool_call` errors block the tool (fail-safe)
-- Timeout errors (default 30s) are logged but don't block
 - Errors display in UI with hook path and message
+- If a hook hangs, use Ctrl+C to abort
 
 ## Debugging
 

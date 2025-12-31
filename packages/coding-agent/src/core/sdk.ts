@@ -313,7 +313,6 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		shellPath: manager.getShellPath(),
 		collapseChangelog: manager.getCollapseChangelog(),
 		hooks: manager.getHookPaths(),
-		hookTimeout: manager.getHookTimeout(),
 		customTools: manager.getCustomToolPaths(),
 		skills: manager.getSkillsSettings(),
 		terminal: { showImages: manager.getShowImages() },
@@ -536,7 +535,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
-			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry);
 		}
 	} else {
 		// Discover hooks, merging with additional paths
@@ -547,7 +546,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
 		if (hooks.length > 0) {
-			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry);
 		}
 	}
 

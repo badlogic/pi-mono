@@ -26,31 +26,12 @@ import type {
 } from "./types.js";
 
 /**
- * Default timeout for hook execution (30 seconds).
- */
-const DEFAULT_TIMEOUT = 30000;
-
-/**
  * Listener for hook errors.
  */
 export type HookErrorListener = (error: HookError) => void;
 
 // Re-export execCommand for backward compatibility
 export { execCommand } from "../exec.js";
-
-/**
- * Create a promise that rejects after a timeout.
- */
-function createTimeout(ms: number): { promise: Promise<never>; clear: () => void } {
-	let timeoutId: NodeJS.Timeout;
-	const promise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`Hook timed out after ${ms}ms`)), ms);
-	});
-	return {
-		promise,
-		clear: () => clearTimeout(timeoutId),
-	};
-}
 
 /** No-op UI context used when no UI is available */
 const noOpUIContext: HookUIContext = {
@@ -71,24 +52,16 @@ export class HookRunner {
 	private cwd: string;
 	private sessionManager: SessionManager;
 	private modelRegistry: ModelRegistry;
-	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
 
-	constructor(
-		hooks: LoadedHook[],
-		cwd: string,
-		sessionManager: SessionManager,
-		modelRegistry: ModelRegistry,
-		timeout: number = DEFAULT_TIMEOUT,
-	) {
+	constructor(hooks: LoadedHook[], cwd: string, sessionManager: SessionManager, modelRegistry: ModelRegistry) {
 		this.hooks = hooks;
 		this.uiContext = noOpUIContext;
 		this.hasUI = false;
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
-		this.timeout = timeout;
 	}
 
 	/**
@@ -262,16 +235,7 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					// No timeout for session_before_compact events (like tool_call, they may take a while)
-					let handlerResult: unknown;
-
-					if (event.type === "session_before_compact") {
-						handlerResult = await handler(event, ctx);
-					} else {
-						const timeout = createTimeout(this.timeout);
-						handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-						timeout.clear();
-					}
+					const handlerResult = await handler(event, ctx);
 
 					// For session before_* events, capture the result (for cancellation)
 					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
@@ -348,9 +312,7 @@ export class HookRunner {
 			for (const handler of handlers) {
 				try {
 					const event: ContextEvent = { type: "context", messages: currentMessages };
-					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-					timeout.clear();
+					const handlerResult = await handler(event, ctx);
 
 					if (handlerResult && (handlerResult as ContextEventResult).messages) {
 						currentMessages = (handlerResult as ContextEventResult).messages!;
@@ -387,9 +349,7 @@ export class HookRunner {
 			for (const handler of handlers) {
 				try {
 					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
-					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-					timeout.clear();
+					const handlerResult = await handler(event, ctx);
 
 					// Take the first message returned
 					if (handlerResult && (handlerResult as BeforeAgentStartEventResult).message && !result) {
