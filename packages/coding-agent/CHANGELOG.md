@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- `ctx.ui.setStatus(key, text)` for hooks to display custom status text in the footer (supports ANSI styling)
-
 This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
 
 ### Session Tree
