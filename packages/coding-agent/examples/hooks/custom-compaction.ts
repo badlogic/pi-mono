@@ -14,7 +14,7 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
-import { convertToLlm } from "@mariozechner/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
@@ -46,21 +46,20 @@ export default function (pi: HookAPI) {
 			"info",
 		);
 
-		// Transform app messages to pi-ai package format
-		const transformedMessages = convertToLlm(allMessages);
+		// Convert messages to readable text format
+		const conversationText = serializeConversation(convertToLlm(allMessages));
 
 		// Include previous summary context if available
 		const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";
 
 		// Build messages that ask for a comprehensive summary
 		const summaryMessages = [
-			...transformedMessages,
 			{
 				role: "user" as const,
 				content: [
 					{
 						type: "text" as const,
-						text: `You are a conversation summarizer. Create a comprehensive summary of this entire conversation that captures:${previousContext}
+						text: `You are a conversation summarizer. Create a comprehensive summary of this conversation that captures:${previousContext}
 
 1. The main goals and objectives discussed
 2. Key decisions made and their rationale
@@ -71,7 +70,11 @@ export default function (pi: HookAPI) {
 
 Be thorough but concise. The summary will replace the ENTIRE conversation history, so include all information needed to continue the work effectively.
 
-Format the summary as structured markdown with clear sections.`,
+Format the summary as structured markdown with clear sections.
+
+<conversation>
+${conversationText}
+</conversation>`,
 					},
 				],
 				timestamp: Date.now(),

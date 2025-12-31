@@ -303,13 +303,15 @@ pi.on("session_before_compact", async (event, ctx) => {
 To generate a summary with your own model, convert messages to text using `serializeConversation`:
 
 ```typescript
-import { serializeConversation } from "@mariozechner/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;
   
-  // Convert messages to readable text format
-  const conversationText = serializeConversation(preparation.messagesToSummarize);
+  // Convert AgentMessage[] to Message[], then serialize to text
+  const conversationText = serializeConversation(
+    convertToLlm(preparation.messagesToSummarize)
+  );
   // Returns:
   // [User]: message text
   // [Assistant thinking]: thinking content
