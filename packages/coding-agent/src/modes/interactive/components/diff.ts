@@ -71,6 +71,35 @@ export interface RenderDiffOptions {
 }
 
 /**
+ * Generate a diff string from old and new text.
+ * Output format is compatible with renderDiff (no line numbers).
+ */
+export function generateDiff(oldText: string, newText: string): string {
+	const parts = Diff.diffLines(oldText, newText);
+	const result: string[] = [];
+
+	for (const part of parts) {
+		const lines = part.value.split("\n");
+		// Remove trailing empty line from split
+		if (lines[lines.length - 1] === "") {
+			lines.pop();
+		}
+
+		for (const line of lines) {
+			if (part.added) {
+				result.push(`+  ${line}`);
+			} else if (part.removed) {
+				result.push(`-  ${line}`);
+			} else {
+				result.push(`   ${line}`);
+			}
+		}
+	}
+
+	return result.join("\n");
+}
+
+/**
  * Render a diff string with colored lines and intra-line change highlighting.
  * - Context lines: dim/gray
  * - Removed lines: red, with inverse on changed tokens

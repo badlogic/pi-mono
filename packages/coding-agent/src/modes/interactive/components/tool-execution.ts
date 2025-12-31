@@ -14,7 +14,7 @@ import stripAnsi from "strip-ansi";
 import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
-import { renderDiff } from "./diff.js";
+import { generateDiff, renderDiff } from "./diff.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit for bash when not expanded
@@ -415,6 +415,8 @@ export class ToolExecutionComponent extends Container {
 		} else if (this.toolName === "edit") {
 			const rawPath = this.args?.file_path || this.args?.path || "";
 			const path = shortenPath(rawPath);
+			const oldText = this.args?.oldText || this.args?.old_text;
+			const newText = this.args?.newText || this.args?.new_text;
 
 			// Build path display, appending :line if we have a successful result with line info
 			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
@@ -433,6 +435,9 @@ export class ToolExecutionComponent extends Container {
 				} else if (this.result.details?.diff) {
 					text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath })}`;
 				}
+			} else if (oldText && newText) {
+				// Show preview diff before tool executes (e.g., during permission prompt)
+				text += `\n\n${renderDiff(generateDiff(oldText, newText))}`;
 			}
 		} else if (this.toolName === "ls") {
 			const path = shortenPath(this.args?.path || ".");
