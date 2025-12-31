@@ -174,12 +174,18 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 - Bookmark any entry via `/tree` → select → `l`
 - Labels appear in tree view and persist as `LabelEntry`
 
-**Theme additions:**
-- `selectedBg`: background for selected items
-- `customMessageBg`, `customMessageText`, `customMessageLabel`: hook message styling
+**Theme changes (breaking for custom themes):**
+
+Custom themes must add these new color tokens or they will fail to load:
+- `selectedBg`: background for selected/highlighted items in tree selector and other components
+- `customMessageBg`: background for hook-injected messages (`CustomMessageEntry`)
+- `customMessageText`: text color for hook messages
+- `customMessageLabel`: label color for hook messages (the `[customType]` prefix)
+
+Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
 
 **Settings:**
-- `enabledModels`: whitelist models in `settings.json` (same format as `--models` CLI)
+- `enabledModels`: allowlist models in `settings.json` (same format as `--models` CLI)
 
 ### Added
 
