@@ -81,6 +81,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `AppMessage` → `AgentMessage`
 - `sessionFile` returns `string | undefined` (was `string | null`)
 - `model` returns `Model | undefined` (was `Model | null`)
+- `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
 
 **Branching API:**
 - `branch(entryIndex: number)` → `branch(entryId: string)`
@@ -105,6 +106,7 @@ See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the curren
 
 **Type changes:**
 - Messages are now `AgentMessage` (was `AppMessage`)
+- `prompt` command: `attachments` field replaced with `images` field using `ImageContent` format
 
 **Compaction events:**
 - `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
