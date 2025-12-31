@@ -355,6 +355,14 @@ export class RpcClient {
 		return this.getData<{ messages: AgentMessage[] }>(response).messages;
 	}
 
+	/**
+	 * Render the current provider context (debug view) to markdown.
+	 */
+	async getContext(options?: { includeEphemeral?: boolean }): Promise<string> {
+		const response = await this.send({ type: "get_context", includeEphemeral: options?.includeEphemeral });
+		return this.getData<{ markdown: string }>(response).markdown;
+	}
+
 	// =========================================================================
 	// Helpers
 	// =========================================================================
