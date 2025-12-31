@@ -25,7 +25,7 @@ See [examples/hooks/](../examples/hooks/) for working implementations, including
 Create `~/.pi/agent/hooks/my-hook.ts`:
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
   pi.on("session_start", async (_event, ctx) => {
@@ -80,7 +80,7 @@ Node.js built-ins (`node:fs`, `node:path`, etc.) are also available.
 A hook exports a default function that receives `HookAPI`:
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
   // Subscribe to events
@@ -360,14 +360,20 @@ Tool inputs:
 
 #### tool_result
 
-Fired after tool executes. **Can modify result.**
+Fired after tool executes (including errors). **Can modify result.**
+
+Check `event.isError` to distinguish successful executions from failures.
 
 ```typescript
 pi.on("tool_result", async (event, ctx) => {
   // event.toolName, event.toolCallId, event.input
   // event.content - array of TextContent | ImageContent
   // event.details - tool-specific (see below)
-  // event.isError
+  // event.isError - true if the tool threw an error
+
+  if (event.isError) {
+    // Handle error case
+  }
 
   // Modify result:
   return { content: [...], details: {...}, isError: false };
@@ -377,7 +383,7 @@ pi.on("tool_result", async (event, ctx) => {
 Use type guards for typed details:
 
 ```typescript
-import { isBashToolResult } from "@mariozechner/pi-coding-agent/hooks";
+import { isBashToolResult } from "@mariozechner/pi-coding-agent";
 
 pi.on("tool_result", async (event, ctx) => {
   if (isBashToolResult(event)) {
@@ -416,25 +422,40 @@ const name = await ctx.ui.input("Name:", "placeholder");
 
 // Notification (non-blocking)
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
+
+// Set the core input editor text (pre-fill prompts, generated content)
+ctx.ui.setEditorText("Generated prompt text here...");
+
+// Get current editor text
+const currentText = ctx.ui.getEditorText();
 ```
 
 **Custom components:**
 
-For full control, render your own TUI component with keyboard focus:
+Show a custom TUI component with keyboard focus:
 
 ```typescript
-const handle = ctx.ui.custom(myComponent);
-// Returns { close: () => void, requestRender: () => void }
+import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+
+const result = await ctx.ui.custom((tui, theme, done) => {
+  const loader = new BorderedLoader(tui, theme, "Working...");
+  loader.onAbort = () => done(null);
+  
+  doWork(loader.signal).then(done).catch(() => done(null));
+  
+  return loader;
+});
 ```
 
 Your component can:
 - Implement `handleInput(data: string)` to receive keyboard input
 - Implement `render(width: number): string[]` to render lines
 - Implement `invalidate()` to clear cached render
-- Call `handle.requestRender()` to trigger re-render
-- Call `handle.close()` when done to restore normal UI
+- Implement `dispose()` for cleanup when closed
+- Call `tui.requestRender()` to trigger re-render
+- Call `done(result)` when done to restore normal UI
 
-See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example with game loop, keyboard handling, and state persistence. See [tui.md](tui.md) for the full component API.
+See [examples/hooks/qna.ts](../examples/hooks/qna.ts) for a loader pattern and [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a game. See [tui.md](tui.md) for the full component API.
 
 ### ctx.hasUI
 
@@ -568,6 +589,8 @@ pi.registerCommand("stats", {
 });
 ```
 
+For long-running commands (e.g., LLM calls), use `ctx.ui.custom()` with a loader. See [examples/hooks/qna.ts](../examples/hooks/qna.ts).
+
 To trigger LLM after command, call `pi.sendMessage(..., true)`.
 
 ### pi.registerMessageRenderer(customType, renderer)
@@ -620,7 +643,7 @@ const result = await pi.exec("git", ["status"], {
 ### Permission Gate
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
   const dangerous = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i];
@@ -643,7 +666,7 @@ export default function (pi: HookAPI) {
 ### Protected Paths
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
   const protectedPaths = [".env", ".git/", "node_modules/"];
@@ -663,7 +686,7 @@ export default function (pi: HookAPI) {
 ### Git Checkpoint
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
   const checkpoints = new Map<string, string>();
@@ -708,7 +731,7 @@ See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example
 | RPC | JSON protocol | Host handles UI |
 | Print (`-p`) | No-op (returns null/false) | Hooks run but can't prompt |
 
-In print mode, `select()` returns `undefined`, `confirm()` returns `false`, `input()` returns `undefined`. Design hooks to handle this.
+In print mode, `select()` returns `undefined`, `confirm()` returns `false`, `input()` returns `undefined`, `getEditorText()` returns `""`, and `setEditorText()` is a no-op. Design hooks to handle this by checking `ctx.hasUI`.
 
 ## Error Handling
 

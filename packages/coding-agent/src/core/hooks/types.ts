@@ -7,7 +7,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
@@ -59,12 +59,48 @@ export interface HookUIContext {
 
 	/**
 	 * Show a custom component with keyboard focus.
-	 * The component receives keyboard input via handleInput() if implemented.
+	 * The factory receives TUI, theme, and a done() callback to close the component.
+	 * Can be async for fire-and-forget work (don't await the work, just start it).
 	 *
-	 * @param component - Component to display (implement handleInput for keyboard, dispose for cleanup)
-	 * @returns Object with close() to restore normal UI and requestRender() to trigger redraw
+	 * @param factory - Function that creates the component. Call done() when finished.
+	 * @returns Promise that resolves with the value passed to done()
+	 *
+	 * @example
+	 * // Sync factory
+	 * const result = await ctx.ui.custom((tui, theme, done) => {
+	 *   const component = new MyComponent(tui, theme);
+	 *   component.onFinish = (value) => done(value);
+	 *   return component;
+	 * });
+	 *
+	 * // Async factory with fire-and-forget work
+	 * const result = await ctx.ui.custom(async (tui, theme, done) => {
+	 *   const loader = new CancellableLoader(tui, theme.fg("accent"), theme.fg("muted"), "Working...");
+	 *   loader.onAbort = () => done(null);
+	 *   doWork(loader.signal).then(done);  // Don't await - fire and forget
+	 *   return loader;
+	 * });
 	 */
-	custom(component: Component & { dispose?(): void }): { close: () => void; requestRender: () => void };
+	custom<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+	): Promise<T>;
+
+	/**
+	 * Set the text in the core input editor.
+	 * Use this to pre-fill the input box with generated content (e.g., prompt templates, extracted questions).
+	 * @param text - Text to set in the editor
+	 */
+	setEditorText(text: string): void;
+
+	/**
+	 * Get the current text from the core input editor.
+	 * @returns Current editor text
+	 */
+	getEditorText(): string;
 }
 
 /**

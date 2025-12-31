@@ -119,9 +119,25 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
-		custom() {
+		async custom() {
 			// Custom UI not supported in RPC mode
-			return { close: () => {}, requestRender: () => {} };
+			return undefined as never;
+		},
+
+		setEditorText(text: string): void {
+			// Fire and forget - host can implement editor control
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "set_editor_text",
+				text,
+			} as RpcHookUIRequest);
+		},
+
+		getEditorText(): string {
+			// Synchronous method can't wait for RPC response
+			// Host should track editor state locally if needed
+			return "";
 		},
 	});
 

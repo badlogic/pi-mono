@@ -46,30 +46,46 @@ export function wrapToolWithHooks<T>(tool: AgentTool<any, T>, hookRunner: HookRu
 			}
 
 			// Execute the actual tool, forwarding onUpdate for progress streaming
-			const result = await tool.execute(toolCallId, params, signal, onUpdate);
+			try {
+				const result = await tool.execute(toolCallId, params, signal, onUpdate);
 
-			// Emit tool_result event - hooks can modify the result
-			if (hookRunner.hasHandlers("tool_result")) {
-				const resultResult = (await hookRunner.emit({
-					type: "tool_result",
-					toolName: tool.name,
-					toolCallId,
-					input: params,
-					content: result.content,
-					details: result.details,
-					isError: false,
-				})) as ToolResultEventResult | undefined;
+				// Emit tool_result event - hooks can modify the result
+				if (hookRunner.hasHandlers("tool_result")) {
+					const resultResult = (await hookRunner.emit({
+						type: "tool_result",
+						toolName: tool.name,
+						toolCallId,
+						input: params,
+						content: result.content,
+						details: result.details,
+						isError: false,
+					})) as ToolResultEventResult | undefined;
 
-				// Apply modifications if any
-				if (resultResult) {
-					return {
-						content: resultResult.content ?? result.content,
-						details: (resultResult.details ?? result.details) as T,
-					};
+					// Apply modifications if any
+					if (resultResult) {
+						return {
+							content: resultResult.content ?? result.content,
+							details: (resultResult.details ?? result.details) as T,
+						};
+					}
 				}
-			}
 
-			return result;
+				return result;
+			} catch (err) {
+				// Emit tool_result event for errors so hooks can observe failures
+				if (hookRunner.hasHandlers("tool_result")) {
+					await hookRunner.emit({
+						type: "tool_result",
+						toolName: tool.name,
+						toolCallId,
+						input: params,
+						content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+						details: undefined,
+						isError: true,
+					});
+				}
+				throw err; // Re-throw original error for agent-loop
+			}
 		},
 	};
 }

@@ -298,6 +298,22 @@ const readFileTool: AgentTool = {
 agent.setTools([readFileTool]);
 ```
 
+### Error Handling
+
+**Throw an error** when a tool fails. Do not return error messages as content.
+
+```typescript
+execute: async (toolCallId, params, signal, onUpdate) => {
+  if (!fs.existsSync(params.path)) {
+    throw new Error(`File not found: ${params.path}`);
+  }
+  // Return content only on success
+  return { content: [{ type: "text", text: "..." }] };
+}
+```
+
+Thrown errors are caught by the agent and reported to the LLM as tool errors with `isError: true`.
+
 ## Proxy Usage
 
 For browser apps that proxy through a backend:

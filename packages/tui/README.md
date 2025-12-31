@@ -247,6 +247,26 @@ loader.setMessage("Still loading...");
 loader.stop();
 ```
 
+### CancellableLoader
+
+Extends Loader with Escape key handling and an AbortSignal for cancelling async operations.
+
+```typescript
+const loader = new CancellableLoader(
+  tui,                              // TUI instance for render updates
+  (s) => chalk.cyan(s),            // spinner color function
+  (s) => chalk.gray(s),            // message color function
+  "Working..."                      // message
+);
+loader.onAbort = () => done(null); // Called when user presses Escape
+doAsyncWork(loader.signal).then(done);
+```
+
+**Properties:**
+- `signal: AbortSignal` - Aborted when user presses Escape
+- `aborted: boolean` - Whether the loader was aborted
+- `onAbort?: () => void` - Callback when user presses Escape
+
 ### SelectList
 
 Interactive selection list with keyboard navigation.

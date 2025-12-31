@@ -5,8 +5,7 @@
  * Demonstrates how to cancel session events using the before_* events.
  */
 
-import type { SessionMessageEntry } from "@mariozechner/pi-coding-agent";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI, SessionMessageEntry } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
 	pi.on("session_before_new", async (_event, ctx) => {

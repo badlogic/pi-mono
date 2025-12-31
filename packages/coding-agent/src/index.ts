@@ -88,6 +88,10 @@ export {
 	discoverSkills,
 	discoverSlashCommands,
 	type FileSlashCommand,
+	// Hook types
+	type HookAPI,
+	type HookContext,
+	type HookFactory,
 	loadSettings,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
@@ -150,5 +154,7 @@ export {
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
+// UI components for hooks
+export { BorderedLoader } from "./modes/interactive/components/bordered-loader.js";
 // Theme utilities for custom tools
 export { getMarkdownTheme } from "./modes/interactive/theme/theme.js";
