@@ -45,7 +45,7 @@ export default function (pi: HookAPI) {
 	pi.on("session_before_branch", async (event, ctx) => {
 		if (!ctx.hasUI) return;
 
-		const choice = await ctx.ui.select(`Branch from turn ${event.entryIndex}?`, [
+		const choice = await ctx.ui.select(`Branch from entry ${event.entryId.slice(0, 8)}?`, [
 			"Yes, create branch",
 			"No, stay in current session",
 		]);

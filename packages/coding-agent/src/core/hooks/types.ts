@@ -13,27 +13,7 @@ import type { CompactionPreparation, CompactionResult } from "../compaction/inde
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "../session-manager.js";
-
-/**
- * Read-only view of SessionManager for hooks.
- * Hooks should use pi.sendMessage() and pi.appendEntry() for writes.
- */
-export type ReadonlySessionManager = Pick<
-	SessionManager,
-	| "getCwd"
-	| "getSessionDir"
-	| "getSessionId"
-	| "getSessionFile"
-	| "getLeafId"
-	| "getLeafEntry"
-	| "getEntry"
-	| "getLabel"
-	| "getPath"
-	| "getHeader"
-	| "getEntries"
-	| "getTree"
->;
+import type { BranchSummaryEntry, CompactionEntry, ReadonlySessionManager, SessionEntry } from "../session-manager.js";
 
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
@@ -150,8 +130,8 @@ export interface SessionNewEvent {
 /** Fired before branching a session (can be cancelled) */
 export interface SessionBeforeBranchEvent {
 	type: "session_before_branch";
-	/** Index of the entry in the session (SessionManager.getEntries()) to branch from */
-	entryIndex: number;
+	/** ID of the entry to branch from */
+	entryId: string;
 }
 
 /** Fired after branching a session */

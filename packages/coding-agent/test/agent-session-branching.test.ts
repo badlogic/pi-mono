@@ -83,7 +83,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		expect(userMessages[0].text).toBe("Say hello");
 
 		// Branch from the first message
-		const result = await session.branch(userMessages[0].entryIndex);
+		const result = await session.branch(userMessages[0].entryId);
 		expect(result.selectedText).toBe("Say hello");
 		expect(result.cancelled).toBe(false);
 
@@ -113,7 +113,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		expect(session.messages.length).toBeGreaterThan(0);
 
 		// Branch from the first message
-		const result = await session.branch(userMessages[0].entryIndex);
+		const result = await session.branch(userMessages[0].entryId);
 		expect(result.selectedText).toBe("Say hi");
 		expect(result.cancelled).toBe(false);
 
@@ -143,7 +143,7 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 
 		// Branch from second message (keeps first message + response)
 		const secondMessage = userMessages[1];
-		const result = await session.branch(secondMessage.entryIndex);
+		const result = await session.branch(secondMessage.entryId);
 		expect(result.selectedText).toBe("Say two");
 
 		// After branching, should have first user message + assistant response

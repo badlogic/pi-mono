@@ -12,7 +12,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import {
 	AuthStorage,
-	type CustomAgentTool,
+	type CustomTool,
 	createAgentSession,
 	createBashTool,
 	createReadTool,
@@ -42,7 +42,7 @@ const auditHook: HookFactory = (api) => {
 };
 
 // Inline custom tool
-const statusTool: CustomAgentTool = {
+const statusTool: CustomTool = {
 	name: "status",
 	label: "Status",
 	description: "Get system status",
@@ -68,15 +68,12 @@ const cwd = process.cwd();
 const { session } = await createAgentSession({
 	cwd,
 	agentDir: "/tmp/my-agent",
-
 	model,
 	thinkingLevel: "off",
 	authStorage,
 	modelRegistry,
-
 	systemPrompt: `You are a minimal assistant.
 Available: read, bash, status. Be concise.`,
-
 	// Use factory functions with the same cwd to ensure path resolution works correctly
 	tools: [createReadTool(cwd), createBashTool(cwd)],
 	customTools: [{ tool: statusTool }],

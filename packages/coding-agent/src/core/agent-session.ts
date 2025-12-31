@@ -27,7 +27,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import type { LoadedCustomTool, SessionEvent as ToolSessionEvent } from "./custom-tools/index.js";
+import type { CustomToolContext, CustomToolSessionEvent, LoadedCustomTool } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html.js";
 import type {
 	HookContext,
@@ -698,7 +698,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitToolSessionEvent("new", previousSessionFile);
+		await this.emitCustomToolSessionEvent("new", previousSessionFile);
 		return true;
 	}
 
@@ -895,7 +895,7 @@ export class AgentSession {
 				throw new Error(`No API key for ${this.model.provider}`);
 			}
 
-			const pathEntries = this.sessionManager.getPath();
+			const pathEntries = this.sessionManager.getBranch();
 			const settings = this.settingsManager.getCompactionSettings();
 
 			const preparation = prepareCompaction(pathEntries, settings);
@@ -1068,7 +1068,7 @@ export class AgentSession {
 				return;
 			}
 
-			const pathEntries = this.sessionManager.getPath();
+			const pathEntries = this.sessionManager.getBranch();
 
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
@@ -1473,7 +1473,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitToolSessionEvent("switch", previousSessionFile);
+		await this.emitCustomToolSessionEvent("switch", previousSessionFile);
 
 		this.agent.replaceMessages(sessionContext.messages);
 
@@ -1498,21 +1498,20 @@ export class AgentSession {
 	}
 
 	/**
-	 * Create a branch from a specific entry index.
+	 * Create a branch from a specific entry.
 	 * Emits before_branch/branch session events to hooks.
 	 *
-	 * @param entryIndex Index into session entries to branch from
+	 * @param entryId ID of the entry to branch from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
 	 *   - cancelled: True if a hook cancelled the branch
 	 */
-	async branch(entryIndex: number): Promise<{ selectedText: string; cancelled: boolean }> {
+	async branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
-		const entries = this.sessionManager.getEntries();
-		const selectedEntry = entries[entryIndex];
+		const selectedEntry = this.sessionManager.getEntry(entryId);
 
 		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
-			throw new Error("Invalid entry index for branching");
+			throw new Error("Invalid entry ID for branching");
 		}
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
@@ -1523,7 +1522,7 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session_before_branch")) {
 			const result = (await this._hookRunner.emit({
 				type: "session_before_branch",
-				entryIndex: entryIndex,
+				entryId,
 			})) as SessionBeforeBranchResult | undefined;
 
 			if (result?.cancel) {
@@ -1550,7 +1549,7 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools (with reason "branch")
-		await this.emitToolSessionEvent("branch", previousSessionFile);
+		await this.emitCustomToolSessionEvent("branch", previousSessionFile);
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1720,7 +1719,7 @@ export class AgentSession {
 		}
 
 		// Emit to custom tools
-		await this.emitToolSessionEvent("tree", this.sessionFile);
+		await this.emitCustomToolSessionEvent("tree", this.sessionFile);
 
 		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false, summaryEntry };
@@ -1729,18 +1728,17 @@ export class AgentSession {
 	/**
 	 * Get all user messages from session for branch selector.
 	 */
-	getUserMessagesForBranching(): Array<{ entryIndex: number; text: string }> {
+	getUserMessagesForBranching(): Array<{ entryId: string; text: string }> {
 		const entries = this.sessionManager.getEntries();
-		const result: Array<{ entryIndex: number; text: string }> = [];
+		const result: Array<{ entryId: string; text: string }> = [];
 
-		for (let i = 0; i < entries.length; i++) {
-			const entry = entries[i];
+		for (const entry of entries) {
 			if (entry.type !== "message") continue;
 			if (entry.message.role !== "user") continue;
 
 			const text = this._extractUserMessageText(entry.message.content);
 			if (text) {
-				result.push({ entryIndex: i, text });
+				result.push({ entryId: entry.id, text });
 			}
 		}
 
@@ -1877,20 +1875,23 @@ export class AgentSession {
 	 * Emit session event to all custom tools.
 	 * Called on session switch, branch, tree navigation, and shutdown.
 	 */
-	async emitToolSessionEvent(
-		reason: ToolSessionEvent["reason"],
+	async emitCustomToolSessionEvent(
+		reason: CustomToolSessionEvent["reason"],
 		previousSessionFile?: string | undefined,
 	): Promise<void> {
-		const event: ToolSessionEvent = {
-			entries: this.sessionManager.getEntries(),
-			sessionFile: this.sessionFile,
-			previousSessionFile,
-			reason,
+		if (!this._customTools) return;
+
+		const event: CustomToolSessionEvent = { reason, previousSessionFile };
+		const ctx: CustomToolContext = {
+			sessionManager: this.sessionManager,
+			modelRegistry: this._modelRegistry,
+			model: this.agent.state.model,
 		};
+
 		for (const { tool } of this._customTools) {
 			if (tool.onSession) {
 				try {
-					await tool.onSession(event);
+					await tool.onSession(event, ctx);
 				} catch (_err) {
 					// Silently ignore tool errors during session events
 				}

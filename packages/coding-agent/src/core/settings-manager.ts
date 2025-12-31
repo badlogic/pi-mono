@@ -48,7 +48,6 @@ export interface Settings {
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	hooks?: string[]; // Array of hook file paths
-	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
@@ -319,15 +318,6 @@ export class SettingsManager {
 
 	setHookPaths(paths: string[]): void {
 		this.globalSettings.hooks = paths;
-		this.save();
-	}
-
-	getHookTimeout(): number {
-		return this.settings.hookTimeout ?? 30000;
-	}
-
-	setHookTimeout(timeout: number): void {
-		this.globalSettings.hookTimeout = timeout;
 		this.save();
 	}
 

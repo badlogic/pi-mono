@@ -193,6 +193,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/session` | Show session info: path, message counts, token usage, cost |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
+| `/tree` | Navigate session tree in-place (search, filter, label entries) |
 | `/branch` | Create new conversation branch from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
 | `/login` | OAuth login for subscription-based models |
@@ -343,7 +344,14 @@ Compaction does not create a new session, but continues the existing one, with a
 
 ### Branching
 
-Use `/branch` to explore alternative conversation paths:
+**In-place navigation (`/tree`):** Navigate the session tree without creating new files. Select any previous point, continue from there, and switch between branches while preserving all history.
+
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- Selecting a branch generates a summary and switches context
+
+**Create new session (`/branch`):** Branch to a new session file:
 
 1. Opens selector showing all your user messages
 2. Select a message to branch from
@@ -612,18 +620,23 @@ export default function (pi: HookAPI) {
 
 **Sending messages from hooks:**
 
-Use `pi.send(text, attachments?)` to inject messages into the session. If the agent is streaming, the message is queued; otherwise a new agent loop starts immediately.
+Use `pi.sendMessage(message, triggerTurn?)` to inject messages into the session. Messages are persisted as `CustomMessageEntry` and sent to the LLM. If the agent is streaming, the message is queued; otherwise a new agent loop starts if `triggerTurn` is true.
 
 ```typescript
 import * as fs from "node:fs";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session", async (event) => {
-    if (event.reason !== "start") return;
+  pi.on("session_start", async () => {
     fs.watch("/tmp/trigger.txt", () => {
       const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
-      if (content) pi.send(content);
+      if (content) {
+        pi.sendMessage({
+          customType: "file-trigger",
+          content,
+          display: true,
+        }, true);  // triggerTurn: start agent loop
+      }
     });
   });
 }
@@ -659,10 +672,11 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
+    const { name } = params as { name: string };
     return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
+      content: [{ type: "text", text: `Hello, ${name}!` }],
+      details: { greeted: name },
     };
   },
 });
@@ -721,7 +735,6 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "showImages": true
   },
   "hooks": ["/path/to/hook.ts"],
-  "hookTimeout": 30000,
   "customTools": ["/path/to/tool.ts"]
 }
 ```
@@ -746,7 +759,6 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `hooks` | Additional hook file paths | `[]` |
-| `hookTimeout` | Timeout for hook operations (ms) | `30000` |
 | `customTools` | Additional custom tool file paths | `[]` |
 
 ---

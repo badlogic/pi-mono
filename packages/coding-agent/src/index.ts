@@ -30,20 +30,22 @@ export {
 	generateSummary,
 	getLastAssistantUsage,
 	prepareBranchEntries,
+	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.js";
 // Custom tools
 export type {
 	AgentToolUpdateCallback,
-	CustomAgentTool,
+	CustomTool,
+	CustomToolAPI,
+	CustomToolContext,
 	CustomToolFactory,
+	CustomToolSessionEvent,
 	CustomToolsLoadResult,
+	CustomToolUIContext,
 	ExecResult,
 	LoadedCustomTool,
 	RenderResultOptions,
-	SessionEvent as ToolSessionEvent,
-	ToolAPI,
-	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
 export type * from "./core/hooks/index.js";
