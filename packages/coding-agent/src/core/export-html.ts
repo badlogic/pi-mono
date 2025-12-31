@@ -1373,6 +1373,9 @@ export function exportSessionToHtml(
 	if (!sessionFile) {
 		throw new Error("Cannot export in-memory session to HTML");
 	}
+	if (!existsSync(sessionFile)) {
+		throw new Error("Nothing to export yet - start a conversation first");
+	}
 	const content = readFileSync(sessionFile, "utf8");
 	const data = parseSessionFile(content);
 
