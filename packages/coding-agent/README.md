@@ -25,12 +25,13 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Project Context Files](#project-context-files)
   - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
+  - [Settings File](#settings-file)
+- [Extensions](#extensions)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
   - [Skills](#skills)
   - [Hooks](#hooks)
   - [Custom Tools](#custom-tools)
-  - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -292,6 +293,10 @@ Toggle inline images via `/settings` or set `terminal.showImages: false` in sett
 
 ## Sessions
 
+Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file. Old linear sessions are auto-migrated on load.
+
+See [docs/session.md](docs/session.md) for the file format and programmatic API.
+
 ### Session Management
 
 Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
@@ -480,6 +485,75 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 5. First available model with valid API key
 
 > pi can help you create custom provider and model configurations.
+
+### Settings File
+
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
+
+```json
+{
+  "theme": "dark",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
+  "queueMode": "one-at-a-time",
+  "shellPath": "C:\\path\\to\\bash.exe",
+  "hideThinkingBlock": false,
+  "collapseChangelog": false,
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "skills": {
+    "enabled": true
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "terminal": {
+    "showImages": true
+  },
+  "hooks": ["/path/to/hook.ts"],
+  "customTools": ["/path/to/tool.ts"]
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `theme` | Color theme name | auto-detected |
+| `defaultProvider` | Default model provider | - |
+| `defaultModel` | Default model ID | - |
+| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
+| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
+| `shellPath` | Custom bash path (Windows) | auto-detected |
+| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `collapseChangelog` | Show condensed changelog after update | `false` |
+| `compaction.enabled` | Enable auto-compaction | `true` |
+| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
+| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
+| `skills.enabled` | Enable skills discovery | `true` |
+| `retry.enabled` | Auto-retry on transient errors | `true` |
+| `retry.maxRetries` | Maximum retry attempts | `3` |
+| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
+| `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `hooks` | Additional hook file paths | `[]` |
+| `customTools` | Additional custom tool file paths | `[]` |
+
+---
+
+## Extensions
 
 ### Themes
 
@@ -695,71 +769,6 @@ export default factory;
 > See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples. pi can help you create custom tools.
 
 > See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
-
-### Settings File
-
-Settings are loaded from two locations and merged:
-
-1. **Global:** `~/.pi/agent/settings.json` - user preferences
-2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
-
-Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
-
-Global `~/.pi/agent/settings.json` stores persistent preferences:
-
-```json
-{
-  "theme": "dark",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "medium",
-  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
-  "queueMode": "one-at-a-time",
-  "shellPath": "C:\\path\\to\\bash.exe",
-  "hideThinkingBlock": false,
-  "collapseChangelog": false,
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
-  },
-  "skills": {
-    "enabled": true
-  },
-  "retry": {
-    "enabled": true,
-    "maxRetries": 3,
-    "baseDelayMs": 2000
-  },
-  "terminal": {
-    "showImages": true
-  },
-  "hooks": ["/path/to/hook.ts"],
-  "customTools": ["/path/to/tool.ts"]
-}
-```
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `theme` | Color theme name | auto-detected |
-| `defaultProvider` | Default model provider | - |
-| `defaultModel` | Default model ID | - |
-| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
-| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
-| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
-| `shellPath` | Custom bash path (Windows) | auto-detected |
-| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
-| `collapseChangelog` | Show condensed changelog after update | `false` |
-| `compaction.enabled` | Enable auto-compaction | `true` |
-| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
-| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
-| `skills.enabled` | Enable skills discovery | `true` |
-| `retry.enabled` | Auto-retry on transient errors | `true` |
-| `retry.maxRetries` | Maximum retry attempts | `3` |
-| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
-| `terminal.showImages` | Render images inline (supported terminals) | `true` |
-| `hooks` | Additional hook file paths | `[]` |
-| `customTools` | Additional custom tool file paths | `[]` |
 
 ---
 
