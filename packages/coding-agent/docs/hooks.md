@@ -2,14 +2,21 @@
 
 Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. They can intercept tool calls, prompt the user, modify results, inject messages, and more.
 
-**Example use cases:**
-- Block dangerous commands (permission gates for `rm -rf`, `sudo`)
-- Checkpoint code state (git stash at each turn, restore on branch)
-- Protect paths (block writes to `.env`, `node_modules/`)
-- Inject messages from external sources (file watchers, webhooks)
-- Custom slash commands and UI components
+**Key capabilities:**
+- **User interaction** - Hooks can prompt users via `ctx.ui` (select, confirm, input, notify)
+- **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()`
+- **Custom slash commands** - Register commands like `/mycommand` via `pi.registerCommand()`
+- **Event interception** - Block or modify tool calls, inject context, customize compaction
+- **Session persistence** - Store hook state that survives restarts via `pi.appendEntry()`
 
-See [examples/hooks/](../examples/hooks/) for working implementations.
+**Example use cases:**
+- Permission gates (confirm before `rm -rf`, `sudo`, etc.)
+- Git checkpointing (stash at each turn, restore on `/branch`)
+- Path protection (block writes to `.env`, `node_modules/`)
+- External integrations (file watchers, webhooks, CI triggers)
+- Interactive tools (games, wizards, custom dialogs)
+
+See [examples/hooks/](../examples/hooks/) for working implementations, including a [snake game](../examples/hooks/snake.ts) demonstrating custom UI.
 
 ## Quick Start
 
@@ -187,7 +194,7 @@ Fired when branching via `/branch`.
 ```typescript
 pi.on("session_before_branch", async (event, ctx) => {
   // event.entryIndex - entry index being branched from
-  
+
   return { cancel: true }; // Cancel branch
   // OR
   return { skipConversationRestore: true }; // Branch but don't rewind messages
@@ -207,10 +214,10 @@ Fired on compaction. See [compaction.md](compaction.md) for details.
 ```typescript
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation, branchEntries, customInstructions, signal } = event;
-  
+
   // Cancel:
   return { cancel: true };
-  
+
   // Custom summary:
   return {
     compaction: {
@@ -236,7 +243,7 @@ pi.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
   // preparation.targetId, oldLeafId, commonAncestorId, entriesToSummarize
   // preparation.userWantsSummary - whether user chose to summarize
-  
+
   return { cancel: true };
   // OR provide custom summary (only used if userWantsSummary is true):
   return { summary: { summary: "...", details: {} } };
@@ -267,7 +274,7 @@ Fired after user submits prompt, before agent loop. Can inject a persistent mess
 pi.on("before_agent_start", async (event, ctx) => {
   // event.prompt - user's prompt text
   // event.images - attached images (if any)
-  
+
   return {
     message: {
       customType: "my-hook",
@@ -315,7 +322,7 @@ Fired before each LLM call. Modify messages non-destructively (session unchanged
 ```typescript
 pi.on("context", async (event, ctx) => {
   // event.messages - deep copy, safe to modify
-  
+
   // Filter or transform messages
   const filtered = event.messages.filter(m => !shouldPrune(m));
   return { messages: filtered };
@@ -333,7 +340,7 @@ pi.on("tool_call", async (event, ctx) => {
   // event.toolName - "bash", "read", "write", "edit", etc.
   // event.toolCallId
   // event.input - tool parameters
-  
+
   if (shouldBlock(event)) {
     return { block: true, reason: "Not allowed" };
   }
@@ -359,7 +366,7 @@ pi.on("tool_result", async (event, ctx) => {
   // event.content - array of TextContent | ImageContent
   // event.details - tool-specific (see below)
   // event.isError
-  
+
   // Modify result:
   return { content: [...], details: {...}, isError: false };
 });
@@ -388,7 +395,9 @@ Every handler receives `ctx: HookContext`:
 
 ### ctx.ui
 
-UI methods for user interaction:
+UI methods for user interaction. Hooks can prompt users and even render custom TUI components.
+
+**Built-in dialogs:**
 
 ```typescript
 // Select from options
@@ -403,19 +412,31 @@ const ok = await ctx.ui.confirm("Delete?", "This cannot be undone");
 const name = await ctx.ui.input("Name:", "placeholder");
 // Returns string or undefined if cancelled
 
-// Notification
+// Notification (non-blocking)
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
+```
 
-// Custom component with keyboard focus
+**Custom components:**
+
+For full control, render your own TUI component with keyboard focus:
+
+```typescript
 const handle = ctx.ui.custom(myComponent);
 // Returns { close: () => void, requestRender: () => void }
-// Component can implement handleInput(data: string) for keyboard
-// Call handle.close() when done
 ```
+
+Your component can:
+- Implement `handleInput(data: string)` to receive keyboard input
+- Implement `render(width: number): string[]` to render lines
+- Implement `invalidate()` to clear cached render
+- Call `handle.requestRender()` to trigger re-render
+- Call `handle.close()` when done to restore normal UI
+
+See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example with game loop, keyboard handling, and state persistence.
 
 ### ctx.hasUI
 
-`false` in print mode (`-p`) and RPC mode. Always check before using `ctx.ui`:
+`false` in print mode (`-p`), JSON print mode, and RPC mode. Always check before using `ctx.ui`:
 
 ```typescript
 if (ctx.hasUI) {
