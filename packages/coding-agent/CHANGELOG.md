@@ -45,6 +45,7 @@
 - **SessionManager**:
   - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
 - **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
+- **Custom tools**: `dispose()` method removed from `CustomAgentTool`. Use `onSession` with `reason: "shutdown"` instead for cleanup. `SessionEvent.reason` now includes `"shutdown"`.
 - **Renamed exports**:
   - `messageTransformer` → `convertToLlm`
   - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
