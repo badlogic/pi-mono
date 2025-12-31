@@ -8,6 +8,10 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export interface BranchSummarySettings {
+	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
+}
+
 export interface RetrySettings {
 	enabled?: boolean; // default: true
 	maxRetries?: number; // default: 3
@@ -38,12 +42,12 @@ export interface Settings {
 	queueMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	hooks?: string[]; // Array of hook file paths
-	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
@@ -255,6 +259,12 @@ export class SettingsManager {
 		};
 	}
 
+	getBranchSummarySettings(): { reserveTokens: number } {
+		return {
+			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
+		};
+	}
+
 	getRetryEnabled(): boolean {
 		return this.settings.retry?.enabled ?? true;
 	}
@@ -303,7 +313,7 @@ export class SettingsManager {
 	}
 
 	getHookPaths(): string[] {
-		return this.settings.hooks ?? [];
+		return [...(this.settings.hooks ?? [])];
 	}
 
 	setHookPaths(paths: string[]): void {
@@ -311,17 +321,8 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getHookTimeout(): number {
-		return this.settings.hookTimeout ?? 30000;
-	}
-
-	setHookTimeout(timeout: number): void {
-		this.globalSettings.hookTimeout = timeout;
-		this.save();
-	}
-
 	getCustomToolPaths(): string[] {
-		return this.settings.customTools ?? [];
+		return [...(this.settings.customTools ?? [])];
 	}
 
 	setCustomToolPaths(paths: string[]): void {
@@ -349,9 +350,9 @@ export class SettingsManager {
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
 			enablePiUser: this.settings.skills?.enablePiUser ?? true,
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
-			customDirectories: this.settings.skills?.customDirectories ?? [],
-			ignoredSkills: this.settings.skills?.ignoredSkills ?? [],
-			includeSkills: this.settings.skills?.includeSkills ?? [],
+			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
+			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
+			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
 		};
 	}
 

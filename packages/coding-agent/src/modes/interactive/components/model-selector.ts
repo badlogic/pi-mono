@@ -36,18 +36,18 @@ export class ModelSelectorComponent extends Container {
 	private allModels: ModelItem[] = [];
 	private filteredModels: ModelItem[] = [];
 	private selectedIndex: number = 0;
-	private currentModel: Model<any> | null;
+	private currentModel?: Model<any>;
 	private settingsManager: SettingsManager;
 	private modelRegistry: ModelRegistry;
 	private onSelectCallback: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
-	private errorMessage: string | null = null;
+	private errorMessage?: string;
 	private tui: TUI;
 	private scopedModels: ReadonlyArray<ScopedModelItem>;
 
 	constructor(
 		tui: TUI,
-		currentModel: Model<any> | null,
+		currentModel: Model<any> | undefined,
 		settingsManager: SettingsManager,
 		modelRegistry: ModelRegistry,
 		scopedModels: ReadonlyArray<ScopedModelItem>,

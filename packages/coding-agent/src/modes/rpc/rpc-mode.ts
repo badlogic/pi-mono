@@ -51,17 +51,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 * Create a hook UI context that uses the RPC protocol.
 	 */
 	const createHookUIContext = (): HookUIContext => ({
-		async select(title: string, options: string[]): Promise<string | null> {
+		async select(title: string, options: string[]): Promise<string | undefined> {
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
 				pendingHookRequests.set(id, {
 					resolve: (response: RpcHookUIResponse) => {
 						if ("cancelled" in response && response.cancelled) {
-							resolve(null);
+							resolve(undefined);
 						} else if ("value" in response) {
 							resolve(response.value);
 						} else {
-							resolve(null);
+							resolve(undefined);
 						}
 					},
 					reject,
@@ -89,17 +89,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
-		async input(title: string, placeholder?: string): Promise<string | null> {
+		async input(title: string, placeholder?: string): Promise<string | undefined> {
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
 				pendingHookRequests.set(id, {
 					resolve: (response: RpcHookUIResponse) => {
 						if ("cancelled" in response && response.cancelled) {
-							resolve(null);
+							resolve(undefined);
 						} else if ("value" in response) {
 							resolve(response.value);
 						} else {
-							resolve(null);
+							resolve(undefined);
 						}
 					},
 					reject,
@@ -118,37 +118,51 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				notifyType: type,
 			} as RpcHookUIRequest);
 		},
-	});
 
-	// Load entries once for session start events
-	const entries = session.sessionManager.getEntries();
+		async custom() {
+			// Custom UI not supported in RPC mode
+			return undefined as never;
+		},
+
+		setEditorText(text: string): void {
+			// Fire and forget - host can implement editor control
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "set_editor_text",
+				text,
+			} as RpcHookUIRequest);
+		},
+
+		getEditorText(): string {
+			// Synchronous method can't wait for RPC response
+			// Host should track editor state locally if needed
+			return "";
+		},
+	});
 
 	// Set up hooks with RPC-based UI context
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		hookRunner.setUIContext(createHookUIContext(), false);
-		hookRunner.setSessionFile(session.sessionFile);
+		hookRunner.initialize({
+			getModel: () => session.agent.state.model,
+			sendMessageHandler: (message, triggerTurn) => {
+				session.sendHookMessage(message, triggerTurn).catch((e) => {
+					output(error(undefined, "hook_send", e.message));
+				});
+			},
+			appendEntryHandler: (customType, data) => {
+				session.sessionManager.appendCustomEntry(customType, data);
+			},
+			uiContext: createHookUIContext(),
+			hasUI: false,
+		});
 		hookRunner.onError((err) => {
 			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
 		});
-		// Set up send handler for pi.send()
-		hookRunner.setSendHandler((text, attachments) => {
-			// In RPC mode, just queue or prompt based on streaming state
-			if (session.isStreaming) {
-				session.queueMessage(text);
-			} else {
-				session.prompt(text, { attachments }).catch((e) => {
-					output(error(undefined, "hook_send", e.message));
-				});
-			}
-		});
-		// Emit session event
+		// Emit session_start event
 		await hookRunner.emit({
-			type: "session",
-			entries,
-			sessionFile: session.sessionFile,
-			previousSessionFile: null,
-			reason: "start",
+			type: "session_start",
 		});
 	}
 
@@ -157,12 +171,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	for (const { tool } of session.customTools) {
 		if (tool.onSession) {
 			try {
-				await tool.onSession({
-					entries,
-					sessionFile: session.sessionFile,
-					previousSessionFile: null,
-					reason: "start",
-				});
+				await tool.onSession(
+					{
+						previousSessionFile: undefined,
+						reason: "start",
+					},
+					{
+						sessionManager: session.sessionManager,
+						modelRegistry: session.modelRegistry,
+						model: session.model,
+					},
+				);
 			} catch (_err) {
 				// Silently ignore tool errors
 			}
@@ -185,10 +204,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			case "prompt": {
 				// Don't await - events will stream
+				// Hook commands and file slash commands are handled in session.prompt()
 				session
 					.prompt(command.message, {
-						attachments: command.attachments,
-						expandSlashCommands: false,
+						images: command.images,
 					})
 					.catch((e) => output(error(id, "prompt", e.message)));
 				return success(id, "prompt");
@@ -344,7 +363,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "branch": {
-				const result = await session.branch(command.entryIndex);
+				const result = await session.branch(command.entryId);
 				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });
 			}
 

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `AgentTool` import moved from `@mariozechner/pi-ai` to `@mariozechner/pi-agent-core`
+- `AppMessage` type renamed to `AgentMessage`
+- `Attachment` type replaced with `ImageContent` for image handling
+- `MomSessionManager.loadSession()` renamed to `buildSessionContex()`
+- `MomSessionManager.createBranchedSessionFromEntries()` signature changed to `createBranchedSession(leafId)`
+- `ProviderTransport` removed from Agent config, replaced with direct `getApiKey` callback
+- `messageTransformer` renamed to `convertToLlm`
+- `ANTHROPIC_API_KEY`/`ANTHROPIC_OAUTH_TOKEN` no longer checked at startup (deferred to first API call)
+
+### Changed
+
+- Session entries now include `id` and `parentId` fields for tree structure support
+- Auth lookup now uses `AuthStorage` class instead of direct environment variable access
+- Image attachments use `ImageContent` type with `data` field instead of `Attachment` with `content`
+- `session.prompt()` now uses `images` option instead of `attachments`
+
+### Added
+
+- Support for OAuth login via coding agent's `/login` command (link `~/.pi/agent/auth.json` to `~/.pi/mom/auth.json`)
+
 ## [0.20.2] - 2025-12-13
 
 ### Fixed

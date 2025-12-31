@@ -66,21 +66,21 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("claude-sonnet-4-5", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("partial match returns best model", () => {
 			const result = parseModelPattern("sonnet", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("no match returns null model", () => {
 			const result = parseModelPattern("nonexistent", allModels);
-			expect(result.model).toBeNull();
+			expect(result.model).toBeUndefined();
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 	});
 
@@ -89,14 +89,14 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("sonnet:high", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.thinkingLevel).toBe("high");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("gpt-4o:medium returns gpt-4o with medium thinking level", () => {
 			const result = parseModelPattern("gpt-4o:medium", allModels);
 			expect(result.model?.id).toBe("gpt-4o");
 			expect(result.thinkingLevel).toBe("medium");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("all valid thinking levels work", () => {
@@ -104,7 +104,7 @@ describe("parseModelPattern", () => {
 				const result = parseModelPattern(`sonnet:${level}`, allModels);
 				expect(result.model?.id).toBe("claude-sonnet-4-5");
 				expect(result.thinkingLevel).toBe(level);
-				expect(result.warning).toBeNull();
+				expect(result.warning).toBeUndefined();
 			}
 		});
 	});
@@ -131,7 +131,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("openrouter/qwen/qwen3-coder:exacto matches with provider prefix", () => {
@@ -139,14 +139,14 @@ describe("parseModelPattern", () => {
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.model?.provider).toBe("openrouter");
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("qwen3-coder:exacto:high matches model with high thinking level", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto:high", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.thinkingLevel).toBe("high");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("openrouter/qwen/qwen3-coder:exacto:high matches with provider and thinking level", () => {
@@ -154,14 +154,14 @@ describe("parseModelPattern", () => {
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.model?.provider).toBe("openrouter");
 			expect(result.thinkingLevel).toBe("high");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 
 		test("gpt-4o:extended matches the extended model", () => {
 			const result = parseModelPattern("openai/gpt-4o:extended", allModels);
 			expect(result.model?.id).toBe("openai/gpt-4o:extended");
 			expect(result.thinkingLevel).toBe("off");
-			expect(result.warning).toBeNull();
+			expect(result.warning).toBeUndefined();
 		});
 	});
 

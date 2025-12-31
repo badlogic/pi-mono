@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, ProviderTransport } from "@mariozechner/pi-agent-core";
+import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
@@ -19,8 +19,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_OAUTH_TOKEN;
+import { API_KEY } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 	let session: AgentSession;
@@ -46,15 +45,10 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		}
 	});
 
-	function createSession() {
+	function createSession(inMemory = false) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-
-		const transport = new ProviderTransport({
-			getApiKey: () => API_KEY,
-		});
-
 		const agent = new Agent({
-			transport,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",
@@ -62,8 +56,10 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 			},
 		});
 
-		sessionManager = SessionManager.create(tempDir);
+		sessionManager = inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		// Use minimal keepRecentTokens so small test conversations have something to summarize
+		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage);
 
@@ -105,7 +101,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 
 		// First message should be the summary (a user message with summary content)
 		const firstMsg = messages[0];
-		expect(firstMsg.role).toBe("user");
+		expect(firstMsg.role).toBe("compactionSummary");
 	}, 120000);
 
 	it("should maintain valid session state after compaction", async () => {
@@ -156,64 +152,31 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		expect(compaction.type).toBe("compaction");
 		if (compaction.type === "compaction") {
 			expect(compaction.summary.length).toBeGreaterThan(0);
-			// firstKeptEntryIndex can be 0 if all messages fit within keepRecentTokens
-			// (which is the case for small conversations)
-			expect(compaction.firstKeptEntryIndex).toBeGreaterThanOrEqual(0);
+			expect(typeof compaction.firstKeptEntryId).toBe("string");
 			expect(compaction.tokensBefore).toBeGreaterThan(0);
 		}
 	}, 120000);
 
 	it("should work with --no-session mode (in-memory only)", async () => {
-		const model = getModel("anthropic", "claude-sonnet-4-5")!;
+		createSession(true); // in-memory mode
 
-		const transport = new ProviderTransport({
-			getApiKey: () => API_KEY,
-		});
+		// Send prompts
+		await session.prompt("What is 2+2? Reply with just the number.");
+		await session.agent.waitForIdle();
 
-		const agent = new Agent({
-			transport,
-			initialState: {
-				model,
-				systemPrompt: "You are a helpful assistant. Be concise.",
-				tools: codingTools,
-			},
-		});
+		await session.prompt("What is 3+3? Reply with just the number.");
+		await session.agent.waitForIdle();
 
-		// Create in-memory session manager
-		const noSessionManager = SessionManager.inMemory();
+		// Compact should work even without file persistence
+		const result = await session.compact();
 
-		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
-		const modelRegistry = new ModelRegistry(authStorage);
+		expect(result.summary).toBeDefined();
+		expect(result.summary.length).toBeGreaterThan(0);
 
-		const noSessionSession = new AgentSession({
-			agent,
-			sessionManager: noSessionManager,
-			settingsManager,
-			modelRegistry,
-		});
-
-		try {
-			// Send prompts
-			await noSessionSession.prompt("What is 2+2? Reply with just the number.");
-			await noSessionSession.agent.waitForIdle();
-
-			await noSessionSession.prompt("What is 3+3? Reply with just the number.");
-			await noSessionSession.agent.waitForIdle();
-
-			// Compact should work even without file persistence
-			const result = await noSessionSession.compact();
-
-			expect(result.summary).toBeDefined();
-			expect(result.summary.length).toBeGreaterThan(0);
-
-			// In-memory entries should have the compaction
-			const entries = noSessionManager.getEntries();
-			const compactionEntries = entries.filter((e) => e.type === "compaction");
-			expect(compactionEntries.length).toBe(1);
-		} finally {
-			noSessionSession.dispose();
-		}
+		// In-memory entries should have the compaction
+		const entries = sessionManager.getEntries();
+		const compactionEntries = entries.filter((e) => e.type === "compaction");
+		expect(compactionEntries.length).toBe(1);
 	}, 120000);
 
 	it("should emit correct events during auto-compaction", async () => {

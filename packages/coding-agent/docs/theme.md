@@ -1,3 +1,5 @@
+> pi can create themes. Ask it to build one for your use case.
+
 # Pi Coding Agent Themes
 
 Themes allow you to customize the colors used throughout the coding agent TUI.
@@ -20,13 +22,18 @@ Every theme must define all color tokens. There are no optional colors.
 | `muted` | Secondary/dimmed text | Metadata, descriptions, output |
 | `dim` | Very dimmed text | Less important info, placeholders |
 | `text` | Default text color | Main content (usually `""`) |
+| `thinkingText` | Thinking block text | Assistant reasoning traces |
 
-### Backgrounds & Content Text (7 colors)
+### Backgrounds & Content Text (11 colors)
 
 | Token | Purpose |
 |-------|---------|
+| `selectedBg` | Selected/active line background (e.g., tree selector) |
 | `userMessageBg` | User message background |
 | `userMessageText` | User message text color |
+| `customMessageBg` | Hook custom message background |
+| `customMessageText` | Hook custom message text color |
+| `customMessageLabel` | Hook custom message label/type text |
 | `toolPendingBg` | Tool execution box (pending state) |
 | `toolSuccessBg` | Tool execution box (success state) |
 | `toolErrorBg` | Tool execution box (error state) |
@@ -95,7 +102,7 @@ These create a visual hierarchy: off → minimal → low → medium → high →
 |-------|---------|
 | `bashMode` | Editor border color when in bash mode (! prefix) |
 
-**Total: 46 color tokens** (all required)
+**Total: 50 color tokens** (all required)
 
 ## Theme Format
 
@@ -113,6 +120,7 @@ Themes are defined in JSON files with the following structure:
   "colors": {
     "accent": "blue",
     "muted": "gray",
+    "thinkingText": "gray",
     "text": "",
     ...
   }

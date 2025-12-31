@@ -29,17 +29,22 @@
  * ```
  */
 
-import { Agent, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
-import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./custom-tools/index.js";
-import type { CustomAgentTool } from "./custom-tools/types.js";
+import {
+	type CustomToolsLoadResult,
+	discoverAndLoadCustomTools,
+	type LoadedCustomTool,
+	wrapCustomTools,
+} from "./custom-tools/index.js";
+import type { CustomTool } from "./custom-tools/types.js";
 import { discoverAndLoadHooks, HookRunner, type LoadedHook, wrapToolsWithHooks } from "./hooks/index.js";
 import type { HookFactory } from "./hooks/types.js";
-import { messageTransformer } from "./messages.js";
+import { convertToLlm } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { SessionManager } from "./session-manager.js";
 import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
@@ -99,7 +104,7 @@ export interface CreateAgentSessionOptions {
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools (replaces discovery). */
-	customTools?: Array<{ path?: string; tool: CustomAgentTool }>;
+	customTools?: Array<{ path?: string; tool: CustomTool }>;
 	/** Additional custom tool paths to load (merged with discovery). */
 	additionalCustomToolPaths?: string[];
 
@@ -127,18 +132,15 @@ export interface CreateAgentSessionResult {
 	/** The created session */
 	session: AgentSession;
 	/** Custom tools result (for UI context setup in interactive mode) */
-	customToolsResult: {
-		tools: LoadedCustomTool[];
-		setUIContext: (uiContext: any, hasUI: boolean) => void;
-	};
+	customToolsResult: CustomToolsLoadResult;
 	/** Warning if session was restored with a different model than saved */
 	modelFallbackMessage?: string;
 }
 
 // Re-exports
 
-export type { CustomAgentTool } from "./custom-tools/types.js";
-export type { HookAPI, HookFactory } from "./hooks/types.js";
+export type { CustomTool } from "./custom-tools/types.js";
+export type { HookAPI, HookContext, HookFactory } from "./hooks/types.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
 export type { FileSlashCommand } from "./slash-commands.js";
@@ -219,7 +221,7 @@ export async function discoverHooks(
 export async function discoverCustomTools(
 	cwd?: string,
 	agentDir?: string,
-): Promise<Array<{ path: string; tool: CustomAgentTool }>> {
+): Promise<Array<{ path: string; tool: CustomTool }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 
@@ -311,7 +313,6 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		shellPath: manager.getShellPath(),
 		collapseChangelog: manager.getCollapseChangelog(),
 		hooks: manager.getHookPaths(),
-		hookTimeout: manager.getHookTimeout(),
 		customTools: manager.getCustomToolPaths(),
 		skills: manager.getSkillsSettings(),
 		terminal: { showImages: manager.getShowImages() },
@@ -340,7 +341,10 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
 function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; factory: HookFactory }>): LoadedHook[] {
 	return definitions.map((def) => {
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
-		let sendHandler: (text: string, attachments?: any[]) => void = () => {};
+		const messageRenderers = new Map<string, any>();
+		const commands = new Map<string, any>();
+		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
+		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
 
 		const api = {
 			on: (event: string, handler: (...args: unknown[]) => Promise<unknown>) => {
@@ -348,8 +352,17 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 				list.push(handler);
 				handlers.set(event, list);
 			},
-			send: (text: string, attachments?: any[]) => {
-				sendHandler(text, attachments);
+			sendMessage: (message: any, triggerTurn?: boolean) => {
+				sendMessageHandler(message, triggerTurn);
+			},
+			appendEntry: (customType: string, data?: any) => {
+				appendEntryHandler(customType, data);
+			},
+			registerMessageRenderer: (customType: string, renderer: any) => {
+				messageRenderers.set(customType, renderer);
+			},
+			registerCommand: (name: string, options: any) => {
+				commands.set(name, { name, ...options });
 			},
 		};
 
@@ -359,8 +372,13 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			path: def.path ?? "<inline>",
 			resolvedPath: def.path ?? "<inline>",
 			handlers,
-			setSendHandler: (handler: (text: string, attachments?: any[]) => void) => {
-				sendHandler = handler;
+			messageRenderers,
+			commands,
+			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
+				sendMessageHandler = handler;
+			},
+			setAppendEntryHandler: (handler: (customType: string, data?: any) => void) => {
+				appendEntryHandler = handler;
 			},
 		};
 	});
@@ -490,7 +508,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const builtInTools = options.tools ?? createCodingTools(cwd);
 	time("createCodingTools");
 
-	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
+	let customToolsResult: CustomToolsLoadResult;
 	if (options.customTools !== undefined) {
 		// Use provided custom tools
 		const loadedTools: LoadedCustomTool[] = options.customTools.map((ct) => ({
@@ -500,24 +518,24 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}));
 		customToolsResult = {
 			tools: loadedTools,
+			errors: [],
 			setUIContext: () => {},
 		};
 	} else {
 		// Discover custom tools, merging with additional paths
 		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
-		const result = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
+		customToolsResult = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
 		time("discoverAndLoadCustomTools");
-		for (const { path, error } of result.errors) {
+		for (const { path, error } of customToolsResult.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
 		}
-		customToolsResult = result;
 	}
 
-	let hookRunner: HookRunner | null = null;
+	let hookRunner: HookRunner | undefined;
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
-			hookRunner = new HookRunner(loadedHooks, cwd, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry);
 		}
 	} else {
 		// Discover hooks, merging with additional paths
@@ -528,11 +546,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
 		if (hooks.length > 0) {
-			hookRunner = new HookRunner(hooks, cwd, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry);
 		}
 	}
 
-	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
+	// Wrap custom tools with context getter (agent is assigned below, accessed at execute time)
+	let agent: Agent;
+	const wrappedCustomTools = wrapCustomTools(customToolsResult.tools, () => ({
+		sessionManager,
+		modelRegistry,
+		model: agent.state.model,
+	}));
+
+	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
 	time("combineTools");
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
@@ -564,34 +590,43 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
 
-	const agent = new Agent({
+	agent = new Agent({
 		initialState: {
 			systemPrompt,
 			model,
 			thinkingLevel,
 			tools: allToolsArray,
 		},
-		messageTransformer,
+		convertToLlm,
+		transformContext: hookRunner
+			? async (messages) => {
+					return hookRunner.emitContext(messages);
+				}
+			: undefined,
 		queueMode: settingsManager.getQueueMode(),
-		transport: new ProviderTransport({
-			getApiKey: async () => {
-				const currentModel = agent.state.model;
-				if (!currentModel) {
-					throw new Error("No model selected");
-				}
-				const key = await modelRegistry.getApiKey(currentModel);
-				if (!key) {
-					throw new Error(`No API key found for provider "${currentModel.provider}"`);
-				}
-				return key;
-			},
-		}),
+		getApiKey: async () => {
+			const currentModel = agent.state.model;
+			if (!currentModel) {
+				throw new Error("No model selected");
+			}
+			const key = await modelRegistry.getApiKey(currentModel);
+			if (!key) {
+				throw new Error(`No API key found for provider "${currentModel.provider}"`);
+			}
+			return key;
+		},
 	});
 	time("createAgent");
 
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
+	} else {
+		// Save initial model and thinking level for new sessions so they can be restored on resume
+		if (model) {
+			sessionManager.appendModelChange(model.provider, model.id);
+		}
+		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
 	const session = new AgentSession({

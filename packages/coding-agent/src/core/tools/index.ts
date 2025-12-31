@@ -1,5 +1,3 @@
-import type { AgentTool } from "@mariozechner/pi-ai";
-
 export { type BashToolDetails, bashTool, createBashTool } from "./bash.js";
 export { createEditTool, editTool } from "./edit.js";
 export { createFindTool, type FindToolDetails, findTool } from "./find.js";
@@ -9,6 +7,7 @@ export { createReadTool, type ReadToolDetails, readTool } from "./read.js";
 export type { TruncationResult } from "./truncate.js";
 export { createWriteTool, writeTool } from "./write.js";
 
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { bashTool, createBashTool } from "./bash.js";
 import { createEditTool, editTool } from "./edit.js";
 import { createFindTool, findTool } from "./find.js";

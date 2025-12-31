@@ -5,7 +5,7 @@
 import { getModels } from "../../models.js";
 import type { OAuthCredentials } from "./types.js";
 
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
 
 const COPILOT_HEADERS = {

@@ -5,8 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import type { Attachment } from "@mariozechner/pi-agent-core";
-import { supportsXhigh } from "@mariozechner/pi-ai";
+import { type ImageContent, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -34,10 +33,10 @@ import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js"
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
 import { ensureTool } from "./utils/tools-manager.js";
 
-async function checkForNewVersion(currentVersion: string): Promise<string | null> {
+async function checkForNewVersion(currentVersion: string): Promise<string | undefined> {
 	try {
 		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi -coding-agent/latest");
-		if (!response.ok) return null;
+		if (!response.ok) return undefined;
 
 		const data = (await response.json()) as { version?: string };
 		const latestVersion = data.version;
@@ -46,26 +45,26 @@ async function checkForNewVersion(currentVersion: string): Promise<string | null
 			return latestVersion;
 		}
 
-		return null;
+		return undefined;
 	} catch {
-		return null;
+		return undefined;
 	}
 }
 
 async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
-	changelogMarkdown: string | null,
+	changelogMarkdown: string | undefined,
 	modelFallbackMessage: string | undefined,
-	modelsJsonError: string | null,
+	modelsJsonError: string | undefined,
 	migratedProviders: string[],
-	versionCheckPromise: Promise<string | null>,
+	versionCheckPromise: Promise<string | undefined>,
 	initialMessages: string[],
 	customTools: LoadedCustomTool[],
 	setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
-	initialAttachments?: Attachment[],
-	fdPath: string | null = null,
+	initialImages?: ImageContent[],
+	fdPath: string | undefined = undefined,
 ): Promise<void> {
 	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
 
@@ -77,7 +76,7 @@ async function runInteractiveMode(
 		}
 	});
 
-	mode.renderInitialMessages(session.state);
+	mode.renderInitialMessages();
 
 	if (migratedProviders.length > 0) {
 		mode.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
@@ -93,7 +92,7 @@ async function runInteractiveMode(
 
 	if (initialMessage) {
 		try {
-			await session.prompt(initialMessage, { attachments: initialAttachments });
+			await session.prompt(initialMessage, { images: initialImages });
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 			mode.showError(errorMessage);
@@ -122,31 +121,31 @@ async function runInteractiveMode(
 
 async function prepareInitialMessage(parsed: Args): Promise<{
 	initialMessage?: string;
-	initialAttachments?: Attachment[];
+	initialImages?: ImageContent[];
 }> {
 	if (parsed.fileArgs.length === 0) {
 		return {};
 	}
 
-	const { textContent, imageAttachments } = await processFileArguments(parsed.fileArgs);
+	const { text, images } = await processFileArguments(parsed.fileArgs);
 
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
-		initialMessage = textContent + parsed.messages[0];
+		initialMessage = text + parsed.messages[0];
 		parsed.messages.shift();
 	} else {
-		initialMessage = textContent;
+		initialMessage = text;
 	}
 
 	return {
 		initialMessage,
-		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+		initialImages: images.length > 0 ? images : undefined,
 	};
 }
 
-function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | null {
+function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | undefined {
 	if (parsed.continue || parsed.resume) {
-		return null;
+		return undefined;
 	}
 
 	const lastVersion = settingsManager.getLastChangelogVersion();
@@ -166,10 +165,10 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 		}
 	}
 
-	return null;
+	return undefined;
 }
 
-function createSessionManager(parsed: Args, cwd: string): SessionManager | null {
+function createSessionManager(parsed: Args, cwd: string): SessionManager | undefined {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
@@ -184,8 +183,8 @@ function createSessionManager(parsed: Args, cwd: string): SessionManager | null 
 	if (parsed.sessionDir) {
 		return SessionManager.create(cwd, parsed.sessionDir);
 	}
-	// Default case (new session) returns null, SDK will create one
-	return null;
+	// Default case (new session) returns undefined, SDK will create one
+	return undefined;
 }
 
 /** Discover SYSTEM.md file if no CLI system prompt was provided */
@@ -208,7 +207,7 @@ function discoverSystemPromptFile(): string | undefined {
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
-	sessionManager: SessionManager | null,
+	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
@@ -330,7 +329,7 @@ export async function main(args: string[]) {
 	}
 
 	const cwd = process.cwd();
-	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
+	const { initialMessage, initialImages } = await prepareInitialMessage(parsed);
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
@@ -409,7 +408,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
+		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => undefined);
 		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
 
 		if (scopedModels.length > 0) {
@@ -438,11 +437,11 @@ export async function main(args: string[]) {
 			customToolsResult.tools,
 			customToolsResult.setUIContext,
 			initialMessage,
-			initialAttachments,
+			initialImages,
 			fdPath,
 		);
 	} else {
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
+		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages);
 		stopThemeWatcher();
 		if (process.stdout.writableLength > 0) {
 			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));

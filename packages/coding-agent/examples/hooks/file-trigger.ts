@@ -9,19 +9,24 @@
  */
 
 import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "start") return;
-
+	pi.on("session_start", async (_event, ctx) => {
 		const triggerFile = "/tmp/agent-trigger.txt";
 
 		fs.watch(triggerFile, () => {
 			try {
 				const content = fs.readFileSync(triggerFile, "utf-8").trim();
 				if (content) {
-					pi.send(`External trigger: ${content}`);
+					pi.sendMessage(
+						{
+							customType: "file-trigger",
+							content: `External trigger: ${content}`,
+							display: true,
+						},
+						true, // triggerTurn - get LLM to respond
+					);
 					fs.writeFileSync(triggerFile, ""); // Clear after reading
 				}
 			} catch {

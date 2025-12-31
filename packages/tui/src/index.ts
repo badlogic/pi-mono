@@ -9,6 +9,7 @@ export {
 } from "./autocomplete.js";
 // Components
 export { Box } from "./components/box.js";
+export { CancellableLoader } from "./components/cancellable-loader.js";
 export { Editor, type EditorTheme } from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
@@ -50,6 +51,8 @@ export {
 	isEnter,
 	isEscape,
 	isHome,
+	isShiftCtrlD,
+	isShiftCtrlO,
 	isShiftCtrlP,
 	isShiftEnter,
 	isShiftTab,
@@ -83,4 +86,4 @@ export {
 } from "./terminal-image.js";
 export { type Component, Container, TUI } from "./tui.js";
 // Utilities
-export { truncateToWidth, visibleWidth } from "./utils.js";
+export { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";

@@ -3,7 +3,7 @@
  *
  * Replaces the default compaction behavior with a full summary of the entire context.
  * Instead of keeping the last 20k tokens of conversation turns, this hook:
- * 1. Summarizes ALL messages (both messagesToSummarize and messagesToKeep and previousSummary)
+ * 1. Summarizes ALL messages (messagesToSummarize + turnPrefixMessages)
  * 2. Discards all old turns completely, keeping only the summary
  *
  * This example also demonstrates using a different model (Gemini Flash) for summarization,
@@ -14,17 +14,15 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
-import { messageTransformer } from "@mariozechner/pi-coding-agent";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
-	pi.on("session", async (event, ctx) => {
-		if (event.reason !== "before_compact") return;
-
+	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction hook triggered", "info");
 
-		const { messagesToSummarize, messagesToKeep, previousSummary, tokensBefore, resolveApiKey, entries, signal } =
-			event;
+		const { preparation, branchEntries: _, signal } = event;
+		const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		const model = getModel("google", "gemini-2.5-flash");
@@ -34,35 +32,34 @@ export default function (pi: HookAPI) {
 		}
 
 		// Resolve API key for the summarization model
-		const apiKey = await resolveApiKey(model);
+		const apiKey = await ctx.modelRegistry.getApiKey(model);
 		if (!apiKey) {
 			ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
 			return;
 		}
 
 		// Combine all messages for full summary
-		const allMessages = [...messagesToSummarize, ...messagesToKeep];
+		const allMessages = [...messagesToSummarize, ...turnPrefixMessages];
 
 		ctx.ui.notify(
 			`Custom compaction: summarizing ${allMessages.length} messages (${tokensBefore.toLocaleString()} tokens) with ${model.id}...`,
 			"info",
 		);
 
-		// Transform app messages to pi-ai package format
-		const transformedMessages = messageTransformer(allMessages);
+		// Convert messages to readable text format
+		const conversationText = serializeConversation(convertToLlm(allMessages));
 
 		// Include previous summary context if available
 		const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";
 
 		// Build messages that ask for a comprehensive summary
 		const summaryMessages = [
-			...transformedMessages,
 			{
 				role: "user" as const,
 				content: [
 					{
 						type: "text" as const,
-						text: `You are a conversation summarizer. Create a comprehensive summary of this entire conversation that captures:${previousContext}
+						text: `You are a conversation summarizer. Create a comprehensive summary of this conversation that captures:${previousContext}
 
 1. The main goals and objectives discussed
 2. Key decisions made and their rationale
@@ -73,7 +70,11 @@ export default function (pi: HookAPI) {
 
 Be thorough but concise. The summary will replace the ENTIRE conversation history, so include all information needed to continue the work effectively.
 
-Format the summary as structured markdown with clear sections.`,
+Format the summary as structured markdown with clear sections.
+
+<conversation>
+${conversationText}
+</conversation>`,
 					},
 				],
 				timestamp: Date.now(),
@@ -94,14 +95,12 @@ Format the summary as structured markdown with clear sections.`,
 				return;
 			}
 
-			// Return a compaction entry that discards ALL messages
-			// firstKeptEntryIndex points past all current entries
+			// Return compaction content - SessionManager adds id/parentId
+			// Use firstKeptEntryId from preparation to keep recent messages
 			return {
-				compactionEntry: {
-					type: "compaction" as const,
-					timestamp: new Date().toISOString(),
+				compaction: {
 					summary,
-					firstKeptEntryIndex: entries.length,
+					firstKeptEntryId,
 					tokensBefore,
 				},
 			};

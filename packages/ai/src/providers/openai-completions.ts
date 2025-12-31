@@ -460,13 +460,15 @@ function convertMessages(
 			};
 
 			const textBlocks = msg.content.filter((b) => b.type === "text") as TextContent[];
-			if (textBlocks.length > 0) {
+			// Filter out empty text blocks to avoid API validation errors
+			const nonEmptyTextBlocks = textBlocks.filter((b) => b.text && b.text.trim().length > 0);
+			if (nonEmptyTextBlocks.length > 0) {
 				// GitHub Copilot requires assistant content as a string, not an array.
 				// Sending as array causes Claude models to re-answer all previous prompts.
 				if (model.provider === "github-copilot") {
-					assistantMsg.content = textBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
+					assistantMsg.content = nonEmptyTextBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
 				} else {
-					assistantMsg.content = textBlocks.map((b) => {
+					assistantMsg.content = nonEmptyTextBlocks.map((b) => {
 						return { type: "text", text: sanitizeSurrogates(b.text) };
 					});
 				}

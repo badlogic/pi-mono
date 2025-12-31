@@ -1,194 +1,365 @@
-# @mariozechner/pi-agent-core
+# @mariozechner/pi-agent
 
-Stateful agent abstraction with transport layer for LLM interactions. Provides a reactive `Agent` class that manages conversation state, emits granular events, and supports pluggable transports for different deployment scenarios.
+Stateful agent with tool execution and event streaming. Built on `@mariozechner/pi-ai`.
 
 ## Installation
 
 ```bash
-npm install @mariozechner/pi-agent-core
+npm install @mariozechner/pi-agent
 ```
 
 ## Quick Start
 
 ```typescript
-import { Agent, ProviderTransport } from '@mariozechner/pi-agent-core';
-import { getModel } from '@mariozechner/pi-ai';
+import { Agent } from "@mariozechner/pi-agent";
+import { getModel } from "@mariozechner/pi-ai";
 
-// Create agent with direct provider transport
 const agent = new Agent({
-  transport: new ProviderTransport(),
   initialState: {
-    systemPrompt: 'You are a helpful assistant.',
-    model: getModel('anthropic', 'claude-sonnet-4-20250514'),
-    thinkingLevel: 'medium',
-    tools: []
-  }
+    systemPrompt: "You are a helpful assistant.",
+    model: getModel("anthropic", "claude-sonnet-4-20250514"),
+  },
 });
 
-// Subscribe to events for reactive UI updates
 agent.subscribe((event) => {
-  switch (event.type) {
-    case 'message_update':
-      // Stream text to UI
-      const content = event.message.content;
-      for (const block of content) {
-        if (block.type === 'text') console.log(block.text);
-      }
-      break;
-    case 'tool_execution_start':
-      console.log(`Calling ${event.toolName}...`);
-      break;
-    case 'tool_execution_update':
-      // Stream tool output (e.g., bash stdout)
-      console.log('Progress:', event.partialResult.content);
-      break;
-    case 'tool_execution_end':
-      console.log(`Result:`, event.result.content);
-      break;
+  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+    // Stream just the new text chunk
+    process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
 
-// Send a prompt
-await agent.prompt('Hello, world!');
-
-// Access conversation state
-console.log(agent.state.messages);
+await agent.prompt("Hello!");
 ```
 
 ## Core Concepts
 
-### Agent State
+### AgentMessage vs LLM Message
 
-The `Agent` maintains reactive state:
+The agent works with `AgentMessage`, a flexible type that can include:
+- Standard LLM messages (`user`, `assistant`, `toolResult`)
+- Custom app-specific message types via declaration merging
+
+LLMs only understand `user`, `assistant`, and `toolResult`. The `convertToLlm` function bridges this gap by filtering and transforming messages before each LLM call.
+
+### Message Flow
+
+```
+AgentMessage[] → transformContext() → AgentMessage[] → convertToLlm() → Message[] → LLM
+                    (optional)                           (required)
+```
+
+1. **transformContext**: Prune old messages, inject external context
+2. **convertToLlm**: Filter out UI-only messages, convert custom types to LLM format
+
+## Event Flow
+
+The agent emits events for UI updates. Understanding the event sequence helps build responsive interfaces.
+
+### prompt() Event Sequence
+
+When you call `prompt("Hello")`:
+
+```
+prompt("Hello")
+├─ agent_start
+├─ turn_start
+├─ message_start   { message: userMessage }      // Your prompt
+├─ message_end     { message: userMessage }
+├─ message_start   { message: assistantMessage } // LLM starts responding
+├─ message_update  { message: partial... }       // Streaming chunks
+├─ message_update  { message: partial... }
+├─ message_end     { message: assistantMessage } // Complete response
+├─ turn_end        { message, toolResults: [] }
+└─ agent_end       { messages: [...] }
+```
+
+### With Tool Calls
+
+If the assistant calls tools, the loop continues:
+
+```
+prompt("Read config.json")
+├─ agent_start
+├─ turn_start
+├─ message_start/end  { userMessage }
+├─ message_start      { assistantMessage with toolCall }
+├─ message_update...
+├─ message_end        { assistantMessage }
+├─ tool_execution_start  { toolCallId, toolName, args }
+├─ tool_execution_update { partialResult }           // If tool streams
+├─ tool_execution_end    { toolCallId, result }
+├─ message_start/end  { toolResultMessage }
+├─ turn_end           { message, toolResults: [toolResult] }
+│
+├─ turn_start                                        // Next turn
+├─ message_start      { assistantMessage }           // LLM responds to tool result
+├─ message_update...
+├─ message_end
+├─ turn_end
+└─ agent_end
+```
+
+### continue() Event Sequence
+
+`continue()` resumes from existing context without adding a new message. Use it for retries after errors.
+
+```typescript
+// After an error, retry from current state
+await agent.continue();
+```
+
+The last message in context must be `user` or `toolResult` (not `assistant`).
+
+### Event Types
+
+| Event | Description |
+|-------|-------------|
+| `agent_start` | Agent begins processing |
+| `agent_end` | Agent completes with all new messages |
+| `turn_start` | New turn begins (one LLM call + tool executions) |
+| `turn_end` | Turn completes with assistant message and tool results |
+| `message_start` | Any message begins (user, assistant, toolResult) |
+| `message_update` | **Assistant only.** Includes `assistantMessageEvent` with delta |
+| `message_end` | Message completes |
+| `tool_execution_start` | Tool begins |
+| `tool_execution_update` | Tool streams progress |
+| `tool_execution_end` | Tool completes |
+
+## Agent Options
+
+```typescript
+const agent = new Agent({
+  // Initial state
+  initialState: {
+    systemPrompt: string,
+    model: Model<any>,
+    thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh",
+    tools: AgentTool<any>[],
+    messages: AgentMessage[],
+  },
+
+  // Convert AgentMessage[] to LLM Message[] (required for custom message types)
+  convertToLlm: (messages) => messages.filter(...),
+
+  // Transform context before convertToLlm (for pruning, compaction)
+  transformContext: async (messages, signal) => pruneOldMessages(messages),
+
+  // How to handle queued messages: "one-at-a-time" (default) or "all"
+  queueMode: "one-at-a-time",
+
+  // Custom stream function (for proxy backends)
+  streamFn: streamProxy,
+
+  // Dynamic API key resolution (for expiring OAuth tokens)
+  getApiKey: async (provider) => refreshToken(),
+});
+```
+
+## Agent State
 
 ```typescript
 interface AgentState {
   systemPrompt: string;
   model: Model<any>;
-  thinkingLevel: ThinkingLevel;  // 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  thinkingLevel: ThinkingLevel;
   tools: AgentTool<any>[];
-  messages: AppMessage[];
+  messages: AgentMessage[];
   isStreaming: boolean;
-  streamMessage: Message | null;
+  streamMessage: AgentMessage | null;  // Current partial during streaming
   pendingToolCalls: Set<string>;
   error?: string;
 }
 ```
 
-### Events
+Access via `agent.state`. During streaming, `streamMessage` contains the partial assistant message.
 
-Events provide fine-grained lifecycle information:
+## Methods
 
-| Event | Description |
-|-------|-------------|
-| `agent_start` | Agent begins processing |
-| `agent_end` | Agent completes, contains all generated messages |
-| `turn_start` | New turn begins (one LLM response + tool executions) |
-| `turn_end` | Turn completes with assistant message and tool results |
-| `message_start` | Message begins (user, assistant, or toolResult) |
-| `message_update` | Assistant message streaming update |
-| `message_end` | Message completes |
-| `tool_execution_start` | Tool begins execution |
-| `tool_execution_update` | Tool streams progress (e.g., bash output) |
-| `tool_execution_end` | Tool completes with result |
-
-### Transports
-
-Transports abstract LLM communication:
-
-- **`ProviderTransport`**: Direct API calls using `@mariozechner/pi-ai`
-- **`AppTransport`**: Proxy through a backend server (for browser apps)
+### Prompting
 
 ```typescript
-// Direct provider access (Node.js)
-const agent = new Agent({
-  transport: new ProviderTransport({
-    apiKey: process.env.ANTHROPIC_API_KEY
-  })
-});
+// Text prompt
+await agent.prompt("Hello");
 
-// Via proxy (browser)
-const agent = new Agent({
-  transport: new AppTransport({
-    endpoint: '/api/agent',
-    headers: { 'Authorization': 'Bearer ...' }
-  })
+// With images
+await agent.prompt("What's in this image?", [
+  { type: "image", data: base64Data, mimeType: "image/jpeg" }
+]);
+
+// AgentMessage directly
+await agent.prompt({ role: "user", content: "Hello", timestamp: Date.now() });
+
+// Continue from current context (last message must be user or toolResult)
+await agent.continue();
+```
+
+### State Management
+
+```typescript
+agent.setSystemPrompt("New prompt");
+agent.setModel(getModel("openai", "gpt-4o"));
+agent.setThinkingLevel("medium");
+agent.setTools([myTool]);
+agent.replaceMessages(newMessages);
+agent.appendMessage(message);
+agent.clearMessages();
+agent.reset();  // Clear everything
+```
+
+### Control
+
+```typescript
+agent.abort();           // Cancel current operation
+await agent.waitForIdle(); // Wait for completion
+```
+
+### Events
+
+```typescript
+const unsubscribe = agent.subscribe((event) => {
+  console.log(event.type);
 });
+unsubscribe();
 ```
 
 ## Message Queue
 
-Queue messages to inject at the next turn:
+Queue messages to inject during tool execution (for user interruptions):
 
 ```typescript
-// Queue mode: 'all' or 'one-at-a-time'
-agent.setQueueMode('one-at-a-time');
+agent.setQueueMode("one-at-a-time");
 
-// Queue a message while agent is streaming
-await agent.queueMessage({
-  role: 'user',
-  content: 'Additional context...',
-  timestamp: Date.now()
+// While agent is running tools
+agent.queueMessage({
+  role: "user",
+  content: "Stop! Do this instead.",
+  timestamp: Date.now(),
 });
 ```
 
-## Attachments
-
-User messages can include attachments:
-
-```typescript
-await agent.prompt('What is in this image?', [{
-  id: 'img1',
-  type: 'image',
-  fileName: 'photo.jpg',
-  mimeType: 'image/jpeg',
-  size: 102400,
-  content: base64ImageData
-}]);
-```
+When queued messages are detected after a tool completes:
+1. Remaining tools are skipped with error results
+2. Queued message is injected
+3. LLM responds to the interruption
 
 ## Custom Message Types
 
-Extend `AppMessage` for app-specific messages via declaration merging:
+Extend `AgentMessage` via declaration merging:
 
 ```typescript
-declare module '@mariozechner/pi-agent-core' {
-  interface CustomMessages {
-    artifact: { role: 'artifact'; code: string; language: string };
+declare module "@mariozechner/pi-agent" {
+  interface CustomAgentMessages {
+    notification: { role: "notification"; text: string; timestamp: number };
   }
 }
 
-// Now AppMessage includes your custom type
-const msg: AppMessage = { role: 'artifact', code: '...', language: 'typescript' };
+// Now valid
+const msg: AgentMessage = { role: "notification", text: "Info", timestamp: Date.now() };
 ```
 
-## API Reference
+Handle custom types in `convertToLlm`:
 
-### Agent Methods
+```typescript
+const agent = new Agent({
+  convertToLlm: (messages) => messages.flatMap(m => {
+    if (m.role === "notification") return []; // Filter out
+    return [m];
+  }),
+});
+```
 
-| Method | Description |
-|--------|-------------|
-| `prompt(text, attachments?)` | Send a user prompt |
-| `continue()` | Continue from current context (for retry after overflow) |
-| `abort()` | Abort current operation |
-| `waitForIdle()` | Returns promise that resolves when agent is idle |
-| `reset()` | Clear all messages and state |
-| `subscribe(fn)` | Subscribe to events, returns unsubscribe function |
-| `queueMessage(msg)` | Queue message for next turn |
-| `clearMessageQueue()` | Clear queued messages |
+## Tools
 
-### State Mutators
+Define tools using `AgentTool`:
 
-| Method | Description |
-|--------|-------------|
-| `setSystemPrompt(v)` | Update system prompt |
-| `setModel(m)` | Switch model |
-| `setThinkingLevel(l)` | Set reasoning level |
-| `setQueueMode(m)` | Set queue mode ('all' or 'one-at-a-time') |
-| `setTools(t)` | Update available tools |
-| `replaceMessages(ms)` | Replace all messages |
-| `appendMessage(m)` | Append a message |
-| `clearMessages()` | Clear all messages |
+```typescript
+import { Type } from "@sinclair/typebox";
+
+const readFileTool: AgentTool = {
+  name: "read_file",
+  label: "Read File",  // For UI display
+  description: "Read a file's contents",
+  parameters: Type.Object({
+    path: Type.String({ description: "File path" }),
+  }),
+  execute: async (toolCallId, params, signal, onUpdate) => {
+    const content = await fs.readFile(params.path, "utf-8");
+
+    // Optional: stream progress
+    onUpdate?.({ content: [{ type: "text", text: "Reading..." }], details: {} });
+
+    return {
+      content: [{ type: "text", text: content }],
+      details: { path: params.path, size: content.length },
+    };
+  },
+};
+
+agent.setTools([readFileTool]);
+```
+
+### Error Handling
+
+**Throw an error** when a tool fails. Do not return error messages as content.
+
+```typescript
+execute: async (toolCallId, params, signal, onUpdate) => {
+  if (!fs.existsSync(params.path)) {
+    throw new Error(`File not found: ${params.path}`);
+  }
+  // Return content only on success
+  return { content: [{ type: "text", text: "..." }] };
+}
+```
+
+Thrown errors are caught by the agent and reported to the LLM as tool errors with `isError: true`.
+
+## Proxy Usage
+
+For browser apps that proxy through a backend:
+
+```typescript
+import { Agent, streamProxy } from "@mariozechner/pi-agent";
+
+const agent = new Agent({
+  streamFn: (model, context, options) =>
+    streamProxy(model, context, {
+      ...options,
+      authToken: "...",
+      proxyUrl: "https://your-server.com",
+    }),
+});
+```
+
+## Low-Level API
+
+For direct control without the Agent class:
+
+```typescript
+import { agentLoop, agentLoopContinue } from "@mariozechner/pi-agent";
+
+const context: AgentContext = {
+  systemPrompt: "You are helpful.",
+  messages: [],
+  tools: [],
+};
+
+const config: AgentLoopConfig = {
+  model: getModel("openai", "gpt-4o"),
+  convertToLlm: (msgs) => msgs.filter(m => ["user", "assistant", "toolResult"].includes(m.role)),
+};
+
+const userMessage = { role: "user", content: "Hello", timestamp: Date.now() };
+
+for await (const event of agentLoop([userMessage], context, config)) {
+  console.log(event.type);
+}
+
+// Continue from existing context
+for await (const event of agentLoopContinue(context, config)) {
+  console.log(event.type);
+}
+```
 
 ## License
 

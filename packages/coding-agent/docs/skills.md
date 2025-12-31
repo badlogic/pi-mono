@@ -1,3 +1,5 @@
+> pi can create skills. Ask it to build one for your use case.
+
 # Skills
 
 Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.

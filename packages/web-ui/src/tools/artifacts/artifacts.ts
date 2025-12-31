@@ -1,13 +1,13 @@
 import { icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
-import { type AgentTool, type Message, StringEnum, type ToolCall } from "@mariozechner/pi-ai";
+import type { Agent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
+import { StringEnum, type ToolCall } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
-import type { Agent } from "../../agent/agent.js";
 import type { ArtifactMessage } from "../../components/Messages.js";
 import { ArtifactsRuntimeProvider } from "../../components/sandbox/ArtifactsRuntimeProvider.js";
 import { AttachmentsRuntimeProvider } from "../../components/sandbox/AttachmentsRuntimeProvider.js";
@@ -85,7 +85,7 @@ export class ArtifactsPanel extends LitElement {
 		if (this.agent) {
 			const attachments: Attachment[] = [];
 			for (const message of this.agent.state.messages) {
-				if (message.role === "user" && message.attachments) {
+				if (message.role === "user-with-attachments" && message.attachments) {
 					attachments.push(...message.attachments);
 				}
 			}
@@ -292,7 +292,7 @@ export class ArtifactsPanel extends LitElement {
 
 	// Re-apply artifacts by scanning a message list (optional utility)
 	public async reconstructFromMessages(
-		messages: Array<Message | { role: "aborted" } | { role: "artifact" }>,
+		messages: Array<AgentMessage | { role: "aborted" } | { role: "artifact" }>,
 	): Promise<void> {
 		const toolCalls = new Map<string, ToolCall>();
 		const artifactToolName = "artifacts";

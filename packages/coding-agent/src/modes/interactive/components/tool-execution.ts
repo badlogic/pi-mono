@@ -11,7 +11,7 @@ import {
 	type TUI,
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
-import type { CustomAgentTool } from "../../../core/custom-tools/types.js";
+import type { CustomTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
@@ -55,7 +55,7 @@ export class ToolExecutionComponent extends Container {
 	private expanded = false;
 	private showImages: boolean;
 	private isPartial = true;
-	private customTool?: CustomAgentTool;
+	private customTool?: CustomTool;
 	private ui: TUI;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -67,7 +67,7 @@ export class ToolExecutionComponent extends Container {
 		toolName: string,
 		args: any,
 		options: ToolExecutionOptions = {},
-		customTool: CustomAgentTool | undefined,
+		customTool: CustomTool | undefined,
 		ui: TUI,
 	) {
 		super();
@@ -415,10 +415,14 @@ export class ToolExecutionComponent extends Container {
 		} else if (this.toolName === "edit") {
 			const rawPath = this.args?.file_path || this.args?.path || "";
 			const path = shortenPath(rawPath);
-			text =
-				theme.fg("toolTitle", theme.bold("edit")) +
-				" " +
-				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
+
+			// Build path display, appending :line if we have a successful result with line info
+			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+			if (this.result && !this.result.isError && this.result.details?.firstChangedLine) {
+				pathDisplay += theme.fg("warning", `:${this.result.details.firstChangedLine}`);
+			}
+
+			text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 
 			if (this.result) {
 				if (this.result.isError) {

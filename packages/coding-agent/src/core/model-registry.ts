@@ -90,11 +90,11 @@ function resolveApiKeyConfig(keyConfig: string): string | undefined {
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
 	private customProviderApiKeys: Map<string, string> = new Map();
-	private loadError: string | null = null;
+	private loadError: string | undefined = undefined;
 
 	constructor(
 		readonly authStorage: AuthStorage,
-		private modelsJsonPath: string | null = null,
+		private modelsJsonPath: string | undefined = undefined,
 	) {
 		// Set up fallback resolver for custom provider API keys
 		this.authStorage.setFallbackResolver((provider) => {
@@ -114,14 +114,14 @@ export class ModelRegistry {
 	 */
 	refresh(): void {
 		this.customProviderApiKeys.clear();
-		this.loadError = null;
+		this.loadError = undefined;
 		this.loadModels();
 	}
 
 	/**
-	 * Get any error from loading models.json (null if no error).
+	 * Get any error from loading models.json (undefined if no error).
 	 */
-	getError(): string | null {
+	getError(): string | undefined {
 		return this.loadError;
 	}
 
@@ -160,9 +160,9 @@ export class ModelRegistry {
 		}
 	}
 
-	private loadCustomModels(modelsJsonPath: string): { models: Model<Api>[]; error: string | null } {
+	private loadCustomModels(modelsJsonPath: string): { models: Model<Api>[]; error: string | undefined } {
 		if (!existsSync(modelsJsonPath)) {
-			return { models: [], error: null };
+			return { models: [], error: undefined };
 		}
 
 		try {
@@ -186,7 +186,7 @@ export class ModelRegistry {
 			this.validateConfig(config);
 
 			// Parse models
-			return { models: this.parseModels(config), error: null };
+			return { models: this.parseModels(config), error: undefined };
 		} catch (error) {
 			if (error instanceof SyntaxError) {
 				return {
@@ -294,14 +294,14 @@ export class ModelRegistry {
 	/**
 	 * Find a model by provider and ID.
 	 */
-	find(provider: string, modelId: string): Model<Api> | null {
-		return this.models.find((m) => m.provider === provider && m.id === modelId) ?? null;
+	find(provider: string, modelId: string): Model<Api> | undefined {
+		return this.models.find((m) => m.provider === provider && m.id === modelId) ?? undefined;
 	}
 
 	/**
 	 * Get API key for a model.
 	 */
-	async getApiKey(model: Model<Api>): Promise<string | null> {
+	async getApiKey(model: Model<Api>): Promise<string | undefined> {
 		return this.authStorage.getApiKey(model.provider);
 	}
 
