@@ -53,7 +53,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
-	| { id?: string; type: "branch"; entryIndex: number }
+	| { id?: string; type: "branch"; entryId: string }
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 
@@ -150,7 +150,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_branch_messages";
 			success: true;
-			data: { messages: Array<{ entryIndex: number; text: string }> };
+			data: { messages: Array<{ entryId: string; text: string }> };
 	  }
 	| {
 			id?: string;

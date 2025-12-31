@@ -14,7 +14,7 @@ import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
 interface UserMessageItem {
-	index: number; // Index in the full messages array
+	id: string; // Entry ID in the session
 	text: string; // The message text
 	timestamp?: string; // Optional timestamp if available
 }
@@ -25,7 +25,7 @@ interface UserMessageItem {
 class UserMessageList implements Component {
 	private messages: UserMessageItem[] = [];
 	private selectedIndex: number = 0;
-	public onSelect?: (messageIndex: number) => void;
+	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
 	private maxVisible: number = 10; // Max messages visible
 
@@ -101,7 +101,7 @@ class UserMessageList implements Component {
 		else if (isEnter(keyData)) {
 			const selected = this.messages[this.selectedIndex];
 			if (selected && this.onSelect) {
-				this.onSelect(selected.index);
+				this.onSelect(selected.id);
 			}
 		}
 		// Escape - cancel
@@ -125,7 +125,7 @@ class UserMessageList implements Component {
 export class UserMessageSelectorComponent extends Container {
 	private messageList: UserMessageList;
 
-	constructor(messages: UserMessageItem[], onSelect: (messageIndex: number) => void, onCancel: () => void) {
+	constructor(messages: UserMessageItem[], onSelect: (entryId: string) => void, onCancel: () => void) {
 		super();
 
 		// Add header

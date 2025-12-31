@@ -14,16 +14,16 @@ export {
 export { type BashExecutorOptions, type BashResult, executeBash } from "./bash-executor.js";
 export type { CompactionResult } from "./compaction/index.js";
 export {
-	type CustomAgentTool,
+	type CustomTool,
+	type CustomToolAPI,
 	type CustomToolFactory,
 	type CustomToolsLoadResult,
+	type CustomToolUIContext,
 	discoverAndLoadCustomTools,
 	type ExecResult,
 	type LoadedCustomTool,
 	loadCustomTools,
 	type RenderResultOptions,
-	type ToolAPI,
-	type ToolUIContext,
 } from "./custom-tools/index.js";
 export {
 	type HookAPI,

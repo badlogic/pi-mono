@@ -102,8 +102,8 @@ export function collectEntriesForBranchSummary(
 	}
 
 	// Find common ancestor (deepest node that's on both paths)
-	const oldPath = new Set(session.getPath(oldLeafId).map((e) => e.id));
-	const targetPath = session.getPath(targetId);
+	const oldPath = new Set(session.getBranch(oldLeafId).map((e) => e.id));
+	const targetPath = session.getBranch(targetId);
 
 	// targetPath is root-first, so iterate backwards to find deepest common ancestor
 	let commonAncestorId: string | null = null;

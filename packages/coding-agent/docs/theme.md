@@ -1,3 +1,5 @@
+> pi can create themes. Ask it to build one for your use case.
+
 # Pi Coding Agent Themes
 
 Themes allow you to customize the colors used throughout the coding agent TUI.

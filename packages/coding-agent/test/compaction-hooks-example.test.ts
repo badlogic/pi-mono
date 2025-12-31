@@ -11,17 +11,11 @@ describe("Documentation example", () => {
 		const exampleHook = (pi: HookAPI) => {
 			pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
 				// All these should be accessible on the event
-				const { preparation, branchEntries, signal } = event;
+				const { preparation, branchEntries } = event;
 				// sessionManager, modelRegistry, and model come from ctx
-				const { sessionManager, modelRegistry, model } = ctx;
-				const {
-					messagesToSummarize,
-					turnPrefixMessages,
-					tokensBefore,
-					firstKeptEntryId,
-					isSplitTurn,
-					previousSummary,
-				} = preparation;
+				const { sessionManager, modelRegistry } = ctx;
+				const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, isSplitTurn } =
+					preparation;
 
 				// Verify types
 				expect(Array.isArray(messagesToSummarize)).toBe(true);

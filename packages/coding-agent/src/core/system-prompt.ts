@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
+import { getAgentDir, getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import type { SkillsSettings } from "./settings-manager.js";
 import { formatSkillsForPrompt, loadSkills, type Skill } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
@@ -202,9 +202,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		return prompt;
 	}
 
-	// Get absolute paths to documentation
+	// Get absolute paths to documentation and examples
 	const readmePath = getReadmePath();
 	const docsPath = getDocsPath();
+	const examplesPath = getExamplesPath();
 
 	// Build tools list based on selected tools
 	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);
@@ -279,7 +280,9 @@ ${guidelines}
 Documentation:
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
-- When asked about: custom models/providers (README sufficient), themes (docs/theme.md), skills (docs/skills.md), hooks (docs/hooks.md), custom tools (docs/custom-tools.md), RPC (docs/rpc.md)`;
+- Examples: ${examplesPath} (hooks, custom tools, SDK)
+- When asked to create: custom models/providers (README.md), hooks (docs/hooks.md, examples/hooks/), custom tools (docs/custom-tools.md, docs/tui.md, examples/custom-tools/), themes (docs/theme.md), skills (docs/skills.md)
+- Always read the doc, examples, AND follow .md cross-references before implementing`;
 
 	if (appendSection) {
 		prompt += appendSection;

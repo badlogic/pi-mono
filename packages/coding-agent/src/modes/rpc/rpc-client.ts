@@ -326,17 +326,17 @@ export class RpcClient {
 	 * Branch from a specific message.
 	 * @returns Object with `text` (the message text) and `cancelled` (if hook cancelled)
 	 */
-	async branch(entryIndex: number): Promise<{ text: string; cancelled: boolean }> {
-		const response = await this.send({ type: "branch", entryIndex });
+	async branch(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "branch", entryId });
 		return this.getData(response);
 	}
 
 	/**
 	 * Get messages available for branching.
 	 */
-	async getBranchMessages(): Promise<Array<{ entryIndex: number; text: string }>> {
+	async getBranchMessages(): Promise<Array<{ entryId: string; text: string }>> {
 		const response = await this.send({ type: "get_branch_messages" });
-		return this.getData<{ messages: Array<{ entryIndex: number; text: string }> }>(response).messages;
+		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
 	/**
