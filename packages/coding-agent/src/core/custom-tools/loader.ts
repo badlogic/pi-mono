@@ -90,6 +90,7 @@ function createNoOpUIContext(): HookUIContext {
 		confirm: async () => false,
 		input: async () => undefined,
 		notify: () => {},
+		setStatus: () => {},
 		custom: () => ({ close: () => {}, requestRender: () => {} }),
 	};
 }

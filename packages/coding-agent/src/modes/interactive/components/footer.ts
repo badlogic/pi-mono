@@ -36,6 +36,7 @@ export class FooterComponent implements Component {
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
+	private hookStatuses: Map<string, string> = new Map();
 
 	constructor(state: AgentState, modelRegistry: ModelRegistry) {
 		this.state = state;
@@ -44,6 +45,19 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	/**
+	 * Set hook status text to display in the footer.
+	 * @param key - Unique key to identify this status
+	 * @param text - Status text, or undefined to clear
+	 */
+	setHookStatus(key: string, text: string | undefined): void {
+		if (text === undefined) {
+			this.hookStatuses.delete(key);
+		} else {
+			this.hookStatuses.set(key, text);
+		}
 	}
 
 	/**
@@ -285,6 +299,16 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		return [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+
+		// Add hook statuses on a single line, sorted by key (hooks can apply their own styling)
+		if (this.hookStatuses.size > 0) {
+			const sortedStatuses = Array.from(this.hookStatuses.entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => text);
+			lines.push(sortedStatuses.join(" "));
+		}
+
+		return lines;
 	}
 }

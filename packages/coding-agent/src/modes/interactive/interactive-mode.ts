@@ -445,8 +445,17 @@ export class InteractiveMode {
 			confirm: (title, message) => this.showHookConfirm(title, message),
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
+			setStatus: (key, text) => this.setHookStatus(key, text),
 			custom: (component) => this.showHookCustom(component),
 		};
+	}
+
+	/**
+	 * Set hook status text in the footer.
+	 */
+	private setHookStatus(key: string, text: string | undefined): void {
+		this.footer.setHookStatus(key, text);
+		this.ui.requestRender();
 	}
 
 	/**

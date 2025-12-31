@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ctx.ui.setStatus(key, text)` for hooks to display custom status text in the footer (supports ANSI styling)
+
 ### Breaking Changes
 
 - **Session tree structure (v2)**: Sessions now store entries as a tree with `id`/`parentId` fields, enabling in-place branching without creating new files. Existing v1 sessions are auto-migrated on load.
