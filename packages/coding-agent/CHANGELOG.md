@@ -68,7 +68,7 @@ The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, and
 
 **Session event changes:**
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
-- Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` to reconstruct state
+- Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
 - New reasons: `"tree"` (for `/tree` navigation) and `"shutdown"` (for cleanup on exit)
 - `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
 
@@ -83,7 +83,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `model` returns `Model | undefined` (was `Model | null`)
 - `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
 
-**Branching API:**
+**AgentSession branching API:**
 - `branch(entryIndex: number)` → `branch(entryId: string)`
 - `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
 - `reset()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
