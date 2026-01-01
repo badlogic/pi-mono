@@ -61,6 +61,8 @@ export interface HookUIContext {
 	 * Set status text in the footer/status bar.
 	 * Pass undefined as text to clear the status for this key.
 	 * Text can include ANSI escape codes for styling.
+	 * Note: Newlines, tabs, and carriage returns are replaced with spaces.
+	 * The combined status line is truncated to terminal width.
 	 * @param key - Unique key to identify this status (e.g., hook name)
 	 * @param text - Status text to display, or undefined to clear
 	 */
