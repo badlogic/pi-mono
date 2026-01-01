@@ -13,6 +13,7 @@ import {
 import stripAnsi from "strip-ansi";
 import type { CustomTool } from "../../../core/custom-tools/types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
+import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
@@ -295,10 +296,8 @@ export class ToolExecutionComponent extends Container {
 
 		let output = textBlocks
 			.map((c: any) => {
-				let text = stripAnsi(c.text || "").replace(/\r/g, "");
-				text = text.replace(/\x1b./g, "");
-				text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
-				return text;
+				// Use sanitizeBinaryOutput to handle binary data that crashes string-width
+				return sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "");
 			})
 			.join("\n");
 
