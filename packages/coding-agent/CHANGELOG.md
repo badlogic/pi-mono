@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ctx.ui.setStatus(key, text)` for hooks to display persistent status text in the footer
+
 ### Fixed
 
 - Crash when displaying bash output containing Unicode format characters like U+0600-U+0604 ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))
