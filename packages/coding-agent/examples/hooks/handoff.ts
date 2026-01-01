@@ -13,8 +13,8 @@
  */
 
 import { complete, type Message } from "@mariozechner/pi-ai";
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
-import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+import type { HookAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
@@ -60,35 +60,18 @@ export default function (pi: HookAPI) {
 
 			// Gather conversation context from current branch
 			const branch = ctx.sessionManager.getBranch();
-			const conversationParts: string[] = [];
+			const messages = branch
+				.filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
+				.map((entry) => entry.message);
 
-			for (const entry of branch) {
-				if (entry.type === "message") {
-					const msg = entry.message;
-					if ("role" in msg && (msg.role === "user" || msg.role === "assistant")) {
-						let text: string;
-						if (typeof msg.content === "string") {
-							text = msg.content;
-						} else {
-							text = msg.content
-								.filter((c): c is { type: "text"; text: string } => c.type === "text")
-								.map((c) => c.text)
-								.join("\n");
-						}
-						if (text) {
-							const role = msg.role === "user" ? "User" : "Assistant";
-							conversationParts.push(`${role}: ${text}`);
-						}
-					}
-				}
-			}
-
-			if (conversationParts.length === 0) {
+			if (messages.length === 0) {
 				ctx.ui.notify("No conversation to hand off", "error");
 				return;
 			}
 
-			const conversationText = conversationParts.join("\n\n");
+			// Convert to LLM format and serialize
+			const llmMessages = convertToLlm(messages);
+			const conversationText = serializeConversation(llmMessages);
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
 			// Generate the handoff prompt with loader UI
