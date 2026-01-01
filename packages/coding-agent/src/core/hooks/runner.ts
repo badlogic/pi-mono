@@ -7,7 +7,14 @@ import type { Model } from "@mariozechner/pi-ai";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
-import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
+import type {
+	AppendEntryHandler,
+	BranchHandler,
+	LoadedHook,
+	NavigateTreeHandler,
+	NewSessionHandler,
+	SendMessageHandler,
+} from "./loader.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
@@ -61,6 +68,10 @@ export class HookRunner {
 	private modelRegistry: ModelRegistry;
 	private errorListeners: Set<HookErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
+	private isIdleFn: () => boolean = () => true;
+	private waitForIdleFn: () => Promise<void> = async () => {};
+	private abortFn: () => Promise<void> = async () => {};
+	private hasQueuedMessagesFn: () => boolean = () => false;
 
 	constructor(hooks: LoadedHook[], cwd: string, sessionManager: SessionManager, modelRegistry: ModelRegistry) {
 		this.hooks = hooks;
@@ -82,15 +93,42 @@ export class HookRunner {
 		sendMessageHandler: SendMessageHandler;
 		/** Handler for hooks to append entries */
 		appendEntryHandler: AppendEntryHandler;
+		/** Handler for hooks to create new sessions */
+		newSessionHandler?: NewSessionHandler;
+		/** Handler for hooks to branch sessions */
+		branchHandler?: BranchHandler;
+		/** Handler for hooks to navigate the session tree */
+		navigateTreeHandler?: NavigateTreeHandler;
+		/** Function to check if agent is idle */
+		isIdle?: () => boolean;
+		/** Function to wait for agent to be idle */
+		waitForIdle?: () => Promise<void>;
+		/** Function to abort current operation */
+		abort?: () => Promise<void>;
+		/** Function to check if there are queued messages */
+		hasQueuedMessages?: () => boolean;
 		/** UI context for interactive prompts */
 		uiContext?: HookUIContext;
 		/** Whether UI is available */
 		hasUI?: boolean;
 	}): void {
 		this.getModel = options.getModel;
+		this.isIdleFn = options.isIdle ?? (() => true);
+		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
+		this.abortFn = options.abort ?? (async () => {});
+		this.hasQueuedMessagesFn = options.hasQueuedMessages ?? (() => false);
 		for (const hook of this.hooks) {
 			hook.setSendMessageHandler(options.sendMessageHandler);
 			hook.setAppendEntryHandler(options.appendEntryHandler);
+			if (options.newSessionHandler) {
+				hook.setNewSessionHandler(options.newSessionHandler);
+			}
+			if (options.branchHandler) {
+				hook.setBranchHandler(options.branchHandler);
+			}
+			if (options.navigateTreeHandler) {
+				hook.setNavigateTreeHandler(options.navigateTreeHandler);
+			}
 		}
 		this.uiContext = options.uiContext ?? noOpUIContext;
 		this.hasUI = options.hasUI ?? false;
@@ -203,6 +241,10 @@ export class HookRunner {
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
 			model: this.getModel(),
+			isIdle: () => this.isIdleFn(),
+			waitForIdle: () => this.waitForIdleFn(),
+			abort: () => this.abortFn(),
+			hasQueuedMessages: () => this.hasQueuedMessagesFn(),
 		};
 	}
 
@@ -211,15 +253,9 @@ export class HookRunner {
 	 */
 	private isSessionBeforeEvent(
 		type: string,
-	): type is
-		| "session_before_switch"
-		| "session_before_new"
-		| "session_before_branch"
-		| "session_before_compact"
-		| "session_before_tree" {
+	): type is "session_before_switch" | "session_before_branch" | "session_before_compact" | "session_before_tree" {
 		return (
 			type === "session_before_switch" ||
-			type === "session_before_new" ||
 			type === "session_before_branch" ||
 			type === "session_before_compact" ||
 			type === "session_before_tree"

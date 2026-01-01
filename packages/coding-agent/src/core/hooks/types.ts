@@ -13,7 +13,13 @@ import type { CompactionPreparation, CompactionResult } from "../compaction/inde
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, ReadonlySessionManager, SessionEntry } from "../session-manager.js";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	ReadonlySessionManager,
+	SessionEntry,
+	SessionManager,
+} from "../session-manager.js";
 
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
@@ -140,6 +146,14 @@ export interface HookContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined if no model is selected yet) */
 	model: Model<any> | undefined;
+	/** Whether the agent is idle (not streaming) */
+	isIdle(): boolean;
+	/** Wait for the agent to finish streaming */
+	waitForIdle(): Promise<void>;
+	/** Abort the current agent operation */
+	abort(): Promise<void>;
+	/** Whether there are queued messages waiting to be processed */
+	hasQueuedMessages(): boolean;
 }
 
 // ============================================================================
@@ -673,6 +687,45 @@ export interface HookAPI {
 	 * Supports timeout and abort signal.
 	 */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+
+	/**
+	 * Start a new session, optionally with a setup callback to initialize it.
+	 * The setup callback receives a writable SessionManager for the new session.
+	 *
+	 * @param options.parentSession - Path to parent session for lineage tracking
+	 * @param options.setup - Async callback to initialize the new session (e.g., append messages)
+	 * @returns Object with `cancelled: true` if a hook cancelled the new session
+	 *
+	 * @example
+	 * // Handoff: summarize current session and start fresh with context
+	 * await pi.newSession({
+	 *   parentSession: ctx.sessionManager.getSessionFile(),
+	 *   setup: async (sm) => {
+	 *     sm.appendMessage({ role: "user", content: [{ type: "text", text: summary }] });
+	 *   }
+	 * });
+	 */
+	newSession(options?: {
+		parentSession?: string;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
+	}): Promise<{ cancelled: boolean }>;
+
+	/**
+	 * Branch from a specific entry, creating a new session file.
+	 *
+	 * @param entryId - ID of the entry to branch from
+	 * @returns Object with `cancelled: true` if a hook cancelled the branch
+	 */
+	branch(entryId: string): Promise<{ cancelled: boolean }>;
+
+	/**
+	 * Navigate to a different point in the session tree (in-place).
+	 *
+	 * @param targetId - ID of the entry to navigate to
+	 * @param options.summarize - Whether to summarize the abandoned branch
+	 * @returns Object with `cancelled: true` if a hook cancelled the navigation
+	 */
+	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
 }
 
 /**

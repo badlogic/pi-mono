@@ -345,6 +345,11 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		const commands = new Map<string, any>();
 		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
+		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
+		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
+		let navigateTreeHandler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }> = async () => ({
+			cancelled: false,
+		});
 
 		const api = {
 			on: (event: string, handler: (...args: unknown[]) => Promise<unknown>) => {
@@ -364,6 +369,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			registerCommand: (name: string, options: any) => {
 				commands.set(name, { name, ...options });
 			},
+			newSession: (options?: any) => newSessionHandler(options),
+			branch: (entryId: string) => branchHandler(entryId),
+			navigateTree: (targetId: string, options?: any) => navigateTreeHandler(targetId, options),
 		};
 
 		def.factory(api as any);
@@ -379,6 +387,15 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			},
 			setAppendEntryHandler: (handler: (customType: string, data?: any) => void) => {
 				appendEntryHandler = handler;
+			},
+			setNewSessionHandler: (handler: (options?: any) => Promise<{ cancelled: boolean }>) => {
+				newSessionHandler = handler;
+			},
+			setBranchHandler: (handler: (entryId: string) => Promise<{ cancelled: boolean }>) => {
+				branchHandler = handler;
+			},
+			setNavigateTreeHandler: (handler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }>) => {
+				navigateTreeHandler = handler;
 			},
 		};
 	});

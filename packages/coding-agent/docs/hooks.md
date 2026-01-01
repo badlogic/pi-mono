@@ -540,6 +540,44 @@ if (ctx.model) {
 }
 ```
 
+### ctx.isIdle()
+
+Returns `true` if the agent is not currently streaming. Useful for hooks that need to wait or check state:
+
+```typescript
+if (ctx.isIdle()) {
+  // Agent is not processing
+}
+```
+
+### ctx.waitForIdle()
+
+Wait for the agent to finish streaming:
+
+```typescript
+await ctx.waitForIdle();
+// Agent is now idle
+```
+
+### ctx.abort()
+
+Abort the current agent operation:
+
+```typescript
+await ctx.abort();
+```
+
+### ctx.hasQueuedMessages()
+
+Check if there are messages queued (user typed while agent was streaming):
+
+```typescript
+if (ctx.hasQueuedMessages()) {
+  // Skip interactive prompt, let queued message take over
+  return;
+}
+```
+
 ## HookAPI Methods
 
 ### pi.on(event, handler)
@@ -653,6 +691,47 @@ const result = await pi.exec("git", ["status"], {
 });
 
 // result.stdout, result.stderr, result.code, result.killed
+```
+
+### pi.newSession(options?)
+
+Start a new session, optionally with a setup callback to initialize it:
+
+```typescript
+await pi.newSession({
+  parentSession: ctx.sessionManager.getSessionFile(),  // Track lineage
+  setup: async (sessionManager) => {
+    // sessionManager is writable, can append messages
+    sessionManager.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "Context from previous session..." }]
+    });
+  }
+});
+```
+
+Returns `{ cancelled: boolean }` - cancelled if a `session_before_switch` hook cancelled.
+
+### pi.branch(entryId)
+
+Branch from a specific entry, creating a new session file:
+
+```typescript
+const result = await pi.branch(entryId);
+if (!result.cancelled) {
+  // Branched successfully
+}
+```
+
+### pi.navigateTree(targetId, options?)
+
+Navigate to a different point in the session tree (in-place):
+
+```typescript
+const result = await pi.navigateTree(targetId, { summarize: true });
+if (!result.cancelled) {
+  // Navigated successfully
+}
 ```
 
 ## Examples

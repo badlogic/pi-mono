@@ -558,6 +558,10 @@ export class AgentSession {
 			sessionManager: this.sessionManager,
 			modelRegistry: this._modelRegistry,
 			model: this.model,
+			isIdle: () => !this.isStreaming,
+			waitForIdle: () => this.agent.waitForIdle(),
+			abort: () => this.abort(),
+			hasQueuedMessages: () => this.queuedMessageCount > 0,
 		};
 
 		try {

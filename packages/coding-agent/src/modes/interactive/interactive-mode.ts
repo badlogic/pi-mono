@@ -412,6 +412,72 @@ export class InteractiveMode {
 			appendEntryHandler: (customType, data) => {
 				this.sessionManager.appendCustomEntry(customType, data);
 			},
+			newSessionHandler: async (options) => {
+				// Stop any loading animation
+				if (this.loadingAnimation) {
+					this.loadingAnimation.stop();
+					this.loadingAnimation = undefined;
+				}
+				this.statusContainer.clear();
+
+				// Create new session
+				const success = await this.session.newSession({ parentSession: options?.parentSession });
+				if (!success) {
+					return { cancelled: true };
+				}
+
+				// Call setup callback if provided
+				if (options?.setup) {
+					await options.setup(this.sessionManager);
+				}
+
+				// Clear UI state
+				this.chatContainer.clear();
+				this.pendingMessagesContainer.clear();
+				this.streamingComponent = undefined;
+				this.streamingMessage = undefined;
+				this.pendingTools.clear();
+
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+				this.ui.requestRender();
+
+				return { cancelled: false };
+			},
+			branchHandler: async (entryId) => {
+				const result = await this.session.branch(entryId);
+				if (result.cancelled) {
+					return { cancelled: true };
+				}
+
+				// Update UI
+				this.chatContainer.clear();
+				this.renderInitialMessages();
+				this.editor.setText(result.selectedText);
+				this.showStatus("Branched to new session");
+
+				return { cancelled: false };
+			},
+			navigateTreeHandler: async (targetId, options) => {
+				const result = await this.session.navigateTree(targetId, { summarize: options?.summarize });
+				if (result.cancelled) {
+					return { cancelled: true };
+				}
+
+				// Update UI
+				this.chatContainer.clear();
+				this.renderInitialMessages();
+				if (result.editorText) {
+					this.editor.setText(result.editorText);
+				}
+				this.showStatus("Navigated to selected point");
+
+				return { cancelled: false };
+			},
+			isIdle: () => !this.session.isStreaming,
+			waitForIdle: () => this.session.agent.waitForIdle(),
+			abort: () => this.session.abort(),
+			hasQueuedMessages: () => this.session.queuedMessageCount > 0,
 			uiContext,
 			hasUI: true,
 		});

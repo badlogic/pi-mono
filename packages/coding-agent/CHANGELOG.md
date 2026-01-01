@@ -35,6 +35,10 @@ The hooks API has been restructured with more granular events and better session
 - New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
 - New `pi.registerCommand(name, options)` for custom slash commands
 - New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
+- New `pi.newSession(options?)` to create new sessions with optional setup callback
+- New `pi.branch(entryId)` to branch from a specific entry
+- New `pi.navigateTree(targetId, options?)` to navigate the session tree
+- New `ctx.isIdle()`, `ctx.waitForIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state access
 - New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
 - New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
 - New `ctx.ui.theme` getter for styling text with theme colors

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import type { HookMessage } from "../messages.js";
+import type { SessionManager } from "../session-manager.js";
 import { execCommand } from "./runner.js";
 import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
 
@@ -61,6 +62,27 @@ export type SendMessageHandler = <T = unknown>(
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
 /**
+ * New session handler type for pi.newSession().
+ */
+export type NewSessionHandler = (options?: {
+	parentSession?: string;
+	setup?: (sessionManager: SessionManager) => Promise<void>;
+}) => Promise<{ cancelled: boolean }>;
+
+/**
+ * Branch handler type for pi.branch().
+ */
+export type BranchHandler = (entryId: string) => Promise<{ cancelled: boolean }>;
+
+/**
+ * Navigate tree handler type for pi.navigateTree().
+ */
+export type NavigateTreeHandler = (
+	targetId: string,
+	options?: { summarize?: boolean },
+) => Promise<{ cancelled: boolean }>;
+
+/**
  * Registered handlers for a loaded hook.
  */
 export interface LoadedHook {
@@ -78,6 +100,12 @@ export interface LoadedHook {
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	/** Set the append entry handler for this hook's pi.appendEntry() */
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
+	/** Set the new session handler for this hook's pi.newSession() */
+	setNewSessionHandler: (handler: NewSessionHandler) => void;
+	/** Set the branch handler for this hook's pi.branch() */
+	setBranchHandler: (handler: BranchHandler) => void;
+	/** Set the navigate tree handler for this hook's pi.navigateTree() */
+	setNavigateTreeHandler: (handler: NavigateTreeHandler) => void;
 }
 
 /**
@@ -126,7 +154,7 @@ function resolveHookPath(hookPath: string, cwd: string): string {
 
 /**
  * Create a HookAPI instance that collects handlers, renderers, and commands.
- * Returns the API, maps, and a function to set the send message handler later.
+ * Returns the API, maps, and functions to set handlers later.
  */
 function createHookAPI(
 	handlers: Map<string, HandlerFn[]>,
@@ -137,12 +165,27 @@ function createHookAPI(
 	commands: Map<string, RegisteredCommand>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
+	setNewSessionHandler: (handler: NewSessionHandler) => void;
+	setBranchHandler: (handler: BranchHandler) => void;
+	setNavigateTreeHandler: (handler: NavigateTreeHandler) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {
 		// Default no-op until mode sets the handler
 	};
 	let appendEntryHandler: AppendEntryHandler = () => {
 		// Default no-op until mode sets the handler
+	};
+	let newSessionHandler: NewSessionHandler = async () => {
+		// Default no-op until mode sets the handler
+		return { cancelled: false };
+	};
+	let branchHandler: BranchHandler = async () => {
+		// Default no-op until mode sets the handler
+		return { cancelled: false };
+	};
+	let navigateTreeHandler: NavigateTreeHandler = async () => {
+		// Default no-op until mode sets the handler
+		return { cancelled: false };
 	};
 	const messageRenderers = new Map<string, HookMessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
@@ -170,6 +213,15 @@ function createHookAPI(
 		exec(command: string, args: string[], options?: ExecOptions) {
 			return execCommand(command, args, options?.cwd ?? cwd, options);
 		},
+		newSession(options) {
+			return newSessionHandler(options);
+		},
+		branch(entryId) {
+			return branchHandler(entryId);
+		},
+		navigateTree(targetId, options) {
+			return navigateTreeHandler(targetId, options);
+		},
 	} as HookAPI;
 
 	return {
@@ -181,6 +233,15 @@ function createHookAPI(
 		},
 		setAppendEntryHandler: (handler: AppendEntryHandler) => {
 			appendEntryHandler = handler;
+		},
+		setNewSessionHandler: (handler: NewSessionHandler) => {
+			newSessionHandler = handler;
+		},
+		setBranchHandler: (handler: BranchHandler) => {
+			branchHandler = handler;
+		},
+		setNavigateTreeHandler: (handler: NavigateTreeHandler) => {
+			navigateTreeHandler = handler;
 		},
 	};
 }
@@ -209,10 +270,16 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, messageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = createHookAPI(
-			handlers,
-			cwd,
-		);
+		const {
+			api,
+			messageRenderers,
+			commands,
+			setSendMessageHandler,
+			setAppendEntryHandler,
+			setNewSessionHandler,
+			setBranchHandler,
+			setNavigateTreeHandler,
+		} = createHookAPI(handlers, cwd);
 
 		// Call factory to register handlers
 		factory(api);
@@ -226,6 +293,9 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				commands,
 				setSendMessageHandler,
 				setAppendEntryHandler,
+				setNewSessionHandler,
+				setBranchHandler,
+				setNavigateTreeHandler,
 			},
 			error: null,
 		};
