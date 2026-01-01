@@ -38,6 +38,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
+import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
@@ -1942,30 +1943,51 @@ export class InteractiveMode {
 			return;
 		}
 
-		// Show loader while creating gist
-		const loader = new Loader(
-			this.ui,
-			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
-			"Creating gist...",
-		);
-		this.statusContainer.addChild(loader);
+		// Show cancellable loader, replacing the editor
+		const loader = new BorderedLoader(this.ui, theme, "Creating gist...");
+		this.editorContainer.clear();
+		this.editorContainer.addChild(loader);
+		this.ui.setFocus(loader);
 		this.ui.requestRender();
 
+		const restoreEditor = () => {
+			loader.dispose();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			try {
+				fs.unlinkSync(tmpFile);
+			} catch {
+				// Ignore cleanup errors
+			}
+		};
+
 		// Create a secret gist asynchronously
+		let proc: ReturnType<typeof spawn> | null = null;
+
+		loader.onAbort = () => {
+			proc?.kill();
+			restoreEditor();
+			this.showStatus("Share cancelled");
+		};
+
 		try {
 			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
-				const proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
+				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
 				let stdout = "";
 				let stderr = "";
-				proc.stdout.on("data", (data) => {
+				proc.stdout?.on("data", (data) => {
 					stdout += data.toString();
 				});
-				proc.stderr.on("data", (data) => {
+				proc.stderr?.on("data", (data) => {
 					stderr += data.toString();
 				});
 				proc.on("close", (code) => resolve({ stdout, stderr, code }));
 			});
+
+			if (loader.signal.aborted) return;
+
+			restoreEditor();
 
 			if (result.code !== 0) {
 				const errorMsg = result.stderr?.trim() || "Unknown error";
@@ -1986,15 +2008,9 @@ export class InteractiveMode {
 			const previewUrl = `https://shittycodingagent.ai/session?${gistId}`;
 			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
-			this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
-		} finally {
-			// Stop loader and clean up
-			loader.stop();
-			this.statusContainer.clear();
-			try {
-				fs.unlinkSync(tmpFile);
-			} catch {
-				// Ignore cleanup errors
+			if (!loader.signal.aborted) {
+				restoreEditor();
+				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
 			}
 		}
 	}
