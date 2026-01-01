@@ -95,6 +95,24 @@
       border-color: var(--accent);
     }
 
+    .sidebar-close {
+      display: none;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-family: inherit;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--dim);
+      border-radius: 3px;
+      cursor: pointer;
+      margin-left: auto;
+    }
+
+    .sidebar-close:hover {
+      color: var(--text);
+      border-color: var(--text);
+    }
+
     .tree-container {
       flex: 1;
       overflow: auto;
@@ -142,6 +160,8 @@
 
     .tree-content {
       color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .tree-role-user {
@@ -353,6 +373,17 @@
 
     .tool-output.expandable.expanded .output-full {
       display: block;
+    }
+
+    .tool-images {
+      margin-top: 12px;
+    }
+
+    .tool-image {
+      max-width: 100%;
+      max-height: 500px;
+      border-radius: 4px;
+      margin: 4px 0;
     }
 
     .expand-hint {
@@ -651,14 +682,22 @@
       top: 10px;
       left: 10px;
       z-index: 100;
-      background: var(--accent);
-      color: var(--body-bg);
-      border: none;
-      padding: 8px 12px;
+      background: var(--container-bg);
+      color: var(--muted);
+      border: 1px solid var(--dim);
+      padding: 6px 10px;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 14px;
+      opacity: 0.8;
     }
+
+    #sidebar-toggle:hover {
+      opacity: 1;
+      color: var(--text);
+    }
+
+
 
     #sidebar-overlay {
       display: none;
@@ -692,6 +731,10 @@
       }
 
       #sidebar-toggle {
+        display: block;
+      }
+
+      .sidebar-close {
         display: block;
       }
 
@@ -732,6 +775,7 @@
           <button class="filter-btn active" data-filter="default" title="Hide settings entries">Default</button>
           <button class="filter-btn" data-filter="all" title="Show everything">All</button>
           <button class="filter-btn" data-filter="labeled" title="Only labeled entries">Labels</button>
+          <button class="sidebar-close" id="sidebar-close" title="Close">✕</button>
         </div>
       </div>
       <div class="tree-container" id="tree-container"></div>
@@ -1355,6 +1399,22 @@
           return textBlocks.map(c => c.text).join('\n');
         };
 
+        const getResultImages = () => {
+          if (!result) return [];
+          return result.content.filter(c => c.type === 'image');
+        };
+
+        const renderResultImages = () => {
+          const images = getResultImages();
+          if (images.length === 0) return '';
+          let html = '<div class="tool-images">';
+          for (const img of images) {
+            html += `<img src="data:${img.mimeType};base64,${img.data}" class="tool-image" />`;
+          }
+          html += '</div>';
+          return html;
+        };
+
         let html = `<div class="tool-execution ${statusClass}">`;
 
         const args = call.arguments || {};
@@ -1388,6 +1448,11 @@
 
             html += `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${pathHtml}</span></div>`;
             if (result) {
+              // Check for images first (e.g., reading image files)
+              const images = getResultImages();
+              if (images.length > 0) {
+                html += renderResultImages();
+              }
               const output = getResultText();
               if (output) {
                 html += formatExpandableOutput(output, 10, lang);
@@ -1706,16 +1771,25 @@
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebar-overlay');
       
+      const sidebarToggle = document.getElementById('sidebar-toggle');
+      
       document.getElementById('sidebar-toggle').addEventListener('click', () => {
         sidebar.classList.toggle('open');
         overlay.classList.toggle('open');
+        sidebarToggle.style.display = 'none';
       });
 
-      // Close sidebar when clicking overlay
-      overlay.addEventListener('click', () => {
+      const closeSidebar = () => {
         sidebar.classList.remove('open');
         overlay.classList.remove('open');
-      });
+        sidebarToggle.style.display = '';
+      };
+
+      // Close sidebar when clicking overlay
+      overlay.addEventListener('click', closeSidebar);
+
+      // Close sidebar when clicking close button
+      document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
 
       // Keyboard shortcut: Escape to reset to leaf
       document.addEventListener('keydown', (e) => {
