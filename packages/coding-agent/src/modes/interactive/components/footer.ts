@@ -1,9 +1,21 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { type Component, visibleWidth } from "@mariozechner/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
 import { dirname, join } from "path";
 import type { AgentSession } from "../../../core/agent-session.js";
 import { theme } from "../theme/theme.js";
+
+/**
+ * Sanitize text for display in a single-line status.
+ * Removes newlines, tabs, carriage returns, and other control characters.
+ */
+function sanitizeStatusText(text: string): string {
+	// Replace newlines, tabs, carriage returns with space, then collapse multiple spaces
+	return text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
+}
 
 /**
  * Find the git root directory by walking up from cwd.
@@ -34,6 +46,7 @@ export class FooterComponent implements Component {
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
+	private hookStatuses: Map<string, string> = new Map();
 
 	constructor(session: AgentSession) {
 		this.session = session;
@@ -41,6 +54,21 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	/**
+	 * Set hook status text to display in the footer.
+	 * Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width.
+	 * ANSI escape codes for styling are preserved.
+	 * @param key - Unique key to identify this status
+	 * @param text - Status text, or undefined to clear
+	 */
+	setHookStatus(key: string, text: string | undefined): void {
+		if (text === undefined) {
+			this.hookStatuses.delete(key);
+		} else {
+			this.hookStatuses.set(key, text);
+		}
 	}
 
 	/**
@@ -279,6 +307,18 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		return [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+
+		// Add hook statuses on a single line, sorted by key alphabetically
+		if (this.hookStatuses.size > 0) {
+			const sortedStatuses = Array.from(this.hookStatuses.entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => sanitizeStatusText(text));
+			const statusLine = sortedStatuses.join(" ");
+			// Truncate to terminal width with dim ellipsis for consistency with footer style
+			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+		}
+
+		return lines;
 	}
 }

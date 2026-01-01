@@ -35,6 +35,7 @@ The hooks API has been restructured with more granular events and better session
 - New `pi.registerCommand(name, options)` for custom slash commands
 - New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
 - New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
+- New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
 - `ctx.exec()` moved to `pi.exec()`
 - `ctx.sessionFile` → `ctx.sessionManager.getSessionFile()`
 - New `ctx.modelRegistry` and `ctx.model` for API key resolution
@@ -189,6 +190,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 
 ### Added
 
+- `ctx.ui.setStatus(key, text)` for hooks to display persistent status text in the footer ([#385](https://github.com/badlogic/pi-mono/pull/385) by [@prateekmedia](https://github.com/prateekmedia))
 - `/share` command to upload session as a secret GitHub gist and get a shareable URL via shittycodingagent.ai ([#380](https://github.com/badlogic/pi-mono/issues/380))
 - HTML export now includes a tree visualization sidebar for navigating session branches ([#375](https://github.com/badlogic/pi-mono/issues/375))
 - HTML export supports keyboard shortcuts: Ctrl+T to toggle thinking blocks, Ctrl+O to toggle tool outputs

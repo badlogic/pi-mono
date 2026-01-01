@@ -119,6 +119,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
+		setStatus(key: string, text: string | undefined): void {
+			// Fire and forget - no response needed
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "setStatus",
+				statusKey: key,
+				statusText: text,
+			} as RpcHookUIRequest);
+		},
+
 		async custom() {
 			// Custom UI not supported in RPC mode
 			return undefined as never;

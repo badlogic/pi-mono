@@ -423,12 +423,22 @@ const name = await ctx.ui.input("Name:", "placeholder");
 // Notification (non-blocking)
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 
+// Set status text in footer (persistent until cleared)
+ctx.ui.setStatus("my-hook", "Processing 5/10...");  // Set status
+ctx.ui.setStatus("my-hook", undefined);              // Clear status
+
 // Set the core input editor text (pre-fill prompts, generated content)
 ctx.ui.setEditorText("Generated prompt text here...");
 
 // Get current editor text
 const currentText = ctx.ui.getEditorText();
 ```
+
+**Status text notes:**
+- Multiple hooks can set their own status using unique keys
+- Statuses are displayed on a single line in the footer, sorted alphabetically by key
+- Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width
+- ANSI escape codes for styling are preserved
 
 **Custom components:**
 
@@ -731,7 +741,7 @@ See [examples/hooks/snake.ts](../examples/hooks/snake.ts) for a complete example
 | RPC | JSON protocol | Host handles UI |
 | Print (`-p`) | No-op (returns null/false) | Hooks run but can't prompt |
 
-In print mode, `select()` returns `undefined`, `confirm()` returns `false`, `input()` returns `undefined`, `getEditorText()` returns `""`, and `setEditorText()` is a no-op. Design hooks to handle this by checking `ctx.hasUI`.
+In print mode, `select()` returns `undefined`, `confirm()` returns `false`, `input()` returns `undefined`, `getEditorText()` returns `""`, and `setEditorText()`/`setStatus()` are no-ops. Design hooks to handle this by checking `ctx.hasUI`.
 
 ## Error Handling
 

@@ -371,6 +371,7 @@ export class InteractiveMode {
 			confirm: (title, message) => this.showHookConfirm(title, message),
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
+			setStatus: (key, text) => this.setHookStatus(key, text),
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
@@ -456,6 +457,14 @@ export class InteractiveMode {
 	private showToolError(toolName: string, error: string): void {
 		const errorText = new Text(theme.fg("error", `Tool "${toolName}" error: ${error}`), 1, 0);
 		this.chatContainer.addChild(errorText);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Set hook status text in the footer.
+	 */
+	private setHookStatus(key: string, text: string | undefined): void {
+		this.footer.setHookStatus(key, text);
 		this.ui.requestRender();
 	}
 

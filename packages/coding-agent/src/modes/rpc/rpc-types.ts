@@ -182,6 +182,7 @@ export type RpcHookUIRequest =
 			message: string;
 			notifyType?: "info" | "warning" | "error";
 	  }
+	| { type: "hook_ui_request"; id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
 	| { type: "hook_ui_request"; id: string; method: "set_editor_text"; text: string };
 
 // ============================================================================

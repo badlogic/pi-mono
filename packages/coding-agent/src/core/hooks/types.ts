@@ -58,6 +58,17 @@ export interface HookUIContext {
 	notify(message: string, type?: "info" | "warning" | "error"): void;
 
 	/**
+	 * Set status text in the footer/status bar.
+	 * Pass undefined as text to clear the status for this key.
+	 * Text can include ANSI escape codes for styling.
+	 * Note: Newlines, tabs, and carriage returns are replaced with spaces.
+	 * The combined status line is truncated to terminal width.
+	 * @param key - Unique key to identify this status (e.g., hook name)
+	 * @param text - Status text to display, or undefined to clear
+	 */
+	setStatus(key: string, text: string | undefined): void;
+
+	/**
 	 * Show a custom component with keyboard focus.
 	 * The factory receives TUI, theme, and a done() callback to close the component.
 	 * Can be async for fire-and-forget work (don't await the work, just start it).
