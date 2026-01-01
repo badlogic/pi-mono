@@ -20,6 +20,8 @@ import type {
 	RegisteredCommand,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
+	ToolBeforeApplyEvent,
+	ToolBeforeApplyEventResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -287,6 +289,36 @@ export class HookRunner {
 					result = handlerResult as ToolCallEventResult;
 					// If blocked, stop processing further hooks
 					if (result.block) {
+						return result;
+					}
+				}
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Emit a tool_before_apply event to all hooks.
+	 * No timeout - user prompts can take as long as needed.
+	 * Errors are thrown (not swallowed) so caller can reject on failure.
+	 */
+	async emitToolBeforeApply(event: ToolBeforeApplyEvent): Promise<ToolBeforeApplyEventResult | undefined> {
+		const ctx = this.createContext();
+		let result: ToolBeforeApplyEventResult | undefined;
+
+		for (const hook of this.hooks) {
+			const handlers = hook.handlers.get("tool_before_apply");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				// No timeout - let user take their time
+				const handlerResult = await handler(event, ctx);
+
+				if (handlerResult) {
+					result = handlerResult as ToolBeforeApplyEventResult;
+					// If blocked or modified, stop processing further hooks
+					if (result.block || result.newContent !== undefined) {
 						return result;
 					}
 				}

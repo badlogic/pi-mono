@@ -317,6 +317,44 @@ export interface ToolCallEvent {
 	input: Record<string, unknown>;
 }
 
+// ============================================================================
+// tool_before_apply events
+// ============================================================================
+
+/**
+ * Base interface for tool_before_apply events.
+ * Fired after a tool computes changes but before applying them.
+ */
+interface ToolBeforeApplyEventBase {
+	type: "tool_before_apply";
+	/** Tool call ID */
+	toolCallId: string;
+	/** Tool input parameters */
+	input: Record<string, unknown>;
+}
+
+/** Preview data for edit tool before applying changes */
+export interface EditToolPreview {
+	/** The file path being edited */
+	path: string;
+	/** Unified diff of the changes to be made */
+	diff: string;
+	/** Line number of the first change in the new file */
+	firstChangedLine?: number;
+	/** The new content that will be written (after replacement) */
+	newContent: string;
+}
+
+/** tool_before_apply event for edit tool */
+export interface EditToolBeforeApplyEvent extends ToolBeforeApplyEventBase {
+	toolName: "edit";
+	/** Preview of the changes to be applied */
+	preview: EditToolPreview;
+}
+
+/** Union of all tool_before_apply events */
+export type ToolBeforeApplyEvent = EditToolBeforeApplyEvent;
+
 /**
  * Base interface for tool_result events.
  */
@@ -430,6 +468,7 @@ export type HookEvent =
 	| TurnStartEvent
 	| TurnEndEvent
 	| ToolCallEvent
+	| ToolBeforeApplyEvent
 	| ToolResultEvent;
 
 // ============================================================================
@@ -454,6 +493,19 @@ export interface ToolCallEventResult {
 	block?: boolean;
 	/** Reason for blocking (returned to LLM as error) */
 	reason?: string;
+}
+
+/**
+ * Return type for tool_before_apply event handlers.
+ * Allows hooks to accept or reject changes before they are applied.
+ */
+export interface ToolBeforeApplyEventResult {
+	/** If true, block the changes from being applied */
+	block?: boolean;
+	/** Reason for blocking (returned to LLM as error) */
+	reason?: string;
+	/** Modified content to apply instead of the original (for edit tool) */
+	newContent?: string;
 }
 
 /**
@@ -600,6 +652,7 @@ export interface HookAPI {
 	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
+	on(event: "tool_before_apply", handler: HookHandler<ToolBeforeApplyEvent, ToolBeforeApplyEventResult>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
 
 	/**

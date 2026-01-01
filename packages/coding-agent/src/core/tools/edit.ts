@@ -3,6 +3,7 @@ import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile, writeFile } from "fs/promises";
+import type { EditToolBeforeApplyEvent, ToolBeforeApplyEventResult } from "../hooks/types.js";
 import { resolveToCwd } from "./path-utils.js";
 
 function detectLineEnding(content: string): "\r\n" | "\n" {
@@ -140,7 +141,12 @@ export interface EditToolDetails {
 	firstChangedLine?: number;
 }
 
-export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
+/** Callback type for before-apply hook */
+export type EditBeforeApplyCallback = (
+	event: EditToolBeforeApplyEvent,
+) => Promise<ToolBeforeApplyEventResult | undefined>;
+
+export function createEditTool(cwd: string): AgentTool<typeof editSchema, EditToolDetails> {
 	return {
 		name: "edit",
 		label: "edit",
@@ -149,14 +155,20 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 		parameters: editSchema,
 		execute: async (
 			_toolCallId: string,
-			{ path, oldText, newText }: { path: string; oldText: string; newText: string },
+			{
+				path,
+				oldText,
+				newText,
+				__beforeApplyCallback,
+			}: { path: string; oldText: string; newText: string; __beforeApplyCallback?: EditBeforeApplyCallback },
 			signal?: AbortSignal,
+			onUpdate?: (update: { content: Array<{ type: "text"; text: string }>; details: EditToolDetails }) => void,
 		) => {
 			const absolutePath = resolveToCwd(path, cwd);
 
 			return new Promise<{
 				content: Array<{ type: "text"; text: string }>;
-				details: EditToolDetails | undefined;
+				details: EditToolDetails;
 			}>((resolve, reject) => {
 				// Check if already aborted
 				if (signal?.aborted) {
@@ -262,8 +274,52 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							return;
 						}
 
+						// Compute diff before applying (for preview)
+						const diffResult = generateDiffString(normalizedContent, normalizedNewContent);
 						const finalContent = restoreLineEndings(normalizedNewContent, originalEnding);
-						await writeFile(absolutePath, finalContent, "utf-8");
+
+						// Track what content to actually write (may be modified by hook)
+						let contentToWrite = finalContent;
+						let finalDiff = diffResult;
+
+						// Send preview update to TUI only if hook will prompt user
+						if (__beforeApplyCallback) {
+							if (onUpdate) {
+								onUpdate({
+									content: [{ type: "text", text: `Pending changes to ${path}...` }],
+									details: {
+										diff: diffResult.diff,
+										firstChangedLine: diffResult.firstChangedLine,
+									},
+								});
+							}
+							const beforeApplyResult = await __beforeApplyCallback({
+								type: "tool_before_apply",
+								toolName: "edit",
+								toolCallId: _toolCallId,
+								input: { path, oldText, newText },
+								preview: {
+									path,
+									diff: diffResult.diff,
+									firstChangedLine: diffResult.firstChangedLine,
+									newContent: finalContent,
+								},
+							});
+
+							// Hook may have modified the content
+							if (beforeApplyResult?.newContent !== undefined) {
+								contentToWrite = beforeApplyResult.newContent;
+								// Recompute diff with modified content
+								finalDiff = generateDiffString(normalizedContent, normalizeToLF(contentToWrite));
+							}
+						}
+
+						// Check if aborted before writing
+						if (aborted) {
+							return;
+						}
+
+						await writeFile(absolutePath, contentToWrite, "utf-8");
 
 						// Check if aborted after writing
 						if (aborted) {
@@ -275,7 +331,6 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							signal.removeEventListener("abort", onAbort);
 						}
 
-						const diffResult = generateDiffString(normalizedContent, normalizedNewContent);
 						resolve({
 							content: [
 								{
@@ -283,7 +338,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 									text: `Successfully replaced text in ${path}.`,
 								},
 							],
-							details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
+							details: { diff: finalDiff.diff, firstChangedLine: finalDiff.firstChangedLine },
 						});
 					} catch (error: any) {
 						// Clean up abort handler

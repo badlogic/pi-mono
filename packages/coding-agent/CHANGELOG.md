@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `tool_before_apply` hook event for edit tool - fires after diff is computed but before file is written, allowing hooks to accept/reject or modify changes
+
 ### Fixed
 
 - Crash when displaying bash output containing Unicode format characters like U+0600-U+0604 ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))

@@ -114,7 +114,9 @@ user sends prompt ────────────────────�
   │   │                                            │       │
   │   │   LLM responds, may call tools:            │       │
   │   │     ├─► tool_call (can block)              │       │
-  │   │     │   tool executes                      │       │
+  │   │     │   tool reads/computes                │       │
+  │   │     ├─► tool_before_apply (edit only)      │       │
+  │   │     │   tool applies changes               │       │
   │   │     └─► tool_result (can modify)           │       │
   │   │                                            │       │
   │   └─► turn_end                                 │       │
@@ -357,6 +359,28 @@ Tool inputs:
 - `ls`: `{ path?, limit? }`
 - `find`: `{ pattern, path?, limit? }`
 - `grep`: `{ pattern, path?, glob?, ignoreCase?, literal?, context?, limit? }`
+
+#### tool_before_apply
+
+Fired after edit tool computes diff but before writing. **Can block or modify.**
+
+```typescript
+pi.on("tool_before_apply", async (event, ctx) => {
+  if (event.toolName !== "edit") return;
+
+  // event.preview.path - file being edited
+  // event.preview.diff - unified diff of changes
+  // event.preview.firstChangedLine - line number of first change
+  // event.preview.newContent - the content that will be written
+
+  const ok = await ctx.ui.confirm("Apply edit?", "");
+  if (!ok) {
+    return { block: true, reason: "User rejected the edit" };
+  }
+
+  // Optionally modify content: return { newContent: "..." };
+});
+```
 
 #### tool_result
 
