@@ -1058,17 +1058,26 @@
         return marked.parse(escaped);
       }
 
-      // Configure marked
-      marked.setOptions({
+      // Configure marked with syntax highlighting
+      marked.use({
         breaks: true,
         gfm: true,
-        highlight: function(code, lang) {
-          if (lang && hljs.getLanguage(lang)) {
-            try {
-              return hljs.highlight(code, { language: lang }).value;
-            } catch {}
+        renderer: {
+          code(token) {
+            const code = token.text;
+            const lang = token.lang;
+            let highlighted;
+            if (lang && hljs.getLanguage(lang)) {
+              try {
+                highlighted = hljs.highlight(code, { language: lang }).value;
+              } catch {
+                highlighted = escapeHtml(code);
+              }
+            } else {
+              highlighted = escapeHtml(code);
+            }
+            return `<pre><code class="hljs">${highlighted}</code></pre>`;
           }
-          return escapeHtml(code);
         }
       });
 
