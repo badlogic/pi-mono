@@ -1050,19 +1050,17 @@
       // INITIALIZATION
       // ============================================================
 
-      // Wrapper for marked that escapes HTML before parsing
-      // Escapes all < that look like tag starts (followed by letter or /)
-      // Code blocks are safe because marked processes them before our escaping affects display
-      function safeMarkedParse(text) {
-        const escaped = text.replace(/<(?=[a-zA-Z\/])/g, '&lt;');
-        return marked.parse(escaped);
+      // Escape HTML tags in text (but not code blocks)
+      function escapeHtmlTags(text) {
+        return text.replace(/<(?=[a-zA-Z\/])/g, '&lt;');
       }
 
-      // Configure marked with syntax highlighting
+      // Configure marked with syntax highlighting and HTML escaping for text
       marked.use({
         breaks: true,
         gfm: true,
         renderer: {
+          // Code blocks: syntax highlight, no HTML escaping
           code(token) {
             const code = token.text;
             const lang = token.lang;
@@ -1082,9 +1080,22 @@
               }
             }
             return `<pre><code class="hljs">${highlighted}</code></pre>`;
+          },
+          // Text content: escape HTML tags
+          text(token) {
+            return escapeHtmlTags(escapeHtml(token.text));
+          },
+          // Inline code: escape HTML
+          codespan(token) {
+            return `<code>${escapeHtml(token.text)}</code>`;
           }
         }
       });
+
+      // Simple marked parse (escaping handled in renderers)
+      function safeMarkedParse(text) {
+        return marked.parse(text);
+      }
 
       // Search input
       const searchInput = document.getElementById('tree-search');
