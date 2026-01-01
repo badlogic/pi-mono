@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Crash when displaying bash output containing Unicode format characters like U+0600-U+0604 ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))
+
 This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
 
 ### Session Tree
