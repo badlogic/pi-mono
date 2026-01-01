@@ -30,9 +30,11 @@ export default function (pi: HookAPI) {
 		ctx.ui.setStatus("status-demo", check + text);
 	});
 
-	pi.on("session_new", async (_event, ctx) => {
-		turnCount = 0;
-		const theme = ctx.ui.theme;
-		ctx.ui.setStatus("status-demo", theme.fg("dim", "Ready"));
+	pi.on("session_switch", async (event, ctx) => {
+		if (event.reason === "new") {
+			turnCount = 0;
+			const theme = ctx.ui.theme;
+			ctx.ui.setStatus("status-demo", theme.fg("dim", "Ready"));
+		}
 	});
 }

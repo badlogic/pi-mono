@@ -52,8 +52,8 @@ export interface CustomToolContext {
 /** Session event passed to onSession callback */
 export interface CustomToolSessionEvent {
 	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "new" | "tree" | "shutdown";
-	/** Previous session file path, or undefined for "start", "new", and "shutdown" */
+	reason: "start" | "switch" | "branch" | "tree" | "shutdown";
+	/** Previous session file path, or undefined for "start" and "shutdown" */
 	previousSessionFile: string | undefined;
 }
 

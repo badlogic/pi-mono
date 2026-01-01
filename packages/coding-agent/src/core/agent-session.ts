@@ -34,7 +34,6 @@ import type {
 	HookRunner,
 	SessionBeforeBranchResult,
 	SessionBeforeCompactResult,
-	SessionBeforeNewResult,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	TreePreparation,
@@ -43,7 +42,7 @@ import type {
 } from "./hooks/index.js";
 import type { BashExecutionMessage, HookMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
@@ -664,19 +663,21 @@ export class AgentSession {
 	}
 
 	/**
-	 * Reset agent and session to start fresh.
+	 * Start a new session, optionally with initial messages and parent tracking.
 	 * Clears all messages and starts a new session.
 	 * Listeners are preserved and will continue receiving events.
-	 * @returns true if reset completed, false if cancelled by hook
+	 * @param options - Optional initial messages and parent session path
+	 * @returns true if completed, false if cancelled by hook
 	 */
-	async reset(): Promise<boolean> {
+	async newSession(options?: NewSessionOptions): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
 
-		// Emit session_before_new event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session_before_new")) {
+		// Emit session_before_switch event with reason "new" (can be cancelled)
+		if (this._hookRunner?.hasHandlers("session_before_switch")) {
 			const result = (await this._hookRunner.emit({
-				type: "session_before_new",
-			})) as SessionBeforeNewResult | undefined;
+				type: "session_before_switch",
+				reason: "new",
+			})) as SessionBeforeSwitchResult | undefined;
 
 			if (result?.cancel) {
 				return false;
@@ -686,19 +687,21 @@ export class AgentSession {
 		this._disconnectFromAgent();
 		await this.abort();
 		this.agent.reset();
-		this.sessionManager.newSession();
+		this.sessionManager.newSession(options);
 		this._queuedMessages = [];
 		this._reconnectToAgent();
 
-		// Emit session_new event to hooks
+		// Emit session_switch event with reason "new" to hooks
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
-				type: "session_new",
+				type: "session_switch",
+				reason: "new",
+				previousSessionFile,
 			});
 		}
 
 		// Emit session event to custom tools
-		await this.emitCustomToolSessionEvent("new", previousSessionFile);
+		await this.emitCustomToolSessionEvent("switch", previousSessionFile);
 		return true;
 	}
 
@@ -1446,6 +1449,7 @@ export class AgentSession {
 		if (this._hookRunner?.hasHandlers("session_before_switch")) {
 			const result = (await this._hookRunner.emit({
 				type: "session_before_switch",
+				reason: "resume",
 				targetSessionFile: sessionPath,
 			})) as SessionBeforeSwitchResult | undefined;
 
@@ -1468,6 +1472,7 @@ export class AgentSession {
 		if (this._hookRunner) {
 			await this._hookRunner.emit({
 				type: "session_switch",
+				reason: "resume",
 				previousSessionFile,
 			});
 		}

@@ -41,12 +41,9 @@ async function checkDirtyRepo(pi: HookAPI, ctx: HookContext, action: string): Pr
 }
 
 export default function (pi: HookAPI) {
-	pi.on("session_before_new", async (_event, ctx) => {
-		return checkDirtyRepo(pi, ctx, "new session");
-	});
-
-	pi.on("session_before_switch", async (_event, ctx) => {
-		return checkDirtyRepo(pi, ctx, "switch session");
+	pi.on("session_before_switch", async (event, ctx) => {
+		const action = event.reason === "new" ? "new session" : "switch session";
+		return checkDirtyRepo(pi, ctx, action);
 	});
 
 	pi.on("session_before_branch", async (_event, ctx) => {

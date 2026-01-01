@@ -100,7 +100,7 @@ interface AgentSession {
   isStreaming: boolean;
   
   // Session management
-  reset(): Promise<boolean>;  // Returns false if cancelled by hook
+  newSession(options?: { parentSession?: string }): Promise<boolean>;  // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
   
   // Branching

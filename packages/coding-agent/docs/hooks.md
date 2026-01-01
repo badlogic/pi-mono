@@ -123,13 +123,9 @@ user sends prompt ────────────────────�
                                                            │
 user sends another prompt ◄────────────────────────────────┘
 
-/new (new session)
-  ├─► session_before_new (can cancel)
-  └─► session_new
-
-/resume (switch session)
-  ├─► session_before_switch (can cancel)
-  └─► session_switch
+/new (new session) or /resume (switch session)
+  ├─► session_before_switch (can cancel, has reason: "new" | "resume")
+  └─► session_switch (has reason: "new" | "resume")
 
 /branch
   ├─► session_before_branch (can cancel)
@@ -161,31 +157,24 @@ pi.on("session_start", async (_event, ctx) => {
 
 #### session_before_switch / session_switch
 
-Fired when switching sessions via `/resume`.
+Fired when starting a new session (`/new`) or switching sessions (`/resume`).
 
 ```typescript
 pi.on("session_before_switch", async (event, ctx) => {
-  // event.targetSessionFile - session we're switching to
-  return { cancel: true }; // Cancel the switch
+  // event.reason - "new" (starting fresh) or "resume" (switching to existing)
+  // event.targetSessionFile - session we're switching to (only for "resume")
+  
+  if (event.reason === "new") {
+    const ok = await ctx.ui.confirm("Clear?", "Delete all messages?");
+    if (!ok) return { cancel: true };
+  }
+  
+  return { cancel: true }; // Cancel the switch/new
 });
 
 pi.on("session_switch", async (event, ctx) => {
+  // event.reason - "new" or "resume"
   // event.previousSessionFile - session we came from
-});
-```
-
-#### session_before_new / session_new
-
-Fired when starting a new session via `/new`.
-
-```typescript
-pi.on("session_before_new", async (_event, ctx) => {
-  const ok = await ctx.ui.confirm("Clear?", "Delete all messages?");
-  if (!ok) return { cancel: true };
-});
-
-pi.on("session_new", async (_event, ctx) => {
-  // New session started
 });
 ```
 

@@ -187,11 +187,12 @@ export class RpcClient {
 	}
 
 	/**
-	 * Reset session (clear all messages).
-	 * @returns Object with `cancelled: true` if a hook cancelled the reset
+	 * Start a new session, optionally with parent tracking.
+	 * @param parentSession - Optional parent session path for lineage tracking
+	 * @returns Object with `cancelled: true` if a hook cancelled the new session
 	 */
-	async reset(): Promise<{ cancelled: boolean }> {
-		const response = await this.send({ type: "reset" });
+	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "new_session", parentSession });
 		return this.getData(response);
 	}
 

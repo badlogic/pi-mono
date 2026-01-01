@@ -107,6 +107,7 @@ export {
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
 	migrateSessionEntries,
+	type NewSessionOptions,
 	parseSessionEntries,
 	type SessionContext,
 	type SessionEntry,

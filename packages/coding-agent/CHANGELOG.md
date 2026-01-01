@@ -23,7 +23,8 @@ The hooks API has been restructured with more granular events and better session
 - `HookCommandContext` removed (use `HookContext` for command handlers)
 
 **Event changes:**
-- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_new`, `session_new`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
+- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
+- `session_before_switch` and `session_switch` events now include `reason: "new" | "resume"` to distinguish between `/new` and `/resume`
 - New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
 - New `before_agent_start` event: inject messages before the agent loop starts
 - New `context` event: modify messages non-destructively before each LLM call
@@ -71,7 +72,7 @@ The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, and
 **Session event changes:**
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
 - Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
-- New reasons: `"tree"` (for `/tree` navigation) and `"shutdown"` (for cleanup on exit)
+- Reasons: `"start" | "switch" | "branch" | "tree" | "shutdown"` (no separate `"new"` reason; `/new` triggers `"switch"`)
 - `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
 
 See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/) for the current API.
@@ -85,10 +86,11 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `model` returns `Model | undefined` (was `Model | null`)
 - `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
 
-**AgentSession branching API:**
+**AgentSession API:**
 - `branch(entryIndex: number)` → `branch(entryId: string)`
 - `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
-- `reset()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
+- `reset()` → `newSession(options?)` where options has optional `parentSession` for lineage tracking
+- `newSession()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
 - New `navigateTree(targetId, options?)` for in-place tree navigation
 
 **Hook integration:**
@@ -97,8 +99,9 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 **SessionManager API:**
 - Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
 - `branchInPlace()` → `branch()`
-- `reset()` → `newSession()`
+- `reset()` → `newSession(options?)` with optional `parentSession` for lineage tracking
 - `createBranchedSessionFromEntries(entries, index)` → `createBranchedSession(leafId)`
+- `SessionHeader.branchedFrom` → `SessionHeader.parentSession`
 - `saveCompaction(entry)` → `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?)`
 - `getEntries()` now excludes the session header (use `getHeader()` separately)
 - `getSessionFile()` returns `string | undefined` (undefined for in-memory sessions)
@@ -138,6 +141,9 @@ This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools a
 See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the current API.
 
 ### RPC Migration
+
+**Session commands:**
+- `reset` command → `new_session` command with optional `parentSession` field
 
 **Branching commands:**
 - `branch` command: `entryIndex` → `entryId`

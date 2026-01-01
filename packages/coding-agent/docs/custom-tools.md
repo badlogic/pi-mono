@@ -241,18 +241,19 @@ Tools can implement `onSession` to react to session changes:
 
 ```typescript
 interface CustomToolSessionEvent {
-  reason: "start" | "switch" | "branch" | "new" | "tree" | "shutdown";
+  reason: "start" | "switch" | "branch" | "tree" | "shutdown";
   previousSessionFile: string | undefined;
 }
 ```
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `switch`: User switched to a different session (`/resume`)
+- `switch`: User started a new session (`/new`) or switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
-- `new`: User started a new session (`/new`)
 - `tree`: User navigated to a different point in the session tree (`/tree`)
 - `shutdown`: Process is exiting (Ctrl+C, Ctrl+D, or SIGTERM) - use to cleanup resources
+
+To check if a session is fresh (no messages), use `ctx.sessionManager.getEntries().length === 0`.
 
 ### State Management Pattern
 

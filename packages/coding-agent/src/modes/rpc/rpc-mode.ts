@@ -239,9 +239,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "abort");
 			}
 
-			case "reset": {
-				const cancelled = !(await session.reset());
-				return success(id, "reset", { cancelled });
+			case "new_session": {
+				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+				const cancelled = !(await session.newSession(options));
+				return success(id, "new_session", { cancelled });
 			}
 
 			// =================================================================

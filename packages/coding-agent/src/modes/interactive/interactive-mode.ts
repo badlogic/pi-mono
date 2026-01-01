@@ -2148,8 +2148,8 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 
-		// Reset via session (emits hook and tool session events)
-		await this.session.reset();
+		// New session via session (emits hook and tool session events)
+		await this.session.newSession();
 
 		// Clear UI state
 		this.chatContainer.clear();

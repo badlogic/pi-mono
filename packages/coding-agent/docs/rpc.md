@@ -76,22 +76,27 @@ Response:
 {"type": "response", "command": "abort", "success": true}
 ```
 
-#### reset
+#### new_session
 
-Clear context and start a fresh session. Can be cancelled by a `before_clear` hook.
+Start a fresh session. Can be cancelled by a `session_before_switch` hook.
 
 ```json
-{"type": "reset"}
+{"type": "new_session"}
+```
+
+With optional parent session tracking:
+```json
+{"type": "new_session", "parentSession": "/path/to/parent-session.jsonl"}
 ```
 
 Response:
 ```json
-{"type": "response", "command": "reset", "success": true, "data": {"cancelled": false}}
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
 ```
 
-If a hook cancelled the reset:
+If a hook cancelled:
 ```json
-{"type": "response", "command": "reset", "success": true, "data": {"cancelled": true}}
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
 
 ### State

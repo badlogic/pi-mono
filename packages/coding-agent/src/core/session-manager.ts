@@ -31,7 +31,11 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	branchedFrom?: string;
+	parentSession?: string;
+}
+
+export interface NewSessionOptions {
+	parentSession?: string;
 }
 
 export interface SessionEntryBase {
@@ -508,7 +512,7 @@ export class SessionManager {
 		}
 	}
 
-	newSession(): string | undefined {
+	newSession(options?: NewSessionOptions): string | undefined {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -517,11 +521,13 @@ export class SessionManager {
 			id: this.sessionId,
 			timestamp,
 			cwd: this.cwd,
+			parentSession: options?.parentSession,
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
 		this.leafId = null;
 		this.flushed = false;
+
 		// Only generate filename if persisting and not already set (e.g., via --session flag)
 		if (this.persist && !this.sessionFile) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
@@ -929,7 +935,7 @@ export class SessionManager {
 			id: newSessionId,
 			timestamp,
 			cwd: this.cwd,
-			branchedFrom: this.persist ? this.sessionFile : undefined,
+			parentSession: this.persist ? this.sessionFile : undefined,
 		};
 
 		// Collect labels for entries in the path

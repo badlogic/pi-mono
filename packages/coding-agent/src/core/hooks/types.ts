@@ -154,25 +154,19 @@ export interface SessionStartEvent {
 /** Fired before switching to another session (can be cancelled) */
 export interface SessionBeforeSwitchEvent {
 	type: "session_before_switch";
-	/** Session file we're switching to */
-	targetSessionFile: string;
+	/** Reason for the switch */
+	reason: "new" | "resume";
+	/** Session file we're switching to (only for "resume") */
+	targetSessionFile?: string;
 }
 
 /** Fired after switching to another session */
 export interface SessionSwitchEvent {
 	type: "session_switch";
+	/** Reason for the switch */
+	reason: "new" | "resume";
 	/** Session file we came from */
 	previousSessionFile: string | undefined;
-}
-
-/** Fired before creating a new session (can be cancelled) */
-export interface SessionBeforeNewEvent {
-	type: "session_before_new";
-}
-
-/** Fired after creating a new session */
-export interface SessionNewEvent {
-	type: "session_new";
 }
 
 /** Fired before branching a session (can be cancelled) */
@@ -255,8 +249,6 @@ export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
-	| SessionBeforeNewEvent
-	| SessionNewEvent
 	| SessionBeforeBranchEvent
 	| SessionBranchEvent
 	| SessionBeforeCompactEvent
@@ -505,12 +497,6 @@ export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
 
-/** Return type for session_before_new handlers */
-export interface SessionBeforeNewResult {
-	/** If true, cancel the new session */
-	cancel?: boolean;
-}
-
 /** Return type for session_before_branch handlers */
 export interface SessionBeforeBranchResult {
 	/**
@@ -600,8 +586,6 @@ export interface HookAPI {
 	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
 	on(event: "session_before_switch", handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
 	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
-	on(event: "session_before_new", handler: HookHandler<SessionBeforeNewEvent, SessionBeforeNewResult>): void;
-	on(event: "session_new", handler: HookHandler<SessionNewEvent>): void;
 	on(event: "session_before_branch", handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>): void;
 	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): void;
 	on(
