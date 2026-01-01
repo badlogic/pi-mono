@@ -9,7 +9,6 @@ export class BorderedLoader extends Container {
 	constructor(tui: TUI, theme: Theme, message: string) {
 		super();
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 		this.loader = new CancellableLoader(
 			tui,
 			(s) => theme.fg("accent", s),
