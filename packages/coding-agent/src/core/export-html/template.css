@@ -675,11 +675,12 @@
     .hljs-keyword, .hljs-selector-tag { color: var(--syntaxKeyword); }
     .hljs-number, .hljs-literal { color: var(--syntaxNumber); }
     .hljs-string, .hljs-doctag { color: var(--syntaxString); }
-    .hljs-title, .hljs-section, .hljs-name { color: var(--syntaxFunction); }
+    .hljs-function, .hljs-title, .hljs-section, .hljs-name { color: var(--syntaxFunction); }
     .hljs-type, .hljs-class, .hljs-built_in { color: var(--syntaxType); }
     .hljs-attr, .hljs-variable, .hljs-params, .hljs-property { color: var(--syntaxVariable); }
     .hljs-meta { color: var(--syntaxKeyword); }
-    .hljs-punctuation, .hljs-operator { color: var(--syntaxOperator); }
+    .hljs-operator { color: var(--syntaxOperator); }
+    .hljs-punctuation { color: var(--syntaxPunctuation); }
     .hljs-subst { color: var(--text); }
 
     /* Footer */
