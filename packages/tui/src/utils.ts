@@ -5,7 +5,8 @@ import stringWidth from "string-width";
  */
 export function visibleWidth(str: string): number {
 	if (!str) return 0;
-	const normalized = str.replace(/\t/g, "   ");
+	// Replace tabs and strip Unicode format characters (Cf) that crash string-width
+	const normalized = str.replace(/\t/g, "   ").replace(/\p{Cf}/gu, "");
 	return stringWidth(normalized);
 }
 
