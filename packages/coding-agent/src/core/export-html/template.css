@@ -364,7 +364,6 @@
 
     .tool-output {
       color: var(--toolOutput);
-      white-space: pre-wrap;
       word-wrap: break-word;
       overflow-wrap: break-word;
       word-break: break-word;
@@ -372,7 +371,11 @@
       overflow-x: auto;
     }
 
-    .tool-output > div {
+    .tool-output > div,
+    .output-preview,
+    .output-full {
+      margin: 0;
+      padding: 0;
       line-height: var(--line-height);
     }
 
