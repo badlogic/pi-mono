@@ -12,6 +12,7 @@ import {
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import type { CustomTool } from "../../../core/custom-tools/types.js";
+import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
@@ -58,11 +59,15 @@ export class ToolExecutionComponent extends Container {
 	private isPartial = true;
 	private customTool?: CustomTool;
 	private ui: TUI;
+	private cwd: string;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
 		details?: any;
 	};
+	// Cached edit diff preview (computed when args arrive, before tool executes)
+	private editDiffPreview?: EditDiffResult | EditDiffError;
+	private editDiffArgsKey?: string; // Track which args the preview is for
 
 	constructor(
 		toolName: string,
@@ -70,6 +75,7 @@ export class ToolExecutionComponent extends Container {
 		options: ToolExecutionOptions = {},
 		customTool: CustomTool | undefined,
 		ui: TUI,
+		cwd: string = process.cwd(),
 	) {
 		super();
 		this.toolName = toolName;
@@ -77,6 +83,7 @@ export class ToolExecutionComponent extends Container {
 		this.showImages = options.showImages ?? true;
 		this.customTool = customTool;
 		this.ui = ui;
+		this.cwd = cwd;
 
 		this.addChild(new Spacer(1));
 
@@ -96,6 +103,47 @@ export class ToolExecutionComponent extends Container {
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
+	}
+
+	/**
+	 * Signal that args are complete (tool is about to execute).
+	 * This triggers diff computation for edit tool.
+	 */
+	setArgsComplete(): void {
+		this.maybeComputeEditDiff();
+	}
+
+	/**
+	 * Compute edit diff preview when we have complete args.
+	 * This runs async and updates display when done.
+	 */
+	private maybeComputeEditDiff(): void {
+		if (this.toolName !== "edit") return;
+
+		const path = this.args?.path;
+		const oldText = this.args?.oldText;
+		const newText = this.args?.newText;
+
+		// Need all three params to compute diff
+		if (!path || oldText === undefined || newText === undefined) return;
+
+		// Create a key to track which args this computation is for
+		const argsKey = JSON.stringify({ path, oldText, newText });
+
+		// Skip if we already computed for these exact args
+		if (this.editDiffArgsKey === argsKey) return;
+
+		this.editDiffArgsKey = argsKey;
+
+		// Compute diff async
+		computeEditDiff(path, oldText, newText, this.cwd).then((result) => {
+			// Only update if args haven't changed since we started
+			if (this.editDiffArgsKey === argsKey) {
+				this.editDiffPreview = result;
+				this.updateDisplay();
+				this.ui.requestRender();
+			}
+		});
 	}
 
 	updateResult(
@@ -415,22 +463,31 @@ export class ToolExecutionComponent extends Container {
 			const rawPath = this.args?.file_path || this.args?.path || "";
 			const path = shortenPath(rawPath);
 
-			// Build path display, appending :line if we have a successful result with line info
+			// Build path display, appending :line if we have diff info
 			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-			if (this.result && !this.result.isError && this.result.details?.firstChangedLine) {
-				pathDisplay += theme.fg("warning", `:${this.result.details.firstChangedLine}`);
+			const firstChangedLine =
+				(this.editDiffPreview && "firstChangedLine" in this.editDiffPreview
+					? this.editDiffPreview.firstChangedLine
+					: undefined) ||
+				(this.result && !this.result.isError ? this.result.details?.firstChangedLine : undefined);
+			if (firstChangedLine) {
+				pathDisplay += theme.fg("warning", `:${firstChangedLine}`);
 			}
 
 			text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 
-			if (this.result) {
-				if (this.result.isError) {
-					const errorText = this.getTextOutput();
-					if (errorText) {
-						text += `\n\n${theme.fg("error", errorText)}`;
-					}
-				} else if (this.result.details?.diff) {
-					text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath })}`;
+			if (this.result?.isError) {
+				// Show error from result
+				const errorText = this.getTextOutput();
+				if (errorText) {
+					text += `\n\n${theme.fg("error", errorText)}`;
+				}
+			} else if (this.editDiffPreview) {
+				// Use cached diff preview (works both before and after execution)
+				if ("error" in this.editDiffPreview) {
+					text += `\n\n${theme.fg("error", this.editDiffPreview.error)}`;
+				} else if (this.editDiffPreview.diff) {
+					text += `\n\n${renderDiff(this.editDiffPreview.diff, { filePath: rawPath })}`;
 				}
 			}
 		} else if (this.toolName === "ls") {

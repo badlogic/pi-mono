@@ -17,7 +17,7 @@ import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.j
 import type { AgentSession } from "./core/agent-session.js";
 
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
-import { exportFromFile } from "./core/export-html.js";
+import { exportFromFile } from "./core/export-html/index.js";
 import type { HookUIContext } from "./core/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";

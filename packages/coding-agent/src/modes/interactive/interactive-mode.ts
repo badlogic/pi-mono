@@ -23,7 +23,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec, spawnSync } from "child_process";
+import { exec, spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
@@ -38,6 +38,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
+import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CustomEditor } from "./components/custom-editor.js";
@@ -173,6 +174,7 @@ export class InteractiveMode {
 			{ name: "settings", description: "Open settings menu" },
 			{ name: "model", description: "Select model (opens selector UI)" },
 			{ name: "export", description: "Export session to HTML file" },
+			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
@@ -684,6 +686,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/share") {
+				await this.handleShareCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/copy") {
 				this.handleCopyCommand();
 				this.editor.setText("");
@@ -911,6 +918,11 @@ export class InteractiveMode {
 							});
 						}
 						this.pendingTools.clear();
+					} else {
+						// Args are now complete - trigger diff computation for edit tools
+						for (const [, component] of this.pendingTools.entries()) {
+							component.setArgsComplete();
+						}
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
@@ -1915,6 +1927,100 @@ export class InteractiveMode {
 			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+		}
+	}
+
+	private async handleShareCommand(): Promise<void> {
+		// Check if gh is available and logged in
+		try {
+			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+			if (authResult.status !== 0) {
+				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
+				return;
+			}
+		} catch {
+			this.showError("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/");
+			return;
+		}
+
+		// Export to a temp file
+		const tmpFile = path.join(os.tmpdir(), "session.html");
+		try {
+			this.session.exportToHtml(tmpFile);
+		} catch (error: unknown) {
+			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+			return;
+		}
+
+		// Show cancellable loader, replacing the editor
+		const loader = new BorderedLoader(this.ui, theme, "Creating gist...");
+		this.editorContainer.clear();
+		this.editorContainer.addChild(loader);
+		this.ui.setFocus(loader);
+		this.ui.requestRender();
+
+		const restoreEditor = () => {
+			loader.dispose();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			try {
+				fs.unlinkSync(tmpFile);
+			} catch {
+				// Ignore cleanup errors
+			}
+		};
+
+		// Create a secret gist asynchronously
+		let proc: ReturnType<typeof spawn> | null = null;
+
+		loader.onAbort = () => {
+			proc?.kill();
+			restoreEditor();
+			this.showStatus("Share cancelled");
+		};
+
+		try {
+			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
+				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
+				let stdout = "";
+				let stderr = "";
+				proc.stdout?.on("data", (data) => {
+					stdout += data.toString();
+				});
+				proc.stderr?.on("data", (data) => {
+					stderr += data.toString();
+				});
+				proc.on("close", (code) => resolve({ stdout, stderr, code }));
+			});
+
+			if (loader.signal.aborted) return;
+
+			restoreEditor();
+
+			if (result.code !== 0) {
+				const errorMsg = result.stderr?.trim() || "Unknown error";
+				this.showError(`Failed to create gist: ${errorMsg}`);
+				return;
+			}
+
+			// Extract gist ID from the URL returned by gh
+			// gh returns something like: https://gist.github.com/username/GIST_ID
+			const gistUrl = result.stdout?.trim();
+			const gistId = gistUrl?.split("/").pop();
+			if (!gistId) {
+				this.showError("Failed to parse gist ID from gh output");
+				return;
+			}
+
+			// Create the preview URL
+			const previewUrl = `https://shittycodingagent.ai/session?${gistId}`;
+			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
+		} catch (error: unknown) {
+			if (!loader.signal.aborted) {
+				restoreEditor();
+				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
+			}
 		}
 	}
 
