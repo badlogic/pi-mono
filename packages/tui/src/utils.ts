@@ -1,11 +1,15 @@
 import stringWidth from "string-width";
 
+// Format characters that crash string-width (Format but not Default_Ignorable_Code_Point)
+const CRASHING_FORMAT_CHARS =
+	/[\u0600-\u0605\u06DD\u070F\u0890\u0891\u08E2\uFFF9-\uFFFB\u{110BD}\u{110CD}\u{13430}-\u{1343F}\u{1BCA0}-\u{1BCA3}]/gu;
+
 /**
  * Calculate the visible width of a string in terminal columns.
  */
 export function visibleWidth(str: string): number {
 	if (!str) return 0;
-	const normalized = str.replace(/\t/g, "   ");
+	const normalized = str.replace(/\t/g, "   ").replace(CRASHING_FORMAT_CHARS, "");
 	return stringWidth(normalized);
 }
 
