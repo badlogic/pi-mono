@@ -5,6 +5,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
 import type { ModelRegistry } from "./model-registry.js";
 
@@ -172,6 +173,41 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 	const scopedModels: ScopedModel[] = [];
 
 	for (const pattern of patterns) {
+		// Check if pattern contains glob characters
+		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
+			// Extract optional thinking level suffix (e.g., "provider/*:high")
+			const colonIdx = pattern.lastIndexOf(":");
+			let globPattern = pattern;
+			let thinkingLevel: ThinkingLevel = "off";
+
+			if (colonIdx !== -1) {
+				const suffix = pattern.substring(colonIdx + 1);
+				if (isValidThinkingLevel(suffix)) {
+					thinkingLevel = suffix;
+					globPattern = pattern.substring(0, colonIdx);
+				}
+			}
+
+			// Match against "provider/modelId" format OR just model ID
+			// This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
+			const matchingModels = availableModels.filter((m) => {
+				const fullId = `${m.provider}/${m.id}`;
+				return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
+			});
+
+			if (matchingModels.length === 0) {
+				console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+				continue;
+			}
+
+			for (const model of matchingModels) {
+				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
+					scopedModels.push({ model, thinkingLevel });
+				}
+			}
+			continue;
+		}
+
 		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
 
 		if (warning) {

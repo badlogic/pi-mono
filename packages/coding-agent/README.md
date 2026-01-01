@@ -497,7 +497,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-4-20250514",
   "defaultThinkingLevel": "medium",
-  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
+  "enabledModels": ["anthropic/*", "*gpt*", "gemini-2.5-pro:high"],
   "queueMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
   "hideThinkingBlock": false,
@@ -529,7 +529,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `defaultProvider` | Default model provider | - |
 | `defaultModel` | Default model ID | - |
 | `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
-| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
+| `enabledModels` | Model patterns for cycling. Supports glob patterns (`github-copilot/*`, `*sonnet*`) and fuzzy matching. Same as `--models` CLI flag | - |
 | `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
 | `shellPath` | Custom bash path (Windows) | auto-detected |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
@@ -788,7 +788,7 @@ pi [options] [@files...] [messages...]
 | `--session-dir <dir>` | Directory for session storage and lookup |
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |
+| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--hook <path>` | Load a hook file (can be used multiple times) |
@@ -839,6 +839,9 @@ pi --provider openai --model gpt-4o "Help me refactor"
 
 # Model cycling with thinking levels
 pi --models sonnet:high,haiku:low
+
+# Limit to specific provider with glob pattern
+pi --models "github-copilot/*"
 
 # Read-only mode
 pi --tools read,grep,find,ls -p "Review the architecture"

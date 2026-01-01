@@ -158,7 +158,8 @@ ${chalk.bold("Options:")}
   --session <path>               Use specific session file
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
-  --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
+  --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
+                                 Supports globs (anthropic/*, *sonnet*) and fuzzy matching
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
@@ -195,6 +196,9 @@ ${chalk.bold("Examples:")}
 
   # Limit model cycling to specific models
   ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
+
+  # Limit to a specific provider with glob pattern
+  ${APP_NAME} --models "github-copilot/*"
 
   # Cycle models with fixed thinking levels
   ${APP_NAME} --models sonnet:high,haiku:low
