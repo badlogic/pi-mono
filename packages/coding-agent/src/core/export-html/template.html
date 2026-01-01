@@ -124,11 +124,12 @@
     }
 
     .tree-node {
-      padding: 2px 8px;
+      padding: 0 8px;
       cursor: pointer;
       display: flex;
       align-items: baseline;
       font-size: 11px;
+      line-height: 18px;
       white-space: nowrap;
     }
 
@@ -138,8 +139,6 @@
 
     .tree-node.active {
       background: var(--selectedBg);
-      border-left: 2px solid var(--accent);
-      padding-left: 6px;
     }
 
     .tree-node.active .tree-content {
@@ -147,8 +146,6 @@
     }
 
     .tree-node.in-path {
-      border-left: 2px solid var(--dim);
-      padding-left: 6px;
     }
 
     .tree-prefix {
@@ -194,6 +191,10 @@
 
     .tree-branch-summary {
       color: var(--warning);
+    }
+
+    .tree-custom-message {
+      color: var(--customMessageLabel);
     }
 
     .tree-status {
@@ -1141,8 +1142,6 @@
         } else if (filterMode === 'default') {
           // Hide settings entries
           if (isSettingsEntry) return false;
-          // Hide tool results (shown via tool call lookup)
-          if (entry.type === 'message' && entry.message.role === 'toolResult') return false;
           // Hide assistant messages with only tool calls (no text), unless error
           if (entry.type === 'message' && entry.message.role === 'assistant') {
             const msg = entry.message;
@@ -1206,11 +1205,19 @@
           case 'compaction':
             return labelHtml + `<span class="tree-compaction">[compaction: ${Math.round(entry.tokensBefore/1000)}k tokens]</span>`;
           case 'branch_summary':
-            return labelHtml + `<span class="tree-branch-summary">[branch summary]</span>`;
+            const summaryText = normalize(entry.summary || '').slice(0, 60);
+            return labelHtml + `<span class="tree-branch-summary">[branch summary]:</span> ${escapeHtml(summaryText)}`;
           case 'model_change':
             return labelHtml + `<span class="tree-muted">[model: ${entry.modelId}]</span>`;
           case 'thinking_level_change':
             return labelHtml + `<span class="tree-muted">[thinking: ${entry.thinkingLevel}]</span>`;
+          case 'custom_message': {
+            const customContent = typeof entry.content === 'string' 
+              ? entry.content 
+              : extractContent(entry.content);
+            const normalizedCustom = normalize(customContent).slice(0, 60);
+            return labelHtml + `<span class="tree-custom-message">[${escapeHtml(entry.customType)}]:</span> ${escapeHtml(normalizedCustom)}`;
+          }
           default:
             return labelHtml + `<span class="tree-muted">[${entry.type}]</span>`;
         }
