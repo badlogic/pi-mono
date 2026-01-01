@@ -198,6 +198,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 
 ### Changed
 
+- **Edit tool line ending handling improved**: Simplified first-newline detection algorithm, added UTF-8 BOM preservation, switched to indexOf-based occurrence counting for better performance, and diff is now generated from final written content for accuracy ([#360](https://github.com/badlogic/pi-mono/pull/360))
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
 

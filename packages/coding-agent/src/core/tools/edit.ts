@@ -6,11 +6,18 @@ import { access, readFile, writeFile } from "fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 
 function detectLineEnding(content: string): "\r\n" | "\n" {
-	const crlfIdx = content.indexOf("\r\n");
-	const lfIdx = content.indexOf("\n");
-	if (lfIdx === -1) return "\n";
-	if (crlfIdx === -1) return "\n";
-	return crlfIdx < lfIdx ? "\r\n" : "\n";
+	for (let i = 0; i < content.length; i++) {
+		const ch = content.charCodeAt(i);
+		if (ch === 10) return "\n";
+		if (ch === 13) {
+			return content.charCodeAt(i + 1) === 10 ? "\r\n" : "\n";
+		}
+	}
+	return "\n";
+}
+
+function stripBom(content: string): { bom: string; text: string } {
+	return content.startsWith("\uFEFF") ? { bom: "\uFEFF", text: content.slice(1) } : { bom: "", text: content };
 }
 
 function normalizeToLF(text: string): string {
@@ -19,6 +26,19 @@ function normalizeToLF(text: string): string {
 
 function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string {
 	return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+	if (!needle) return 0;
+	let count = 0;
+	let idx = 0;
+	while (true) {
+		idx = haystack.indexOf(needle, idx);
+		if (idx === -1) break;
+		count++;
+		idx += needle.length;
+	}
+	return count;
 }
 
 /**
@@ -196,12 +216,14 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						// Read the file
-						const content = await readFile(absolutePath, "utf-8");
+						const rawContent = await readFile(absolutePath, "utf-8");
 
 						// Check if aborted after reading
 						if (aborted) {
 							return;
 						}
+
+						const { bom, text: content } = stripBom(rawContent);
 
 						const originalEnding = detectLineEnding(content);
 						const normalizedContent = normalizeToLF(content);
@@ -222,7 +244,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						// Count occurrences
-						const occurrences = normalizedContent.split(normalizedOldText).length - 1;
+						const occurrences = countOccurrences(normalizedContent, normalizedOldText);
 
 						if (occurrences > 1) {
 							if (signal) {
@@ -262,7 +284,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							return;
 						}
 
-						const finalContent = restoreLineEndings(normalizedNewContent, originalEnding);
+						const finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding);
 						await writeFile(absolutePath, finalContent, "utf-8");
 
 						// Check if aborted after writing
@@ -275,7 +297,8 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							signal.removeEventListener("abort", onAbort);
 						}
 
-						const diffResult = generateDiffString(normalizedContent, normalizedNewContent);
+						const oldForDiff = bom + restoreLineEndings(normalizedContent, originalEnding);
+						const diffResult = generateDiffString(oldForDiff, finalContent);
 						resolve({
 							content: [
 								{

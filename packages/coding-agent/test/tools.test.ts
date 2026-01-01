@@ -433,4 +433,60 @@ describe("edit tool CRLF handling", () => {
 			}),
 		).rejects.toThrow(/Found 2 occurrences/);
 	});
+
+	it("should preserve UTF-8 BOM after edit", async () => {
+		const testFile = join(testDir, "bom-test.txt");
+		writeFileSync(testFile, "\uFEFFfirst\r\nsecond\r\nthird\r\n");
+
+		await editTool.execute("test-bom-1", {
+			path: testFile,
+			oldText: "second\n",
+			newText: "REPLACED\n",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("\uFEFFfirst\r\nREPLACED\r\nthird\r\n");
+	});
+
+	it("should handle file with no newlines", async () => {
+		const testFile = join(testDir, "no-newline.txt");
+		writeFileSync(testFile, "single line content");
+
+		await editTool.execute("test-no-newline", {
+			path: testFile,
+			oldText: "line",
+			newText: "LINE",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("single LINE content");
+	});
+
+	it("should handle lone CR as line ending", async () => {
+		const testFile = join(testDir, "lone-cr.txt");
+		writeFileSync(testFile, "first\rsecond\rthird\r");
+
+		await editTool.execute("test-lone-cr", {
+			path: testFile,
+			oldText: "second\n",
+			newText: "REPLACED\n",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("first\nREPLACED\nthird\n");
+	});
+
+	it("should match oldText without trailing newline", async () => {
+		const testFile = join(testDir, "no-trailing.txt");
+		writeFileSync(testFile, "hello world\r\ngoodbye world\r\n");
+
+		await editTool.execute("test-no-trailing", {
+			path: testFile,
+			oldText: "hello world",
+			newText: "HELLO WORLD",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("HELLO WORLD\r\ngoodbye world\r\n");
+	});
 });
