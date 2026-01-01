@@ -235,7 +235,7 @@
     }
 
     .header h1 {
-      font-size: 14px;
+      font-size: 12px;
       font-weight: bold;
       color: var(--borderAccent);
       margin-bottom: var(--line-height);
@@ -1287,6 +1287,15 @@
         return div.innerHTML;
       }
 
+      // Format token counts (matches footer.ts)
+      function formatTokens(count) {
+        if (count < 1000) return count.toString();
+        if (count < 10000) return (count / 1000).toFixed(1) + 'k';
+        if (count < 1000000) return Math.round(count / 1000) + 'k';
+        if (count < 10000000) return (count / 1000000).toFixed(1) + 'M';
+        return Math.round(count / 1000000) + 'M';
+      }
+
       // Configure marked
       marked.setOptions({
         breaks: true,
@@ -1666,8 +1675,8 @@
         return '';
       }
 
-      // Compute stats for current path
-      function computeStats(path) {
+      // Compute stats for a list of entries
+      function computeStats(entryList) {
         let userMessages = 0;
         let assistantMessages = 0;
         let toolCalls = 0;
@@ -1675,7 +1684,7 @@
         const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
         const models = new Set();
 
-        for (const entry of path) {
+        for (const entry of entryList) {
           if (entry.type === 'message') {
             const msg = entry.message;
             if (msg.role === 'user') userMessages++;
@@ -1704,22 +1713,32 @@
         return { userMessages, assistantMessages, toolCalls, tokens, cost, models: Array.from(models) };
       }
 
+      // Compute global stats once for all entries
+      const globalStats = computeStats(entries);
+
       // Render header
       function renderHeader(path) {
-        const stats = computeStats(path);
-        const totalTokens = stats.tokens.input + stats.tokens.output + stats.tokens.cacheRead + stats.tokens.cacheWrite;
-        const totalCost = stats.cost.input + stats.cost.output + stats.cost.cacheRead + stats.cost.cacheWrite;
+        const pathStats = computeStats(path);
+        const totalCost = globalStats.cost.input + globalStats.cost.output + globalStats.cost.cacheRead + globalStats.cost.cacheWrite;
+
+        // Format tokens like footer: ↑input ↓output Rcache_read Wcache_write (global stats)
+        const tokenParts = [];
+        if (globalStats.tokens.input) tokenParts.push(`↑${formatTokens(globalStats.tokens.input)}`);
+        if (globalStats.tokens.output) tokenParts.push(`↓${formatTokens(globalStats.tokens.output)}`);
+        if (globalStats.tokens.cacheRead) tokenParts.push(`R${formatTokens(globalStats.tokens.cacheRead)}`);
+        if (globalStats.tokens.cacheWrite) tokenParts.push(`W${formatTokens(globalStats.tokens.cacheWrite)}`);
+        const tokensDisplay = tokenParts.join(' ') || '0';
 
         let html = `
           <div class="header">
             <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
             <div class="header-info">
               <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
-              <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${stats.models.join(', ') || 'unknown'}</span></div>
-              <div class="info-item"><span class="info-label">Messages:</span><span class="info-value">${stats.userMessages} user, ${stats.assistantMessages} assistant</span></div>
-              <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${stats.toolCalls}</span></div>
-              <div class="info-item"><span class="info-label">Tokens:</span><span class="info-value">${totalTokens.toLocaleString()}</span></div>
-              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">$${totalCost.toFixed(4)}</span></div>
+              <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${globalStats.models.join(', ') || 'unknown'}</span></div>
+              <div class="info-item"><span class="info-label">Messages:</span><span class="info-value">${globalStats.userMessages} user, ${globalStats.assistantMessages} assistant</span></div>
+              <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${globalStats.toolCalls}</span></div>
+              <div class="info-item"><span class="info-label">Tokens:</span><span class="info-value">${tokensDisplay}</span></div>
+              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">$${totalCost.toFixed(3)}</span></div>
             </div>
           </div>`;
 
@@ -1745,7 +1764,8 @@
       }
 
       // Navigate to entry
-      function navigateTo(targetId, scrollToTarget = true) {
+      // scrollMode: 'target' = scroll to target element, 'bottom' = scroll to bottom, 'none' = no scroll
+      function navigateTo(targetId, scrollMode = 'target') {
         currentPath = getPath(targetId);
         renderTree();
 
@@ -1755,19 +1775,18 @@
         headerContainer.innerHTML = renderHeader(currentPath);
         messagesContainer.innerHTML = currentPath.map(renderEntry).join('');
 
-        // Scroll to target element
-        if (scrollToTarget) {
-          const targetEl = document.getElementById(`entry-${targetId}`);
-          if (targetEl) {
-            // Use 'end' to ensure we scroll far enough to see the target
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            // Brief highlight
-            targetEl.style.outline = '2px solid var(--accent)';
-            setTimeout(() => { targetEl.style.outline = ''; }, 1500);
+        // Use requestAnimationFrame to wait for DOM render before scrolling
+        requestAnimationFrame(() => {
+          const content = document.getElementById('content');
+          if (scrollMode === 'bottom') {
+            content.scrollTop = content.scrollHeight;
+          } else if (scrollMode === 'target') {
+            const targetEl = document.getElementById(`entry-${targetId}`);
+            if (targetEl) {
+              targetEl.scrollIntoView({ block: 'center' });
+            }
           }
-        } else {
-          document.getElementById('content').scrollTop = 0;
-        }
+        });
       }
 
       // Initialize
@@ -1852,7 +1871,7 @@
         if (e.key === 'Escape') {
           searchInput.value = '';
           searchQuery = '';
-          navigateTo(leafId);
+          navigateTo(leafId, 'bottom');
         }
         // Toggle thinking blocks on Ctrl+T
         if (e.ctrlKey && e.key === 't') {
@@ -1867,7 +1886,7 @@
       });
 
       // Initial render
-      navigateTo(leafId);
+      navigateTo(leafId, 'bottom');
     })();
   </script>
 </body>
