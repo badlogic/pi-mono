@@ -5,7 +5,7 @@
  */
 
 import { getModel } from "@mariozechner/pi-ai";
-import { createAgentSession, discoverAuthStorage, discoverModels } from "../../src/index.js";
+import { createAgentSession, discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage and model registry
 const authStorage = discoverAuthStorage();

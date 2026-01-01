@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage, AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
@@ -54,7 +54,15 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getAvailableThemes, getEditorTheme, getMarkdownTheme, onThemeChange, setTheme, theme } from "./theme/theme.js";
+import {
+	getAvailableThemes,
+	getEditorTheme,
+	getMarkdownTheme,
+	onThemeChange,
+	setTheme,
+	type Theme,
+	theme,
+} from "./theme/theme.js";
 
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
@@ -83,8 +91,13 @@ export class InteractiveMode {
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 
+	// Status line tracking (for mutating immediately-sequential status updates)
+	private lastStatusSpacer: Spacer | undefined = undefined;
+	private lastStatusText: Text | undefined = undefined;
+
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
+	private streamingMessage: AssistantMessage | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -152,7 +165,7 @@ export class InteractiveMode {
 		this.editor = new CustomEditor(getEditorTheme());
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
-		this.footer = new FooterComponent(session.state, session.modelRegistry);
+		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Define slash commands for autocomplete
@@ -357,7 +370,9 @@ export class InteractiveMode {
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
 			setStatus: (key, text) => this.setHookStatus(key, text),
-			custom: (component) => this.showHookCustom(component),
+			custom: (factory) => this.showHookCustom(factory),
+			setEditorText: (text) => this.editor.setText(text),
+			getEditorText: () => this.editor.getText(),
 		};
 		this.setToolUIContext(uiContext, true);
 
@@ -546,38 +561,37 @@ export class InteractiveMode {
 
 	/**
 	 * Show a custom component with keyboard focus.
-	 * Returns a function to call when done.
 	 */
-	private showHookCustom(component: Component & { dispose?(): void }): {
-		close: () => void;
-		requestRender: () => void;
-	} {
-		// Store current editor content
+	private async showHookCustom<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+	): Promise<T> {
 		const savedText = this.editor.getText();
 
-		// Replace editor with custom component
-		this.editorContainer.clear();
-		this.editorContainer.addChild(component);
-		this.ui.setFocus(component);
-		this.ui.requestRender();
+		return new Promise((resolve) => {
+			let component: Component & { dispose?(): void };
 
-		// Return control object
-		return {
-			close: () => {
-				// Call dispose if available
+			const close = (result: T) => {
 				component.dispose?.();
-
-				// Restore editor
 				this.editorContainer.clear();
 				this.editorContainer.addChild(this.editor);
 				this.editor.setText(savedText);
 				this.ui.setFocus(this.editor);
 				this.ui.requestRender();
-			},
-			requestRender: () => {
+				resolve(result);
+			};
+
+			Promise.resolve(factory(this.ui, theme, close)).then((c) => {
+				component = c;
+				this.editorContainer.clear();
+				this.editorContainer.addChild(component);
+				this.ui.setFocus(component);
 				this.ui.requestRender();
-			},
-		};
+			});
+		});
 	}
 
 	/**
@@ -801,16 +815,16 @@ export class InteractiveMode {
 
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
-			await this.handleEvent(event, this.session.state);
+			await this.handleEvent(event);
 		});
 	}
 
-	private async handleEvent(event: AgentSessionEvent, state: AgentState): Promise<void> {
+	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
 		}
 
-		this.footer.updateState(state);
+		this.footer.invalidate();
 
 		switch (event.type) {
 			case "agent_start":
@@ -839,18 +853,19 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
+					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(event.message);
+					this.streamingComponent.updateContent(this.streamingMessage);
 					this.ui.requestRender();
 				}
 				break;
 
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
-					const assistantMsg = event.message as AssistantMessage;
-					this.streamingComponent.updateContent(assistantMsg);
+					this.streamingMessage = event.message;
+					this.streamingComponent.updateContent(this.streamingMessage);
 
-					for (const content of assistantMsg.content) {
+					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
 								this.chatContainer.addChild(new Text("", 0, 0));
@@ -881,12 +896,14 @@ export class InteractiveMode {
 			case "message_end":
 				if (event.message.role === "user") break;
 				if (this.streamingComponent && event.message.role === "assistant") {
-					const assistantMsg = event.message as AssistantMessage;
-					this.streamingComponent.updateContent(assistantMsg);
+					this.streamingMessage = event.message;
+					this.streamingComponent.updateContent(this.streamingMessage);
 
-					if (assistantMsg.stopReason === "aborted" || assistantMsg.stopReason === "error") {
+					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
 						const errorMessage =
-							assistantMsg.stopReason === "aborted" ? "Operation aborted" : assistantMsg.errorMessage || "Error";
+							this.streamingMessage.stopReason === "aborted"
+								? "Operation aborted"
+								: this.streamingMessage.errorMessage || "Error";
 						for (const [, component] of this.pendingTools.entries()) {
 							component.updateResult({
 								content: [{ type: "text", text: errorMessage }],
@@ -896,6 +913,7 @@ export class InteractiveMode {
 						this.pendingTools.clear();
 					}
 					this.streamingComponent = undefined;
+					this.streamingMessage = undefined;
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -948,6 +966,7 @@ export class InteractiveMode {
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
+					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
 				this.ui.requestRender();
@@ -1003,7 +1022,7 @@ export class InteractiveMode {
 						summary: event.result.summary,
 						timestamp: Date.now(),
 					});
-					this.footer.updateState(this.session.state);
+					this.footer.invalidate();
 				}
 				this.ui.requestRender();
 				break;
@@ -1061,10 +1080,29 @@ export class InteractiveMode {
 		return textBlocks.map((c) => (c as { text: string }).text).join("");
 	}
 
-	/** Show a status message in the chat */
+	/**
+	 * Show a status message in the chat.
+	 *
+	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
+	 * we update the previous status line instead of appending new ones to avoid log spam.
+	 */
 	private showStatus(message: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
+		const children = this.chatContainer.children;
+		const last = children.length > 0 ? children[children.length - 1] : undefined;
+		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
+
+		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
+			this.lastStatusText.setText(theme.fg("dim", message));
+			this.ui.requestRender();
+			return;
+		}
+
+		const spacer = new Spacer(1);
+		const text = new Text(theme.fg("dim", message), 1, 0);
+		this.chatContainer.addChild(spacer);
+		this.chatContainer.addChild(text);
+		this.lastStatusSpacer = spacer;
+		this.lastStatusText = text;
 		this.ui.requestRender();
 	}
 
@@ -1144,7 +1182,7 @@ export class InteractiveMode {
 		this.pendingTools.clear();
 
 		if (options.updateFooter) {
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 			this.updateEditorBorderColor();
 		}
 
@@ -1291,7 +1329,7 @@ export class InteractiveMode {
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
 		}
@@ -1304,7 +1342,7 @@ export class InteractiveMode {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
-				this.footer.updateState(this.session.state);
+				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
@@ -1329,14 +1367,17 @@ export class InteractiveMode {
 		this.hideThinkingBlock = !this.hideThinkingBlock;
 		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
 
-		for (const child of this.chatContainer.children) {
-			if (child instanceof AssistantMessageComponent) {
-				child.setHideThinkingBlock(this.hideThinkingBlock);
-			}
-		}
-
+		// Rebuild chat from session messages
 		this.chatContainer.clear();
 		this.rebuildChatFromMessages();
+
+		// If streaming, re-add the streaming component with updated visibility and re-render
+		if (this.streamingComponent && this.streamingMessage) {
+			this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
+			this.streamingComponent.updateContent(this.streamingMessage);
+			this.chatContainer.addChild(this.streamingComponent);
+		}
+
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
@@ -1498,7 +1539,7 @@ export class InteractiveMode {
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
-						this.footer.updateState(this.session.state);
+						this.footer.invalidate();
 						this.updateEditorBorderColor();
 					},
 					onThemeChange: (themeName) => {
@@ -1551,7 +1592,7 @@ export class InteractiveMode {
 				async (model) => {
 					try {
 						await this.session.setModel(model);
-						this.footer.updateState(this.session.state);
+						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
 						this.showStatus(`Model: ${model.id}`);
@@ -1738,6 +1779,7 @@ export class InteractiveMode {
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
 		// Switch session via AgentSession (emits hook and tool session events)
@@ -2004,6 +2046,7 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
 		this.chatContainer.addChild(new Spacer(1));
@@ -2138,7 +2181,7 @@ export class InteractiveMode {
 			const msg = createCompactionSummaryMessage(result.summary, result.tokensBefore, new Date().toISOString());
 			this.addMessageToChat(msg);
 
-			this.footer.updateState(this.session.state);
+			this.footer.invalidate();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {

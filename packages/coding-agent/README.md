@@ -25,12 +25,13 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Project Context Files](#project-context-files)
   - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
+  - [Settings File](#settings-file)
+- [Extensions](#extensions)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
   - [Skills](#skills)
   - [Hooks](#hooks)
   - [Custom Tools](#custom-tools)
-  - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -292,6 +293,10 @@ Toggle inline images via `/settings` or set `terminal.showImages: false` in sett
 
 ## Sessions
 
+Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+See [docs/session.md](docs/session.md) for the file format and programmatic API.
+
 ### Session Management
 
 Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
@@ -320,14 +325,6 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 When disabled, neither case triggers automatic compaction (use `/compact` manually if needed).
 
-**How it works:**
-1. Cut point calculated to keep ~20k tokens of recent messages
-2. Messages before cut point are summarized
-3. Summary replaces old messages as "context handoff"
-4. Previous compaction summaries chain into new ones
-
-Compaction does not create a new session, but continues the existing one, with a marker in the `.jsonl` file that encodes the compaction point.
-
 **Configuration** (`~/.pi/agent/settings.json`):
 
 ```json
@@ -340,7 +337,9 @@ Compaction does not create a new session, but continues the existing one, with a
 }
 ```
 
-> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
+> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/tree` to revisit any previous point.
+
+See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via hooks.
 
 ### Branching
 
@@ -349,7 +348,7 @@ Compaction does not create a new session, but continues the existing one, with a
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
 - Press `l` to label entries as bookmarks
-- Selecting a branch generates a summary and switches context
+- When switching branches, you're prompted whether to generate a summary of the abandoned branch (messages up to the common ancestor)
 
 **Create new session (`/branch`):** Branch to a new session file:
 
@@ -480,6 +479,75 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 5. First available model with valid API key
 
 > pi can help you create custom provider and model configurations.
+
+### Settings File
+
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
+
+```json
+{
+  "theme": "dark",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": ["anthropic/*", "*gpt*", "gemini-2.5-pro:high"],
+  "queueMode": "one-at-a-time",
+  "shellPath": "C:\\path\\to\\bash.exe",
+  "hideThinkingBlock": false,
+  "collapseChangelog": false,
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "skills": {
+    "enabled": true
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "terminal": {
+    "showImages": true
+  },
+  "hooks": ["/path/to/hook.ts"],
+  "customTools": ["/path/to/tool.ts"]
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `theme` | Color theme name | auto-detected |
+| `defaultProvider` | Default model provider | - |
+| `defaultModel` | Default model ID | - |
+| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `enabledModels` | Model patterns for cycling. Supports glob patterns (`github-copilot/*`, `*sonnet*`) and fuzzy matching. Same as `--models` CLI flag | - |
+| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
+| `shellPath` | Custom bash path (Windows) | auto-detected |
+| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `collapseChangelog` | Show condensed changelog after update | `false` |
+| `compaction.enabled` | Enable auto-compaction | `true` |
+| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
+| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
+| `skills.enabled` | Enable skills discovery | `true` |
+| `retry.enabled` | Auto-retry on transient errors | `true` |
+| `retry.maxRetries` | Maximum retry attempts | `3` |
+| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
+| `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `hooks` | Additional hook file paths | `[]` |
+| `customTools` | Additional custom tool file paths | `[]` |
+
+---
+
+## Extensions
 
 ### Themes
 
@@ -696,71 +764,6 @@ export default factory;
 
 > See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
 
-### Settings File
-
-Settings are loaded from two locations and merged:
-
-1. **Global:** `~/.pi/agent/settings.json` - user preferences
-2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
-
-Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
-
-Global `~/.pi/agent/settings.json` stores persistent preferences:
-
-```json
-{
-  "theme": "dark",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "medium",
-  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
-  "queueMode": "one-at-a-time",
-  "shellPath": "C:\\path\\to\\bash.exe",
-  "hideThinkingBlock": false,
-  "collapseChangelog": false,
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
-  },
-  "skills": {
-    "enabled": true
-  },
-  "retry": {
-    "enabled": true,
-    "maxRetries": 3,
-    "baseDelayMs": 2000
-  },
-  "terminal": {
-    "showImages": true
-  },
-  "hooks": ["/path/to/hook.ts"],
-  "customTools": ["/path/to/tool.ts"]
-}
-```
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `theme` | Color theme name | auto-detected |
-| `defaultProvider` | Default model provider | - |
-| `defaultModel` | Default model ID | - |
-| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
-| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
-| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
-| `shellPath` | Custom bash path (Windows) | auto-detected |
-| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
-| `collapseChangelog` | Show condensed changelog after update | `false` |
-| `compaction.enabled` | Enable auto-compaction | `true` |
-| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
-| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
-| `skills.enabled` | Enable skills discovery | `true` |
-| `retry.enabled` | Auto-retry on transient errors | `true` |
-| `retry.maxRetries` | Maximum retry attempts | `3` |
-| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
-| `terminal.showImages` | Render images inline (supported terminals) | `true` |
-| `hooks` | Additional hook file paths | `[]` |
-| `customTools` | Additional custom tool file paths | `[]` |
-
 ---
 
 ## CLI Reference
@@ -785,7 +788,7 @@ pi [options] [@files...] [messages...]
 | `--session-dir <dir>` | Directory for session storage and lookup |
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |
+| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--hook <path>` | Load a hook file (can be used multiple times) |
@@ -836,6 +839,9 @@ pi --provider openai --model gpt-4o "Help me refactor"
 
 # Model cycling with thinking levels
 pi --models sonnet:high,haiku:low
+
+# Limit to specific provider with glob pattern
+pi --models "github-copilot/*"
 
 # Read-only mode
 pi --tools read,grep,find,ls -p "Review the architecture"

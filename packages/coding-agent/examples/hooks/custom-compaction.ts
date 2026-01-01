@@ -14,8 +14,8 @@
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {

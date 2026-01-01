@@ -34,6 +34,7 @@ const ThemeJsonSchema = Type.Object({
 		muted: ColorValueSchema,
 		dim: ColorValueSchema,
 		text: ColorValueSchema,
+		thinkingText: ColorValueSchema,
 		// Backgrounds & Content Text (11 colors)
 		selectedBg: ColorValueSchema,
 		userMessageBg: ColorValueSchema,
@@ -98,6 +99,7 @@ export type ThemeColor =
 	| "muted"
 	| "dim"
 	| "text"
+	| "thinkingText"
 	| "userMessageText"
 	| "customMessageText"
 	| "customMessageLabel"

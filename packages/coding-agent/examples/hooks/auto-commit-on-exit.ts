@@ -5,7 +5,7 @@
  * Uses the last assistant message to generate a commit message.
  */
 
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {

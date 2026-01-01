@@ -91,7 +91,9 @@ function createNoOpUIContext(): HookUIContext {
 		input: async () => undefined,
 		notify: () => {},
 		setStatus: () => {},
-		custom: () => ({ close: () => {}, requestRender: () => {} }),
+		custom: async () => undefined as never,
+		setEditorText: () => {},
+		getEditorText: () => "",
 	};
 }
 

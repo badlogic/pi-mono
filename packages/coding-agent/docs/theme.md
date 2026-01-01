@@ -22,6 +22,7 @@ Every theme must define all color tokens. There are no optional colors.
 | `muted` | Secondary/dimmed text | Metadata, descriptions, output |
 | `dim` | Very dimmed text | Less important info, placeholders |
 | `text` | Default text color | Main content (usually `""`) |
+| `thinkingText` | Thinking block text | Assistant reasoning traces |
 
 ### Backgrounds & Content Text (11 colors)
 
@@ -119,6 +120,7 @@ Themes are defined in JSON files with the following structure:
   "colors": {
     "accent": "blue",
     "muted": "gray",
+    "thinkingText": "gray",
     "text": "",
     ...
   }

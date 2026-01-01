@@ -140,7 +140,7 @@ export interface CreateAgentSessionResult {
 // Re-exports
 
 export type { CustomTool } from "./custom-tools/types.js";
-export type { HookAPI, HookFactory } from "./hooks/types.js";
+export type { HookAPI, HookContext, HookFactory } from "./hooks/types.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
 export type { FileSlashCommand } from "./slash-commands.js";
@@ -621,6 +621,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
+	} else {
+		// Save initial model and thinking level for new sessions so they can be restored on resume
+		if (model) {
+			sessionManager.appendModelChange(model.provider, model.id);
+		}
+		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
 	const session = new AgentSession({

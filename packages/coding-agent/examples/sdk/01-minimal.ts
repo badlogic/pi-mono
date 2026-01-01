@@ -5,7 +5,7 @@
  * from cwd and ~/.pi/agent. Model chosen from settings or first available.
  */
 
-import { createAgentSession } from "../../src/index.js";
+import { createAgentSession } from "@mariozechner/pi-coding-agent";
 
 const { session } = await createAgentSession();
 

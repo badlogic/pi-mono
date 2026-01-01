@@ -9,7 +9,6 @@
  */
 
 import { getModel } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
 import {
 	AuthStorage,
 	type CustomTool,
@@ -20,7 +19,8 @@ import {
 	ModelRegistry,
 	SessionManager,
 	SettingsManager,
-} from "../../src/index.js";
+} from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 
 // Custom auth storage location
 const authStorage = new AuthStorage("/tmp/my-agent/auth.json");
