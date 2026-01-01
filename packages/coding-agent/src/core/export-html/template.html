@@ -9,6 +9,7 @@
       {{THEME_VARS}}
       --body-bg: {{BODY_BG}};
       --container-bg: {{CONTAINER_BG}};
+      --info-bg: {{INFO_BG}};
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -366,7 +367,7 @@
     /* Model change */
     .model-change {
       padding: 8px 16px;
-      background: var(--toolPendingBg);
+      background: var(--info-bg);
       border-radius: 4px;
       color: var(--dim);
       font-size: 11px;
@@ -379,7 +380,7 @@
 
     /* Compaction */
     .compaction {
-      background: var(--customMessageBg);
+      background: var(--info-bg);
       border-radius: 4px;
       overflow: hidden;
     }
@@ -393,7 +394,7 @@
     }
 
     .compaction-header:hover {
-      background: rgba(128, 128, 128, 0.1);
+      background: var(--selectedBg);
     }
 
     .compaction-toggle {
@@ -421,7 +422,7 @@
     }
 
     .compaction-summary {
-      background: rgba(0, 0, 0, 0.1);
+      background: var(--selectedBg);
       border-radius: 4px;
       padding: 12px;
       white-space: pre-wrap;
@@ -429,7 +430,7 @@
 
     /* System prompt */
     .system-prompt {
-      background: var(--customMessageBg);
+      background: var(--info-bg);
       padding: 12px 16px;
       border-radius: 4px;
       margin-bottom: 16px;

@@ -2,12 +2,78 @@ import type { AgentState } from "@mariozechner/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir, VERSION } from "../../config.js";
-import { getResolvedThemeColors, isLightTheme } from "../../modes/interactive/theme/theme.js";
+import { getResolvedThemeColors } from "../../modes/interactive/theme/theme.js";
 import { SessionManager } from "../session-manager.js";
 
 export interface ExportOptions {
 	outputPath?: string;
 	themeName?: string;
+}
+
+/** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
+function parseColor(color: string): { r: number; g: number; b: number } | undefined {
+	const hexMatch = color.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+	if (hexMatch) {
+		return {
+			r: Number.parseInt(hexMatch[1], 16),
+			g: Number.parseInt(hexMatch[2], 16),
+			b: Number.parseInt(hexMatch[3], 16),
+		};
+	}
+	const rgbMatch = color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+	if (rgbMatch) {
+		return {
+			r: Number.parseInt(rgbMatch[1], 10),
+			g: Number.parseInt(rgbMatch[2], 10),
+			b: Number.parseInt(rgbMatch[3], 10),
+		};
+	}
+	return undefined;
+}
+
+/** Calculate relative luminance of a color (0-1, higher = lighter). */
+function getLuminance(r: number, g: number, b: number): number {
+	const toLinear = (c: number) => {
+		const s = c / 255;
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/** Adjust color brightness. Factor > 1 lightens, < 1 darkens. */
+function adjustBrightness(color: string, factor: number): string {
+	const parsed = parseColor(color);
+	if (!parsed) return color;
+	const adjust = (c: number) => Math.min(255, Math.max(0, Math.round(c * factor)));
+	return `rgb(${adjust(parsed.r)}, ${adjust(parsed.g)}, ${adjust(parsed.b)})`;
+}
+
+/** Derive export background colors from a base color (e.g., userMessageBg). */
+function deriveExportColors(baseColor: string): { pageBg: string; cardBg: string; infoBg: string } {
+	const parsed = parseColor(baseColor);
+	if (!parsed) {
+		return {
+			pageBg: "rgb(24, 24, 30)",
+			cardBg: "rgb(30, 30, 36)",
+			infoBg: "rgb(60, 55, 40)",
+		};
+	}
+
+	const luminance = getLuminance(parsed.r, parsed.g, parsed.b);
+	const isLight = luminance > 0.5;
+
+	if (isLight) {
+		return {
+			pageBg: adjustBrightness(baseColor, 0.96),
+			cardBg: baseColor,
+			infoBg: `rgb(${Math.min(255, parsed.r + 10)}, ${Math.min(255, parsed.g + 5)}, ${Math.max(0, parsed.b - 20)})`,
+		};
+	}
+	return {
+		pageBg: adjustBrightness(baseColor, 0.7),
+		cardBg: adjustBrightness(baseColor, 0.85),
+		infoBg: `rgb(${Math.min(255, parsed.r + 20)}, ${Math.min(255, parsed.g + 15)}, ${parsed.b})`,
+	};
 }
 
 /**
@@ -19,6 +85,14 @@ function generateThemeVars(themeName?: string): string {
 	for (const [key, value] of Object.entries(colors)) {
 		lines.push(`--${key}: ${value};`);
 	}
+
+	// Add derived export colors
+	const userMessageBg = colors.userMessageBg || "#343541";
+	const exportColors = deriveExportColors(userMessageBg);
+	lines.push(`--exportPageBg: ${exportColors.pageBg};`);
+	lines.push(`--exportCardBg: ${exportColors.cardBg};`);
+	lines.push(`--exportInfoBg: ${exportColors.infoBg};`);
+
 	return lines.join("\n      ");
 }
 
@@ -40,9 +114,11 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const hljsJs = readFileSync(join(templateDir, "vendor", "highlight.min.js"), "utf-8");
 
 	const themeVars = generateThemeVars(themeName);
-	const light = isLightTheme(themeName);
-	const bodyBg = light ? "#f8f8f8" : "#18181e";
-	const containerBg = light ? "#ffffff" : "#1e1e24";
+	const colors = getResolvedThemeColors(themeName);
+	const exportColors = deriveExportColors(colors.userMessageBg || "#343541");
+	const bodyBg = exportColors.pageBg;
+	const containerBg = exportColors.cardBg;
+	const infoBg = exportColors.infoBg;
 
 	const title = `Session ${sessionData.header?.id ?? "export"} - ${APP_NAME}`;
 
@@ -54,6 +130,7 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 		.replace("{{THEME_VARS}}", themeVars)
 		.replace("{{BODY_BG}}", bodyBg)
 		.replace("{{CONTAINER_BG}}", containerBg)
+		.replace("{{INFO_BG}}", infoBg)
 		.replace("{{SESSION_DATA}}", sessionDataBase64)
 		.replace("{{MARKED_JS}}", markedJs)
 		.replace("{{HIGHLIGHT_JS}}", hljsJs)
