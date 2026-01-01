@@ -621,7 +621,6 @@
       display: block;
       background: none;
       color: var(--mdCodeBlock);
-      padding: var(--line-height);
     }
 
     .markdown-content blockquote {
