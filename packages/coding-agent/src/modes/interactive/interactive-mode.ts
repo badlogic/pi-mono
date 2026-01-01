@@ -23,7 +23,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec, spawnSync } from "child_process";
+import { exec, spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
@@ -173,6 +173,7 @@ export class InteractiveMode {
 			{ name: "settings", description: "Open settings menu" },
 			{ name: "model", description: "Select model (opens selector UI)" },
 			{ name: "export", description: "Export session to HTML file" },
+			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
@@ -672,6 +673,11 @@ export class InteractiveMode {
 			}
 			if (text.startsWith("/export")) {
 				this.handleExportCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/share") {
+				await this.handleShareCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -1911,6 +1917,85 @@ export class InteractiveMode {
 			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+		}
+	}
+
+	private async handleShareCommand(): Promise<void> {
+		// Check if gh is available and logged in
+		try {
+			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+			if (authResult.status !== 0) {
+				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
+				return;
+			}
+		} catch {
+			this.showError("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/");
+			return;
+		}
+
+		// Export to a temp file
+		const tmpFile = path.join(os.tmpdir(), "session.html");
+		try {
+			this.session.exportToHtml(tmpFile);
+		} catch (error: unknown) {
+			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+			return;
+		}
+
+		// Show loader while creating gist
+		const loader = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			"Creating gist...",
+		);
+		this.statusContainer.addChild(loader);
+		this.ui.requestRender();
+
+		// Create a secret gist asynchronously
+		try {
+			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
+				const proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
+				let stdout = "";
+				let stderr = "";
+				proc.stdout.on("data", (data) => {
+					stdout += data.toString();
+				});
+				proc.stderr.on("data", (data) => {
+					stderr += data.toString();
+				});
+				proc.on("close", (code) => resolve({ stdout, stderr, code }));
+			});
+
+			if (result.code !== 0) {
+				const errorMsg = result.stderr?.trim() || "Unknown error";
+				this.showError(`Failed to create gist: ${errorMsg}`);
+				return;
+			}
+
+			// Extract gist ID from the URL returned by gh
+			// gh returns something like: https://gist.github.com/username/GIST_ID
+			const gistUrl = result.stdout?.trim();
+			const gistId = gistUrl?.split("/").pop();
+			if (!gistId) {
+				this.showError("Failed to parse gist ID from gh output");
+				return;
+			}
+
+			// Create the preview URL
+			const previewUrl = `https://shittycodingagent.ai/session?${gistId}`;
+			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
+		} catch (error: unknown) {
+			this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
+		} finally {
+			// Stop loader and clean up
+			loader.stop();
+			this.statusContainer.clear();
+			try {
+				fs.unlinkSync(tmpFile);
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	}
 

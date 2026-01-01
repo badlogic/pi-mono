@@ -1,0 +1,1160 @@
+    (function() {
+      'use strict';
+
+      // ============================================================
+      // DATA LOADING
+      // ============================================================
+
+      const base64 = document.getElementById('session-data').textContent;
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+      const { header, entries, leafId, systemPrompt, tools } = data;
+
+      // ============================================================
+      // DATA STRUCTURES
+      // ============================================================
+
+      // Entry lookup by ID
+      const byId = new Map();
+      for (const entry of entries) {
+        byId.set(entry.id, entry);
+      }
+
+      // Tool call lookup (toolCallId -> {name, arguments})
+      const toolCallMap = new Map();
+      for (const entry of entries) {
+        if (entry.type === 'message' && entry.message.role === 'assistant') {
+          const content = entry.message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'toolCall') {
+                toolCallMap.set(block.id, { name: block.name, arguments: block.arguments });
+              }
+            }
+          }
+        }
+      }
+
+      // Label lookup (entryId -> label string)
+      // Labels are stored in 'label' entries that reference their target via parentId
+      const labelMap = new Map();
+      for (const entry of entries) {
+        if (entry.type === 'label' && entry.parentId && entry.label) {
+          labelMap.set(entry.parentId, entry.label);
+        }
+      }
+
+      // ============================================================
+      // TREE DATA PREPARATION (no DOM, pure data)
+      // ============================================================
+
+      /**
+       * Build tree structure from flat entries.
+       * Returns array of root nodes, each with { entry, children, label }.
+       */
+      function buildTree() {
+        const nodeMap = new Map();
+        const roots = [];
+
+        // Create nodes
+        for (const entry of entries) {
+          nodeMap.set(entry.id, { 
+            entry, 
+            children: [],
+            label: labelMap.get(entry.id)
+          });
+        }
+
+        // Build parent-child relationships
+        for (const entry of entries) {
+          const node = nodeMap.get(entry.id);
+          if (entry.parentId === null || entry.parentId === undefined || entry.parentId === entry.id) {
+            roots.push(node);
+          } else {
+            const parent = nodeMap.get(entry.parentId);
+            if (parent) {
+              parent.children.push(node);
+            } else {
+              roots.push(node);
+            }
+          }
+        }
+
+        // Sort children by timestamp
+        function sortChildren(node) {
+          node.children.sort((a, b) =>
+            new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime()
+          );
+          node.children.forEach(sortChildren);
+        }
+        roots.forEach(sortChildren);
+
+        return roots;
+      }
+
+      /**
+       * Build set of entry IDs on path from root to target.
+       */
+      function buildActivePathIds(targetId) {
+        const ids = new Set();
+        let current = byId.get(targetId);
+        while (current) {
+          ids.add(current.id);
+          // Stop if no parent or self-referencing (root)
+          if (!current.parentId || current.parentId === current.id) {
+            break;
+          }
+          current = byId.get(current.parentId);
+        }
+        return ids;
+      }
+
+      /**
+       * Get array of entries from root to target (the conversation path).
+       */
+      function getPath(targetId) {
+        const path = [];
+        let current = byId.get(targetId);
+        while (current) {
+          path.unshift(current);
+          // Stop if no parent or self-referencing (root)
+          if (!current.parentId || current.parentId === current.id) {
+            break;
+          }
+          current = byId.get(current.parentId);
+        }
+        return path;
+      }
+
+      /**
+       * Flatten tree into list with indentation and connector info.
+       * Returns array of { node, indent, showConnector, isLast, gutters, isVirtualRootChild, multipleRoots }.
+       * Matches tree-selector.ts logic exactly.
+       */
+      function flattenTree(roots, activePathIds) {
+        const result = [];
+        const multipleRoots = roots.length > 1;
+
+        // Mark which subtrees contain the active leaf
+        const containsActive = new Map();
+        function markActive(node) {
+          let has = activePathIds.has(node.entry.id);
+          for (const child of node.children) {
+            if (markActive(child)) has = true;
+          }
+          containsActive.set(node, has);
+          return has;
+        }
+        roots.forEach(markActive);
+
+        // Stack: [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
+        const stack = [];
+
+        // Add roots (prioritize branch containing active leaf)
+        const orderedRoots = [...roots].sort((a, b) => 
+          Number(containsActive.get(b)) - Number(containsActive.get(a))
+        );
+        for (let i = orderedRoots.length - 1; i >= 0; i--) {
+          const isLast = i === orderedRoots.length - 1;
+          stack.push([orderedRoots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, [], multipleRoots]);
+        }
+
+        while (stack.length > 0) {
+          const [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild] = stack.pop();
+
+          result.push({ node, indent, showConnector, isLast, gutters, isVirtualRootChild, multipleRoots });
+
+          const children = node.children;
+          const multipleChildren = children.length > 1;
+
+          // Order children (active branch first)
+          const orderedChildren = [...children].sort((a, b) => 
+            Number(containsActive.get(b)) - Number(containsActive.get(a))
+          );
+
+          // Calculate child indent (matches tree-selector.ts)
+          let childIndent;
+          if (multipleChildren) {
+            // Parent branches: children get +1
+            childIndent = indent + 1;
+          } else if (justBranched && indent > 0) {
+            // First generation after a branch: +1 for visual grouping
+            childIndent = indent + 1;
+          } else {
+            // Single-child chain: stay flat
+            childIndent = indent;
+          }
+
+          // Build gutters for children
+          const connectorDisplayed = showConnector && !isVirtualRootChild;
+          const currentDisplayIndent = multipleRoots ? Math.max(0, indent - 1) : indent;
+          const connectorPosition = Math.max(0, currentDisplayIndent - 1);
+          const childGutters = connectorDisplayed
+            ? [...gutters, { position: connectorPosition, show: !isLast }]
+            : gutters;
+
+          // Add children in reverse order for stack
+          for (let i = orderedChildren.length - 1; i >= 0; i--) {
+            const childIsLast = i === orderedChildren.length - 1;
+            stack.push([orderedChildren[i], childIndent, multipleChildren, multipleChildren, childIsLast, childGutters, false]);
+          }
+        }
+
+        return result;
+      }
+
+      /**
+       * Build ASCII prefix string for tree node.
+       */
+      function buildTreePrefix(flatNode) {
+        const { indent, showConnector, isLast, gutters, isVirtualRootChild, multipleRoots } = flatNode;
+        const displayIndent = multipleRoots ? Math.max(0, indent - 1) : indent;
+        const connector = showConnector && !isVirtualRootChild ? (isLast ? '└─ ' : '├─ ') : '';
+        const connectorPosition = connector ? displayIndent - 1 : -1;
+
+        const totalChars = displayIndent * 3;
+        const prefixChars = [];
+        for (let i = 0; i < totalChars; i++) {
+          const level = Math.floor(i / 3);
+          const posInLevel = i % 3;
+
+          const gutter = gutters.find(g => g.position === level);
+          if (gutter) {
+            prefixChars.push(posInLevel === 0 ? (gutter.show ? '│' : ' ') : ' ');
+          } else if (connector && level === connectorPosition) {
+            if (posInLevel === 0) {
+              prefixChars.push(isLast ? '└' : '├');
+            } else if (posInLevel === 1) {
+              prefixChars.push('─');
+            } else {
+              prefixChars.push(' ');
+            }
+          } else {
+            prefixChars.push(' ');
+          }
+        }
+        return prefixChars.join('');
+      }
+
+      // ============================================================
+      // FILTERING (pure data)
+      // ============================================================
+
+      let filterMode = 'default';
+      let searchQuery = '';
+
+      function hasTextContent(content) {
+        if (typeof content === 'string') return content.trim().length > 0;
+        if (Array.isArray(content)) {
+          for (const c of content) {
+            if (c.type === 'text' && c.text && c.text.trim().length > 0) return true;
+          }
+        }
+        return false;
+      }
+
+      function extractContent(content) {
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+          return content
+            .filter(c => c.type === 'text' && c.text)
+            .map(c => c.text)
+            .join('');
+        }
+        return '';
+      }
+
+      function getSearchableText(entry, label) {
+        const parts = [];
+        if (label) parts.push(label);
+
+        switch (entry.type) {
+          case 'message': {
+            const msg = entry.message;
+            parts.push(msg.role);
+            if (msg.content) parts.push(extractContent(msg.content));
+            if (msg.role === 'bashExecution' && msg.command) parts.push(msg.command);
+            break;
+          }
+          case 'custom_message':
+            parts.push(entry.customType);
+            parts.push(typeof entry.content === 'string' ? entry.content : extractContent(entry.content));
+            break;
+          case 'compaction':
+            parts.push('compaction');
+            break;
+          case 'branch_summary':
+            parts.push('branch summary', entry.summary);
+            break;
+          case 'model_change':
+            parts.push('model', entry.modelId);
+            break;
+          case 'thinking_level_change':
+            parts.push('thinking', entry.thinkingLevel);
+            break;
+        }
+
+        return parts.join(' ').toLowerCase();
+      }
+
+      /**
+       * Filter flat nodes based on current filterMode and searchQuery.
+       */
+      function filterNodes(flatNodes, currentLeafId) {
+        const searchTokens = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+
+        return flatNodes.filter(flatNode => {
+          const entry = flatNode.node.entry;
+          const label = flatNode.node.label;
+          const isCurrentLeaf = entry.id === currentLeafId;
+
+          // Always show current leaf
+          if (isCurrentLeaf) return true;
+
+          // Hide assistant messages with only tool calls (no text) unless error/aborted
+          if (entry.type === 'message' && entry.message.role === 'assistant') {
+            const msg = entry.message;
+            const hasText = hasTextContent(msg.content);
+            const isErrorOrAborted = msg.stopReason && msg.stopReason !== 'stop' && msg.stopReason !== 'toolUse';
+            if (!hasText && !isErrorOrAborted) return false;
+          }
+
+          // Apply filter mode
+          const isSettingsEntry = ['label', 'custom', 'model_change', 'thinking_level_change'].includes(entry.type);
+          let passesFilter = true;
+
+          switch (filterMode) {
+            case 'user-only':
+              passesFilter = entry.type === 'message' && entry.message.role === 'user';
+              break;
+            case 'no-tools':
+              passesFilter = !isSettingsEntry && !(entry.type === 'message' && entry.message.role === 'toolResult');
+              break;
+            case 'labeled-only':
+              passesFilter = label !== undefined;
+              break;
+            case 'all':
+              passesFilter = true;
+              break;
+            default: // 'default'
+              passesFilter = !isSettingsEntry;
+              break;
+          }
+
+          if (!passesFilter) return false;
+
+          // Apply search filter
+          if (searchTokens.length > 0) {
+            const nodeText = getSearchableText(entry, label);
+            if (!searchTokens.every(t => nodeText.includes(t))) return false;
+          }
+
+          return true;
+        });
+      }
+
+      // ============================================================
+      // TREE DISPLAY TEXT (pure data -> string)
+      // ============================================================
+
+      function shortenPath(p) {
+        if (p.startsWith('/Users/')) {
+          const parts = p.split('/');
+          if (parts.length > 2) return '~' + p.slice(('/Users/' + parts[2]).length);
+        }
+        if (p.startsWith('/home/')) {
+          const parts = p.split('/');
+          if (parts.length > 2) return '~' + p.slice(('/home/' + parts[2]).length);
+        }
+        return p;
+      }
+
+      function formatToolCall(name, args) {
+        switch (name) {
+          case 'read': {
+            const path = shortenPath(String(args.path || args.file_path || ''));
+            const offset = args.offset;
+            const limit = args.limit;
+            let display = path;
+            if (offset !== undefined || limit !== undefined) {
+              const start = offset ?? 1;
+              const end = limit !== undefined ? start + limit - 1 : '';
+              display += `:${start}${end ? `-${end}` : ''}`;
+            }
+            return `[read: ${display}]`;
+          }
+          case 'write':
+            return `[write: ${shortenPath(String(args.path || args.file_path || ''))}]`;
+          case 'edit':
+            return `[edit: ${shortenPath(String(args.path || args.file_path || ''))}]`;
+          case 'bash': {
+            const rawCmd = String(args.command || '');
+            const cmd = rawCmd.replace(/[\n\t]/g, ' ').trim().slice(0, 50);
+            return `[bash: ${cmd}${rawCmd.length > 50 ? '...' : ''}]`;
+          }
+          case 'grep':
+            return `[grep: /${args.pattern || ''}/ in ${shortenPath(String(args.path || '.'))}]`;
+          case 'find':
+            return `[find: ${args.pattern || ''} in ${shortenPath(String(args.path || '.'))}]`;
+          case 'ls':
+            return `[ls: ${shortenPath(String(args.path || '.'))}]`;
+          default: {
+            const argsStr = JSON.stringify(args).slice(0, 40);
+            return `[${name}: ${argsStr}${JSON.stringify(args).length > 40 ? '...' : ''}]`;
+          }
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      /**
+       * Truncate string to maxLen chars, append "..." if truncated.
+       */
+      function truncate(s, maxLen = 100) {
+        if (s.length <= maxLen) return s;
+        return s.slice(0, maxLen) + '...';
+      }
+
+      /**
+       * Get display text for tree node (returns HTML string).
+       */
+      function getTreeNodeDisplayHtml(entry, label) {
+        const normalize = s => s.replace(/[\n\t]/g, ' ').trim();
+        const labelHtml = label ? `<span class="tree-label">[${escapeHtml(label)}]</span> ` : '';
+
+        switch (entry.type) {
+          case 'message': {
+            const msg = entry.message;
+            if (msg.role === 'user') {
+              const content = truncate(normalize(extractContent(msg.content)));
+              return labelHtml + `<span class="tree-role-user">user:</span> ${escapeHtml(content)}`;
+            }
+            if (msg.role === 'assistant') {
+              const textContent = truncate(normalize(extractContent(msg.content)));
+              if (textContent) {
+                return labelHtml + `<span class="tree-role-assistant">assistant:</span> ${escapeHtml(textContent)}`;
+              }
+              if (msg.stopReason === 'aborted') {
+                return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-muted">(aborted)</span>`;
+              }
+              if (msg.errorMessage) {
+                return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-error">${escapeHtml(truncate(msg.errorMessage))}</span>`;
+              }
+              return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-muted">(no text)</span>`;
+            }
+            if (msg.role === 'toolResult') {
+              const toolCall = msg.toolCallId ? toolCallMap.get(msg.toolCallId) : null;
+              if (toolCall) {
+                return labelHtml + `<span class="tree-role-tool">${escapeHtml(formatToolCall(toolCall.name, toolCall.arguments))}</span>`;
+              }
+              return labelHtml + `<span class="tree-role-tool">[${msg.toolName || 'tool'}]</span>`;
+            }
+            if (msg.role === 'bashExecution') {
+              const cmd = truncate(normalize(msg.command || ''));
+              return labelHtml + `<span class="tree-role-tool">[bash]:</span> ${escapeHtml(cmd)}`;
+            }
+            return labelHtml + `<span class="tree-muted">[${msg.role}]</span>`;
+          }
+          case 'compaction':
+            return labelHtml + `<span class="tree-compaction">[compaction: ${Math.round(entry.tokensBefore/1000)}k tokens]</span>`;
+          case 'branch_summary': {
+            const summary = truncate(normalize(entry.summary || ''));
+            return labelHtml + `<span class="tree-branch-summary">[branch summary]:</span> ${escapeHtml(summary)}`;
+          }
+          case 'custom_message': {
+            const content = typeof entry.content === 'string' ? entry.content : extractContent(entry.content);
+            return labelHtml + `<span class="tree-custom">[${escapeHtml(entry.customType)}]:</span> ${escapeHtml(truncate(normalize(content)))}`;
+          }
+          case 'model_change':
+            return labelHtml + `<span class="tree-muted">[model: ${entry.modelId}]</span>`;
+          case 'thinking_level_change':
+            return labelHtml + `<span class="tree-muted">[thinking: ${entry.thinkingLevel}]</span>`;
+          default:
+            return labelHtml + `<span class="tree-muted">[${entry.type}]</span>`;
+        }
+      }
+
+      // ============================================================
+      // TREE RENDERING (DOM manipulation)
+      // ============================================================
+
+      let currentLeafId = leafId;
+      let treeRendered = false;
+
+      function renderTree() {
+        const tree = buildTree();
+        const activePathIds = buildActivePathIds(currentLeafId);
+        const flatNodes = flattenTree(tree, activePathIds);
+        const filtered = filterNodes(flatNodes, currentLeafId);
+        const container = document.getElementById('tree-container');
+
+        // Full render only on first call or when filter/search changes
+        if (!treeRendered) {
+          container.innerHTML = '';
+
+          for (const flatNode of filtered) {
+            const entry = flatNode.node.entry;
+            const isOnPath = activePathIds.has(entry.id);
+            const isLeaf = entry.id === currentLeafId;
+
+            const div = document.createElement('div');
+            div.className = 'tree-node';
+            if (isOnPath) div.classList.add('in-path');
+            if (isLeaf) div.classList.add('active');
+            div.dataset.id = entry.id;
+
+            const prefix = buildTreePrefix(flatNode);
+            const prefixSpan = document.createElement('span');
+            prefixSpan.className = 'tree-prefix';
+            prefixSpan.textContent = prefix;
+
+            const marker = document.createElement('span');
+            marker.className = 'tree-marker';
+            marker.textContent = isOnPath ? '•' : ' ';
+
+            const content = document.createElement('span');
+            content.className = 'tree-content';
+            content.innerHTML = getTreeNodeDisplayHtml(entry, flatNode.node.label);
+
+            div.appendChild(prefixSpan);
+            div.appendChild(marker);
+            div.appendChild(content);
+            div.addEventListener('click', () => navigateTo(entry.id));
+
+            container.appendChild(div);
+          }
+
+          treeRendered = true;
+        } else {
+          // Just update markers and classes
+          const nodes = container.querySelectorAll('.tree-node');
+          for (const node of nodes) {
+            const id = node.dataset.id;
+            const isOnPath = activePathIds.has(id);
+            const isLeaf = id === currentLeafId;
+
+            node.classList.toggle('in-path', isOnPath);
+            node.classList.toggle('active', isLeaf);
+
+            const marker = node.querySelector('.tree-marker');
+            if (marker) {
+              marker.textContent = isOnPath ? '•' : ' ';
+            }
+          }
+        }
+
+        document.getElementById('tree-status').textContent = `${filtered.length} / ${flatNodes.length} entries`;
+
+        // Scroll active node into view after layout
+        setTimeout(() => {
+          const activeNode = container.querySelector('.tree-node.active');
+          if (activeNode) {
+            activeNode.scrollIntoView({ block: 'nearest' });
+          }
+        }, 0);
+      }
+
+      function forceTreeRerender() {
+        treeRendered = false;
+        renderTree();
+      }
+
+      // ============================================================
+      // MESSAGE RENDERING
+      // ============================================================
+
+      function formatTokens(count) {
+        if (count < 1000) return count.toString();
+        if (count < 10000) return (count / 1000).toFixed(1) + 'k';
+        if (count < 1000000) return Math.round(count / 1000) + 'k';
+        return (count / 1000000).toFixed(1) + 'M';
+      }
+
+      function formatTimestamp(ts) {
+        if (!ts) return '';
+        const date = new Date(ts);
+        return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+
+      function replaceTabs(text) {
+        return text.replace(/\t/g, '   ');
+      }
+
+      function getLanguageFromPath(filePath) {
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        const extToLang = {
+          ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+          py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+          c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp', cs: 'csharp',
+          php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash',
+          sql: 'sql', html: 'html', css: 'css', scss: 'scss',
+          json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml',
+          md: 'markdown', dockerfile: 'dockerfile'
+        };
+        return extToLang[ext];
+      }
+
+      function findToolResult(toolCallId) {
+        for (const entry of entries) {
+          if (entry.type === 'message' && entry.message.role === 'toolResult') {
+            if (entry.message.toolCallId === toolCallId) {
+              return entry.message;
+            }
+          }
+        }
+        return null;
+      }
+
+      function formatExpandableOutput(text, maxLines, lang) {
+        text = replaceTabs(text);
+        const lines = text.split('\n');
+        const displayLines = lines.slice(0, maxLines);
+        const remaining = lines.length - maxLines;
+
+        if (lang) {
+          let highlighted;
+          try {
+            highlighted = hljs.highlight(text, { language: lang }).value;
+          } catch {
+            highlighted = escapeHtml(text);
+          }
+
+          if (remaining > 0) {
+            const previewCode = displayLines.join('\n');
+            let previewHighlighted;
+            try {
+              previewHighlighted = hljs.highlight(previewCode, { language: lang }).value;
+            } catch {
+              previewHighlighted = escapeHtml(previewCode);
+            }
+
+            return `<div class="tool-output expandable" onclick="this.classList.toggle('expanded')">
+              <div class="output-preview"><pre><code class="hljs">${previewHighlighted}</code></pre>
+              <div class="expand-hint">... (${remaining} more lines)</div></div>
+              <div class="output-full"><pre><code class="hljs">${highlighted}</code></pre></div></div>`;
+          }
+
+          return `<div class="tool-output"><pre><code class="hljs">${highlighted}</code></pre></div>`;
+        }
+
+        // Plain text output
+        if (remaining > 0) {
+          let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+          out += '<div class="output-preview">';
+          for (const line of displayLines) {
+            out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+          }
+          out += `<div class="expand-hint">... (${remaining} more lines)</div></div>`;
+          out += '<div class="output-full">';
+          for (const line of lines) {
+            out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+          }
+          out += '</div></div>';
+          return out;
+        }
+
+        let out = '<div class="tool-output">';
+        for (const line of displayLines) {
+          out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
+        }
+        out += '</div>';
+        return out;
+      }
+
+      function renderToolCall(call) {
+        const result = findToolResult(call.id);
+        const isError = result?.isError || false;
+        const statusClass = result ? (isError ? 'error' : 'success') : 'pending';
+
+        const getResultText = () => {
+          if (!result) return '';
+          const textBlocks = result.content.filter(c => c.type === 'text');
+          return textBlocks.map(c => c.text).join('\n');
+        };
+
+        const getResultImages = () => {
+          if (!result) return [];
+          return result.content.filter(c => c.type === 'image');
+        };
+
+        const renderResultImages = () => {
+          const images = getResultImages();
+          if (images.length === 0) return '';
+          return '<div class="tool-images">' + 
+            images.map(img => `<img src="data:${img.mimeType};base64,${img.data}" class="tool-image" />`).join('') + 
+            '</div>';
+        };
+
+        let html = `<div class="tool-execution ${statusClass}">`;
+        const args = call.arguments || {};
+        const name = call.name;
+
+        switch (name) {
+          case 'bash': {
+            const command = args.command || '';
+            html += `<div class="tool-command">$ ${escapeHtml(command)}</div>`;
+            if (result) {
+              const output = getResultText().trim();
+              if (output) html += formatExpandableOutput(output, 5);
+            }
+            break;
+          }
+          case 'read': {
+            const filePath = args.file_path || args.path || '';
+            const offset = args.offset;
+            const limit = args.limit;
+            const lang = getLanguageFromPath(filePath);
+
+            let pathHtml = escapeHtml(shortenPath(filePath));
+            if (offset !== undefined || limit !== undefined) {
+              const startLine = offset ?? 1;
+              const endLine = limit !== undefined ? startLine + limit - 1 : '';
+              pathHtml += `<span class="line-numbers">:${startLine}${endLine ? '-' + endLine : ''}</span>`;
+            }
+
+            html += `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${pathHtml}</span></div>`;
+            if (result) {
+              html += renderResultImages();
+              const output = getResultText();
+              if (output) html += formatExpandableOutput(output, 10, lang);
+            }
+            break;
+          }
+          case 'write': {
+            const filePath = args.file_path || args.path || '';
+            const content = args.content || '';
+            const lines = content.split('\n');
+            const lang = getLanguageFromPath(filePath);
+
+            html += `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(shortenPath(filePath))}</span>`;
+            if (lines.length > 10) html += ` <span class="line-count">(${lines.length} lines)</span>`;
+            html += '</div>';
+
+            if (content) html += formatExpandableOutput(content, 10, lang);
+            if (result) {
+              const output = getResultText().trim();
+              if (output) html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
+            }
+            break;
+          }
+          case 'edit': {
+            const filePath = args.file_path || args.path || '';
+            html += `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(shortenPath(filePath))}</span></div>`;
+
+            if (result?.details?.diff) {
+              const diffLines = result.details.diff.split('\n');
+              html += '<div class="tool-diff">';
+              for (const line of diffLines) {
+                const cls = line.match(/^\+/) ? 'diff-added' : line.match(/^-/) ? 'diff-removed' : 'diff-context';
+                html += `<div class="${cls}">${escapeHtml(replaceTabs(line))}</div>`;
+              }
+              html += '</div>';
+            } else if (result) {
+              const output = getResultText().trim();
+              if (output) html += `<div class="tool-output"><pre>${escapeHtml(output)}</pre></div>`;
+            }
+            break;
+          }
+          default: {
+            html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
+            html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
+            if (result) {
+              const output = getResultText();
+              if (output) html += formatExpandableOutput(output, 10);
+            }
+          }
+        }
+
+        html += '</div>';
+        return html;
+      }
+
+      function renderEntry(entry) {
+        const ts = formatTimestamp(entry.timestamp);
+        const tsHtml = ts ? `<div class="message-timestamp">${ts}</div>` : '';
+        const entryId = `entry-${entry.id}`;
+
+        if (entry.type === 'message') {
+          const msg = entry.message;
+
+          if (msg.role === 'user') {
+            let html = `<div class="user-message" id="${entryId}">${tsHtml}`;
+            const content = msg.content;
+
+            if (Array.isArray(content)) {
+              const images = content.filter(c => c.type === 'image');
+              if (images.length > 0) {
+                html += '<div class="message-images">';
+                for (const img of images) {
+                  html += `<img src="data:${img.mimeType};base64,${img.data}" class="message-image" />`;
+                }
+                html += '</div>';
+              }
+            }
+
+            const text = typeof content === 'string' ? content : 
+              content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+            if (text.trim()) {
+              html += `<div class="markdown-content">${safeMarkedParse(text)}</div>`;
+            }
+            html += '</div>';
+            return html;
+          }
+
+          if (msg.role === 'assistant') {
+            let html = `<div class="assistant-message" id="${entryId}">${tsHtml}`;
+
+            for (const block of msg.content) {
+              if (block.type === 'text' && block.text.trim()) {
+                html += `<div class="assistant-text markdown-content">${safeMarkedParse(block.text)}</div>`;
+              } else if (block.type === 'thinking' && block.thinking.trim()) {
+                html += `<div class="thinking-block">
+                  <div class="thinking-text">${escapeHtml(block.thinking)}</div>
+                  <div class="thinking-collapsed">Thinking ...</div>
+                </div>`;
+              }
+            }
+
+            for (const block of msg.content) {
+              if (block.type === 'toolCall') {
+                html += renderToolCall(block);
+              }
+            }
+
+            if (msg.stopReason === 'aborted') {
+              html += '<div class="error-text">Aborted</div>';
+            } else if (msg.stopReason === 'error') {
+              html += `<div class="error-text">Error: ${escapeHtml(msg.errorMessage || 'Unknown error')}</div>`;
+            }
+
+            html += '</div>';
+            return html;
+          }
+
+          if (msg.role === 'bashExecution') {
+            const isError = msg.cancelled || (msg.exitCode !== 0 && msg.exitCode !== null);
+            let html = `<div class="tool-execution ${isError ? 'error' : 'success'}" id="${entryId}">${tsHtml}`;
+            html += `<div class="tool-command">$ ${escapeHtml(msg.command)}</div>`;
+            if (msg.output) html += formatExpandableOutput(msg.output, 10);
+            if (msg.cancelled) {
+              html += '<div style="color: var(--warning)">(cancelled)</div>';
+            } else if (msg.exitCode !== 0 && msg.exitCode !== null) {
+              html += `<div style="color: var(--error)">(exit ${msg.exitCode})</div>`;
+            }
+            html += '</div>';
+            return html;
+          }
+
+          if (msg.role === 'toolResult') return '';
+        }
+
+        if (entry.type === 'model_change') {
+          return `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
+        }
+
+        if (entry.type === 'compaction') {
+          return `<div class="compaction" id="${entryId}" onclick="this.classList.toggle('expanded')">
+            <div class="compaction-label">[compaction]</div>
+            <div class="compaction-collapsed">Compacted from ${entry.tokensBefore.toLocaleString()} tokens</div>
+            <div class="compaction-content"><strong>Compacted from ${entry.tokensBefore.toLocaleString()} tokens</strong>\n\n${escapeHtml(entry.summary)}</div>
+          </div>`;
+        }
+
+        if (entry.type === 'branch_summary') {
+          return `<div class="branch-summary" id="${entryId}">${tsHtml}
+            <div class="branch-summary-header">Branch Summary</div>
+            <div class="markdown-content">${safeMarkedParse(entry.summary)}</div>
+          </div>`;
+        }
+
+        if (entry.type === 'custom_message' && entry.display) {
+          return `<div class="hook-message" id="${entryId}">${tsHtml}
+            <div class="hook-type">[${escapeHtml(entry.customType)}]</div>
+            <div class="markdown-content">${safeMarkedParse(typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content))}</div>
+          </div>`;
+        }
+
+        return '';
+      }
+
+      // ============================================================
+      // HEADER / STATS
+      // ============================================================
+
+      function computeStats(entryList) {
+        let userMessages = 0, assistantMessages = 0, toolResults = 0;
+        let customMessages = 0, compactions = 0, branchSummaries = 0, toolCalls = 0;
+        const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+        const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+        const models = new Set();
+
+        for (const entry of entryList) {
+          if (entry.type === 'message') {
+            const msg = entry.message;
+            if (msg.role === 'user') userMessages++;
+            if (msg.role === 'assistant') {
+              assistantMessages++;
+              if (msg.model) models.add(msg.provider ? `${msg.provider}/${msg.model}` : msg.model);
+              if (msg.usage) {
+                tokens.input += msg.usage.input || 0;
+                tokens.output += msg.usage.output || 0;
+                tokens.cacheRead += msg.usage.cacheRead || 0;
+                tokens.cacheWrite += msg.usage.cacheWrite || 0;
+                if (msg.usage.cost) {
+                  cost.input += msg.usage.cost.input || 0;
+                  cost.output += msg.usage.cost.output || 0;
+                  cost.cacheRead += msg.usage.cost.cacheRead || 0;
+                  cost.cacheWrite += msg.usage.cost.cacheWrite || 0;
+                }
+              }
+              toolCalls += msg.content.filter(c => c.type === 'toolCall').length;
+            }
+            if (msg.role === 'toolResult') toolResults++;
+          } else if (entry.type === 'compaction') {
+            compactions++;
+          } else if (entry.type === 'branch_summary') {
+            branchSummaries++;
+          } else if (entry.type === 'custom_message') {
+            customMessages++;
+          }
+        }
+
+        return { userMessages, assistantMessages, toolResults, customMessages, compactions, branchSummaries, toolCalls, tokens, cost, models: Array.from(models) };
+      }
+
+      const globalStats = computeStats(entries);
+
+      function renderHeader() {
+        const totalCost = globalStats.cost.input + globalStats.cost.output + globalStats.cost.cacheRead + globalStats.cost.cacheWrite;
+
+        const tokenParts = [];
+        if (globalStats.tokens.input) tokenParts.push(`↑${formatTokens(globalStats.tokens.input)}`);
+        if (globalStats.tokens.output) tokenParts.push(`↓${formatTokens(globalStats.tokens.output)}`);
+        if (globalStats.tokens.cacheRead) tokenParts.push(`R${formatTokens(globalStats.tokens.cacheRead)}`);
+        if (globalStats.tokens.cacheWrite) tokenParts.push(`W${formatTokens(globalStats.tokens.cacheWrite)}`);
+
+        const msgParts = [];
+        if (globalStats.userMessages) msgParts.push(`${globalStats.userMessages} user`);
+        if (globalStats.assistantMessages) msgParts.push(`${globalStats.assistantMessages} assistant`);
+        if (globalStats.toolResults) msgParts.push(`${globalStats.toolResults} tool results`);
+        if (globalStats.customMessages) msgParts.push(`${globalStats.customMessages} custom`);
+        if (globalStats.compactions) msgParts.push(`${globalStats.compactions} compactions`);
+        if (globalStats.branchSummaries) msgParts.push(`${globalStats.branchSummaries} branch summaries`);
+
+        let html = `
+          <div class="header">
+            <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
+            <div class="help-bar">Ctrl+T toggle thinking · Ctrl+O toggle tools</div>
+            <div class="header-info">
+              <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
+              <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${globalStats.models.join(', ') || 'unknown'}</span></div>
+              <div class="info-item"><span class="info-label">Messages:</span><span class="info-value">${msgParts.join(', ') || '0'}</span></div>
+              <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${globalStats.toolCalls}</span></div>
+              <div class="info-item"><span class="info-label">Tokens:</span><span class="info-value">${tokenParts.join(' ') || '0'}</span></div>
+              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">$${totalCost.toFixed(3)}</span></div>
+            </div>
+          </div>`;
+
+        if (systemPrompt) {
+          html += `<div class="system-prompt">
+            <div class="system-prompt-header">System Prompt</div>
+            <div class="system-prompt-content">${escapeHtml(systemPrompt)}</div>
+          </div>`;
+        }
+
+        if (tools && tools.length > 0) {
+          html += `<div class="tools-list">
+            <div class="tools-header">Available Tools</div>
+            <div class="tools-content">
+              ${tools.map(t => `<div class="tool-item"><span class="tool-item-name">${escapeHtml(t.name)}</span> - <span class="tool-item-desc">${escapeHtml(t.description)}</span></div>`).join('')}
+            </div>
+          </div>`;
+        }
+
+        return html;
+      }
+
+      // ============================================================
+      // NAVIGATION
+      // ============================================================
+
+      // Cache for rendered entry DOM nodes
+      const entryCache = new Map();
+
+      function renderEntryToNode(entry) {
+        // Check cache first
+        if (entryCache.has(entry.id)) {
+          return entryCache.get(entry.id).cloneNode(true);
+        }
+
+        // Render to HTML string, then parse to node
+        const html = renderEntry(entry);
+        if (!html) return null;
+
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        const node = template.content.firstElementChild;
+
+        // Cache the node
+        if (node) {
+          entryCache.set(entry.id, node.cloneNode(true));
+        }
+        return node;
+      }
+
+      function navigateTo(targetId, scrollMode = 'target') {
+        currentLeafId = targetId;
+        const path = getPath(targetId);
+
+        renderTree();
+
+        document.getElementById('header-container').innerHTML = renderHeader();
+
+        // Build messages using cached DOM nodes
+        const messagesEl = document.getElementById('messages');
+        const fragment = document.createDocumentFragment();
+
+        for (const entry of path) {
+          const node = renderEntryToNode(entry);
+          if (node) {
+            fragment.appendChild(node);
+          }
+        }
+
+        messagesEl.innerHTML = '';
+        messagesEl.appendChild(fragment);
+
+        // Use setTimeout(0) to ensure DOM is fully laid out before scrolling
+        setTimeout(() => {
+          const content = document.getElementById('content');
+          if (scrollMode === 'bottom') {
+            content.scrollTop = content.scrollHeight;
+          } else if (scrollMode === 'target') {
+            const targetEl = document.getElementById(`entry-${targetId}`);
+            if (targetEl) {
+              targetEl.scrollIntoView({ block: 'center' });
+            }
+          }
+        }, 0);
+      }
+
+      // ============================================================
+      // INITIALIZATION
+      // ============================================================
+
+      // Wrapper for marked that escapes HTML before parsing
+      // Escapes all < that look like tag starts (followed by letter or /)
+      // Code blocks are safe because marked processes them before our escaping affects display
+      function safeMarkedParse(text) {
+        const escaped = text.replace(/<(?=[a-zA-Z\/])/g, '&lt;');
+        return marked.parse(escaped);
+      }
+
+      // Configure marked
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        highlight: function(code, lang) {
+          if (lang && hljs.getLanguage(lang)) {
+            try {
+              return hljs.highlight(code, { language: lang }).value;
+            } catch {}
+          }
+          return escapeHtml(code);
+        }
+      });
+
+      // Search input
+      const searchInput = document.getElementById('tree-search');
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        forceTreeRerender();
+      });
+
+      // Filter buttons
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          filterMode = btn.dataset.filter;
+          forceTreeRerender();
+        });
+      });
+
+      // Sidebar toggle
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const hamburger = document.getElementById('hamburger');
+
+      hamburger.addEventListener('click', () => {
+        sidebar.classList.add('open');
+        overlay.classList.add('open');
+        hamburger.style.display = 'none';
+      });
+
+      const closeSidebar = () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+        hamburger.style.display = '';
+      };
+
+      overlay.addEventListener('click', closeSidebar);
+      document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
+
+      // Toggle states
+      let thinkingExpanded = true;
+      let toolOutputsExpanded = false;
+
+      const toggleThinking = () => {
+        thinkingExpanded = !thinkingExpanded;
+        document.querySelectorAll('.thinking-text').forEach(el => {
+          el.style.display = thinkingExpanded ? '' : 'none';
+        });
+        document.querySelectorAll('.thinking-collapsed').forEach(el => {
+          el.style.display = thinkingExpanded ? 'none' : 'block';
+        });
+      };
+
+      const toggleToolOutputs = () => {
+        toolOutputsExpanded = !toolOutputsExpanded;
+        document.querySelectorAll('.tool-output.expandable').forEach(el => {
+          el.classList.toggle('expanded', toolOutputsExpanded);
+        });
+        document.querySelectorAll('.compaction').forEach(el => {
+          el.classList.toggle('expanded', toolOutputsExpanded);
+        });
+      };
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          searchQuery = '';
+          navigateTo(leafId, 'bottom');
+        }
+        if (e.ctrlKey && e.key === 't') {
+          e.preventDefault();
+          toggleThinking();
+        }
+        if (e.ctrlKey && e.key === 'o') {
+          e.preventDefault();
+          toggleToolOutputs();
+        }
+      });
+
+      // Initial render - don't scroll, stay at top
+      if (leafId) {
+        navigateTo(leafId, 'none');
+      } else if (entries.length > 0) {
+        // Fallback: use last entry if no leafId
+        navigateTo(entries[entries.length - 1].id, 'none');
+      }
+    })();

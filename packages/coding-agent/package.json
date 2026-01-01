@@ -32,7 +32,7 @@
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-assets",
 		"build:binary": "npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
-		"copy-assets": "mkdir -p dist/modes/interactive/theme && cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && mkdir -p dist/core/export-html/vendor && cp src/core/export-html/template.html dist/core/export-html/ && cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
+		"copy-assets": "mkdir -p dist/modes/interactive/theme && cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && mkdir -p dist/core/export-html/vendor && cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
 		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/ && mkdir -p dist/theme && cp src/modes/interactive/theme/*.json dist/theme/ && mkdir -p dist/export-html/vendor && cp src/core/export-html/template.html dist/export-html/ && cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && cp -r docs dist/ && cp -r examples dist/",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"

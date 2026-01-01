@@ -110,6 +110,8 @@ interface SessionData {
 function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const templateDir = getExportTemplateDir();
 	const template = readFileSync(join(templateDir, "template.html"), "utf-8");
+	const templateCss = readFileSync(join(templateDir, "template.css"), "utf-8");
+	const templateJs = readFileSync(join(templateDir, "template.js"), "utf-8");
 	const markedJs = readFileSync(join(templateDir, "vendor", "marked.min.js"), "utf-8");
 	const hljsJs = readFileSync(join(templateDir, "vendor", "highlight.min.js"), "utf-8");
 
@@ -125,17 +127,19 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	// Base64 encode session data to avoid escaping issues
 	const sessionDataBase64 = Buffer.from(JSON.stringify(sessionData)).toString("base64");
 
-	return template
-		.replace("{{TITLE}}", title)
+	// Build the CSS with theme variables injected
+	const css = templateCss
 		.replace("{{THEME_VARS}}", themeVars)
 		.replace("{{BODY_BG}}", bodyBg)
 		.replace("{{CONTAINER_BG}}", containerBg)
-		.replace("{{INFO_BG}}", infoBg)
+		.replace("{{INFO_BG}}", infoBg);
+
+	return template
+		.replace("{{CSS}}", css)
+		.replace("{{JS}}", templateJs)
 		.replace("{{SESSION_DATA}}", sessionDataBase64)
 		.replace("{{MARKED_JS}}", markedJs)
-		.replace("{{HIGHLIGHT_JS}}", hljsJs)
-		.replace("{{APP_NAME}}", `${APP_NAME} v${VERSION}`)
-		.replace("{{GENERATED_DATE}}", new Date().toLocaleString());
+		.replace("{{HIGHLIGHT_JS}}", hljsJs);
 }
 
 /**
