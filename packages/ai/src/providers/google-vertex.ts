@@ -3,7 +3,7 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type ThinkingConfig,
-	type ThinkingLevel,
+	ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -19,6 +19,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
 import { convertMessages, convertTools, mapStopReason, mapToolChoice } from "./google-shared.js";
 
 export interface GoogleVertexOptions extends StreamOptions {
@@ -26,13 +27,21 @@ export interface GoogleVertexOptions extends StreamOptions {
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
-		level?: ThinkingLevel;
+		level?: GoogleThinkingLevel;
 	};
 	project?: string;
 	location?: string;
 }
 
 const API_VERSION = "v1";
+
+const THINKING_LEVEL_MAP: Record<GoogleThinkingLevel, ThinkingLevel> = {
+	THINKING_LEVEL_UNSPECIFIED: ThinkingLevel.THINKING_LEVEL_UNSPECIFIED,
+	MINIMAL: ThinkingLevel.MINIMAL,
+	LOW: ThinkingLevel.LOW,
+	MEDIUM: ThinkingLevel.MEDIUM,
+	HIGH: ThinkingLevel.HIGH,
+};
 
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
@@ -322,7 +331,7 @@ function buildParams(
 	if (options.thinking?.enabled && model.reasoning) {
 		const thinkingConfig: ThinkingConfig = { includeThoughts: true };
 		if (options.thinking.level !== undefined) {
-			thinkingConfig.thinkingLevel = options.thinking.level;
+			thinkingConfig.thinkingLevel = THINKING_LEVEL_MAP[options.thinking.level];
 		} else if (options.thinking.budgetTokens !== undefined) {
 			thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}

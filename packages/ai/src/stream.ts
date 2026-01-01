@@ -259,23 +259,14 @@ function mapOptionsForApi<TApi extends Api>(
 
 			const vertexModel = model as Model<"google-vertex">;
 			const effort = clampReasoning(options.reasoning)!;
+			const geminiModel = vertexModel as unknown as Model<"google-generative-ai">;
 
-			if (isGemini3ProModel(vertexModel as unknown as Model<"google-generative-ai">)) {
+			if (isGemini3ProModel(geminiModel) || isGemini3FlashModel(geminiModel)) {
 				return {
 					...base,
 					thinking: {
 						enabled: true,
-						level: getGemini3ThinkingLevel(effort, vertexModel as unknown as Model<"google-generative-ai">),
-					},
-				} satisfies GoogleVertexOptions;
-			}
-
-			if (isGemini3FlashModel(vertexModel as unknown as Model<"google-generative-ai">)) {
-				return {
-					...base,
-					thinking: {
-						enabled: true,
-						level: getGemini3ThinkingLevel(effort, vertexModel as unknown as Model<"google-generative-ai">),
+						level: getGemini3ThinkingLevel(effort, geminiModel),
 					},
 				} satisfies GoogleVertexOptions;
 			}
@@ -284,7 +275,7 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				thinking: {
 					enabled: true,
-					budgetTokens: getGoogleBudget(vertexModel as unknown as Model<"google-generative-ai">, effort),
+					budgetTokens: getGoogleBudget(geminiModel, effort),
 				},
 			} satisfies GoogleVertexOptions;
 		}
