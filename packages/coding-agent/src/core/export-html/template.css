@@ -218,7 +218,7 @@
 
     /* Help bar */
     .help-bar {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
     }
@@ -363,7 +363,6 @@
     }
 
     .tool-output {
-      margin-top: var(--line-height);
       color: var(--toolOutput);
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -516,6 +515,7 @@
     .tools-header {
       font-weight: bold;
       color: var(--warning);
+      margin-bottom: var(--line-height);
     }
 
     .tool-item {
