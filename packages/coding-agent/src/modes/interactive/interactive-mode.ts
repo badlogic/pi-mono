@@ -902,6 +902,11 @@ export class InteractiveMode {
 							});
 						}
 						this.pendingTools.clear();
+					} else {
+						// Args are now complete - trigger diff computation for edit tools
+						for (const [, component] of this.pendingTools.entries()) {
+							component.setArgsComplete();
+						}
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
