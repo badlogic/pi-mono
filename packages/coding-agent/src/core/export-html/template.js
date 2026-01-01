@@ -1074,7 +1074,12 @@
                 highlighted = escapeHtml(code);
               }
             } else {
-              highlighted = escapeHtml(code);
+              // Auto-detect language if not specified
+              try {
+                highlighted = hljs.highlightAuto(code).value;
+              } catch {
+                highlighted = escapeHtml(code);
+              }
             }
             return `<pre><code class="hljs">${highlighted}</code></pre>`;
           }

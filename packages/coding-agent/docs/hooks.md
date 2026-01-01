@@ -438,7 +438,25 @@ const currentText = ctx.ui.getEditorText();
 - Multiple hooks can set their own status using unique keys
 - Statuses are displayed on a single line in the footer, sorted alphabetically by key
 - Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width
-- ANSI escape codes for styling are preserved
+- Use `ctx.ui.theme` to style status text with theme colors (see below)
+
+**Styling with theme colors:**
+
+Use `ctx.ui.theme` to apply consistent colors that respect the user's theme:
+
+```typescript
+const theme = ctx.ui.theme;
+
+// Foreground colors
+ctx.ui.setStatus("my-hook", theme.fg("success", "✓") + theme.fg("dim", " Ready"));
+ctx.ui.setStatus("my-hook", theme.fg("error", "✗") + theme.fg("dim", " Failed"));
+ctx.ui.setStatus("my-hook", theme.fg("accent", "●") + theme.fg("dim", " Working..."));
+
+// Available fg colors: accent, success, error, warning, muted, dim, text, and more
+// See docs/theme.md for the full list of theme colors
+```
+
+See [examples/hooks/status-line.ts](../examples/hooks/status-line.ts) for a complete example.
 
 **Custom components:**
 

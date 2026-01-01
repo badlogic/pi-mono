@@ -26,6 +26,7 @@ cp permission-gate.ts ~/.pi/agent/hooks/
 | `custom-compaction.ts` | Custom compaction that summarizes entire conversation |
 | `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
+| `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
 
 ## Writing Hooks
 

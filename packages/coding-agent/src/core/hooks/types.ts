@@ -112,6 +112,16 @@ export interface HookUIContext {
 	 * @returns Current editor text
 	 */
 	getEditorText(): string;
+
+	/**
+	 * Get the current theme for styling text with ANSI codes.
+	 * Use theme.fg() and theme.bg() to style status text.
+	 *
+	 * @example
+	 * const theme = ctx.ui.theme;
+	 * ctx.ui.setStatus("my-hook", theme.fg("success", "✓") + " Ready");
+	 */
+	readonly theme: Theme;
 }
 
 /**

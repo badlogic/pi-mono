@@ -21,6 +21,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
+import { theme } from "../src/modes/interactive/theme/theme.js";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
@@ -112,6 +113,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				custom: async () => undefined as never,
 				setEditorText: () => {},
 				getEditorText: () => "",
+				get theme() {
+					return theme;
+				},
 			},
 			hasUI: false,
 		});

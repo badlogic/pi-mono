@@ -375,6 +375,9 @@ export class InteractiveMode {
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
+			get theme() {
+				return theme;
+			},
 		};
 		this.setToolUIContext(uiContext, true);
 

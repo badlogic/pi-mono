@@ -15,6 +15,7 @@ import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
+import { theme } from "../interactive/theme/theme.js";
 import type { RpcCommand, RpcHookUIRequest, RpcHookUIResponse, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -149,6 +150,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Synchronous method can't wait for RPC response
 			// Host should track editor state locally if needed
 			return "";
+		},
+
+		get theme() {
+			return theme;
 		},
 	});
 

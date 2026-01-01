@@ -4,6 +4,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
+import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
@@ -43,6 +44,9 @@ const noOpUIContext: HookUIContext = {
 	custom: async () => undefined as never,
 	setEditorText: () => {},
 	getEditorText: () => "",
+	get theme() {
+		return theme;
+	},
 };
 
 /**
