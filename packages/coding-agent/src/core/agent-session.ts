@@ -28,7 +28,7 @@ import {
 	shouldCompact,
 } from "./compaction/index.js";
 import type { CustomToolContext, CustomToolSessionEvent, LoadedCustomTool } from "./custom-tools/index.js";
-import { exportSessionToHtml } from "./export-html.js";
+import { exportSessionToHtml } from "./export-html/index.js";
 import type {
 	HookContext,
 	HookRunner,
