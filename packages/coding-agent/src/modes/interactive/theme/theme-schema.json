@@ -267,6 +267,25 @@
 				}
 			},
 			"additionalProperties": false
+		},
+		"export": {
+			"type": "object",
+			"description": "Optional colors for HTML export (defaults derived from userMessageBg if not specified)",
+			"properties": {
+				"pageBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Page background color"
+				},
+				"cardBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Card/container background color"
+				},
+				"infoBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Info sections background (system prompt, notices)"
+				}
+			},
+			"additionalProperties": false
 		}
 	},
 	"additionalProperties": false,

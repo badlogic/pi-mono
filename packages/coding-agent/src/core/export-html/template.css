@@ -363,6 +363,7 @@
     }
 
     .tool-output {
+      margin-top: var(--line-height);
       color: var(--toolOutput);
       word-wrap: break-word;
       overflow-wrap: break-word;

@@ -104,6 +104,27 @@ These create a visual hierarchy: off → minimal → low → medium → high →
 
 **Total: 50 color tokens** (all required)
 
+### HTML Export Colors (optional)
+
+The `export` section is optional and controls colors used when exporting sessions to HTML via `/export`. If not specified, these colors are automatically derived from `userMessageBg` based on luminance detection.
+
+| Token | Purpose |
+|-------|---------|
+| `pageBg` | Page background color |
+| `cardBg` | Card/container background (headers, stats boxes) |
+| `infoBg` | Info sections background (system prompt, notices, compaction) |
+
+Example:
+```json
+{
+  "export": {
+    "pageBg": "#18181e",
+    "cardBg": "#1e1e24",
+    "infoBg": "#3c3728"
+  }
+}
+```
+
 ## Theme Format
 
 Themes are defined in JSON files with the following structure:

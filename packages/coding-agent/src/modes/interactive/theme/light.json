@@ -75,5 +75,10 @@
 		"thinkingXhigh": "#8b008b",
 
 		"bashMode": "green"
+	},
+	"export": {
+		"pageBg": "#f8f8f8",
+		"cardBg": "#ffffff",
+		"infoBg": "#fffae6"
 	}
 }

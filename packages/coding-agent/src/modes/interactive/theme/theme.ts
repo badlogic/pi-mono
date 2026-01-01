@@ -82,6 +82,13 @@ const ThemeJsonSchema = Type.Object({
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
 	}),
+	export: Type.Optional(
+		Type.Object({
+			pageBg: Type.Optional(ColorValueSchema),
+			cardBg: Type.Optional(ColorValueSchema),
+			infoBg: Type.Optional(ColorValueSchema),
+		}),
+	),
 });
 
 type ThemeJson = Static<typeof ThemeJsonSchema>;
@@ -735,6 +742,44 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
 export function isLightTheme(themeName?: string): boolean {
 	// Currently just check the name - could be extended to analyze colors
 	return themeName === "light";
+}
+
+/**
+ * Get explicit export colors from theme JSON, if specified.
+ * Returns undefined for each color that isn't explicitly set.
+ */
+export function getThemeExportColors(themeName?: string): {
+	pageBg?: string;
+	cardBg?: string;
+	infoBg?: string;
+} {
+	const name = themeName ?? getDefaultTheme();
+	try {
+		const themeJson = loadThemeJson(name);
+		const exportSection = themeJson.export;
+		if (!exportSection) return {};
+
+		const vars = themeJson.vars ?? {};
+		const resolve = (value: string | number | undefined): string | undefined => {
+			if (value === undefined) return undefined;
+			if (typeof value === "number") return ansi256ToHex(value);
+			if (value.startsWith("$")) {
+				const resolved = vars[value];
+				if (resolved === undefined) return undefined;
+				if (typeof resolved === "number") return ansi256ToHex(resolved);
+				return resolved;
+			}
+			return value;
+		};
+
+		return {
+			pageBg: resolve(exportSection.pageBg),
+			cardBg: resolve(exportSection.cardBg),
+			infoBg: resolve(exportSection.infoBg),
+		};
+	} catch {
+		return {};
+	}
 }
 
 // ============================================================================

@@ -2,7 +2,7 @@ import type { AgentState } from "@mariozechner/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
-import { getResolvedThemeColors } from "../../modes/interactive/theme/theme.js";
+import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
 import { SessionManager } from "../session-manager.js";
 
 export interface ExportOptions {
@@ -86,12 +86,14 @@ function generateThemeVars(themeName?: string): string {
 		lines.push(`--${key}: ${value};`);
 	}
 
-	// Add derived export colors
+	// Use explicit theme export colors if available, otherwise derive from userMessageBg
+	const themeExport = getThemeExportColors(themeName);
 	const userMessageBg = colors.userMessageBg || "#343541";
-	const exportColors = deriveExportColors(userMessageBg);
-	lines.push(`--exportPageBg: ${exportColors.pageBg};`);
-	lines.push(`--exportCardBg: ${exportColors.cardBg};`);
-	lines.push(`--exportInfoBg: ${exportColors.infoBg};`);
+	const derivedColors = deriveExportColors(userMessageBg);
+
+	lines.push(`--exportPageBg: ${themeExport.pageBg ?? derivedColors.pageBg};`);
+	lines.push(`--exportCardBg: ${themeExport.cardBg ?? derivedColors.cardBg};`);
+	lines.push(`--exportInfoBg: ${themeExport.infoBg ?? derivedColors.infoBg};`);
 
 	return lines.join("\n      ");
 }
