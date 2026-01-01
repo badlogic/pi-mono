@@ -1,7 +1,7 @@
 import type { AgentState } from "@mariozechner/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
-import { APP_NAME, getExportTemplateDir, VERSION } from "../../config.js";
+import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors } from "../../modes/interactive/theme/theme.js";
 import { SessionManager } from "../session-manager.js";
 
@@ -121,8 +121,6 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const bodyBg = exportColors.pageBg;
 	const containerBg = exportColors.cardBg;
 	const infoBg = exportColors.infoBg;
-
-	const title = `Session ${sessionData.header?.id ?? "export"} - ${APP_NAME}`;
 
 	// Base64 encode session data to avoid escaping issues
 	const sessionDataBase64 = Buffer.from(JSON.stringify(sessionData)).toString("base64");
