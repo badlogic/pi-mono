@@ -47,6 +47,12 @@ export interface CustomToolContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined if no model is selected yet) */
 	model: Model<any> | undefined;
+	/** Whether the agent is idle (not streaming) */
+	isIdle(): boolean;
+	/** Whether there are queued messages waiting to be processed */
+	hasQueuedMessages(): boolean;
+	/** Abort the current agent operation (fire-and-forget, does not wait) */
+	abort(): void;
 }
 
 /** Session event passed to onSession callback */

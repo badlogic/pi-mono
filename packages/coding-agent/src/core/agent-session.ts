@@ -1878,6 +1878,11 @@ export class AgentSession {
 			sessionManager: this.sessionManager,
 			modelRegistry: this._modelRegistry,
 			model: this.agent.state.model,
+			isIdle: () => !this.isStreaming,
+			hasQueuedMessages: () => this.queuedMessageCount > 0,
+			abort: () => {
+				this.abort();
+			},
 		};
 
 		for (const { tool } of this._customTools) {

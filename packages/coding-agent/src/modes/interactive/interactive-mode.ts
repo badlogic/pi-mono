@@ -476,7 +476,9 @@ export class InteractiveMode {
 			},
 			isIdle: () => !this.session.isStreaming,
 			waitForIdle: () => this.session.agent.waitForIdle(),
-			abort: () => this.session.abort(),
+			abort: () => {
+				this.session.abort();
+			},
 			hasQueuedMessages: () => this.session.queuedMessageCount > 0,
 			uiContext,
 			hasUI: true,
@@ -512,6 +514,11 @@ export class InteractiveMode {
 						sessionManager: this.session.sessionManager,
 						modelRegistry: this.session.modelRegistry,
 						model: this.session.model,
+						isIdle: () => !this.session.isStreaming,
+						hasQueuedMessages: () => this.session.queuedMessageCount > 0,
+						abort: () => {
+							this.session.abort();
+						},
 					});
 				} catch (err) {
 					this.showToolError(tool.name, err instanceof Error ? err.message : String(err));

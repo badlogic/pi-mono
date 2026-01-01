@@ -230,10 +230,32 @@ interface CustomToolContext {
   sessionManager: ReadonlySessionManager;  // Read-only access to session
   modelRegistry: ModelRegistry;            // For API key resolution
   model: Model | undefined;                // Current model (may be undefined)
+  isIdle(): boolean;                       // Whether agent is streaming
+  hasQueuedMessages(): boolean;            // Whether user has queued messages
+  abort(): void;                           // Abort current operation (fire-and-forget)
 }
 ```
 
 Use `ctx.sessionManager.getBranch()` to get entries on the current branch for state reconstruction.
+
+### Checking Queue State
+
+Interactive tools can skip prompts when the user has already queued a message:
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  // If user already queued a message, skip the interactive prompt
+  if (ctx.hasQueuedMessages()) {
+    return {
+      content: [{ type: "text", text: "Skipped - user has queued input" }],
+    };
+  }
+
+  // Otherwise, prompt for input
+  const answer = await pi.ui.input("What would you like to do?");
+  // ...
+}
+```
 
 ## Session Lifecycle
 

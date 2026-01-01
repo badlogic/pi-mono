@@ -150,7 +150,7 @@ export interface HookContext {
 	/** Whether the agent is idle (not streaming) */
 	isIdle(): boolean;
 	/** Abort the current agent operation (fire-and-forget, does not wait) */
-	abort(): Promise<void>;
+	abort(): void;
 	/** Whether there are queued messages waiting to be processed */
 	hasQueuedMessages(): boolean;
 }

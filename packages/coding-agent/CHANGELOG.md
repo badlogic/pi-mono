@@ -76,7 +76,10 @@ execute(toolCallId, params, signal, onUpdate)
 execute(toolCallId, params, onUpdate, ctx, signal?)
 ```
 
-The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, and `model`.
+The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, `model`, and agent state methods:
+- `ctx.isIdle()` - check if agent is streaming
+- `ctx.hasQueuedMessages()` - check if user has queued messages (skip interactive prompts)
+- `ctx.abort()` - abort current operation (fire-and-forget)
 
 **Session event changes:**
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`

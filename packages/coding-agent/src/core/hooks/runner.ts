@@ -71,7 +71,7 @@ export class HookRunner {
 	private getModel: () => Model<any> | undefined = () => undefined;
 	private isIdleFn: () => boolean = () => true;
 	private waitForIdleFn: () => Promise<void> = async () => {};
-	private abortFn: () => Promise<void> = async () => {};
+	private abortFn: () => void = () => {};
 	private hasQueuedMessagesFn: () => boolean = () => false;
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private branchHandler: BranchHandler = async () => ({ cancelled: false });
@@ -107,8 +107,8 @@ export class HookRunner {
 		isIdle?: () => boolean;
 		/** Function to wait for agent to be idle */
 		waitForIdle?: () => Promise<void>;
-		/** Function to abort current operation */
-		abort?: () => Promise<void>;
+		/** Function to abort current operation (fire-and-forget) */
+		abort?: () => void;
 		/** Function to check if there are queued messages */
 		hasQueuedMessages?: () => boolean;
 		/** UI context for interactive prompts */
@@ -119,7 +119,7 @@ export class HookRunner {
 		this.getModel = options.getModel;
 		this.isIdleFn = options.isIdle ?? (() => true);
 		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
-		this.abortFn = options.abort ?? (async () => {});
+		this.abortFn = options.abort ?? (() => {});
 		this.hasQueuedMessagesFn = options.hasQueuedMessages ?? (() => false);
 		// Store session handlers for HookCommandContext
 		if (options.newSessionHandler) {

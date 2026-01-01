@@ -63,6 +63,11 @@ export async function runPrintMode(
 						sessionManager: session.sessionManager,
 						modelRegistry: session.modelRegistry,
 						model: session.model,
+						isIdle: () => !session.isStreaming,
+						hasQueuedMessages: () => session.queuedMessageCount > 0,
+						abort: () => {
+							session.abort();
+						},
 					},
 				);
 			} catch (_err) {

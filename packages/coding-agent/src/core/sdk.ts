@@ -567,12 +567,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// Wrap custom tools with context getter (agent is assigned below, accessed at execute time)
+	// Wrap custom tools with context getter (agent/session assigned below, accessed at execute time)
 	let agent: Agent;
+	let session: AgentSession;
 	const wrappedCustomTools = wrapCustomTools(customToolsResult.tools, () => ({
 		sessionManager,
 		modelRegistry,
 		model: agent.state.model,
+		isIdle: () => !session.isStreaming,
+		hasQueuedMessages: () => session.queuedMessageCount > 0,
+		abort: () => {
+			session.abort();
+		},
 	}));
 
 	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
@@ -646,7 +652,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	const session = new AgentSession({
+	session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,
