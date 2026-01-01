@@ -30,7 +30,6 @@ import {
 import type { CustomToolContext, CustomToolSessionEvent, LoadedCustomTool } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html/index.js";
 import type {
-	HookContext,
 	HookRunner,
 	SessionBeforeBranchResult,
 	SessionBeforeCompactResult,
@@ -545,24 +544,8 @@ export class AgentSession {
 		const command = this._hookRunner.getCommand(commandName);
 		if (!command) return false;
 
-		// Get UI context from hook runner (set by mode)
-		const uiContext = this._hookRunner.getUIContext();
-		if (!uiContext) return false;
-
-		// Build command context
-		const cwd = process.cwd();
-		const ctx: HookContext = {
-			ui: uiContext,
-			hasUI: this._hookRunner.getHasUI(),
-			cwd,
-			sessionManager: this.sessionManager,
-			modelRegistry: this._modelRegistry,
-			model: this.model,
-			isIdle: () => !this.isStreaming,
-			waitForIdle: () => this.agent.waitForIdle(),
-			abort: () => this.abort(),
-			hasQueuedMessages: () => this.queuedMessageCount > 0,
-		};
+		// Get command context from hook runner (includes session control methods)
+		const ctx = this._hookRunner.createCommandContext();
 
 		try {
 			await command.handler(args, ctx);

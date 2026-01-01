@@ -542,7 +542,7 @@ if (ctx.model) {
 
 ### ctx.isIdle()
 
-Returns `true` if the agent is not currently streaming. Useful for hooks that need to wait or check state:
+Returns `true` if the agent is not currently streaming:
 
 ```typescript
 if (ctx.isIdle()) {
@@ -550,18 +550,9 @@ if (ctx.isIdle()) {
 }
 ```
 
-### ctx.waitForIdle()
-
-Wait for the agent to finish streaming:
-
-```typescript
-await ctx.waitForIdle();
-// Agent is now idle
-```
-
 ### ctx.abort()
 
-Abort the current agent operation:
+Abort the current agent operation (fire-and-forget, does not wait):
 
 ```typescript
 await ctx.abort();
@@ -576,6 +567,62 @@ if (ctx.hasQueuedMessages()) {
   // Skip interactive prompt, let queued message take over
   return;
 }
+```
+
+## HookCommandContext (Slash Commands Only)
+
+Slash command handlers receive `HookCommandContext`, which extends `HookContext` with session control methods. These methods are only safe in user-initiated commands because they can cause deadlocks if called from event handlers (which run inside the agent loop).
+
+### ctx.waitForIdle()
+
+Wait for the agent to finish streaming:
+
+```typescript
+await ctx.waitForIdle();
+// Agent is now idle
+```
+
+### ctx.newSession(options?)
+
+Create a new session, optionally with initialization:
+
+```typescript
+const result = await ctx.newSession({
+  parentSession: ctx.sessionManager.getSessionFile(), // Track lineage
+  setup: async (sm) => {
+    // Initialize the new session
+    sm.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "Context from previous session..." }],
+      timestamp: Date.now(),
+    });
+  },
+});
+
+if (result.cancelled) {
+  // A hook cancelled the new session
+}
+```
+
+### ctx.branch(entryId)
+
+Branch from a specific entry, creating a new session file:
+
+```typescript
+const result = await ctx.branch("entry-id-123");
+if (!result.cancelled) {
+  // Now in the branched session
+}
+```
+
+### ctx.navigateTree(targetId, options?)
+
+Navigate to a different point in the session tree:
+
+```typescript
+const result = await ctx.navigateTree("entry-id-456", {
+  summarize: true, // Summarize the abandoned branch
+});
 ```
 
 ## HookAPI Methods
@@ -691,47 +738,6 @@ const result = await pi.exec("git", ["status"], {
 });
 
 // result.stdout, result.stderr, result.code, result.killed
-```
-
-### pi.newSession(options?)
-
-Start a new session, optionally with a setup callback to initialize it:
-
-```typescript
-await pi.newSession({
-  parentSession: ctx.sessionManager.getSessionFile(),  // Track lineage
-  setup: async (sessionManager) => {
-    // sessionManager is writable, can append messages
-    sessionManager.appendMessage({
-      role: "user",
-      content: [{ type: "text", text: "Context from previous session..." }]
-    });
-  }
-});
-```
-
-Returns `{ cancelled: boolean }` - cancelled if a `session_before_switch` hook cancelled.
-
-### pi.branch(entryId)
-
-Branch from a specific entry, creating a new session file:
-
-```typescript
-const result = await pi.branch(entryId);
-if (!result.cancelled) {
-  // Branched successfully
-}
-```
-
-### pi.navigateTree(targetId, options?)
-
-Navigate to a different point in the session tree (in-place):
-
-```typescript
-const result = await pi.navigateTree(targetId, { summarize: true });
-if (!result.cancelled) {
-  // Navigated successfully
-}
 ```
 
 ## Examples

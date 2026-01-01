@@ -20,6 +20,7 @@ import type {
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
+	HookCommandContext,
 	HookContext,
 	HookError,
 	HookEvent,
@@ -72,6 +73,9 @@ export class HookRunner {
 	private waitForIdleFn: () => Promise<void> = async () => {};
 	private abortFn: () => Promise<void> = async () => {};
 	private hasQueuedMessagesFn: () => boolean = () => false;
+	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
+	private branchHandler: BranchHandler = async () => ({ cancelled: false });
+	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 
 	constructor(hooks: LoadedHook[], cwd: string, sessionManager: SessionManager, modelRegistry: ModelRegistry) {
 		this.hooks = hooks;
@@ -93,11 +97,11 @@ export class HookRunner {
 		sendMessageHandler: SendMessageHandler;
 		/** Handler for hooks to append entries */
 		appendEntryHandler: AppendEntryHandler;
-		/** Handler for hooks to create new sessions */
+		/** Handler for creating new sessions (for HookCommandContext) */
 		newSessionHandler?: NewSessionHandler;
-		/** Handler for hooks to branch sessions */
+		/** Handler for branching sessions (for HookCommandContext) */
 		branchHandler?: BranchHandler;
-		/** Handler for hooks to navigate the session tree */
+		/** Handler for navigating session tree (for HookCommandContext) */
 		navigateTreeHandler?: NavigateTreeHandler;
 		/** Function to check if agent is idle */
 		isIdle?: () => boolean;
@@ -117,18 +121,20 @@ export class HookRunner {
 		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
 		this.abortFn = options.abort ?? (async () => {});
 		this.hasQueuedMessagesFn = options.hasQueuedMessages ?? (() => false);
+		// Store session handlers for HookCommandContext
+		if (options.newSessionHandler) {
+			this.newSessionHandler = options.newSessionHandler;
+		}
+		if (options.branchHandler) {
+			this.branchHandler = options.branchHandler;
+		}
+		if (options.navigateTreeHandler) {
+			this.navigateTreeHandler = options.navigateTreeHandler;
+		}
+		// Set per-hook handlers for pi.sendMessage() and pi.appendEntry()
 		for (const hook of this.hooks) {
 			hook.setSendMessageHandler(options.sendMessageHandler);
 			hook.setAppendEntryHandler(options.appendEntryHandler);
-			if (options.newSessionHandler) {
-				hook.setNewSessionHandler(options.newSessionHandler);
-			}
-			if (options.branchHandler) {
-				hook.setBranchHandler(options.branchHandler);
-			}
-			if (options.navigateTreeHandler) {
-				hook.setNavigateTreeHandler(options.navigateTreeHandler);
-			}
 		}
 		this.uiContext = options.uiContext ?? noOpUIContext;
 		this.hasUI = options.hasUI ?? false;
@@ -242,9 +248,22 @@ export class HookRunner {
 			modelRegistry: this.modelRegistry,
 			model: this.getModel(),
 			isIdle: () => this.isIdleFn(),
-			waitForIdle: () => this.waitForIdleFn(),
 			abort: () => this.abortFn(),
 			hasQueuedMessages: () => this.hasQueuedMessagesFn(),
+		};
+	}
+
+	/**
+	 * Create the command context for slash command handlers.
+	 * Extends HookContext with session control methods that are only safe in commands.
+	 */
+	createCommandContext(): HookCommandContext {
+		return {
+			...this.createContext(),
+			waitForIdle: () => this.waitForIdleFn(),
+			newSession: (options) => this.newSessionHandler(options),
+			branch: (entryId) => this.branchHandler(entryId),
+			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
 		};
 	}
 

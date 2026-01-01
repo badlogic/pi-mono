@@ -20,7 +20,7 @@ The hooks API has been restructured with more granular events and better session
 
 **Type renames:**
 - `HookEventContext` → `HookContext`
-- `HookCommandContext` removed (use `HookContext` for command handlers)
+- `HookCommandContext` is now a new interface extending `HookContext` with session control methods
 
 **Event changes:**
 - The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
@@ -33,18 +33,23 @@ The hooks API has been restructured with more granular events and better session
 **API changes:**
 - `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
 - New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
-- New `pi.registerCommand(name, options)` for custom slash commands
+- New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
 - New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
-- New `pi.newSession(options?)` to create new sessions with optional setup callback
-- New `pi.branch(entryId)` to branch from a specific entry
-- New `pi.navigateTree(targetId, options?)` to navigate the session tree
-- New `ctx.isIdle()`, `ctx.waitForIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state access
+- New `ctx.isIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state (available in all events)
 - New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
 - New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
 - New `ctx.ui.theme` getter for styling text with theme colors
 - `ctx.exec()` moved to `pi.exec()`
 - `ctx.sessionFile` → `ctx.sessionManager.getSessionFile()`
 - New `ctx.modelRegistry` and `ctx.model` for API key resolution
+
+**HookCommandContext (slash commands only):**
+- `ctx.waitForIdle()` - wait for agent to finish streaming
+- `ctx.newSession(options?)` - create new sessions with optional setup callback
+- `ctx.branch(entryId)` - branch from a specific entry
+- `ctx.navigateTree(targetId, options?)` - navigate the session tree
+
+These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
 
 **Removed:**
 - `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)

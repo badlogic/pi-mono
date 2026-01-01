@@ -80,9 +80,6 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setNewSessionHandler: () => {},
-			setBranchHandler: () => {},
-			setNavigateTreeHandler: () => {},
 		};
 	}
 
@@ -269,9 +266,6 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setNewSessionHandler: () => {},
-			setBranchHandler: () => {},
-			setNavigateTreeHandler: () => {},
 		};
 
 		createSession([throwingHook]);
@@ -319,9 +313,6 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setNewSessionHandler: () => {},
-			setBranchHandler: () => {},
-			setNavigateTreeHandler: () => {},
 		};
 
 		const hook2: LoadedHook = {
@@ -351,9 +342,6 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setNewSessionHandler: () => {},
-			setBranchHandler: () => {},
-			setNavigateTreeHandler: () => {},
 		};
 
 		createSession([hook1, hook2]);
