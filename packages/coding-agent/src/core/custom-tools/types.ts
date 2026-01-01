@@ -37,6 +37,27 @@ export interface CustomToolAPI {
 }
 
 /**
+ * Clawd here, summarizing what's available to custom tools:
+ *
+ * CustomToolAPI (passed to factory, stable across session changes):
+ *   - cwd: string - current working directory
+ *   - exec(cmd, args, options?): Promise<ExecResult> - run shell commands
+ *   - ui: CustomToolUIContext - select, confirm, input, notify, custom, setStatus, theme
+ *   - hasUI: boolean - false in print/RPC mode
+ *
+ * CustomToolContext (passed to execute and onSession):
+ *   - sessionManager: ReadonlySessionManager - read session entries, branch info
+ *   - modelRegistry: ModelRegistry - get API keys, list models
+ *   - model: Model | undefined - current model
+ *   - isIdle(): boolean - check if agent is streaming
+ *   - hasQueuedMessages(): boolean - check if user queued input (skip interactive prompts!)
+ *   - abort(): void - fire-and-forget abort (sets signal, doesn't wait)
+ *
+ * Note: Custom tools run inside the agent loop (like tool_call events in hooks),
+ * so they only get the safe read-only methods. No waitForIdle/newSession/branch/navigateTree.
+ */
+
+/**
  * Context passed to tool execute and onSession callbacks.
  * Provides access to session state and model information.
  */

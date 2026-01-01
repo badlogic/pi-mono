@@ -131,6 +131,31 @@ export interface HookUIContext {
 }
 
 /**
+ * Clawd here, summarizing what's available to hooks:
+ *
+ * HookContext (available in ALL event handlers):
+ *   - ui: HookUIContext - select, confirm, input, notify, custom, setStatus, theme
+ *   - hasUI: boolean - false in print/RPC mode
+ *   - cwd: string - current working directory
+ *   - sessionManager: ReadonlySessionManager - read session entries, branch info
+ *   - modelRegistry: ModelRegistry - get API keys, list models
+ *   - model: Model | undefined - current model
+ *   - isIdle(): boolean - check if agent is streaming
+ *   - hasQueuedMessages(): boolean - check if user queued input (skip interactive prompts)
+ *   - abort(): void - fire-and-forget abort (sets signal, doesn't wait)
+ *
+ * HookCommandContext (only in registerCommand handlers, extends HookContext):
+ *   - waitForIdle(): Promise<void> - wait for agent to finish
+ *   - newSession(options?): Promise - create new session with optional setup
+ *   - branch(entryId): Promise - branch from specific entry
+ *   - navigateTree(targetId, options?): Promise - navigate session tree
+ *
+ * Why the split? Session control methods (waitForIdle, newSession, etc.) would DEADLOCK
+ * if called from event handlers like tool_call or context, because those run inside
+ * the agent loop. Slash commands run from user input, outside the loop, so they're safe.
+ */
+
+/**
  * Context passed to hook event handlers.
  * For command handlers, see HookCommandContext which extends this with session control methods.
  */
