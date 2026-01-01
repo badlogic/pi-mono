@@ -37,6 +37,7 @@
       position: sticky;
       top: 0;
       height: 100vh;
+      border-right: 1px solid var(--dim);
     }
 
     .sidebar-header {
@@ -110,15 +111,22 @@
     }
 
     .tree-node:hover {
-      background: rgba(128, 128, 128, 0.15);
+      background: var(--selectedBg);
     }
 
     .tree-node.active {
-      background: rgba(128, 128, 128, 0.2);
+      background: var(--selectedBg);
+      border-left: 2px solid var(--accent);
+      padding-left: 6px;
     }
 
     .tree-node.active .tree-content {
       font-weight: bold;
+    }
+
+    .tree-node.in-path {
+      border-left: 2px solid var(--dim);
+      padding-left: 6px;
     }
 
     .tree-prefix {
