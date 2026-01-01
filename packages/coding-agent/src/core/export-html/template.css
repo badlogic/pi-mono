@@ -620,7 +620,7 @@
     .markdown-content pre code {
       display: block;
       background: none;
-      color: var(--mdCodeBlock);
+      color: var(--text);
     }
 
     .markdown-content blockquote {
