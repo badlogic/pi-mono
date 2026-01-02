@@ -127,7 +127,8 @@ export default function (pi: HookAPI) {
 			const todos = getTodos(ctx);
 
 			await ctx.ui.custom<void>((_tui, theme, done) => {
-				return new TodoListComponent(todos, theme, () => done());
+				// Cast: Theme.fg uses ThemeColor union type, but we only use standard colors
+				return new TodoListComponent(todos, theme as { fg: (color: string, text: string) => string }, () => done());
 			});
 		},
 	});
