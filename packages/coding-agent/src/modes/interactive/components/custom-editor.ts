@@ -1,5 +1,6 @@
 import {
 	Editor,
+	isAltEnter,
 	isCtrlC,
 	isCtrlD,
 	isCtrlG,
@@ -28,8 +29,14 @@ export class CustomEditor extends Editor {
 	public onCtrlT?: () => void;
 	public onCtrlG?: () => void;
 	public onCtrlZ?: () => void;
+	public onAltEnter?: () => void;
 
 	handleInput(data: string): void {
+		// Intercept Alt+Enter for follow-up messages
+		if (isAltEnter(data) && this.onAltEnter) {
+			this.onAltEnter();
+			return;
+		}
 		// Intercept Ctrl+G for external editor
 		if (isCtrlG(data) && this.onCtrlG) {
 			this.onCtrlG();

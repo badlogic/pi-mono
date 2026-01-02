@@ -305,7 +305,8 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		defaultProvider: manager.getDefaultProvider(),
 		defaultModel: manager.getDefaultModel(),
 		defaultThinkingLevel: manager.getDefaultThinkingLevel(),
-		queueMode: manager.getQueueMode(),
+		steeringMode: manager.getSteeringMode(),
+		followUpMode: manager.getFollowUpMode(),
 		theme: manager.getTheme(),
 		compaction: manager.getCompactionSettings(),
 		retry: manager.getRetrySettings(),
@@ -626,7 +627,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					return hookRunner.emitContext(messages);
 				}
 			: undefined,
-		queueMode: settingsManager.getQueueMode(),
+		steeringMode: settingsManager.getSteeringMode(),
+		followUpMode: settingsManager.getFollowUpMode(),
 		getApiKey: async () => {
 			const currentModel = agent.state.model;
 			if (!currentModel) {

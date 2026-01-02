@@ -253,9 +253,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "prompt");
 			}
 
-			case "queue_message": {
-				await session.queueMessage(command.message);
-				return success(id, "queue_message");
+			case "steer": {
+				await session.steer(command.message);
+				return success(id, "steer");
+			}
+
+			case "follow_up": {
+				await session.followUp(command.message);
+				return success(id, "follow_up");
 			}
 
 			case "abort": {
@@ -279,7 +284,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
 					isCompacting: session.isCompacting,
-					queueMode: session.queueMode,
+					steeringMode: session.steeringMode,
+					followUpMode: session.followUpMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					autoCompactionEnabled: session.autoCompactionEnabled,
@@ -334,12 +340,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			// =================================================================
-			// Queue Mode
+			// Queue Modes
 			// =================================================================
 
-			case "set_queue_mode": {
-				session.setQueueMode(command.mode);
-				return success(id, "set_queue_mode");
+			case "set_steering_mode": {
+				session.setSteeringMode(command.mode);
+				return success(id, "set_steering_mode");
+			}
+
+			case "set_follow_up_mode": {
+				session.setFollowUpMode(command.mode);
+				return success(id, "set_follow_up_mode");
 			}
 
 			// =================================================================

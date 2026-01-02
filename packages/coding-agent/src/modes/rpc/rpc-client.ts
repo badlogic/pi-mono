@@ -173,10 +173,17 @@ export class RpcClient {
 	}
 
 	/**
-	 * Queue a message while agent is streaming.
+	 * Queue a steering message to interrupt the agent mid-run.
 	 */
-	async queueMessage(message: string): Promise<void> {
-		await this.send({ type: "queue_message", message });
+	async steer(message: string): Promise<void> {
+		await this.send({ type: "steer", message });
+	}
+
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 */
+	async followUp(message: string): Promise<void> {
+		await this.send({ type: "follow_up", message });
 	}
 
 	/**
@@ -248,10 +255,17 @@ export class RpcClient {
 	}
 
 	/**
-	 * Set queue mode.
+	 * Set steering mode.
 	 */
-	async setQueueMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		await this.send({ type: "set_queue_mode", mode });
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_steering_mode", mode });
+	}
+
+	/**
+	 * Set follow-up mode.
+	 */
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_follow_up_mode", mode });
 	}
 
 	/**

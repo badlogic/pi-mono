@@ -262,6 +262,9 @@ export class InteractiveMode {
 			theme.fg("dim", "!") +
 			theme.fg("muted", " to run bash") +
 			"\n" +
+			theme.fg("dim", "alt+enter") +
+			theme.fg("muted", " to queue follow-up") +
+			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
 		const header = new Text(`${logo}\n${instructions}`, 1, 0);
@@ -776,6 +779,7 @@ export class InteractiveMode {
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
 		this.editor.onCtrlG = () => this.openExternalEditor();
+		this.editor.onAltEnter = () => this.handleAltEnter();
 
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -920,9 +924,9 @@ export class InteractiveMode {
 				}
 			}
 
-			// Queue regular messages if agent is streaming
+			// Queue steering message if agent is streaming (interrupts current work)
 			if (this.session.isStreaming) {
-				await this.session.queueMessage(text);
+				await this.session.steer(text);
 				this.updatePendingMessagesDisplay();
 				this.editor.addToHistory(text);
 				this.editor.setText("");
@@ -1447,6 +1451,24 @@ export class InteractiveMode {
 		process.kill(0, "SIGTSTP");
 	}
 
+	private async handleAltEnter(): Promise<void> {
+		const text = this.editor.getText().trim();
+		if (!text) return;
+
+		// Alt+Enter queues a follow-up message (waits until agent finishes)
+		if (this.session.isStreaming) {
+			await this.session.followUp(text);
+			this.updatePendingMessagesDisplay();
+			this.editor.addToHistory(text);
+			this.editor.setText("");
+			this.ui.requestRender();
+		}
+		// If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
+		else if (this.editor.onSubmit) {
+			this.editor.onSubmit(text);
+		}
+	}
+
 	private updateEditorBorderColor(): void {
 		if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
@@ -1651,7 +1673,8 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					showImages: this.settingsManager.getShowImages(),
-					queueMode: this.session.queueMode,
+					steeringMode: this.session.steeringMode,
+					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
 					currentTheme: this.settingsManager.getTheme() || "dark",
@@ -1672,8 +1695,11 @@ export class InteractiveMode {
 							}
 						}
 					},
-					onQueueModeChange: (mode) => {
-						this.session.setQueueMode(mode);
+					onSteeringModeChange: (mode) => {
+						this.session.setSteeringMode(mode);
+					},
+					onFollowUpModeChange: (mode) => {
+						this.session.setFollowUpMode(mode);
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
