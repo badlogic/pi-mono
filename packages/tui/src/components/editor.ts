@@ -696,6 +696,19 @@ export class Editor implements Component {
 		return this.state.lines.join("\n");
 	}
 
+	/**
+	 * Get text with paste markers expanded to their actual content.
+	 * Use this when you need the full content (e.g., for external editor).
+	 */
+	getExpandedText(): string {
+		let result = this.state.lines.join("\n");
+		for (const [pasteId, pasteContent] of this.pastes) {
+			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
+			result = result.replace(markerRegex, pasteContent);
+		}
+		return result;
+	}
+
 	getLines(): string[] {
 		return [...this.state.lines];
 	}

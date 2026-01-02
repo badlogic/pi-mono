@@ -1627,7 +1627,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		const currentText = this.editor.getText();
+		const currentText = this.editor.getExpandedText();
 		const tmpFile = path.join(os.tmpdir(), `pi-editor-${Date.now()}.pi.md`);
 
 		try {
