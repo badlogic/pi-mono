@@ -144,7 +144,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// queueMessage should work while streaming
 		expect(() => session.queueMessage("Queued message")).not.toThrow();
-		expect(session.queuedMessageCount).toBe(1);
+		expect(session.pendingMessageCount).toBe(1);
 
 		// Cleanup
 		await session.abort();

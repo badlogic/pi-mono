@@ -575,7 +575,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		model: agent.state.model,
 		isIdle: () => !session.isStreaming,
-		hasQueuedMessages: () => session.queuedMessageCount > 0,
+		hasPendingMessages: () => session.pendingMessageCount > 0,
 		abort: () => {
 			session.abort();
 		},

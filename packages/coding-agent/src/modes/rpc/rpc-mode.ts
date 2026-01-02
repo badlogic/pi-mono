@@ -182,7 +182,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		hookRunner.initialize({
 			getModel: () => session.agent.state.model,
 			sendMessageHandler: (message, triggerTurn) => {
-				session.sendHookMessage(message, triggerTurn).catch((e) => {
+				session.sendHookMessage(message, { triggerTurn }).catch((e) => {
 					output(error(undefined, "hook_send", e.message));
 				});
 			},
@@ -216,7 +216,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 						modelRegistry: session.modelRegistry,
 						model: session.model,
 						isIdle: () => !session.isStreaming,
-						hasQueuedMessages: () => session.queuedMessageCount > 0,
+						hasPendingMessages: () => session.pendingMessageCount > 0,
 						abort: () => {
 							session.abort();
 						},
@@ -284,7 +284,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					sessionId: session.sessionId,
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
-					queuedMessageCount: session.queuedMessageCount,
+					pendingMessageCount: session.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
 			}

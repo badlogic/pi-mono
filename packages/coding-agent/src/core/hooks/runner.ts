@@ -73,7 +73,7 @@ export class HookRunner {
 	private isIdleFn: () => boolean = () => true;
 	private waitForIdleFn: () => Promise<void> = async () => {};
 	private abortFn: () => void = () => {};
-	private hasQueuedMessagesFn: () => boolean = () => false;
+	private hasPendingMessagesFn: () => boolean = () => false;
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private branchHandler: BranchHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -111,7 +111,7 @@ export class HookRunner {
 		/** Function to abort current operation (fire-and-forget) */
 		abort?: () => void;
 		/** Function to check if there are queued messages */
-		hasQueuedMessages?: () => boolean;
+		hasPendingMessages?: () => boolean;
 		/** UI context for interactive prompts */
 		uiContext?: HookUIContext;
 		/** Whether UI is available */
@@ -121,7 +121,7 @@ export class HookRunner {
 		this.isIdleFn = options.isIdle ?? (() => true);
 		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
 		this.abortFn = options.abort ?? (() => {});
-		this.hasQueuedMessagesFn = options.hasQueuedMessages ?? (() => false);
+		this.hasPendingMessagesFn = options.hasPendingMessages ?? (() => false);
 		// Store session handlers for HookCommandContext
 		if (options.newSessionHandler) {
 			this.newSessionHandler = options.newSessionHandler;
@@ -250,7 +250,7 @@ export class HookRunner {
 			model: this.getModel(),
 			isIdle: () => this.isIdleFn(),
 			abort: () => this.abortFn(),
-			hasQueuedMessages: () => this.hasQueuedMessagesFn(),
+			hasPendingMessages: () => this.hasPendingMessagesFn(),
 		};
 	}
 

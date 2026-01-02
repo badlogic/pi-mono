@@ -161,7 +161,7 @@ export interface HookContext {
 	/** Abort the current agent operation (fire-and-forget, does not wait) */
 	abort(): void;
 	/** Whether there are queued messages waiting to be processed */
-	hasQueuedMessages(): boolean;
+	hasPendingMessages(): boolean;
 }
 
 /**

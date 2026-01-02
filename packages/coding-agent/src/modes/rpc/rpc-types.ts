@@ -74,7 +74,7 @@ export interface RpcSessionState {
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
-	queuedMessageCount: number;
+	pendingMessageCount: number;
 }
 
 // ============================================================================
