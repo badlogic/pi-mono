@@ -50,7 +50,7 @@ export interface CustomToolContext {
 	/** Whether the agent is idle (not streaming) */
 	isIdle(): boolean;
 	/** Whether there are queued messages waiting to be processed */
-	hasQueuedMessages(): boolean;
+	hasPendingMessages(): boolean;
 	/** Abort the current agent operation (fire-and-forget, does not wait) */
 	abort(): void;
 }

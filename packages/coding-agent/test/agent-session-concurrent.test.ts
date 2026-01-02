@@ -127,7 +127,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// Second prompt should reject
 		await expect(session.prompt("Second message")).rejects.toThrow(
-			"Agent is already processing. Use queueMessage() to queue messages during streaming.",
+			"Agent is already processing. Use steer() or followUp() to queue messages during streaming.",
 		);
 
 		// Cleanup
@@ -135,16 +135,32 @@ describe("AgentSession concurrent prompt guard", () => {
 		await firstPrompt.catch(() => {}); // Ignore abort error
 	});
 
-	it("should allow queueMessage() while streaming", async () => {
+	it("should allow steer() while streaming", async () => {
 		createSession();
 
 		// Start first prompt
 		const firstPrompt = session.prompt("First message");
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
-		// queueMessage should work while streaming
-		expect(() => session.queueMessage("Queued message")).not.toThrow();
-		expect(session.queuedMessageCount).toBe(1);
+		// steer should work while streaming
+		expect(() => session.steer("Steering message")).not.toThrow();
+		expect(session.pendingMessageCount).toBe(1);
+
+		// Cleanup
+		await session.abort();
+		await firstPrompt.catch(() => {});
+	});
+
+	it("should allow followUp() while streaming", async () => {
+		createSession();
+
+		// Start first prompt
+		const firstPrompt = session.prompt("First message");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+
+		// followUp should work while streaming
+		expect(() => session.followUp("Follow-up message")).not.toThrow();
+		expect(session.pendingMessageCount).toBe(1);
 
 		// Cleanup
 		await session.abort();

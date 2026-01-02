@@ -32,8 +32,8 @@ export async function runPrintMode(
 	if (hookRunner) {
 		hookRunner.initialize({
 			getModel: () => session.model,
-			sendMessageHandler: (message, triggerTurn) => {
-				session.sendHookMessage(message, triggerTurn).catch((e) => {
+			sendMessageHandler: (message, options) => {
+				session.sendHookMessage(message, options).catch((e) => {
 					console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
 				});
 			},
@@ -64,7 +64,7 @@ export async function runPrintMode(
 						modelRegistry: session.modelRegistry,
 						model: session.model,
 						isIdle: () => !session.isStreaming,
-						hasQueuedMessages: () => session.queuedMessageCount > 0,
+						hasPendingMessages: () => session.pendingMessageCount > 0,
 						abort: () => {
 							session.abort();
 						},

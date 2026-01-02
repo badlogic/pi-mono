@@ -24,7 +24,8 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 export interface SettingsConfig {
 	autoCompact: boolean;
 	showImages: boolean;
-	queueMode: "all" | "one-at-a-time";
+	steeringMode: "all" | "one-at-a-time";
+	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
 	availableThinkingLevels: ThinkingLevel[];
 	currentTheme: string;
@@ -36,7 +37,8 @@ export interface SettingsConfig {
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
-	onQueueModeChange: (mode: "all" | "one-at-a-time") => void;
+	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
+	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onThemeChange: (theme: string) => void;
 	onThemePreview?: (theme: string) => void;
@@ -127,10 +129,19 @@ export class SettingsSelectorComponent extends Container {
 				values: ["true", "false"],
 			},
 			{
-				id: "queue-mode",
-				label: "Queue mode",
-				description: "How to process queued messages while agent is working",
-				currentValue: config.queueMode,
+				id: "steering-mode",
+				label: "Steering mode",
+				description:
+					"Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.",
+				currentValue: config.steeringMode,
+				values: ["one-at-a-time", "all"],
+			},
+			{
+				id: "follow-up-mode",
+				label: "Follow-up mode",
+				description:
+					"Alt+Enter queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.",
+				currentValue: config.followUpMode,
 				values: ["one-at-a-time", "all"],
 			},
 			{
@@ -227,8 +238,11 @@ export class SettingsSelectorComponent extends Container {
 					case "show-images":
 						callbacks.onShowImagesChange(newValue === "true");
 						break;
-					case "queue-mode":
-						callbacks.onQueueModeChange(newValue as "all" | "one-at-a-time");
+					case "steering-mode":
+						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
+						break;
+					case "follow-up-mode":
+						callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
 						break;
 					case "hide-thinking":
 						callbacks.onHideThinkingBlockChange(newValue === "true");

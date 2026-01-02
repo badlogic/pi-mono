@@ -53,7 +53,7 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
  */
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-	triggerTurn?: boolean,
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 ) => void;
 
 /**
@@ -177,8 +177,11 @@ function createHookAPI(
 			list.push(handler);
 			handlers.set(event, list);
 		},
-		sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void {
-			sendMessageHandler(message, triggerTurn);
+		sendMessage<T = unknown>(
+			message: HookMessage<T>,
+			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		): void {
+			sendMessageHandler(message, options);
 		},
 		appendEntry<T = unknown>(customType: string, data?: T): void {
 			appendEntryHandler(customType, data);

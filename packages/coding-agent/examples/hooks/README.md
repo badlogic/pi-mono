@@ -28,6 +28,7 @@ cp permission-gate.ts ~/.pi/agent/hooks/
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
 | `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
+| `todo/` | Adds `/todos` command to view todos managed by the [todo custom tool](../custom-tools/todo/) |
 
 ## Writing Hooks
 

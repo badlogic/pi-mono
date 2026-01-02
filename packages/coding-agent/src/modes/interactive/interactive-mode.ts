@@ -262,6 +262,9 @@ export class InteractiveMode {
 			theme.fg("dim", "!") +
 			theme.fg("muted", " to run bash") +
 			"\n" +
+			theme.fg("dim", "alt+enter") +
+			theme.fg("muted", " to queue follow-up") +
+			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
 		const header = new Text(`${logo}\n${instructions}`, 1, 0);
@@ -401,10 +404,10 @@ export class InteractiveMode {
 
 		hookRunner.initialize({
 			getModel: () => this.session.model,
-			sendMessageHandler: (message, triggerTurn) => {
+			sendMessageHandler: (message, options) => {
 				const wasStreaming = this.session.isStreaming;
 				this.session
-					.sendHookMessage(message, triggerTurn)
+					.sendHookMessage(message, options)
 					.then(() => {
 						// For non-streaming cases with display=true, update UI
 						// (streaming cases update via message_end event)
@@ -486,7 +489,7 @@ export class InteractiveMode {
 			abort: () => {
 				this.session.abort();
 			},
-			hasQueuedMessages: () => this.session.queuedMessageCount > 0,
+			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			uiContext,
 			hasUI: true,
 		});
@@ -522,7 +525,7 @@ export class InteractiveMode {
 						modelRegistry: this.session.modelRegistry,
 						model: this.session.model,
 						isIdle: () => !this.session.isStreaming,
-						hasQueuedMessages: () => this.session.queuedMessageCount > 0,
+						hasPendingMessages: () => this.session.pendingMessageCount > 0,
 						abort: () => {
 							this.session.abort();
 						},
@@ -737,8 +740,9 @@ export class InteractiveMode {
 		this.editor.onEscape = () => {
 			if (this.loadingAnimation) {
 				// Abort and restore queued messages to editor
-				const queuedMessages = this.session.clearQueue();
-				const queuedText = queuedMessages.join("\n\n");
+				const { steering, followUp } = this.session.clearQueue();
+				const allQueued = [...steering, ...followUp];
+				const queuedText = allQueued.join("\n\n");
 				const currentText = this.editor.getText();
 				const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
 				this.editor.setText(combinedText);
@@ -775,6 +779,7 @@ export class InteractiveMode {
 		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
 		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
 		this.editor.onCtrlG = () => this.openExternalEditor();
+		this.editor.onAltEnter = () => this.handleAltEnter();
 
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -919,9 +924,9 @@ export class InteractiveMode {
 				}
 			}
 
-			// Queue regular messages if agent is streaming
+			// Queue steering message if agent is streaming (interrupts current work)
 			if (this.session.isStreaming) {
-				await this.session.queueMessage(text);
+				await this.session.steer(text);
 				this.updatePendingMessagesDisplay();
 				this.editor.addToHistory(text);
 				this.editor.setText("");
@@ -1446,6 +1451,24 @@ export class InteractiveMode {
 		process.kill(0, "SIGTSTP");
 	}
 
+	private async handleAltEnter(): Promise<void> {
+		const text = this.editor.getText().trim();
+		if (!text) return;
+
+		// Alt+Enter queues a follow-up message (waits until agent finishes)
+		if (this.session.isStreaming) {
+			await this.session.followUp(text);
+			this.updatePendingMessagesDisplay();
+			this.editor.addToHistory(text);
+			this.editor.setText("");
+			this.ui.requestRender();
+		}
+		// If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
+		else if (this.editor.onSubmit) {
+			this.editor.onSubmit(text);
+		}
+	}
+
 	private updateEditorBorderColor(): void {
 		if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
@@ -1599,12 +1622,17 @@ export class InteractiveMode {
 
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const queuedMessages = this.session.getQueuedMessages();
-		if (queuedMessages.length > 0) {
+		const steeringMessages = this.session.getSteeringMessages();
+		const followUpMessages = this.session.getFollowUpMessages();
+		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const message of queuedMessages) {
-				const queuedText = theme.fg("dim", `Queued: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(queuedText, 1, 0));
+			for (const message of steeringMessages) {
+				const text = theme.fg("dim", `Steering: ${message}`);
+				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
+			}
+			for (const message of followUpMessages) {
+				const text = theme.fg("dim", `Follow-up: ${message}`);
+				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 		}
 	}
@@ -1645,7 +1673,8 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					showImages: this.settingsManager.getShowImages(),
-					queueMode: this.session.queueMode,
+					steeringMode: this.session.steeringMode,
+					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
 					currentTheme: this.settingsManager.getTheme() || "dark",
@@ -1666,8 +1695,11 @@ export class InteractiveMode {
 							}
 						}
 					},
-					onQueueModeChange: (mode) => {
-						this.session.setQueueMode(mode);
+					onSteeringModeChange: (mode) => {
+						this.session.setSteeringMode(mode);
+					},
+					onFollowUpModeChange: (mode) => {
+						this.session.setFollowUpMode(mode);
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);

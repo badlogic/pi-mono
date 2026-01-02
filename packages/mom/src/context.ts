@@ -495,11 +495,19 @@ export class MomSettingsManager {
 	}
 
 	// Compatibility methods for AgentSession
-	getQueueMode(): "all" | "one-at-a-time" {
+	getSteeringMode(): "all" | "one-at-a-time" {
 		return "one-at-a-time"; // Mom processes one message at a time
 	}
 
-	setQueueMode(_mode: "all" | "one-at-a-time"): void {
+	setSteeringMode(_mode: "all" | "one-at-a-time"): void {
+		// No-op for mom
+	}
+
+	getFollowUpMode(): "all" | "one-at-a-time" {
+		return "one-at-a-time"; // Mom processes one message at a time
+	}
+
+	setFollowUpMode(_mode: "all" | "one-at-a-time"): void {
 		// No-op for mom
 	}
 

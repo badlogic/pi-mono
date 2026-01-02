@@ -127,11 +127,21 @@ describe("Agent", () => {
 		expect(agent.state.messages).toEqual([]);
 	});
 
-	it("should support message queueing", async () => {
+	it("should support steering message queue", async () => {
 		const agent = new Agent();
 
-		const message = { role: "user" as const, content: "Queued message", timestamp: Date.now() };
-		agent.queueMessage(message);
+		const message = { role: "user" as const, content: "Steering message", timestamp: Date.now() };
+		agent.steer(message);
+
+		// The message is queued but not yet in state.messages
+		expect(agent.state.messages).not.toContainEqual(message);
+	});
+
+	it("should support follow-up message queue", async () => {
+		const agent = new Agent();
+
+		const message = { role: "user" as const, content: "Follow-up message", timestamp: Date.now() };
+		agent.followUp(message);
 
 		// The message is queued but not yet in state.messages
 		expect(agent.state.messages).not.toContainEqual(message);
@@ -176,7 +186,7 @@ describe("Agent", () => {
 
 		// Second prompt should reject
 		await expect(agent.prompt("Second message")).rejects.toThrow(
-			"Agent is already processing a prompt. Use queueMessage() or wait for completion.",
+			"Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
 		);
 
 		// Cleanup - abort to stop the stream

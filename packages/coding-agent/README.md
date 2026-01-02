@@ -188,7 +188,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 | Command | Description |
 |---------|-------------|
-| `/settings` | Open settings menu (thinking, theme, queue mode, toggles) |
+| `/settings` | Open settings menu (thinking, theme, message delivery modes, toggles) |
 | `/model` | Switch models mid-session (fuzzy search, arrow keys, Enter to select) |
 | `/export [file]` | Export session to self-contained HTML |
 | `/share` | Upload session as secret GitHub gist, get shareable URL (requires `gh` CLI) |
@@ -214,7 +214,11 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 **Multi-line paste:** Pasted content is collapsed to `[paste #N <lines> lines]` but sent in full.
 
-**Message queuing:** Submit messages while the agent is working. They queue and process based on queue mode (configurable via `/settings`). Press Escape to abort and restore queued messages to editor.
+**Message queuing:** Submit messages while the agent is working:
+- **Enter** queues a *steering* message, delivered after current tool execution (interrupts remaining tools)
+- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
+
+Both modes are configurable via `/settings`: "one-at-a-time" delivers messages one by one waiting for responses, "all" delivers all queued messages at once. Press Escape to abort and restore queued messages to editor.
 
 ### Keyboard Shortcuts
 
@@ -499,7 +503,8 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "defaultModel": "claude-sonnet-4-20250514",
   "defaultThinkingLevel": "medium",
   "enabledModels": ["anthropic/*", "*gpt*", "gemini-2.5-pro:high"],
-  "queueMode": "one-at-a-time",
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
   "hideThinkingBlock": false,
   "collapseChangelog": false,
@@ -531,7 +536,8 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `defaultModel` | Default model ID | - |
 | `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
 | `enabledModels` | Model patterns for cycling. Supports glob patterns (`github-copilot/*`, `*sonnet*`) and fuzzy matching. Same as `--models` CLI flag | - |
-| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
+| `steeringMode` | Steering message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
+| `followUpMode` | Follow-up message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
 | `shellPath` | Custom bash path (Windows) | auto-detected |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
 | `collapseChangelog` | Show condensed changelog after update | `false` |
@@ -689,7 +695,13 @@ export default function (pi: HookAPI) {
 
 **Sending messages from hooks:**
 
-Use `pi.sendMessage(message, triggerTurn?)` to inject messages into the session. Messages are persisted as `CustomMessageEntry` and sent to the LLM. If the agent is streaming, the message is queued; otherwise a new agent loop starts if `triggerTurn` is true.
+Use `pi.sendMessage(message, options?)` to inject messages into the session. Messages are persisted as `CustomMessageEntry` and sent to the LLM.
+
+Options:
+- `triggerTurn`: If true and agent is idle, starts a new agent turn. Default: false.
+- `deliverAs`: When agent is streaming, controls delivery timing:
+  - `"steer"` (default): Delivered after current tool execution, interrupts remaining tools.
+  - `"followUp"`: Delivered only after agent finishes all work.
 
 ```typescript
 import * as fs from "node:fs";

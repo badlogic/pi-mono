@@ -138,8 +138,10 @@ export class AgentSession {
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 
-	// Message queue state
-	private _queuedMessages: string[] = [];
+	/** Tracks pending steering messages for UI display. Removed when delivered. */
+	private _steeringMessages: string[] = [];
+	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
+	private _followUpMessages: string[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -207,16 +209,21 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-		// When a user message starts, check if it's from the queue and remove it BEFORE emitting
+		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
-		if (event.type === "message_start" && event.message.role === "user" && this._queuedMessages.length > 0) {
-			// Extract text content from the message
+		if (event.type === "message_start" && event.message.role === "user") {
 			const messageText = this._getUserMessageText(event.message);
-			if (messageText && this._queuedMessages.includes(messageText)) {
-				// Remove the first occurrence of this message from the queue
-				const index = this._queuedMessages.indexOf(messageText);
-				if (index !== -1) {
-					this._queuedMessages.splice(index, 1);
+			if (messageText) {
+				// Check steering queue first
+				const steeringIndex = this._steeringMessages.indexOf(messageText);
+				if (steeringIndex !== -1) {
+					this._steeringMessages.splice(steeringIndex, 1);
+				} else {
+					// Check follow-up queue
+					const followUpIndex = this._followUpMessages.indexOf(messageText);
+					if (followUpIndex !== -1) {
+						this._followUpMessages.splice(followUpIndex, 1);
+					}
 				}
 			}
 		}
@@ -418,9 +425,14 @@ export class AgentSession {
 		return this.agent.state.messages;
 	}
 
-	/** Current queue mode */
-	get queueMode(): "all" | "one-at-a-time" {
-		return this.agent.getQueueMode();
+	/** Current steering mode */
+	get steeringMode(): "all" | "one-at-a-time" {
+		return this.agent.getSteeringMode();
+	}
+
+	/** Current follow-up mode */
+	get followUpMode(): "all" | "one-at-a-time" {
+		return this.agent.getFollowUpMode();
 	}
 
 	/** Current session file path, or undefined if sessions are disabled */
@@ -456,7 +468,7 @@ export class AgentSession {
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
 		if (this.isStreaming) {
-			throw new Error("Agent is already processing. Use queueMessage() to queue messages during streaming.");
+			throw new Error("Agent is already processing. Use steer() or followUp() to queue messages during streaming.");
 		}
 
 		// Flush any pending bash messages before the new prompt
@@ -565,12 +577,25 @@ export class AgentSession {
 	}
 
 	/**
-	 * Queue a message to be sent after the current response completes.
-	 * Use when agent is currently streaming.
+	 * Queue a steering message to interrupt the agent mid-run.
+	 * Delivered after current tool execution, skips remaining tools.
 	 */
-	async queueMessage(text: string): Promise<void> {
-		this._queuedMessages.push(text);
-		await this.agent.queueMessage({
+	async steer(text: string): Promise<void> {
+		this._steeringMessages.push(text);
+		this.agent.steer({
+			role: "user",
+			content: [{ type: "text", text }],
+			timestamp: Date.now(),
+		});
+	}
+
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 * Delivered only when agent has no more tool calls or steering messages.
+	 */
+	async followUp(text: string): Promise<void> {
+		this._followUpMessages.push(text);
+		this.agent.followUp({
 			role: "user",
 			content: [{ type: "text", text }],
 			timestamp: Date.now(),
@@ -586,11 +611,12 @@ export class AgentSession {
 	 * - Not streaming + no trigger: appends to state/session, no turn
 	 *
 	 * @param message Hook message with customType, content, display, details
-	 * @param triggerTurn If true and not streaming, triggers a new LLM turn
+	 * @param options.triggerTurn If true and not streaming, triggers a new LLM turn
+	 * @param options.deliverAs When streaming, use "steer" (default) for immediate or "followUp" to wait
 	 */
 	async sendHookMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		triggerTurn?: boolean,
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 	): Promise<void> {
 		const appMessage = {
 			role: "hookMessage" as const,
@@ -602,8 +628,12 @@ export class AgentSession {
 		} satisfies HookMessage<T>;
 		if (this.isStreaming) {
 			// Queue for processing by agent loop
-			await this.agent.queueMessage(appMessage);
-		} else if (triggerTurn) {
+			if (options?.deliverAs === "followUp") {
+				this.agent.followUp(appMessage);
+			} else {
+				this.agent.steer(appMessage);
+			}
+		} else if (options?.triggerTurn) {
 			// Send as prompt - agent loop will emit message events
 			await this.agent.prompt(appMessage);
 		} else {
@@ -619,24 +649,32 @@ export class AgentSession {
 	}
 
 	/**
-	 * Clear queued messages and return them.
+	 * Clear all queued messages and return them.
 	 * Useful for restoring to editor when user aborts.
+	 * @returns Object with steering and followUp arrays
 	 */
-	clearQueue(): string[] {
-		const queued = [...this._queuedMessages];
-		this._queuedMessages = [];
-		this.agent.clearMessageQueue();
-		return queued;
+	clearQueue(): { steering: string[]; followUp: string[] } {
+		const steering = [...this._steeringMessages];
+		const followUp = [...this._followUpMessages];
+		this._steeringMessages = [];
+		this._followUpMessages = [];
+		this.agent.clearAllQueues();
+		return { steering, followUp };
 	}
 
-	/** Number of messages currently queued */
-	get queuedMessageCount(): number {
-		return this._queuedMessages.length;
+	/** Number of pending messages (includes both steering and follow-up) */
+	get pendingMessageCount(): number {
+		return this._steeringMessages.length + this._followUpMessages.length;
 	}
 
-	/** Get queued messages (read-only) */
-	getQueuedMessages(): readonly string[] {
-		return this._queuedMessages;
+	/** Get pending steering messages (read-only) */
+	getSteeringMessages(): readonly string[] {
+		return this._steeringMessages;
+	}
+
+	/** Get pending follow-up messages (read-only) */
+	getFollowUpMessages(): readonly string[] {
+		return this._followUpMessages;
 	}
 
 	get skillsSettings(): Required<SkillsSettings> | undefined {
@@ -678,7 +716,8 @@ export class AgentSession {
 		await this.abort();
 		this.agent.reset();
 		this.sessionManager.newSession(options);
-		this._queuedMessages = [];
+		this._steeringMessages = [];
+		this._followUpMessages = [];
 		this._reconnectToAgent();
 
 		// Emit session_switch event with reason "new" to hooks
@@ -856,12 +895,21 @@ export class AgentSession {
 	// =========================================================================
 
 	/**
-	 * Set message queue mode.
+	 * Set steering message mode.
 	 * Saves to settings.
 	 */
-	setQueueMode(mode: "all" | "one-at-a-time"): void {
-		this.agent.setQueueMode(mode);
-		this.settingsManager.setQueueMode(mode);
+	setSteeringMode(mode: "all" | "one-at-a-time"): void {
+		this.agent.setSteeringMode(mode);
+		this.settingsManager.setSteeringMode(mode);
+	}
+
+	/**
+	 * Set follow-up message mode.
+	 * Saves to settings.
+	 */
+	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+		this.agent.setFollowUpMode(mode);
+		this.settingsManager.setFollowUpMode(mode);
 	}
 
 	// =========================================================================
@@ -1450,7 +1498,8 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
-		this._queuedMessages = [];
+		this._steeringMessages = [];
+		this._followUpMessages = [];
 
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
@@ -1882,7 +1931,7 @@ export class AgentSession {
 			modelRegistry: this._modelRegistry,
 			model: this.agent.state.model,
 			isIdle: () => !this.isStreaming,
-			hasQueuedMessages: () => this.queuedMessageCount > 0,
+			hasPendingMessages: () => this.pendingMessageCount > 0,
 			abort: () => {
 				this.abort();
 			},

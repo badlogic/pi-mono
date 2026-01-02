@@ -346,7 +346,7 @@ const renderApp = () => {
 						onClick: () => {
 							// Demo: Inject custom message (will appear on next agent run)
 							if (agent) {
-								agent.queueMessage(
+								agent.steer(
 									createSystemNotification(
 										"This is a custom message! It appears in the UI but is never sent to the LLM.",
 									),

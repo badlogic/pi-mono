@@ -25,7 +25,7 @@ export default function (pi: HookAPI) {
 							content: `External trigger: ${content}`,
 							display: true,
 						},
-						true, // triggerTurn - get LLM to respond
+						{ triggerTurn: true }, // triggerTurn - get LLM to respond
 					);
 					fs.writeFileSync(triggerFile, ""); // Clear after reading
 				}

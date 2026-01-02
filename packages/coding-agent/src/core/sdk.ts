@@ -305,7 +305,8 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		defaultProvider: manager.getDefaultProvider(),
 		defaultModel: manager.getDefaultModel(),
 		defaultThinkingLevel: manager.getDefaultThinkingLevel(),
-		queueMode: manager.getQueueMode(),
+		steeringMode: manager.getSteeringMode(),
+		followUpMode: manager.getFollowUpMode(),
 		theme: manager.getTheme(),
 		compaction: manager.getCompactionSettings(),
 		retry: manager.getRetrySettings(),
@@ -343,7 +344,10 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 		const messageRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
-		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
+		let sendMessageHandler: (
+			message: any,
+			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
 		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
@@ -357,8 +361,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 				list.push(handler);
 				handlers.set(event, list);
 			},
-			sendMessage: (message: any, triggerTurn?: boolean) => {
-				sendMessageHandler(message, triggerTurn);
+			sendMessage: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => {
+				sendMessageHandler(message, options);
 			},
 			appendEntry: (customType: string, data?: any) => {
 				appendEntryHandler(customType, data);
@@ -382,7 +386,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			handlers,
 			messageRenderers,
 			commands,
-			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
+			setSendMessageHandler: (
+				handler: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => void,
+			) => {
 				sendMessageHandler = handler;
 			},
 			setAppendEntryHandler: (handler: (customType: string, data?: any) => void) => {
@@ -575,7 +581,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		model: agent.state.model,
 		isIdle: () => !session.isStreaming,
-		hasQueuedMessages: () => session.queuedMessageCount > 0,
+		hasPendingMessages: () => session.pendingMessageCount > 0,
 		abort: () => {
 			session.abort();
 		},
@@ -626,7 +632,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					return hookRunner.emitContext(messages);
 				}
 			: undefined,
-		queueMode: settingsManager.getQueueMode(),
+		steeringMode: settingsManager.getSteeringMode(),
+		followUpMode: settingsManager.getFollowUpMode(),
 		getApiKey: async () => {
 			const currentModel = agent.state.model;
 			if (!currentModel) {
