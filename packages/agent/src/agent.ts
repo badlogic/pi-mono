@@ -171,6 +171,10 @@ export class Agent {
 	async prompt(message: AgentMessage | AgentMessage[]): Promise<void>;
 	async prompt(input: string, images?: ImageContent[]): Promise<void>;
 	async prompt(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]) {
+		if (this._state.isStreaming) {
+			throw new Error("Agent is already processing a prompt. Use queueMessage() or wait for completion.");
+		}
+
 		const model = this._state.model;
 		if (!model) throw new Error("No model configured");
 
@@ -199,6 +203,10 @@ export class Agent {
 
 	/** Continue from current context (for retry after overflow) */
 	async continue() {
+		if (this._state.isStreaming) {
+			throw new Error("Agent is already processing. Wait for completion before continuing.");
+		}
+
 		const messages = this._state.messages;
 		if (messages.length === 0) {
 			throw new Error("No messages to continue from");

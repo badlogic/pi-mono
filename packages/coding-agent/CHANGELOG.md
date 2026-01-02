@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `AgentSession.prompt()` now throws if called while the agent is already streaming, preventing race conditions. Use `queueMessage()` to queue messages during streaming.
+
 ## [0.31.1] - 2026-01-02
 
 ### Fixed

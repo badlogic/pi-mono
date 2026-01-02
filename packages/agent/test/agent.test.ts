@@ -1,6 +1,40 @@
-import { getModel } from "@mariozechner/pi-ai";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../src/index.js";
+
+// Mock stream that mimics AssistantMessageEventStream
+class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
+	constructor() {
+		super(
+			(event) => event.type === "done" || event.type === "error",
+			(event) => {
+				if (event.type === "done") return event.message;
+				if (event.type === "error") return event.error;
+				throw new Error("Unexpected event type");
+			},
+		);
+	}
+}
+
+function createAssistantMessage(text: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "openai-responses",
+		provider: "openai",
+		model: "mock",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+}
 
 describe("Agent", () => {
 	it("should create an agent instance with default state", () => {
@@ -108,5 +142,81 @@ describe("Agent", () => {
 
 		// Should not throw even if nothing is running
 		expect(() => agent.abort()).not.toThrow();
+	});
+
+	it("should throw when prompt() called while streaming", async () => {
+		let abortSignal: AbortSignal | undefined;
+		const agent = new Agent({
+			// Use a stream function that responds to abort
+			streamFn: (_model, _context, options) => {
+				abortSignal = options?.signal;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "start", partial: createAssistantMessage("") });
+					// Check abort signal periodically
+					const checkAbort = () => {
+						if (abortSignal?.aborted) {
+							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
+						} else {
+							setTimeout(checkAbort, 5);
+						}
+					};
+					checkAbort();
+				});
+				return stream;
+			},
+		});
+
+		// Start first prompt (don't await, it will block until abort)
+		const firstPrompt = agent.prompt("First message");
+
+		// Wait a tick for isStreaming to be set
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(agent.state.isStreaming).toBe(true);
+
+		// Second prompt should reject
+		await expect(agent.prompt("Second message")).rejects.toThrow(
+			"Agent is already processing a prompt. Use queueMessage() or wait for completion.",
+		);
+
+		// Cleanup - abort to stop the stream
+		agent.abort();
+		await firstPrompt.catch(() => {}); // Ignore abort error
+	});
+
+	it("should throw when continue() called while streaming", async () => {
+		let abortSignal: AbortSignal | undefined;
+		const agent = new Agent({
+			streamFn: (_model, _context, options) => {
+				abortSignal = options?.signal;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "start", partial: createAssistantMessage("") });
+					const checkAbort = () => {
+						if (abortSignal?.aborted) {
+							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
+						} else {
+							setTimeout(checkAbort, 5);
+						}
+					};
+					checkAbort();
+				});
+				return stream;
+			},
+		});
+
+		// Start first prompt
+		const firstPrompt = agent.prompt("First message");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(agent.state.isStreaming).toBe(true);
+
+		// continue() should reject
+		await expect(agent.continue()).rejects.toThrow(
+			"Agent is already processing. Wait for completion before continuing.",
+		);
+
+		// Cleanup
+		agent.abort();
+		await firstPrompt.catch(() => {});
 	});
 });

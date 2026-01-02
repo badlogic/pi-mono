@@ -112,7 +112,6 @@ export interface SessionStats {
 	cost: number;
 }
 
-/** Internal marker for hook messages queued through the agent loop */
 // ============================================================================
 // Constants
 // ============================================================================
@@ -456,6 +455,10 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		if (this.isStreaming) {
+			throw new Error("Agent is already processing. Use queueMessage() to queue messages during streaming.");
+		}
+
 		// Flush any pending bash messages before the new prompt
 		this._flushPendingBashMessages();
 

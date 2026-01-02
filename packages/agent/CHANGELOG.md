@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `prompt()` and `continue()` now throw if called while the agent is already streaming, preventing race conditions and corrupted state. Use `queueMessage()` to queue messages during streaming, or `await` the previous call.
+
 ## [0.31.1] - 2026-01-02
 
 ## [0.31.0] - 2026-01-02
