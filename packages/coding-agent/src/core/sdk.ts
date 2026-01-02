@@ -35,6 +35,7 @@ import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
+import { getCodexPrompt } from "./codex-compat.js";
 import {
 	type CustomToolsLoadResult,
 	discoverAndLoadCustomTools,
@@ -55,6 +56,16 @@ import {
 	loadProjectContextFiles as loadContextFilesInternal,
 } from "./system-prompt.js";
 import { time } from "./timings.js";
+
+const OPENAI_OAUTH_TOOLING_NOTE = [
+	"Tooling note for this environment (strict):",
+	"- Use only: read, write, edit, bash.",
+	"- Do NOT use apply_patch or any other tool name.",
+	"- If you would normally use apply_patch, use edit or write instead.",
+	"- Any instruction mentioning apply_patch is invalid in this environment.",
+	"- If a task requires a different tool, say you cannot and ask for user guidance.",
+].join("\n");
+
 import {
 	allTools,
 	bashTool,
@@ -610,6 +621,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		systemPrompt = options.systemPrompt(defaultPrompt);
 	}
 
+	// ChatGPT OAuth requires the exact Codex prompt - no modifications allowed
+	// Check if we're using OpenAI with OAuth and override the system prompt
+	const isOpenAIOAuth = model?.provider === "openai" && modelRegistry.isUsingOAuth(model);
+	if (isOpenAIOAuth) {
+		systemPrompt = getCodexPrompt();
+	}
+
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
 
@@ -650,6 +668,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			sessionManager.appendModelChange(model.provider, model.id);
 		}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
+	}
+
+	if (isOpenAIOAuth) {
+		const hasCodexCompatNote = sessionManager
+			.getEntries()
+			.some((entry) => entry.type === "custom_message" && entry.customType === "codex-compat");
+		if (!hasCodexCompatNote) {
+			sessionManager.appendCustomMessageEntry("codex-compat", OPENAI_OAUTH_TOOLING_NOTE, false);
+			agent.replaceMessages(sessionManager.buildSessionContext().messages);
+		}
 	}
 
 	session = new AgentSession({

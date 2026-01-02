@@ -143,6 +143,7 @@ Use `/login` to authenticate with subscription-based or free-tier providers:
 | Provider | Models | Cost |
 |----------|--------|------|
 | Anthropic (Claude Pro/Max) | Claude models via your subscription | Subscription |
+| OpenAI (ChatGPT Plus/Pro) | OpenAI models via ChatGPT backend (incl. GPT-5.2 Codex) | Subscription |
 | GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
 | Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
 | Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
@@ -157,6 +158,10 @@ pi
 **GitHub Copilot notes:**
 - Press Enter for github.com, or enter your GitHub Enterprise Server domain
 - If you get "model not supported" error, enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
+
+**OpenAI notes:**
+- Requires a ChatGPT Plus/Pro/Team/Enterprise subscription
+- Login enables OpenAI models via the ChatGPT backend (the model list may not show every legacy model)
 
 **Google providers notes:**
 - Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
@@ -198,7 +203,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/tree` | Navigate session tree in-place (search, filter, label entries) |
 | `/branch` | Create new conversation branch from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
-| `/login` | OAuth login for subscription-based models |
+| `/login` | OAuth login for subscription-based models (OpenAI, Anthropic, Copilot, Google) |
 | `/logout` | Clear OAuth tokens |
 | `/new` | Start a new session |
 | `/copy` | Copy last agent message to clipboard |

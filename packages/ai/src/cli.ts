@@ -7,6 +7,7 @@ import { loginGitHubCopilot } from "./utils/oauth/github-copilot.js";
 import { loginAntigravity } from "./utils/oauth/google-antigravity.js";
 import { loginGeminiCli } from "./utils/oauth/google-gemini-cli.js";
 import { getOAuthProviders } from "./utils/oauth/index.js";
+import { loginOpenAI } from "./utils/oauth/openai.js";
 import type { OAuthCredentials, OAuthProvider } from "./utils/oauth/types.js";
 
 const AUTH_FILE = "auth.json";
@@ -84,6 +85,17 @@ async function login(provider: OAuthProvider): Promise<void> {
 					(msg) => console.log(msg),
 				);
 				break;
+
+			case "openai":
+				credentials = await loginOpenAI(
+					(info) => {
+						console.log(`\nOpen this URL in your browser:\n${info.url}`);
+						if (info.instructions) console.log(info.instructions);
+						console.log();
+					},
+					(msg) => console.log(msg),
+				);
+				break;
 		}
 
 		const auth = loadAuth();
@@ -109,6 +121,7 @@ Commands:
 
 Providers:
   anthropic         Anthropic (Claude Pro/Max)
+  openai            OpenAI (ChatGPT Plus/Pro)
   github-copilot    GitHub Copilot
   google-gemini-cli Google Gemini CLI
   google-antigravity Antigravity (Gemini 3, Claude, GPT-OSS)
@@ -140,7 +153,7 @@ Examples:
 			}
 			console.log();
 
-			const choice = await prompt(rl, "Enter number (1-4): ");
+			const choice = await prompt(rl, `Enter number (1-${PROVIDERS.length}): `);
 			rl.close();
 
 			const index = parseInt(choice, 10) - 1;

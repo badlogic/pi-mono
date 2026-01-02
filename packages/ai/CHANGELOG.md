@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI OAuth provider**: Added ChatGPT Plus/Pro OAuth login helpers (`loginOpenAI`, `refreshOpenAIToken`) and provider metadata for OAuth-based auth.
+- **GPT-5.2 Codex model**: Added `gpt-5.2-codex` to the OpenAI responses model catalog for ChatGPT-backed Codex access.
+
+### Changed
+
+- **OpenAI ChatGPT backend support**: Added handling for ChatGPT backend requirements (instructions field, stateless IDs, reasoning defaults, and parameter restrictions) in the OpenAI responses provider.
+
 ### Fixed
 
 - **Gemini CLI rate limit handling**: Added automatic retry with server-provided delay for 429 errors. Parses delay from error messages like "Your quota will reset after 39s" and waits accordingly. Falls back to exponential backoff for other transient errors. ([#370](https://github.com/badlogic/pi-mono/issues/370))

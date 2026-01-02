@@ -442,6 +442,29 @@ async function generateModels() {
 		});
 	}
 
+	// TODO: Remove this once models.dev lists gpt-5.2-codex
+	// gpt-5.2-codex is currently only available via ChatGPT subscription (OAuth),
+	// not through the OpenAI Platform API, so models.dev doesn't list it yet.
+	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5.2-codex")) {
+		allModels.push({
+			id: "gpt-5.2-codex",
+			name: "GPT-5.2 Codex",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
+			provider: "openai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 5,
+				cacheRead: 0.125,
+				cacheWrite: 1.25,
+			},
+			contextWindow: 400000,
+			maxTokens: 128000,
+		});
+	}
+
 	// Add missing Grok models
 	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
 		allModels.push({

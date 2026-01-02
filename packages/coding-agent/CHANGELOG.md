@@ -5,10 +5,15 @@
 ### Added
 
 - Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
+- **OpenAI OAuth login**: `/login` now supports ChatGPT Plus/Pro/Team/Enterprise accounts and enables the `gpt-5.2-codex` model via the ChatGPT backend. ([#](https://github.com/badlogic/pi-mono/pull/) by [@melihmucuk](https://github.com/melihmucuk))
 
 ### Fixed
 
 - `AgentSession.prompt()` now throws if called while the agent is already streaming, preventing race conditions. Use `queueMessage()` to queue messages during streaming.
+
+### Changed
+
+- **Codex compatibility for ChatGPT OAuth**: OpenAI OAuth sessions now use the Codex system prompt and ChatGPT backend headers to satisfy backend validation, including compaction prompts. ([#](https://github.com/badlogic/pi-mono/pull/) by [@melihmucuk](https://github.com/melihmucuk))
 
 ## [0.31.1] - 2026-01-02
 
@@ -36,10 +41,12 @@ See [docs/session.md](docs/session.md) for the file format and `SessionManager` 
 The hooks API has been restructured with more granular events and better session access.
 
 **Type renames:**
+
 - `HookEventContext` → `HookContext`
 - `HookCommandContext` is now a new interface extending `HookContext` with session control methods
 
 **Event changes:**
+
 - The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
 - `session_before_switch` and `session_switch` events now include `reason: "new" | "resume"` to distinguish between `/new` and `/resume`
 - New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
@@ -48,6 +55,7 @@ The hooks API has been restructured with more granular events and better session
 - Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
 
 **API changes:**
+
 - `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
 - New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
 - New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
@@ -62,6 +70,7 @@ The hooks API has been restructured with more granular events and better session
 - New `ctx.modelRegistry` and `ctx.model` for API key resolution
 
 **HookCommandContext (slash commands only):**
+
 - `ctx.waitForIdle()` - wait for agent to finish streaming
 - `ctx.newSession(options?)` - create new sessions with optional setup callback
 - `ctx.branch(entryId)` - branch from a specific entry
@@ -70,6 +79,7 @@ The hooks API has been restructured with more granular events and better session
 These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
 
 **Removed:**
+
 - `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)
 - `resolveApiKey` parameter (use `ctx.modelRegistry.getApiKey(model)`)
 
@@ -80,12 +90,14 @@ See [docs/hooks.md](docs/hooks.md) and [examples/hooks/](examples/hooks/) for th
 The custom tools API has been restructured to mirror the hooks pattern with a context object.
 
 **Type renames:**
+
 - `CustomAgentTool` → `CustomTool`
 - `ToolAPI` → `CustomToolAPI`
 - `ToolContext` → `CustomToolContext`
 - `ToolSessionEvent` → `CustomToolSessionEvent`
 
 **Execute signature changed:**
+
 ```typescript
 // Before (v0.30.2)
 execute(toolCallId, params, signal, onUpdate)
@@ -95,11 +107,13 @@ execute(toolCallId, params, onUpdate, ctx, signal?)
 ```
 
 The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, `model`, and agent state methods:
+
 - `ctx.isIdle()` - check if agent is streaming
 - `ctx.hasQueuedMessages()` - check if user has queued messages (skip interactive prompts)
 - `ctx.abort()` - abort current operation (fire-and-forget)
 
 **Session event changes:**
+
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
 - Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
 - Reasons: `"start" | "switch" | "branch" | "tree" | "shutdown"` (no separate `"new"` reason; `/new` triggers `"switch"`)
@@ -110,6 +124,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 ### SDK Migration
 
 **Type changes:**
+
 - `CustomAgentTool` → `CustomTool`
 - `AppMessage` → `AgentMessage`
 - `sessionFile` returns `string | undefined` (was `string | null`)
@@ -117,6 +132,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
 
 **AgentSession API:**
+
 - `branch(entryIndex: number)` → `branch(entryId: string)`
 - `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
 - `reset()` → `newSession(options?)` where options has optional `parentSession` for lineage tracking
@@ -124,9 +140,11 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - New `navigateTree(targetId, options?)` for in-place tree navigation
 
 **Hook integration:**
+
 - New `sendHookMessage(message, triggerTurn?)` for hook message injection
 
 **SessionManager API:**
+
 - Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
 - `branchInPlace()` → `branch()`
 - `reset()` → `newSession(options?)` with optional `parentSession` for lineage tracking
@@ -144,10 +162,13 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 `ModelRegistry` is a new class that manages model discovery and API key resolution. It combines built-in models with custom models from `models.json` and resolves API keys via `AuthStorage`.
 
 ```typescript
-import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import {
+  discoverAuthStorage,
+  discoverModels,
+} from "@mariozechner/pi-coding-agent";
 
-const authStorage = discoverAuthStorage();  // ~/.pi/agent/auth.json
-const modelRegistry = discoverModels(authStorage);  // + ~/.pi/agent/models.json
+const authStorage = discoverAuthStorage(); // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage); // + ~/.pi/agent/models.json
 
 // Get all models (built-in + custom)
 const allModels = modelRegistry.getAll();
@@ -165,6 +186,7 @@ const apiKey = await modelRegistry.getApiKey(model);
 This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools access it via `ctx.modelRegistry`.
 
 **Renamed exports:**
+
 - `messageTransformer` → `convertToLlm`
 - `SessionContext` alias `LoadedSession` removed
 
@@ -173,17 +195,21 @@ See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the curren
 ### RPC Migration
 
 **Session commands:**
+
 - `reset` command → `new_session` command with optional `parentSession` field
 
 **Branching commands:**
+
 - `branch` command: `entryIndex` → `entryId`
 - `get_branch_messages` response: `entryIndex` → `entryId`
 
 **Type changes:**
+
 - Messages are now `AgentMessage` (was `AppMessage`)
 - `prompt` command: `attachments` field replaced with `images` field using `ImageContent` format
 
 **Compaction events:**
+
 - `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
 - `auto_compaction_end` now includes `willRetry` field
 - `compact` response includes full `CompactionResult` (`summary`, `firstKeptEntryId`, `tokensBefore`, `details`)
@@ -193,6 +219,7 @@ See [docs/rpc.md](docs/rpc.md) for the current protocol.
 ### Structured Compaction
 
 Compaction and branch summarization now use a structured output format:
+
 - Clear sections: Goal, Progress, Key Information, File Operations
 - File tracking: `readFiles` and `modifiedFiles` arrays in `details`, accumulated across compactions
 - Conversations are serialized to text before summarization to prevent the model from "continuing" them
@@ -202,6 +229,7 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 ### Interactive Mode
 
 **`/tree` command:**
+
 - Navigate the full session tree in-place
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
@@ -209,12 +237,14 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 - Selecting a branch switches context and optionally injects a summary of the abandoned branch
 
 **Entry labels:**
+
 - Bookmark any entry via `/tree` → select → `l`
 - Labels appear in tree view and persist as `LabelEntry`
 
 **Theme changes (breaking for custom themes):**
 
 Custom themes must add these new color tokens or they will fail to load:
+
 - `selectedBg`: background for selected/highlighted items in tree selector and other components
 - `customMessageBg`: background for hook-injected messages (`CustomMessageEntry`)
 - `customMessageText`: text color for hook messages
@@ -223,6 +253,7 @@ Custom themes must add these new color tokens or they will fail to load:
 Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
 
 **Settings:**
+
 - `enabledModels`: allowlist models in `settings.json` (same format as `--models` CLI)
 
 ### Added
@@ -320,6 +351,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - **Credential storage refactored**: API keys and OAuth tokens are now stored in `~/.pi/agent/auth.json` instead of `oauth.json` and `settings.json`. Existing credentials are automatically migrated on first run. ([#296](https://github.com/badlogic/pi-mono/issues/296))
 
 - **SDK API changes** ([#296](https://github.com/badlogic/pi-mono/issues/296)):
+
   - Added `AuthStorage` class for credential management (API keys and OAuth tokens)
   - Added `ModelRegistry` class for model discovery and API key resolution
   - Added `discoverAuthStorage()` and `discoverModels()` discovery functions
@@ -358,6 +390,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 ### Added
 
 - **Compaction hook improvements**: The `before_compact` session event now includes:
+
   - `previousSummary`: Summary from the last compaction (if any), so hooks can preserve accumulated context
   - `messagesToKeep`: Messages that will be kept after the summary (recent turns), in addition to `messagesToSummarize`
   - `resolveApiKey`: Function to resolve API keys for any model (checks settings, OAuth, env vars)
@@ -620,6 +653,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
 
 - Cleaned up documentation:
+
   - `theme.md`: Added missing color tokens (`thinkingXhigh`, `bashMode`)
   - `skills.md`: Rewrote with better framing and examples
   - `hooks.md`: Fixed timeout/error handling docs, added import aliases section

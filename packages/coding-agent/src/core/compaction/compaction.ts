@@ -8,6 +8,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete, completeSimple } from "@mariozechner/pi-ai";
+import { getCodexPrompt } from "../codex-compat.js";
 import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import {
@@ -488,17 +489,31 @@ export async function generateSummary(
 	}
 	promptText += basePrompt;
 
+	// ChatGPT backend requires exact Codex prompt as system, so we put
+	// summarization instructions in the user message instead
+	const isChatGPTBackend = model.baseUrl?.includes("chatgpt.com") ?? false;
+	const userMessageText = isChatGPTBackend ? `${SUMMARIZATION_SYSTEM_PROMPT}\n\n${promptText}` : promptText;
+
 	const summarizationMessages = [
 		{
 			role: "user" as const,
-			content: [{ type: "text" as const, text: promptText }],
+			content: [{ type: "text" as const, text: userMessageText }],
 			timestamp: Date.now(),
 		},
 	];
 
+	// For ChatGPT backend, we need to use the Codex prompt (required by backend)
+	// For other providers, use the summarization system prompt
+	let systemPrompt: string | undefined;
+	if (isChatGPTBackend) {
+		systemPrompt = getCodexPrompt();
+	} else {
+		systemPrompt = SUMMARIZATION_SYSTEM_PROMPT;
+	}
+
 	const response = await completeSimple(
 		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{ systemPrompt, messages: summarizationMessages },
 		{ maxTokens, signal, apiKey, reasoning: "high" },
 	);
 

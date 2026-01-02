@@ -357,20 +357,44 @@ function createClient(model: Model<"openai-responses">, context: Context, apiKey
 }
 
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {
-	const messages = convertMessages(model, context);
+	// ChatGPT backend requires instructions field, not system message in input
+	const isChatGPTBackend = model.baseUrl.includes("chatgpt.com");
+	let messages = convertMessages(model, context, isChatGPTBackend);
+
+	// ChatGPT backend (stateless mode) requires stripping IDs from all input items
+	if (isChatGPTBackend) {
+		messages = messages.map((item) => {
+			if ("id" in item && item.id) {
+				const { id: _id, ...itemWithoutId } = item;
+				return itemWithoutId as (typeof messages)[number];
+			}
+			return item;
+		});
+	}
 
 	const params: ResponseCreateParamsStreaming = {
 		model: model.id,
 		input: messages,
 		stream: true,
+		// ChatGPT backend requires instructions field for system prompt, store: false, and include for stateless mode
+		...(isChatGPTBackend
+			? {
+					...(context.systemPrompt ? { instructions: context.systemPrompt } : {}),
+					store: false,
+					include: ["reasoning.encrypted_content"],
+				}
+			: {}),
 	};
 
-	if (options?.maxTokens) {
-		params.max_output_tokens = options?.maxTokens;
-	}
+	// ChatGPT backend doesn't support max_output_tokens or temperature
+	if (!isChatGPTBackend) {
+		if (options?.maxTokens) {
+			params.max_output_tokens = options?.maxTokens;
+		}
 
-	if (options?.temperature !== undefined) {
-		params.temperature = options?.temperature;
+		if (options?.temperature !== undefined) {
+			params.temperature = options?.temperature;
+		}
 	}
 
 	if (context.tools) {
@@ -378,12 +402,16 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	}
 
 	if (model.reasoning) {
-		if (options?.reasoningEffort || options?.reasoningSummary) {
+		if (options?.reasoningEffort || options?.reasoningSummary || isChatGPTBackend) {
+			// ChatGPT backend requires reasoning config; default to medium/auto per Codex CLI
 			params.reasoning = {
 				effort: options?.reasoningEffort || "medium",
 				summary: options?.reasoningSummary || "auto",
 			};
-			params.include = ["reasoning.encrypted_content"];
+			// include is already set for ChatGPT backend above
+			if (!isChatGPTBackend) {
+				params.include = ["reasoning.encrypted_content"];
+			}
 		} else {
 			if (model.name.startsWith("gpt-5")) {
 				// Jesus Christ, see https://community.openai.com/t/need-reasoning-false-option-for-gpt-5/1351588/7
@@ -403,12 +431,13 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	return params;
 }
 
-function convertMessages(model: Model<"openai-responses">, context: Context): ResponseInput {
+function convertMessages(model: Model<"openai-responses">, context: Context, skipSystemPrompt = false): ResponseInput {
 	const messages: ResponseInput = [];
 
 	const transformedMessages = transformMessages(context.messages, model);
 
-	if (context.systemPrompt) {
+	// Skip system prompt if using instructions field (ChatGPT backend)
+	if (context.systemPrompt && !skipSystemPrompt) {
 		const role = model.reasoning ? "developer" : "system";
 		messages.push({
 			role,

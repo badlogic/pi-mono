@@ -145,7 +145,7 @@ export class ModelRegistry {
 			}
 		}
 
-		const combined = [...builtInModels, ...customModels];
+		let models = [...builtInModels, ...customModels];
 
 		// Update github-copilot base URL based on OAuth credentials
 		const copilotCred = this.authStorage.get("github-copilot");
@@ -154,10 +154,42 @@ export class ModelRegistry {
 				? (normalizeDomain(copilotCred.enterpriseUrl) ?? undefined)
 				: undefined;
 			const baseUrl = getGitHubCopilotBaseUrl(copilotCred.access, domain);
-			this.models = combined.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m));
-		} else {
-			this.models = combined;
+			models = models.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m));
 		}
+
+		// Update OpenAI models to use ChatGPT backend when OAuth is used
+		// ChatGPT Plus/Pro subscriptions use a different endpoint than regular API keys
+		const openaiCred = this.authStorage.get("openai");
+		if (openaiCred?.type !== "oauth") {
+			models = models.filter((m) => !(m.provider === "openai" && m.id === "gpt-5.2-codex"));
+		}
+		if (openaiCred?.type === "oauth") {
+			const accountId = openaiCred.accountId;
+			// Use Codex CLI's exact originator and User-Agent format
+			// ChatGPT backend validates these headers
+			const os = process.platform === "darwin" ? "Mac OS" : process.platform;
+			const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x86_64" : process.arch;
+			models = models.map((m) => {
+				if (m.provider === "openai") {
+					return {
+						...m,
+						baseUrl: "https://chatgpt.com/backend-api/codex",
+						headers: {
+							...m.headers,
+							...(accountId ? { "chatgpt-account-id": accountId } : {}),
+							// Must match Codex CLI's headers exactly
+							originator: "codex_cli_rs",
+							"User-Agent": `codex_cli_rs/1.0.0 (${os}; ${arch})`,
+							"OpenAI-Beta": "responses=experimental",
+							accept: "text/event-stream",
+						},
+					};
+				}
+				return m;
+			});
+		}
+
+		this.models = models;
 	}
 
 	private loadCustomModels(modelsJsonPath: string): { models: Model<Api>[]; error: string | undefined } {

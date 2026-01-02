@@ -2430,6 +2430,23 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 16384,
 		} satisfies Model<"openai-responses">,
+		"gpt-5.2-codex": {
+			id: "gpt-5.2-codex",
+			name: "GPT-5.2 Codex",
+			api: "openai-responses",
+			provider: "openai",
+			baseUrl: "https://api.openai.com/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.25,
+				output: 5,
+				cacheRead: 0.125,
+				cacheWrite: 1.25,
+			},
+			contextWindow: 400000,
+			maxTokens: 128000,
+		} satisfies Model<"openai-responses">,
 		"gpt-5.2-pro": {
 			id: "gpt-5.2-pro",
 			name: "GPT-5.2 Pro",
