@@ -9,6 +9,7 @@
 ### Fixed
 
 - `AgentSession.prompt()` now throws if called while the agent is already streaming, preventing race conditions. Use `queueMessage()` to queue messages during streaming.
+- Ctrl+C now works like Escape in selector components, so mashing Ctrl+C will eventually close the program ([#400](https://github.com/badlogic/pi-mono/pull/400) by [@mitsuhiko](https://github.com/mitsuhiko))
 
 ## [0.31.1] - 2026-01-02
 
