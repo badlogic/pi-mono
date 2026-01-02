@@ -100,6 +100,43 @@ describe("anthropic-bedrock provider", () => {
 		expect((lastCommandInput as { modelId?: string }).modelId).toBe(model.id);
 	});
 
+	it("derives region from VPC and gov endpoints", async () => {
+		const events = [
+			{
+				type: "message_start",
+				message: {
+					usage: { input_tokens: 1, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+				},
+			},
+			{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 1, output_tokens: 0 } },
+		];
+
+		const context: Context = {
+			messages: [{ role: "user", content: "Ping", timestamp: Date.now() }],
+		};
+
+		sendMock = async () => ({ body: createBody(events) });
+		const vpcModel = {
+			...createModel(),
+			baseUrl: "https://vpce-12345.bedrock-runtime.us-gov-west-1.vpce.amazonaws.com",
+		};
+		const vpcStream = stream(vpcModel, context);
+		for await (const _event of vpcStream) {
+			// Drain stream
+		}
+		await vpcStream.result();
+		expect(lastClientConfig).toMatchObject({ region: "us-gov-west-1" });
+
+		sendMock = async () => ({ body: createBody(events) });
+		const hostModel = { ...createModel(), baseUrl: "bedrock-runtime.eu-central-1.amazonaws.com" };
+		const hostStream = stream(hostModel, context);
+		for await (const _event of hostStream) {
+			// Drain stream
+		}
+		await hostStream.result();
+		expect(lastClientConfig).toMatchObject({ region: "eu-central-1" });
+	});
+
 	it("parses tool call arguments from partial JSON", async () => {
 		const events = [
 			{

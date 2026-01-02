@@ -13,10 +13,13 @@ import {
 	type OAuthCredentials,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -204,7 +207,7 @@ export class AuthStorage {
 		let cred = this.data[provider];
 		if (!cred && provider === "anthropic" && !this.claudeCliChecked) {
 			this.claudeCliChecked = true;
-			const imported = loadClaudeCliCredentials();
+			const imported = await loadClaudeCliCredentials();
 			if (imported) {
 				this.data[provider] = { type: "oauth", ...imported };
 				this.save();
@@ -246,10 +249,25 @@ export class AuthStorage {
 	}
 }
 
-function loadClaudeCliCredentials(): OAuthCredentials | undefined {
+async function loadClaudeCliCredentials(): Promise<OAuthCredentials | undefined> {
+	const fromEnv = loadClaudeCliCredentialsFromEnv();
+	if (fromEnv) return fromEnv;
 	const fromFiles = loadClaudeCliCredentialsFromFiles();
 	if (fromFiles) return fromFiles;
-	return loadClaudeCliCredentialsFromKeychain();
+	return await loadClaudeCliCredentialsFromKeychain();
+}
+
+function loadClaudeCliCredentialsFromEnv(): OAuthCredentials | undefined {
+	const access = getString(process.env.ANTHROPIC_ACCESS_TOKEN);
+	const refresh = getString(process.env.ANTHROPIC_REFRESH_TOKEN);
+	if (!access || !refresh) return undefined;
+	const expires = resolveExpires({
+		expiresAt: process.env.ANTHROPIC_EXPIRES_AT,
+		expiresIn: process.env.ANTHROPIC_EXPIRES_IN,
+	});
+	const email = getString(process.env.ANTHROPIC_EMAIL);
+	const resolvedExpires = expires ?? 0;
+	return email ? { access, refresh, expires: resolvedExpires, email } : { access, refresh, expires: resolvedExpires };
 }
 
 function loadClaudeCliCredentialsFromFiles(): OAuthCredentials | undefined {
@@ -270,23 +288,34 @@ function loadClaudeCliCredentialsFromFiles(): OAuthCredentials | undefined {
 	return undefined;
 }
 
-function loadClaudeCliCredentialsFromKeychain(): OAuthCredentials | undefined {
+async function loadClaudeCliCredentialsFromKeychain(): Promise<OAuthCredentials | undefined> {
 	if (process.platform !== "darwin") return undefined;
 
 	const services = ["Claude Code-credentials", "Claude Code"];
 	for (const service of services) {
 		try {
-			const output = execFileSync("security", ["find-generic-password", "-s", service, "-w"], {
+			const { stdout } = await execFileAsync("security", ["find-generic-password", "-s", service, "-w"], {
 				encoding: "utf-8",
-			}).trim();
+				timeout: 1500,
+				maxBuffer: 1024 * 1024,
+			});
+			const output = stdout.trim();
 			if (!output) continue;
 			const parsed = JSON.parse(output);
 			const creds = extractClaudeCliCredentials(parsed);
 			if (creds) return creds;
-		} catch {}
+		} catch (error) {
+			logKeychainDebug(`Claude CLI keychain lookup failed for ${service}`, error);
+		}
 	}
 
 	return undefined;
+}
+
+function logKeychainDebug(message: string, error?: unknown): void {
+	if (process.env.PI_DEBUG_AUTH !== "1") return;
+	const detail = error instanceof Error ? error.message : error ? String(error) : "";
+	console.debug(detail ? `[auth] ${message}: ${detail}` : `[auth] ${message}`);
 }
 
 function extractClaudeCliCredentials(data: unknown): OAuthCredentials | undefined {

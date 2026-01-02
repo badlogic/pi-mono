@@ -363,13 +363,31 @@ function resolveEndpoint(baseUrl: string): string | undefined {
 }
 
 function parseRegionFromEndpoint(baseUrl: string): string | undefined {
+	if (!baseUrl) return undefined;
+	const normalized = baseUrl.startsWith("http://") || baseUrl.startsWith("https://") ? baseUrl : `https://${baseUrl}`;
 	try {
-		const url = new URL(baseUrl);
-		const match = url.hostname.match(/bedrock-runtime[.-]([a-z0-9-]+)\.amazonaws\.com$/);
-		return match?.[1];
+		const url = new URL(normalized);
+		const hostname = url.hostname;
+		const parts = hostname.split(".");
+		for (let i = 0; i < parts.length; i += 1) {
+			const part = parts[i];
+			if (part === "bedrock-runtime") {
+				const candidate = parts[i + 1];
+				if (candidate && isLikelyRegion(candidate)) return candidate;
+			}
+			if (part.startsWith("bedrock-runtime-")) {
+				const candidate = part.slice("bedrock-runtime-".length);
+				if (candidate && isLikelyRegion(candidate)) return candidate;
+			}
+		}
+		return undefined;
 	} catch {
 		return undefined;
 	}
+}
+
+function isLikelyRegion(value: string): boolean {
+	return /^[a-z0-9-]+-\d+$/.test(value);
 }
 
 function resolveRegion(model: Model<"anthropic-bedrock">, options?: BedrockOptions): string {
