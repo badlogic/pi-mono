@@ -108,7 +108,10 @@ export function visibleWidth(str: string): number {
 		clean = clean.replace(/\t/g, "   ");
 	}
 	if (clean.includes("\x1b")) {
+		// Strip SGR codes (\x1b[...m) and cursor codes (\x1b[...G/K/H/J)
 		clean = clean.replace(/\x1b\[[0-9;]*[mGKHJ]/g, "");
+		// Strip OSC 8 hyperlinks: \x1b]8;;URL\x07 and \x1b]8;;\x07
+		clean = clean.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
 	}
 
 	// Calculate width
