@@ -28,6 +28,7 @@ import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
+import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
@@ -84,6 +85,7 @@ export class InteractiveMode {
 	private editor: CustomEditor;
 	private editorContainer: Container;
 	private footer: FooterComponent;
+	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
@@ -165,7 +167,8 @@ export class InteractiveMode {
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
-		this.editor = new CustomEditor(getEditorTheme());
+		this.keybindings = KeybindingsManager.create();
+		this.editor = new CustomEditor(getEditorTheme(), this.keybindings);
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
 		this.footer = new FooterComponent(session);
@@ -770,20 +773,21 @@ export class InteractiveMode {
 			}
 		};
 
-		this.editor.onCtrlC = () => this.handleCtrlC();
+		// Register app action handlers
+		this.editor.onAction("clear", () => this.handleCtrlC());
 		this.editor.onCtrlD = () => this.handleCtrlD();
-		this.editor.onCtrlZ = () => this.handleCtrlZ();
-		this.editor.onShiftTab = () => this.cycleThinkingLevel();
-		this.editor.onCtrlP = () => this.cycleModel("forward");
-		this.editor.onShiftCtrlP = () => this.cycleModel("backward");
+		this.editor.onAction("suspend", () => this.handleCtrlZ());
+		this.editor.onAction("cycleThinkingLevel", () => this.cycleThinkingLevel());
+		this.editor.onAction("cycleModelForward", () => this.cycleModel("forward"));
+		this.editor.onAction("cycleModelBackward", () => this.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
-		this.editor.onCtrlL = () => this.showModelSelector();
-		this.editor.onCtrlO = () => this.toggleToolOutputExpansion();
-		this.editor.onCtrlT = () => this.toggleThinkingBlockVisibility();
-		this.editor.onCtrlG = () => this.openExternalEditor();
-		this.editor.onAltEnter = () => this.handleAltEnter();
+		this.editor.onAction("selectModel", () => this.showModelSelector());
+		this.editor.onAction("expandTools", () => this.toggleToolOutputExpansion());
+		this.editor.onAction("toggleThinking", () => this.toggleThinkingBlockVisibility());
+		this.editor.onAction("externalEditor", () => this.openExternalEditor());
+		this.editor.onAction("followUp", () => this.handleFollowUp());
 
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1456,7 +1460,7 @@ export class InteractiveMode {
 		process.kill(0, "SIGTSTP");
 	}
 
-	private async handleAltEnter(): Promise<void> {
+	private async handleFollowUp(): Promise<void> {
 		const text = this.editor.getText().trim();
 		if (!text) return;
 

@@ -1,16 +1,5 @@
 import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
-import {
-	Container,
-	Input,
-	isArrowDown,
-	isArrowUp,
-	isCtrlC,
-	isEnter,
-	isEscape,
-	Spacer,
-	Text,
-	type TUI,
-} from "@mariozechner/pi-tui";
+import { Container, Input, matchesKey, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
@@ -217,26 +206,26 @@ export class ModelSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		// Up arrow - wrap to bottom when at top
-		if (isArrowUp(keyData)) {
+		if (matchesKey(keyData, "up")) {
 			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 		}
 		// Down arrow - wrap to top when at bottom
-		else if (isArrowDown(keyData)) {
+		else if (matchesKey(keyData, "down")) {
 			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 		}
 		// Enter
-		else if (isEnter(keyData)) {
+		else if (matchesKey(keyData, "enter")) {
 			const selectedModel = this.filteredModels[this.selectedIndex];
 			if (selectedModel) {
 				this.handleSelect(selectedModel.model);
 			}
 		}
 		// Escape or Ctrl+C
-		else if (isEscape(keyData) || isCtrlC(keyData)) {
+		else if (matchesKey(keyData, "escape") || matchesKey(keyData, "ctrl+c")) {
 			this.onCancelCallback();
 		}
 		// Pass everything else to search input

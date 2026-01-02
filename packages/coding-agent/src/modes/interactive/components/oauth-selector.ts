@@ -1,14 +1,5 @@
 import { getOAuthProviders, type OAuthProviderInfo } from "@mariozechner/pi-ai";
-import {
-	Container,
-	isArrowDown,
-	isArrowUp,
-	isCtrlC,
-	isEnter,
-	isEscape,
-	Spacer,
-	TruncatedText,
-} from "@mariozechner/pi-tui";
+import { Container, matchesKey, Spacer, TruncatedText } from "@mariozechner/pi-tui";
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -105,24 +96,24 @@ export class OAuthSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		// Up arrow
-		if (isArrowUp(keyData)) {
+		if (matchesKey(keyData, "up")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
 		}
 		// Down arrow
-		else if (isArrowDown(keyData)) {
+		else if (matchesKey(keyData, "down")) {
 			this.selectedIndex = Math.min(this.allProviders.length - 1, this.selectedIndex + 1);
 			this.updateList();
 		}
 		// Enter
-		else if (isEnter(keyData)) {
+		else if (matchesKey(keyData, "enter")) {
 			const selectedProvider = this.allProviders[this.selectedIndex];
 			if (selectedProvider?.available) {
 				this.onSelectCallback(selectedProvider.id);
 			}
 		}
 		// Escape or Ctrl+C
-		else if (isEscape(keyData) || isCtrlC(keyData)) {
+		else if (matchesKey(keyData, "escape") || matchesKey(keyData, "ctrl+c")) {
 			this.onCancelCallback();
 		}
 	}

@@ -3,7 +3,7 @@
  * Displays a list of string options with keyboard navigation.
  */
 
-import { Container, isArrowDown, isArrowUp, isCtrlC, isEnter, isEscape, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -67,24 +67,24 @@ export class HookSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		// Up arrow or k
-		if (isArrowUp(keyData) || keyData === "k") {
+		if (matchesKey(keyData, "up") || keyData === "k") {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
 		}
 		// Down arrow or j
-		else if (isArrowDown(keyData) || keyData === "j") {
+		else if (matchesKey(keyData, "down") || keyData === "j") {
 			this.selectedIndex = Math.min(this.options.length - 1, this.selectedIndex + 1);
 			this.updateList();
 		}
 		// Enter
-		else if (isEnter(keyData) || keyData === "\n") {
+		else if (matchesKey(keyData, "enter") || keyData === "\n") {
 			const selected = this.options[this.selectedIndex];
 			if (selected) {
 				this.onSelectCallback(selected);
 			}
 		}
 		// Escape or Ctrl+C
-		else if (isEscape(keyData) || isCtrlC(keyData)) {
+		else if (matchesKey(keyData, "escape") || matchesKey(keyData, "ctrl+c")) {
 			this.onCancelCallback();
 		}
 	}

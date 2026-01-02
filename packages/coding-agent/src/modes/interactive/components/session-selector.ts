@@ -1,16 +1,4 @@
-import {
-	type Component,
-	Container,
-	Input,
-	isArrowDown,
-	isArrowUp,
-	isCtrlC,
-	isEnter,
-	isEscape,
-	Spacer,
-	Text,
-	truncateToWidth,
-} from "@mariozechner/pi-tui";
+import { type Component, Container, Input, matchesKey, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
@@ -127,28 +115,28 @@ class SessionList implements Component {
 
 	handleInput(keyData: string): void {
 		// Up arrow
-		if (isArrowUp(keyData)) {
+		if (matchesKey(keyData, "up")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 		}
 		// Down arrow
-		else if (isArrowDown(keyData)) {
+		else if (matchesKey(keyData, "down")) {
 			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
 		// Enter
-		else if (isEnter(keyData)) {
+		else if (matchesKey(keyData, "enter")) {
 			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.path);
 			}
 		}
 		// Escape - cancel
-		else if (isEscape(keyData)) {
+		else if (matchesKey(keyData, "escape")) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
 		}
 		// Ctrl+C - exit
-		else if (isCtrlC(keyData)) {
+		else if (matchesKey(keyData, "ctrl+c")) {
 			this.onExit();
 		}
 		// Pass everything else to search input

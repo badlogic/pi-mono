@@ -1,33 +1,6 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
-import {
-	isAltBackspace,
-	isAltEnter,
-	isAltLeft,
-	isAltRight,
-	isArrowDown,
-	isArrowLeft,
-	isArrowRight,
-	isArrowUp,
-	isBackspace,
-	isCtrlA,
-	isCtrlC,
-	isCtrlE,
-	isCtrlK,
-	isCtrlLeft,
-	isCtrlRight,
-	isCtrlU,
-	isCtrlW,
-	isDelete,
-	isEnd,
-	isEnter,
-	isEscape,
-	isHome,
-	isShiftBackspace,
-	isShiftDelete,
-	isShiftEnter,
-	isShiftSpace,
-	isTab,
-} from "../keys.js";
+import { getEditorKeybindings } from "../keybindings.js";
+import { matchesKey } from "../keys.js";
 import type { Component } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
@@ -421,277 +394,210 @@ export class Editor implements Component {
 	}
 
 	handleInput(data: string): void {
-		// Handle bracketed paste mode
-		// Start of paste: \x1b[200~
-		// End of paste: \x1b[201~
+		const kb = getEditorKeybindings();
 
-		// Check if we're starting a bracketed paste
+		// Handle bracketed paste mode
 		if (data.includes("\x1b[200~")) {
 			this.isInPaste = true;
 			this.pasteBuffer = "";
-			// Remove the start marker and keep the rest
 			data = data.replace("\x1b[200~", "");
 		}
 
-		// If we're in a paste, buffer the data
 		if (this.isInPaste) {
-			// Append data to buffer first (end marker could be split across chunks)
 			this.pasteBuffer += data;
-
-			// Check if the accumulated buffer contains the end marker
 			const endIndex = this.pasteBuffer.indexOf("\x1b[201~");
 			if (endIndex !== -1) {
-				// Extract content before the end marker
 				const pasteContent = this.pasteBuffer.substring(0, endIndex);
-
-				// Process the complete paste
 				this.handlePaste(pasteContent);
-
-				// Reset paste state
 				this.isInPaste = false;
-
-				// Process any remaining data after the end marker
-				const remaining = this.pasteBuffer.substring(endIndex + 6); // 6 = length of \x1b[201~
+				const remaining = this.pasteBuffer.substring(endIndex + 6);
 				this.pasteBuffer = "";
-
 				if (remaining.length > 0) {
 					this.handleInput(remaining);
 				}
 				return;
-			} else {
-				// Still accumulating, wait for more data
-				return;
 			}
-		}
-
-		// Handle special key combinations first
-
-		// Ctrl+C - Exit (let parent handle this)
-		if (isCtrlC(data)) {
 			return;
 		}
 
-		// Handle autocomplete special keys first (but don't block other input)
+		// Ctrl+C - let parent handle (exit/clear)
+		if (kb.matches(data, "copy")) {
+			return;
+		}
+
+		// Handle autocomplete mode
 		if (this.isAutocompleting && this.autocompleteList) {
-			// Escape - cancel autocomplete
-			if (isEscape(data)) {
+			if (kb.matches(data, "selectCancel")) {
 				this.cancelAutocomplete();
 				return;
 			}
-			// Let the autocomplete list handle navigation and selection
-			else if (isArrowUp(data) || isArrowDown(data) || isEnter(data) || isTab(data)) {
-				// Only pass arrow keys to the list, not Enter/Tab (we handle those directly)
-				if (isArrowUp(data) || isArrowDown(data)) {
-					this.autocompleteList.handleInput(data);
-					return;
-				}
 
-				// If Tab was pressed, always apply the selection
-				if (isTab(data)) {
-					const selected = this.autocompleteList.getSelectedItem();
-					if (selected && this.autocompleteProvider) {
-						const result = this.autocompleteProvider.applyCompletion(
-							this.state.lines,
-							this.state.cursorLine,
-							this.state.cursorCol,
-							selected,
-							this.autocompletePrefix,
-						);
+			if (kb.matches(data, "selectUp") || kb.matches(data, "selectDown")) {
+				this.autocompleteList.handleInput(data);
+				return;
+			}
 
-						this.state.lines = result.lines;
-						this.state.cursorLine = result.cursorLine;
-						this.state.cursorCol = result.cursorCol;
-
-						this.cancelAutocomplete();
-
-						if (this.onChange) {
-							this.onChange(this.getText());
-						}
-					}
-					return;
-				}
-
-				// If Enter was pressed on a slash command, apply completion and submit
-				if (isEnter(data) && this.autocompletePrefix.startsWith("/")) {
-					const selected = this.autocompleteList.getSelectedItem();
-					if (selected && this.autocompleteProvider) {
-						const result = this.autocompleteProvider.applyCompletion(
-							this.state.lines,
-							this.state.cursorLine,
-							this.state.cursorCol,
-							selected,
-							this.autocompletePrefix,
-						);
-
-						this.state.lines = result.lines;
-						this.state.cursorLine = result.cursorLine;
-						this.state.cursorCol = result.cursorCol;
-					}
+			if (kb.matches(data, "tab")) {
+				const selected = this.autocompleteList.getSelectedItem();
+				if (selected && this.autocompleteProvider) {
+					const result = this.autocompleteProvider.applyCompletion(
+						this.state.lines,
+						this.state.cursorLine,
+						this.state.cursorCol,
+						selected,
+						this.autocompletePrefix,
+					);
+					this.state.lines = result.lines;
+					this.state.cursorLine = result.cursorLine;
+					this.state.cursorCol = result.cursorCol;
 					this.cancelAutocomplete();
-					// Don't return - fall through to submission logic
+					if (this.onChange) this.onChange(this.getText());
 				}
-				// If Enter was pressed on a file path, apply completion
-				else if (isEnter(data)) {
-					const selected = this.autocompleteList.getSelectedItem();
-					if (selected && this.autocompleteProvider) {
-						const result = this.autocompleteProvider.applyCompletion(
-							this.state.lines,
-							this.state.cursorLine,
-							this.state.cursorCol,
-							selected,
-							this.autocompletePrefix,
-						);
+				return;
+			}
 
-						this.state.lines = result.lines;
-						this.state.cursorLine = result.cursorLine;
-						this.state.cursorCol = result.cursorCol;
+			if (kb.matches(data, "selectConfirm")) {
+				const selected = this.autocompleteList.getSelectedItem();
+				if (selected && this.autocompleteProvider) {
+					const result = this.autocompleteProvider.applyCompletion(
+						this.state.lines,
+						this.state.cursorLine,
+						this.state.cursorCol,
+						selected,
+						this.autocompletePrefix,
+					);
+					this.state.lines = result.lines;
+					this.state.cursorLine = result.cursorLine;
+					this.state.cursorCol = result.cursorCol;
 
+					if (this.autocompletePrefix.startsWith("/")) {
 						this.cancelAutocomplete();
-
-						if (this.onChange) {
-							this.onChange(this.getText());
-						}
+						// Fall through to submit
+					} else {
+						this.cancelAutocomplete();
+						if (this.onChange) this.onChange(this.getText());
+						return;
 					}
-					return;
 				}
 			}
-			// For other keys (like regular typing), DON'T return here
-			// Let them fall through to normal character handling
 		}
 
-		// Tab key - context-aware completion (but not when already autocompleting)
-		if (isTab(data) && !this.isAutocompleting) {
+		// Tab - trigger completion
+		if (kb.matches(data, "tab") && !this.isAutocompleting) {
 			this.handleTabCompletion();
 			return;
 		}
 
-		// Continue with rest of input handling
-		// Ctrl+K - Delete to end of line
-		if (isCtrlK(data)) {
+		// Deletion actions
+		if (kb.matches(data, "deleteToLineEnd")) {
 			this.deleteToEndOfLine();
+			return;
 		}
-		// Ctrl+U - Delete to start of line
-		else if (isCtrlU(data)) {
+		if (kb.matches(data, "deleteToLineStart")) {
 			this.deleteToStartOfLine();
+			return;
 		}
-		// Ctrl+W - Delete word backwards
-		else if (isCtrlW(data)) {
+		if (kb.matches(data, "deleteWordBackward")) {
 			this.deleteWordBackwards();
+			return;
 		}
-		// Option/Alt+Backspace - Delete word backwards
-		else if (isAltBackspace(data)) {
-			this.deleteWordBackwards();
+		if (kb.matches(data, "deleteCharBackward") || matchesKey(data, "shift+backspace")) {
+			this.handleBackspace();
+			return;
 		}
-		// Ctrl+A - Move to start of line
-		else if (isCtrlA(data)) {
+		if (kb.matches(data, "deleteCharForward") || matchesKey(data, "shift+delete")) {
+			this.handleForwardDelete();
+			return;
+		}
+
+		// Cursor movement actions
+		if (kb.matches(data, "cursorLineStart")) {
 			this.moveToLineStart();
+			return;
 		}
-		// Ctrl+E - Move to end of line
-		else if (isCtrlE(data)) {
+		if (kb.matches(data, "cursorLineEnd")) {
 			this.moveToLineEnd();
+			return;
 		}
-		// New line shortcuts (but not plain LF/CR which should be submit)
-		else if (
-			(data.charCodeAt(0) === 10 && data.length > 1) || // Ctrl+Enter with modifiers
-			data === "\x1b\r" || // Option+Enter in some terminals (legacy)
-			data === "\x1b[13;2~" || // Shift+Enter in some terminals (legacy format)
-			isShiftEnter(data) || // Shift+Enter (Kitty protocol, handles lock bits)
-			isAltEnter(data) || // Alt+Enter (Kitty protocol, handles lock bits)
+		if (kb.matches(data, "cursorWordLeft")) {
+			this.moveWordBackwards();
+			return;
+		}
+		if (kb.matches(data, "cursorWordRight")) {
+			this.moveWordForwards();
+			return;
+		}
+
+		// New line (Shift+Enter, Alt+Enter, etc.)
+		if (
+			kb.matches(data, "newLine") ||
+			(data.charCodeAt(0) === 10 && data.length > 1) ||
+			data === "\x1b\r" ||
+			data === "\x1b[13;2~" ||
 			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
-			(data === "\n" && data.length === 1) || // Shift+Enter from iTerm2 mapping
-			data === "\\\r" // Shift+Enter in VS Code terminal
+			(data === "\n" && data.length === 1) ||
+			data === "\\\r"
 		) {
-			// Modifier + Enter = new line
 			this.addNewLine();
+			return;
 		}
-		// Plain Enter - submit (handles both legacy \r and Kitty protocol with lock bits)
-		else if (isEnter(data)) {
-			// If submit is disabled, do nothing
-			if (this.disableSubmit) {
-				return;
-			}
 
-			// Get text and substitute paste markers with actual content
+		// Submit (Enter)
+		if (kb.matches(data, "submit")) {
+			if (this.disableSubmit) return;
+
 			let result = this.state.lines.join("\n").trim();
-
-			// Replace all [paste #N +xxx lines] or [paste #N xxx chars] markers with actual paste content
 			for (const [pasteId, pasteContent] of this.pastes) {
-				// Match formats: [paste #N], [paste #N +xxx lines], or [paste #N xxx chars]
 				const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
 				result = result.replace(markerRegex, pasteContent);
 			}
 
-			// Reset editor and clear pastes
-			this.state = {
-				lines: [""],
-				cursorLine: 0,
-				cursorCol: 0,
-			};
+			this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
 			this.pastes.clear();
 			this.pasteCounter = 0;
-			this.historyIndex = -1; // Exit history browsing mode
+			this.historyIndex = -1;
 
-			// Notify that editor is now empty
-			if (this.onChange) {
-				this.onChange("");
-			}
+			if (this.onChange) this.onChange("");
+			if (this.onSubmit) this.onSubmit(result);
+			return;
+		}
 
-			if (this.onSubmit) {
-				this.onSubmit(result);
-			}
-		}
-		// Backspace (including Shift+Backspace)
-		else if (isBackspace(data) || isShiftBackspace(data)) {
-			this.handleBackspace();
-		}
-		// Line navigation shortcuts (Home/End keys)
-		else if (isHome(data)) {
-			this.moveToLineStart();
-		} else if (isEnd(data)) {
-			this.moveToLineEnd();
-		}
-		// Forward delete (Fn+Backspace or Delete key, including Shift+Delete)
-		else if (isDelete(data) || isShiftDelete(data)) {
-			this.handleForwardDelete();
-		}
-		// Word navigation (Option/Alt + Arrow or Ctrl + Arrow)
-		else if (isAltLeft(data) || isCtrlLeft(data)) {
-			// Word left
-			this.moveWordBackwards();
-		} else if (isAltRight(data) || isCtrlRight(data)) {
-			// Word right
-			this.moveWordForwards();
-		}
-		// Arrow keys
-		else if (isArrowUp(data)) {
-			// Up - history navigation or cursor movement
+		// Arrow key navigation (with history support)
+		if (kb.matches(data, "cursorUp")) {
 			if (this.isEditorEmpty()) {
-				this.navigateHistory(-1); // Start browsing history
+				this.navigateHistory(-1);
 			} else if (this.historyIndex > -1 && this.isOnFirstVisualLine()) {
-				this.navigateHistory(-1); // Navigate to older history entry
+				this.navigateHistory(-1);
 			} else {
-				this.moveCursor(-1, 0); // Cursor movement (within text or history entry)
+				this.moveCursor(-1, 0);
 			}
-		} else if (isArrowDown(data)) {
-			// Down - history navigation or cursor movement
+			return;
+		}
+		if (kb.matches(data, "cursorDown")) {
 			if (this.historyIndex > -1 && this.isOnLastVisualLine()) {
-				this.navigateHistory(1); // Navigate to newer history entry or clear
+				this.navigateHistory(1);
 			} else {
-				this.moveCursor(1, 0); // Cursor movement (within text or history entry)
+				this.moveCursor(1, 0);
 			}
-		} else if (isArrowRight(data)) {
-			// Right
+			return;
+		}
+		if (kb.matches(data, "cursorRight")) {
 			this.moveCursor(0, 1);
-		} else if (isArrowLeft(data)) {
-			// Left
+			return;
+		}
+		if (kb.matches(data, "cursorLeft")) {
 			this.moveCursor(0, -1);
+			return;
 		}
-		// Shift+Space - insert regular space (Kitty protocol sends escape sequence)
-		else if (isShiftSpace(data)) {
+
+		// Shift+Space - insert regular space
+		if (matchesKey(data, "shift+space")) {
 			this.insertCharacter(" ");
+			return;
 		}
-		// Regular characters (printable characters and unicode, but not control characters)
-		else if (data.charCodeAt(0) >= 32) {
+
+		// Regular characters
+		if (data.charCodeAt(0) >= 32) {
 			this.insertCharacter(data);
 		}
 	}

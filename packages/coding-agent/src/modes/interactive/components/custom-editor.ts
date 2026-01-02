@@ -1,113 +1,65 @@
-import {
-	Editor,
-	isAltEnter,
-	isCtrlC,
-	isCtrlD,
-	isCtrlG,
-	isCtrlL,
-	isCtrlO,
-	isCtrlP,
-	isCtrlT,
-	isCtrlZ,
-	isEscape,
-	isShiftCtrlP,
-	isShiftTab,
-} from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme } from "@mariozechner/pi-tui";
+import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**
- * Custom editor that handles Escape and Ctrl+C keys for coding-agent
+ * Custom editor that handles app-level keybindings for coding-agent.
  */
 export class CustomEditor extends Editor {
+	private keybindings: KeybindingsManager;
+	private actionHandlers: Map<AppAction, () => void> = new Map();
+
+	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;
-	public onCtrlC?: () => void;
 	public onCtrlD?: () => void;
-	public onShiftTab?: () => void;
-	public onCtrlP?: () => void;
-	public onShiftCtrlP?: () => void;
-	public onCtrlL?: () => void;
-	public onCtrlO?: () => void;
-	public onCtrlT?: () => void;
-	public onCtrlG?: () => void;
-	public onCtrlZ?: () => void;
-	public onAltEnter?: () => void;
+
+	constructor(theme: EditorTheme, keybindings: KeybindingsManager) {
+		super(theme);
+		this.keybindings = keybindings;
+	}
+
+	/**
+	 * Register a handler for an app action.
+	 */
+	onAction(action: AppAction, handler: () => void): void {
+		this.actionHandlers.set(action, handler);
+	}
 
 	handleInput(data: string): void {
-		// Intercept Alt+Enter for follow-up messages
-		if (isAltEnter(data) && this.onAltEnter) {
-			this.onAltEnter();
-			return;
-		}
-		// Intercept Ctrl+G for external editor
-		if (isCtrlG(data) && this.onCtrlG) {
-			this.onCtrlG();
-			return;
-		}
+		// Check app keybindings first
 
-		// Intercept Ctrl+Z for suspend
-		if (isCtrlZ(data) && this.onCtrlZ) {
-			this.onCtrlZ();
-			return;
-		}
-
-		// Intercept Ctrl+T for thinking block visibility toggle
-		if (isCtrlT(data) && this.onCtrlT) {
-			this.onCtrlT();
-			return;
-		}
-
-		// Intercept Ctrl+L for model selector
-		if (isCtrlL(data) && this.onCtrlL) {
-			this.onCtrlL();
-			return;
-		}
-
-		// Intercept Ctrl+O for tool output expansion
-		if (isCtrlO(data) && this.onCtrlO) {
-			this.onCtrlO();
-			return;
-		}
-
-		// Intercept Shift+Ctrl+P for backward model cycling (check before Ctrl+P)
-		if (isShiftCtrlP(data) && this.onShiftCtrlP) {
-			this.onShiftCtrlP();
-			return;
-		}
-
-		// Intercept Ctrl+P for model cycling
-		if (isCtrlP(data) && this.onCtrlP) {
-			this.onCtrlP();
-			return;
-		}
-
-		// Intercept Shift+Tab for thinking level cycling
-		if (isShiftTab(data) && this.onShiftTab) {
-			this.onShiftTab();
-			return;
-		}
-
-		// Intercept Escape key - but only if autocomplete is NOT active
-		// (let parent handle escape for autocomplete cancellation)
-		if (isEscape(data) && this.onEscape && !this.isShowingAutocomplete()) {
-			this.onEscape();
-			return;
-		}
-
-		// Intercept Ctrl+C
-		if (isCtrlC(data) && this.onCtrlC) {
-			this.onCtrlC();
-			return;
-		}
-
-		// Intercept Ctrl+D (only when editor is empty)
-		if (isCtrlD(data)) {
-			if (this.getText().length === 0 && this.onCtrlD) {
-				this.onCtrlD();
+		// Escape/interrupt - only if autocomplete is NOT active
+		if (this.keybindings.matches(data, "interrupt")) {
+			if (!this.isShowingAutocomplete()) {
+				// Use dynamic onEscape if set, otherwise registered handler
+				const handler = this.onEscape ?? this.actionHandlers.get("interrupt");
+				if (handler) {
+					handler();
+					return;
+				}
 			}
-			// Always consume Ctrl+D (don't pass to parent)
+			// Let parent handle escape for autocomplete cancellation
+			super.handleInput(data);
 			return;
 		}
 
-		// Pass to parent for normal handling
+		// Exit (Ctrl+D) - only when editor is empty
+		if (this.keybindings.matches(data, "exit")) {
+			if (this.getText().length === 0) {
+				const handler = this.onCtrlD ?? this.actionHandlers.get("exit");
+				if (handler) handler();
+			}
+			return; // Always consume
+		}
+
+		// Check all other app actions
+		for (const [action, handler] of this.actionHandlers) {
+			if (action !== "interrupt" && action !== "exit" && this.keybindings.matches(data, action)) {
+				handler();
+				return;
+			}
+		}
+
+		// Pass to parent for editor handling
 		super.handleInput(data);
 	}
 }

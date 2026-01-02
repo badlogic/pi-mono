@@ -6,7 +6,7 @@
  */
 
 import type { HookAPI, Theme } from "@mariozechner/pi-coding-agent";
-import { isCtrlC, isEscape, truncateToWidth } from "@mariozechner/pi-tui";
+import { matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 
 interface Todo {
 	id: number;
@@ -35,7 +35,7 @@ class TodoListComponent {
 	}
 
 	handleInput(data: string): void {
-		if (isEscape(data) || isCtrlC(data)) {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 			this.onClose();
 		}
 	}

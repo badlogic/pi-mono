@@ -20,45 +20,18 @@ export { type SettingItem, SettingsList, type SettingsListTheme } from "./compon
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
-// Kitty keyboard protocol helpers
+// Keybindings
 export {
-	isAltBackspace,
-	isAltEnter,
-	isAltLeft,
-	isAltRight,
-	isArrowDown,
-	isArrowLeft,
-	isArrowRight,
-	isArrowUp,
-	isBackspace,
-	isCtrlA,
-	isCtrlC,
-	isCtrlD,
-	isCtrlE,
-	isCtrlG,
-	isCtrlK,
-	isCtrlL,
-	isCtrlLeft,
-	isCtrlO,
-	isCtrlP,
-	isCtrlRight,
-	isCtrlT,
-	isCtrlU,
-	isCtrlW,
-	isCtrlZ,
-	isDelete,
-	isEnd,
-	isEnter,
-	isEscape,
-	isHome,
-	isShiftCtrlD,
-	isShiftCtrlO,
-	isShiftCtrlP,
-	isShiftEnter,
-	isShiftTab,
-	isTab,
-	Keys,
-} from "./keys.js";
+	DEFAULT_EDITOR_KEYBINDINGS,
+	type EditorAction,
+	type EditorKeybindingsConfig,
+	EditorKeybindingsManager,
+	getEditorKeybindings,
+	type KeyId,
+	setEditorKeybindings,
+} from "./keybindings.js";
+// Keyboard input handling
+export { matchesKey, parseKey } from "./keys.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support

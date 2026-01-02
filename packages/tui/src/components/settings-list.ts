@@ -1,4 +1,4 @@
-import { isArrowDown, isArrowUp, isCtrlC, isEnter, isEscape } from "../keys.js";
+import { matchesKey } from "../keys.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
@@ -145,13 +145,13 @@ export class SettingsList implements Component {
 		}
 
 		// Main list input handling
-		if (isArrowUp(data)) {
+		if (matchesKey(data, "up")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.items.length - 1 : this.selectedIndex - 1;
-		} else if (isArrowDown(data)) {
+		} else if (matchesKey(data, "down")) {
 			this.selectedIndex = this.selectedIndex === this.items.length - 1 ? 0 : this.selectedIndex + 1;
-		} else if (isEnter(data) || data === " ") {
+		} else if (matchesKey(data, "enter") || data === " ") {
 			this.activateItem();
-		} else if (isEscape(data) || isCtrlC(data)) {
+		} else if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 			this.onCancel();
 		}
 	}
