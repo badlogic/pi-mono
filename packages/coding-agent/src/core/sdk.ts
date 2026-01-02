@@ -522,7 +522,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 	time("discoverContextFiles");
 
-	const builtInTools = options.tools ?? createCodingTools(cwd);
+	const autoResizeImages = settingsManager.getImageAutoResize();
+	const builtInTools = options.tools ?? createCodingTools(cwd, { read: { autoResizeImages } });
 	time("createCodingTools");
 
 	let customToolsResult: CustomToolsLoadResult;

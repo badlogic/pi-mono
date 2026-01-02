@@ -47,7 +47,8 @@
 		"file-type": "^21.1.1",
 		"glob": "^11.0.3",
 		"jiti": "^2.6.1",
-		"marked": "^15.0.12"
+		"marked": "^15.0.12",
+		"sharp": "^0.34.2"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",

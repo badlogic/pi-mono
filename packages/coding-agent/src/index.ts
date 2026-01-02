@@ -120,6 +120,7 @@ export {
 } from "./core/session-manager.js";
 export {
 	type CompactionSettings,
+	type ImageSettings,
 	type RetrySettings,
 	type Settings,
 	SettingsManager,
@@ -149,7 +150,9 @@ export {
 	type LsToolDetails,
 	lsTool,
 	type ReadToolDetails,
+	type ReadToolOptions,
 	readTool,
+	type ToolsOptions,
 	type TruncationResult,
 	writeTool,
 } from "./core/tools/index.js";
