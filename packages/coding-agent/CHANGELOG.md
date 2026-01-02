@@ -15,6 +15,7 @@
   - `queuedMessageCount` → `pendingMessageCount`
   - `getQueuedMessages()` → `getSteeringMessages()` and `getFollowUpMessages()`
   - `clearQueue()` now returns `{ steering: string[], followUp: string[] }`
+  - `hasQueuedMessages()` → `hasPendingMessages()`
 - **Hook API signature changed**: `pi.sendMessage()` second parameter changed from `triggerTurn?: boolean` to `options?: { triggerTurn?, deliverAs? }`. Use `deliverAs: "followUp"` for follow-up delivery. Affects both hooks and internal `sendHookMessage()` method.
 - **RPC API changes**:
   - `queue_message` command → `steer` and `follow_up` commands
@@ -25,6 +26,7 @@
 ### Added
 
 - Alt+Enter keybind to queue follow-up messages while agent is streaming
+- `Theme` and `ThemeColor` types now exported for hooks using `ctx.ui.custom()`
 - Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
 
 ### Fixed

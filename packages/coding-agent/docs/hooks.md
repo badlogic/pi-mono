@@ -565,13 +565,13 @@ Abort the current agent operation (fire-and-forget, does not wait):
 await ctx.abort();
 ```
 
-### ctx.hasQueuedMessages()
+### ctx.hasPendingMessages()
 
-Check if there are messages queued (user typed while agent was streaming):
+Check if there are messages pending (user typed while agent was streaming):
 
 ```typescript
-if (ctx.hasQueuedMessages()) {
-  // Skip interactive prompt, let queued message take over
+if (ctx.hasPendingMessages()) {
+  // Skip interactive prompt, let pending messages take over
   return;
 }
 ```
@@ -638,7 +638,7 @@ const result = await ctx.navigateTree("entry-id-456", {
 
 Subscribe to events. See [Events](#events) for all event types.
 
-### pi.sendMessage(message, triggerTurn?)
+### pi.sendMessage(message, options?)
 
 Inject a message into the session. Creates a `CustomMessageEntry` that participates in the LLM context.
 
@@ -648,12 +648,17 @@ pi.sendMessage({
   content: "Message text",    // string or (TextContent | ImageContent)[]
   display: true,              // Show in TUI
   details: { ... },           // Optional metadata (not sent to LLM)
-}, triggerTurn);              // If true, triggers LLM response
+}, {
+  triggerTurn: true,          // If true and agent is idle, triggers LLM response
+  deliverAs: "steer",         // "steer" (default) or "followUp" when agent is streaming
+});
 ```
 
 **Storage and timing:**
 - The message is appended to the session file immediately as a `CustomMessageEntry`
-- If the agent is currently streaming, the message is queued and appended after the current turn
+- If the agent is currently streaming:
+  - `deliverAs: "steer"` (default): Delivered after current tool execution, interrupts remaining tools
+  - `deliverAs: "followUp"`: Delivered only after agent finishes all work
 - If `triggerTurn` is true and the agent is idle, a new agent loop starts
 
 **LLM context:**
@@ -700,7 +705,7 @@ pi.registerCommand("stats", {
 
 For long-running commands (e.g., LLM calls), use `ctx.ui.custom()` with a loader. See [examples/hooks/qna.ts](../examples/hooks/qna.ts).
 
-To trigger LLM after command, call `pi.sendMessage(..., true)`.
+To trigger LLM after command, call `pi.sendMessage(..., { triggerTurn: true })`.
 
 ### pi.registerMessageRenderer(customType, renderer)
 
