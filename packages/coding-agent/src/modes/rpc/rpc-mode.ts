@@ -152,6 +152,25 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			return "";
 		},
 
+		async editor(title: string, prefill?: string): Promise<string | undefined> {
+			const id = crypto.randomUUID();
+			return new Promise((resolve, reject) => {
+				pendingHookRequests.set(id, {
+					resolve: (response: RpcHookUIResponse) => {
+						if ("cancelled" in response && response.cancelled) {
+							resolve(undefined);
+						} else if ("value" in response) {
+							resolve(response.value);
+						} else {
+							resolve(undefined);
+						}
+					},
+					reject,
+				});
+				output({ type: "hook_ui_request", id, method: "editor", title, prefill } as RpcHookUIRequest);
+			});
+		},
+
 		get theme() {
 			return theme;
 		},

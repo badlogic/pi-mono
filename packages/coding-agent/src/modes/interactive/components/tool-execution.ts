@@ -441,9 +441,6 @@ export class ToolExecutionComponent extends Container {
 				theme.fg("toolTitle", theme.bold("write")) +
 				" " +
 				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
-			if (totalLines > 10) {
-				text += ` (${totalLines} lines)`;
-			}
 
 			if (fileContent) {
 				const maxLines = this.expanded ? lines.length : 10;
@@ -456,7 +453,7 @@ export class ToolExecutionComponent extends Container {
 						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
 						.join("\n");
 				if (remaining > 0) {
-					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+					text += theme.fg("toolOutput", `\n... (${remaining} more lines, ${totalLines} total)`);
 				}
 			}
 		} else if (this.toolName === "edit") {

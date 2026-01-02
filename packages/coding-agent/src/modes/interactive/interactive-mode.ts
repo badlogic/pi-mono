@@ -44,6 +44,7 @@ import { CompactionSummaryMessageComponent } from "./components/compaction-summa
 import { CustomEditor } from "./components/custom-editor.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
+import { HookEditorComponent } from "./components/hook-editor.js";
 import { HookInputComponent } from "./components/hook-input.js";
 import { HookMessageComponent } from "./components/hook-message.js";
 import { HookSelectorComponent } from "./components/hook-selector.js";
@@ -132,6 +133,7 @@ export class InteractiveMode {
 	// Hook UI state
 	private hookSelector: HookSelectorComponent | undefined = undefined;
 	private hookInput: HookInputComponent | undefined = undefined;
+	private hookEditor: HookEditorComponent | undefined = undefined;
 
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
@@ -375,6 +377,7 @@ export class InteractiveMode {
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
+			editor: (title, prefill) => this.showHookEditor(title, prefill),
 			get theme() {
 				return theme;
 			},
@@ -620,6 +623,43 @@ export class InteractiveMode {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.hookInput = undefined;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a multi-line editor for hooks (with Ctrl+G support).
+	 */
+	private showHookEditor(title: string, prefill?: string): Promise<string | undefined> {
+		return new Promise((resolve) => {
+			this.hookEditor = new HookEditorComponent(
+				this.ui,
+				title,
+				prefill,
+				(value) => {
+					this.hideHookEditor();
+					resolve(value);
+				},
+				() => {
+					this.hideHookEditor();
+					resolve(undefined);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.hookEditor);
+			this.ui.setFocus(this.hookEditor);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the hook editor.
+	 */
+	private hideHookEditor(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.hookEditor = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}

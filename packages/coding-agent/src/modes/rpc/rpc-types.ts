@@ -175,6 +175,7 @@ export type RpcHookUIRequest =
 	| { type: "hook_ui_request"; id: string; method: "select"; title: string; options: string[] }
 	| { type: "hook_ui_request"; id: string; method: "confirm"; title: string; message: string }
 	| { type: "hook_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
+	| { type: "hook_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
 	| {
 			type: "hook_ui_request";
 			id: string;

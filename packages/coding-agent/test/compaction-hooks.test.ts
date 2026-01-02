@@ -113,6 +113,7 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 				custom: async () => undefined as never,
 				setEditorText: () => {},
 				getEditorText: () => "",
+				editor: async () => undefined,
 				get theme() {
 					return theme;
 				},

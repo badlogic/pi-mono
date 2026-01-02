@@ -120,6 +120,15 @@ export interface HookUIContext {
 	getEditorText(): string;
 
 	/**
+	 * Show a multi-line editor for text editing.
+	 * Supports Ctrl+G to open external editor ($VISUAL or $EDITOR).
+	 * @param title - Title describing what is being edited
+	 * @param prefill - Optional initial text
+	 * @returns Edited text, or undefined if cancelled (Escape)
+	 */
+	editor(title: string, prefill?: string): Promise<string | undefined>;
+
+	/**
 	 * Get the current theme for styling text with ANSI codes.
 	 * Use theme.fg() and theme.bg() to style status text.
 	 *

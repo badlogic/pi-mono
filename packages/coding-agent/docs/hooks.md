@@ -405,9 +405,14 @@ const choice = await ctx.ui.select("Pick one:", ["A", "B", "C"]);
 const ok = await ctx.ui.confirm("Delete?", "This cannot be undone");
 // Returns true or false
 
-// Text input
+// Text input (single line)
 const name = await ctx.ui.input("Name:", "placeholder");
 // Returns string or undefined if cancelled
+
+// Multi-line editor (with Ctrl+G for external editor)
+const text = await ctx.ui.editor("Edit prompt:", "prefilled text");
+// Returns edited text or undefined if cancelled (Escape)
+// Ctrl+Enter to submit, Ctrl+G to open $VISUAL or $EDITOR
 
 // Notification (non-blocking)
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
