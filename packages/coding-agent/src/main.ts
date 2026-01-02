@@ -119,7 +119,10 @@ async function runInteractiveMode(
 	}
 }
 
-async function prepareInitialMessage(parsed: Args): Promise<{
+async function prepareInitialMessage(
+	parsed: Args,
+	autoResizeImages: boolean,
+): Promise<{
 	initialMessage?: string;
 	initialImages?: ImageContent[];
 }> {
@@ -127,7 +130,7 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 		return {};
 	}
 
-	const { text, images } = await processFileArguments(parsed.fileArgs);
+	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages });
 
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
@@ -329,13 +332,12 @@ export async function main(args: string[]) {
 	}
 
 	const cwd = process.cwd();
-	const { initialMessage, initialImages } = await prepareInitialMessage(parsed);
+	const settingsManager = SettingsManager.create(cwd);
+	time("SettingsManager.create");
+	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
-
-	const settingsManager = SettingsManager.create(cwd);
-	time("SettingsManager.create");
 	initTheme(settingsManager.getTheme(), isInteractive);
 	time("initTheme");
 

@@ -34,6 +34,10 @@ export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 }
 
+export interface ImageSettings {
+	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -52,6 +56,7 @@ export interface Settings {
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
+	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 }
 
@@ -387,6 +392,18 @@ export class SettingsManager {
 			this.globalSettings.terminal = {};
 		}
 		this.globalSettings.terminal.showImages = show;
+		this.save();
+	}
+
+	getImageAutoResize(): boolean {
+		return this.settings.images?.autoResize ?? true;
+	}
+
+	setImageAutoResize(enabled: boolean): void {
+		if (!this.globalSettings.images) {
+			this.globalSettings.images = {};
+		}
+		this.globalSettings.images.autoResize = enabled;
 		this.save();
 	}
 

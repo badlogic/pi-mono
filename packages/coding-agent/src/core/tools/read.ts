@@ -3,6 +3,7 @@ import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
+import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
@@ -17,7 +18,13 @@ export interface ReadToolDetails {
 	truncation?: TruncationResult;
 }
 
-export function createReadTool(cwd: string): AgentTool<typeof readSchema> {
+export interface ReadToolOptions {
+	/** Whether to auto-resize images to 2000x2000 max. Default: true */
+	autoResizeImages?: boolean;
+}
+
+export function createReadTool(cwd: string, options?: ReadToolOptions): AgentTool<typeof readSchema> {
+	const autoResizeImages = options?.autoResizeImages ?? true;
 	return {
 		name: "read",
 		label: "read",
@@ -72,10 +79,26 @@ export function createReadTool(cwd: string): AgentTool<typeof readSchema> {
 								const buffer = await readFile(absolutePath);
 								const base64 = buffer.toString("base64");
 
-								content = [
-									{ type: "text", text: `Read image file [${mimeType}]` },
-									{ type: "image", data: base64, mimeType },
-								];
+								if (autoResizeImages) {
+									// Resize image if needed
+									const resized = await resizeImage({ type: "image", data: base64, mimeType });
+									const dimensionNote = formatDimensionNote(resized);
+
+									let textNote = `Read image file [${resized.mimeType}]`;
+									if (dimensionNote) {
+										textNote += `\n${dimensionNote}`;
+									}
+
+									content = [
+										{ type: "text", text: textNote },
+										{ type: "image", data: resized.data, mimeType: resized.mimeType },
+									];
+								} else {
+									content = [
+										{ type: "text", text: `Read image file [${mimeType}]` },
+										{ type: "image", data: base64, mimeType },
+									];
+								}
 							} else {
 								// Read as text
 								const textContent = await readFile(absolutePath, "utf-8");

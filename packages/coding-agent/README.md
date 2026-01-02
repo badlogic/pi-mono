@@ -290,6 +290,8 @@ You: What's in this screenshot? /path/to/image.png
 
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
+**Auto-resize:** Images larger than 2000x2000 pixels are automatically resized to fit within this limit for better compatibility with Anthropic models. The original dimensions are noted in the context so the model can map coordinates back if needed. Disable via `images.autoResize: false` in settings.
+
 **Inline rendering:** On terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images, images in tool output are rendered inline. On unsupported terminals, a text placeholder is shown instead.
 
 Toggle inline images via `/settings` or set `terminal.showImages: false` in settings.
@@ -524,6 +526,9 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "terminal": {
     "showImages": true
   },
+  "images": {
+    "autoResize": true
+  },
   "hooks": ["/path/to/hook.ts"],
   "customTools": ["/path/to/tool.ts"]
 }
@@ -549,6 +554,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `retry.maxRetries` | Maximum retry attempts | `3` |
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `hooks` | Additional hook file paths | `[]` |
 | `customTools` | Additional custom tool file paths | `[]` |
 
