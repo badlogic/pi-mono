@@ -340,8 +340,8 @@ describe("agentLoop with AgentMessage", () => {
 		const config: AgentLoopConfig = {
 			model: createModel(),
 			convertToLlm: identityConverter,
-			getQueuedMessages: async () => {
-				// Return queued message after first tool executes
+			getSteeringMessages: async () => {
+				// Return steering message after first tool executes
 				if (executed.length === 1 && !queuedDelivered) {
 					queuedDelivered = true;
 					return [queuedUserMessage];

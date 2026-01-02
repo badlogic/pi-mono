@@ -109,71 +109,88 @@ async function runLoop(
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 	streamFn?: StreamFn,
 ): Promise<void> {
-	let hasMoreToolCalls = true;
 	let firstTurn = true;
-	let queuedMessages: AgentMessage[] = (await config.getQueuedMessages?.()) || [];
-	let queuedAfterTools: AgentMessage[] | null = null;
+	// Check for steering messages at start (user may have typed while waiting)
+	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
-	while (hasMoreToolCalls || queuedMessages.length > 0) {
-		if (!firstTurn) {
-			stream.push({ type: "turn_start" });
-		} else {
-			firstTurn = false;
-		}
+	// Outer loop: continues when queued follow-up messages arrive after agent would stop
+	while (true) {
+		let hasMoreToolCalls = true;
+		let steeringAfterTools: AgentMessage[] | null = null;
 
-		// Process queued messages (inject before next assistant response)
-		if (queuedMessages.length > 0) {
-			for (const message of queuedMessages) {
-				stream.push({ type: "message_start", message });
-				stream.push({ type: "message_end", message });
-				currentContext.messages.push(message);
-				newMessages.push(message);
+		// Inner loop: process tool calls and steering messages
+		while (hasMoreToolCalls || pendingMessages.length > 0) {
+			if (!firstTurn) {
+				stream.push({ type: "turn_start" });
+			} else {
+				firstTurn = false;
 			}
-			queuedMessages = [];
-		}
 
-		// Stream assistant response
-		const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
-		newMessages.push(message);
+			// Process pending messages (inject before next assistant response)
+			if (pendingMessages.length > 0) {
+				for (const message of pendingMessages) {
+					stream.push({ type: "message_start", message });
+					stream.push({ type: "message_end", message });
+					currentContext.messages.push(message);
+					newMessages.push(message);
+				}
+				pendingMessages = [];
+			}
 
-		if (message.stopReason === "error" || message.stopReason === "aborted") {
-			stream.push({ type: "turn_end", message, toolResults: [] });
-			stream.push({ type: "agent_end", messages: newMessages });
-			stream.end(newMessages);
-			return;
-		}
+			// Stream assistant response
+			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+			newMessages.push(message);
 
-		// Check for tool calls
-		const toolCalls = message.content.filter((c) => c.type === "toolCall");
-		hasMoreToolCalls = toolCalls.length > 0;
+			if (message.stopReason === "error" || message.stopReason === "aborted") {
+				stream.push({ type: "turn_end", message, toolResults: [] });
+				stream.push({ type: "agent_end", messages: newMessages });
+				stream.end(newMessages);
+				return;
+			}
 
-		const toolResults: ToolResultMessage[] = [];
-		if (hasMoreToolCalls) {
-			const toolExecution = await executeToolCalls(
-				currentContext.tools,
-				message,
-				signal,
-				stream,
-				config.getQueuedMessages,
-			);
-			toolResults.push(...toolExecution.toolResults);
-			queuedAfterTools = toolExecution.queuedMessages ?? null;
+			// Check for tool calls
+			const toolCalls = message.content.filter((c) => c.type === "toolCall");
+			hasMoreToolCalls = toolCalls.length > 0;
 
-			for (const result of toolResults) {
-				currentContext.messages.push(result);
-				newMessages.push(result);
+			const toolResults: ToolResultMessage[] = [];
+			if (hasMoreToolCalls) {
+				const toolExecution = await executeToolCalls(
+					currentContext.tools,
+					message,
+					signal,
+					stream,
+					config.getSteeringMessages,
+				);
+				toolResults.push(...toolExecution.toolResults);
+				steeringAfterTools = toolExecution.steeringMessages ?? null;
+
+				for (const result of toolResults) {
+					currentContext.messages.push(result);
+					newMessages.push(result);
+				}
+			}
+
+			stream.push({ type: "turn_end", message, toolResults });
+
+			// Get steering messages after turn completes
+			if (steeringAfterTools && steeringAfterTools.length > 0) {
+				pendingMessages = steeringAfterTools;
+				steeringAfterTools = null;
+			} else {
+				pendingMessages = (await config.getSteeringMessages?.()) || [];
 			}
 		}
 
-		stream.push({ type: "turn_end", message, toolResults });
-
-		// Get queued messages after turn completes
-		if (queuedAfterTools && queuedAfterTools.length > 0) {
-			queuedMessages = queuedAfterTools;
-			queuedAfterTools = null;
-		} else {
-			queuedMessages = (await config.getQueuedMessages?.()) || [];
+		// Agent would stop here. Check for follow-up messages.
+		const followUpMessages = (await config.getFollowUpMessages?.()) || [];
+		if (followUpMessages.length > 0) {
+			// Set as pending so inner loop processes them
+			pendingMessages = followUpMessages;
+			continue;
 		}
+
+		// No more messages, exit
+		break;
 	}
 
 	stream.push({ type: "agent_end", messages: newMessages });
@@ -279,11 +296,11 @@ async function executeToolCalls(
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
-	getQueuedMessages?: AgentLoopConfig["getQueuedMessages"],
-): Promise<{ toolResults: ToolResultMessage[]; queuedMessages?: AgentMessage[] }> {
+	getSteeringMessages?: AgentLoopConfig["getSteeringMessages"],
+): Promise<{ toolResults: ToolResultMessage[]; steeringMessages?: AgentMessage[] }> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
 	const results: ToolResultMessage[] = [];
-	let queuedMessages: AgentMessage[] | undefined;
+	let steeringMessages: AgentMessage[] | undefined;
 
 	for (let index = 0; index < toolCalls.length; index++) {
 		const toolCall = toolCalls[index];
@@ -343,11 +360,11 @@ async function executeToolCalls(
 		stream.push({ type: "message_start", message: toolResultMessage });
 		stream.push({ type: "message_end", message: toolResultMessage });
 
-		// Check for queued messages - skip remaining tools if user interrupted
-		if (getQueuedMessages) {
-			const queued = await getQueuedMessages();
-			if (queued.length > 0) {
-				queuedMessages = queued;
+		// Check for steering messages - skip remaining tools if user interrupted
+		if (getSteeringMessages) {
+			const steering = await getSteeringMessages();
+			if (steering.length > 0) {
+				steeringMessages = steering;
 				const remainingCalls = toolCalls.slice(index + 1);
 				for (const skipped of remainingCalls) {
 					results.push(skipToolCall(skipped, stream));
@@ -357,7 +374,7 @@ async function executeToolCalls(
 		}
 	}
 
-	return { toolResults: results, queuedMessages };
+	return { toolResults: results, steeringMessages };
 }
 
 function skipToolCall(
