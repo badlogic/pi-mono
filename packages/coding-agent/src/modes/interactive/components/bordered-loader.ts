@@ -8,7 +8,8 @@ export class BorderedLoader extends Container {
 
 	constructor(tui: TUI, theme: Theme, message: string) {
 		super();
-		this.addChild(new DynamicBorder());
+		const borderColor = (s: string) => theme.fg("border", s);
+		this.addChild(new DynamicBorder(borderColor));
 		this.loader = new CancellableLoader(
 			tui,
 			(s) => theme.fg("accent", s),
@@ -19,7 +20,7 @@ export class BorderedLoader extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("muted", "esc cancel"), 1, 0));
 		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
+		this.addChild(new DynamicBorder(borderColor));
 	}
 
 	get signal(): AbortSignal {
