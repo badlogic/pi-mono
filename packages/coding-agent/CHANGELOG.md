@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.31.0] - 2026-01-02
 
 This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
