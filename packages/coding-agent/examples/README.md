@@ -13,6 +13,12 @@ Example hooks for intercepting tool calls, adding safety gates, and integrating 
 ### [custom-tools/](custom-tools/)
 Example custom tools that extend the agent's capabilities.
 
+## Tool + Hook Combinations
+
+Some examples are designed to work together:
+
+- **todo/** - The [custom tool](custom-tools/todo/) lets the LLM manage a todo list, while the [hook](hooks/todo/) adds a `/todos` command for users to view todos at any time.
+
 ## Documentation
 
 - [SDK Reference](sdk/README.md)

@@ -19,6 +19,8 @@ Full-featured example demonstrating:
 - Proper branching support via details storage
 - State management without external files
 
+**Companion hook:** [hooks/todo/](../hooks/todo/) adds a `/todos` command for users to view the todo list.
+
 ### subagent/
 Delegate tasks to specialized subagents with isolated context windows. Includes:
 - `index.ts` - The custom tool (single, parallel, and chain modes)

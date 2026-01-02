@@ -1,3 +1,4 @@
 {
-  "customTools": ["packages/coding-agent/examples/custom-tools/todo/index.ts"]
+  "customTools": ["packages/coding-agent/examples/custom-tools/todo/index.ts"],
+  "hooks": ["packages/coding-agent/examples/hooks/todo/index.ts"]
 }

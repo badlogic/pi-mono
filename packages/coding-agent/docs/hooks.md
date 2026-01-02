@@ -465,9 +465,11 @@ const result = await ctx.ui.custom((tui, theme, done) => {
   
   doWork(loader.signal).then(done).catch(() => done(null));
   
-  return loader;
+  return loader;  // Return the component directly, do NOT wrap in Box/Container
 });
 ```
+
+**Important:** Return your component directly from the callback. Do not wrap it in a `Box` or `Container`, as this breaks input handling.
 
 Your component can:
 - Implement `handleInput(data: string)` to receive keyboard input
