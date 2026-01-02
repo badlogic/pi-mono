@@ -24,6 +24,7 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 export interface SettingsConfig {
 	autoCompact: boolean;
 	showImages: boolean;
+	autoResizeImages: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
@@ -37,6 +38,7 @@ export interface SettingsConfig {
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
+	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
@@ -223,6 +225,15 @@ export class SettingsSelectorComponent extends Container {
 			});
 		}
 
+		// Image auto-resize toggle (always available, affects both attached and read images)
+		items.splice(supportsImages ? 2 : 1, 0, {
+			id: "auto-resize-images",
+			label: "Auto-resize images",
+			description: "Resize large images to 2000x2000 max for better model compatibility",
+			currentValue: config.autoResizeImages ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -237,6 +248,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "show-images":
 						callbacks.onShowImagesChange(newValue === "true");
+						break;
+					case "auto-resize-images":
+						callbacks.onAutoResizeImagesChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");

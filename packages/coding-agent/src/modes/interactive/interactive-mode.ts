@@ -1673,6 +1673,7 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					showImages: this.settingsManager.getShowImages(),
+					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -1694,6 +1695,9 @@ export class InteractiveMode {
 								child.setShowImages(enabled);
 							}
 						}
+					},
+					onAutoResizeImagesChange: (enabled) => {
+						this.settingsManager.setImageAutoResize(enabled);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
