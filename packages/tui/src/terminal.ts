@@ -26,6 +26,9 @@ export interface Terminal {
 	clearLine(): void; // Clear current line
 	clearFromCursor(): void; // Clear from cursor to end of screen
 	clearScreen(): void; // Clear entire screen and move cursor to (0,0)
+
+	// Title operations
+	setTitle(title: string): void; // Set terminal window title
 }
 
 /**
@@ -126,5 +129,10 @@ export class ProcessTerminal implements Terminal {
 
 	clearScreen(): void {
 		process.stdout.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
+	}
+
+	setTitle(title: string): void {
+		// OSC 0;title BEL - set terminal window title
+		process.stdout.write(`\x1b]0;${title}\x07`);
 	}
 }

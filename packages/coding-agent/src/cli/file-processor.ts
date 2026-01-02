@@ -7,6 +7,7 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.js";
+import { formatDimensionNote, resizeImage } from "../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
 
 export interface ProcessedFiles {
@@ -14,8 +15,14 @@ export interface ProcessedFiles {
 	images: ImageContent[];
 }
 
+export interface ProcessFileOptions {
+	/** Whether to auto-resize images to 2000x2000 max. Default: true */
+	autoResizeImages?: boolean;
+}
+
 /** Process @file arguments into text content and image attachments */
-export async function processFileArguments(fileArgs: string[]): Promise<ProcessedFiles> {
+export async function processFileArguments(fileArgs: string[], options?: ProcessFileOptions): Promise<ProcessedFiles> {
+	const autoResizeImages = options?.autoResizeImages ?? true;
 	let text = "";
 	const images: ImageContent[] = [];
 
@@ -45,16 +52,33 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 			const content = await readFile(absolutePath);
 			const base64Content = content.toString("base64");
 
-			const attachment: ImageContent = {
-				type: "image",
-				mimeType,
-				data: base64Content,
-			};
+			let attachment: ImageContent;
+			let dimensionNote: string | undefined;
+
+			if (autoResizeImages) {
+				const resized = await resizeImage({ type: "image", data: base64Content, mimeType });
+				dimensionNote = formatDimensionNote(resized);
+				attachment = {
+					type: "image",
+					mimeType: resized.mimeType,
+					data: resized.data,
+				};
+			} else {
+				attachment = {
+					type: "image",
+					mimeType,
+					data: base64Content,
+				};
+			}
 
 			images.push(attachment);
 
-			// Add text reference to image
-			text += `<file name="${absolutePath}"></file>\n`;
+			// Add text reference to image with optional dimension note
+			if (dimensionNote) {
+				text += `<file name="${absolutePath}">${dimensionNote}</file>\n`;
+			} else {
+				text += `<file name="${absolutePath}"></file>\n`;
+			}
 		} else {
 			// Handle text file
 			try {

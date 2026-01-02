@@ -5,22 +5,29 @@
  * When branching, offers to restore code to that point in history.
  */
 
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
-	const checkpoints = new Map<number, string>();
+	const checkpoints = new Map<string, string>();
+	let currentEntryId: string | undefined;
 
-	pi.on("turn_start", async (event) => {
+	// Track the current entry ID when user messages are saved
+	pi.on("tool_result", async (_event, ctx) => {
+		const leaf = ctx.sessionManager.getLeafEntry();
+		if (leaf) currentEntryId = leaf.id;
+	});
+
+	pi.on("turn_start", async () => {
 		// Create a git stash entry before LLM makes changes
 		const { stdout } = await pi.exec("git", ["stash", "create"]);
 		const ref = stdout.trim();
-		if (ref) {
-			checkpoints.set(event.turnIndex, ref);
+		if (ref && currentEntryId) {
+			checkpoints.set(currentEntryId, ref);
 		}
 	});
 
 	pi.on("session_before_branch", async (event, ctx) => {
-		const ref = checkpoints.get(event.entryIndex);
+		const ref = checkpoints.get(event.entryId);
 		if (!ref) return;
 
 		if (!ctx.hasUI) {

@@ -4,14 +4,23 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
+import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
-import type { AppendEntryHandler, LoadedHook, SendMessageHandler } from "./loader.js";
+import type {
+	AppendEntryHandler,
+	BranchHandler,
+	LoadedHook,
+	NavigateTreeHandler,
+	NewSessionHandler,
+	SendMessageHandler,
+} from "./loader.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
+	HookCommandContext,
 	HookContext,
 	HookError,
 	HookEvent,
@@ -26,11 +35,6 @@ import type {
 } from "./types.js";
 
 /**
- * Default timeout for hook execution (30 seconds).
- */
-const DEFAULT_TIMEOUT = 30000;
-
-/**
  * Listener for hook errors.
  */
 export type HookErrorListener = (error: HookError) => void;
@@ -38,27 +42,20 @@ export type HookErrorListener = (error: HookError) => void;
 // Re-export execCommand for backward compatibility
 export { execCommand } from "../exec.js";
 
-/**
- * Create a promise that rejects after a timeout.
- */
-function createTimeout(ms: number): { promise: Promise<never>; clear: () => void } {
-	let timeoutId: NodeJS.Timeout;
-	const promise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`Hook timed out after ${ms}ms`)), ms);
-	});
-	return {
-		promise,
-		clear: () => clearTimeout(timeoutId),
-	};
-}
-
 /** No-op UI context used when no UI is available */
 const noOpUIContext: HookUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
 	input: async () => undefined,
 	notify: () => {},
-	custom: () => ({ close: () => {}, requestRender: () => {} }),
+	setStatus: () => {},
+	custom: async () => undefined as never,
+	setEditorText: () => {},
+	getEditorText: () => "",
+	editor: async () => undefined,
+	get theme() {
+		return theme;
+	},
 };
 
 /**
@@ -71,24 +68,23 @@ export class HookRunner {
 	private cwd: string;
 	private sessionManager: SessionManager;
 	private modelRegistry: ModelRegistry;
-	private timeout: number;
 	private errorListeners: Set<HookErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
+	private isIdleFn: () => boolean = () => true;
+	private waitForIdleFn: () => Promise<void> = async () => {};
+	private abortFn: () => void = () => {};
+	private hasPendingMessagesFn: () => boolean = () => false;
+	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
+	private branchHandler: BranchHandler = async () => ({ cancelled: false });
+	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 
-	constructor(
-		hooks: LoadedHook[],
-		cwd: string,
-		sessionManager: SessionManager,
-		modelRegistry: ModelRegistry,
-		timeout: number = DEFAULT_TIMEOUT,
-	) {
+	constructor(hooks: LoadedHook[], cwd: string, sessionManager: SessionManager, modelRegistry: ModelRegistry) {
 		this.hooks = hooks;
 		this.uiContext = noOpUIContext;
 		this.hasUI = false;
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
-		this.timeout = timeout;
 	}
 
 	/**
@@ -102,26 +98,47 @@ export class HookRunner {
 		sendMessageHandler: SendMessageHandler;
 		/** Handler for hooks to append entries */
 		appendEntryHandler: AppendEntryHandler;
+		/** Handler for creating new sessions (for HookCommandContext) */
+		newSessionHandler?: NewSessionHandler;
+		/** Handler for branching sessions (for HookCommandContext) */
+		branchHandler?: BranchHandler;
+		/** Handler for navigating session tree (for HookCommandContext) */
+		navigateTreeHandler?: NavigateTreeHandler;
+		/** Function to check if agent is idle */
+		isIdle?: () => boolean;
+		/** Function to wait for agent to be idle */
+		waitForIdle?: () => Promise<void>;
+		/** Function to abort current operation (fire-and-forget) */
+		abort?: () => void;
+		/** Function to check if there are queued messages */
+		hasPendingMessages?: () => boolean;
 		/** UI context for interactive prompts */
 		uiContext?: HookUIContext;
 		/** Whether UI is available */
 		hasUI?: boolean;
 	}): void {
 		this.getModel = options.getModel;
-		this.setSendMessageHandler(options.sendMessageHandler);
-		this.setAppendEntryHandler(options.appendEntryHandler);
-		if (options.uiContext) {
-			this.setUIContext(options.uiContext, options.hasUI ?? false);
+		this.isIdleFn = options.isIdle ?? (() => true);
+		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
+		this.abortFn = options.abort ?? (() => {});
+		this.hasPendingMessagesFn = options.hasPendingMessages ?? (() => false);
+		// Store session handlers for HookCommandContext
+		if (options.newSessionHandler) {
+			this.newSessionHandler = options.newSessionHandler;
 		}
-	}
-
-	/**
-	 * Set the UI context for hooks.
-	 * Call this when the mode initializes and UI is available.
-	 */
-	setUIContext(uiContext: HookUIContext, hasUI: boolean): void {
-		this.uiContext = uiContext;
-		this.hasUI = hasUI;
+		if (options.branchHandler) {
+			this.branchHandler = options.branchHandler;
+		}
+		if (options.navigateTreeHandler) {
+			this.navigateTreeHandler = options.navigateTreeHandler;
+		}
+		// Set per-hook handlers for pi.sendMessage() and pi.appendEntry()
+		for (const hook of this.hooks) {
+			hook.setSendMessageHandler(options.sendMessageHandler);
+			hook.setAppendEntryHandler(options.appendEntryHandler);
+		}
+		this.uiContext = options.uiContext ?? noOpUIContext;
+		this.hasUI = options.hasUI ?? false;
 	}
 
 	/**
@@ -143,26 +160,6 @@ export class HookRunner {
 	 */
 	getHookPaths(): string[] {
 		return this.hooks.map((h) => h.path);
-	}
-
-	/**
-	 * Set the send message handler for all hooks' pi.sendMessage().
-	 * Call this when the mode initializes.
-	 */
-	setSendMessageHandler(handler: SendMessageHandler): void {
-		for (const hook of this.hooks) {
-			hook.setSendMessageHandler(handler);
-		}
-	}
-
-	/**
-	 * Set the append entry handler for all hooks' pi.appendEntry().
-	 * Call this when the mode initializes.
-	 */
-	setAppendEntryHandler(handler: AppendEntryHandler): void {
-		for (const hook of this.hooks) {
-			hook.setAppendEntryHandler(handler);
-		}
 	}
 
 	/**
@@ -251,6 +248,23 @@ export class HookRunner {
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
 			model: this.getModel(),
+			isIdle: () => this.isIdleFn(),
+			abort: () => this.abortFn(),
+			hasPendingMessages: () => this.hasPendingMessagesFn(),
+		};
+	}
+
+	/**
+	 * Create the command context for slash command handlers.
+	 * Extends HookContext with session control methods that are only safe in commands.
+	 */
+	createCommandContext(): HookCommandContext {
+		return {
+			...this.createContext(),
+			waitForIdle: () => this.waitForIdleFn(),
+			newSession: (options) => this.newSessionHandler(options),
+			branch: (entryId) => this.branchHandler(entryId),
+			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
 		};
 	}
 
@@ -259,15 +273,9 @@ export class HookRunner {
 	 */
 	private isSessionBeforeEvent(
 		type: string,
-	): type is
-		| "session_before_switch"
-		| "session_before_new"
-		| "session_before_branch"
-		| "session_before_compact"
-		| "session_before_tree" {
+	): type is "session_before_switch" | "session_before_branch" | "session_before_compact" | "session_before_tree" {
 		return (
 			type === "session_before_switch" ||
-			type === "session_before_new" ||
 			type === "session_before_branch" ||
 			type === "session_before_compact" ||
 			type === "session_before_tree"
@@ -290,16 +298,7 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				try {
-					// No timeout for session_before_compact events (like tool_call, they may take a while)
-					let handlerResult: unknown;
-
-					if (event.type === "session_before_compact") {
-						handlerResult = await handler(event, ctx);
-					} else {
-						const timeout = createTimeout(this.timeout);
-						handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-						timeout.clear();
-					}
+					const handlerResult = await handler(event, ctx);
 
 					// For session before_* events, capture the result (for cancellation)
 					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
@@ -376,9 +375,7 @@ export class HookRunner {
 			for (const handler of handlers) {
 				try {
 					const event: ContextEvent = { type: "context", messages: currentMessages };
-					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-					timeout.clear();
+					const handlerResult = await handler(event, ctx);
 
 					if (handlerResult && (handlerResult as ContextEventResult).messages) {
 						currentMessages = (handlerResult as ContextEventResult).messages!;
@@ -415,9 +412,7 @@ export class HookRunner {
 			for (const handler of handlers) {
 				try {
 					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
-					const timeout = createTimeout(this.timeout);
-					const handlerResult = await Promise.race([handler(event, ctx), timeout.promise]);
-					timeout.clear();
+					const handlerResult = await handler(event, ctx);
 
 					// Take the first message returned
 					if (handlerResult && (handlerResult as BeforeAgentStartEventResult).message && !result) {

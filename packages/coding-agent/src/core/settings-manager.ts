@@ -34,12 +34,17 @@ export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 }
 
+export interface ImageSettings {
+	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-	queueMode?: "all" | "one-at-a-time";
+	steeringMode?: "all" | "one-at-a-time";
+	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
@@ -48,10 +53,10 @@ export interface Settings {
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	hooks?: string[]; // Array of hook file paths
-	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
 	customTools?: string[]; // Array of custom tool file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
+	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 }
 
@@ -126,11 +131,22 @@ export class SettingsManager {
 		}
 		try {
 			const content = readFileSync(path, "utf-8");
-			return JSON.parse(content);
+			const settings = JSON.parse(content);
+			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
 			console.error(`Warning: Could not read settings file ${path}: ${error}`);
 			return {};
 		}
+	}
+
+	/** Migrate old settings format to new format */
+	private static migrateSettings(settings: Record<string, unknown>): Settings {
+		// Migrate queueMode -> steeringMode
+		if ("queueMode" in settings && !("steeringMode" in settings)) {
+			settings.steeringMode = settings.queueMode;
+			delete settings.queueMode;
+		}
+		return settings as Settings;
 	}
 
 	private loadProjectSettings(): Settings {
@@ -140,7 +156,8 @@ export class SettingsManager {
 
 		try {
 			const content = readFileSync(this.projectSettingsPath, "utf-8");
-			return JSON.parse(content);
+			const settings = JSON.parse(content);
+			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
 			console.error(`Warning: Could not read project settings file: ${error}`);
 			return {};
@@ -205,12 +222,21 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getQueueMode(): "all" | "one-at-a-time" {
-		return this.settings.queueMode || "one-at-a-time";
+	getSteeringMode(): "all" | "one-at-a-time" {
+		return this.settings.steeringMode || "one-at-a-time";
 	}
 
-	setQueueMode(mode: "all" | "one-at-a-time"): void {
-		this.globalSettings.queueMode = mode;
+	setSteeringMode(mode: "all" | "one-at-a-time"): void {
+		this.globalSettings.steeringMode = mode;
+		this.save();
+	}
+
+	getFollowUpMode(): "all" | "one-at-a-time" {
+		return this.settings.followUpMode || "one-at-a-time";
+	}
+
+	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+		this.globalSettings.followUpMode = mode;
 		this.save();
 	}
 
@@ -322,15 +348,6 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getHookTimeout(): number {
-		return this.settings.hookTimeout ?? 30000;
-	}
-
-	setHookTimeout(timeout: number): void {
-		this.globalSettings.hookTimeout = timeout;
-		this.save();
-	}
-
 	getCustomToolPaths(): string[] {
 		return [...(this.settings.customTools ?? [])];
 	}
@@ -375,6 +392,18 @@ export class SettingsManager {
 			this.globalSettings.terminal = {};
 		}
 		this.globalSettings.terminal.showImages = show;
+		this.save();
+	}
+
+	getImageAutoResize(): boolean {
+		return this.settings.images?.autoResize ?? true;
+	}
+
+	setImageAutoResize(enabled: boolean): void {
+		if (!this.globalSettings.images) {
+			this.globalSettings.images = {};
+		}
+		this.globalSettings.images.autoResize = enabled;
 		this.save();
 	}
 

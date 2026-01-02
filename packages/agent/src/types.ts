@@ -75,12 +75,26 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 
 	/**
-	 * Returns queued messages to inject into the conversation.
+	 * Returns steering messages to inject into the conversation mid-run.
 	 *
-	 * Called after each turn to check for user interruptions or injected messages.
-	 * If messages are returned, they're added to the context before the next LLM call.
+	 * Called after each tool execution to check for user interruptions.
+	 * If messages are returned, remaining tool calls are skipped and
+	 * these messages are added to the context before the next LLM call.
+	 *
+	 * Use this for "steering" the agent while it's working.
 	 */
-	getQueuedMessages?: () => Promise<AgentMessage[]>;
+	getSteeringMessages?: () => Promise<AgentMessage[]>;
+
+	/**
+	 * Returns follow-up messages to process after the agent would otherwise stop.
+	 *
+	 * Called when the agent has no more tool calls and no steering messages.
+	 * If messages are returned, they're added to the context and the agent
+	 * continues with another turn.
+	 *
+	 * Use this for follow-up messages that should wait until the agent finishes.
+	 */
+	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 }
 
 /**

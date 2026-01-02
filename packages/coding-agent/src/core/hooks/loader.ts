@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import type { HookMessage } from "../messages.js";
+import type { SessionManager } from "../session-manager.js";
 import { execCommand } from "./runner.js";
 import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
 
@@ -52,13 +53,34 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
  */
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-	triggerTurn?: boolean,
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 ) => void;
 
 /**
  * Append entry handler type for pi.appendEntry().
  */
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
+
+/**
+ * New session handler type for ctx.newSession() in HookCommandContext.
+ */
+export type NewSessionHandler = (options?: {
+	parentSession?: string;
+	setup?: (sessionManager: SessionManager) => Promise<void>;
+}) => Promise<{ cancelled: boolean }>;
+
+/**
+ * Branch handler type for ctx.branch() in HookCommandContext.
+ */
+export type BranchHandler = (entryId: string) => Promise<{ cancelled: boolean }>;
+
+/**
+ * Navigate tree handler type for ctx.navigateTree() in HookCommandContext.
+ */
+export type NavigateTreeHandler = (
+	targetId: string,
+	options?: { summarize?: boolean },
+) => Promise<{ cancelled: boolean }>;
 
 /**
  * Registered handlers for a loaded hook.
@@ -126,7 +148,7 @@ function resolveHookPath(hookPath: string, cwd: string): string {
 
 /**
  * Create a HookAPI instance that collects handlers, renderers, and commands.
- * Returns the API, maps, and a function to set the send message handler later.
+ * Returns the API, maps, and functions to set handlers later.
  */
 function createHookAPI(
 	handlers: Map<string, HandlerFn[]>,
@@ -155,8 +177,11 @@ function createHookAPI(
 			list.push(handler);
 			handlers.set(event, list);
 		},
-		sendMessage<T = unknown>(message: HookMessage<T>, triggerTurn?: boolean): void {
-			sendMessageHandler(message, triggerTurn);
+		sendMessage<T = unknown>(
+			message: HookMessage<T>,
+			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		): void {
+			sendMessageHandler(message, options);
 		},
 		appendEntry<T = unknown>(customType: string, data?: T): void {
 			appendEntryHandler(customType, data);

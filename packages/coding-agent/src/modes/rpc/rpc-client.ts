@@ -173,10 +173,17 @@ export class RpcClient {
 	}
 
 	/**
-	 * Queue a message while agent is streaming.
+	 * Queue a steering message to interrupt the agent mid-run.
 	 */
-	async queueMessage(message: string): Promise<void> {
-		await this.send({ type: "queue_message", message });
+	async steer(message: string): Promise<void> {
+		await this.send({ type: "steer", message });
+	}
+
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 */
+	async followUp(message: string): Promise<void> {
+		await this.send({ type: "follow_up", message });
 	}
 
 	/**
@@ -187,11 +194,12 @@ export class RpcClient {
 	}
 
 	/**
-	 * Reset session (clear all messages).
-	 * @returns Object with `cancelled: true` if a hook cancelled the reset
+	 * Start a new session, optionally with parent tracking.
+	 * @param parentSession - Optional parent session path for lineage tracking
+	 * @returns Object with `cancelled: true` if a hook cancelled the new session
 	 */
-	async reset(): Promise<{ cancelled: boolean }> {
-		const response = await this.send({ type: "reset" });
+	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "new_session", parentSession });
 		return this.getData(response);
 	}
 
@@ -247,10 +255,17 @@ export class RpcClient {
 	}
 
 	/**
-	 * Set queue mode.
+	 * Set steering mode.
 	 */
-	async setQueueMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		await this.send({ type: "set_queue_mode", mode });
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_steering_mode", mode });
+	}
+
+	/**
+	 * Set follow-up mode.
+	 */
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_follow_up_mode", mode });
 	}
 
 	/**
@@ -326,17 +341,17 @@ export class RpcClient {
 	 * Branch from a specific message.
 	 * @returns Object with `text` (the message text) and `cancelled` (if hook cancelled)
 	 */
-	async branch(entryIndex: number): Promise<{ text: string; cancelled: boolean }> {
-		const response = await this.send({ type: "branch", entryIndex });
+	async branch(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "branch", entryId });
 		return this.getData(response);
 	}
 
 	/**
 	 * Get messages available for branching.
 	 */
-	async getBranchMessages(): Promise<Array<{ entryIndex: number; text: string }>> {
+	async getBranchMessages(): Promise<Array<{ entryId: string; text: string }>> {
 		const response = await this.send({ type: "get_branch_messages" });
-		return this.getData<{ messages: Array<{ entryIndex: number; text: string }> }>(response).messages;
+		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
 	/**

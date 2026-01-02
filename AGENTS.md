@@ -60,7 +60,9 @@ Use these sections under `## [Unreleased]`:
 - `### Removed` - Removed features
 
 ### Rules
+- Before adding entries, read the full `[Unreleased]` section to see which subsections already exist
 - New entries ALWAYS go under `## [Unreleased]` section
+- Append to existing subsections (e.g., `### Fixed`), do not create duplicates
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
 
@@ -81,5 +83,6 @@ Use these sections under `## [Unreleased]`:
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
-### Tool Usage
-**CTRICIAL**: NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
+### **CRITICAL** Tool Usage Rules **CRITICAL**
+- NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
+- You MUST read every file you modify in full before editing.

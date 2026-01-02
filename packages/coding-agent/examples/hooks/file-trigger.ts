@@ -9,7 +9,7 @@
  */
 
 import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
 	pi.on("session_start", async (_event, ctx) => {
@@ -25,7 +25,7 @@ export default function (pi: HookAPI) {
 							content: `External trigger: ${content}`,
 							display: true,
 						},
-						true, // triggerTurn - get LLM to respond
+						{ triggerTurn: true }, // triggerTurn - get LLM to respond
 					);
 					fs.writeFileSync(triggerFile, ""); // Clear after reading
 				}

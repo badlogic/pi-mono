@@ -48,10 +48,10 @@ First line of the file. Metadata only, not part of the tree (no `id`/`parentId`)
 {"type":"session","version":2,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project"}
 ```
 
-For branched sessions (created via `/branch` command):
+For sessions with a parent (created via `/branch` or `newSession({ parentSession })`):
 
 ```json
-{"type":"session","version":2,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","branchedFrom":"/path/to/original/session.jsonl"}
+{"type":"session","version":2,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","parentSession":"/path/to/original/session.jsonl"}
 ```
 
 ### SessionMessageEntry

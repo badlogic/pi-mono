@@ -5,7 +5,7 @@
  * Patterns checked: rm -rf, sudo, chmod/chown 777
  */
 
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
 	const dangerousPatterns = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i, /\b(chmod|chown)\b.*777/i];

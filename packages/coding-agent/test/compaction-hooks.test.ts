@@ -21,6 +21,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
+import { theme } from "../src/modes/interactive/theme/theme.js";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
@@ -99,16 +100,26 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 		const modelRegistry = new ModelRegistry(authStorage);
 
 		hookRunner = new HookRunner(hooks, tempDir, sessionManager, modelRegistry);
-		hookRunner.setUIContext(
-			{
+		hookRunner.initialize({
+			getModel: () => session.model,
+			sendMessageHandler: async () => {},
+			appendEntryHandler: async () => {},
+			uiContext: {
 				select: async () => undefined,
 				confirm: async () => false,
 				input: async () => undefined,
 				notify: () => {},
-				custom: () => ({ close: () => {}, requestRender: () => {} }),
+				setStatus: () => {},
+				custom: async () => undefined as never,
+				setEditorText: () => {},
+				getEditorText: () => "",
+				editor: async () => undefined,
+				get theme() {
+					return theme;
+				},
 			},
-			false,
-		);
+			hasUI: false,
+		});
 
 		session = new AgentSession({
 			agent,

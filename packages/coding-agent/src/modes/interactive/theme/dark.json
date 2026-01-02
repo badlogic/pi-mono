@@ -29,6 +29,7 @@
 		"muted": "gray",
 		"dim": "dimGray",
 		"text": "",
+		"thinkingText": "gray",
 
 		"selectedBg": "selectedBg",
 		"userMessageBg": "userMsgBg",
@@ -75,5 +76,10 @@
 		"thinkingXhigh": "#d183e8",
 
 		"bashMode": "green"
+	},
+	"export": {
+		"pageBg": "#18181e",
+		"cardBg": "#1e1e24",
+		"infoBg": "#3c3728"
 	}
 }

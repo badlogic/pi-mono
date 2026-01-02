@@ -4,6 +4,26 @@
 
 ### Breaking Changes
 
+- **Queue API replaced with steer/followUp**: The `queueMessage()` method has been split into two methods with different delivery semantics ([#403](https://github.com/badlogic/pi-mono/issues/403)):
+  - `steer(msg)`: Interrupts the agent mid-run. Delivered after current tool execution, skips remaining tools.
+  - `followUp(msg)`: Waits until the agent finishes. Delivered only when there are no more tool calls or steering messages.
+- **Queue mode renamed**: `queueMode` option renamed to `steeringMode`. Added new `followUpMode` option. Both control whether messages are delivered one-at-a-time or all at once.
+- **AgentLoopConfig callbacks renamed**: `getQueuedMessages` split into `getSteeringMessages` and `getFollowUpMessages`.
+- **Agent methods renamed**:
+  - `queueMessage()` → `steer()` and `followUp()`
+  - `clearMessageQueue()` → `clearSteeringQueue()`, `clearFollowUpQueue()`, `clearAllQueues()`
+  - `setQueueMode()`/`getQueueMode()` → `setSteeringMode()`/`getSteeringMode()` and `setFollowUpMode()`/`getFollowUpMode()`
+
+### Fixed
+
+- `prompt()` and `continue()` now throw if called while the agent is already streaming, preventing race conditions and corrupted state. Use `steer()` or `followUp()` to queue messages during streaming, or `await` the previous call.
+
+## [0.31.1] - 2026-01-02
+
+## [0.31.0] - 2026-01-02
+
+### Breaking Changes
+
 - **Transport abstraction removed**: `ProviderTransport`, `AppTransport`, and `AgentTransport` interface have been removed. Use the `streamFn` option directly for custom streaming implementations.
 
 - **Agent options renamed**:

@@ -1,13 +1,21 @@
+> pi can create custom tools. Ask it to build one for your use case.
+
 # Custom Tools
 
 Custom tools are additional tools that the LLM can call directly, just like the built-in `read`, `write`, `edit`, and `bash` tools. They are TypeScript modules that define callable functions with parameters, return values, and optional TUI rendering.
 
+**Key capabilities:**
+- **User interaction** - Prompt users via `pi.ui` (select, confirm, input dialogs)
+- **Custom rendering** - Control how tool calls and results appear via `renderCall`/`renderResult`
+- **TUI components** - Render custom components with `pi.ui.custom()` (see [tui.md](tui.md))
+- **State management** - Persist state in tool result `details` for proper branching support
+- **Streaming results** - Send partial updates via `onUpdate` callback
+
 **Example use cases:**
-- Ask the user questions with selectable options
-- Maintain state across calls (todo lists, connection pools)
-- Custom TUI rendering (progress indicators, structured output)
-- Integrate external services with proper error handling
-- Tools that need user confirmation before proceeding
+- Interactive dialogs (questions with selectable options)
+- Stateful tools (todo lists, connection pools)
+- Rich output rendering (progress indicators, structured views)
+- External service integrations with confirmation flows
 
 **When to use custom tools vs. alternatives:**
 
@@ -36,10 +44,11 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
+    const { name } = params as { name: string };
     return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
+      content: [{ type: "text", text: `Hello, ${name}!` }],
+      details: { greeted: name },
     };
   },
 });
@@ -82,7 +91,7 @@ Custom tools can import from these packages (automatically resolved by pi):
 | Package | Purpose |
 |---------|---------|
 | `@sinclair/typebox` | Schema definitions (`Type.Object`, `Type.String`, etc.) |
-| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `ToolSessionEvent` (alias for `SessionEvent`), etc.) |
+| `@mariozechner/pi-coding-agent` | Types (`CustomToolFactory`, `CustomTool`, `CustomToolContext`, etc.) |
 | `@mariozechner/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
 | `@mariozechner/pi-tui` | TUI components (`Text`, `Box`, etc. for custom rendering) |
 
@@ -94,7 +103,12 @@ Node.js built-in modules (`node:fs`, `node:path`, etc.) are also available.
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
-import type { CustomToolFactory, ToolSessionEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  CustomTool,
+  CustomToolContext,
+  CustomToolFactory,
+  CustomToolSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 
 const factory: CustomToolFactory = (pi) => ({
   name: "my_tool",
@@ -106,9 +120,10 @@ const factory: CustomToolFactory = (pi) => ({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, signal, onUpdate) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
     // signal - AbortSignal for cancellation
     // onUpdate - Callback for streaming partial results
+    // ctx - CustomToolContext with sessionManager, modelRegistry, model
     return {
       content: [{ type: "text", text: "Result for LLM" }],
       details: { /* structured data for rendering */ },
@@ -116,12 +131,12 @@ const factory: CustomToolFactory = (pi) => ({
   },
 
   // Optional: Session lifecycle callback
-  onSession(event) {
+  onSession(event, ctx) {
     if (event.reason === "shutdown") {
       // Cleanup resources (close connections, save state, etc.)
       return;
     }
-    // Reconstruct state from entries for other events
+    // Reconstruct state from ctx.sessionManager.getBranch()
   },
 
   // Optional: Custom rendering
@@ -134,12 +149,12 @@ export default factory;
 
 **Important:** Use `StringEnum` from `@mariozechner/pi-ai` instead of `Type.Union`/`Type.Literal` for string enums. The latter doesn't work with Google's API.
 
-## ToolAPI Object
+## CustomToolAPI Object
 
-The factory receives a `ToolAPI` object (named `pi` by convention):
+The factory receives a `CustomToolAPI` object (named `pi` by convention):
 
 ```typescript
-interface ToolAPI {
+interface CustomToolAPI {
   cwd: string;  // Current working directory
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   ui: ToolUIContext;
@@ -174,7 +189,7 @@ Always check `pi.hasUI` before using UI methods.
 Pass the `signal` from `execute` to `pi.exec` to support cancellation:
 
 ```typescript
-async execute(toolCallId, params, signal) {
+async execute(toolCallId, params, onUpdate, ctx, signal) {
   const result = await pi.exec("long-running-command", ["arg"], { signal });
   if (result.killed) {
     return { content: [{ type: "text", text: "Cancelled" }] };
@@ -183,26 +198,101 @@ async execute(toolCallId, params, signal) {
 }
 ```
 
+### Error Handling
+
+**Throw an error** when the tool fails. Do not return an error message as content.
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  const { path } = params as { path: string };
+  
+  // Throw on error - pi will catch it and report to the LLM
+  if (!fs.existsSync(path)) {
+    throw new Error(`File not found: ${path}`);
+  }
+  
+  // Return content only on success
+  return { content: [{ type: "text", text: "Success" }] };
+}
+```
+
+Thrown errors are:
+- Reported to the LLM as tool errors (with `isError: true`)
+- Emitted to hooks via `tool_result` event (hooks can inspect `event.isError`)
+- Displayed in the TUI with error styling
+
+## CustomToolContext
+
+The `execute` and `onSession` callbacks receive a `CustomToolContext`:
+
+```typescript
+interface CustomToolContext {
+  sessionManager: ReadonlySessionManager;  // Read-only access to session
+  modelRegistry: ModelRegistry;            // For API key resolution
+  model: Model | undefined;                // Current model (may be undefined)
+  isIdle(): boolean;                       // Whether agent is streaming
+  hasQueuedMessages(): boolean;            // Whether user has queued messages
+  abort(): void;                           // Abort current operation (fire-and-forget)
+}
+```
+
+Use `ctx.sessionManager.getBranch()` to get entries on the current branch for state reconstruction.
+
+### Checking Queue State
+
+Interactive tools can skip prompts when the user has already queued a message:
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  // If user already queued a message, skip the interactive prompt
+  if (ctx.hasQueuedMessages()) {
+    return {
+      content: [{ type: "text", text: "Skipped - user has queued input" }],
+    };
+  }
+
+  // Otherwise, prompt for input
+  const answer = await pi.ui.input("What would you like to do?");
+  // ...
+}
+```
+
+### Multi-line Editor
+
+For longer text editing, use `pi.ui.editor()` which supports Ctrl+G for external editor:
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  const text = await pi.ui.editor("Edit your response:", "prefilled text");
+  // Returns edited text or undefined if cancelled (Escape)
+  // Ctrl+Enter to submit, Ctrl+G to open $VISUAL or $EDITOR
+  
+  if (!text) {
+    return { content: [{ type: "text", text: "Cancelled" }] };
+  }
+  // ...
+}
+```
+
 ## Session Lifecycle
 
 Tools can implement `onSession` to react to session changes:
 
 ```typescript
-interface SessionEvent {
-  entries: SessionEntry[];      // All session entries
-  sessionFile: string | undefined;   // Current session file (undefined with --no-session)
-  previousSessionFile: string | undefined;  // Previous session file
-  reason: "start" | "switch" | "branch" | "new" | "tree";
+interface CustomToolSessionEvent {
+  reason: "start" | "switch" | "branch" | "tree" | "shutdown";
+  previousSessionFile: string | undefined;
 }
 ```
 
 **Reasons:**
 - `start`: Initial session load on startup
-- `switch`: User switched to a different session (`/resume`)
+- `switch`: User started a new session (`/new`) or switched to a different session (`/resume`)
 - `branch`: User branched from a previous message (`/branch`)
-- `new`: User started a new session (`/new`)
 - `tree`: User navigated to a different point in the session tree (`/tree`)
 - `shutdown`: Process is exiting (Ctrl+C, Ctrl+D, or SIGTERM) - use to cleanup resources
+
+To check if a session is fresh (no messages), use `ctx.sessionManager.getEntries().length === 0`.
 
 ### State Management Pattern
 
@@ -218,9 +308,11 @@ const factory: CustomToolFactory = (pi) => {
   let items: string[] = [];
 
   // Reconstruct state from session entries
-  const reconstructState = (event: ToolSessionEvent) => {
+  const reconstructState = (event: CustomToolSessionEvent, ctx: CustomToolContext) => {
+    if (event.reason === "shutdown") return;
+    
     items = [];
-    for (const entry of event.entries) {
+    for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== "message") continue;
       const msg = entry.message;
       if (msg.role !== "toolResult") continue;
@@ -241,7 +333,7 @@ const factory: CustomToolFactory = (pi) => {
     
     onSession: reconstructState,
     
-    async execute(toolCallId, params) {
+    async execute(toolCallId, params, onUpdate, ctx, signal) {
       // Modify items...
       items.push("new item");
       
@@ -262,7 +354,7 @@ This pattern ensures:
 
 ## Custom Rendering
 
-Custom tools can provide `renderCall` and `renderResult` methods to control how they appear in the TUI. Both are optional.
+Custom tools can provide `renderCall` and `renderResult` methods to control how they appear in the TUI. Both are optional. See [tui.md](tui.md) for the full component API.
 
 ### How It Works
 
@@ -363,7 +455,7 @@ If `renderCall` or `renderResult` is not defined or throws an error:
 ## Execute Function
 
 ```typescript
-async execute(toolCallId, args, signal, onUpdate) {
+async execute(toolCallId, args, onUpdate, ctx, signal) {
   // Type assertion for params (TypeBox schema doesn't flow through)
   const params = args as { action: "list" | "add"; text?: string };
 
@@ -395,7 +487,7 @@ const factory: CustomToolFactory = (pi) => {
   // Shared state
   let connection = null;
 
-  const handleSession = (event: ToolSessionEvent) => {
+  const handleSession = (event: CustomToolSessionEvent, ctx: CustomToolContext) => {
     if (event.reason === "shutdown") {
       connection?.close();
     }

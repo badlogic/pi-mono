@@ -1,6 +1,6 @@
 # Examples
 
-Example code for pi-coding-agent.
+Example code for pi-coding-agent SDK, hooks, and custom tools.
 
 ## Directories
 
@@ -13,13 +13,11 @@ Example hooks for intercepting tool calls, adding safety gates, and integrating 
 ### [custom-tools/](custom-tools/)
 Example custom tools that extend the agent's capabilities.
 
-## Running Examples
+## Tool + Hook Combinations
 
-```bash
-cd packages/coding-agent
-npx tsx examples/sdk/01-minimal.ts
-npx tsx examples/hooks/permission-gate.ts
-```
+Some examples are designed to work together:
+
+- **todo/** - The [custom tool](custom-tools/todo/) lets the LLM manage a todo list, while the [hook](hooks/todo/) adds a `/todos` command for users to view todos at any time.
 
 ## Documentation
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-01-02
+
+## [0.31.0] - 2026-01-02
+
 ### Breaking Changes
 
 - **Agent class moved to `@mariozechner/pi-agent-core`**: The `Agent` class, `AgentState`, and related types are no longer exported from this package. Import them from `@mariozechner/pi-agent-core` instead.

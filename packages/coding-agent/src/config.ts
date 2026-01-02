@@ -60,6 +60,21 @@ export function getThemesDir(): string {
 	return join(packageDir, srcOrDist, "modes", "interactive", "theme");
 }
 
+/**
+ * Get path to HTML export template directory (shipped with package)
+ * - For Bun binary: export-html/ next to executable
+ * - For Node.js (dist/): dist/core/export-html/
+ * - For tsx (src/): src/core/export-html/
+ */
+export function getExportTemplateDir(): string {
+	if (isBunBinary) {
+		return join(dirname(process.execPath), "export-html");
+	}
+	const packageDir = getPackageDir();
+	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
+	return join(packageDir, srcOrDist, "core", "export-html");
+}
+
 /** Get path to package.json */
 export function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");
@@ -73,6 +88,11 @@ export function getReadmePath(): string {
 /** Get path to docs directory */
 export function getDocsPath(): string {
 	return resolve(join(getPackageDir(), "docs"));
+}
+
+/** Get path to examples directory */
+export function getExamplesPath(): string {
+	return resolve(join(getPackageDir(), "examples"));
 }
 
 /** Get path to CHANGELOG.md */

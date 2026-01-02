@@ -30,20 +30,22 @@ export {
 	generateSummary,
 	getLastAssistantUsage,
 	prepareBranchEntries,
+	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.js";
 // Custom tools
 export type {
 	AgentToolUpdateCallback,
-	CustomAgentTool,
+	CustomTool,
+	CustomToolAPI,
+	CustomToolContext,
 	CustomToolFactory,
+	CustomToolSessionEvent,
 	CustomToolsLoadResult,
+	CustomToolUIContext,
 	ExecResult,
 	LoadedCustomTool,
 	RenderResultOptions,
-	SessionEvent as ToolSessionEvent,
-	ToolAPI,
-	ToolUIContext,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
 export type * from "./core/hooks/index.js";
@@ -86,6 +88,10 @@ export {
 	discoverSkills,
 	discoverSlashCommands,
 	type FileSlashCommand,
+	// Hook types
+	type HookAPI,
+	type HookContext,
+	type HookFactory,
 	loadSettings,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
@@ -101,6 +107,7 @@ export {
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
 	migrateSessionEntries,
+	type NewSessionOptions,
 	parseSessionEntries,
 	type SessionContext,
 	type SessionEntry,
@@ -113,6 +120,7 @@ export {
 } from "./core/session-manager.js";
 export {
 	type CompactionSettings,
+	type ImageSettings,
 	type RetrySettings,
 	type Settings,
 	SettingsManager,
@@ -142,11 +150,15 @@ export {
 	type LsToolDetails,
 	lsTool,
 	type ReadToolDetails,
+	type ReadToolOptions,
 	readTool,
+	type ToolsOptions,
 	type TruncationResult,
 	writeTool,
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
-// Theme utilities for custom tools
-export { getMarkdownTheme } from "./modes/interactive/theme/theme.js";
+// UI components for hooks
+export { BorderedLoader } from "./modes/interactive/components/bordered-loader.js";
+// Theme utilities for custom tools and hooks
+export { getMarkdownTheme, Theme, type ThemeColor } from "./modes/interactive/theme/theme.js";

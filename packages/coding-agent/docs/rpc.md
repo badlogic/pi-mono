@@ -76,22 +76,27 @@ Response:
 {"type": "response", "command": "abort", "success": true}
 ```
 
-#### reset
+#### new_session
 
-Clear context and start a fresh session. Can be cancelled by a `before_clear` hook.
+Start a fresh session. Can be cancelled by a `session_before_switch` hook.
 
 ```json
-{"type": "reset"}
+{"type": "new_session"}
+```
+
+With optional parent session tracking:
+```json
+{"type": "new_session", "parentSession": "/path/to/parent-session.jsonl"}
 ```
 
 Response:
 ```json
-{"type": "response", "command": "reset", "success": true, "data": {"cancelled": false}}
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
 ```
 
-If a hook cancelled the reset:
+If a hook cancelled:
 ```json
-{"type": "response", "command": "reset", "success": true, "data": {"cancelled": true}}
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
 
 ### State
@@ -145,7 +150,7 @@ Response:
 }
 ```
 
-Messages are `AppMessage` objects (see [Message Types](#message-types)).
+Messages are `AgentMessage` objects (see [Message Types](#message-types)).
 
 ### Model
 
@@ -289,8 +294,10 @@ Response:
   "command": "compact",
   "success": true,
   "data": {
+    "summary": "Summary of conversation...",
+    "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
-    "summary": "Summary of conversation..."
+    "details": {}
   }
 }
 ```
@@ -491,7 +498,7 @@ If a hook cancelled the switch:
 Create a new branch from a previous user message. Can be cancelled by a `before_branch` hook. Returns the text of the message being branched from.
 
 ```json
-{"type": "branch", "entryIndex": 2}
+{"type": "branch", "entryId": "abc123"}
 ```
 
 Response:
@@ -530,8 +537,8 @@ Response:
   "success": true,
   "data": {
     "messages": [
-      {"entryIndex": 0, "text": "First prompt..."},
-      {"entryIndex": 2, "text": "Second prompt..."}
+      {"entryId": "abc123", "text": "First prompt..."},
+      {"entryId": "def456", "text": "Second prompt..."}
     ]
   }
 }
@@ -618,7 +625,7 @@ A turn consists of one assistant response plus any resulting tool calls and resu
 
 ### message_start / message_end
 
-Emitted when a message begins and completes. The `message` field contains an `AppMessage`.
+Emitted when a message begins and completes. The `message` field contains an `AgentMessage`.
 
 ```json
 {"type": "message_start", "message": {...}}
@@ -717,19 +724,26 @@ Use `toolCallId` to correlate events. The `partialResult` in `tool_execution_upd
 Emitted when automatic compaction runs (when context is nearly full).
 
 ```json
-{"type": "auto_compaction_start"}
+{"type": "auto_compaction_start", "reason": "threshold"}
 ```
+
+The `reason` field is `"threshold"` (context getting large) or `"overflow"` (context exceeded limit).
 
 ```json
 {
   "type": "auto_compaction_end",
   "result": {
+    "summary": "Summary of conversation...",
+    "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
-    "summary": "Summary of conversation..."
+    "details": {}
   },
-  "aborted": false
+  "aborted": false,
+  "willRetry": false
 }
 ```
+
+If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and the agent will automatically retry the prompt.
 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
@@ -806,7 +820,7 @@ Parse errors:
 
 Source files:
 - [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
-- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AppMessage`, `Attachment`, `AgentEvent`
+- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AgentMessage`, `AgentEvent`
 - [`src/core/messages.ts`](../src/core/messages.ts) - `BashExecutionMessage`
 - [`src/modes/rpc/rpc-types.ts`](../src/modes/rpc/rpc-types.ts) - RPC command/response types
 

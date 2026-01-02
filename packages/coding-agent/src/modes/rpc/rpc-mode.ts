@@ -15,6 +15,7 @@ import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
+import { theme } from "../interactive/theme/theme.js";
 import type { RpcCommand, RpcHookUIRequest, RpcHookUIResponse, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -119,30 +120,80 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
-		custom() {
+		setStatus(key: string, text: string | undefined): void {
+			// Fire and forget - no response needed
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "setStatus",
+				statusKey: key,
+				statusText: text,
+			} as RpcHookUIRequest);
+		},
+
+		async custom() {
 			// Custom UI not supported in RPC mode
-			return { close: () => {}, requestRender: () => {} };
+			return undefined as never;
+		},
+
+		setEditorText(text: string): void {
+			// Fire and forget - host can implement editor control
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "set_editor_text",
+				text,
+			} as RpcHookUIRequest);
+		},
+
+		getEditorText(): string {
+			// Synchronous method can't wait for RPC response
+			// Host should track editor state locally if needed
+			return "";
+		},
+
+		async editor(title: string, prefill?: string): Promise<string | undefined> {
+			const id = crypto.randomUUID();
+			return new Promise((resolve, reject) => {
+				pendingHookRequests.set(id, {
+					resolve: (response: RpcHookUIResponse) => {
+						if ("cancelled" in response && response.cancelled) {
+							resolve(undefined);
+						} else if ("value" in response) {
+							resolve(response.value);
+						} else {
+							resolve(undefined);
+						}
+					},
+					reject,
+				});
+				output({ type: "hook_ui_request", id, method: "editor", title, prefill } as RpcHookUIRequest);
+			});
+		},
+
+		get theme() {
+			return theme;
 		},
 	});
-
-	// Load entries once for session start events
-	const entries = session.sessionManager.getEntries();
 
 	// Set up hooks with RPC-based UI context
 	const hookRunner = session.hookRunner;
 	if (hookRunner) {
-		hookRunner.setUIContext(createHookUIContext(), false);
+		hookRunner.initialize({
+			getModel: () => session.agent.state.model,
+			sendMessageHandler: (message, options) => {
+				session.sendHookMessage(message, options).catch((e) => {
+					output(error(undefined, "hook_send", e.message));
+				});
+			},
+			appendEntryHandler: (customType, data) => {
+				session.sessionManager.appendCustomEntry(customType, data);
+			},
+			uiContext: createHookUIContext(),
+			hasUI: false,
+		});
 		hookRunner.onError((err) => {
 			output({ type: "hook_error", hookPath: err.hookPath, event: err.event, error: err.error });
-		});
-		// Set up handlers for pi.sendMessage() and pi.appendEntry()
-		hookRunner.setSendMessageHandler((message, triggerTurn) => {
-			session.sendHookMessage(message, triggerTurn).catch((e) => {
-				output(error(undefined, "hook_send", e.message));
-			});
-		});
-		hookRunner.setAppendEntryHandler((customType, data) => {
-			session.sessionManager.appendCustomEntry(customType, data);
 		});
 		// Emit session_start event
 		await hookRunner.emit({
@@ -155,12 +206,22 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	for (const { tool } of session.customTools) {
 		if (tool.onSession) {
 			try {
-				await tool.onSession({
-					entries,
-					sessionFile: session.sessionFile,
-					previousSessionFile: undefined,
-					reason: "start",
-				});
+				await tool.onSession(
+					{
+						previousSessionFile: undefined,
+						reason: "start",
+					},
+					{
+						sessionManager: session.sessionManager,
+						modelRegistry: session.modelRegistry,
+						model: session.model,
+						isIdle: () => !session.isStreaming,
+						hasPendingMessages: () => session.pendingMessageCount > 0,
+						abort: () => {
+							session.abort();
+						},
+					},
+				);
 			} catch (_err) {
 				// Silently ignore tool errors
 			}
@@ -192,9 +253,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "prompt");
 			}
 
-			case "queue_message": {
-				await session.queueMessage(command.message);
-				return success(id, "queue_message");
+			case "steer": {
+				await session.steer(command.message);
+				return success(id, "steer");
+			}
+
+			case "follow_up": {
+				await session.followUp(command.message);
+				return success(id, "follow_up");
 			}
 
 			case "abort": {
@@ -202,9 +268,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "abort");
 			}
 
-			case "reset": {
-				const cancelled = !(await session.reset());
-				return success(id, "reset", { cancelled });
+			case "new_session": {
+				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+				const cancelled = !(await session.newSession(options));
+				return success(id, "new_session", { cancelled });
 			}
 
 			// =================================================================
@@ -217,12 +284,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
 					isCompacting: session.isCompacting,
-					queueMode: session.queueMode,
+					steeringMode: session.steeringMode,
+					followUpMode: session.followUpMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
-					queuedMessageCount: session.queuedMessageCount,
+					pendingMessageCount: session.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
 			}
@@ -272,12 +340,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			// =================================================================
-			// Queue Mode
+			// Queue Modes
 			// =================================================================
 
-			case "set_queue_mode": {
-				session.setQueueMode(command.mode);
-				return success(id, "set_queue_mode");
+			case "set_steering_mode": {
+				session.setSteeringMode(command.mode);
+				return success(id, "set_steering_mode");
+			}
+
+			case "set_follow_up_mode": {
+				session.setFollowUpMode(command.mode);
+				return success(id, "set_follow_up_mode");
 			}
 
 			// =================================================================
@@ -342,7 +415,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "branch": {
-				const result = await session.branch(command.entryIndex);
+				const result = await session.branch(command.entryId);
 				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });
 			}
 

@@ -18,9 +18,10 @@ import type { CompactionResult } from "../../core/compaction/index.js";
 export type RpcCommand =
 	// Prompting
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "queue_message"; message: string }
+	| { id?: string; type: "steer"; message: string }
+	| { id?: string; type: "follow_up"; message: string }
 	| { id?: string; type: "abort" }
-	| { id?: string; type: "reset" }
+	| { id?: string; type: "new_session"; parentSession?: string }
 
 	// State
 	| { id?: string; type: "get_state" }
@@ -34,8 +35,9 @@ export type RpcCommand =
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
 	| { id?: string; type: "cycle_thinking_level" }
 
-	// Queue mode
-	| { id?: string; type: "set_queue_mode"; mode: "all" | "one-at-a-time" }
+	// Queue modes
+	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
+	| { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
 
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
@@ -53,7 +55,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
-	| { id?: string; type: "branch"; entryIndex: number }
+	| { id?: string; type: "branch"; entryId: string }
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 
@@ -69,12 +71,13 @@ export interface RpcSessionState {
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	isCompacting: boolean;
-	queueMode: "all" | "one-at-a-time";
+	steeringMode: "all" | "one-at-a-time";
+	followUpMode: "all" | "one-at-a-time";
 	sessionFile?: string;
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
-	queuedMessageCount: number;
+	pendingMessageCount: number;
 }
 
 // ============================================================================
@@ -85,9 +88,10 @@ export interface RpcSessionState {
 export type RpcResponse =
 	// Prompting (async - events follow)
 	| { id?: string; type: "response"; command: "prompt"; success: true }
-	| { id?: string; type: "response"; command: "queue_message"; success: true }
+	| { id?: string; type: "response"; command: "steer"; success: true }
+	| { id?: string; type: "response"; command: "follow_up"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }
-	| { id?: string; type: "response"; command: "reset"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -125,8 +129,9 @@ export type RpcResponse =
 			data: { level: ThinkingLevel } | null;
 	  }
 
-	// Queue mode
-	| { id?: string; type: "response"; command: "set_queue_mode"; success: true }
+	// Queue modes
+	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
+	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
 
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
@@ -150,7 +155,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_branch_messages";
 			success: true;
-			data: { messages: Array<{ entryIndex: number; text: string }> };
+			data: { messages: Array<{ entryId: string; text: string }> };
 	  }
 	| {
 			id?: string;
@@ -175,13 +180,16 @@ export type RpcHookUIRequest =
 	| { type: "hook_ui_request"; id: string; method: "select"; title: string; options: string[] }
 	| { type: "hook_ui_request"; id: string; method: "confirm"; title: string; message: string }
 	| { type: "hook_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
+	| { type: "hook_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
 	| {
 			type: "hook_ui_request";
 			id: string;
 			method: "notify";
 			message: string;
 			notifyType?: "info" | "warning" | "error";
-	  };
+	  }
+	| { type: "hook_ui_request"; id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
+	| { type: "hook_ui_request"; id: string; method: "set_editor_text"; text: string };
 
 // ============================================================================
 // Hook UI Commands (stdin)

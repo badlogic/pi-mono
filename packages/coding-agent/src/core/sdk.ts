@@ -35,8 +35,13 @@ import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
-import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./custom-tools/index.js";
-import type { CustomAgentTool } from "./custom-tools/types.js";
+import {
+	type CustomToolsLoadResult,
+	discoverAndLoadCustomTools,
+	type LoadedCustomTool,
+	wrapCustomTools,
+} from "./custom-tools/index.js";
+import type { CustomTool } from "./custom-tools/types.js";
 import { discoverAndLoadHooks, HookRunner, type LoadedHook, wrapToolsWithHooks } from "./hooks/index.js";
 import type { HookFactory } from "./hooks/types.js";
 import { convertToLlm } from "./messages.js";
@@ -99,7 +104,7 @@ export interface CreateAgentSessionOptions {
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools (replaces discovery). */
-	customTools?: Array<{ path?: string; tool: CustomAgentTool }>;
+	customTools?: Array<{ path?: string; tool: CustomTool }>;
 	/** Additional custom tool paths to load (merged with discovery). */
 	additionalCustomToolPaths?: string[];
 
@@ -127,18 +132,15 @@ export interface CreateAgentSessionResult {
 	/** The created session */
 	session: AgentSession;
 	/** Custom tools result (for UI context setup in interactive mode) */
-	customToolsResult: {
-		tools: LoadedCustomTool[];
-		setUIContext: (uiContext: any, hasUI: boolean) => void;
-	};
+	customToolsResult: CustomToolsLoadResult;
 	/** Warning if session was restored with a different model than saved */
 	modelFallbackMessage?: string;
 }
 
 // Re-exports
 
-export type { CustomAgentTool } from "./custom-tools/types.js";
-export type { HookAPI, HookFactory } from "./hooks/types.js";
+export type { CustomTool } from "./custom-tools/types.js";
+export type { HookAPI, HookCommandContext, HookContext, HookFactory } from "./hooks/types.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
 export type { FileSlashCommand } from "./slash-commands.js";
@@ -219,7 +221,7 @@ export async function discoverHooks(
 export async function discoverCustomTools(
 	cwd?: string,
 	agentDir?: string,
-): Promise<Array<{ path: string; tool: CustomAgentTool }>> {
+): Promise<Array<{ path: string; tool: CustomTool }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 
@@ -303,7 +305,8 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		defaultProvider: manager.getDefaultProvider(),
 		defaultModel: manager.getDefaultModel(),
 		defaultThinkingLevel: manager.getDefaultThinkingLevel(),
-		queueMode: manager.getQueueMode(),
+		steeringMode: manager.getSteeringMode(),
+		followUpMode: manager.getFollowUpMode(),
 		theme: manager.getTheme(),
 		compaction: manager.getCompactionSettings(),
 		retry: manager.getRetrySettings(),
@@ -311,7 +314,6 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		shellPath: manager.getShellPath(),
 		collapseChangelog: manager.getCollapseChangelog(),
 		hooks: manager.getHookPaths(),
-		hookTimeout: manager.getHookTimeout(),
 		customTools: manager.getCustomToolPaths(),
 		skills: manager.getSkillsSettings(),
 		terminal: { showImages: manager.getShowImages() },
@@ -342,8 +344,16 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 		const messageRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
-		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
+		let sendMessageHandler: (
+			message: any,
+			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
+		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
+		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
+		let navigateTreeHandler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }> = async () => ({
+			cancelled: false,
+		});
 
 		const api = {
 			on: (event: string, handler: (...args: unknown[]) => Promise<unknown>) => {
@@ -351,8 +361,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 				list.push(handler);
 				handlers.set(event, list);
 			},
-			sendMessage: (message: any, triggerTurn?: boolean) => {
-				sendMessageHandler(message, triggerTurn);
+			sendMessage: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => {
+				sendMessageHandler(message, options);
 			},
 			appendEntry: (customType: string, data?: any) => {
 				appendEntryHandler(customType, data);
@@ -363,6 +373,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			registerCommand: (name: string, options: any) => {
 				commands.set(name, { name, ...options });
 			},
+			newSession: (options?: any) => newSessionHandler(options),
+			branch: (entryId: string) => branchHandler(entryId),
+			navigateTree: (targetId: string, options?: any) => navigateTreeHandler(targetId, options),
 		};
 
 		def.factory(api as any);
@@ -373,11 +386,22 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			handlers,
 			messageRenderers,
 			commands,
-			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
+			setSendMessageHandler: (
+				handler: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => void,
+			) => {
 				sendMessageHandler = handler;
 			},
 			setAppendEntryHandler: (handler: (customType: string, data?: any) => void) => {
 				appendEntryHandler = handler;
+			},
+			setNewSessionHandler: (handler: (options?: any) => Promise<{ cancelled: boolean }>) => {
+				newSessionHandler = handler;
+			},
+			setBranchHandler: (handler: (entryId: string) => Promise<{ cancelled: boolean }>) => {
+				branchHandler = handler;
+			},
+			setNavigateTreeHandler: (handler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }>) => {
+				navigateTreeHandler = handler;
 			},
 		};
 	});
@@ -504,10 +528,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 	time("discoverContextFiles");
 
-	const builtInTools = options.tools ?? createCodingTools(cwd);
+	const autoResizeImages = settingsManager.getImageAutoResize();
+	const builtInTools = options.tools ?? createCodingTools(cwd, { read: { autoResizeImages } });
 	time("createCodingTools");
 
-	let customToolsResult: { tools: LoadedCustomTool[]; setUIContext: (ctx: any, hasUI: boolean) => void };
+	let customToolsResult: CustomToolsLoadResult;
 	if (options.customTools !== undefined) {
 		// Use provided custom tools
 		const loadedTools: LoadedCustomTool[] = options.customTools.map((ct) => ({
@@ -517,24 +542,24 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}));
 		customToolsResult = {
 			tools: loadedTools,
+			errors: [],
 			setUIContext: () => {},
 		};
 	} else {
 		// Discover custom tools, merging with additional paths
 		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
-		const result = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
+		customToolsResult = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
 		time("discoverAndLoadCustomTools");
-		for (const { path, error } of result.errors) {
+		for (const { path, error } of customToolsResult.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
 		}
-		customToolsResult = result;
 	}
 
 	let hookRunner: HookRunner | undefined;
 	if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
-			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry);
 		}
 	} else {
 		// Discover hooks, merging with additional paths
@@ -545,11 +570,25 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			console.error(`Failed to load hook "${path}": ${error}`);
 		}
 		if (hooks.length > 0) {
-			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry, settingsManager.getHookTimeout());
+			hookRunner = new HookRunner(hooks, cwd, sessionManager, modelRegistry);
 		}
 	}
 
-	let allToolsArray: Tool[] = [...builtInTools, ...customToolsResult.tools.map((lt) => lt.tool as unknown as Tool)];
+	// Wrap custom tools with context getter (agent/session assigned below, accessed at execute time)
+	let agent: Agent;
+	let session: AgentSession;
+	const wrappedCustomTools = wrapCustomTools(customToolsResult.tools, () => ({
+		sessionManager,
+		modelRegistry,
+		model: agent.state.model,
+		isIdle: () => !session.isStreaming,
+		hasPendingMessages: () => session.pendingMessageCount > 0,
+		abort: () => {
+			session.abort();
+		},
+	}));
+
+	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
 	time("combineTools");
 	if (hookRunner) {
 		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
@@ -581,7 +620,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
 
-	const agent = new Agent({
+	agent = new Agent({
 		initialState: {
 			systemPrompt,
 			model,
@@ -594,7 +633,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					return hookRunner.emitContext(messages);
 				}
 			: undefined,
-		queueMode: settingsManager.getQueueMode(),
+		steeringMode: settingsManager.getSteeringMode(),
+		followUpMode: settingsManager.getFollowUpMode(),
 		getApiKey: async () => {
 			const currentModel = agent.state.model;
 			if (!currentModel) {
@@ -612,9 +652,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
+	} else {
+		// Save initial model and thinking level for new sessions so they can be restored on resume
+		if (model) {
+			sessionManager.appendModelChange(model.provider, model.id);
+		}
+		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	const session = new AgentSession({
+	session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,

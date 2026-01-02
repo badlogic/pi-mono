@@ -1,10 +1,21 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { type Component, visibleWidth } from "@mariozechner/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
 import { dirname, join } from "path";
-import type { ModelRegistry } from "../../../core/model-registry.js";
+import type { AgentSession } from "../../../core/agent-session.js";
 import { theme } from "../theme/theme.js";
+
+/**
+ * Sanitize text for display in a single-line status.
+ * Removes newlines, tabs, carriage returns, and other control characters.
+ */
+function sanitizeStatusText(text: string): string {
+	// Replace newlines, tabs, carriage returns with space, then collapse multiple spaces
+	return text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
+}
 
 /**
  * Find the git root directory by walking up from cwd.
@@ -30,20 +41,34 @@ function findGitHeadPath(): string | null {
  * Footer component that shows pwd, token stats, and context usage
  */
 export class FooterComponent implements Component {
-	private state: AgentState;
-	private modelRegistry: ModelRegistry;
+	private session: AgentSession;
 	private cachedBranch: string | null | undefined = undefined; // undefined = not checked yet, null = not in git repo, string = branch name
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
+	private hookStatuses: Map<string, string> = new Map();
 
-	constructor(state: AgentState, modelRegistry: ModelRegistry) {
-		this.state = state;
-		this.modelRegistry = modelRegistry;
+	constructor(session: AgentSession) {
+		this.session = session;
 	}
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	/**
+	 * Set hook status text to display in the footer.
+	 * Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width.
+	 * ANSI escape codes for styling are preserved.
+	 * @param key - Unique key to identify this status
+	 * @param text - Status text, or undefined to clear
+	 */
+	setHookStatus(key: string, text: string | undefined): void {
+		if (text === undefined) {
+			this.hookStatuses.delete(key);
+		} else {
+			this.hookStatuses.set(key, text);
+		}
 	}
 
 	/**
@@ -89,10 +114,6 @@ export class FooterComponent implements Component {
 		}
 	}
 
-	updateState(state: AgentState): void {
-		this.state = state;
-	}
-
 	invalidate(): void {
 		// Invalidate cached branch so it gets re-read on next render
 		this.cachedBranch = undefined;
@@ -132,26 +153,27 @@ export class FooterComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		// Calculate cumulative usage from all assistant messages
+		const state = this.session.state;
+
+		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
 		let totalInput = 0;
 		let totalOutput = 0;
 		let totalCacheRead = 0;
 		let totalCacheWrite = 0;
 		let totalCost = 0;
 
-		for (const message of this.state.messages) {
-			if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				totalInput += assistantMsg.usage.input;
-				totalOutput += assistantMsg.usage.output;
-				totalCacheRead += assistantMsg.usage.cacheRead;
-				totalCacheWrite += assistantMsg.usage.cacheWrite;
-				totalCost += assistantMsg.usage.cost.total;
+		for (const entry of this.session.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				totalInput += entry.message.usage.input;
+				totalOutput += entry.message.usage.output;
+				totalCacheRead += entry.message.usage.cacheRead;
+				totalCacheWrite += entry.message.usage.cacheWrite;
+				totalCost += entry.message.usage.cost.total;
 			}
 		}
 
 		// Get last assistant message for context percentage calculation (skip aborted messages)
-		const lastAssistantMessage = this.state.messages
+		const lastAssistantMessage = state.messages
 			.slice()
 			.reverse()
 			.find((m) => m.role === "assistant" && m.stopReason !== "aborted") as AssistantMessage | undefined;
@@ -163,7 +185,7 @@ export class FooterComponent implements Component {
 				lastAssistantMessage.usage.cacheRead +
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
-		const contextWindow = this.state.model?.contextWindow || 0;
+		const contextWindow = state.model?.contextWindow || 0;
 		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 		const contextPercent = contextPercentValue.toFixed(1);
 
@@ -209,7 +231,7 @@ export class FooterComponent implements Component {
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = this.state.model ? this.modelRegistry.isUsingOAuth(this.state.model) : false;
+		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);
@@ -231,12 +253,12 @@ export class FooterComponent implements Component {
 		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = this.state.model?.id || "no-model";
+		const modelName = state.model?.id || "no-model";
 
 		// Add thinking level hint if model supports reasoning and thinking is enabled
 		let rightSide = modelName;
-		if (this.state.model?.reasoning) {
-			const thinkingLevel = this.state.thinkingLevel || "off";
+		if (state.model?.reasoning) {
+			const thinkingLevel = state.thinkingLevel || "off";
 			if (thinkingLevel !== "off") {
 				rightSide = `${modelName} • ${thinkingLevel}`;
 			}
@@ -285,6 +307,18 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		return [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+
+		// Add hook statuses on a single line, sorted by key alphabetically
+		if (this.hookStatuses.size > 0) {
+			const sortedStatuses = Array.from(this.hookStatuses.entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => sanitizeStatusText(text));
+			const statusLine = sortedStatuses.join(" ");
+			// Truncate to terminal width with dim ellipsis for consistency with footer style
+			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+		}
+
+		return lines;
 	}
 }

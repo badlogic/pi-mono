@@ -4,7 +4,12 @@
  * File-based commands that inject content when invoked with /commandname.
  */
 
-import { createAgentSession, discoverSlashCommands, type FileSlashCommand, SessionManager } from "../../src/index.js";
+import {
+	createAgentSession,
+	discoverSlashCommands,
+	type FileSlashCommand,
+	SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 // Discover commands from cwd/.pi/commands/ and ~/.pi/agent/commands/
 const discovered = discoverSlashCommands();

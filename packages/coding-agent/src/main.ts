@@ -17,7 +17,7 @@ import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.j
 import type { AgentSession } from "./core/agent-session.js";
 
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
-import { exportFromFile } from "./core/export-html.js";
+import { exportFromFile } from "./core/export-html/index.js";
 import type { HookUIContext } from "./core/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
@@ -119,7 +119,10 @@ async function runInteractiveMode(
 	}
 }
 
-async function prepareInitialMessage(parsed: Args): Promise<{
+async function prepareInitialMessage(
+	parsed: Args,
+	autoResizeImages: boolean,
+): Promise<{
 	initialMessage?: string;
 	initialImages?: ImageContent[];
 }> {
@@ -127,7 +130,7 @@ async function prepareInitialMessage(parsed: Args): Promise<{
 		return {};
 	}
 
-	const { text, images } = await processFileArguments(parsed.fileArgs);
+	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages });
 
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
@@ -329,13 +332,12 @@ export async function main(args: string[]) {
 	}
 
 	const cwd = process.cwd();
-	const { initialMessage, initialImages } = await prepareInitialMessage(parsed);
+	const settingsManager = SettingsManager.create(cwd);
+	time("SettingsManager.create");
+	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
-
-	const settingsManager = SettingsManager.create(cwd);
-	time("SettingsManager.create");
 	initTheme(settingsManager.getTheme(), isInteractive);
 	time("initTheme");
 

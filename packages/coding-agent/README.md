@@ -25,12 +25,13 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Project Context Files](#project-context-files)
   - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
+  - [Settings File](#settings-file)
+- [Extensions](#extensions)
   - [Themes](#themes)
   - [Custom Slash Commands](#custom-slash-commands)
   - [Skills](#skills)
   - [Hooks](#hooks)
   - [Custom Tools](#custom-tools)
-  - [Settings File](#settings-file)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -187,12 +188,14 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 | Command | Description |
 |---------|-------------|
-| `/settings` | Open settings menu (thinking, theme, queue mode, toggles) |
+| `/settings` | Open settings menu (thinking, theme, message delivery modes, toggles) |
 | `/model` | Switch models mid-session (fuzzy search, arrow keys, Enter to select) |
 | `/export [file]` | Export session to self-contained HTML |
+| `/share` | Upload session as secret GitHub gist, get shareable URL (requires `gh` CLI) |
 | `/session` | Show session info: path, message counts, token usage, cost |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
+| `/tree` | Navigate session tree in-place (search, filter, label entries) |
 | `/branch` | Create new conversation branch from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
 | `/login` | OAuth login for subscription-based models |
@@ -211,7 +214,11 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 **Multi-line paste:** Pasted content is collapsed to `[paste #N <lines> lines]` but sent in full.
 
-**Message queuing:** Submit messages while the agent is working. They queue and process based on queue mode (configurable via `/settings`). Press Escape to abort and restore queued messages to editor.
+**Message queuing:** Submit messages while the agent is working:
+- **Enter** queues a *steering* message, delivered after current tool execution (interrupts remaining tools)
+- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
+
+Both modes are configurable via `/settings`: "one-at-a-time" delivers messages one by one waiting for responses, "all" delivers all queued messages at once. Press Escape to abort and restore queued messages to editor.
 
 ### Keyboard Shortcuts
 
@@ -283,6 +290,8 @@ You: What's in this screenshot? /path/to/image.png
 
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
+**Auto-resize:** Images larger than 2000x2000 pixels are automatically resized to fit within this limit for better compatibility with Anthropic models. The original dimensions are noted in the context so the model can map coordinates back if needed. Disable via `images.autoResize: false` in settings.
+
 **Inline rendering:** On terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images, images in tool output are rendered inline. On unsupported terminals, a text placeholder is shown instead.
 
 Toggle inline images via `/settings` or set `terminal.showImages: false` in settings.
@@ -290,6 +299,10 @@ Toggle inline images via `/settings` or set `terminal.showImages: false` in sett
 ---
 
 ## Sessions
+
+Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+See [docs/session.md](docs/session.md) for the file format and programmatic API.
 
 ### Session Management
 
@@ -319,14 +332,6 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 When disabled, neither case triggers automatic compaction (use `/compact` manually if needed).
 
-**How it works:**
-1. Cut point calculated to keep ~20k tokens of recent messages
-2. Messages before cut point are summarized
-3. Summary replaces old messages as "context handoff"
-4. Previous compaction summaries chain into new ones
-
-Compaction does not create a new session, but continues the existing one, with a marker in the `.jsonl` file that encodes the compaction point.
-
 **Configuration** (`~/.pi/agent/settings.json`):
 
 ```json
@@ -339,11 +344,20 @@ Compaction does not create a new session, but continues the existing one, with a
 }
 ```
 
-> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
+> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/tree` to revisit any previous point.
+
+See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via hooks.
 
 ### Branching
 
-Use `/branch` to explore alternative conversation paths:
+**In-place navigation (`/tree`):** Navigate the session tree without creating new files. Select any previous point, continue from there, and switch between branches while preserving all history.
+
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- When switching branches, you're prompted whether to generate a summary of the abandoned branch (messages up to the common ancestor)
+
+**Create new session (`/branch`):** Branch to a new session file:
 
 1. Opens selector showing all your user messages
 2. Select a message to branch from
@@ -472,6 +486,81 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 5. First available model with valid API key
 
 > pi can help you create custom provider and model configurations.
+
+### Settings File
+
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
+
+```json
+{
+  "theme": "dark",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": ["anthropic/*", "*gpt*", "gemini-2.5-pro:high"],
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "shellPath": "C:\\path\\to\\bash.exe",
+  "hideThinkingBlock": false,
+  "collapseChangelog": false,
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "skills": {
+    "enabled": true
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "terminal": {
+    "showImages": true
+  },
+  "images": {
+    "autoResize": true
+  },
+  "hooks": ["/path/to/hook.ts"],
+  "customTools": ["/path/to/tool.ts"]
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `theme` | Color theme name | auto-detected |
+| `defaultProvider` | Default model provider | - |
+| `defaultModel` | Default model ID | - |
+| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `enabledModels` | Model patterns for cycling. Supports glob patterns (`github-copilot/*`, `*sonnet*`) and fuzzy matching. Same as `--models` CLI flag | - |
+| `steeringMode` | Steering message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
+| `followUpMode` | Follow-up message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
+| `shellPath` | Custom bash path (Windows) | auto-detected |
+| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `collapseChangelog` | Show condensed changelog after update | `false` |
+| `compaction.enabled` | Enable auto-compaction | `true` |
+| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
+| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
+| `skills.enabled` | Enable skills discovery | `true` |
+| `retry.enabled` | Auto-retry on transient errors | `true` |
+| `retry.maxRetries` | Maximum retry attempts | `3` |
+| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
+| `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
+| `hooks` | Additional hook file paths | `[]` |
+| `customTools` | Additional custom tool file paths | `[]` |
+
+---
+
+## Extensions
 
 ### Themes
 
@@ -612,18 +701,29 @@ export default function (pi: HookAPI) {
 
 **Sending messages from hooks:**
 
-Use `pi.send(text, attachments?)` to inject messages into the session. If the agent is streaming, the message is queued; otherwise a new agent loop starts immediately.
+Use `pi.sendMessage(message, options?)` to inject messages into the session. Messages are persisted as `CustomMessageEntry` and sent to the LLM.
+
+Options:
+- `triggerTurn`: If true and agent is idle, starts a new agent turn. Default: false.
+- `deliverAs`: When agent is streaming, controls delivery timing:
+  - `"steer"` (default): Delivered after current tool execution, interrupts remaining tools.
+  - `"followUp"`: Delivered only after agent finishes all work.
 
 ```typescript
 import * as fs from "node:fs";
 import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
 
 export default function (pi: HookAPI) {
-  pi.on("session", async (event) => {
-    if (event.reason !== "start") return;
+  pi.on("session_start", async () => {
     fs.watch("/tmp/trigger.txt", () => {
       const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
-      if (content) pi.send(content);
+      if (content) {
+        pi.sendMessage({
+          customType: "file-trigger",
+          content,
+          display: true,
+        }, true);  // triggerTurn: start agent loop
+      }
     });
   });
 }
@@ -659,10 +759,11 @@ const factory: CustomToolFactory = (pi) => ({
     name: Type.String({ description: "Name to greet" }),
   }),
 
-  async execute(toolCallId, params) {
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
+    const { name } = params as { name: string };
     return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
+      content: [{ type: "text", text: `Hello, ${name}!` }],
+      details: { greeted: name },
     };
   },
 });
@@ -681,73 +782,6 @@ export default factory;
 > See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples. pi can help you create custom tools.
 
 > See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
-
-### Settings File
-
-Settings are loaded from two locations and merged:
-
-1. **Global:** `~/.pi/agent/settings.json` - user preferences
-2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
-
-Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
-
-Global `~/.pi/agent/settings.json` stores persistent preferences:
-
-```json
-{
-  "theme": "dark",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "medium",
-  "enabledModels": ["claude-sonnet", "gpt-4o", "gemini-2.5-pro:high"],
-  "queueMode": "one-at-a-time",
-  "shellPath": "C:\\path\\to\\bash.exe",
-  "hideThinkingBlock": false,
-  "collapseChangelog": false,
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
-  },
-  "skills": {
-    "enabled": true
-  },
-  "retry": {
-    "enabled": true,
-    "maxRetries": 3,
-    "baseDelayMs": 2000
-  },
-  "terminal": {
-    "showImages": true
-  },
-  "hooks": ["/path/to/hook.ts"],
-  "hookTimeout": 30000,
-  "customTools": ["/path/to/tool.ts"]
-}
-```
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `theme` | Color theme name | auto-detected |
-| `defaultProvider` | Default model provider | - |
-| `defaultModel` | Default model ID | - |
-| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
-| `enabledModels` | Model patterns for cycling (same as `--models` CLI flag) | - |
-| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
-| `shellPath` | Custom bash path (Windows) | auto-detected |
-| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
-| `collapseChangelog` | Show condensed changelog after update | `false` |
-| `compaction.enabled` | Enable auto-compaction | `true` |
-| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
-| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
-| `skills.enabled` | Enable skills discovery | `true` |
-| `retry.enabled` | Auto-retry on transient errors | `true` |
-| `retry.maxRetries` | Maximum retry attempts | `3` |
-| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
-| `terminal.showImages` | Render images inline (supported terminals) | `true` |
-| `hooks` | Additional hook file paths | `[]` |
-| `hookTimeout` | Timeout for hook operations (ms) | `30000` |
-| `customTools` | Additional custom tool file paths | `[]` |
 
 ---
 
@@ -773,7 +807,7 @@ pi [options] [@files...] [messages...]
 | `--session-dir <dir>` | Directory for session storage and lookup |
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |
+| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--hook <path>` | Load a hook file (can be used multiple times) |
@@ -824,6 +858,9 @@ pi --provider openai --model gpt-4o "Help me refactor"
 
 # Model cycling with thinking levels
 pi --models sonnet:high,haiku:low
+
+# Limit to specific provider with glob pattern
+pi --models "github-copilot/*"
 
 # Read-only mode
 pi --tools read,grep,find,ls -p "Review the architecture"

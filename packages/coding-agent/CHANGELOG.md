@@ -4,99 +4,289 @@
 
 ### Breaking Changes
 
-- **Session tree structure (v2)**: Sessions now store entries as a tree with `id`/`parentId` fields, enabling in-place branching without creating new files. Existing v1 sessions are auto-migrated on load.
-- **SessionManager API**:
-  - `saveXXX()` renamed to `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
-  - `branchInPlace()` renamed to `branch()`
-  - `reset()` renamed to `newSession()`
-  - `createBranchedSessionFromEntries(entries, index)` replaced with `createBranchedSession(leafId)`
-  - `saveCompaction(entry)` replaced with `appendCompaction(summary, firstKeptEntryId, tokensBefore)`
-  - `getEntries()` now excludes the session header (use `getHeader()` separately)
-  - New methods: `getTree()`, `getPath()`, `getLeafUuid()`, `getLeafEntry()`, `getEntry()`, `branchWithSummary()`
-  - New `appendCustomEntry(customType, data)` for hooks to store custom data (not in LLM context)
-  - New `appendCustomMessageEntry(customType, content, display, details?)` for hooks to inject messages into LLM context
-- **Compaction API**:
-  - `CompactionEntry<T>` and `CompactionResult<T>` are now generic with optional `details?: T` for hook-specific data
-  - `compact()` now returns `CompactionResult` (`{ summary, firstKeptEntryId, tokensBefore, details? }`) instead of `CompactionEntry`
-  - `appendCompaction()` now accepts optional `details` parameter
-  - `CompactionEntry.firstKeptEntryIndex` replaced with `firstKeptEntryId`
-  - `prepareCompaction(pathEntries, settings)` now takes path entries (from `getPath()`) and settings only
-  - `CompactionPreparation` restructured: removed `cutPoint`, `messagesToKeep`, `boundaryStart`; added `turnPrefixMessages`, `isSplitTurn`, `previousSummary`, `fileOps`, `settings`
-  - `compact(preparation, model, apiKey, customInstructions?, signal?)` now takes preparation and execution context separately
-- **Hook types**:
-  - `HookEventContext` renamed to `HookContext`
-  - `HookContext` now has `sessionManager`, `modelRegistry`, and `model` (current model, may be undefined)
-  - `HookCommandContext` removed - `RegisteredCommand.handler` now takes `(args: string, ctx: HookContext)`
-  - `before_compact` event: removed `previousCompactions` and `model`, added `branchEntries: SessionEntry[]` (hooks extract what they need)
-  - `before_tree` event: removed `model` (use `ctx.model` instead)
-  - `before_switch` event now has `targetSessionFile`, `switch` event has `previousSessionFile`
-  - Removed `resolveApiKey` (use `modelRegistry.getApiKey(model)`)
-  - Hooks can return `compaction.details` to store custom data (e.g., ArtifactIndex for structured compaction)
-- **Hook API**:
-  - `pi.send(text, attachments?)` replaced with `pi.sendMessage(message, triggerTurn?)` which creates `CustomMessageEntry` instead of user messages
-  - New `pi.appendEntry(customType, data?)` to persist hook state (does NOT participate in LLM context)
-  - New `pi.registerCommand(name, options)` to register custom slash commands
-  - New `pi.registerMessageRenderer(customType, renderer)` to register custom renderers for hook messages
-  - New `pi.exec(command, args, options?)` to execute shell commands (moved from `HookEventContext`/`HookCommandContext`)
-  - `HookMessageRenderer` type: `(message: HookMessage, options, theme) => Component | null`
-  - Renderers return inner content; the TUI wraps it in a styled Box
-  - New types: `HookMessage<T>`, `RegisteredCommand`, `HookContext`
-  - Handler types renamed: `SendHandler` → `SendMessageHandler`, new `AppendEntryHandler`
-- **SessionManager**:
-  - `getSessionFile()` now returns `string | undefined` (undefined for in-memory sessions)
-- **Themes**: Custom themes must add `selectedBg`, `customMessageBg`, `customMessageText`, `customMessageLabel` color tokens (50 total)
-- **Custom tools**: `dispose()` method removed from `CustomAgentTool`. Use `onSession` with `reason: "shutdown"` instead for cleanup. `SessionEvent.reason` now includes `"shutdown"`.
-- **Renamed exports**:
-  - `messageTransformer` → `convertToLlm`
-  - `SessionContext` alias `LoadedSession` removed (use `SessionContext` directly)
-- **Removed exports**:
-  - `createSummaryMessage()` - replaced by internal compaction logic
-  - `SUMMARY_PREFIX`, `SUMMARY_SUFFIX` - no longer used
-  - `Attachment` type - use `ImageContent` from `@mariozechner/pi-ai` instead
-- **New exports**:
-  - `BranchSummaryEntry`, `CustomEntry`, `CustomMessageEntry`, `LabelEntry` - new session entry types
-  - `SessionEntryBase`, `FileEntry` - base types for session entries
-  - `CURRENT_SESSION_VERSION`, `migrateSessionEntries` - session migration utilities
-  - `BranchPreparation`, `BranchSummaryResult`, `CollectEntriesResult`, `GenerateBranchSummaryOptions` - branch summarization types
-  - `FileOperations`, `collectEntriesForBranchSummary`, `prepareBranchEntries`, `generateBranchSummary` - branch summarization utilities
-  - `CompactionPreparation`, `CompactionDetails` - compaction preparation types
-  - `ReadonlySessionManager` - read-only session manager interface for hooks
-  - `HookMessage`, `HookContext`, `HookMessageRenderOptions` - hook types
-  - `isHookMessage`, `createHookMessage` - hook message utilities
+- **Queue API replaced with steer/followUp**: The `queueMessage()` method has been split into two methods with different delivery semantics ([#403](https://github.com/badlogic/pi-mono/issues/403)):
+  - `steer(text)`: Interrupts the agent mid-run (Enter while streaming). Delivered after current tool execution.
+  - `followUp(text)`: Waits until the agent finishes (Alt+Enter while streaming). Delivered only when agent stops.
+- **Settings renamed**: `queueMode` setting renamed to `steeringMode`. Added new `followUpMode` setting. Old settings.json files are migrated automatically.
+- **AgentSession methods renamed**:
+  - `queueMessage()` → `steer()` and `followUp()`
+  - `queueMode` getter → `steeringMode` and `followUpMode` getters
+  - `setQueueMode()` → `setSteeringMode()` and `setFollowUpMode()`
+  - `queuedMessageCount` → `pendingMessageCount`
+  - `getQueuedMessages()` → `getSteeringMessages()` and `getFollowUpMessages()`
+  - `clearQueue()` now returns `{ steering: string[], followUp: string[] }`
+  - `hasQueuedMessages()` → `hasPendingMessages()`
+- **Hook API signature changed**: `pi.sendMessage()` second parameter changed from `triggerTurn?: boolean` to `options?: { triggerTurn?, deliverAs? }`. Use `deliverAs: "followUp"` for follow-up delivery. Affects both hooks and internal `sendHookMessage()` method.
+- **RPC API changes**:
+  - `queue_message` command → `steer` and `follow_up` commands
+  - `set_queue_mode` command → `set_steering_mode` and `set_follow_up_mode` commands
+  - `RpcSessionState.queueMode` → `steeringMode` and `followUpMode`
+- **Settings UI**: "Queue mode" setting split into "Steering mode" and "Follow-up mode"
 
 ### Added
 
-- **`/tree` command**: Navigate the session tree in-place. Shows full tree structure with labels, supports search (type to filter), page navigation (←/→), and filter modes (Ctrl+O cycles: default → no-tools → user-only → labeled-only → all, Shift+Ctrl+O cycles backwards). Selecting a branch generates a summary and switches context. Press `l` to label entries.
-- **`context` hook event**: Fires before each LLM call, allowing hooks to non-destructively modify messages. Returns `{ messages }` to override. Useful for dynamic context pruning without modifying session history.
-- **`before_agent_start` hook event**: Fires once when user submits a prompt, before `agent_start`. Hooks can return `{ message }` to inject a `CustomMessageEntry` that gets persisted and sent to the LLM.
-- **`ui.custom()` for hooks**: Show arbitrary TUI components with keyboard focus. Call `done()` when finished: `ctx.ui.custom(component, done)`.
-- **Branch summarization**: When switching branches via `/tree`, generates a summary of the abandoned branch including file operations (read/modified files). Summaries are stored as `BranchSummaryEntry` with cumulative file tracking in `details`.
-- **Structured compaction**: Both compaction and branch summarization now use structured output format with clear sections (Goal, Progress, Key Information, File Operations). Conversations are serialized to text before summarization to prevent the model from "continuing" conversations.
-- **File tracking in summaries**: Compaction and branch summaries now track `readFiles` and `modifiedFiles` arrays in the `details` field, accumulated across multiple compactions/summaries. This provides cumulative file operation history.
-- **`selectedBg` theme color**: Background color for selected/active lines in tree selector and other components.
-- **Entry labels**: Label any session entry with `/tree` → select entry → press `l`. Labels appear in tree view and are persisted as `LabelEntry` in the session. Use `labeled-only` filter mode to show only labeled entries.
-- **`enabledModels` setting**: Configure whitelisted models in `settings.json` (same format as `--models` CLI flag). CLI `--models` takes precedence over the setting.
-- **Snake game example hook**: Added `examples/hooks/snake.ts` demonstrating `ui.custom()`, `registerCommand()`, and session persistence.
+- Automatic image resizing: images larger than 2000x2000 are resized for better model compatibility. Original dimensions are injected into the prompt. Controlled via `/settings` or `images.autoResize` in settings.json. ([#402](https://github.com/badlogic/pi-mono/pull/402) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Alt+Enter keybind to queue follow-up messages while agent is streaming
+- `Theme` and `ThemeColor` types now exported for hooks using `ctx.ui.custom()`
+- Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
+
+### Fixed
+
+- Shift+Space, Shift+Backspace, and Shift+Delete now work correctly in Kitty-protocol terminals (Kitty, WezTerm, etc.) instead of being silently ignored ([#411](https://github.com/badlogic/pi-mono/pull/411) by [@nathyong](https://github.com/nathyong))
+- `AgentSession.prompt()` now throws if called while the agent is already streaming, preventing race conditions. Use `steer()` or `followUp()` to queue messages during streaming.
+- Ctrl+C now works like Escape in selector components, so mashing Ctrl+C will eventually close the program ([#400](https://github.com/badlogic/pi-mono/pull/400) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.31.1] - 2026-01-02
+
+### Fixed
+
+- Model selector no longer allows negative index when pressing arrow keys before models finish loading ([#398](https://github.com/badlogic/pi-mono/pull/398) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Type guard functions (`isBashToolResult`, etc.) now exported at runtime, not just in type declarations ([#397](https://github.com/badlogic/pi-mono/issues/397))
+
+## [0.31.0] - 2026-01-02
+
+This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
+
+### Session Tree
+
+Sessions now use a tree structure with `id`/`parentId` fields. This enables in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+**Existing sessions are automatically migrated** (v1 → v2) on first load. No manual action required.
+
+New entry types: `BranchSummaryEntry` (context from abandoned branches), `CustomEntry` (hook state), `CustomMessageEntry` (hook-injected messages), `LabelEntry` (bookmarks).
+
+See [docs/session.md](docs/session.md) for the file format and `SessionManager` API.
+
+### Hooks Migration
+
+The hooks API has been restructured with more granular events and better session access.
+
+**Type renames:**
+- `HookEventContext` → `HookContext`
+- `HookCommandContext` is now a new interface extending `HookContext` with session control methods
+
+**Event changes:**
+- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
+- `session_before_switch` and `session_switch` events now include `reason: "new" | "resume"` to distinguish between `/new` and `/resume`
+- New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
+- New `before_agent_start` event: inject messages before the agent loop starts
+- New `context` event: modify messages non-destructively before each LLM call
+- Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
+
+**API changes:**
+- `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
+- New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
+- New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
+- New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
+- New `ctx.isIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state (available in all events)
+- New `ctx.ui.editor(title, prefill?)` for multi-line text editing with Ctrl+G external editor support
+- New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
+- New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
+- New `ctx.ui.theme` getter for styling text with theme colors
+- `ctx.exec()` moved to `pi.exec()`
+- `ctx.sessionFile` → `ctx.sessionManager.getSessionFile()`
+- New `ctx.modelRegistry` and `ctx.model` for API key resolution
+
+**HookCommandContext (slash commands only):**
+- `ctx.waitForIdle()` - wait for agent to finish streaming
+- `ctx.newSession(options?)` - create new sessions with optional setup callback
+- `ctx.branch(entryId)` - branch from a specific entry
+- `ctx.navigateTree(targetId, options?)` - navigate the session tree
+
+These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
+
+**Removed:**
+- `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)
+- `resolveApiKey` parameter (use `ctx.modelRegistry.getApiKey(model)`)
+
+See [docs/hooks.md](docs/hooks.md) and [examples/hooks/](examples/hooks/) for the current API.
+
+### Custom Tools Migration
+
+The custom tools API has been restructured to mirror the hooks pattern with a context object.
+
+**Type renames:**
+- `CustomAgentTool` → `CustomTool`
+- `ToolAPI` → `CustomToolAPI`
+- `ToolContext` → `CustomToolContext`
+- `ToolSessionEvent` → `CustomToolSessionEvent`
+
+**Execute signature changed:**
+```typescript
+// Before (v0.30.2)
+execute(toolCallId, params, signal, onUpdate)
+
+// After
+execute(toolCallId, params, onUpdate, ctx, signal?)
+```
+
+The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, `model`, and agent state methods:
+- `ctx.isIdle()` - check if agent is streaming
+- `ctx.hasQueuedMessages()` - check if user has queued messages (skip interactive prompts)
+- `ctx.abort()` - abort current operation (fire-and-forget)
+
+**Session event changes:**
+- `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
+- Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
+- Reasons: `"start" | "switch" | "branch" | "tree" | "shutdown"` (no separate `"new"` reason; `/new` triggers `"switch"`)
+- `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
+
+See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/) for the current API.
+
+### SDK Migration
+
+**Type changes:**
+- `CustomAgentTool` → `CustomTool`
+- `AppMessage` → `AgentMessage`
+- `sessionFile` returns `string | undefined` (was `string | null`)
+- `model` returns `Model | undefined` (was `Model | null`)
+- `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
+
+**AgentSession API:**
+- `branch(entryIndex: number)` → `branch(entryId: string)`
+- `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
+- `reset()` → `newSession(options?)` where options has optional `parentSession` for lineage tracking
+- `newSession()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
+- New `navigateTree(targetId, options?)` for in-place tree navigation
+
+**Hook integration:**
+- New `sendHookMessage(message, triggerTurn?)` for hook message injection
+
+**SessionManager API:**
+- Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
+- `branchInPlace()` → `branch()`
+- `reset()` → `newSession(options?)` with optional `parentSession` for lineage tracking
+- `createBranchedSessionFromEntries(entries, index)` → `createBranchedSession(leafId)`
+- `SessionHeader.branchedFrom` → `SessionHeader.parentSession`
+- `saveCompaction(entry)` → `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?)`
+- `getEntries()` now excludes the session header (use `getHeader()` separately)
+- `getSessionFile()` returns `string | undefined` (undefined for in-memory sessions)
+- New tree methods: `getTree()`, `getBranch()`, `getLeafId()`, `getLeafEntry()`, `getEntry()`, `getChildren()`, `getLabel()`
+- New append methods: `appendCustomEntry()`, `appendCustomMessageEntry()`, `appendLabelChange()`
+- New branch methods: `branch(entryId)`, `branchWithSummary()`
+
+**ModelRegistry (new):**
+
+`ModelRegistry` is a new class that manages model discovery and API key resolution. It combines built-in models with custom models from `models.json` and resolves API keys via `AuthStorage`.
+
+```typescript
+import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+
+const authStorage = discoverAuthStorage();  // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage);  // + ~/.pi/agent/models.json
+
+// Get all models (built-in + custom)
+const allModels = modelRegistry.getAll();
+
+// Get only models with valid API keys
+const available = await modelRegistry.getAvailable();
+
+// Find specific model
+const model = modelRegistry.find("anthropic", "claude-sonnet-4-20250514");
+
+// Get API key for a model
+const apiKey = await modelRegistry.getApiKey(model);
+```
+
+This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools access it via `ctx.modelRegistry`.
+
+**Renamed exports:**
+- `messageTransformer` → `convertToLlm`
+- `SessionContext` alias `LoadedSession` removed
+
+See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the current API.
+
+### RPC Migration
+
+**Session commands:**
+- `reset` command → `new_session` command with optional `parentSession` field
+
+**Branching commands:**
+- `branch` command: `entryIndex` → `entryId`
+- `get_branch_messages` response: `entryIndex` → `entryId`
+
+**Type changes:**
+- Messages are now `AgentMessage` (was `AppMessage`)
+- `prompt` command: `attachments` field replaced with `images` field using `ImageContent` format
+
+**Compaction events:**
+- `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
+- `auto_compaction_end` now includes `willRetry` field
+- `compact` response includes full `CompactionResult` (`summary`, `firstKeptEntryId`, `tokensBefore`, `details`)
+
+See [docs/rpc.md](docs/rpc.md) for the current protocol.
+
+### Structured Compaction
+
+Compaction and branch summarization now use a structured output format:
+- Clear sections: Goal, Progress, Key Information, File Operations
+- File tracking: `readFiles` and `modifiedFiles` arrays in `details`, accumulated across compactions
+- Conversations are serialized to text before summarization to prevent the model from "continuing" them
+
+The `before_compact` and `before_tree` hook events allow custom compaction implementations. See [docs/compaction.md](docs/compaction.md).
+
+### Interactive Mode
+
+**`/tree` command:**
+- Navigate the full session tree in-place
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- Selecting a branch switches context and optionally injects a summary of the abandoned branch
+
+**Entry labels:**
+- Bookmark any entry via `/tree` → select → `l`
+- Labels appear in tree view and persist as `LabelEntry`
+
+**Theme changes (breaking for custom themes):**
+
+Custom themes must add these new color tokens or they will fail to load:
+- `selectedBg`: background for selected/highlighted items in tree selector and other components
+- `customMessageBg`: background for hook-injected messages (`CustomMessageEntry`)
+- `customMessageText`: text color for hook messages
+- `customMessageLabel`: label color for hook messages (the `[customType]` prefix)
+
+Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
+
+**Settings:**
+- `enabledModels`: allowlist models in `settings.json` (same format as `--models` CLI)
+
+### Added
+
+- `ctx.ui.setStatus(key, text)` for hooks to display persistent status text in the footer ([#385](https://github.com/badlogic/pi-mono/pull/385) by [@prateekmedia](https://github.com/prateekmedia))
+- `ctx.ui.theme` getter for styling status text and other output with theme colors
+- `/share` command to upload session as a secret GitHub gist and get a shareable URL via shittycodingagent.ai ([#380](https://github.com/badlogic/pi-mono/issues/380))
+- HTML export now includes a tree visualization sidebar for navigating session branches ([#375](https://github.com/badlogic/pi-mono/issues/375))
+- HTML export supports keyboard shortcuts: Ctrl+T to toggle thinking blocks, Ctrl+O to toggle tool outputs
+- HTML export supports theme-configurable background colors via optional `export` section in theme JSON ([#387](https://github.com/badlogic/pi-mono/pull/387) by [@mitsuhiko](https://github.com/mitsuhiko))
+- HTML export syntax highlighting now uses theme colors and matches TUI rendering
+- **Snake game example hook**: Demonstrates `ui.custom()`, `registerCommand()`, and session persistence. See [examples/hooks/snake.ts](examples/hooks/snake.ts).
+- **`thinkingText` theme token**: Configurable color for thinking block text. ([#366](https://github.com/badlogic/pi-mono/pull/366) by [@paulbettner](https://github.com/paulbettner))
 
 ### Changed
 
 - **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
 - **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
-- **New entry types**: `BranchSummaryEntry` for branch context, `CustomEntry<T>` for hook state persistence, `CustomMessageEntry<T>` for hook-injected context messages, `LabelEntry` for user-defined bookmarks
-- **TUI**: `CustomMessageEntry` renders with purple styling (customMessageBg, customMessageText, customMessageLabel theme colors). Entries with `display: false` are hidden.
-- **AgentSession**: New `sendHookMessage(message, triggerTurn?)` method for hooks to inject messages. Handles queuing during streaming, direct append when idle, and optional turn triggering.
-- **HookMessage**: New message type with `role: "hookMessage"` for hook-injected messages in agent events. Use `isHookMessage(msg)` type guard to identify them. These are converted to user messages for LLM context via `messageTransformer`.
-- **Agent.prompt()**: Now accepts `AppMessage` directly (in addition to `string, attachments?`) for custom message types like `HookMessage`.
+- HTML export template split into separate files (template.html, template.css, template.js) for easier maintenance
 
 ### Fixed
 
+- HTML export now properly sanitizes user messages containing HTML tags like `<style>` that could break DOM rendering
+- Crash when displaying bash output containing Unicode format characters like U+0600-U+0604 ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))
+- **Footer shows full session stats**: Token usage and cost now include all messages, not just those after compaction. ([#322](https://github.com/badlogic/pi-mono/issues/322))
+- **Status messages spam chat log**: Rapidly changing settings (e.g., thinking level via Shift+Tab) would add multiple status lines. Sequential status updates now coalesce into a single line. ([#365](https://github.com/badlogic/pi-mono/pull/365) by [@paulbettner](https://github.com/paulbettner))
+- **Toggling thinking blocks during streaming shows nothing**: Pressing Ctrl+T while streaming would hide the current message until streaming completed.
+- **Resuming session resets thinking level to off**: Initial model and thinking level were not saved to session file, causing `--resume`/`--continue` to default to `off`. ([#342](https://github.com/badlogic/pi-mono/issues/342) by [@aliou](https://github.com/aliou))
+- **Hook `tool_result` event ignores errors from custom tools**: The `tool_result` hook event was never emitted when tools threw errors, and always had `isError: false` for successful executions. Now emits the event with correct `isError` value in both success and error cases. ([#374](https://github.com/badlogic/pi-mono/issues/374) by [@nicobailon](https://github.com/nicobailon))
 - **Edit tool fails on Windows due to CRLF line endings**: Files with CRLF line endings now match correctly when LLMs send LF-only text. Line endings are normalized before matching and restored to original style on write. ([#355](https://github.com/badlogic/pi-mono/issues/355) by [@Pratham-Dubey](https://github.com/Pratham-Dubey))
+- **Edit tool fails on files with UTF-8 BOM**: Files with UTF-8 BOM marker could cause "text not found" errors since the LLM doesn't include the invisible BOM character. BOM is now stripped before matching and restored on write. ([#394](https://github.com/badlogic/pi-mono/pull/394) by [@prathamdby](https://github.com/prathamdby))
 - **Use bash instead of sh on Unix**: Fixed shell commands using `/bin/sh` instead of `/bin/bash` on Unix systems. ([#328](https://github.com/badlogic/pi-mono/pull/328) by [@dnouri](https://github.com/dnouri))
 - **OAuth login URL clickable**: Made OAuth login URLs clickable in terminal. ([#349](https://github.com/badlogic/pi-mono/pull/349) by [@Cursivez](https://github.com/Cursivez))
 - **Improved error messages**: Better error messages when `apiKey` or `model` are missing. ([#346](https://github.com/badlogic/pi-mono/pull/346) by [@ronyrus](https://github.com/ronyrus))
 - **Session file validation**: `findMostRecentSession()` now validates session headers before returning, preventing non-session JSONL files from being loaded
 - **Compaction error handling**: `generateSummary()` and `generateTurnPrefixSummary()` now throw on LLM errors instead of returning empty strings
 - **Compaction with branched sessions**: Fixed compaction incorrectly including entries from abandoned branches, causing token overflow errors. Compaction now uses `sessionManager.getPath()` to work only on the current branch path, eliminating 80+ lines of duplicate entry collection logic between `prepareCompaction()` and `compact()`
+- **enabledModels glob patterns**: `--models` and `enabledModels` now support glob patterns like `github-copilot/*` or `*sonnet*`. Previously, patterns were only matched literally or via substring search. ([#337](https://github.com/badlogic/pi-mono/issues/337))
 
 ## [0.30.2] - 2025-12-26
 

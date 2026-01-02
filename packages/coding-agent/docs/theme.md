@@ -1,3 +1,5 @@
+> pi can create themes. Ask it to build one for your use case.
+
 # Pi Coding Agent Themes
 
 Themes allow you to customize the colors used throughout the coding agent TUI.
@@ -20,6 +22,7 @@ Every theme must define all color tokens. There are no optional colors.
 | `muted` | Secondary/dimmed text | Metadata, descriptions, output |
 | `dim` | Very dimmed text | Less important info, placeholders |
 | `text` | Default text color | Main content (usually `""`) |
+| `thinkingText` | Thinking block text | Assistant reasoning traces |
 
 ### Backgrounds & Content Text (11 colors)
 
@@ -101,6 +104,27 @@ These create a visual hierarchy: off → minimal → low → medium → high →
 
 **Total: 50 color tokens** (all required)
 
+### HTML Export Colors (optional)
+
+The `export` section is optional and controls colors used when exporting sessions to HTML via `/export`. If not specified, these colors are automatically derived from `userMessageBg` based on luminance detection.
+
+| Token | Purpose |
+|-------|---------|
+| `pageBg` | Page background color |
+| `cardBg` | Card/container background (headers, stats boxes) |
+| `infoBg` | Info sections background (system prompt, notices, compaction) |
+
+Example:
+```json
+{
+  "export": {
+    "pageBg": "#18181e",
+    "cardBg": "#1e1e24",
+    "infoBg": "#3c3728"
+  }
+}
+```
+
 ## Theme Format
 
 Themes are defined in JSON files with the following structure:
@@ -117,6 +141,7 @@ Themes are defined in JSON files with the following structure:
   "colors": {
     "accent": "blue",
     "muted": "gray",
+    "thinkingText": "gray",
     "text": "",
     ...
   }

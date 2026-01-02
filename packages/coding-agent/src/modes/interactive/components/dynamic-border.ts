@@ -2,7 +2,11 @@ import type { Component } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 
 /**
- * Dynamic border component that adjusts to viewport width
+ * Dynamic border component that adjusts to viewport width.
+ *
+ * Note: When used from hooks loaded via jiti, the global `theme` may be undefined
+ * because jiti creates a separate module cache. Always pass an explicit color
+ * function when using DynamicBorder in components exported for hook use.
  */
 export class DynamicBorder implements Component {
 	private color: (str: string) => string;

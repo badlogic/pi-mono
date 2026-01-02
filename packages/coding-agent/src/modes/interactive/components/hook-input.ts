@@ -2,7 +2,7 @@
  * Simple text input component for hooks.
  */
 
-import { Container, Input, isEnter, isEscape, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Input, isCtrlC, isEnter, isEscape, Spacer, Text } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -52,8 +52,8 @@ export class HookInputComponent extends Container {
 			return;
 		}
 
-		// Escape to cancel
-		if (isEscape(keyData)) {
+		// Escape or Ctrl+C to cancel
+		if (isEscape(keyData) || isCtrlC(keyData)) {
 			this.onCancelCallback();
 			return;
 		}

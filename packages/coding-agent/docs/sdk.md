@@ -1,3 +1,5 @@
+> pi can help you use the SDK. Ask it to build an integration for your use case.
+
 # SDK
 
 The SDK provides programmatic access to pi's agent capabilities. Use it to embed pi in other applications, build custom interfaces, or integrate with automated workflows.
@@ -76,7 +78,6 @@ The session manages the agent lifecycle, message history, and event streaming.
 interface AgentSession {
   // Send a prompt and wait for completion
   prompt(text: string, options?: PromptOptions): Promise<void>;
-  prompt(message: AppMessage): Promise<void>;  // For HookMessage, etc.
   
   // Subscribe to events (returns unsubscribe function)
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
@@ -88,25 +89,26 @@ interface AgentSession {
   // Model control
   setModel(model: Model): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): void;
-  cycleModel(): Promise<ModelCycleResult | null>;
-  cycleThinkingLevel(): ThinkingLevel | null;
+  cycleModel(): Promise<ModelCycleResult | undefined>;
+  cycleThinkingLevel(): ThinkingLevel | undefined;
   
   // State access
   agent: Agent;
-  model: Model | null;
+  model: Model | undefined;
   thinkingLevel: ThinkingLevel;
-  messages: AppMessage[];
+  messages: AgentMessage[];
   isStreaming: boolean;
   
   // Session management
-  newSession(): Promise<boolean>;  // Returns false if cancelled by hook
+  newSession(options?: { parentSession?: string }): Promise<boolean>;  // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
   
-  // Branching (tree-based)
-  branch(entryId: string): Promise<{ cancelled: boolean }>;
+  // Branching
+  branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
+  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
-  sendHookMessage(message: HookMessage, triggerTurn?: boolean): void;
+  sendHookMessage(message: HookMessage, triggerTurn?: boolean): Promise<void>;
   
   // Compaction
   compact(customInstructions?: string): Promise<CompactionResult>;
@@ -128,7 +130,7 @@ The `Agent` class (from `@mariozechner/pi-agent-core`) handles the core LLM inte
 // Access current state
 const state = session.agent.state;
 
-// state.messages: AppMessage[] - conversation history
+// state.messages: AgentMessage[] - conversation history
 // state.model: Model - current model
 // state.thinkingLevel: ThinkingLevel - current thinking level
 // state.systemPrompt: string - system prompt
@@ -400,10 +402,10 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, discoverCustomTools, type CustomAgentTool } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverCustomTools, type CustomTool } from "@mariozechner/pi-coding-agent";
 
 // Inline custom tool
-const myTool: CustomAgentTool = {
+const myTool: CustomTool = {
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
@@ -793,7 +795,7 @@ import {
   readTool,
   bashTool,
   type HookFactory,
-  type CustomAgentTool,
+  type CustomTool,
 } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage (custom location)
@@ -816,7 +818,7 @@ const auditHook: HookFactory = (api) => {
 };
 
 // Inline tool
-const statusTool: CustomAgentTool = {
+const statusTool: CustomTool = {
   name: "status",
   label: "Status",
   description: "Get system status",
@@ -932,7 +934,7 @@ createGrepTool, createFindTool, createLsTool
 // Types
 type CreateAgentSessionOptions
 type CreateAgentSessionResult
-type CustomAgentTool
+type CustomTool
 type HookFactory
 type Skill
 type FileSlashCommand

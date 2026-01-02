@@ -72,6 +72,83 @@ const ANTIGRAVITY_HEADERS = {
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+/**
+ * Extract retry delay from Gemini error response (in milliseconds).
+ * Parses patterns like:
+ * - "Your quota will reset after 39s"
+ * - "Your quota will reset after 18h31m10s"
+ * - "Please retry in Xs" or "Please retry in Xms"
+ * - "retryDelay": "34.074824224s" (JSON field)
+ */
+function extractRetryDelay(errorText: string): number | undefined {
+	// Pattern 1: "Your quota will reset after ..." (formats: "18h31m10s", "10m15s", "6s", "39s")
+	const durationMatch = errorText.match(/reset after (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
+	if (durationMatch) {
+		const hours = durationMatch[1] ? parseInt(durationMatch[1], 10) : 0;
+		const minutes = durationMatch[2] ? parseInt(durationMatch[2], 10) : 0;
+		const seconds = parseFloat(durationMatch[3]);
+		if (!Number.isNaN(seconds)) {
+			const totalMs = ((hours * 60 + minutes) * 60 + seconds) * 1000;
+			if (totalMs > 0) {
+				return Math.ceil(totalMs + 1000); // Add 1s buffer
+			}
+		}
+	}
+
+	// Pattern 2: "Please retry in X[ms|s]"
+	const retryInMatch = errorText.match(/Please retry in ([0-9.]+)(ms|s)/i);
+	if (retryInMatch?.[1]) {
+		const value = parseFloat(retryInMatch[1]);
+		if (!Number.isNaN(value) && value > 0) {
+			const ms = retryInMatch[2].toLowerCase() === "ms" ? value : value * 1000;
+			return Math.ceil(ms + 1000);
+		}
+	}
+
+	// Pattern 3: "retryDelay": "34.074824224s" (JSON field in error details)
+	const retryDelayMatch = errorText.match(/"retryDelay":\s*"([0-9.]+)(ms|s)"/i);
+	if (retryDelayMatch?.[1]) {
+		const value = parseFloat(retryDelayMatch[1]);
+		if (!Number.isNaN(value) && value > 0) {
+			const ms = retryDelayMatch[2].toLowerCase() === "ms" ? value : value * 1000;
+			return Math.ceil(ms + 1000);
+		}
+	}
+
+	return undefined;
+}
+
+/**
+ * Check if an error is retryable (rate limit, server error, etc.)
+ */
+function isRetryableError(status: number, errorText: string): boolean {
+	if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+		return true;
+	}
+	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable/i.test(errorText);
+}
+
+/**
+ * Sleep for a given number of milliseconds, respecting abort signal.
+ */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("Request was aborted"));
+			return;
+		}
+		const timeout = setTimeout(resolve, ms);
+		signal?.addEventListener("abort", () => {
+			clearTimeout(timeout);
+			reject(new Error("Request was aborted"));
+		});
+	});
+}
+
 interface CloudCodeAssistRequest {
 	project: string;
 	model: string;
@@ -181,21 +258,62 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 			const isAntigravity = endpoint.includes("sandbox.googleapis.com");
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
-			const response = await fetch(url, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${accessToken}`,
-					"Content-Type": "application/json",
-					Accept: "text/event-stream",
-					...headers,
-				},
-				body: JSON.stringify(requestBody),
-				signal: options?.signal,
-			});
+			// Fetch with retry logic for rate limits and transient errors
+			let response: Response | undefined;
+			let lastError: Error | undefined;
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Cloud Code Assist API error (${response.status}): ${errorText}`);
+			for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+				if (options?.signal?.aborted) {
+					throw new Error("Request was aborted");
+				}
+
+				try {
+					response = await fetch(url, {
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${accessToken}`,
+							"Content-Type": "application/json",
+							Accept: "text/event-stream",
+							...headers,
+						},
+						body: JSON.stringify(requestBody),
+						signal: options?.signal,
+					});
+
+					if (response.ok) {
+						break; // Success, exit retry loop
+					}
+
+					const errorText = await response.text();
+
+					// Check if retryable
+					if (attempt < MAX_RETRIES && isRetryableError(response.status, errorText)) {
+						// Use server-provided delay or exponential backoff
+						const serverDelay = extractRetryDelay(errorText);
+						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
+						await sleep(delayMs, options?.signal);
+						continue;
+					}
+
+					// Not retryable or max retries exceeded
+					throw new Error(`Cloud Code Assist API error (${response.status}): ${errorText}`);
+				} catch (error) {
+					if (error instanceof Error && error.message === "Request was aborted") {
+						throw error;
+					}
+					lastError = error instanceof Error ? error : new Error(String(error));
+					// Network errors are retryable
+					if (attempt < MAX_RETRIES) {
+						const delayMs = BASE_DELAY_MS * 2 ** attempt;
+						await sleep(delayMs, options?.signal);
+						continue;
+					}
+					throw lastError;
+				}
+			}
+
+			if (!response || !response.ok) {
+				throw lastError ?? new Error("Failed to get response after retries");
 			}
 
 			if (!response.body) {

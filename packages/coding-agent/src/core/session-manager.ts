@@ -31,7 +31,11 @@ export interface SessionHeader {
 	id: string;
 	timestamp: string;
 	cwd: string;
-	branchedFrom?: string;
+	parentSession?: string;
+}
+
+export interface NewSessionOptions {
+	parentSession?: string;
 }
 
 export interface SessionEntryBase {
@@ -159,19 +163,21 @@ export interface SessionInfo {
 	allMessagesText: string;
 }
 
-/**
- * Read-only interface for SessionManager.
- * Used by compaction/summarization utilities that only need to read session data.
- */
-export interface ReadonlySessionManager {
-	getLeafId(): string | null;
-	getEntry(id: string): SessionEntry | undefined;
-	getPath(fromId?: string): SessionEntry[];
-	getEntries(): SessionEntry[];
-	getChildren(parentId: string): SessionEntry[];
-	getTree(): SessionTreeNode[];
-	getLabel(id: string): string | undefined;
-}
+export type ReadonlySessionManager = Pick<
+	SessionManager,
+	| "getCwd"
+	| "getSessionDir"
+	| "getSessionId"
+	| "getSessionFile"
+	| "getLeafId"
+	| "getLeafEntry"
+	| "getEntry"
+	| "getLabel"
+	| "getBranch"
+	| "getHeader"
+	| "getEntries"
+	| "getTree"
+>;
 
 /** Generate a unique short ID (8 hex chars, collision-checked) */
 function generateId(byId: { has(id: string): boolean }): string {
@@ -506,7 +512,7 @@ export class SessionManager {
 		}
 	}
 
-	newSession(): string | undefined {
+	newSession(options?: NewSessionOptions): string | undefined {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -515,11 +521,13 @@ export class SessionManager {
 			id: this.sessionId,
 			timestamp,
 			cwd: this.cwd,
+			parentSession: options?.parentSession,
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
 		this.leafId = null;
 		this.flushed = false;
+
 		// Only generate filename if persisting and not already set (e.g., via --session flag)
 		if (this.persist && !this.sessionFile) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
@@ -772,7 +780,7 @@ export class SessionManager {
 	 * Includes all entry types (messages, compaction, model changes, etc.).
 	 * Use buildSessionContext() to get the resolved messages for the LLM.
 	 */
-	getPath(fromId?: string): SessionEntry[] {
+	getBranch(fromId?: string): SessionEntry[] {
 		const path: SessionEntry[] = [];
 		const startId = fromId ?? this.leafId;
 		let current = startId ? this.byId.get(startId) : undefined;
@@ -908,7 +916,7 @@ export class SessionManager {
 	 * Returns the new session file path, or undefined if not persisting.
 	 */
 	createBranchedSession(leafId: string): string | undefined {
-		const path = this.getPath(leafId);
+		const path = this.getBranch(leafId);
 		if (path.length === 0) {
 			throw new Error(`Entry ${leafId} not found`);
 		}
@@ -927,7 +935,7 @@ export class SessionManager {
 			id: newSessionId,
 			timestamp,
 			cwd: this.cwd,
-			branchedFrom: this.persist ? this.sessionFile : undefined,
+			parentSession: this.persist ? this.sessionFile : undefined,
 		};
 
 		// Collect labels for entries in the path

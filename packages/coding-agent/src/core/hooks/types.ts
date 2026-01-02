@@ -7,33 +7,19 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "../session-manager.js";
-
-/**
- * Read-only view of SessionManager for hooks.
- * Hooks should use pi.sendMessage() and pi.appendEntry() for writes.
- */
-export type ReadonlySessionManager = Pick<
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	ReadonlySessionManager,
+	SessionEntry,
 	SessionManager,
-	| "getCwd"
-	| "getSessionDir"
-	| "getSessionId"
-	| "getSessionFile"
-	| "getLeafId"
-	| "getLeafEntry"
-	| "getEntry"
-	| "getLabel"
-	| "getPath"
-	| "getHeader"
-	| "getEntries"
-	| "getTree"
->;
+} from "../session-manager.js";
 
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
@@ -78,17 +64,84 @@ export interface HookUIContext {
 	notify(message: string, type?: "info" | "warning" | "error"): void;
 
 	/**
-	 * Show a custom component with keyboard focus.
-	 * The component receives keyboard input via handleInput() if implemented.
-	 *
-	 * @param component - Component to display (implement handleInput for keyboard, dispose for cleanup)
-	 * @returns Object with close() to restore normal UI and requestRender() to trigger redraw
+	 * Set status text in the footer/status bar.
+	 * Pass undefined as text to clear the status for this key.
+	 * Text can include ANSI escape codes for styling.
+	 * Note: Newlines, tabs, and carriage returns are replaced with spaces.
+	 * The combined status line is truncated to terminal width.
+	 * @param key - Unique key to identify this status (e.g., hook name)
+	 * @param text - Status text to display, or undefined to clear
 	 */
-	custom(component: Component & { dispose?(): void }): { close: () => void; requestRender: () => void };
+	setStatus(key: string, text: string | undefined): void;
+
+	/**
+	 * Show a custom component with keyboard focus.
+	 * The factory receives TUI, theme, and a done() callback to close the component.
+	 * Can be async for fire-and-forget work (don't await the work, just start it).
+	 *
+	 * @param factory - Function that creates the component. Call done() when finished.
+	 * @returns Promise that resolves with the value passed to done()
+	 *
+	 * @example
+	 * // Sync factory
+	 * const result = await ctx.ui.custom((tui, theme, done) => {
+	 *   const component = new MyComponent(tui, theme);
+	 *   component.onFinish = (value) => done(value);
+	 *   return component;
+	 * });
+	 *
+	 * // Async factory with fire-and-forget work
+	 * const result = await ctx.ui.custom(async (tui, theme, done) => {
+	 *   const loader = new CancellableLoader(tui, theme.fg("accent"), theme.fg("muted"), "Working...");
+	 *   loader.onAbort = () => done(null);
+	 *   doWork(loader.signal).then(done);  // Don't await - fire and forget
+	 *   return loader;
+	 * });
+	 */
+	custom<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+	): Promise<T>;
+
+	/**
+	 * Set the text in the core input editor.
+	 * Use this to pre-fill the input box with generated content (e.g., prompt templates, extracted questions).
+	 * @param text - Text to set in the editor
+	 */
+	setEditorText(text: string): void;
+
+	/**
+	 * Get the current text from the core input editor.
+	 * @returns Current editor text
+	 */
+	getEditorText(): string;
+
+	/**
+	 * Show a multi-line editor for text editing.
+	 * Supports Ctrl+G to open external editor ($VISUAL or $EDITOR).
+	 * @param title - Title describing what is being edited
+	 * @param prefill - Optional initial text
+	 * @returns Edited text, or undefined if cancelled (Escape)
+	 */
+	editor(title: string, prefill?: string): Promise<string | undefined>;
+
+	/**
+	 * Get the current theme for styling text with ANSI codes.
+	 * Use theme.fg() and theme.bg() to style status text.
+	 *
+	 * @example
+	 * const theme = ctx.ui.theme;
+	 * ctx.ui.setStatus("my-hook", theme.fg("success", "✓") + " Ready");
+	 */
+	readonly theme: Theme;
 }
 
 /**
- * Context passed to hook event and command handlers.
+ * Context passed to hook event handlers.
+ * For command handlers, see HookCommandContext which extends this with session control methods.
  */
 export interface HookContext {
 	/** UI methods for user interaction */
@@ -103,6 +156,63 @@ export interface HookContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined if no model is selected yet) */
 	model: Model<any> | undefined;
+	/** Whether the agent is idle (not streaming) */
+	isIdle(): boolean;
+	/** Abort the current agent operation (fire-and-forget, does not wait) */
+	abort(): void;
+	/** Whether there are queued messages waiting to be processed */
+	hasPendingMessages(): boolean;
+}
+
+/**
+ * Extended context for slash command handlers.
+ * Includes session control methods that are only safe in user-initiated commands.
+ *
+ * These methods are not available in event handlers because they can cause
+ * deadlocks when called from within the agent loop (e.g., tool_call, context events).
+ */
+export interface HookCommandContext extends HookContext {
+	/** Wait for the agent to finish streaming */
+	waitForIdle(): Promise<void>;
+
+	/**
+	 * Start a new session, optionally with a setup callback to initialize it.
+	 * The setup callback receives a writable SessionManager for the new session.
+	 *
+	 * @param options.parentSession - Path to parent session for lineage tracking
+	 * @param options.setup - Async callback to initialize the new session (e.g., append messages)
+	 * @returns Object with `cancelled: true` if a hook cancelled the new session
+	 *
+	 * @example
+	 * // Handoff: summarize current session and start fresh with context
+	 * await ctx.newSession({
+	 *   parentSession: ctx.sessionManager.getSessionFile(),
+	 *   setup: async (sm) => {
+	 *     sm.appendMessage({ role: "user", content: [{ type: "text", text: summary }] });
+	 *   }
+	 * });
+	 */
+	newSession(options?: {
+		parentSession?: string;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
+	}): Promise<{ cancelled: boolean }>;
+
+	/**
+	 * Branch from a specific entry, creating a new session file.
+	 *
+	 * @param entryId - ID of the entry to branch from
+	 * @returns Object with `cancelled: true` if a hook cancelled the branch
+	 */
+	branch(entryId: string): Promise<{ cancelled: boolean }>;
+
+	/**
+	 * Navigate to a different point in the session tree (in-place).
+	 *
+	 * @param targetId - ID of the entry to navigate to
+	 * @param options.summarize - Whether to summarize the abandoned branch
+	 * @returns Object with `cancelled: true` if a hook cancelled the navigation
+	 */
+	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -117,32 +227,26 @@ export interface SessionStartEvent {
 /** Fired before switching to another session (can be cancelled) */
 export interface SessionBeforeSwitchEvent {
 	type: "session_before_switch";
-	/** Session file we're switching to */
-	targetSessionFile: string;
+	/** Reason for the switch */
+	reason: "new" | "resume";
+	/** Session file we're switching to (only for "resume") */
+	targetSessionFile?: string;
 }
 
 /** Fired after switching to another session */
 export interface SessionSwitchEvent {
 	type: "session_switch";
+	/** Reason for the switch */
+	reason: "new" | "resume";
 	/** Session file we came from */
 	previousSessionFile: string | undefined;
-}
-
-/** Fired before creating a new session (can be cancelled) */
-export interface SessionBeforeNewEvent {
-	type: "session_before_new";
-}
-
-/** Fired after creating a new session */
-export interface SessionNewEvent {
-	type: "session_new";
 }
 
 /** Fired before branching a session (can be cancelled) */
 export interface SessionBeforeBranchEvent {
 	type: "session_before_branch";
-	/** Index of the entry in the session (SessionManager.getEntries()) to branch from */
-	entryIndex: number;
+	/** ID of the entry to branch from */
+	entryId: string;
 }
 
 /** Fired after branching a session */
@@ -218,8 +322,6 @@ export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
-	| SessionBeforeNewEvent
-	| SessionNewEvent
 	| SessionBeforeBranchEvent
 	| SessionBranchEvent
 	| SessionBeforeCompactEvent
@@ -468,12 +570,6 @@ export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
 
-/** Return type for session_before_new handlers */
-export interface SessionBeforeNewResult {
-	/** If true, cancel the new session */
-	cancel?: boolean;
-}
-
 /** Return type for session_before_branch handlers */
 export interface SessionBeforeBranchResult {
 	/**
@@ -551,7 +647,7 @@ export interface RegisteredCommand {
 	name: string;
 	description?: string;
 
-	handler: (args: string, ctx: HookContext) => Promise<void>;
+	handler: (args: string, ctx: HookCommandContext) => Promise<void>;
 }
 
 /**
@@ -563,8 +659,6 @@ export interface HookAPI {
 	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
 	on(event: "session_before_switch", handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
 	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
-	on(event: "session_before_new", handler: HookHandler<SessionBeforeNewEvent, SessionBeforeNewResult>): void;
-	on(event: "session_new", handler: HookHandler<SessionNewEvent>): void;
 	on(event: "session_before_branch", handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>): void;
 	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): void;
 	on(
@@ -598,12 +692,15 @@ export interface HookAPI {
 	 * @param message.content - Message content (string or TextContent/ImageContent array)
 	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
 	 * @param message.details - Optional hook-specific metadata (not sent to LLM)
-	 * @param triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
-	 *                      If agent is streaming, message is queued and triggerTurn is ignored.
+	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
+	 *                             If agent is streaming, message is queued and triggerTurn is ignored.
+	 * @param options.deliverAs - How to deliver when agent is streaming. Default: "steer".
+	 *                           - "steer": Interrupt mid-run, delivered after current tool execution.
+	 *                           - "followUp": Wait until agent finishes all work before delivery.
 	 */
 	sendMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		triggerTurn?: boolean,
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 	): void;
 
 	/**
@@ -643,7 +740,7 @@ export interface HookAPI {
 
 	/**
 	 * Register a custom slash command.
-	 * Handler receives HookCommandContext.
+	 * Handler receives HookCommandContext with session control methods.
 	 */
 	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
 

@@ -4,7 +4,7 @@
  * Context files provide project-specific instructions loaded into the system prompt.
  */
 
-import { createAgentSession, discoverContextFiles, SessionManager } from "../../src/index.js";
+import { createAgentSession, discoverContextFiles, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Discover AGENTS.md files walking up from cwd
 const discovered = discoverContextFiles();

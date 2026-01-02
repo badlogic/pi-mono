@@ -14,10 +14,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir, isBunBinary } from "../../config.js";
+import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
-import type { CustomToolFactory, CustomToolsLoadResult, LoadedCustomTool, ToolAPI } from "./types.js";
+import type { CustomToolAPI, CustomToolFactory, CustomToolsLoadResult, LoadedCustomTool } from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -90,7 +91,14 @@ function createNoOpUIContext(): HookUIContext {
 		confirm: async () => false,
 		input: async () => undefined,
 		notify: () => {},
-		custom: () => ({ close: () => {}, requestRender: () => {} }),
+		setStatus: () => {},
+		custom: async () => undefined as never,
+		setEditorText: () => {},
+		getEditorText: () => "",
+		editor: async () => undefined,
+		get theme() {
+			return theme;
+		},
 	};
 }
 
@@ -104,7 +112,7 @@ function createNoOpUIContext(): HookUIContext {
  */
 async function loadToolWithBun(
 	resolvedPath: string,
-	sharedApi: ToolAPI,
+	sharedApi: CustomToolAPI,
 ): Promise<{ tools: LoadedCustomTool[] | null; error: string | null }> {
 	try {
 		// Try to import directly - will work for tools without @mariozechner/* imports
@@ -149,7 +157,7 @@ async function loadToolWithBun(
 async function loadTool(
 	toolPath: string,
 	cwd: string,
-	sharedApi: ToolAPI,
+	sharedApi: CustomToolAPI,
 ): Promise<{ tools: LoadedCustomTool[] | null; error: string | null }> {
 	const resolvedPath = resolveToolPath(toolPath, cwd);
 
@@ -209,7 +217,7 @@ export async function loadCustomTools(
 	const seenNames = new Set<string>(builtInToolNames);
 
 	// Shared API object - all tools get the same instance
-	const sharedApi: ToolAPI = {
+	const sharedApi: CustomToolAPI = {
 		cwd,
 		exec: (command: string, args: string[], options?: ExecOptions) =>
 			execCommand(command, args, options?.cwd ?? cwd, options),

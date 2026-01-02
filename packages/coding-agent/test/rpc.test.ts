@@ -237,7 +237,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(stats.assistantMessages).toBeGreaterThanOrEqual(1);
 	}, 90000);
 
-	test("should reset session", async () => {
+	test("should create new session", async () => {
 		await client.start();
 
 		// Send a prompt
@@ -247,8 +247,8 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		let state = await client.getState();
 		expect(state.messageCount).toBeGreaterThan(0);
 
-		// Reset
-		await client.reset();
+		// New session
+		await client.newSession();
 
 		// Verify messages cleared
 		state = await client.getState();

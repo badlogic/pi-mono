@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-coding-agent",
-	"version": "0.30.2",
+	"version": "0.31.1",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -32,22 +32,23 @@
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && npm run copy-assets",
 		"build:binary": "npm run build && bun build --compile ./dist/cli.js --outfile dist/pi && npm run copy-binary-assets",
-		"copy-assets": "mkdir -p dist/modes/interactive/theme && cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/",
-		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/ && mkdir -p dist/theme && cp src/modes/interactive/theme/*.json dist/theme/ && cp -r docs dist/ && cp -r examples dist/",
+		"copy-assets": "mkdir -p dist/modes/interactive/theme && cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && mkdir -p dist/core/export-html/vendor && cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
+		"copy-binary-assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/ && mkdir -p dist/theme && cp src/modes/interactive/theme/*.json dist/theme/ && mkdir -p dist/export-html/vendor && cp src/core/export-html/template.html dist/export-html/ && cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && cp -r docs dist/ && cp -r examples dist/",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "^0.30.2",
-		"@mariozechner/pi-ai": "^0.30.2",
-		"@mariozechner/pi-tui": "^0.30.2",
+		"@mariozechner/pi-agent-core": "^0.31.1",
+		"@mariozechner/pi-ai": "^0.31.1",
+		"@mariozechner/pi-tui": "^0.31.1",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
 		"file-type": "^21.1.1",
 		"glob": "^11.0.3",
 		"jiti": "^2.6.1",
-		"marked": "^15.0.12"
+		"marked": "^15.0.12",
+		"sharp": "^0.34.2"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",

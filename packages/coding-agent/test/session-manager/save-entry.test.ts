@@ -42,7 +42,7 @@ describe("SessionManager.saveCustomEntry", () => {
 		expect(customEntry.parentId).toBe(msgId);
 
 		// Tree structure should be correct
-		const path = session.getPath();
+		const path = session.getBranch();
 		expect(path).toHaveLength(3);
 		expect(path[0].id).toBe(msgId);
 		expect(path[1].id).toBe(customId);
