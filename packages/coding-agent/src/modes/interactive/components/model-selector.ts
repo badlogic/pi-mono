@@ -152,6 +152,7 @@ export class ModelSelectorComponent extends Container {
 
 		this.allModels = models;
 		this.filteredModels = models;
+		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, models.length - 1));
 	}
 
 	private filterModels(query: string): void {
@@ -216,11 +217,13 @@ export class ModelSelectorComponent extends Container {
 	handleInput(keyData: string): void {
 		// Up arrow - wrap to bottom when at top
 		if (isArrowUp(keyData)) {
+			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 		}
 		// Down arrow - wrap to top when at bottom
 		else if (isArrowDown(keyData)) {
+			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 		}
