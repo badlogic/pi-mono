@@ -22,7 +22,10 @@ import {
 	isEnter,
 	isEscape,
 	isHome,
+	isShiftBackspace,
+	isShiftDelete,
 	isShiftEnter,
+	isShiftSpace,
 	isTab,
 } from "../keys.js";
 import type { Component } from "../tui.js";
@@ -457,8 +460,8 @@ export class Editor implements Component {
 				this.onSubmit(result);
 			}
 		}
-		// Backspace
-		else if (isBackspace(data)) {
+		// Backspace (including Shift+Backspace)
+		else if (isBackspace(data) || isShiftBackspace(data)) {
 			this.handleBackspace();
 		}
 		// Line navigation shortcuts (Home/End keys)
@@ -467,8 +470,8 @@ export class Editor implements Component {
 		} else if (isEnd(data)) {
 			this.moveToLineEnd();
 		}
-		// Forward delete (Fn+Backspace or Delete key)
-		else if (isDelete(data)) {
+		// Forward delete (Fn+Backspace or Delete key, including Shift+Delete)
+		else if (isDelete(data) || isShiftDelete(data)) {
 			this.handleForwardDelete();
 		}
 		// Word navigation (Option/Alt + Arrow or Ctrl + Arrow)
@@ -502,6 +505,10 @@ export class Editor implements Component {
 		} else if (isArrowLeft(data)) {
 			// Left
 			this.moveCursor(0, -1);
+		}
+		// Shift+Space - insert regular space (Kitty protocol sends escape sequence)
+		else if (isShiftSpace(data)) {
+			this.insertCharacter(" ");
 		}
 		// Regular characters (printable characters and unicode, but not control characters)
 		else if (data.charCodeAt(0) >= 32) {

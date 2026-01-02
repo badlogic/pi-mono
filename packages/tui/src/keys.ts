@@ -42,6 +42,7 @@ const CODEPOINTS = {
 	escape: 27,
 	tab: 9,
 	enter: 13,
+	space: 32,
 	backspace: 127,
 } as const;
 
@@ -465,6 +466,15 @@ export function isBackspace(data: string): boolean {
 }
 
 /**
+ * Check if input matches Shift+Backspace (Kitty protocol).
+ * Returns true so caller can treat it as regular backspace.
+ * Ignores lock key bits.
+ */
+export function isShiftBackspace(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.shift);
+}
+
+/**
  * Check if input matches Shift+Enter.
  * Ignores lock key bits.
  */
@@ -478,6 +488,15 @@ export function isShiftEnter(data: string): boolean {
  */
 export function isAltEnter(data: string): boolean {
 	return data === Keys.ALT_ENTER || data === "\x1b\r" || matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.alt);
+}
+
+/**
+ * Check if input matches Shift+Space (Kitty protocol).
+ * Returns true so caller can insert a regular space.
+ * Ignores lock key bits.
+ */
+export function isShiftSpace(data: string): boolean {
+	return matchesKittySequence(data, CODEPOINTS.space, MODIFIERS.shift);
 }
 
 /**
@@ -544,4 +563,13 @@ export function isEnd(data: string): boolean {
  */
 export function isDelete(data: string): boolean {
 	return data === "\x1b[3~" || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.delete, 0);
+}
+
+/**
+ * Check if input matches Shift+Delete (Kitty protocol).
+ * Returns true so caller can treat it as regular delete.
+ * Ignores lock key bits.
+ */
+export function isShiftDelete(data: string): boolean {
+	return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.delete, MODIFIERS.shift);
 }
