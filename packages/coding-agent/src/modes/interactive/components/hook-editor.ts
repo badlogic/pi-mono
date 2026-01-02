@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Container, Editor, isCtrlG, isEscape, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, Editor, isCtrlC, isCtrlG, isEscape, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -67,8 +67,8 @@ export class HookEditorComponent extends Container {
 			return;
 		}
 
-		// Escape to cancel
-		if (isEscape(keyData)) {
+		// Escape or Ctrl+C to cancel
+		if (isEscape(keyData) || isCtrlC(keyData)) {
 			this.onCancelCallback();
 			return;
 		}
