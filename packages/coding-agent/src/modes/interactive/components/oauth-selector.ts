@@ -1,5 +1,14 @@
 import { getOAuthProviders, type OAuthProviderInfo } from "@mariozechner/pi-ai";
-import { Container, isArrowDown, isArrowUp, isEnter, isEscape, Spacer, TruncatedText } from "@mariozechner/pi-tui";
+import {
+	Container,
+	isArrowDown,
+	isArrowUp,
+	isCtrlC,
+	isEnter,
+	isEscape,
+	Spacer,
+	TruncatedText,
+} from "@mariozechner/pi-tui";
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -112,8 +121,8 @@ export class OAuthSelectorComponent extends Container {
 				this.onSelectCallback(selectedProvider.id);
 			}
 		}
-		// Escape
-		else if (isEscape(keyData)) {
+		// Escape or Ctrl+C
+		else if (isEscape(keyData) || isCtrlC(keyData)) {
 			this.onCancelCallback();
 		}
 	}

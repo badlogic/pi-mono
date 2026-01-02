@@ -4,6 +4,7 @@ import {
 	Input,
 	isArrowDown,
 	isArrowUp,
+	isCtrlC,
 	isEnter,
 	isEscape,
 	Spacer,
@@ -234,8 +235,8 @@ export class ModelSelectorComponent extends Container {
 				this.handleSelect(selectedModel.model);
 			}
 		}
-		// Escape
-		else if (isEscape(keyData)) {
+		// Escape or Ctrl+C
+		else if (isEscape(keyData) || isCtrlC(keyData)) {
 			this.onCancelCallback();
 		}
 		// Pass everything else to search input
