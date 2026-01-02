@@ -5,7 +5,7 @@
 ### Added
 
 - Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
-- **OpenAI OAuth login**: `/login` now supports ChatGPT Plus/Pro/Team/Enterprise accounts and enables the `gpt-5.2-codex` model via the ChatGPT backend. ([#](https://github.com/badlogic/pi-mono/pull/) by [@melihmucuk](https://github.com/melihmucuk))
+- **OpenAI OAuth login**: `/login` now supports ChatGPT Plus/Pro/Team/Enterprise accounts and enables the `gpt-5.2-codex` model via the ChatGPT backend. ([#410](https://github.com/badlogic/pi-mono/pull/410) by [@melihmucuk](https://github.com/melihmucuk))
 
 ### Fixed
 
@@ -13,7 +13,7 @@
 
 ### Changed
 
-- **Codex compatibility for ChatGPT OAuth**: OpenAI OAuth sessions now use the Codex system prompt and ChatGPT backend headers to satisfy backend validation, including compaction prompts. ([#](https://github.com/badlogic/pi-mono/pull/) by [@melihmucuk](https://github.com/melihmucuk))
+- **Codex compatibility for ChatGPT OAuth**: OpenAI OAuth sessions now use the Codex system prompt and ChatGPT backend headers to satisfy backend validation, including compaction prompts. ([#410](https://github.com/badlogic/pi-mono/pull/410) by [@melihmucuk](https://github.com/melihmucuk))
 
 ## [0.31.1] - 2026-01-02
 
