@@ -433,4 +433,18 @@ describe("edit tool CRLF handling", () => {
 			}),
 		).rejects.toThrow(/Found 2 occurrences/);
 	});
+
+	it("should preserve UTF-8 BOM after edit", async () => {
+		const testFile = join(testDir, "bom-test.txt");
+		writeFileSync(testFile, "\uFEFFfirst\r\nsecond\r\nthird\r\n");
+
+		await editTool.execute("test-bom", {
+			path: testFile,
+			oldText: "second\n",
+			newText: "REPLACED\n",
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("\uFEFFfirst\r\nREPLACED\r\nthird\r\n");
+	});
 });

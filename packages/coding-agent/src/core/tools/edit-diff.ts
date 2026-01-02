@@ -24,6 +24,11 @@ export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string 
 	return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
 }
 
+/** Strip UTF-8 BOM if present, return both the BOM (if any) and the text without it */
+export function stripBom(content: string): { bom: string; text: string } {
+	return content.startsWith("\uFEFF") ? { bom: "\uFEFF", text: content.slice(1) } : { bom: "", text: content };
+}
+
 /**
  * Generate a unified diff string with line numbers and context.
  * Returns both the diff string and the first changed line number (in the new file).
@@ -160,7 +165,10 @@ export async function computeEditDiff(
 		}
 
 		// Read the file
-		const content = await readFile(absolutePath, "utf-8");
+		const rawContent = await readFile(absolutePath, "utf-8");
+
+		// Strip BOM before matching (LLM won't include invisible BOM in oldText)
+		const { text: content } = stripBom(rawContent);
 
 		const normalizedContent = normalizeToLF(content);
 		const normalizedOldText = normalizeToLF(oldText);

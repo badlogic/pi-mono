@@ -2,7 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access, readFile, writeFile } from "fs/promises";
-import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings } from "./edit-diff.js";
+import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
 import { resolveToCwd } from "./path-utils.js";
 
 const editSchema = Type.Object({
@@ -74,12 +74,15 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						// Read the file
-						const content = await readFile(absolutePath, "utf-8");
+						const rawContent = await readFile(absolutePath, "utf-8");
 
 						// Check if aborted after reading
 						if (aborted) {
 							return;
 						}
+
+						// Strip BOM before matching (LLM won't include invisible BOM in oldText)
+						const { bom, text: content } = stripBom(rawContent);
 
 						const originalEnding = detectLineEnding(content);
 						const normalizedContent = normalizeToLF(content);
@@ -140,7 +143,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 							return;
 						}
 
-						const finalContent = restoreLineEndings(normalizedNewContent, originalEnding);
+						const finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding);
 						await writeFile(absolutePath, finalContent, "utf-8");
 
 						// Check if aborted after writing
