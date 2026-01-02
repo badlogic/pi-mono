@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Shift+Space, Shift+Backspace, and Shift+Delete now work correctly in Kitty-protocol terminals (Kitty, WezTerm, etc.) instead of being silently ignored ([#411](https://github.com/badlogic/pi-mono/pull/411) by [@nathyong](https://github.com/nathyong))
+
 ## [0.31.1] - 2026-01-02
 
 ### Fixed
