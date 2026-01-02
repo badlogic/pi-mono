@@ -126,15 +126,9 @@ export class ModelRegistry {
 	}
 
 	private loadModels(): void {
-		// Load built-in models
-		const builtInModels: Model<Api>[] = [];
-		for (const provider of getProviders()) {
-			const providerModels = getModels(provider as KnownProvider);
-			builtInModels.push(...(providerModels as Model<Api>[]));
-		}
-
-		// Load custom models from models.json (if path provided)
+		// Load custom models from models.json first (to know which providers to skip)
 		let customModels: Model<Api>[] = [];
+		let customProviders = new Set<string>();
 		if (this.modelsJsonPath) {
 			const result = this.loadCustomModels(this.modelsJsonPath);
 			if (result.error) {
@@ -142,7 +136,16 @@ export class ModelRegistry {
 				// Keep built-in models even if custom models failed to load
 			} else {
 				customModels = result.models;
+				customProviders = result.providers;
 			}
+		}
+
+		// Load built-in models, skipping providers that are overridden in models.json
+		const builtInModels: Model<Api>[] = [];
+		for (const provider of getProviders()) {
+			if (customProviders.has(provider)) continue;
+			const providerModels = getModels(provider as KnownProvider);
+			builtInModels.push(...(providerModels as Model<Api>[]));
 		}
 
 		const combined = [...builtInModels, ...customModels];
@@ -160,9 +163,13 @@ export class ModelRegistry {
 		}
 	}
 
-	private loadCustomModels(modelsJsonPath: string): { models: Model<Api>[]; error: string | undefined } {
+	private loadCustomModels(modelsJsonPath: string): {
+		models: Model<Api>[];
+		providers: Set<string>;
+		error: string | undefined;
+	} {
 		if (!existsSync(modelsJsonPath)) {
-			return { models: [], error: undefined };
+			return { models: [], providers: new Set(), error: undefined };
 		}
 
 		try {
@@ -178,6 +185,7 @@ export class ModelRegistry {
 					"Unknown schema error";
 				return {
 					models: [],
+					providers: new Set(),
 					error: `Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`,
 				};
 			}
@@ -185,17 +193,20 @@ export class ModelRegistry {
 			// Additional validation
 			this.validateConfig(config);
 
-			// Parse models
-			return { models: this.parseModels(config), error: undefined };
+			// Parse models and collect provider names
+			const providers = new Set(Object.keys(config.providers));
+			return { models: this.parseModels(config), providers, error: undefined };
 		} catch (error) {
 			if (error instanceof SyntaxError) {
 				return {
 					models: [],
+					providers: new Set(),
 					error: `Failed to parse models.json: ${error.message}\n\nFile: ${modelsJsonPath}`,
 				};
 			}
 			return {
 				models: [],
+				providers: new Set(),
 				error: `Failed to load models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${modelsJsonPath}`,
 			};
 		}
