@@ -1,6 +1,6 @@
 # Examples
 
-Example code for pi-coding-agent.
+Example code for pi-coding-agent SDK, hooks, and custom tools.
 
 ## Directories
 
@@ -12,14 +12,6 @@ Example hooks for intercepting tool calls, adding safety gates, and integrating 
 
 ### [custom-tools/](custom-tools/)
 Example custom tools that extend the agent's capabilities.
-
-## Running Examples
-
-```bash
-cd packages/coding-agent
-npx tsx examples/sdk/01-minimal.ts
-npx tsx examples/hooks/permission-gate.ts
-```
 
 ## Documentation
 

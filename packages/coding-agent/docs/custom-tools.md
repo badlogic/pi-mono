@@ -257,6 +257,23 @@ async execute(toolCallId, params, onUpdate, ctx, signal) {
 }
 ```
 
+### Multi-line Editor
+
+For longer text editing, use `pi.ui.editor()` which supports Ctrl+G for external editor:
+
+```typescript
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  const text = await pi.ui.editor("Edit your response:", "prefilled text");
+  // Returns edited text or undefined if cancelled (Escape)
+  // Ctrl+Enter to submit, Ctrl+G to open $VISUAL or $EDITOR
+  
+  if (!text) {
+    return { content: [{ type: "text", text: "Cancelled" }] };
+  }
+  // ...
+}
+```
+
 ## Session Lifecycle
 
 Tools can implement `onSession` to react to session changes:

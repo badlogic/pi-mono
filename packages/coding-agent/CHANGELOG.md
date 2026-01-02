@@ -36,6 +36,7 @@ The hooks API has been restructured with more granular events and better session
 - New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
 - New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
 - New `ctx.isIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state (available in all events)
+- New `ctx.ui.editor(title, prefill?)` for multi-line text editing with Ctrl+G external editor support
 - New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
 - New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
 - New `ctx.ui.theme` getter for styling text with theme colors
