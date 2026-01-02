@@ -1,4 +1,5 @@
 import type { AnthropicOptions } from "./providers/anthropic.js";
+import type { BedrockOptions } from "./providers/anthropic-bedrock.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
@@ -11,11 +12,13 @@ export type Api =
 	| "openai-completions"
 	| "openai-responses"
 	| "anthropic-messages"
+	| "anthropic-bedrock"
 	| "google-generative-ai"
 	| "google-gemini-cli";
 
 export interface ApiOptionsMap {
 	"anthropic-messages": AnthropicOptions;
+	"anthropic-bedrock": BedrockOptions;
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
 	"google-generative-ai": GoogleOptions;

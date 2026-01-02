@@ -1,5 +1,6 @@
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type BedrockOptions, streamAnthropicBedrock } from "./providers/anthropic-bedrock.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
 	type GoogleGeminiCliOptions,
@@ -58,8 +59,9 @@ export function stream<TApi extends Api>(
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
+	const requiresApiKey = model.api !== "anthropic-bedrock";
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
-	if (!apiKey) {
+	if (requiresApiKey && !apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 	const providerOptions = { ...options, apiKey };
@@ -68,6 +70,9 @@ export function stream<TApi extends Api>(
 	switch (api) {
 		case "anthropic-messages":
 			return streamAnthropic(model as Model<"anthropic-messages">, context, providerOptions);
+
+		case "anthropic-bedrock":
+			return streamAnthropicBedrock(model as Model<"anthropic-bedrock">, context, providerOptions as BedrockOptions);
 
 		case "openai-completions":
 			return streamOpenAICompletions(model as Model<"openai-completions">, context, providerOptions as any);
@@ -107,8 +112,9 @@ export function streamSimple<TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
+	const requiresApiKey = model.api !== "anthropic-bedrock";
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
-	if (!apiKey) {
+	if (requiresApiKey && !apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
@@ -141,6 +147,25 @@ function mapOptionsForApi<TApi extends Api>(
 	const clampReasoning = (effort: ReasoningEffort | undefined) => (effort === "xhigh" ? "high" : effort);
 
 	switch (model.api) {
+		case "anthropic-bedrock": {
+			if (!options?.reasoning) {
+				return { ...base, thinkingEnabled: false } satisfies BedrockOptions;
+			}
+
+			const anthropicBudgets = {
+				minimal: 1024,
+				low: 2048,
+				medium: 8192,
+				high: 16384,
+			};
+
+			return {
+				...base,
+				thinkingEnabled: true,
+				thinkingBudgetTokens: anthropicBudgets[clampReasoning(options.reasoning)!],
+			} satisfies BedrockOptions;
+		}
+
 		case "anthropic-messages": {
 			// Explicitly disable thinking when reasoning is not specified
 			if (!options?.reasoning) {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Anthropic Bedrock provider**: Added `anthropic-bedrock` API support for Claude models hosted on AWS Bedrock.
+
 ### Fixed
 
 - **Gemini CLI rate limit handling**: Added automatic retry with server-provided delay for 429 errors. Parses delay from error messages like "Your quota will reset after 39s" and waits accordingly. Falls back to exponential backoff for other transient errors. ([#370](https://github.com/badlogic/pi-mono/issues/370))

@@ -35,6 +35,7 @@ const ModelDefinitionSchema = Type.Object({
 			Type.Literal("openai-completions"),
 			Type.Literal("openai-responses"),
 			Type.Literal("anthropic-messages"),
+			Type.Literal("anthropic-bedrock"),
 			Type.Literal("google-generative-ai"),
 		]),
 	),
@@ -60,6 +61,7 @@ const ProviderConfigSchema = Type.Object({
 			Type.Literal("openai-completions"),
 			Type.Literal("openai-responses"),
 			Type.Literal("anthropic-messages"),
+			Type.Literal("anthropic-bedrock"),
 			Type.Literal("google-generative-ai"),
 		]),
 	),
@@ -283,6 +285,10 @@ export class ModelRegistry {
 	async getAvailable(): Promise<Model<Api>[]> {
 		const available: Model<Api>[] = [];
 		for (const model of this.models) {
+			if (model.api === "anthropic-bedrock") {
+				available.push(model);
+				continue;
+			}
 			const apiKey = await this.authStorage.getApiKey(model.provider);
 			if (apiKey) {
 				available.push(model);
@@ -302,6 +308,9 @@ export class ModelRegistry {
 	 * Get API key for a model.
 	 */
 	async getApiKey(model: Model<Api>): Promise<string | undefined> {
+		if (model.api === "anthropic-bedrock") {
+			return "bedrock";
+		}
 		return this.authStorage.getApiKey(model.provider);
 	}
 

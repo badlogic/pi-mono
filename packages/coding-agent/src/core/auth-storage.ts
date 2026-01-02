@@ -13,8 +13,10 @@ import {
 	type OAuthCredentials,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
+import { execFileSync } from "child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { homedir } from "os";
+import { dirname, join } from "path";
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -36,6 +38,7 @@ export class AuthStorage {
 	private data: AuthStorageData = {};
 	private runtimeOverrides: Map<string, string> = new Map();
 	private fallbackResolver?: (provider: string) => string | undefined;
+	private claudeCliChecked = false;
 
 	constructor(private authPath: string) {
 		this.reload();
@@ -198,7 +201,16 @@ export class AuthStorage {
 			return runtimeKey;
 		}
 
-		const cred = this.data[provider];
+		let cred = this.data[provider];
+		if (!cred && provider === "anthropic" && !this.claudeCliChecked) {
+			this.claudeCliChecked = true;
+			const imported = loadClaudeCliCredentials();
+			if (imported) {
+				this.data[provider] = { type: "oauth", ...imported };
+				this.save();
+				cred = this.data[provider];
+			}
+		}
 
 		if (cred?.type === "api_key") {
 			return cred.key;
@@ -231,5 +243,142 @@ export class AuthStorage {
 
 		// Fall back to custom resolver (e.g., models.json custom providers)
 		return this.fallbackResolver?.(provider) ?? undefined;
+	}
+}
+
+function loadClaudeCliCredentials(): OAuthCredentials | undefined {
+	const fromFiles = loadClaudeCliCredentialsFromFiles();
+	if (fromFiles) return fromFiles;
+	return loadClaudeCliCredentialsFromKeychain();
+}
+
+function loadClaudeCliCredentialsFromFiles(): OAuthCredentials | undefined {
+	const home = homedir();
+	const paths = [
+		join(home, ".claude", ".credentials.json"),
+		join(home, ".claude", "credentials.json"),
+		join(home, ".config", "claude", "credentials.json"),
+	];
+
+	for (const path of paths) {
+		const data = readJsonFile(path);
+		if (!data) continue;
+		const creds = extractClaudeCliCredentials(data);
+		if (creds) return creds;
+	}
+
+	return undefined;
+}
+
+function loadClaudeCliCredentialsFromKeychain(): OAuthCredentials | undefined {
+	if (process.platform !== "darwin") return undefined;
+
+	const services = ["Claude Code-credentials", "Claude Code"];
+	for (const service of services) {
+		try {
+			const output = execFileSync("security", ["find-generic-password", "-s", service, "-w"], {
+				encoding: "utf-8",
+			}).trim();
+			if (!output) continue;
+			const parsed = JSON.parse(output);
+			const creds = extractClaudeCliCredentials(parsed);
+			if (creds) return creds;
+		} catch {}
+	}
+
+	return undefined;
+}
+
+function extractClaudeCliCredentials(data: unknown): OAuthCredentials | undefined {
+	if (!isRecord(data)) return undefined;
+
+	const candidates: Record<string, unknown>[] = [];
+	const nestedClaude = data.claudeAiOauth;
+	const nestedClaudeSnake = data.claude_ai_oauth;
+
+	if (isRecord(nestedClaude)) candidates.push(nestedClaude);
+	if (isRecord(nestedClaudeSnake)) candidates.push(nestedClaudeSnake);
+	if (isRecord(data.oauth)) candidates.push(data.oauth);
+	candidates.push(data);
+
+	for (const candidate of candidates) {
+		const creds = toOAuthCredentials(candidate);
+		if (creds) return creds;
+	}
+
+	return undefined;
+}
+
+function toOAuthCredentials(candidate: Record<string, unknown>): OAuthCredentials | undefined {
+	const access =
+		getString(candidate.accessToken) ??
+		getString(candidate.access_token) ??
+		getString(candidate.access) ??
+		getString(candidate.token);
+	const refresh =
+		getString(candidate.refreshToken) ?? getString(candidate.refresh_token) ?? getString(candidate.refresh);
+	const expires = resolveExpires(candidate);
+
+	if (!access || !refresh || !expires) {
+		return undefined;
+	}
+
+	const email = getString(candidate.email);
+	return email ? { access, refresh, expires, email } : { access, refresh, expires };
+}
+
+function resolveExpires(candidate: Record<string, unknown>): number | undefined {
+	const absolute =
+		parseAbsoluteExpiry(candidate.expiresAt) ??
+		parseAbsoluteExpiry(candidate.expires_at) ??
+		parseAbsoluteExpiry(candidate.expires);
+	if (absolute) return absolute;
+
+	const relative = parseNumber(candidate.expiresIn) ?? parseNumber(candidate.expires_in);
+	if (relative !== undefined) {
+		return Date.now() + relative * 1000;
+	}
+
+	return undefined;
+}
+
+function parseAbsoluteExpiry(value: unknown): number | undefined {
+	if (typeof value === "number") return normalizeEpoch(value);
+	if (typeof value === "string") {
+		const numeric = Number(value);
+		if (!Number.isNaN(numeric)) return normalizeEpoch(numeric);
+		const parsed = Date.parse(value);
+		if (!Number.isNaN(parsed)) return parsed;
+	}
+	return undefined;
+}
+
+function normalizeEpoch(value: number): number {
+	return value < 1_000_000_000_000 ? value * 1000 : value;
+}
+
+function parseNumber(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string") {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	}
+	return undefined;
+}
+
+function getString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function readJsonFile(path: string): unknown | undefined {
+	if (!existsSync(path)) return undefined;
+	try {
+		return JSON.parse(readFileSync(path, "utf-8"));
+	} catch {
+		return undefined;
 	}
 }

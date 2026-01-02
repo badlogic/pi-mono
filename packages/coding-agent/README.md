@@ -165,6 +165,8 @@ pi
 
 Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
 
+If you already use Claude Code (Anthropic's CLI), pi will attempt to import its OAuth credentials automatically.
+
 ### Quick Start
 
 ```bash
@@ -434,7 +436,7 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 }
 ```
 
-**Supported APIs:** `openai-completions`, `openai-responses`, `anthropic-messages`, `google-generative-ai`
+**Supported APIs:** `openai-completions`, `openai-responses`, `anthropic-messages`, `anthropic-bedrock`, `google-generative-ai`
 
 **API key resolution:** The `apiKey` field is checked as environment variable name first, then used as literal value.
 

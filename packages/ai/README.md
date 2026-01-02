@@ -8,6 +8,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 
 - **OpenAI**
 - **Anthropic**
+- **Anthropic (Bedrock)**
 - **Google**
 - **Mistral**
 - **Groq**

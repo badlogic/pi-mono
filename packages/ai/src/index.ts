@@ -1,5 +1,6 @@
 export * from "./models.js";
 export * from "./providers/anthropic.js";
+export * from "./providers/anthropic-bedrock.js";
 export * from "./providers/google.js";
 export * from "./providers/google-gemini-cli.js";
 export * from "./providers/openai-completions.js";

@@ -5,6 +5,8 @@
 ### Added
 
 - Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
+- **Claude CLI auth reuse**: Auth storage now imports existing Claude CLI OAuth credentials when available.
+- **Bedrock model support in models.json**: `anthropic-bedrock` is now accepted as an API value and Bedrock models no longer require API keys to appear in the model selector.
 
 ### Fixed
 
