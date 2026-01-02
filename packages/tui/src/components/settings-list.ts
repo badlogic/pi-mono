@@ -1,6 +1,6 @@
 import { isArrowDown, isArrowUp, isCtrlC, isEnter, isEscape } from "../keys.js";
 import type { Component } from "../tui.js";
-import { truncateToWidth, visibleWidth } from "../utils.js";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
 export interface SettingItem {
 	/** Unique identifier for this setting */
@@ -123,7 +123,10 @@ export class SettingsList implements Component {
 		const selectedItem = this.items[this.selectedIndex];
 		if (selectedItem?.description) {
 			lines.push("");
-			lines.push(this.theme.description(`  ${truncateToWidth(selectedItem.description, width - 4, "")}`));
+			const wrappedDesc = wrapTextWithAnsi(selectedItem.description, width - 4);
+			for (const line of wrappedDesc) {
+				lines.push(this.theme.description(`  ${line}`));
+			}
 		}
 
 		// Add hint
