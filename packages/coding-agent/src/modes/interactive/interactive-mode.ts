@@ -404,10 +404,10 @@ export class InteractiveMode {
 
 		hookRunner.initialize({
 			getModel: () => this.session.model,
-			sendMessageHandler: (message, triggerTurn) => {
+			sendMessageHandler: (message, options) => {
 				const wasStreaming = this.session.isStreaming;
 				this.session
-					.sendHookMessage(message, { triggerTurn })
+					.sendHookMessage(message, options)
 					.then(() => {
 						// For non-streaming cases with display=true, update UI
 						// (streaming cases update via message_end event)

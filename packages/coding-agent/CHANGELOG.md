@@ -15,7 +15,7 @@
   - `queuedMessageCount` → `pendingMessageCount`
   - `getQueuedMessages()` → `getSteeringMessages()` and `getFollowUpMessages()`
   - `clearQueue()` now returns `{ steering: string[], followUp: string[] }`
-- **sendHookMessage() signature changed**: Second parameter changed from `triggerTurn?: boolean` to `options?: { triggerTurn?, deliverAs? }`. Use `deliverAs: "followUp"` for follow-up delivery.
+- **Hook API signature changed**: `pi.sendMessage()` second parameter changed from `triggerTurn?: boolean` to `options?: { triggerTurn?, deliverAs? }`. Use `deliverAs: "followUp"` for follow-up delivery. Affects both hooks and internal `sendHookMessage()` method.
 - **RPC API changes**:
   - `queue_message` command → `steer` and `follow_up` commands
   - `set_queue_mode` command → `set_steering_mode` and `set_follow_up_mode` commands

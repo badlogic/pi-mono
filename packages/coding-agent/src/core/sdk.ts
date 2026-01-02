@@ -344,7 +344,10 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 		const messageRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
-		let sendMessageHandler: (message: any, triggerTurn?: boolean) => void = () => {};
+		let sendMessageHandler: (
+			message: any,
+			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
 		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
@@ -358,8 +361,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 				list.push(handler);
 				handlers.set(event, list);
 			},
-			sendMessage: (message: any, triggerTurn?: boolean) => {
-				sendMessageHandler(message, triggerTurn);
+			sendMessage: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => {
+				sendMessageHandler(message, options);
 			},
 			appendEntry: (customType: string, data?: any) => {
 				appendEntryHandler(customType, data);
@@ -383,7 +386,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			handlers,
 			messageRenderers,
 			commands,
-			setSendMessageHandler: (handler: (message: any, triggerTurn?: boolean) => void) => {
+			setSendMessageHandler: (
+				handler: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => void,
+			) => {
 				sendMessageHandler = handler;
 			},
 			setAppendEntryHandler: (handler: (customType: string, data?: any) => void) => {

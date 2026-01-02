@@ -181,8 +181,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	if (hookRunner) {
 		hookRunner.initialize({
 			getModel: () => session.agent.state.model,
-			sendMessageHandler: (message, triggerTurn) => {
-				session.sendHookMessage(message, { triggerTurn }).catch((e) => {
+			sendMessageHandler: (message, options) => {
+				session.sendHookMessage(message, options).catch((e) => {
 					output(error(undefined, "hook_send", e.message));
 				});
 			},

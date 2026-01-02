@@ -692,12 +692,15 @@ export interface HookAPI {
 	 * @param message.content - Message content (string or TextContent/ImageContent array)
 	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
 	 * @param message.details - Optional hook-specific metadata (not sent to LLM)
-	 * @param triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
-	 *                      If agent is streaming, message is queued and triggerTurn is ignored.
+	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
+	 *                             If agent is streaming, message is queued and triggerTurn is ignored.
+	 * @param options.deliverAs - How to deliver when agent is streaming. Default: "steer".
+	 *                           - "steer": Interrupt mid-run, delivered after current tool execution.
+	 *                           - "followUp": Wait until agent finishes all work before delivery.
 	 */
 	sendMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		triggerTurn?: boolean,
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 	): void;
 
 	/**
