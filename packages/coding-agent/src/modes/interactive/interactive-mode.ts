@@ -303,6 +303,10 @@ export class InteractiveMode {
 		this.ui.start();
 		this.isInitialized = true;
 
+		// Set terminal title
+		const cwdBasename = path.basename(process.cwd());
+		this.ui.terminal.setTitle(`pi - ${cwdBasename}`);
+
 		// Initialize hooks with TUI-based UI context
 		await this.initHooksAndCustomTools();
 
