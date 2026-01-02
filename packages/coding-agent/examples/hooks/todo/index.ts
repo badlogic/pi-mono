@@ -5,7 +5,7 @@
  * with a nice custom UI.
  */
 
-import type { HookAPI } from "@mariozechner/pi-coding-agent";
+import type { HookAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { isCtrlC, isEscape, truncateToWidth } from "@mariozechner/pi-tui";
 
 interface Todo {
@@ -23,12 +23,12 @@ interface TodoDetails {
 
 class TodoListComponent {
 	private todos: Todo[];
-	private theme: { fg: (color: string, text: string) => string };
+	private theme: Theme;
 	private onClose: () => void;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(todos: Todo[], theme: { fg: (color: string, text: string) => string }, onClose: () => void) {
+	constructor(todos: Todo[], theme: Theme, onClose: () => void) {
 		this.todos = todos;
 		this.theme = theme;
 		this.onClose = onClose;
@@ -127,8 +127,7 @@ export default function (pi: HookAPI) {
 			const todos = getTodos(ctx);
 
 			await ctx.ui.custom<void>((_tui, theme, done) => {
-				// Cast: Theme.fg uses ThemeColor union type, but we only use standard colors
-				return new TodoListComponent(todos, theme as { fg: (color: string, text: string) => string }, () => done());
+				return new TodoListComponent(todos, theme, () => done());
 			});
 		},
 	});
