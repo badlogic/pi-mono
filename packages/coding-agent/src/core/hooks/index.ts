@@ -12,5 +12,5 @@ export {
 } from "./loader.js";
 export { execCommand, HookRunner, type HookErrorListener } from "./runner.js";
 export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";
-export type * from "./types.js";
+export * from "./types.js";
 export type { ReadonlySessionManager } from "../session-manager.js";

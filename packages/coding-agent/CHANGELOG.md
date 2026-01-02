@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Model selector no longer allows negative index when pressing arrow keys before models finish loading ([#398](https://github.com/badlogic/pi-mono/pull/398) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Type guard functions (`isBashToolResult`, etc.) now exported at runtime, not just in type declarations ([#397](https://github.com/badlogic/pi-mono/issues/397))
+
 ## [0.31.0] - 2026-01-02
 
 This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
