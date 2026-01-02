@@ -74,6 +74,17 @@ const ModelsConfigSchema = Type.Object({
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
+/** Result of loading custom models from models.json */
+interface CustomModelsResult {
+	models: Model<Api>[];
+	providers: Set<string>;
+	error: string | undefined;
+}
+
+function emptyCustomModelsResult(error?: string): CustomModelsResult {
+	return { models: [], providers: new Set(), error };
+}
+
 /**
  * Resolve an API key config value to an actual key.
  * Checks environment variable first, then treats as literal.
@@ -127,27 +138,16 @@ export class ModelRegistry {
 
 	private loadModels(): void {
 		// Load custom models from models.json first (to know which providers to skip)
-		let customModels: Model<Api>[] = [];
-		let customProviders = new Set<string>();
-		if (this.modelsJsonPath) {
-			const result = this.loadCustomModels(this.modelsJsonPath);
-			if (result.error) {
-				this.loadError = result.error;
-				// Keep built-in models even if custom models failed to load
-			} else {
-				customModels = result.models;
-				customProviders = result.providers;
-			}
+		const { models: customModels, providers: customProviders, error } = this.modelsJsonPath
+			? this.loadCustomModels(this.modelsJsonPath)
+			: emptyCustomModelsResult();
+
+		if (error) {
+			this.loadError = error;
+			// Keep built-in models even if custom models failed to load
 		}
 
-		// Load built-in models, skipping providers that are overridden in models.json
-		const builtInModels: Model<Api>[] = [];
-		for (const provider of getProviders()) {
-			if (customProviders.has(provider)) continue;
-			const providerModels = getModels(provider as KnownProvider);
-			builtInModels.push(...(providerModels as Model<Api>[]));
-		}
-
+		const builtInModels = this.loadBuiltInModels(customProviders);
 		const combined = [...builtInModels, ...customModels];
 
 		// Update github-copilot base URL based on OAuth credentials
@@ -163,13 +163,16 @@ export class ModelRegistry {
 		}
 	}
 
-	private loadCustomModels(modelsJsonPath: string): {
-		models: Model<Api>[];
-		providers: Set<string>;
-		error: string | undefined;
-	} {
+	/** Load built-in models, skipping providers that are overridden in models.json */
+	private loadBuiltInModels(skipProviders: Set<string>): Model<Api>[] {
+		return getProviders()
+			.filter((provider) => !skipProviders.has(provider))
+			.flatMap((provider) => getModels(provider as KnownProvider) as Model<Api>[]);
+	}
+
+	private loadCustomModels(modelsJsonPath: string): CustomModelsResult {
 		if (!existsSync(modelsJsonPath)) {
-			return { models: [], providers: new Set(), error: undefined };
+			return emptyCustomModelsResult();
 		}
 
 		try {
@@ -183,11 +186,7 @@ export class ModelRegistry {
 				const errors =
 					validate.errors?.map((e: any) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
 					"Unknown schema error";
-				return {
-					models: [],
-					providers: new Set(),
-					error: `Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`,
-				};
+				return emptyCustomModelsResult(`Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`);
 			}
 
 			// Additional validation
@@ -198,17 +197,11 @@ export class ModelRegistry {
 			return { models: this.parseModels(config), providers, error: undefined };
 		} catch (error) {
 			if (error instanceof SyntaxError) {
-				return {
-					models: [],
-					providers: new Set(),
-					error: `Failed to parse models.json: ${error.message}\n\nFile: ${modelsJsonPath}`,
-				};
+				return emptyCustomModelsResult(`Failed to parse models.json: ${error.message}\n\nFile: ${modelsJsonPath}`);
 			}
-			return {
-				models: [],
-				providers: new Set(),
-				error: `Failed to load models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${modelsJsonPath}`,
-			};
+			return emptyCustomModelsResult(
+				`Failed to load models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${modelsJsonPath}`,
+			);
 		}
 	}
 
