@@ -11,7 +11,7 @@
  * - After each agent response, prompts to execute the plan or continue planning
  * - Shows "plan" indicator in footer when active
  * - Extracts todo list from plan and tracks progress during execution
- * - Uses smart matching to track progress (no ugly IDs shown to user)
+ * - Uses ID-based tracking: agent outputs [DONE:id] to mark steps complete
  *
  * Usage:
  * 1. Copy this file to ~/.pi/agent/hooks/ or your project's .pi/hooks/
@@ -130,64 +130,20 @@ function isSafeCommand(command: string): boolean {
 	return true;
 }
 
-// Todo item
+// Todo item with unique ID
 interface TodoItem {
+	id: string;
 	text: string;
 	completed: boolean;
-	// Keywords extracted for matching
-	keywords: string[];
+}
+
+// Generate a short unique ID
+function generateId(): string {
+	return Math.random().toString(36).substring(2, 8);
 }
 
 /**
- * Extract significant keywords from text for matching.
- */
-function extractKeywords(text: string): string[] {
-	// Remove common words and extract significant terms
-	const stopWords = new Set([
-		"the",
-		"a",
-		"an",
-		"to",
-		"for",
-		"of",
-		"in",
-		"on",
-		"at",
-		"by",
-		"with",
-		"using",
-		"and",
-		"or",
-		"use",
-		"run",
-		"execute",
-		"create",
-		"make",
-		"do",
-		"then",
-		"next",
-		"step",
-		"first",
-		"second",
-		"third",
-		"finally",
-		"it",
-		"its",
-		"this",
-		"that",
-		"from",
-		"into",
-	]);
-
-	return text
-		.toLowerCase()
-		.replace(/[^a-z0-9/._-]/g, " ")
-		.split(/\s+/)
-		.filter((w) => w.length > 2 && !stopWords.has(w));
-}
-
-/**
- * Extract todo items from assistant message.
+ * Extract todo items from assistant message and assign IDs.
  */
 function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
@@ -198,11 +154,7 @@ function extractTodoItems(message: string): TodoItem[] {
 		let text = match[2].trim();
 		text = text.replace(/\*{1,2}$/, "").trim();
 		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
-			items.push({
-				text,
-				completed: false,
-				keywords: extractKeywords(text),
-			});
+			items.push({ id: generateId(), text, completed: false });
 		}
 	}
 
@@ -213,11 +165,7 @@ function extractTodoItems(message: string): TodoItem[] {
 			let text = match[1].trim();
 			text = text.replace(/\*{1,2}$/, "").trim();
 			if (text.length > 10 && !text.startsWith("`")) {
-				items.push({
-					text,
-					completed: false,
-					keywords: extractKeywords(text),
-				});
+				items.push({ id: generateId(), text, completed: false });
 			}
 		}
 	}
@@ -226,54 +174,15 @@ function extractTodoItems(message: string): TodoItem[] {
 }
 
 /**
- * Calculate similarity between tool action and todo item.
- * Returns a score from 0 to 1.
+ * Find [DONE:id] tags in text and return the IDs.
  */
-function matchScore(todoKeywords: string[], actionText: string): number {
-	if (todoKeywords.length === 0) return 0;
-
-	const actionLower = actionText.toLowerCase();
-	let matches = 0;
-
-	for (const keyword of todoKeywords) {
-		if (actionLower.includes(keyword)) {
-			matches++;
-		}
+function findDoneTags(text: string): string[] {
+	const pattern = /\[DONE:([a-z0-9]+)\]/gi;
+	const ids: string[] = [];
+	for (const match of text.matchAll(pattern)) {
+		ids.push(match[1].toLowerCase());
 	}
-
-	return matches / todoKeywords.length;
-}
-
-/**
- * Find the best matching uncompleted todo for a tool action.
- * Uses keyword matching with a preference for sequential order.
- */
-function findBestMatch(todos: TodoItem[], toolName: string, input: Record<string, unknown>): number {
-	// Build action text from tool name and input
-	let actionText = toolName;
-	if (input.path) actionText += ` ${input.path}`;
-	if (input.command) actionText += ` ${input.command}`;
-	if (input.content) actionText += ` ${String(input.content).slice(0, 100)}`;
-
-	let bestIdx = -1;
-	let bestScore = 0.3; // Minimum threshold
-
-	for (let i = 0; i < todos.length; i++) {
-		if (todos[i].completed) continue;
-
-		const score = matchScore(todos[i].keywords, actionText);
-
-		// Bonus for being the first uncompleted item (sequential preference)
-		const isFirstUncompleted = !todos.slice(0, i).some((t) => !t.completed);
-		const adjustedScore = isFirstUncompleted ? score + 0.1 : score;
-
-		if (adjustedScore > bestScore) {
-			bestScore = adjustedScore;
-			bestIdx = i;
-		}
-	}
-
-	return bestIdx;
+	return ids;
 }
 
 export default function planModeHook(pi: HookAPI) {
@@ -299,7 +208,7 @@ export default function planModeHook(pi: HookAPI) {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Show widget during execution
+		// Show widget during execution (no IDs shown to user)
 		if (executionMode && todoItems.length > 0) {
 			const lines: string[] = [];
 			for (const item of todoItems) {
@@ -382,17 +291,27 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
-	// Track progress via tool results
-	pi.on("tool_result", async (event, ctx) => {
-		if (!executionMode || todoItems.length === 0) return;
-		if (event.isError) return;
-
-		// Find best matching todo item
-		const matchIdx = findBestMatch(todoItems, event.toolName, event.input);
-		if (matchIdx >= 0 && !todoItems[matchIdx].completed) {
-			todoItems[matchIdx].completed = true;
-			updateStatus(ctx);
-		}
+	// Filter out stale plan mode context messages from LLM context
+	// This ensures the agent only sees the CURRENT state (plan mode on/off)
+	(pi as any).on("context", async (event: { messages: Array<{ role: string; content: unknown }> }) => {
+		// Remove any previous plan-mode-context or plan-execution-context messages
+		// They'll be re-injected with current state via before_agent_start
+		const filtered = event.messages.filter((m) => {
+			if (m.role === "user" && Array.isArray(m.content)) {
+				// Check for our custom message types in user messages
+				const hasOldContext = (m.content as Array<{ type: string; text?: string }>).some(
+					(c) =>
+						c.type === "text" &&
+						c.text &&
+						(c.text.includes("[PLAN MODE ACTIVE]") ||
+							c.text.includes("[PLAN MODE DISABLED") ||
+							c.text.includes("[EXECUTING PLAN]")),
+				);
+				if (hasOldContext) return false;
+			}
+			return true;
+		});
+		return { messages: filtered };
 	});
 
 	// Inject plan mode context
@@ -424,14 +343,19 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		}
 
 		if (executionMode && todoItems.length > 0) {
-			const completed = todoItems.filter((t) => t.completed).length;
-			const remaining = todoItems.filter((t) => !t.completed).map((t) => t.text);
+			const remaining = todoItems.filter((t) => !t.completed);
+			const todoList = remaining.map((t) => `- [${t.id}] ${t.text}`).join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
-					content: `[EXECUTING PLAN - ${completed}/${todoItems.length} complete]
+					content: `[EXECUTING PLAN]
 Plan mode is OFF. You have FULL access to: read, write, edit, bash.
-${remaining.length > 0 ? `Remaining steps:\n${remaining.map((t, i) => `${i + 1}. ${t}`).join("\n")}` : "All steps complete!"}`,
+
+Remaining steps:
+${todoList}
+
+IMPORTANT: After completing each step, output [DONE:id] to mark it complete.
+Example: [DONE:${remaining[0]?.id || "abc123"}]`,
 					display: false,
 				},
 			};
@@ -440,8 +364,28 @@ ${remaining.length > 0 ? `Remaining steps:\n${remaining.map((t, i) => `${i + 1}.
 
 	// After agent finishes
 	pi.on("agent_end", async (event, ctx) => {
-		// Check if all complete
+		// Check for done tags in execution mode
 		if (executionMode && todoItems.length > 0) {
+			const messages = event.messages;
+			const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+			if (lastAssistant && Array.isArray(lastAssistant.content)) {
+				const textContent = lastAssistant.content
+					.filter((block): block is { type: "text"; text: string } => block.type === "text")
+					.map((block) => block.text)
+					.join("\n");
+
+				// Find and mark completed items
+				const doneIds = findDoneTags(textContent);
+				for (const id of doneIds) {
+					const item = todoItems.find((t) => t.id === id);
+					if (item && !item.completed) {
+						item.completed = true;
+					}
+				}
+				updateStatus(ctx);
+			}
+
+			// Check if all complete
 			const allComplete = todoItems.every((t) => t.completed);
 			if (allComplete) {
 				// Show final completed list in chat
@@ -485,7 +429,7 @@ ${remaining.length > 0 ? `Remaining steps:\n${remaining.map((t, i) => `${i + 1}.
 
 		const hasTodos = todoItems.length > 0;
 
-		// Show todo list in chat (no IDs, just numbered)
+		// Show todo list in chat (no IDs shown to user, just numbered)
 		if (hasTodos) {
 			const todoListText = todoItems.map((t, i) => `${i + 1}. ☐ ${t.text}`).join("\n");
 			pi.sendMessage(
@@ -510,13 +454,11 @@ ${remaining.length > 0 ? `Remaining steps:\n${remaining.map((t, i) => `${i + 1}.
 			pi.setActiveTools(NORMAL_MODE_TOOLS);
 			updateStatus(ctx);
 
+			// Simple execution message - context event filters old plan mode messages
+			// and before_agent_start injects fresh execution context with IDs
 			const execMessage = hasTodos
-				? `[PLAN MODE DISABLED - EXECUTE NOW]
-You now have FULL access to all tools: read, write, edit, bash.
-Execute the plan step by step. Start with: ${todoItems[0].text}`
-				: `[PLAN MODE DISABLED - EXECUTE NOW]
-You now have FULL access to all tools: read, write, edit, bash.
-Execute the plan you just created. Proceed step by step.`;
+				? `Execute the plan. Start with: ${todoItems[0].text}`
+				: "Execute the plan you just created.";
 
 			pi.sendMessage(
 				{
