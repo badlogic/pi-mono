@@ -127,7 +127,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// Second prompt should reject
 		await expect(session.prompt("Second message")).rejects.toThrow(
-			"Agent is already processing. Use steer() or followUp() to queue messages during streaming.",
+			"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
 		);
 
 		// Cleanup
