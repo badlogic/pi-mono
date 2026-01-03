@@ -12,7 +12,14 @@ import { getAgentDir } from "../../config.js";
 import type { HookMessage } from "../messages.js";
 import type { SessionManager } from "../session-manager.js";
 import { execCommand } from "./runner.js";
-import type { ExecOptions, HookAPI, HookContext, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
+import type {
+	ExecOptions,
+	HookAPI,
+	HookContext,
+	HookFactory,
+	HookMessageRenderer,
+	RegisteredCommand,
+} from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
