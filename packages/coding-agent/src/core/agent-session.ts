@@ -224,6 +224,15 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		// Emit text_delta events to hooks for streaming text monitoring
+		if (
+			event.type === "message_update" &&
+			event.assistantMessageEvent.type === "text_delta" &&
+			this._hookRunner
+		) {
+			await this._hookRunner.emit({ type: "text_delta", text: event.assistantMessageEvent.delta });
+		}
+
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
