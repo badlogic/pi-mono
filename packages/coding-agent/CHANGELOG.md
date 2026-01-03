@@ -46,8 +46,10 @@
   - Read-only tools: `read`, `bash`, `grep`, `find`, `ls` (no `edit`/`write`)
   - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
   - Interactive prompt after each response: execute plan, stay in plan mode, or refine
+  - Todo list extraction from numbered plans with progress tracking (`📋 2/5` in footer)
+  - `/todos` command to view current plan progress
   - Shows `⏸ plan` indicator in footer when active
-  - State persists across sessions
+  - State persists across sessions (including todo progress)
 
 ### Changed
 
