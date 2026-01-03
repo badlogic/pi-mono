@@ -170,7 +170,7 @@ class SessionList implements Component {
 	public onCancel?: () => void;
 	public onExit: () => void = () => {};
 	public onSelectionChange?: (session: SessionInfo) => void;
-	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
+	private maxVisible: number = 8; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
 	constructor(sessions: SessionInfo[]) {
 		this.allSessions = sessions;
