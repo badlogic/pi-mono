@@ -62,14 +62,19 @@ export type SendMessageHandler = <T = unknown>(
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
 /**
- * Get tools handler type for pi.getTools().
+ * Get active tools handler type for pi.getActiveTools().
  */
-export type GetToolsHandler = () => string[];
+export type GetActiveToolsHandler = () => string[];
 
 /**
- * Set tools handler type for pi.setTools().
+ * Get all tools handler type for pi.getAllTools().
  */
-export type SetToolsHandler = (toolNames: string[]) => void;
+export type GetAllToolsHandler = () => string[];
+
+/**
+ * Set active tools handler type for pi.setActiveTools().
+ */
+export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
 /**
  * CLI flag definition registered by a hook.
@@ -146,10 +151,12 @@ export interface LoadedHook {
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	/** Set the append entry handler for this hook's pi.appendEntry() */
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
-	/** Set the get tools handler for this hook's pi.getTools() */
-	setGetToolsHandler: (handler: GetToolsHandler) => void;
-	/** Set the set tools handler for this hook's pi.setTools() */
-	setSetToolsHandler: (handler: SetToolsHandler) => void;
+	/** Set the get active tools handler for this hook's pi.getActiveTools() */
+	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
+	/** Set the get all tools handler for this hook's pi.getAllTools() */
+	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
+	/** Set the set active tools handler for this hook's pi.setActiveTools() */
+	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
 	/** Set a flag value (called after CLI parsing) */
 	setFlagValue: (name: string, value: boolean | string) => void;
 }
@@ -215,8 +222,9 @@ function createHookAPI(
 	shortcuts: Map<string, HookShortcut>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
-	setGetToolsHandler: (handler: GetToolsHandler) => void;
-	setSetToolsHandler: (handler: SetToolsHandler) => void;
+	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
+	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
+	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
 	setFlagValue: (name: string, value: boolean | string) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {
@@ -225,8 +233,9 @@ function createHookAPI(
 	let appendEntryHandler: AppendEntryHandler = () => {
 		// Default no-op until mode sets the handler
 	};
-	let getToolsHandler: GetToolsHandler = () => [];
-	let setToolsHandler: SetToolsHandler = () => {
+	let getActiveToolsHandler: GetActiveToolsHandler = () => [];
+	let getAllToolsHandler: GetAllToolsHandler = () => [];
+	let setActiveToolsHandler: SetActiveToolsHandler = () => {
 		// Default no-op until mode sets the handler
 	};
 	const messageRenderers = new Map<string, HookMessageRenderer>();
@@ -261,11 +270,14 @@ function createHookAPI(
 		exec(command: string, args: string[], options?: ExecOptions) {
 			return execCommand(command, args, options?.cwd ?? cwd, options);
 		},
-		getTools(): string[] {
-			return getToolsHandler();
+		getActiveTools(): string[] {
+			return getActiveToolsHandler();
 		},
-		setTools(toolNames: string[]): void {
-			setToolsHandler(toolNames);
+		getAllTools(): string[] {
+			return getAllToolsHandler();
+		},
+		setActiveTools(toolNames: string[]): void {
+			setActiveToolsHandler(toolNames);
 		},
 		registerFlag(
 			name: string,
@@ -304,11 +316,14 @@ function createHookAPI(
 		setAppendEntryHandler: (handler: AppendEntryHandler) => {
 			appendEntryHandler = handler;
 		},
-		setGetToolsHandler: (handler: GetToolsHandler) => {
-			getToolsHandler = handler;
+		setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => {
+			getActiveToolsHandler = handler;
 		},
-		setSetToolsHandler: (handler: SetToolsHandler) => {
-			setToolsHandler = handler;
+		setGetAllToolsHandler: (handler: GetAllToolsHandler) => {
+			getAllToolsHandler = handler;
+		},
+		setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => {
+			setActiveToolsHandler = handler;
 		},
 		setFlagValue: (name: string, value: boolean | string) => {
 			flagValues.set(name, value);
@@ -349,8 +364,9 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 			shortcuts,
 			setSendMessageHandler,
 			setAppendEntryHandler,
-			setGetToolsHandler,
-			setSetToolsHandler,
+			setGetActiveToolsHandler,
+			setGetAllToolsHandler,
+			setSetActiveToolsHandler,
 			setFlagValue,
 		} = createHookAPI(handlers, cwd, hookPath);
 
@@ -369,8 +385,9 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				shortcuts,
 				setSendMessageHandler,
 				setAppendEntryHandler,
-				setGetToolsHandler,
-				setSetToolsHandler,
+				setGetActiveToolsHandler,
+				setGetAllToolsHandler,
+				setSetActiveToolsHandler,
 				setFlagValue,
 			},
 			error: null,

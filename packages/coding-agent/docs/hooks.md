@@ -306,21 +306,6 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
-#### text_delta
-
-Fired for each chunk of streaming text from the assistant. Useful for real-time monitoring of agent output.
-
-```typescript
-pi.on("text_delta", async (event, ctx) => {
-  // event.text - the new text chunk
-  
-  // Example: watch for specific patterns in streaming output
-  if (event.text.includes("[DONE:")) {
-    // Handle completion marker
-  }
-});
-```
-
 #### context
 
 Fired before each LLM call. Modify messages non-destructively (session unchanged).
@@ -782,25 +767,35 @@ const result = await pi.exec("git", ["status"], {
 // result.stdout, result.stderr, result.code, result.killed
 ```
 
-### pi.getTools()
+### pi.getActiveTools()
 
 Get the names of currently active tools:
 
 ```typescript
-const toolNames = pi.getTools();
+const toolNames = pi.getActiveTools();
 // ["read", "bash", "edit", "write"]
 ```
 
-### pi.setTools(toolNames)
+### pi.getAllTools()
+
+Get all configured tools (built-in via --tools or default, plus custom tools):
+
+```typescript
+const allTools = pi.getAllTools();
+// ["read", "bash", "edit", "write", "my-custom-tool"]
+```
+
+### pi.setActiveTools(toolNames)
 
 Set the active tools by name. Changes take effect on the next agent turn.
+Note: This will invalidate prompt caching for the next request.
 
 ```typescript
 // Switch to read-only mode (plan mode)
-pi.setTools(["read", "bash", "grep", "find", "ls"]);
+pi.setActiveTools(["read", "bash", "grep", "find", "ls"]);
 
 // Restore full access
-pi.setTools(["read", "bash", "edit", "write"]);
+pi.setActiveTools(["read", "bash", "edit", "write"]);
 ```
 
 Only built-in tools can be enabled/disabled. Custom tools are always active. Unknown tool names are ignored.

@@ -83,8 +83,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setGetToolsHandler: () => {},
-			setSetToolsHandler: () => {},
+			setGetActiveToolsHandler: () => {},
+			setGetAllToolsHandler: () => {},
+			setSetActiveToolsHandler: () => {},
 			setFlagValue: () => {},
 		};
 	}
@@ -110,8 +111,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			getModel: () => session.model,
 			sendMessageHandler: async () => {},
 			appendEntryHandler: async () => {},
-			getToolsHandler: () => [],
-			setToolsHandler: () => {},
+			getActiveToolsHandler: () => [],
+			getAllToolsHandler: () => [],
+			setActiveToolsHandler: () => {},
 			uiContext: {
 				select: async () => undefined,
 				confirm: async () => false,
@@ -279,8 +281,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setGetToolsHandler: () => {},
-			setSetToolsHandler: () => {},
+			setGetActiveToolsHandler: () => {},
+			setGetAllToolsHandler: () => {},
+			setSetActiveToolsHandler: () => {},
 			setFlagValue: () => {},
 		};
 
@@ -332,8 +335,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setGetToolsHandler: () => {},
-			setSetToolsHandler: () => {},
+			setGetActiveToolsHandler: () => {},
+			setGetAllToolsHandler: () => {},
+			setSetActiveToolsHandler: () => {},
 			setFlagValue: () => {},
 		};
 
@@ -367,8 +371,9 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-			setGetToolsHandler: () => {},
-			setSetToolsHandler: () => {},
+			setGetActiveToolsHandler: () => {},
+			setGetAllToolsHandler: () => {},
+			setSetActiveToolsHandler: () => {},
 			setFlagValue: () => {},
 		};
 

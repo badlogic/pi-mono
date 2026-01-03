@@ -40,8 +40,9 @@ export async function runPrintMode(
 			appendEntryHandler: (customType, data) => {
 				session.sessionManager.appendCustomEntry(customType, data);
 			},
-			getToolsHandler: () => session.getActiveToolNames(),
-			setToolsHandler: (toolNames) => session.setActiveToolsByName(toolNames),
+			getActiveToolsHandler: () => session.getActiveToolNames(),
+			getAllToolsHandler: () => session.getAllToolNames(),
+			setActiveToolsHandler: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 		});
 		hookRunner.onError((err) => {
 			console.error(`Hook error (${err.hookPath}): ${err.error}`);

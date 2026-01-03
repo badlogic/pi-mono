@@ -355,8 +355,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 		) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
-		let getToolsHandler: () => string[] = () => [];
-		let setToolsHandler: (toolNames: string[]) => void = () => {};
+		let getActiveToolsHandler: () => string[] = () => [];
+		let getAllToolsHandler: () => string[] = () => [];
+		let setActiveToolsHandler: (toolNames: string[]) => void = () => {};
 		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let navigateTreeHandler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }> = async () => ({
@@ -394,8 +395,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			newSession: (options?: any) => newSessionHandler(options),
 			branch: (entryId: string) => branchHandler(entryId),
 			navigateTree: (targetId: string, options?: any) => navigateTreeHandler(targetId, options),
-			getTools: () => getToolsHandler(),
-			setTools: (toolNames: string[]) => setToolsHandler(toolNames),
+			getActiveTools: () => getActiveToolsHandler(),
+			getAllTools: () => getAllToolsHandler(),
+			setActiveTools: (toolNames: string[]) => setActiveToolsHandler(toolNames),
 		};
 
 		def.factory(api as any);
@@ -426,11 +428,14 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			setNavigateTreeHandler: (handler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }>) => {
 				navigateTreeHandler = handler;
 			},
-			setGetToolsHandler: (handler: () => string[]) => {
-				getToolsHandler = handler;
+			setGetActiveToolsHandler: (handler: () => string[]) => {
+				getActiveToolsHandler = handler;
 			},
-			setSetToolsHandler: (handler: (toolNames: string[]) => void) => {
-				setToolsHandler = handler;
+			setGetAllToolsHandler: (handler: () => string[]) => {
+				getAllToolsHandler = handler;
+			},
+			setSetActiveToolsHandler: (handler: (toolNames: string[]) => void) => {
+				setActiveToolsHandler = handler;
 			},
 			setFlagValue: (name: string, value: boolean | string) => {
 				flagValues.set(name, value);
