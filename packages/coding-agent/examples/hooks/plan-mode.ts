@@ -356,17 +356,16 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		if (executionMode && todoItems.length > 0) {
 			console.error("[plan-mode] before_agent_start: injecting EXECUTING PLAN context");
 			const remaining = todoItems.filter((t) => !t.completed);
-			const todoList = remaining.map((t) => `- [${t.id}] ${t.text}`).join("\n");
+			const todoList = remaining.map((t, i) => `${i + 1}. (id=${t.id}) ${t.text}`).join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
-					content: `[EXECUTING PLAN]
-Plan mode is OFF. You have FULL access to: read, write, edit, bash.
+					content: `[EXECUTING PLAN - You have FULL tool access]
 
-Remaining steps:
+Steps to complete:
 ${todoList}
 
-IMPORTANT: After completing each step, output [DONE:id] to mark it complete.
+After completing each step, output [DONE:id] to mark it complete.
 Example: [DONE:${remaining[0]?.id || "abc123"}]`,
 					display: false,
 				},
