@@ -495,6 +495,7 @@
       padding: var(--line-height);
       border-radius: 4px;
       margin-bottom: var(--line-height);
+      cursor: pointer;
     }
 
     .system-prompt-header {
@@ -502,14 +503,27 @@
       color: var(--customMessageLabel);
     }
 
+    .system-prompt-collapsed {
+      color: var(--customMessageText);
+    }
+
     .system-prompt-content {
+      display: none;
       color: var(--customMessageText);
       white-space: pre-wrap;
       word-wrap: break-word;
       font-size: 11px;
-      max-height: 200px;
+      max-height: 400px;
       overflow-y: auto;
       margin-top: var(--line-height);
+    }
+
+    .system-prompt.expanded .system-prompt-collapsed {
+      display: none;
+    }
+
+    .system-prompt.expanded .system-prompt-content {
+      display: block;
     }
 
     /* Tools list */

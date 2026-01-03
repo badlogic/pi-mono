@@ -964,8 +964,11 @@
           </div>`;
 
         if (systemPrompt) {
-          html += `<div class="system-prompt">
+          const promptLines = systemPrompt.split('\n').length;
+          const promptChars = systemPrompt.length;
+          html += `<div class="system-prompt" onclick="this.classList.toggle('expanded')">
             <div class="system-prompt-header">System Prompt</div>
+            <div class="system-prompt-collapsed">${promptLines} lines, ${promptChars.toLocaleString()} chars (click to expand)</div>
             <div class="system-prompt-content">${escapeHtml(systemPrompt)}</div>
           </div>`;
         }
