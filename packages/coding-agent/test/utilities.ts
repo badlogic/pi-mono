@@ -2,11 +2,11 @@
  * Shared test utilities for coding-agent tests.
  */
 
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, getOAuthApiKey, type OAuthCredentials, type OAuthProvider } from "@mariozechner/pi-ai";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
@@ -19,6 +19,106 @@ import { codingTools } from "../src/core/tools/index.js";
  * describe.skipIf(!API_KEY)
  */
 export const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+
+// ============================================================================
+// OAuth API key resolution from ~/.pi/agent/auth.json
+// ============================================================================
+
+const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
+
+type ApiKeyCredential = {
+	type: "api_key";
+	key: string;
+};
+
+type OAuthCredentialEntry = {
+	type: "oauth";
+} & OAuthCredentials;
+
+type AuthCredential = ApiKeyCredential | OAuthCredentialEntry;
+
+type AuthStorageData = Record<string, AuthCredential>;
+
+function loadAuthStorage(): AuthStorageData {
+	if (!existsSync(AUTH_PATH)) {
+		return {};
+	}
+	try {
+		const content = readFileSync(AUTH_PATH, "utf-8");
+		return JSON.parse(content);
+	} catch {
+		return {};
+	}
+}
+
+function saveAuthStorage(storage: AuthStorageData): void {
+	const configDir = dirname(AUTH_PATH);
+	if (!existsSync(configDir)) {
+		mkdirSync(configDir, { recursive: true, mode: 0o700 });
+	}
+	writeFileSync(AUTH_PATH, JSON.stringify(storage, null, 2), "utf-8");
+	chmodSync(AUTH_PATH, 0o600);
+}
+
+/**
+ * Resolve API key for a provider from ~/.pi/agent/auth.json
+ *
+ * For API key credentials, returns the key directly.
+ * For OAuth credentials, returns the access token (refreshing if expired and saving back).
+ *
+ * For google-gemini-cli and google-antigravity, returns JSON-encoded { token, projectId }
+ */
+export async function resolveApiKey(provider: string): Promise<string | undefined> {
+	const storage = loadAuthStorage();
+	const entry = storage[provider];
+
+	if (!entry) return undefined;
+
+	if (entry.type === "api_key") {
+		return entry.key;
+	}
+
+	if (entry.type === "oauth") {
+		// Build OAuthCredentials record for getOAuthApiKey
+		const oauthCredentials: Record<string, OAuthCredentials> = {};
+		for (const [key, value] of Object.entries(storage)) {
+			if (value.type === "oauth") {
+				const { type: _, ...creds } = value;
+				oauthCredentials[key] = creds;
+			}
+		}
+
+		const result = await getOAuthApiKey(provider as OAuthProvider, oauthCredentials);
+		if (!result) return undefined;
+
+		// Save refreshed credentials back to auth.json
+		storage[provider] = { type: "oauth", ...result.newCredentials };
+		saveAuthStorage(storage);
+
+		return result.apiKey;
+	}
+
+	return undefined;
+}
+
+/**
+ * Check if a provider has credentials in ~/.pi/agent/auth.json
+ */
+export function hasAuthForProvider(provider: string): boolean {
+	const storage = loadAuthStorage();
+	return provider in storage;
+}
+
+/** Path to the real pi agent config directory */
+export const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
+
+/**
+ * Get an AuthStorage instance backed by ~/.pi/agent/auth.json
+ * Use this for tests that need real OAuth credentials.
+ */
+export function getRealAuthStorage(): AuthStorage {
+	return new AuthStorage(AUTH_PATH);
+}
 
 /**
  * Create a minimal user message for testing.

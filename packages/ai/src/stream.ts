@@ -159,6 +159,8 @@ function mapOptionsForApi<TApi extends Api>(
 				return { ...base, thinkingEnabled: false } satisfies AnthropicOptions;
 			}
 
+			// Claude requires max_tokens > thinking.budget_tokens
+			// So we need to ensure maxTokens accounts for both thinking and output
 			const anthropicBudgets = {
 				minimal: 1024,
 				low: 2048,
@@ -166,10 +168,21 @@ function mapOptionsForApi<TApi extends Api>(
 				high: 16384,
 			};
 
+			const minOutputTokens = 1024;
+			let thinkingBudget = anthropicBudgets[clampReasoning(options.reasoning)!];
+			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
+			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
+
+			// If not enough room for thinking + output, reduce thinking budget
+			if (maxTokens <= thinkingBudget) {
+				thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+			}
+
 			return {
 				...base,
+				maxTokens,
 				thinkingEnabled: true,
-				thinkingBudgetTokens: anthropicBudgets[clampReasoning(options.reasoning)!],
+				thinkingBudgetTokens: thinkingBudget,
 			} satisfies AnthropicOptions;
 		}
 
@@ -234,7 +247,9 @@ function mapOptionsForApi<TApi extends Api>(
 				} satisfies GoogleGeminiCliOptions;
 			}
 
-			// Gemini 2.x models use thinkingBudget
+			// Models using thinkingBudget (Gemini 2.x, Claude via Antigravity)
+			// Claude requires max_tokens > thinking.budget_tokens
+			// So we need to ensure maxTokens accounts for both thinking and output
 			const budgets: Record<ClampedReasoningEffort, number> = {
 				minimal: 1024,
 				low: 2048,
@@ -242,11 +257,22 @@ function mapOptionsForApi<TApi extends Api>(
 				high: 16384,
 			};
 
+			const minOutputTokens = 1024;
+			let thinkingBudget = budgets[effort];
+			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
+			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
+
+			// If not enough room for thinking + output, reduce thinking budget
+			if (maxTokens <= thinkingBudget) {
+				thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+			}
+
 			return {
 				...base,
+				maxTokens,
 				thinking: {
 					enabled: true,
-					budgetTokens: budgets[effort],
+					budgetTokens: thinkingBudget,
 				},
 			} satisfies GoogleGeminiCliOptions;
 		}
