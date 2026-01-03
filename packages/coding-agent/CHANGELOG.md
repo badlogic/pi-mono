@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- JPEG/GIF/WebP images not displaying in terminals using Kitty graphics protocol (Kitty, Ghostty, WezTerm). The protocol requires PNG format, so non-PNG images are now converted before display.
+
 ## [0.32.2] - 2026-01-03
 
 ### Added

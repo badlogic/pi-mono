@@ -14,6 +14,7 @@ import stripAnsi from "strip-ansi";
 import type { CustomTool } from "../../../core/custom-tools/types.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
+import { convertToPng } from "../../../utils/image-convert.js";
 import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
@@ -68,6 +69,8 @@ export class ToolExecutionComponent extends Container {
 	// Cached edit diff preview (computed when args arrive, before tool executes)
 	private editDiffPreview?: EditDiffResult | EditDiffError;
 	private editDiffArgsKey?: string; // Track which args the preview is for
+	// Cached converted images for Kitty protocol (which requires PNG), keyed by index
+	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 
 	constructor(
 		toolName: string,
@@ -157,6 +160,39 @@ export class ToolExecutionComponent extends Container {
 		this.result = result;
 		this.isPartial = isPartial;
 		this.updateDisplay();
+		// Convert non-PNG images to PNG for Kitty protocol (async)
+		this.maybeConvertImagesForKitty();
+	}
+
+	/**
+	 * Convert non-PNG images to PNG for Kitty graphics protocol.
+	 * Kitty requires PNG format (f=100), so JPEG/GIF/WebP won't display.
+	 */
+	private maybeConvertImagesForKitty(): void {
+		const caps = getCapabilities();
+		// Only needed for Kitty protocol
+		if (caps.images !== "kitty") return;
+		if (!this.result) return;
+
+		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+
+		for (let i = 0; i < imageBlocks.length; i++) {
+			const img = imageBlocks[i];
+			if (!img.data || !img.mimeType) continue;
+			// Skip if already PNG or already converted
+			if (img.mimeType === "image/png") continue;
+			if (this.convertedImages.has(i)) continue;
+
+			// Convert async
+			const index = i;
+			convertToPng(img.data, img.mimeType).then((converted) => {
+				if (converted) {
+					this.convertedImages.set(index, converted);
+					this.updateDisplay();
+					this.ui.requestRender();
+				}
+			});
+		}
 	}
 
 	setExpanded(expanded: boolean): void {
@@ -249,14 +285,25 @@ export class ToolExecutionComponent extends Container {
 			const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
 			const caps = getCapabilities();
 
-			for (const img of imageBlocks) {
+			for (let i = 0; i < imageBlocks.length; i++) {
+				const img = imageBlocks[i];
 				if (caps.images && this.showImages && img.data && img.mimeType) {
+					// Use converted PNG for Kitty protocol if available
+					const converted = this.convertedImages.get(i);
+					const imageData = converted?.data ?? img.data;
+					const imageMimeType = converted?.mimeType ?? img.mimeType;
+
+					// For Kitty, skip non-PNG images that haven't been converted yet
+					if (caps.images === "kitty" && imageMimeType !== "image/png") {
+						continue;
+					}
+
 					const spacer = new Spacer(1);
 					this.addChild(spacer);
 					this.imageSpacers.push(spacer);
 					const imageComponent = new Image(
-						img.data,
-						img.mimeType,
+						imageData,
+						imageMimeType,
 						{ fallbackColor: (s: string) => theme.fg("toolOutput", s) },
 						{ maxWidthCells: 60 },
 					);
