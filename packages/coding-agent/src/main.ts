@@ -35,7 +35,7 @@ import { ensureTool } from "./utils/tools-manager.js";
 
 async function checkForNewVersion(currentVersion: string): Promise<string | undefined> {
 	try {
-		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi -coding-agent/latest");
+		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
 		if (!response.ok) return undefined;
 
 		const data = (await response.json()) as { version?: string };
