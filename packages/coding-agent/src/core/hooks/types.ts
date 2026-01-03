@@ -577,7 +577,7 @@ export type HookEvent =
  */
 export interface ContextEventResult {
 	/** Modified messages to send instead of the original */
-	messages?: Message[];
+	messages?: AgentMessage[];
 }
 
 /**
