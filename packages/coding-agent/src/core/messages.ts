@@ -35,6 +35,8 @@ export interface BashExecutionMessage {
 	truncated: boolean;
 	fullOutputPath?: string;
 	timestamp: number;
+	/** If true, this message is excluded from LLM context (!! prefix) */
+	excludeFromContext?: boolean;
 }
 
 /**
@@ -148,6 +150,10 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 		.map((m): Message | undefined => {
 			switch (m.role) {
 				case "bashExecution":
+					// Skip messages excluded from context (!! prefix)
+					if (m.excludeFromContext) {
+						return undefined;
+					}
 					return {
 						role: "user",
 						content: [{ type: "text", text: bashExecutionToText(m) }],

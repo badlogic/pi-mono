@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Shell commands without context contribution: use `!!command` to execute a bash command that is shown in the TUI and saved to session history but excluded from LLM context. Useful for running commands you don't want the AI to see. ([#414](https://github.com/badlogic/pi-mono/issues/414))
+
 ## [0.32.0] - 2026-01-03
 
 ### Breaking Changes

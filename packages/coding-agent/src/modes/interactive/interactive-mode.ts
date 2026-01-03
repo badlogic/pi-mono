@@ -892,9 +892,10 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Handle bash command
+			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
-				const command = text.slice(1).trim();
+				const isExcluded = text.startsWith("!!");
+				const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
 				if (command) {
 					if (this.session.isBashRunning) {
 						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
@@ -902,7 +903,7 @@ export class InteractiveMode {
 						return;
 					}
 					this.editor.addToHistory(text);
-					await this.handleBashCommand(command);
+					await this.handleBashCommand(command, isExcluded);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
 					return;
@@ -1250,7 +1251,7 @@ export class InteractiveMode {
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
 		switch (message.role) {
 			case "bashExecution": {
-				const component = new BashExecutionComponent(message.command, this.ui);
+				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
 				if (message.output) {
 					component.appendOutput(message.output);
 				}
@@ -2362,9 +2363,9 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleBashCommand(command: string): Promise<void> {
+	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
 		const isDeferred = this.session.isStreaming;
-		this.bashComponent = new BashExecutionComponent(command, this.ui);
+		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
@@ -2377,12 +2378,16 @@ export class InteractiveMode {
 		this.ui.requestRender();
 
 		try {
-			const result = await this.session.executeBash(command, (chunk) => {
-				if (this.bashComponent) {
-					this.bashComponent.appendOutput(chunk);
-					this.ui.requestRender();
-				}
-			});
+			const result = await this.session.executeBash(
+				command,
+				(chunk) => {
+					if (this.bashComponent) {
+						this.bashComponent.appendOutput(chunk);
+						this.ui.requestRender();
+					}
+				},
+				{ excludeFromContext },
+			);
 
 			if (this.bashComponent) {
 				this.bashComponent.setComplete(

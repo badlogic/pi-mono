@@ -29,12 +29,14 @@ export class BashExecutionComponent extends Container {
 	private contentContainer: Container;
 	private ui: TUI;
 
-	constructor(command: string, ui: TUI) {
+	constructor(command: string, ui: TUI, excludeFromContext = false) {
 		super();
 		this.command = command;
 		this.ui = ui;
 
-		const borderColor = (str: string) => theme.fg("bashMode", str);
+		// Use dim border for excluded-from-context commands (!! prefix)
+		const colorKey = excludeFromContext ? "dim" : "bashMode";
+		const borderColor = (str: string) => theme.fg(colorKey, str);
 
 		// Add spacer
 		this.addChild(new Spacer(1));
@@ -47,13 +49,13 @@ export class BashExecutionComponent extends Container {
 		this.addChild(this.contentContainer);
 
 		// Command header
-		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${command}`)), 1, 0);
+		const header = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 1, 0);
 		this.contentContainer.addChild(header);
 
 		// Loader
 		this.loader = new Loader(
 			ui,
-			(spinner) => theme.fg("bashMode", spinner),
+			(spinner) => theme.fg(colorKey, spinner),
 			(text) => theme.fg("muted", text),
 			"Running... (esc to cancel)",
 		);

@@ -1395,8 +1395,13 @@ export class AgentSession {
 	 * Adds result to agent context and session.
 	 * @param command The bash command to execute
 	 * @param onChunk Optional streaming callback for output
+	 * @param options.excludeFromContext If true, command output won't be sent to LLM (!! prefix)
 	 */
-	async executeBash(command: string, onChunk?: (chunk: string) => void): Promise<BashResult> {
+	async executeBash(
+		command: string,
+		onChunk?: (chunk: string) => void,
+		options?: { excludeFromContext?: boolean },
+	): Promise<BashResult> {
 		this._bashAbortController = new AbortController();
 
 		try {
@@ -1415,6 +1420,7 @@ export class AgentSession {
 				truncated: result.truncated,
 				fullOutputPath: result.fullOutputPath,
 				timestamp: Date.now(),
+				excludeFromContext: options?.excludeFromContext,
 			};
 
 			// If agent is streaming, defer adding to avoid breaking tool_use/tool_result ordering
