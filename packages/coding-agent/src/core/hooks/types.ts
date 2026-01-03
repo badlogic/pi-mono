@@ -393,16 +393,6 @@ export interface AgentEndEvent {
 }
 
 /**
- * Event data for text_delta event.
- * Fired when new text is streamed from the assistant.
- */
-export interface TextDeltaEvent {
-	type: "text_delta";
-	/** The new text chunk */
-	text: string;
-}
-
-/**
  * Event data for turn_start event.
  */
 export interface TurnStartEvent {
@@ -545,7 +535,6 @@ export type HookEvent =
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
-	| TextDeltaEvent
 	| TurnStartEvent
 	| TurnEndEvent
 	| ToolCallEvent
@@ -712,7 +701,6 @@ export interface HookAPI {
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
-	on(event: "text_delta", handler: HookHandler<TextDeltaEvent>): void;
 
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry that
@@ -788,23 +776,30 @@ export interface HookAPI {
 	 * Get the list of currently active tool names.
 	 * @returns Array of tool names (e.g., ["read", "bash", "edit", "write"])
 	 */
-	getTools(): string[];
+	getActiveTools(): string[];
+
+	/**
+	 * Get all configured tools (built-in via --tools or default, plus custom tools).
+	 * @returns Array of all tool names
+	 */
+	getAllTools(): string[];
 
 	/**
 	 * Set the active tools by name.
 	 * Only built-in tools can be enabled/disabled. Custom tools are always active.
 	 * Changes take effect on the next agent turn.
+	 * Note: This will invalidate prompt caching for the next request.
 	 *
 	 * @param toolNames - Array of tool names to enable (e.g., ["read", "bash", "grep", "find", "ls"])
 	 *
 	 * @example
 	 * // Switch to read-only mode (plan mode)
-	 * pi.setTools(["read", "bash", "grep", "find", "ls"]);
+	 * pi.setActiveTools(["read", "bash", "grep", "find", "ls"]);
 	 *
 	 * // Restore full access
-	 * pi.setTools(["read", "bash", "edit", "write"]);
+	 * pi.setActiveTools(["read", "bash", "edit", "write"]);
 	 */
-	setTools(toolNames: string[]): void;
+	setActiveTools(toolNames: string[]): void;
 
 	/**
 	 * Register a CLI flag for this hook.

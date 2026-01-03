@@ -99,10 +99,12 @@ export class HookRunner {
 		sendMessageHandler: SendMessageHandler;
 		/** Handler for hooks to append entries */
 		appendEntryHandler: AppendEntryHandler;
-		/** Handler for getting current tools */
-		getToolsHandler: () => string[];
-		/** Handler for setting tools */
-		setToolsHandler: (toolNames: string[]) => void;
+		/** Handler for getting current active tools */
+		getActiveToolsHandler: () => string[];
+		/** Handler for getting all configured tools */
+		getAllToolsHandler: () => string[];
+		/** Handler for setting active tools */
+		setActiveToolsHandler: (toolNames: string[]) => void;
 		/** Handler for creating new sessions (for HookCommandContext) */
 		newSessionHandler?: NewSessionHandler;
 		/** Handler for branching sessions (for HookCommandContext) */
@@ -137,12 +139,13 @@ export class HookRunner {
 		if (options.navigateTreeHandler) {
 			this.navigateTreeHandler = options.navigateTreeHandler;
 		}
-		// Set per-hook handlers for pi.sendMessage(), pi.appendEntry(), pi.getTools(), pi.setTools()
+		// Set per-hook handlers for pi.sendMessage(), pi.appendEntry(), pi.getActiveTools(), pi.getAllTools(), pi.setActiveTools()
 		for (const hook of this.hooks) {
 			hook.setSendMessageHandler(options.sendMessageHandler);
 			hook.setAppendEntryHandler(options.appendEntryHandler);
-			hook.setGetToolsHandler(options.getToolsHandler);
-			hook.setSetToolsHandler(options.setToolsHandler);
+			hook.setGetActiveToolsHandler(options.getActiveToolsHandler);
+			hook.setGetAllToolsHandler(options.getAllToolsHandler);
+			hook.setSetActiveToolsHandler(options.setActiveToolsHandler);
 		}
 		this.uiContext = options.uiContext ?? noOpUIContext;
 		this.hasUI = options.hasUI ?? false;
@@ -193,14 +196,52 @@ export class HookRunner {
 		}
 	}
 
+	// Built-in shortcuts that hooks should not override
+	private static readonly RESERVED_SHORTCUTS = new Set([
+		"ctrl+c",
+		"ctrl+d",
+		"ctrl+z",
+		"ctrl+k",
+		"ctrl+p",
+		"ctrl+l",
+		"ctrl+o",
+		"ctrl+t",
+		"ctrl+g",
+		"shift+tab",
+		"shift+ctrl+p",
+		"alt+enter",
+		"escape",
+		"enter",
+	]);
+
 	/**
 	 * Get all keyboard shortcuts registered by hooks.
+	 * When multiple hooks register the same shortcut, the last one wins.
+	 * Conflicts with built-in shortcuts are skipped with a warning.
+	 * Conflicts between hooks are logged as warnings.
 	 */
 	getShortcuts(): Map<string, import("./loader.js").HookShortcut> {
 		const allShortcuts = new Map<string, import("./loader.js").HookShortcut>();
 		for (const hook of this.hooks) {
 			for (const [key, shortcut] of hook.shortcuts) {
-				allShortcuts.set(key, shortcut);
+				const normalizedKey = key.toLowerCase();
+
+				// Check for built-in shortcut conflicts
+				if (HookRunner.RESERVED_SHORTCUTS.has(normalizedKey)) {
+					console.warn(
+						`Hook shortcut '${key}' from ${shortcut.hookPath} conflicts with built-in shortcut. Skipping.`,
+					);
+					continue;
+				}
+
+				const existing = allShortcuts.get(normalizedKey);
+				if (existing) {
+					// Log conflict between hooks - last one wins
+					console.warn(
+						`Hook shortcut conflict: '${key}' registered by both ${existing.hookPath} and ${shortcut.hookPath}. Using ${shortcut.hookPath}.`,
+					);
+				}
+				allShortcuts.set(normalizedKey, shortcut);
 			}
 		}
 		return allShortcuts;

@@ -4,7 +4,8 @@ export {
 	loadHooks,
 	type AppendEntryHandler,
 	type BranchHandler,
-	type GetToolsHandler,
+	type GetActiveToolsHandler,
+	type GetAllToolsHandler,
 	type HookFlag,
 	type HookShortcut,
 	type LoadedHook,
@@ -12,7 +13,7 @@ export {
 	type NavigateTreeHandler,
 	type NewSessionHandler,
 	type SendMessageHandler,
-	type SetToolsHandler,
+	type SetActiveToolsHandler,
 } from "./loader.js";
 export { execCommand, HookRunner, type HookErrorListener } from "./runner.js";
 export { wrapToolsWithHooks, wrapToolWithHooks } from "./tool-wrapper.js";

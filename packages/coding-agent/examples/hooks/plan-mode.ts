@@ -232,10 +232,10 @@ export default function planModeHook(pi: HookAPI) {
 		todoItems = [];
 
 		if (planModeEnabled) {
-			pi.setTools(PLAN_MODE_TOOLS);
+			pi.setActiveTools(PLAN_MODE_TOOLS);
 			ctx.ui.notify(`Plan mode enabled. Tools: ${PLAN_MODE_TOOLS.join(", ")}`);
 		} else {
-			pi.setTools(NORMAL_MODE_TOOLS);
+			pi.setActiveTools(NORMAL_MODE_TOOLS);
 			ctx.ui.notify("Plan mode disabled. Full access restored.");
 		}
 		updateStatus(ctx);
@@ -291,39 +291,6 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
-	// Buffer for accumulating text to handle [DONE:id] split across chunks
-	let textBuffer = "";
-
-	// Watch for [DONE:id] tags in streaming text
-	pi.on("text_delta", async (event, ctx) => {
-		if (!executionMode || todoItems.length === 0) return;
-
-		// Accumulate text in buffer
-		textBuffer += event.text;
-
-		// Look for complete [DONE:id] patterns
-		const doneIds = findDoneTags(textBuffer);
-		if (doneIds.length === 0) return;
-
-		let changed = false;
-		for (const id of doneIds) {
-			const item = todoItems.find((t) => t.id === id);
-			if (item && !item.completed) {
-				item.completed = true;
-				changed = true;
-			}
-		}
-
-		// Clear processed patterns from buffer (keep last 20 chars for partial matches)
-		if (textBuffer.length > 50) {
-			textBuffer = textBuffer.slice(-20);
-		}
-
-		if (changed) {
-			updateStatus(ctx);
-		}
-	});
-
 	// Inject plan mode context
 	pi.on("before_agent_start", async () => {
 		if (!planModeEnabled && !executionMode) return;
@@ -372,10 +339,7 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 
 	// After agent finishes in plan mode
 	pi.on("agent_end", async (event, ctx) => {
-		// Clear text buffer
-		textBuffer = "";
-
-		// Check for done tags in the final message too
+		// Check for done tags in the final message
 		if (executionMode && todoItems.length > 0) {
 			const messages = event.messages;
 			const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
@@ -399,9 +363,7 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 			const allComplete = todoItems.every((t) => t.completed);
 			if (allComplete) {
 				// Show final completed list in chat
-				const completedList = todoItems
-					.map((t) => `~~${t.text}~~`)
-					.join("\n");
+				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
 				pi.sendMessage(
 					{
 						customType: "plan-complete",
@@ -412,9 +374,9 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 				);
 
 				executionMode = false;
-				const completedItems = [...todoItems]; // Keep for reference
+				const _completedItems = [...todoItems]; // Keep for reference
 				todoItems = [];
-				pi.setTools(NORMAL_MODE_TOOLS);
+				pi.setActiveTools(NORMAL_MODE_TOOLS);
 				updateStatus(ctx);
 			}
 			return;
@@ -464,7 +426,7 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 		if (choice?.startsWith("Execute")) {
 			planModeEnabled = false;
 			executionMode = hasTodos;
-			pi.setTools(NORMAL_MODE_TOOLS);
+			pi.setActiveTools(NORMAL_MODE_TOOLS);
 			updateStatus(ctx);
 
 			const execMessage = hasTodos
@@ -511,7 +473,7 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 		}
 
 		if (planModeEnabled) {
-			pi.setTools(PLAN_MODE_TOOLS);
+			pi.setActiveTools(PLAN_MODE_TOOLS);
 		}
 		updateStatus(ctx);
 	});
