@@ -130,20 +130,15 @@ function isSafeCommand(command: string): boolean {
 	return true;
 }
 
-// Todo item with unique ID
+// Todo item with step number
 interface TodoItem {
-	id: string;
+	step: number;
 	text: string;
 	completed: boolean;
 }
 
-// Generate a short unique ID
-function generateId(): string {
-	return Math.random().toString(36).substring(2, 8);
-}
-
 /**
- * Extract todo items from assistant message and assign IDs.
+ * Extract todo items from assistant message.
  */
 function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
@@ -154,7 +149,7 @@ function extractTodoItems(message: string): TodoItem[] {
 		let text = match[2].trim();
 		text = text.replace(/\*{1,2}$/, "").trim();
 		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
-			items.push({ id: generateId(), text, completed: false });
+			items.push({ step: items.length + 1, text, completed: false });
 		}
 	}
 
@@ -165,7 +160,7 @@ function extractTodoItems(message: string): TodoItem[] {
 			let text = match[1].trim();
 			text = text.replace(/\*{1,2}$/, "").trim();
 			if (text.length > 10 && !text.startsWith("`")) {
-				items.push({ id: generateId(), text, completed: false });
+				items.push({ step: items.length + 1, text, completed: false });
 			}
 		}
 	}
@@ -174,15 +169,19 @@ function extractTodoItems(message: string): TodoItem[] {
 }
 
 /**
- * Find [DONE:id] tags in text and return the IDs.
+ * Find [STEP N DONE] or [DONE N] tags in text and return step numbers.
  */
-function findDoneTags(text: string): string[] {
-	const pattern = /\[DONE:([a-z0-9]+)\]/gi;
-	const ids: string[] = [];
-	for (const match of text.matchAll(pattern)) {
-		ids.push(match[1].toLowerCase());
+function findDoneSteps(text: string): number[] {
+	const steps: number[] = [];
+	// Match [STEP 1 DONE], [STEP 2 DONE], etc.
+	for (const match of text.matchAll(/\[STEP\s+(\d+)\s+DONE\]/gi)) {
+		steps.push(parseInt(match[1], 10));
 	}
-	return ids;
+	// Also match [DONE 1], [DONE 2], etc.
+	for (const match of text.matchAll(/\[DONE\s+(\d+)\]/gi)) {
+		steps.push(parseInt(match[1], 10));
+	}
+	return steps;
 }
 
 export default function planModeHook(pi: HookAPI) {
@@ -356,17 +355,16 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		if (executionMode && todoItems.length > 0) {
 			console.error("[plan-mode] before_agent_start: injecting EXECUTING PLAN context");
 			const remaining = todoItems.filter((t) => !t.completed);
-			const todoList = remaining.map((t, i) => `${i + 1}. (id=${t.id}) ${t.text}`).join("\n");
+			const todoList = remaining.map((t) => `Step ${t.step}: ${t.text}`).join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
 					content: `[EXECUTING PLAN - You have FULL tool access]
 
-Steps to complete:
 ${todoList}
 
-After completing each step, output [DONE:id] to mark it complete.
-Example: [DONE:${remaining[0]?.id || "abc123"}]`,
+IMPORTANT: After completing each step, output [STEP N DONE] where N is the step number.
+Example: After completing step ${remaining[0]?.step || 1}, write [STEP ${remaining[0]?.step || 1} DONE]`,
 					display: false,
 				},
 			};
@@ -387,9 +385,9 @@ Example: [DONE:${remaining[0]?.id || "abc123"}]`,
 					.join("\n");
 
 				// Find and mark completed items
-				const doneIds = findDoneTags(textContent);
-				for (const id of doneIds) {
-					const item = todoItems.find((t) => t.id === id);
+				const doneSteps = findDoneSteps(textContent);
+				for (const stepNum of doneSteps) {
+					const item = todoItems.find((t) => t.step === stepNum);
 					if (item && !item.completed) {
 						item.completed = true;
 					}
