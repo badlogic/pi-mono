@@ -1994,15 +1994,26 @@ export class InteractiveMode {
 							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
 								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
-									// Use OSC 8 hyperlink escape sequence for clickable link
+
+									// OSC 8 hyperlink for desktop terminals that support clicking
 									const hyperlink = `\x1b]8;;${info.url}\x07Click here to login\x1b]8;;\x07`;
 									this.chatContainer.addChild(new Text(theme.fg("accent", hyperlink), 1, 0));
+
+									// OSC 52 to copy URL to clipboard (works over SSH, e.g., Termux)
+									const urlBase64 = Buffer.from(info.url).toString("base64");
+									process.stdout.write(`\x1b]52;c;${urlBase64}\x07`);
+									this.chatContainer.addChild(
+										new Text(theme.fg("dim", "(URL copied to clipboard - paste in browser)"), 1, 0),
+									);
+
 									if (info.instructions) {
 										this.chatContainer.addChild(new Spacer(1));
 										this.chatContainer.addChild(new Text(theme.fg("warning", info.instructions), 1, 0));
 									}
+
 									this.ui.requestRender();
 
+									// Try to open browser on desktop
 									const openCmd =
 										process.platform === "darwin"
 											? "open"
