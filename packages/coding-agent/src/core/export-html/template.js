@@ -964,13 +964,23 @@
           </div>`;
 
         if (systemPrompt) {
-          const promptLines = systemPrompt.split('\n').length;
-          const promptChars = systemPrompt.length;
-          html += `<div class="system-prompt" onclick="this.classList.toggle('expanded')">
-            <div class="system-prompt-header">System Prompt</div>
-            <div class="system-prompt-collapsed">${promptLines} lines, ${promptChars.toLocaleString()} chars (click to expand)</div>
-            <div class="system-prompt-content">${escapeHtml(systemPrompt)}</div>
-          </div>`;
+          const lines = systemPrompt.split('\n');
+          const previewLines = 10;
+          if (lines.length > previewLines) {
+            const preview = lines.slice(0, previewLines).join('\n');
+            const remaining = lines.length - previewLines;
+            html += `<div class="system-prompt expandable" onclick="this.classList.toggle('expanded')">
+              <div class="system-prompt-header">System Prompt</div>
+              <div class="system-prompt-preview">${escapeHtml(preview)}</div>
+              <div class="system-prompt-expand-hint">... (${remaining} more lines, click to expand)</div>
+              <div class="system-prompt-full">${escapeHtml(systemPrompt)}</div>
+            </div>`;
+          } else {
+            html += `<div class="system-prompt">
+              <div class="system-prompt-header">System Prompt</div>
+              <div class="system-prompt-full" style="display: block">${escapeHtml(systemPrompt)}</div>
+            </div>`;
+          }
         }
 
         if (tools && tools.length > 0) {
