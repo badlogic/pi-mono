@@ -78,10 +78,14 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			handlers,
 			messageRenderers: new Map(),
 			commands: new Map(),
+			flags: new Map(),
+			flagValues: new Map(),
+			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
 			setGetToolsHandler: () => {},
 			setSetToolsHandler: () => {},
+			setFlagValue: () => {},
 		};
 	}
 
@@ -269,10 +273,14 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			]),
 			messageRenderers: new Map(),
 			commands: new Map(),
+			flags: new Map(),
+			flagValues: new Map(),
+			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
 			setGetToolsHandler: () => {},
 			setSetToolsHandler: () => {},
+			setFlagValue: () => {},
 		};
 
 		createSession([throwingHook]);
@@ -318,10 +326,14 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			]),
 			messageRenderers: new Map(),
 			commands: new Map(),
+			flags: new Map(),
+			flagValues: new Map(),
+			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
 			setGetToolsHandler: () => {},
 			setSetToolsHandler: () => {},
+			setFlagValue: () => {},
 		};
 
 		const hook2: LoadedHook = {
@@ -349,10 +361,14 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			]),
 			messageRenderers: new Map(),
 			commands: new Map(),
+			flags: new Map(),
+			flagValues: new Map(),
+			shortcuts: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
 			setGetToolsHandler: () => {},
 			setSetToolsHandler: () => {},
+			setFlagValue: () => {},
 		};
 
 		createSession([hook1, hook2]);

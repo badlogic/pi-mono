@@ -112,6 +112,8 @@ export interface CreateAgentSessionOptions {
 	hooks?: Array<{ path?: string; factory: HookFactory }>;
 	/** Additional hook paths to load (merged with discovery). */
 	additionalHookPaths?: string[];
+	/** Pre-loaded hooks (skips loading, used when hooks were loaded early for CLI flags). */
+	preloadedHooks?: LoadedHook[];
 
 	/** Skills. Default: discovered from multiple locations */
 	skills?: Skill[];
@@ -341,9 +343,13 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
  */
 function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; factory: HookFactory }>): LoadedHook[] {
 	return definitions.map((def) => {
+		const hookPath = def.path ?? "<inline>";
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 		const messageRenderers = new Map<string, any>();
 		const commands = new Map<string, any>();
+		const flags = new Map<string, any>();
+		const flagValues = new Map<string, boolean | string>();
+		const shortcuts = new Map<string, any>();
 		let sendMessageHandler: (
 			message: any,
 			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
@@ -375,6 +381,16 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			registerCommand: (name: string, options: any) => {
 				commands.set(name, { name, ...options });
 			},
+			registerFlag: (name: string, options: any) => {
+				flags.set(name, { name, hookPath, ...options });
+				if (options.default !== undefined) {
+					flagValues.set(name, options.default);
+				}
+			},
+			getFlag: (name: string) => flagValues.get(name),
+			registerShortcut: (shortcut: string, options: any) => {
+				shortcuts.set(shortcut, { shortcut, hookPath, ...options });
+			},
 			newSession: (options?: any) => newSessionHandler(options),
 			branch: (entryId: string) => branchHandler(entryId),
 			navigateTree: (targetId: string, options?: any) => navigateTreeHandler(targetId, options),
@@ -385,11 +401,14 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		def.factory(api as any);
 
 		return {
-			path: def.path ?? "<inline>",
-			resolvedPath: def.path ?? "<inline>",
+			path: hookPath,
+			resolvedPath: hookPath,
 			handlers,
 			messageRenderers,
 			commands,
+			flags,
+			flagValues,
+			shortcuts,
 			setSendMessageHandler: (
 				handler: (message: any, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" }) => void,
 			) => {
@@ -412,6 +431,9 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			},
 			setSetToolsHandler: (handler: (toolNames: string[]) => void) => {
 				setToolsHandler = handler;
+			},
+			setFlagValue: (name: string, value: boolean | string) => {
+				flagValues.set(name, value);
 			},
 		};
 	});
@@ -566,7 +588,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	let hookRunner: HookRunner | undefined;
-	if (options.hooks !== undefined) {
+	if (options.preloadedHooks !== undefined && options.preloadedHooks.length > 0) {
+		// Use pre-loaded hooks (from early CLI flag discovery)
+		hookRunner = new HookRunner(options.preloadedHooks, cwd, sessionManager, modelRegistry);
+	} else if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
 			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
 			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry);

@@ -72,6 +72,36 @@ export type GetToolsHandler = () => string[];
 export type SetToolsHandler = (toolNames: string[]) => void;
 
 /**
+ * CLI flag definition registered by a hook.
+ */
+export interface HookFlag {
+	/** Flag name (without --) */
+	name: string;
+	/** Description for --help */
+	description?: string;
+	/** Type: boolean or string */
+	type: "boolean" | "string";
+	/** Default value */
+	default?: boolean | string;
+	/** Hook path that registered this flag */
+	hookPath: string;
+}
+
+/**
+ * Keyboard shortcut registered by a hook.
+ */
+export interface HookShortcut {
+	/** Shortcut string (e.g., "shift+p", "ctrl+shift+x") */
+	shortcut: string;
+	/** Description for help */
+	description?: string;
+	/** Handler function */
+	handler: (ctx: import("./types.js").HookContext) => Promise<void> | void;
+	/** Hook path that registered this shortcut */
+	hookPath: string;
+}
+
+/**
  * New session handler type for ctx.newSession() in HookCommandContext.
  */
 export type NewSessionHandler = (options?: {
@@ -106,6 +136,12 @@ export interface LoadedHook {
 	messageRenderers: Map<string, HookMessageRenderer>;
 	/** Map of command name to registered command */
 	commands: Map<string, RegisteredCommand>;
+	/** CLI flags registered by this hook */
+	flags: Map<string, HookFlag>;
+	/** Flag values (set after CLI parsing) */
+	flagValues: Map<string, boolean | string>;
+	/** Keyboard shortcuts registered by this hook */
+	shortcuts: Map<string, HookShortcut>;
 	/** Set the send message handler for this hook's pi.sendMessage() */
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	/** Set the append entry handler for this hook's pi.appendEntry() */
@@ -114,6 +150,8 @@ export interface LoadedHook {
 	setGetToolsHandler: (handler: GetToolsHandler) => void;
 	/** Set the set tools handler for this hook's pi.setTools() */
 	setSetToolsHandler: (handler: SetToolsHandler) => void;
+	/** Set a flag value (called after CLI parsing) */
+	setFlagValue: (name: string, value: boolean | string) => void;
 }
 
 /**
@@ -167,14 +205,19 @@ function resolveHookPath(hookPath: string, cwd: string): string {
 function createHookAPI(
 	handlers: Map<string, HandlerFn[]>,
 	cwd: string,
+	hookPath: string,
 ): {
 	api: HookAPI;
 	messageRenderers: Map<string, HookMessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
+	flags: Map<string, HookFlag>;
+	flagValues: Map<string, boolean | string>;
+	shortcuts: Map<string, HookShortcut>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
 	setGetToolsHandler: (handler: GetToolsHandler) => void;
 	setSetToolsHandler: (handler: SetToolsHandler) => void;
+	setFlagValue: (name: string, value: boolean | string) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {
 		// Default no-op until mode sets the handler
@@ -188,6 +231,9 @@ function createHookAPI(
 	};
 	const messageRenderers = new Map<string, HookMessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
+	const flags = new Map<string, HookFlag>();
+	const flagValues = new Map<string, boolean | string>();
+	const shortcuts = new Map<string, HookShortcut>();
 
 	// Cast to HookAPI - the implementation is more general (string event names)
 	// but the interface has specific overloads for type safety in hooks
@@ -221,12 +267,37 @@ function createHookAPI(
 		setTools(toolNames: string[]): void {
 			setToolsHandler(toolNames);
 		},
+		registerFlag(
+			name: string,
+			options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
+		): void {
+			flags.set(name, { name, hookPath, ...options });
+			// Set default value if provided
+			if (options.default !== undefined) {
+				flagValues.set(name, options.default);
+			}
+		},
+		getFlag(name: string): boolean | string | undefined {
+			return flagValues.get(name);
+		},
+		registerShortcut(
+			shortcut: string,
+			options: {
+				description?: string;
+				handler: (ctx: import("./types.js").HookContext) => Promise<void> | void;
+			},
+		): void {
+			shortcuts.set(shortcut, { shortcut, hookPath, ...options });
+		},
 	} as HookAPI;
 
 	return {
 		api,
 		messageRenderers,
 		commands,
+		flags,
+		flagValues,
+		shortcuts,
 		setSendMessageHandler: (handler: SendMessageHandler) => {
 			sendMessageHandler = handler;
 		},
@@ -238,6 +309,9 @@ function createHookAPI(
 		},
 		setSetToolsHandler: (handler: SetToolsHandler) => {
 			setToolsHandler = handler;
+		},
+		setFlagValue: (name: string, value: boolean | string) => {
+			flagValues.set(name, value);
 		},
 	};
 }
@@ -270,11 +344,15 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 			api,
 			messageRenderers,
 			commands,
+			flags,
+			flagValues,
+			shortcuts,
 			setSendMessageHandler,
 			setAppendEntryHandler,
 			setGetToolsHandler,
 			setSetToolsHandler,
-		} = createHookAPI(handlers, cwd);
+			setFlagValue,
+		} = createHookAPI(handlers, cwd, hookPath);
 
 		// Call factory to register handlers
 		factory(api);
@@ -286,10 +364,14 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				handlers,
 				messageRenderers,
 				commands,
+				flags,
+				flagValues,
+				shortcuts,
 				setSendMessageHandler,
 				setAppendEntryHandler,
 				setGetToolsHandler,
 				setSetToolsHandler,
+				setFlagValue,
 			},
 			error: null,
 		};

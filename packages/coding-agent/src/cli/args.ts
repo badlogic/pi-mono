@@ -35,6 +35,8 @@ export interface Args {
 	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
+	/** Unknown flags (potentially hook flags) - map of flag name to value */
+	unknownFlags: Map<string, boolean | string>;
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -43,10 +45,11 @@ export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
 
-export function parseArgs(args: string[]): Args {
+export function parseArgs(args: string[], hookFlags?: Map<string, { type: "boolean" | "string" }>): Args {
 	const result: Args = {
 		messages: [],
 		fileArgs: [],
+		unknownFlags: new Map(),
 	};
 
 	for (let i = 0; i < args.length; i++) {
@@ -131,6 +134,18 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
+		} else if (arg.startsWith("--") && hookFlags) {
+			// Check if it's a hook-registered flag
+			const flagName = arg.slice(2);
+			const hookFlag = hookFlags.get(flagName);
+			if (hookFlag) {
+				if (hookFlag.type === "boolean") {
+					result.unknownFlags.set(flagName, true);
+				} else if (hookFlag.type === "string" && i + 1 < args.length) {
+					result.unknownFlags.set(flagName, args[++i]);
+				}
+			}
+			// Unknown flags without hookFlags are silently ignored (first pass)
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -171,6 +186,8 @@ ${chalk.bold("Options:")}
   --list-models [search]         List available models (with optional fuzzy search)
   --help, -h                     Show this help
   --version, -v                  Show version number
+
+Hooks can register additional flags (e.g., --plan from plan-mode hook).
 
 ${chalk.bold("Examples:")}
   # Interactive mode

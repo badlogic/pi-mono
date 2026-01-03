@@ -5,6 +5,8 @@ export {
 	type AppendEntryHandler,
 	type BranchHandler,
 	type GetToolsHandler,
+	type HookFlag,
+	type HookShortcut,
 	type LoadedHook,
 	type LoadHooksResult,
 	type NavigateTreeHandler,

@@ -38,7 +38,9 @@
 
 - `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
 - Hook API: `pi.getTools()` and `pi.setTools(toolNames)` for dynamically enabling/disabling tools from hooks
-- New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode with `/plan` command
+- Hook API: `pi.registerFlag(name, options)` and `pi.getFlag(name)` for hooks to register custom CLI flags
+- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts
+- New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode with `/plan` command, `--plan` flag, and Shift+P shortcut
 
 ### Changed
 
