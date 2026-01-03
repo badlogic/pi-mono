@@ -350,17 +350,11 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Get only models that have valid API keys available.
+	 * Get only models that have auth configured.
+	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
-	async getAvailable(): Promise<Model<Api>[]> {
-		const available: Model<Api>[] = [];
-		for (const model of this.models) {
-			const apiKey = await this.authStorage.getApiKey(model.provider);
-			if (apiKey) {
-				available.push(model);
-			}
-		}
-		return available;
+	getAvailable(): Model<Api>[] {
+		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
 	}
 
 	/**

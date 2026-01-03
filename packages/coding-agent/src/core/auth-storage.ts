@@ -122,10 +122,22 @@ export class AuthStorage {
 	}
 
 	/**
-	 * Check if credentials exist for a provider.
+	 * Check if credentials exist for a provider in auth.json.
 	 */
 	has(provider: string): boolean {
 		return provider in this.data;
+	}
+
+	/**
+	 * Check if any form of auth is configured for a provider.
+	 * Unlike getApiKey(), this doesn't refresh OAuth tokens.
+	 */
+	hasAuth(provider: string): boolean {
+		if (this.runtimeOverrides.has(provider)) return true;
+		if (this.data[provider]) return true;
+		if (getEnvApiKey(provider)) return true;
+		if (this.fallbackResolver?.(provider)) return true;
+		return false;
 	}
 
 	/**
