@@ -1135,7 +1135,7 @@ export class SessionManager {
 					// Check first line for valid session header
 					let header: { type: string; id: string; timestamp: string } | null = null;
 					try {
-						const first: SessionEntry = JSON.parse(lines[0]);
+						const first: FileEntry = JSON.parse(lines[0]);
 						if (first.type === "session" && first.id) {
 							header = first;
 						}

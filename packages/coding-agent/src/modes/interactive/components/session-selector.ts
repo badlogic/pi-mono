@@ -82,12 +82,17 @@ class SessionPreview implements Component {
 			} else if (message.role === "toolResult") {
 				prefix = message.toolName;
 				suffix = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-			} else {
-				prefix = message.role === "assistant" ? "  ai" : "user";
+			} else if (message.role === 'user' || message.role === 'assistant') {
+				prefix = message.role === "assistant" ? "ai" : "user";
 				suffix =
 					typeof message.content === "string"
 						? message.content
 						: message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+			} else if (message.role === 'branchSummary' || message.role === 'compactionSummary') {
+				prefix = message.role === 'branchSummary' ? "branch" : "compact";
+				suffix = message.summary;
+			} else {
+				continue;
 			}
 
 			prefix = `${theme.bold(prefix)} `;
@@ -125,7 +130,8 @@ class SessionPreview implements Component {
 		let end = content.length - 1;
 		const top: string[] = [];
 		const bottom: string[] = [];
-		const EMPTY_PREFIX = " ".repeat(5);
+		const prefixLength = 1 + Math.max(...content.map(c => c.prefix.length)); // Biggest prefix + 1 space
+		const EMPTY_PREFIX = " ".repeat(prefixLength);
 
 		// Create centered separator
 		const ellipsis = "   ⋮   ";
@@ -137,7 +143,7 @@ class SessionPreview implements Component {
 		// building top and bottom sections until we hit maxLines limit.
 		while (start < end && top.length + bottom.length < maxLines) {
 			content[start].lines.slice(0, MAX_LINES_PER_MSG).forEach((line, i) => {
-				const prefix = i === 0 ? content[start].prefix : EMPTY_PREFIX;
+				const prefix = i === 0 ? content[start].prefix.padStart(prefixLength) : EMPTY_PREFIX;
 				top.push(truncateToWidth(prefix + line, width));
 			});
 			if (content[start].lines.length > MAX_LINES_PER_MSG) {
@@ -147,7 +153,7 @@ class SessionPreview implements Component {
 				bottom.push(partialSeparator);
 			}
 			content[end].lines.slice(-MAX_LINES_PER_MSG).forEach((line, i) => {
-				const prefix = i === 0 ? content[end].prefix : EMPTY_PREFIX;
+				const prefix = i === 0 ? content[end].prefix.padStart(prefixLength) : EMPTY_PREFIX;
 				bottom.push(truncateToWidth(prefix + line, width));
 			});
 			start++;
