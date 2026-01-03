@@ -2,7 +2,7 @@
  * Simple text input component for hooks.
  */
 
-import { Container, Input, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, getEditorKeybindings, Input, Spacer, Text } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -46,14 +46,15 @@ export class HookInputComponent extends Container {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Enter
-		if (matchesKey(keyData, "enter") || keyData === "\n") {
+		if (kb.matches(keyData, "selectConfirm") || keyData === "\n") {
 			this.onSubmitCallback(this.input.getValue());
 			return;
 		}
 
 		// Escape or Ctrl+C to cancel
-		if (matchesKey(keyData, "escape") || matchesKey(keyData, "ctrl+c")) {
+		if (kb.matches(keyData, "selectCancel")) {
 			this.onCancelCallback();
 			return;
 		}

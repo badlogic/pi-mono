@@ -1,4 +1,12 @@
-import { type Component, Container, Input, matchesKey, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import {
+	type Component,
+	Container,
+	getEditorKeybindings,
+	Input,
+	Spacer,
+	Text,
+	truncateToWidth,
+} from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
@@ -114,30 +122,27 @@ class SessionList implements Component {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Up arrow
-		if (matchesKey(keyData, "up")) {
+		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 		}
 		// Down arrow
-		else if (matchesKey(keyData, "down")) {
+		else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
 		// Enter
-		else if (matchesKey(keyData, "enter")) {
+		else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.path);
 			}
 		}
 		// Escape - cancel
-		else if (matchesKey(keyData, "escape")) {
+		else if (kb.matches(keyData, "selectCancel")) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
-		}
-		// Ctrl+C - exit
-		else if (matchesKey(keyData, "ctrl+c")) {
-			this.onExit();
 		}
 		// Pass everything else to search input
 		else {

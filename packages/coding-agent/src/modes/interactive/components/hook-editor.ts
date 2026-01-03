@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Container, Editor, matchesKey, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, Editor, getEditorKeybindings, matchesKey, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -67,13 +67,14 @@ export class HookEditorComponent extends Container {
 			return;
 		}
 
+		const kb = getEditorKeybindings();
 		// Escape or Ctrl+C to cancel
-		if (matchesKey(keyData, "escape") || matchesKey(keyData, "ctrl+c")) {
+		if (kb.matches(keyData, "selectCancel")) {
 			this.onCancelCallback();
 			return;
 		}
 
-		// Ctrl+G for external editor
+		// Ctrl+G for external editor (keep matchesKey for this app-specific action)
 		if (matchesKey(keyData, "ctrl+g")) {
 			this.openExternalEditor();
 			return;

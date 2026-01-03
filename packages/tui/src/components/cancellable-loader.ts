@@ -1,4 +1,4 @@
-import { matchesKey } from "../keys.js";
+import { getEditorKeybindings } from "../keybindings.js";
 import { Loader } from "./loader.js";
 
 /**
@@ -27,7 +27,8 @@ export class CancellableLoader extends Loader {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "escape")) {
+		const kb = getEditorKeybindings();
+		if (kb.matches(data, "selectCancel")) {
 			this.abortController.abort();
 			this.onAbort?.();
 		}

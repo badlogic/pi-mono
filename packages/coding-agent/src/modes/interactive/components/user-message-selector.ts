@@ -1,4 +1,4 @@
-import { type Component, Container, matchesKey, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { type Component, Container, getEditorKeybindings, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -78,29 +78,24 @@ class UserMessageList implements Component {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Up arrow - go to previous (older) message, wrap to bottom when at top
-		if (matchesKey(keyData, "up")) {
+		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.messages.length - 1 : this.selectedIndex - 1;
 		}
 		// Down arrow - go to next (newer) message, wrap to top when at bottom
-		else if (matchesKey(keyData, "down")) {
+		else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = this.selectedIndex === this.messages.length - 1 ? 0 : this.selectedIndex + 1;
 		}
 		// Enter - select message and branch
-		else if (matchesKey(keyData, "enter")) {
+		else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.messages[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.id);
 			}
 		}
 		// Escape - cancel
-		else if (matchesKey(keyData, "escape")) {
-			if (this.onCancel) {
-				this.onCancel();
-			}
-		}
-		// Ctrl+C - cancel
-		else if (matchesKey(keyData, "ctrl+c")) {
+		else if (kb.matches(keyData, "selectCancel")) {
 			if (this.onCancel) {
 				this.onCancel();
 			}

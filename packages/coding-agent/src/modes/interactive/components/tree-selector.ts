@@ -1,6 +1,7 @@
 import {
 	type Component,
 	Container,
+	getEditorKeybindings,
 	Input,
 	matchesKey,
 	Spacer,
@@ -655,30 +656,29 @@ class TreeList implements Component {
 	}
 
 	handleInput(keyData: string): void {
-		if (matchesKey(keyData, "up")) {
+		const kb = getEditorKeybindings();
+		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredNodes.length - 1 : this.selectedIndex - 1;
-		} else if (matchesKey(keyData, "down")) {
+		} else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = this.selectedIndex === this.filteredNodes.length - 1 ? 0 : this.selectedIndex + 1;
-		} else if (matchesKey(keyData, "left")) {
+		} else if (kb.matches(keyData, "cursorLeft")) {
 			// Page up
 			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisibleLines);
-		} else if (matchesKey(keyData, "right")) {
+		} else if (kb.matches(keyData, "cursorRight")) {
 			// Page down
 			this.selectedIndex = Math.min(this.filteredNodes.length - 1, this.selectedIndex + this.maxVisibleLines);
-		} else if (matchesKey(keyData, "enter")) {
+		} else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.filteredNodes[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.node.entry.id);
 			}
-		} else if (matchesKey(keyData, "escape")) {
+		} else if (kb.matches(keyData, "selectCancel")) {
 			if (this.searchQuery) {
 				this.searchQuery = "";
 				this.applyFilter();
 			} else {
 				this.onCancel?.();
 			}
-		} else if (matchesKey(keyData, "ctrl+c")) {
-			this.onCancel?.();
 		} else if (matchesKey(keyData, "shift+ctrl+o")) {
 			// Cycle filter backwards
 			const modes: FilterMode[] = ["default", "no-tools", "user-only", "labeled-only", "all"];
@@ -691,7 +691,7 @@ class TreeList implements Component {
 			const currentIndex = modes.indexOf(this.filterMode);
 			this.filterMode = modes[(currentIndex + 1) % modes.length];
 			this.applyFilter();
-		} else if (matchesKey(keyData, "backspace")) {
+		} else if (kb.matches(keyData, "deleteCharBackward")) {
 			if (this.searchQuery.length > 0) {
 				this.searchQuery = this.searchQuery.slice(0, -1);
 				this.applyFilter();
@@ -759,10 +759,11 @@ class LabelInput implements Component {
 	}
 
 	handleInput(keyData: string): void {
-		if (matchesKey(keyData, "enter")) {
+		const kb = getEditorKeybindings();
+		if (kb.matches(keyData, "selectConfirm")) {
 			const value = this.input.getValue().trim();
 			this.onSubmit?.(this.entryId, value || undefined);
-		} else if (matchesKey(keyData, "escape")) {
+		} else if (kb.matches(keyData, "selectCancel")) {
 			this.onCancel?.();
 		} else {
 			this.input.handleInput(keyData);

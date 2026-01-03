@@ -1,4 +1,4 @@
-import { matchesKey } from "../keys.js";
+import { getEditorKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
@@ -145,13 +145,14 @@ export class SettingsList implements Component {
 		}
 
 		// Main list input handling
-		if (matchesKey(data, "up")) {
+		const kb = getEditorKeybindings();
+		if (kb.matches(data, "selectUp")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.items.length - 1 : this.selectedIndex - 1;
-		} else if (matchesKey(data, "down")) {
+		} else if (kb.matches(data, "selectDown")) {
 			this.selectedIndex = this.selectedIndex === this.items.length - 1 ? 0 : this.selectedIndex + 1;
-		} else if (matchesKey(data, "enter") || data === " ") {
+		} else if (kb.matches(data, "selectConfirm") || data === " ") {
 			this.activateItem();
-		} else if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+		} else if (kb.matches(data, "selectCancel")) {
 			this.onCancel();
 		}
 	}
