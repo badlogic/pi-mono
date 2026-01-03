@@ -891,6 +891,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/quit" || text === "/exit") {
+				this.editor.setText("");
+				await this.shutdown();
+				return;
+			}
 
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
