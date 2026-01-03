@@ -70,7 +70,7 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	selectUp: "up",
 	selectDown: "down",
 	selectConfirm: "enter",
-	selectCancel: "escape",
+	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
 };
