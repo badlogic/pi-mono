@@ -168,21 +168,7 @@ function extractTodoItems(message: string): TodoItem[] {
 	return items;
 }
 
-/**
- * Find [STEP N DONE] or [DONE N] tags in text and return step numbers.
- */
-function findDoneSteps(text: string): number[] {
-	const steps: number[] = [];
-	// Match [STEP 1 DONE], [STEP 2 DONE], etc.
-	for (const match of text.matchAll(/\[STEP\s+(\d+)\s+DONE\]/gi)) {
-		steps.push(parseInt(match[1], 10));
-	}
-	// Also match [DONE 1], [DONE 2], etc.
-	for (const match of text.matchAll(/\[DONE\s+(\d+)\]/gi)) {
-		steps.push(parseInt(match[1], 10));
-	}
-	return steps;
-}
+
 
 export default function planModeHook(pi: HookAPI) {
 	let planModeEnabled = false;
@@ -290,6 +276,19 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
+	// Track step completion based on tool results
+	pi.on("tool_result", async (_event, ctx) => {
+		if (!executionMode || todoItems.length === 0) return;
+
+		// Mark the first uncompleted step as done when any tool succeeds
+		const nextStep = todoItems.find((t) => !t.completed);
+		if (nextStep) {
+			nextStep.completed = true;
+			console.error(`[plan-mode] Marked step ${nextStep.step} complete: ${nextStep.text}`);
+			updateStatus(ctx);
+		}
+	});
+
 	// Filter out stale plan mode context messages from LLM context
 	// This ensures the agent only sees the CURRENT state (plan mode on/off)
 	pi.on("context", async (event) => {
@@ -355,16 +354,16 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		if (executionMode && todoItems.length > 0) {
 			console.error("[plan-mode] before_agent_start: injecting EXECUTING PLAN context");
 			const remaining = todoItems.filter((t) => !t.completed);
-			const todoList = remaining.map((t) => `Step ${t.step}: ${t.text}`).join("\n");
+			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
-					content: `[EXECUTING PLAN - You have FULL tool access]
+					content: `[EXECUTING PLAN - Full tool access enabled]
 
+Remaining steps:
 ${todoList}
 
-IMPORTANT: After completing each step, output [STEP N DONE] where N is the step number.
-Example: After completing step ${remaining[0]?.step || 1}, write [STEP ${remaining[0]?.step || 1} DONE]`,
+Execute each step in order.`,
 					display: false,
 				},
 			};
@@ -374,28 +373,8 @@ Example: After completing step ${remaining[0]?.step || 1}, write [STEP ${remaini
 
 	// After agent finishes
 	pi.on("agent_end", async (event, ctx) => {
-		// Check for done tags in execution mode
+		// In execution mode, check if all steps complete
 		if (executionMode && todoItems.length > 0) {
-			const messages = event.messages;
-			const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-			if (lastAssistant && Array.isArray(lastAssistant.content)) {
-				const textContent = lastAssistant.content
-					.filter((block): block is { type: "text"; text: string } => block.type === "text")
-					.map((block) => block.text)
-					.join("\n");
-
-				// Find and mark completed items
-				const doneSteps = findDoneSteps(textContent);
-				for (const stepNum of doneSteps) {
-					const item = todoItems.find((t) => t.step === stepNum);
-					if (item && !item.completed) {
-						item.completed = true;
-					}
-				}
-				updateStatus(ctx);
-			}
-
-			// Check if all complete
 			const allComplete = todoItems.every((t) => t.completed);
 			if (allComplete) {
 				// Show final completed list in chat
