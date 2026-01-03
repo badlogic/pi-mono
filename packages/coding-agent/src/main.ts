@@ -18,6 +18,7 @@ import type { AgentSession } from "./core/agent-session.js";
 
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
 import { exportFromFile } from "./core/export-html/index.js";
+import { discoverAndLoadHooks } from "./core/hooks/index.js";
 import type { HookUIContext } from "./core/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
@@ -212,6 +213,7 @@ function buildSessionOptions(
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
+	preloadedHooks?: import("./core/hooks/index.js").LoadedHook[],
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
@@ -270,9 +272,9 @@ function buildSessionOptions(
 		options.skills = [];
 	}
 
-	// Additional hook paths from CLI
-	if (parsed.hooks && parsed.hooks.length > 0) {
-		options.additionalHookPaths = parsed.hooks;
+	// Pre-loaded hooks (from early CLI flag discovery)
+	if (preloadedHooks && preloadedHooks.length > 0) {
+		options.preloadedHooks = preloadedHooks;
 	}
 
 	// Additional custom tool paths from CLI
@@ -294,8 +296,37 @@ export async function main(args: string[]) {
 	const modelRegistry = discoverModels(authStorage);
 	time("discoverModels");
 
-	const parsed = parseArgs(args);
+	// First pass: parse args to get --hook paths
+	const firstPass = parseArgs(args);
+	time("parseArgs-firstPass");
+
+	// Early load hooks to discover their CLI flags
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const hookPaths = firstPass.hooks ?? [];
+	const { hooks: loadedHooks } = await discoverAndLoadHooks(hookPaths, cwd, agentDir);
+	time("discoverHookFlags");
+
+	// Collect all hook flags
+	const hookFlags = new Map<string, { type: "boolean" | "string" }>();
+	for (const hook of loadedHooks) {
+		for (const [name, flag] of hook.flags) {
+			hookFlags.set(name, { type: flag.type });
+		}
+	}
+
+	// Second pass: parse args with hook flags
+	const parsed = parseArgs(args, hookFlags);
 	time("parseArgs");
+
+	// Pass flag values to hooks
+	for (const [name, value] of parsed.unknownFlags) {
+		for (const hook of loadedHooks) {
+			if (hook.flags.has(name)) {
+				hook.setFlagValue(name, value);
+			}
+		}
+	}
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -331,7 +362,6 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	const cwd = process.cwd();
 	const settingsManager = SettingsManager.create(cwd);
 	time("SettingsManager.create");
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
@@ -369,7 +399,7 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry);
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, loadedHooks);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
 

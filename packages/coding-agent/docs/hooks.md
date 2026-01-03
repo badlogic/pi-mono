@@ -775,6 +775,44 @@ pi.setTools(["read", "bash", "edit", "write"]);
 
 Only built-in tools can be enabled/disabled. Custom tools are always active. Unknown tool names are ignored.
 
+### pi.registerFlag(name, options)
+
+Register a CLI flag for this hook. Flag values are accessible via `pi.getFlag()`.
+
+```typescript
+pi.registerFlag("plan", {
+  description: "Start in plan mode (read-only)",
+  type: "boolean",  // or "string"
+  default: false,
+});
+```
+
+### pi.getFlag(name)
+
+Get the value of a CLI flag registered by this hook.
+
+```typescript
+if (pi.getFlag("plan") === true) {
+  // plan mode enabled via --plan flag
+}
+```
+
+### pi.registerShortcut(shortcut, options)
+
+Register a keyboard shortcut for this hook. The handler is called when the shortcut is pressed.
+
+```typescript
+pi.registerShortcut("shift+p", {
+  description: "Toggle plan mode",
+  handler: async (ctx) => {
+    // toggle mode
+    ctx.ui.notify("Plan mode toggled");
+  },
+});
+```
+
+Shortcut format: `modifier+key` where modifier can be `shift`, `ctrl`, `alt`, or combinations like `ctrl+shift`.
+
 ## Examples
 
 ### Permission Gate

@@ -410,20 +410,7 @@ export class InteractiveMode {
 		}
 
 		// Create and set hook & tool UI context
-		const uiContext: HookUIContext = {
-			select: (title, options) => this.showHookSelector(title, options),
-			confirm: (title, message) => this.showHookConfirm(title, message),
-			input: (title, placeholder) => this.showHookInput(title, placeholder),
-			notify: (message, type) => this.showHookNotify(message, type),
-			setStatus: (key, text) => this.setHookStatus(key, text),
-			custom: (factory) => this.showHookCustom(factory),
-			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getText(),
-			editor: (title, prefill) => this.showHookEditor(title, prefill),
-			get theme() {
-				return theme;
-			},
-		};
+		const uiContext = this.createHookUIContext();
 		this.setToolUIContext(uiContext, true);
 
 		// Notify custom tools of session start
@@ -536,6 +523,9 @@ export class InteractiveMode {
 			this.showHookError(error.hookPath, error.error);
 		});
 
+		// Set up hook-registered shortcuts
+		this.setupHookShortcuts(hookRunner);
+
 		// Show loaded hooks
 		const hookPaths = hookRunner.getHookPaths();
 		if (hookPaths.length > 0) {
@@ -584,11 +574,107 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set up keyboard shortcuts registered by hooks.
+	 */
+	private setupHookShortcuts(hookRunner: import("../../core/hooks/index.js").HookRunner): void {
+		const shortcuts = hookRunner.getShortcuts();
+		if (shortcuts.size === 0) return;
+
+		// Create a context for shortcut handlers
+		const createContext = (): import("../../core/hooks/types.js").HookContext => ({
+			ui: this.createHookUIContext(),
+			hasUI: true,
+			cwd: process.cwd(),
+			sessionManager: this.sessionManager,
+			modelRegistry: this.session.modelRegistry,
+			model: this.session.model,
+			isIdle: () => !this.session.isStreaming,
+			abort: () => this.session.abort(),
+			hasPendingMessages: () => this.session.pendingMessageCount > 0,
+		});
+
+		// Set up the hook shortcut handler on the editor
+		this.editor.onHookShortcut = (data: string) => {
+			for (const [shortcutStr, shortcut] of shortcuts) {
+				if (this.matchShortcut(data, shortcutStr)) {
+					// Run handler async, don't block input
+					Promise.resolve(shortcut.handler(createContext())).catch((err) => {
+						this.showError(`Shortcut handler error: ${err instanceof Error ? err.message : String(err)}`);
+					});
+					return true;
+				}
+			}
+			return false;
+		};
+	}
+
+	/**
+	 * Match a key input against a shortcut string like "shift+p" or "ctrl+shift+x".
+	 */
+	private matchShortcut(data: string, shortcut: string): boolean {
+		const parts = shortcut.toLowerCase().split("+");
+		const key = parts.pop() ?? "";
+		const modifiers = new Set(parts);
+
+		const hasShift = modifiers.has("shift");
+		const hasCtrl = modifiers.has("ctrl");
+		const hasAlt = modifiers.has("alt");
+
+		// Get the key codepoint
+		const keyCode = key.length === 1 ? key.charCodeAt(0) : 0;
+		if (keyCode === 0) return false;
+
+		// Calculate expected modifier bits for Kitty protocol
+		// Kitty modifier bits: 1=shift, 2=alt, 4=ctrl
+		let expectedMod = 0;
+		if (hasShift) expectedMod |= 1;
+		if (hasAlt) expectedMod |= 2;
+		if (hasCtrl) expectedMod |= 4;
+
+		// Try to match Kitty protocol: \x1b[<code>;<mod>u
+		// With modifier offset: mod in sequence = expectedMod + 1
+		const kittyPattern = new RegExp(`^\x1b\\[${keyCode};(\\d+)u$`);
+		const kittyMatch = data.match(kittyPattern);
+		if (kittyMatch) {
+			const actualMod = parseInt(kittyMatch[1], 10) - 1; // Subtract 1 for the offset
+			// Mask out lock bits (8=capslock, 16=numlock)
+			return (actualMod & 0x7) === expectedMod;
+		}
+
+		// Try uppercase letter for shift+letter (legacy terminals)
+		if (hasShift && !hasCtrl && !hasAlt && key.length === 1) {
+			return data === key.toUpperCase();
+		}
+
+		return false;
+	}
+
+	/**
 	 * Set hook status text in the footer.
 	 */
 	private setHookStatus(key: string, text: string | undefined): void {
 		this.footer.setHookStatus(key, text);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Create the HookUIContext for hooks and tools.
+	 */
+	private createHookUIContext(): HookUIContext {
+		return {
+			select: (title, options) => this.showHookSelector(title, options),
+			confirm: (title, message) => this.showHookConfirm(title, message),
+			input: (title, placeholder) => this.showHookInput(title, placeholder),
+			notify: (message, type) => this.showHookNotify(message, type),
+			setStatus: (key, text) => this.setHookStatus(key, text),
+			custom: (factory) => this.showHookCustom(factory),
+			setEditorText: (text) => this.editor.setText(text),
+			getEditorText: () => this.editor.getText(),
+			editor: (title, prefill) => this.showHookEditor(title, prefill),
+			get theme() {
+				return theme;
+			},
+		};
 	}
 
 	/**

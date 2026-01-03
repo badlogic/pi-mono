@@ -771,6 +771,70 @@ export interface HookAPI {
 	 * pi.setTools(["read", "bash", "edit", "write"]);
 	 */
 	setTools(toolNames: string[]): void;
+
+	/**
+	 * Register a CLI flag for this hook.
+	 * Flags are parsed from command line and values accessible via getFlag().
+	 *
+	 * @param name - Flag name (will be --name on CLI)
+	 * @param options - Flag configuration
+	 *
+	 * @example
+	 * pi.registerFlag("plan", {
+	 *   description: "Start in plan mode (read-only)",
+	 *   type: "boolean",
+	 * });
+	 */
+	registerFlag(
+		name: string,
+		options: {
+			/** Description shown in --help */
+			description?: string;
+			/** Flag type: boolean (--flag) or string (--flag value) */
+			type: "boolean" | "string";
+			/** Default value */
+			default?: boolean | string;
+		},
+	): void;
+
+	/**
+	 * Get the value of a CLI flag registered by this hook.
+	 * Returns undefined if flag was not provided and has no default.
+	 *
+	 * @param name - Flag name (without --)
+	 * @returns Flag value, or undefined
+	 *
+	 * @example
+	 * if (pi.getFlag("plan")) {
+	 *   // plan mode enabled
+	 * }
+	 */
+	getFlag(name: string): boolean | string | undefined;
+
+	/**
+	 * Register a keyboard shortcut for this hook.
+	 * The handler is called when the shortcut is pressed in interactive mode.
+	 *
+	 * @param shortcut - Shortcut definition (e.g., "shift+p", "ctrl+shift+x")
+	 * @param options - Shortcut configuration
+	 *
+	 * @example
+	 * pi.registerShortcut("shift+p", {
+	 *   description: "Toggle plan mode",
+	 *   handler: async (ctx) => {
+	 *     // toggle plan mode
+	 *   },
+	 * });
+	 */
+	registerShortcut(
+		shortcut: string,
+		options: {
+			/** Description shown in help */
+			description?: string;
+			/** Handler called when shortcut is pressed */
+			handler: (ctx: HookContext) => Promise<void> | void;
+		},
+	): void;
 }
 
 /**

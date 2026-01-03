@@ -169,6 +169,43 @@ export class HookRunner {
 	}
 
 	/**
+	 * Get all CLI flags registered by hooks.
+	 */
+	getFlags(): Map<string, import("./loader.js").HookFlag> {
+		const allFlags = new Map<string, import("./loader.js").HookFlag>();
+		for (const hook of this.hooks) {
+			for (const [name, flag] of hook.flags) {
+				allFlags.set(name, flag);
+			}
+		}
+		return allFlags;
+	}
+
+	/**
+	 * Set a flag value (after CLI parsing).
+	 */
+	setFlagValue(name: string, value: boolean | string): void {
+		for (const hook of this.hooks) {
+			if (hook.flags.has(name)) {
+				hook.setFlagValue(name, value);
+			}
+		}
+	}
+
+	/**
+	 * Get all keyboard shortcuts registered by hooks.
+	 */
+	getShortcuts(): Map<string, import("./loader.js").HookShortcut> {
+		const allShortcuts = new Map<string, import("./loader.js").HookShortcut>();
+		for (const hook of this.hooks) {
+			for (const [key, shortcut] of hook.shortcuts) {
+				allShortcuts.set(key, shortcut);
+			}
+		}
+		return allShortcuts;
+	}
+
+	/**
 	 * Subscribe to hook errors.
 	 * @returns Unsubscribe function
 	 */
