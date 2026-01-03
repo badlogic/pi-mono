@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported.
+
 ## [0.32.1] - 2026-01-03
 
 ### Added

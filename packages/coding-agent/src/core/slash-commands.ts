@@ -81,19 +81,29 @@ export function parseCommandArgs(argsString: string): string[] {
 
 /**
  * Substitute argument placeholders in command content
- * Supports $1, $2, ... for positional args and $@ for all args
+ * Supports $1, $2, ... for positional args, $@ and $ARGUMENTS for all args
+ *
+ * Note: Replacement happens on the template string only. Argument values
+ * containing patterns like $1, $@, or $ARGUMENTS are NOT recursively substituted.
  */
 export function substituteArgs(content: string, args: string[]): string {
 	let result = content;
 
-	// Replace $@ with all args joined
-	result = result.replace(/\$@/g, args.join(" "));
-
-	// Replace $1, $2, etc. with positional args
+	// Replace $1, $2, etc. with positional args FIRST (before wildcards)
+	// This prevents wildcard replacement values containing $<digit> patterns from being re-substituted
 	result = result.replace(/\$(\d+)/g, (_, num) => {
 		const index = parseInt(num, 10) - 1;
 		return args[index] ?? "";
 	});
+
+	// Pre-compute all args joined (optimization)
+	const allArgs = args.join(" ");
+
+	// Replace $ARGUMENTS with all args joined (new syntax, aligns with Claude, Codex, OpenCode)
+	result = result.replace(/\$ARGUMENTS/g, allArgs);
+
+	// Replace $@ with all args joined (existing syntax)
+	result = result.replace(/\$@/g, allArgs);
 
 	return result;
 }
