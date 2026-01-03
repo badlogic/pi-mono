@@ -445,9 +445,10 @@ const currentText = ctx.ui.getEditorText();
 
 **Widget notes:**
 - Widgets are multi-line displays shown above the editor (below "Working..." indicator)
-- Multiple hooks can set widgets using unique keys
+- Multiple hooks can set widgets using unique keys (all widgets are displayed, stacked vertically)
 - Use for progress lists, todo tracking, or any multi-line status
 - Supports ANSI styling via `ctx.ui.theme` (including `strikethrough`)
+- **Caution:** Keep widgets small (a few lines). Large widgets from multiple hooks can cause viewport overflow and TUI flicker.
 
 **Styling with theme colors:**
 
