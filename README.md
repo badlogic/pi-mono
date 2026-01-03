@@ -2,6 +2,13 @@
 
 Tools for building AI agents and managing LLM deployments.
 
+<p>
+  <a href="https://discord.com/invite/nKXTsAcmbT"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
+  <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
+</p>
+
+> **Note:** The Discord is an unofficial community server, not monitored by maintainers. For bug reports and feature requests, use [GitHub Issues](https://github.com/badlogic/pi-mono/issues).
+
 ## Packages
 
 | Package | Description |
