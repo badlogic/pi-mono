@@ -16,7 +16,7 @@ Delegate tasks to specialized subagents with isolated context windows.
 ```
 subagent/
 ├── README.md            # This file
-├── subagent.ts          # The custom tool (entry point)
+├── index.ts             # The custom tool (entry point)
 ├── agents.ts            # Agent discovery logic
 ├── agents/              # Sample agent definitions
 │   ├── scout.md         # Fast recon, returns compressed context
@@ -36,7 +36,7 @@ From the repository root, symlink the files:
 ```bash
 # Symlink the tool (must be in a subdirectory with index.ts)
 mkdir -p ~/.pi/agent/tools/subagent
-ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/subagent.ts" ~/.pi/agent/tools/subagent/index.ts
+ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/index.ts" ~/.pi/agent/tools/subagent/index.ts
 ln -sf "$(pwd)/packages/coding-agent/examples/custom-tools/subagent/agents.ts" ~/.pi/agent/tools/subagent/agents.ts
 
 # Symlink agents
