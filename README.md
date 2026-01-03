@@ -14,8 +14,6 @@
 
 Tools for building AI agents and managing LLM deployments.
 
-> **Note:** The Discord is an unofficial community server, not monitored by maintainers. For bug reports and feature requests, use [GitHub Issues](https://github.com/badlogic/pi-mono/issues).
-
 ## Packages
 
 | Package | Description |
