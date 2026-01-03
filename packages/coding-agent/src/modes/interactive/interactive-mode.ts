@@ -637,6 +637,9 @@ export class InteractiveMode {
 		this.renderWidgets();
 	}
 
+	// Maximum total widget lines to prevent viewport overflow
+	private static readonly MAX_WIDGET_LINES = 10;
+
 	/**
 	 * Render all hook widgets to the widget container.
 	 */
@@ -649,10 +652,18 @@ export class InteractiveMode {
 			return;
 		}
 
-		// Render each widget
+		// Render each widget, respecting max lines to prevent viewport overflow
+		let totalLines = 0;
 		for (const [_key, lines] of this.hookWidgets) {
 			for (const line of lines) {
+				if (totalLines >= InteractiveMode.MAX_WIDGET_LINES) {
+					// Add truncation indicator and stop
+					this.widgetContainer.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
+					this.ui.requestRender();
+					return;
+				}
 				this.widgetContainer.addChild(new Text(line, 1, 0));
+				totalLines++;
 			}
 		}
 
