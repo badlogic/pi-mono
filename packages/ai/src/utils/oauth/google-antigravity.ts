@@ -7,6 +7,7 @@
  */
 
 import type { Server } from "http";
+import { HEADLESS_INSTRUCTIONS, parseOAuthRedirectUrl } from "./headless.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials } from "./types.js";
 
@@ -221,105 +222,136 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
 	};
 }
 
+/** Options for headless OAuth flow */
+export interface AntigravityLoginOptions {
+	/** If true, use manual URL paste instead of localhost callback server */
+	headless?: boolean;
+	/** Callback to prompt user to paste redirect URL (required if headless) */
+	onPromptUrl?: () => Promise<string>;
+}
+
 /**
  * Login with Antigravity OAuth
  *
  * @param onAuth - Callback with URL and optional instructions
  * @param onProgress - Optional progress callback
+ * @param options - Optional settings for headless environments
  */
 export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
+	options?: AntigravityLoginOptions,
 ): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
+	const headless = options?.headless ?? false;
 
-	// Start local server for callback
-	onProgress?.("Starting local server for OAuth callback...");
-	const { server, getCode } = await startCallbackServer();
+	// Build authorization URL
+	const authParams = new URLSearchParams({
+		client_id: CLIENT_ID,
+		response_type: "code",
+		redirect_uri: REDIRECT_URI,
+		scope: SCOPES.join(" "),
+		code_challenge: challenge,
+		code_challenge_method: "S256",
+		state: verifier,
+		access_type: "offline",
+		prompt: "consent",
+	});
 
-	try {
-		// Build authorization URL
-		const authParams = new URLSearchParams({
-			client_id: CLIENT_ID,
-			response_type: "code",
-			redirect_uri: REDIRECT_URI,
-			scope: SCOPES.join(" "),
-			code_challenge: challenge,
-			code_challenge_method: "S256",
-			state: verifier,
-			access_type: "offline",
-			prompt: "consent",
-		});
+	const authUrl = `${AUTH_URL}?${authParams.toString()}`;
 
-		const authUrl = `${AUTH_URL}?${authParams.toString()}`;
+	let code: string;
+	let state: string;
 
-		// Notify caller with URL to open
+	if (headless) {
+		// Headless mode: user manually pastes the redirect URL
+		if (!options?.onPromptUrl) {
+			throw new Error("onPromptUrl callback is required for headless OAuth flow");
+		}
+
 		onAuth({
 			url: authUrl,
-			instructions: "Complete the sign-in in your browser. The callback will be captured automatically.",
+			instructions: HEADLESS_INSTRUCTIONS,
 		});
 
-		// Wait for the callback
-		onProgress?.("Waiting for OAuth callback...");
-		const { code, state } = await getCode();
+		const redirectUrl = await options.onPromptUrl();
+		const parsed = parseOAuthRedirectUrl(redirectUrl, "/oauth-callback");
+		code = parsed.code;
+		state = parsed.state;
+	} else {
+		// Standard mode: localhost callback server
+		onProgress?.("Starting local server for OAuth callback...");
+		const { server, getCode } = await startCallbackServer();
 
-		// Verify state matches
-		if (state !== verifier) {
-			throw new Error("OAuth state mismatch - possible CSRF attack");
+		try {
+			onAuth({
+				url: authUrl,
+				instructions: "Complete the sign-in in your browser. The callback will be captured automatically.",
+			});
+
+			onProgress?.("Waiting for OAuth callback...");
+			const result = await getCode();
+			code = result.code;
+			state = result.state;
+		} finally {
+			server.close();
 		}
-
-		// Exchange code for tokens
-		onProgress?.("Exchanging authorization code for tokens...");
-		const tokenResponse = await fetch(TOKEN_URL, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded",
-			},
-			body: new URLSearchParams({
-				client_id: CLIENT_ID,
-				client_secret: CLIENT_SECRET,
-				code,
-				grant_type: "authorization_code",
-				redirect_uri: REDIRECT_URI,
-				code_verifier: verifier,
-			}),
-		});
-
-		if (!tokenResponse.ok) {
-			const error = await tokenResponse.text();
-			throw new Error(`Token exchange failed: ${error}`);
-		}
-
-		const tokenData = (await tokenResponse.json()) as {
-			access_token: string;
-			refresh_token: string;
-			expires_in: number;
-		};
-
-		if (!tokenData.refresh_token) {
-			throw new Error("No refresh token received. Please try again.");
-		}
-
-		// Get user email
-		onProgress?.("Getting user info...");
-		const email = await getUserEmail(tokenData.access_token);
-
-		// Discover project
-		const projectId = await discoverProject(tokenData.access_token, onProgress);
-
-		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
-		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
-
-		const credentials: OAuthCredentials = {
-			refresh: tokenData.refresh_token,
-			access: tokenData.access_token,
-			expires: expiresAt,
-			projectId,
-			email,
-		};
-
-		return credentials;
-	} finally {
-		server.close();
 	}
+
+	// Verify state matches
+	if (state !== verifier) {
+		throw new Error("OAuth state mismatch - possible CSRF attack");
+	}
+
+	// Exchange code for tokens
+	onProgress?.("Exchanging authorization code for tokens...");
+	const tokenResponse = await fetch(TOKEN_URL, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+		body: new URLSearchParams({
+			client_id: CLIENT_ID,
+			client_secret: CLIENT_SECRET,
+			code,
+			grant_type: "authorization_code",
+			redirect_uri: REDIRECT_URI,
+			code_verifier: verifier,
+		}),
+	});
+
+	if (!tokenResponse.ok) {
+		const error = await tokenResponse.text();
+		throw new Error(`Token exchange failed: ${error}`);
+	}
+
+	const tokenData = (await tokenResponse.json()) as {
+		access_token: string;
+		refresh_token: string;
+		expires_in: number;
+	};
+
+	if (!tokenData.refresh_token) {
+		throw new Error("No refresh token received. Please try again.");
+	}
+
+	// Get user email
+	onProgress?.("Getting user info...");
+	const email = await getUserEmail(tokenData.access_token);
+
+	// Discover project
+	const projectId = await discoverProject(tokenData.access_token, onProgress);
+
+	// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
+	const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
+
+	const credentials: OAuthCredentials = {
+		refresh: tokenData.refresh_token,
+		access: tokenData.access_token,
+		expires: expiresAt,
+		projectId,
+		email,
+	};
+
+	return credentials;
 }

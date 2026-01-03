@@ -20,14 +20,18 @@ export {
 } from "./github-copilot.js";
 // Google Antigravity
 export {
+	type AntigravityLoginOptions,
 	loginAntigravity,
 	refreshAntigravityToken,
 } from "./google-antigravity.js";
 // Google Gemini CLI
 export {
+	type GeminiCliLoginOptions,
 	loginGeminiCli,
 	refreshGoogleCloudToken,
 } from "./google-gemini-cli.js";
+// Headless utilities
+export { HEADLESS_INSTRUCTIONS, parseOAuthRedirectUrl } from "./headless.js";
 
 export * from "./types.js";
 

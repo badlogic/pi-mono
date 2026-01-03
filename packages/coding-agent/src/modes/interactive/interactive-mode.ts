@@ -35,6 +35,7 @@ import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { canOpenBrowser, supportsHyperlinks } from "../../utils/environment.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -1983,16 +1984,17 @@ export class InteractiveMode {
 								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
 
-									// OSC 8 hyperlink for desktop terminals that support clicking
-									const hyperlink = `\x1b]8;;${info.url}\x07Click here to login\x1b]8;;\x07`;
-									this.chatContainer.addChild(new Text(theme.fg("accent", hyperlink), 1, 0));
-
-									// OSC 52 to copy URL to clipboard (works over SSH, e.g., Termux)
-									const urlBase64 = Buffer.from(info.url).toString("base64");
-									process.stdout.write(`\x1b]52;c;${urlBase64}\x07`);
+									// Always show the plain URL for copy/paste (essential for headless environments)
 									this.chatContainer.addChild(
-										new Text(theme.fg("dim", "(URL copied to clipboard - paste in browser)"), 1, 0),
+										new Text(theme.fg("muted", "Open this URL in your browser:"), 1, 0),
 									);
+									this.chatContainer.addChild(new Text(theme.fg("accent", info.url), 1, 0));
+
+									// Show clickable hyperlink only if terminal supports it
+									if (supportsHyperlinks()) {
+										const hyperlink = `\x1b]8;;${info.url}\x07Click here to login\x1b]8;;\x07`;
+										this.chatContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+									}
 
 									if (info.instructions) {
 										this.chatContainer.addChild(new Spacer(1));
@@ -2001,14 +2003,16 @@ export class InteractiveMode {
 
 									this.ui.requestRender();
 
-									// Try to open browser on desktop
-									const openCmd =
-										process.platform === "darwin"
-											? "open"
-											: process.platform === "win32"
-												? "start"
-												: "xdg-open";
-									exec(`${openCmd} "${info.url}"`);
+									// Only attempt to auto-open browser in graphical environments
+									if (canOpenBrowser()) {
+										const openCmd =
+											process.platform === "darwin"
+												? "open"
+												: process.platform === "win32"
+													? "start"
+													: "xdg-open";
+										exec(`${openCmd} "${info.url}"`);
+									}
 								},
 								onPrompt: async (prompt: { message: string; placeholder?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
