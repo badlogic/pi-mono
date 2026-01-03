@@ -11,6 +11,7 @@
  * - After each agent response, prompts to execute the plan or continue planning
  * - Shows "plan" indicator in footer when active
  * - Extracts todo list from plan and tracks progress during execution
+ * - Agent marks steps complete by outputting [DONE:id] tags
  *
  * Usage:
  * 1. Copy this file to ~/.pi/agent/hooks/ or your project's .pi/hooks/
@@ -28,35 +29,29 @@ const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
 
 // Patterns for destructive bash commands that should be blocked in plan mode
 const DESTRUCTIVE_PATTERNS = [
-	// File/directory modification
 	/\brm\b/i,
 	/\brmdir\b/i,
 	/\bmv\b/i,
-	/\bcp\b/i, // cp can overwrite files
+	/\bcp\b/i,
 	/\bmkdir\b/i,
 	/\btouch\b/i,
 	/\bchmod\b/i,
 	/\bchown\b/i,
 	/\bchgrp\b/i,
-	/\bln\b/i, // symlinks
-	// File content modification
+	/\bln\b/i,
 	/\btee\b/i,
 	/\btruncate\b/i,
 	/\bdd\b/i,
 	/\bshred\b/i,
-	// Redirects that write to files
-	/[^<]>(?!>)/, // > but not >> or <>
-	/>>/, // append
-	// Package managers / installers
+	/[^<]>(?!>)/,
+	/>>/,
 	/\bnpm\s+(install|uninstall|update|ci|link|publish)/i,
 	/\byarn\s+(add|remove|install|publish)/i,
 	/\bpnpm\s+(add|remove|install|publish)/i,
 	/\bpip\s+(install|uninstall)/i,
 	/\bapt(-get)?\s+(install|remove|purge|update|upgrade)/i,
 	/\bbrew\s+(install|uninstall|upgrade)/i,
-	// Git write operations
 	/\bgit\s+(add|commit|push|pull|merge|rebase|reset|checkout\s+-b|branch\s+-[dD]|stash|cherry-pick|revert|tag|init|clone)/i,
-	// Other dangerous commands
 	/\bsudo\b/i,
 	/\bsu\b/i,
 	/\bkill\b/i,
@@ -66,7 +61,6 @@ const DESTRUCTIVE_PATTERNS = [
 	/\bshutdown\b/i,
 	/\bsystemctl\s+(start|stop|restart|enable|disable)/i,
 	/\bservice\s+\S+\s+(start|stop|restart)/i,
-	// Editors (interactive, could modify files)
 	/\b(vim?|nano|emacs|code|subl)\b/i,
 ];
 
@@ -113,77 +107,65 @@ const SAFE_COMMANDS = [
 	/^\s*yarn\s+(list|info|why|audit)/i,
 	/^\s*node\s+--version/i,
 	/^\s*python\s+--version/i,
-	/^\s*curl\s/i, // curl without -o is usually safe (reading)
-	/^\s*wget\s+-O\s*-/i, // wget to stdout only
+	/^\s*curl\s/i,
+	/^\s*wget\s+-O\s*-/i,
 	/^\s*jq\b/,
-	/^\s*sed\s+-n/i, // sed with -n (no auto-print) for reading only
+	/^\s*sed\s+-n/i,
 	/^\s*awk\b/,
-	/^\s*rg\b/, // ripgrep
-	/^\s*fd\b/, // fd-find
-	/^\s*bat\b/, // bat (cat clone)
-	/^\s*exa\b/, // exa (ls clone)
+	/^\s*rg\b/,
+	/^\s*fd\b/,
+	/^\s*bat\b/,
+	/^\s*exa\b/,
 ];
 
-/**
- * Check if a bash command is safe (read-only) for plan mode.
- */
 function isSafeCommand(command: string): boolean {
-	// Check if it's an explicitly safe command
 	if (SAFE_COMMANDS.some((pattern) => pattern.test(command))) {
-		// But still check for destructive patterns (e.g., cat > file)
 		if (!DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command))) {
 			return true;
 		}
 	}
-
-	// Check for destructive patterns
 	if (DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command))) {
 		return false;
 	}
-
-	// Allow commands that don't match any destructive pattern
-	// This is permissive - unknown commands are allowed
 	return true;
 }
 
-// Todo item for plan execution tracking
+// Todo item with unique ID
 interface TodoItem {
+	id: string;
 	text: string;
 	completed: boolean;
 }
 
+// Generate a short unique ID
+function generateId(): string {
+	return Math.random().toString(36).substring(2, 8);
+}
+
 /**
- * Extract todo items from assistant message.
- * Looks for numbered lists like:
- * 1. First task
- * 2. Second task
- * Or bullet points with step indicators:
- * - Step 1: Do something
- * - Step 2: Do another thing
+ * Extract todo items from assistant message and assign IDs.
  */
 function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
 
-	// Match numbered lists: "1. Task" or "1) Task" (handles markdown bold like "1. **Task**")
+	// Match numbered lists: "1. Task" or "1) Task"
 	const numberedPattern = /^\s*(\d+)[.)]\s+\*{0,2}([^*\n]+)/gm;
 	for (const match of message.matchAll(numberedPattern)) {
 		let text = match[2].trim();
-		// Remove trailing ** if present
 		text = text.replace(/\*{1,2}$/, "").trim();
-		// Skip if it's just a file path, code reference, or sub-item
 		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
-			items.push({ text, completed: false });
+			items.push({ id: generateId(), text, completed: false });
 		}
 	}
 
-	// If no numbered items found, try bullet points with "Step" prefix
+	// If no numbered items, try bullet points
 	if (items.length === 0) {
 		const stepPattern = /^\s*[-*]\s*(?:Step\s*\d+[:.])?\s*\*{0,2}([^*\n]+)/gim;
 		for (const match of message.matchAll(stepPattern)) {
 			let text = match[1].trim();
 			text = text.replace(/\*{1,2}$/, "").trim();
 			if (text.length > 10 && !text.startsWith("`")) {
-				items.push({ text, completed: false });
+				items.push({ id: generateId(), text, completed: false });
 			}
 		}
 	}
@@ -192,37 +174,20 @@ function extractTodoItems(message: string): TodoItem[] {
 }
 
 /**
- * Try to match a tool call or message to a todo item.
- * Returns the index of the matching item, or -1 if no match.
+ * Find [DONE:id] tags in text and return the IDs.
  */
-function matchTodoItem(todos: TodoItem[], action: string): number {
-	const actionLower = action.toLowerCase();
-
-	for (let i = 0; i < todos.length; i++) {
-		if (todos[i].completed) continue;
-
-		const todoLower = todos[i].text.toLowerCase();
-		// Check for keyword overlap
-		const todoWords = todoLower.split(/\s+/).filter((w) => w.length > 3);
-		const matchCount = todoWords.filter((w) => actionLower.includes(w)).length;
-
-		// If more than 30% of significant words match, consider it a match
-		if (todoWords.length > 0 && matchCount / todoWords.length > 0.3) {
-			return i;
-		}
+function findDoneTags(text: string): string[] {
+	const pattern = /\[DONE:([a-z0-9]+)\]/gi;
+	const ids: string[] = [];
+	for (const match of text.matchAll(pattern)) {
+		ids.push(match[1].toLowerCase());
 	}
-
-	return -1;
+	return ids;
 }
 
 export default function planModeHook(pi: HookAPI) {
-	// Track plan mode state
 	let planModeEnabled = false;
-
-	// Track execution mode (after plan confirmed)
 	let executionMode = false;
-
-	// Todo list extracted from plan
 	let todoItems: TodoItem[] = [];
 
 	// Register --plan CLI flag
@@ -234,7 +199,6 @@ export default function planModeHook(pi: HookAPI) {
 
 	// Helper to update status displays
 	function updateStatus(ctx: HookContext) {
-		// Update footer status
 		if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`));
@@ -244,7 +208,7 @@ export default function planModeHook(pi: HookAPI) {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Update widget with todo list (only during execution mode)
+		// Show widget during execution
 		if (executionMode && todoItems.length > 0) {
 			const lines: string[] = [];
 			for (const item of todoItems) {
@@ -262,7 +226,6 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	}
 
-	// Helper to toggle plan mode
 	function togglePlanMode(ctx: HookContext) {
 		planModeEnabled = !planModeEnabled;
 		executionMode = false;
@@ -286,7 +249,7 @@ export default function planModeHook(pi: HookAPI) {
 		},
 	});
 
-	// Register /todos command to show current todo list
+	// Register /todos command
 	pi.registerCommand("todos", {
 		description: "Show current plan todo list",
 		handler: async (_args, ctx) => {
@@ -296,12 +259,9 @@ export default function planModeHook(pi: HookAPI) {
 			}
 
 			const todoList = todoItems
-				.map((item, i) => {
+				.map((item) => {
 					const checkbox = item.completed ? "✓" : "○";
-					const style = item.completed
-						? ctx.ui.theme.fg("muted", `${checkbox} ${item.text}`)
-						: `${checkbox} ${item.text}`;
-					return `${i + 1}. ${style}`;
+					return `[${item.id}] ${checkbox} ${item.text}`;
 				})
 				.join("\n");
 
@@ -317,18 +277,8 @@ export default function planModeHook(pi: HookAPI) {
 		},
 	});
 
-	// Block destructive bash commands in plan mode
-	pi.on("tool_call", async (event, ctx) => {
-		// Track progress in execution mode
-		if (executionMode && todoItems.length > 0) {
-			const action = `${event.toolName}: ${JSON.stringify(event.input).slice(0, 200)}`;
-			const matchIdx = matchTodoItem(todoItems, action);
-			if (matchIdx >= 0) {
-				todoItems[matchIdx].completed = true;
-				updateStatus(ctx);
-			}
-		}
-
+	// Block destructive bash in plan mode
+	pi.on("tool_call", async (event) => {
 		if (!planModeEnabled) return;
 		if (event.toolName !== "bash") return;
 
@@ -341,48 +291,89 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
-	// Inject plan mode context at the start of each turn via before_agent_start
-	pi.on("before_agent_start", async () => {
-		if (!planModeEnabled) return;
+	// Check for [DONE:id] tags after each tool result (agent may output them in tool-related text)
+	pi.on("tool_result", async (_event, ctx) => {
+		if (!executionMode || todoItems.length === 0) return;
+		// The actual checking happens in agent_end when we have the full message
+		// But we update status here to keep UI responsive
+		updateStatus(ctx);
+	});
 
-		// Return a message to inject into context
-		return {
-			message: {
-				customType: "plan-mode-context",
-				content: `[PLAN MODE ACTIVE]
+	// Inject plan mode context
+	pi.on("before_agent_start", async () => {
+		if (!planModeEnabled && !executionMode) return;
+
+		if (planModeEnabled) {
+			return {
+				message: {
+					customType: "plan-mode-context",
+					content: `[PLAN MODE ACTIVE]
 You are in plan mode - a read-only exploration mode for safe code analysis.
 
 Restrictions:
 - You can only use: read, bash, grep, find, ls
 - You CANNOT use: edit, write (file modifications are disabled)
-- Bash is restricted to READ-ONLY commands (cat, ls, grep, git status, etc.)
-- Destructive bash commands are BLOCKED (rm, mv, cp, git commit, npm install, etc.)
+- Bash is restricted to READ-ONLY commands
 - Focus on analysis, planning, and understanding the codebase
 
-Your task is to explore, analyze, and create a detailed plan.
-
-IMPORTANT: When you have a complete plan, format it as a numbered list:
+Create a detailed numbered plan:
 1. First step description
 2. Second step description
-3. Third step description
 ...
 
-This format allows tracking progress during execution.
 Do NOT attempt to make changes - just describe what you would do.`,
-				display: false, // Don't show in TUI, just inject into context
-			},
-		};
+					display: false,
+				},
+			};
+		}
+
+		if (executionMode && todoItems.length > 0) {
+			const todoList = todoItems.map((t) => `- [${t.id}] ${t.completed ? "☑" : "☐"} ${t.text}`).join("\n");
+			return {
+				message: {
+					customType: "plan-execution-context",
+					content: `[EXECUTING PLAN]
+You have a plan with ${todoItems.length} steps. After completing each step, output [DONE:id] to mark it complete.
+
+Current plan status:
+${todoList}
+
+IMPORTANT: After completing each step, output [DONE:id] where id is the step's ID (e.g., [DONE:${todoItems.find((t) => !t.completed)?.id || todoItems[0].id}]).`,
+					display: false,
+				},
+			};
+		}
 	});
 
-	// After agent finishes, offer to execute the plan
+	// After agent finishes in plan mode
 	pi.on("agent_end", async (event, ctx) => {
-		// In execution mode, check if all todos are complete
+		// Check for done tags in the final message too
 		if (executionMode && todoItems.length > 0) {
+			const messages = event.messages;
+			const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+			if (lastAssistant && Array.isArray(lastAssistant.content)) {
+				const textContent = lastAssistant.content
+					.filter((block): block is { type: "text"; text: string } => block.type === "text")
+					.map((block) => block.text)
+					.join("\n");
+
+				const doneIds = findDoneTags(textContent);
+				for (const id of doneIds) {
+					const item = todoItems.find((t) => t.id === id);
+					if (item && !item.completed) {
+						item.completed = true;
+					}
+				}
+				updateStatus(ctx);
+			}
+
+			// Check if all complete
 			const allComplete = todoItems.every((t) => t.completed);
 			if (allComplete) {
 				ctx.ui.notify("Plan execution complete!", "info");
 				executionMode = false;
 				todoItems = [];
+				pi.setTools(NORMAL_MODE_TOOLS);
 				updateStatus(ctx);
 			}
 			return;
@@ -391,11 +382,10 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		if (!planModeEnabled) return;
 		if (!ctx.hasUI) return;
 
-		// Try to extract todo items from the last message
+		// Extract todos from last message
 		const messages = event.messages;
 		const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
 		if (lastAssistant && Array.isArray(lastAssistant.content)) {
-			// Extract text from content blocks
 			const textContent = lastAssistant.content
 				.filter((block): block is { type: "text"; text: string } => block.type === "text")
 				.map((block) => block.text)
@@ -411,9 +401,9 @@ Do NOT attempt to make changes - just describe what you would do.`,
 
 		const hasTodos = todoItems.length > 0;
 
-		// Show todo list in chat if we extracted items
+		// Show todo list in chat with IDs
 		if (hasTodos) {
-			const todoListText = todoItems.map((t, i) => `☐ ${i + 1}. ${t.text}`).join("\n");
+			const todoListText = todoItems.map((t) => `☐ [${t.id}] ${t.text}`).join("\n");
 			pi.sendMessage(
 				{
 					customType: "plan-todo-list",
@@ -431,15 +421,13 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		]);
 
 		if (choice?.startsWith("Execute")) {
-			// Switch to normal mode
 			planModeEnabled = false;
 			executionMode = hasTodos;
 			pi.setTools(NORMAL_MODE_TOOLS);
-			updateStatus(ctx); // This will now show the widget during execution
+			updateStatus(ctx);
 
-			// Send message to trigger execution immediately
 			const execMessage = hasTodos
-				? `Execute the plan you just created. There are ${todoItems.length} steps to complete. Proceed step by step, announcing each step as you work on it.`
+				? `Execute the plan. After completing each step, output [DONE:id] where id is the step's ID. Start with step [${todoItems[0].id}]: ${todoItems[0].text}`
 				: "Execute the plan you just created. Proceed step by step.";
 
 			pi.sendMessage(
@@ -456,23 +444,19 @@ Do NOT attempt to make changes - just describe what you would do.`,
 				ctx.ui.setEditorText(refinement);
 			}
 		}
-		// "Stay in plan mode" - do nothing, just continue
 	});
 
-	// Initialize plan mode state on session start
+	// Initialize state on session start
 	pi.on("session_start", async (_event, ctx) => {
-		// Check --plan flag first
 		if (pi.getFlag("plan") === true) {
 			planModeEnabled = true;
 		}
 
-		// Check if there's persisted plan mode state (from previous session)
 		const entries = ctx.sessionManager.getEntries();
 		const planModeEntry = entries
 			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
 			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
 
-		// Restore from session (overrides flag if session has state)
 		if (planModeEntry?.data) {
 			if (planModeEntry.data.enabled !== undefined) {
 				planModeEnabled = planModeEntry.data.enabled;
@@ -485,16 +469,14 @@ Do NOT attempt to make changes - just describe what you would do.`,
 			}
 		}
 
-		// Apply initial state if plan mode is enabled
 		if (planModeEnabled) {
 			pi.setTools(PLAN_MODE_TOOLS);
 		}
 		updateStatus(ctx);
 	});
 
-	// Save state when plan mode changes (via tool_call or other events)
+	// Persist state
 	pi.on("turn_start", async () => {
-		// Persist current state including todos
 		pi.appendEntry("plan-mode", {
 			enabled: planModeEnabled,
 			todos: todoItems,
