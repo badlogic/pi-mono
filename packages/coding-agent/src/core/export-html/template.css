@@ -548,7 +548,7 @@
 
     .tools-header {
       font-weight: bold;
-      color: var(--warning);
+      color: var(--customMessageLabel);
       margin-bottom: var(--line-height);
     }
 
