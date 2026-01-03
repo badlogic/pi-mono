@@ -1,4 +1,4 @@
-import { isArrowDown, isArrowUp, isCtrlC, isEnter, isEscape } from "../keys.js";
+import { getEditorKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
@@ -145,13 +145,14 @@ export class SettingsList implements Component {
 		}
 
 		// Main list input handling
-		if (isArrowUp(data)) {
+		const kb = getEditorKeybindings();
+		if (kb.matches(data, "selectUp")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.items.length - 1 : this.selectedIndex - 1;
-		} else if (isArrowDown(data)) {
+		} else if (kb.matches(data, "selectDown")) {
 			this.selectedIndex = this.selectedIndex === this.items.length - 1 ? 0 : this.selectedIndex + 1;
-		} else if (isEnter(data) || data === " ") {
+		} else if (kb.matches(data, "selectConfirm") || data === " ") {
 			this.activateItem();
-		} else if (isEscape(data) || isCtrlC(data)) {
+		} else if (kb.matches(data, "selectCancel")) {
 			this.onCancel();
 		}
 	}

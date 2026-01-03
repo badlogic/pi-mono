@@ -3,7 +3,7 @@
  */
 
 import type { HookAPI } from "@mariozechner/pi-coding-agent";
-import { isArrowDown, isArrowLeft, isArrowRight, isArrowUp, isEscape, visibleWidth } from "@mariozechner/pi-tui";
+import { matchesKey, visibleWidth } from "@mariozechner/pi-tui";
 
 const GAME_WIDTH = 40;
 const GAME_HEIGHT = 15;
@@ -150,7 +150,7 @@ class SnakeComponent {
 	handleInput(data: string): void {
 		// If paused (resuming), wait for any key
 		if (this.paused) {
-			if (isEscape(data) || data === "q" || data === "Q") {
+			if (matchesKey(data, "escape") || data === "q" || data === "Q") {
 				// Quit without clearing save
 				this.dispose();
 				this.onClose();
@@ -163,7 +163,7 @@ class SnakeComponent {
 		}
 
 		// ESC to pause and save
-		if (isEscape(data)) {
+		if (matchesKey(data, "escape")) {
 			this.dispose();
 			this.onSave(this.state);
 			this.onClose();
@@ -179,13 +179,13 @@ class SnakeComponent {
 		}
 
 		// Arrow keys or WASD
-		if (isArrowUp(data) || data === "w" || data === "W") {
+		if (matchesKey(data, "up") || data === "w" || data === "W") {
 			if (this.state.direction !== "down") this.state.nextDirection = "up";
-		} else if (isArrowDown(data) || data === "s" || data === "S") {
+		} else if (matchesKey(data, "down") || data === "s" || data === "S") {
 			if (this.state.direction !== "up") this.state.nextDirection = "down";
-		} else if (isArrowRight(data) || data === "d" || data === "D") {
+		} else if (matchesKey(data, "right") || data === "d" || data === "D") {
 			if (this.state.direction !== "left") this.state.nextDirection = "right";
-		} else if (isArrowLeft(data) || data === "a" || data === "A") {
+		} else if (matchesKey(data, "left") || data === "a" || data === "A") {
 			if (this.state.direction !== "right") this.state.nextDirection = "left";
 		}
 

@@ -1,20 +1,4 @@
-import {
-	isAltBackspace,
-	isAltLeft,
-	isAltRight,
-	isArrowLeft,
-	isArrowRight,
-	isBackspace,
-	isCtrlA,
-	isCtrlE,
-	isCtrlK,
-	isCtrlLeft,
-	isCtrlRight,
-	isCtrlU,
-	isCtrlW,
-	isDelete,
-	isEnter,
-} from "../keys.js";
+import { getEditorKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 
@@ -78,17 +62,16 @@ export class Input implements Component {
 			}
 			return;
 		}
-		// Handle special keys
-		if (isEnter(data) || data === "\n") {
-			// Enter - submit
-			if (this.onSubmit) {
-				this.onSubmit(this.value);
-			}
+		const kb = getEditorKeybindings();
+
+		// Submit
+		if (kb.matches(data, "submit") || data === "\n") {
+			if (this.onSubmit) this.onSubmit(this.value);
 			return;
 		}
 
-		if (isBackspace(data)) {
-			// Backspace - delete grapheme before cursor (handles emojis, etc.)
+		// Deletion
+		if (kb.matches(data, "deleteCharBackward")) {
 			if (this.cursor > 0) {
 				const beforeCursor = this.value.slice(0, this.cursor);
 				const graphemes = [...segmenter.segment(beforeCursor)];
@@ -100,30 +83,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (isArrowLeft(data)) {
-			// Left arrow - move by one grapheme (handles emojis, etc.)
-			if (this.cursor > 0) {
-				const beforeCursor = this.value.slice(0, this.cursor);
-				const graphemes = [...segmenter.segment(beforeCursor)];
-				const lastGrapheme = graphemes[graphemes.length - 1];
-				this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
-			}
-			return;
-		}
-
-		if (isArrowRight(data)) {
-			// Right arrow - move by one grapheme (handles emojis, etc.)
-			if (this.cursor < this.value.length) {
-				const afterCursor = this.value.slice(this.cursor);
-				const graphemes = [...segmenter.segment(afterCursor)];
-				const firstGrapheme = graphemes[0];
-				this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
-			}
-			return;
-		}
-
-		if (isDelete(data)) {
-			// Delete - delete grapheme at cursor (handles emojis, etc.)
+		if (kb.matches(data, "deleteCharForward")) {
 			if (this.cursor < this.value.length) {
 				const afterCursor = this.value.slice(this.cursor);
 				const graphemes = [...segmenter.segment(afterCursor)];
@@ -134,49 +94,59 @@ export class Input implements Component {
 			return;
 		}
 
-		if (isCtrlA(data)) {
-			// Ctrl+A - beginning of line
-			this.cursor = 0;
-			return;
-		}
-
-		if (isCtrlE(data)) {
-			// Ctrl+E - end of line
-			this.cursor = this.value.length;
-			return;
-		}
-
-		if (isCtrlW(data)) {
-			// Ctrl+W - delete word backwards
+		if (kb.matches(data, "deleteWordBackward")) {
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (isAltBackspace(data)) {
-			// Option/Alt+Backspace - delete word backwards
-			this.deleteWordBackwards();
-			return;
-		}
-
-		if (isCtrlU(data)) {
-			// Ctrl+U - delete from cursor to start of line
+		if (kb.matches(data, "deleteToLineStart")) {
 			this.value = this.value.slice(this.cursor);
 			this.cursor = 0;
 			return;
 		}
 
-		if (isCtrlK(data)) {
-			// Ctrl+K - delete from cursor to end of line
+		if (kb.matches(data, "deleteToLineEnd")) {
 			this.value = this.value.slice(0, this.cursor);
 			return;
 		}
 
-		if (isCtrlLeft(data) || isAltLeft(data)) {
+		// Cursor movement
+		if (kb.matches(data, "cursorLeft")) {
+			if (this.cursor > 0) {
+				const beforeCursor = this.value.slice(0, this.cursor);
+				const graphemes = [...segmenter.segment(beforeCursor)];
+				const lastGrapheme = graphemes[graphemes.length - 1];
+				this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
+			}
+			return;
+		}
+
+		if (kb.matches(data, "cursorRight")) {
+			if (this.cursor < this.value.length) {
+				const afterCursor = this.value.slice(this.cursor);
+				const graphemes = [...segmenter.segment(afterCursor)];
+				const firstGrapheme = graphemes[0];
+				this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
+			}
+			return;
+		}
+
+		if (kb.matches(data, "cursorLineStart")) {
+			this.cursor = 0;
+			return;
+		}
+
+		if (kb.matches(data, "cursorLineEnd")) {
+			this.cursor = this.value.length;
+			return;
+		}
+
+		if (kb.matches(data, "cursorWordLeft")) {
 			this.moveWordBackwards();
 			return;
 		}
 
-		if (isCtrlRight(data) || isAltRight(data)) {
+		if (kb.matches(data, "cursorWordRight")) {
 			this.moveWordForwards();
 			return;
 		}

@@ -1,12 +1,8 @@
 import {
 	type Component,
 	Container,
+	getEditorKeybindings,
 	Input,
-	isArrowDown,
-	isArrowUp,
-	isCtrlC,
-	isEnter,
-	isEscape,
 	Spacer,
 	Text,
 	truncateToWidth,
@@ -126,30 +122,27 @@ class SessionList implements Component {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Up arrow
-		if (isArrowUp(keyData)) {
+		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 		}
 		// Down arrow
-		else if (isArrowDown(keyData)) {
+		else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
 		// Enter
-		else if (isEnter(keyData)) {
+		else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected && this.onSelect) {
 				this.onSelect(selected.path);
 			}
 		}
 		// Escape - cancel
-		else if (isEscape(keyData)) {
+		else if (kb.matches(keyData, "selectCancel")) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
-		}
-		// Ctrl+C - exit
-		else if (isCtrlC(keyData)) {
-			this.onExit();
 		}
 		// Pass everything else to search input
 		else {

@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isShiftCtrlD } from "./keys.js";
+import { matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, setCellDimensions } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
@@ -146,7 +146,7 @@ export class TUI extends Container {
 		}
 
 		// Global debug key handler (Shift+Ctrl+D)
-		if (isShiftCtrlD(data) && this.onDebug) {
+		if (matchesKey(data, "shift+ctrl+d") && this.onDebug) {
 			this.onDebug();
 			return;
 		}
