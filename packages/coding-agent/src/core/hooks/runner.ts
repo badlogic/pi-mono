@@ -3,13 +3,15 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type {
 	AppendEntryHandler,
 	BranchHandler,
+	HookFlag,
+	HookShortcut,
 	LoadedHook,
 	NavigateTreeHandler,
 	NewSessionHandler,
@@ -176,8 +178,8 @@ export class HookRunner {
 	/**
 	 * Get all CLI flags registered by hooks.
 	 */
-	getFlags(): Map<string, import("./loader.js").HookFlag> {
-		const allFlags = new Map<string, import("./loader.js").HookFlag>();
+	getFlags(): Map<string, HookFlag> {
+		const allFlags = new Map<string, HookFlag>();
 		for (const hook of this.hooks) {
 			for (const [name, flag] of hook.flags) {
 				allFlags.set(name, flag);
@@ -221,8 +223,8 @@ export class HookRunner {
 	 * Conflicts with built-in shortcuts are skipped with a warning.
 	 * Conflicts between hooks are logged as warnings.
 	 */
-	getShortcuts(): Map<string, import("./loader.js").HookShortcut> {
-		const allShortcuts = new Map<string, import("./loader.js").HookShortcut>();
+	getShortcuts(): Map<string, HookShortcut> {
+		const allShortcuts = new Map<string, HookShortcut>();
 		for (const hook of this.hooks) {
 			for (const [key, shortcut] of hook.shortcuts) {
 				const normalizedKey = key.toLowerCase();
@@ -486,7 +488,7 @@ export class HookRunner {
 	 */
 	async emitBeforeAgentStart(
 		prompt: string,
-		images?: import("@mariozechner/pi-ai").ImageContent[],
+		images?: ImageContent[],
 	): Promise<BeforeAgentStartEventResult | undefined> {
 		const ctx = this.createContext();
 		let result: BeforeAgentStartEventResult | undefined;
