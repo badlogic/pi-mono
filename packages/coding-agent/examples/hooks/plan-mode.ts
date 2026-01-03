@@ -244,8 +244,8 @@ export default function planModeHook(pi: HookAPI) {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Update widget with todo list (show in both plan mode and execution mode)
-		if (todoItems.length > 0) {
+		// Update widget with todo list (only during execution mode)
+		if (executionMode && todoItems.length > 0) {
 			const lines: string[] = [];
 			for (const item of todoItems) {
 				if (item.completed) {
@@ -405,20 +405,26 @@ Do NOT attempt to make changes - just describe what you would do.`,
 				const extracted = extractTodoItems(textContent);
 				if (extracted.length > 0) {
 					todoItems = extracted;
-					updateStatus(ctx); // Show the extracted todos
 				}
 			}
 		}
 
 		const hasTodos = todoItems.length > 0;
-		const todoPreview = hasTodos
-			? `\n\nExtracted ${todoItems.length} steps:\n${todoItems
-					.slice(0, 3)
-					.map((t, i) => `  ${i + 1}. ${t.text.slice(0, 50)}...`)
-					.join("\n")}${todoItems.length > 3 ? `\n  ... and ${todoItems.length - 3} more` : ""}`
-			: "";
 
-		const choice = await ctx.ui.select(`Plan mode - what next?${todoPreview}`, [
+		// Show todo list in chat if we extracted items
+		if (hasTodos) {
+			const todoListText = todoItems.map((t, i) => `☐ ${i + 1}. ${t.text}`).join("\n");
+			pi.sendMessage(
+				{
+					customType: "plan-todo-list",
+					content: `**Plan Steps (${todoItems.length}):**\n\n${todoListText}`,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+		}
+
+		const choice = await ctx.ui.select("Plan mode - what next?", [
 			hasTodos ? "Execute the plan (track progress)" : "Execute the plan",
 			"Stay in plan mode",
 			"Refine the plan",
@@ -429,7 +435,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 			planModeEnabled = false;
 			executionMode = hasTodos;
 			pi.setTools(NORMAL_MODE_TOOLS);
-			updateStatus(ctx);
+			updateStatus(ctx); // This will now show the widget during execution
 
 			// Send message to trigger execution immediately
 			const execMessage = hasTodos
