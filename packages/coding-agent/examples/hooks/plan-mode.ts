@@ -398,8 +398,21 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 			// Check if all complete
 			const allComplete = todoItems.every((t) => t.completed);
 			if (allComplete) {
-				ctx.ui.notify("Plan execution complete!", "info");
+				// Show final completed list in chat
+				const completedList = todoItems
+					.map((t) => `~~${t.text}~~`)
+					.join("\n");
+				pi.sendMessage(
+					{
+						customType: "plan-complete",
+						content: `**Plan Complete!** ✓\n\n${completedList}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
 				executionMode = false;
+				const completedItems = [...todoItems]; // Keep for reference
 				todoItems = [];
 				pi.setTools(NORMAL_MODE_TOOLS);
 				updateStatus(ctx);
