@@ -147,7 +147,10 @@ function cleanStepText(text: string): string {
 		// Remove markdown code
 		.replace(/`([^`]+)`/g, "$1")
 		// Remove leading action words that are redundant
-		.replace(/^(Use|Run|Execute|Create|Write|Read|Check|Verify|Update|Modify|Add|Remove|Delete|Install)\s+(the\s+)?/i, "")
+		.replace(
+			/^(Use|Run|Execute|Create|Write|Read|Check|Verify|Update|Modify|Add|Remove|Delete|Install)\s+(the\s+)?/i,
+			"",
+		)
 		// Clean up extra whitespace
 		.replace(/\s+/g, " ")
 		.trim();
@@ -159,7 +162,7 @@ function cleanStepText(text: string): string {
 
 	// Truncate if too long
 	if (cleaned.length > 50) {
-		cleaned = cleaned.slice(0, 47) + "...";
+		cleaned = `${cleaned.slice(0, 47)}...`;
 	}
 
 	return cleaned;
@@ -202,8 +205,6 @@ function extractTodoItems(message: string): TodoItem[] {
 
 	return items;
 }
-
-
 
 export default function planModeHook(pi: HookAPI) {
 	let planModeEnabled = false;
@@ -329,19 +330,16 @@ export default function planModeHook(pi: HookAPI) {
 	// Filter out stale plan mode context messages from LLM context
 	// This ensures the agent only sees the CURRENT state (plan mode on/off)
 	pi.on("context", async (event) => {
-		
 		// Only filter when NOT in plan mode (i.e., when executing)
 		if (planModeEnabled) {
 			return;
 		}
 
 		// Remove any previous plan-mode-context messages
-		const beforeCount = event.messages.length;
+		const _beforeCount = event.messages.length;
 		const filtered = event.messages.filter((m) => {
 			if (m.role === "user" && Array.isArray(m.content)) {
-				const hasOldContext = m.content.some(
-					(c) => c.type === "text" && c.text.includes("[PLAN MODE ACTIVE]"),
-				);
+				const hasOldContext = m.content.some((c) => c.type === "text" && c.text.includes("[PLAN MODE ACTIVE]"));
 				if (hasOldContext) {
 					return false;
 				}
