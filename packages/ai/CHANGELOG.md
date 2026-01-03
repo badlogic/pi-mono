@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `getEnvApiKey("google-vertex")` now returns `undefined` unless both `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) and `GOOGLE_CLOUD_LOCATION` environment variables are set. Previously it always returned a dummy value, causing `--list-models` to show Vertex AI models as available even without proper configuration.
+
 ## [0.32.2] - 2026-01-03
 
 ## [0.32.1] - 2026-01-03

@@ -42,9 +42,14 @@ export function getEnvApiKey(provider: any): string | undefined {
 	// Vertex AI doesn't use API keys.
 	// It relies on Google Cloud auth: `gcloud auth application-default login`.
 	// @google/genai library picks up and manages the auth automatically.
-	// Return a dummy value to maintain consistency.
+	// Only return a dummy value if the required env vars are configured.
 	if (provider === "google-vertex") {
-		return "vertex-ai-authenticated";
+		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
+		if (hasProject && hasLocation) {
+			return "vertex-ai-authenticated";
+		}
+		return undefined;
 	}
 
 	const envMap: Record<string, string> = {
