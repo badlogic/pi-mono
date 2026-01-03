@@ -130,26 +130,29 @@ const image = new Image(
 
 ## Keyboard Input
 
-Use key detection helpers:
+Use `matchesKey()` for key detection:
 
 ```typescript
-import {
-  isEnter, isEscape, isTab,
-  isArrowUp, isArrowDown, isArrowLeft, isArrowRight,
-  isCtrlC, isCtrlO, isBackspace, isDelete,
-  // ... and more
-} from "@mariozechner/pi-tui";
+import { matchesKey, Key } from "@mariozechner/pi-tui";
 
 handleInput(data: string) {
-  if (isArrowUp(data)) {
+  if (matchesKey(data, Key.up)) {
     this.selectedIndex--;
-  } else if (isEnter(data)) {
+  } else if (matchesKey(data, Key.enter)) {
     this.onSelect?.(this.selectedIndex);
-  } else if (isEscape(data)) {
+  } else if (matchesKey(data, Key.escape)) {
     this.onCancel?.();
+  } else if (matchesKey(data, Key.ctrl("c"))) {
+    // Ctrl+C
   }
 }
 ```
+
+**Key identifiers** (use `Key.*` for autocomplete, or string literals):
+- Basic keys: `Key.enter`, `Key.escape`, `Key.tab`, `Key.space`, `Key.backspace`, `Key.delete`, `Key.home`, `Key.end`
+- Arrow keys: `Key.up`, `Key.down`, `Key.left`, `Key.right`
+- With modifiers: `Key.ctrl("c")`, `Key.shift("tab")`, `Key.alt("left")`, `Key.ctrlShift("p")`
+- String format also works: `"enter"`, `"ctrl+c"`, `"shift+tab"`, `"ctrl+shift+p"`
 
 ## Line Width
 
@@ -175,7 +178,7 @@ Example: Interactive selector
 
 ```typescript
 import {
-  isEnter, isEscape, isArrowUp, isArrowDown,
+  matchesKey, Key,
   truncateToWidth, visibleWidth
 } from "@mariozechner/pi-tui";
 
@@ -193,15 +196,15 @@ class MySelector {
   }
 
   handleInput(data: string): void {
-    if (isArrowUp(data) && this.selected > 0) {
+    if (matchesKey(data, Key.up) && this.selected > 0) {
       this.selected--;
       this.invalidate();
-    } else if (isArrowDown(data) && this.selected < this.items.length - 1) {
+    } else if (matchesKey(data, Key.down) && this.selected < this.items.length - 1) {
       this.selected++;
       this.invalidate();
-    } else if (isEnter(data)) {
+    } else if (matchesKey(data, Key.enter)) {
       this.onSelect?.(this.items[this.selected]);
-    } else if (isEscape(data)) {
+    } else if (matchesKey(data, Key.escape)) {
       this.onCancel?.();
     }
   }
