@@ -138,18 +138,50 @@ interface TodoItem {
 }
 
 /**
+ * Clean up extracted step text for display.
+ */
+function cleanStepText(text: string): string {
+	let cleaned = text
+		// Remove markdown bold/italic
+		.replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1")
+		// Remove markdown code
+		.replace(/`([^`]+)`/g, "$1")
+		// Remove leading action words that are redundant
+		.replace(/^(Use|Run|Execute|Create|Write|Read|Check|Verify|Update|Modify|Add|Remove|Delete|Install)\s+(the\s+)?/i, "")
+		// Clean up extra whitespace
+		.replace(/\s+/g, " ")
+		.trim();
+
+	// Capitalize first letter
+	if (cleaned.length > 0) {
+		cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+	}
+
+	// Truncate if too long
+	if (cleaned.length > 50) {
+		cleaned = cleaned.slice(0, 47) + "...";
+	}
+
+	return cleaned;
+}
+
+/**
  * Extract todo items from assistant message.
  */
 function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
 
-	// Match numbered lists: "1. Task" or "1) Task"
+	// Match numbered lists: "1. Task" or "1) Task" - also handle **bold** prefixes
 	const numberedPattern = /^\s*(\d+)[.)]\s+\*{0,2}([^*\n]+)/gm;
 	for (const match of message.matchAll(numberedPattern)) {
 		let text = match[2].trim();
 		text = text.replace(/\*{1,2}$/, "").trim();
+		// Skip if too short or looks like code/command
 		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
-			items.push({ step: items.length + 1, text, completed: false });
+			const cleaned = cleanStepText(text);
+			if (cleaned.length > 3) {
+				items.push({ step: items.length + 1, text: cleaned, completed: false });
+			}
 		}
 	}
 
@@ -160,7 +192,10 @@ function extractTodoItems(message: string): TodoItem[] {
 			let text = match[1].trim();
 			text = text.replace(/\*{1,2}$/, "").trim();
 			if (text.length > 10 && !text.startsWith("`")) {
-				items.push({ step: items.length + 1, text, completed: false });
+				const cleaned = cleanStepText(text);
+				if (cleaned.length > 3) {
+					items.push({ step: items.length + 1, text: cleaned, completed: false });
+				}
 			}
 		}
 	}
@@ -172,6 +207,7 @@ function extractTodoItems(message: string): TodoItem[] {
 
 export default function planModeHook(pi: HookAPI) {
 	let planModeEnabled = false;
+	let toolsCalledThisTurn = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
 
@@ -278,13 +314,15 @@ export default function planModeHook(pi: HookAPI) {
 
 	// Track step completion based on tool results
 	pi.on("tool_result", async (_event, ctx) => {
+		toolsCalledThisTurn = true;
+
 		if (!executionMode || todoItems.length === 0) return;
 
 		// Mark the first uncompleted step as done when any tool succeeds
 		const nextStep = todoItems.find((t) => !t.completed);
 		if (nextStep) {
 			nextStep.completed = true;
-			console.error(`[plan-mode] Marked step ${nextStep.step} complete: ${nextStep.text}`);
+			console.error(`[plan-mode] Marked step ${nextStep.step} complete (tool): ${nextStep.text}`);
 			updateStatus(ctx);
 		}
 	});
@@ -496,12 +534,29 @@ Execute each step in order.`,
 		updateStatus(ctx);
 	});
 
-	// Persist state
+	// Reset tool tracking at start of each turn and persist state
 	pi.on("turn_start", async () => {
+		toolsCalledThisTurn = false;
 		pi.appendEntry("plan-mode", {
 			enabled: planModeEnabled,
 			todos: todoItems,
 			executing: executionMode,
 		});
+	});
+
+	// Handle non-tool turns (e.g., analysis, explanation steps)
+	pi.on("turn_end", async (_event, ctx) => {
+		if (!executionMode || todoItems.length === 0) return;
+
+		// If no tools were called this turn, the agent was doing analysis/explanation
+		// Mark the next uncompleted step as done
+		if (!toolsCalledThisTurn) {
+			const nextStep = todoItems.find((t) => !t.completed);
+			if (nextStep) {
+				nextStep.completed = true;
+				console.error(`[plan-mode] Marked step ${nextStep.step} complete (no-tool turn): ${nextStep.text}`);
+				updateStatus(ctx);
+			}
+		}
 	});
 }
