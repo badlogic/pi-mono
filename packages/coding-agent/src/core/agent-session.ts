@@ -83,6 +83,8 @@ export interface PromptOptions {
 	expandSlashCommands?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
+	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
+	streamingBehavior?: "steer" | "followUp";
 }
 
 /** Result from cycleModel() */
@@ -461,22 +463,18 @@ export class AgentSession {
 
 	/**
 	 * Send a prompt to the agent.
-	 * - Validates model and API key before sending
-	 * - Handles hook commands (registered via pi.registerCommand)
+	 * - Handles hook commands (registered via pi.registerCommand) immediately, even during streaming
 	 * - Expands file-based slash commands by default
-	 * @throws Error if no model selected or no API key available
+	 * - During streaming, queues via steer() or followUp() based on streamingBehavior option
+	 * - Validates model and API key before sending (when not streaming)
+	 * @throws Error if streaming and no streamingBehavior specified
+	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
-		if (this.isStreaming) {
-			throw new Error("Agent is already processing. Use steer() or followUp() to queue messages during streaming.");
-		}
-
-		// Flush any pending bash messages before the new prompt
-		this._flushPendingBashMessages();
-
 		const expandCommands = options?.expandSlashCommands ?? true;
 
-		// Handle hook commands first (if enabled and text is a slash command)
+		// Handle hook commands first (execute immediately, even during streaming)
+		// Hook commands manage their own LLM interaction via pi.sendMessage()
 		if (expandCommands && text.startsWith("/")) {
 			const handled = await this._tryExecuteHookCommand(text);
 			if (handled) {
@@ -484,6 +482,27 @@ export class AgentSession {
 				return;
 			}
 		}
+
+		// Expand file-based slash commands if requested
+		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
+
+		// If streaming, queue via steer() or followUp() based on option
+		if (this.isStreaming) {
+			if (!options?.streamingBehavior) {
+				throw new Error(
+					"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+				);
+			}
+			if (options.streamingBehavior === "followUp") {
+				await this._queueFollowUp(expandedText);
+			} else {
+				await this._queueSteer(expandedText);
+			}
+			return;
+		}
+
+		// Flush any pending bash messages before the new prompt
+		this._flushPendingBashMessages();
 
 		// Validate model
 		if (!this.model) {
@@ -508,9 +527,6 @@ export class AgentSession {
 		if (lastAssistant) {
 			await this._checkCompaction(lastAssistant, false);
 		}
-
-		// Expand file-based slash commands if requested
-		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
 
 		// Build messages array (hook message if any, then user message)
 		const messages: AgentMessage[] = [];
@@ -579,8 +595,43 @@ export class AgentSession {
 	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 * Delivered after current tool execution, skips remaining tools.
+	 * Expands file-based slash commands. Errors on hook commands.
+	 * @throws Error if text is a hook command
 	 */
 	async steer(text: string): Promise<void> {
+		// Check for hook commands (cannot be queued)
+		if (text.startsWith("/")) {
+			this._throwIfHookCommand(text);
+		}
+
+		// Expand file-based slash commands
+		const expandedText = expandSlashCommand(text, [...this._fileCommands]);
+
+		await this._queueSteer(expandedText);
+	}
+
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 * Delivered only when agent has no more tool calls or steering messages.
+	 * Expands file-based slash commands. Errors on hook commands.
+	 * @throws Error if text is a hook command
+	 */
+	async followUp(text: string): Promise<void> {
+		// Check for hook commands (cannot be queued)
+		if (text.startsWith("/")) {
+			this._throwIfHookCommand(text);
+		}
+
+		// Expand file-based slash commands
+		const expandedText = expandSlashCommand(text, [...this._fileCommands]);
+
+		await this._queueFollowUp(expandedText);
+	}
+
+	/**
+	 * Internal: Queue a steering message (already expanded, no hook command check).
+	 */
+	private async _queueSteer(text: string): Promise<void> {
 		this._steeringMessages.push(text);
 		this.agent.steer({
 			role: "user",
@@ -590,16 +641,32 @@ export class AgentSession {
 	}
 
 	/**
-	 * Queue a follow-up message to be processed after the agent finishes.
-	 * Delivered only when agent has no more tool calls or steering messages.
+	 * Internal: Queue a follow-up message (already expanded, no hook command check).
 	 */
-	async followUp(text: string): Promise<void> {
+	private async _queueFollowUp(text: string): Promise<void> {
 		this._followUpMessages.push(text);
 		this.agent.followUp({
 			role: "user",
 			content: [{ type: "text", text }],
 			timestamp: Date.now(),
 		});
+	}
+
+	/**
+	 * Throw an error if the text is a hook command.
+	 */
+	private _throwIfHookCommand(text: string): void {
+		if (!this._hookRunner) return;
+
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const command = this._hookRunner.getCommand(commandName);
+
+		if (command) {
+			throw new Error(
+				`Hook command "/${commandName}" cannot be queued. Use prompt() or execute the command when not streaming.`,
+			);
+		}
 	}
 
 	/**

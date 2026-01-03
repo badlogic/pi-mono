@@ -17,7 +17,7 @@ import type { CompactionResult } from "../../core/compaction/index.js";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[] }
+	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string }
 	| { id?: string; type: "follow_up"; message: string }
 	| { id?: string; type: "abort" }

@@ -77,7 +77,12 @@ The session manages the agent lifecycle, message history, and event streaming.
 ```typescript
 interface AgentSession {
   // Send a prompt and wait for completion
+  // If streaming, requires streamingBehavior option to queue the message
   prompt(text: string, options?: PromptOptions): Promise<void>;
+  
+  // Queue messages during streaming
+  steer(text: string): Promise<void>;    // Interrupt: delivered after current tool, skips remaining
+  followUp(text: string): Promise<void>; // Wait: delivered only when agent finishes
   
   // Subscribe to events (returns unsubscribe function)
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
@@ -121,6 +126,41 @@ interface AgentSession {
   dispose(): void;
 }
 ```
+
+### Prompting and Message Queueing
+
+The `prompt()` method handles slash commands, hook commands, and message sending:
+
+```typescript
+// Basic prompt (when not streaming)
+await session.prompt("What files are here?");
+
+// With images
+await session.prompt("What's in this image?", {
+  images: [{ type: "image", source: { type: "base64", mediaType: "image/png", data: "..." } }]
+});
+
+// During streaming: must specify how to queue the message
+await session.prompt("Stop and do this instead", { streamingBehavior: "steer" });
+await session.prompt("After you're done, also check X", { streamingBehavior: "followUp" });
+```
+
+**Behavior:**
+- **Hook commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+- **File-based slash commands** (from `.md` files): Expanded to their content before sending/queueing.
+- **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
+
+For explicit queueing during streaming:
+
+```typescript
+// Interrupt the agent (delivered after current tool, skips remaining tools)
+await session.steer("New instruction");
+
+// Wait for agent to finish (delivered only when agent stops)
+await session.followUp("After you're done, also do this");
+```
+
+Both `steer()` and `followUp()` expand file-based slash commands but error on hook commands (hook commands cannot be queued).
 
 ### Agent and AgentState
 

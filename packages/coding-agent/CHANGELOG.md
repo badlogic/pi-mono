@@ -6,6 +6,16 @@
 
 - `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
 
+### Changed
+
+- **Slash commands and hook commands now work during streaming**: Previously, using a slash command or hook command while the agent was streaming would crash with "Agent is already processing". Now:
+  - Hook commands execute immediately (they manage their own LLM interaction via `pi.sendMessage()`)
+  - File-based slash commands are expanded and queued via steer/followUp
+  - `steer()` and `followUp()` now expand file-based slash commands and error on hook commands (hook commands cannot be queued)
+  - `prompt()` accepts new `streamingBehavior` option (`"steer"` or `"followUp"`) to specify queueing behavior during streaming
+  - RPC `prompt` command now accepts optional `streamingBehavior` field
+  ([#420](https://github.com/badlogic/pi-mono/issues/420))
+
 ### Fixed
 
 - Slash command argument substitution now processes positional arguments (`$1`, `$2`, etc.) before all-arguments (`$@`, `$ARGUMENTS`) to prevent recursive substitution when argument values contain dollar-digit patterns like `$100`. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))

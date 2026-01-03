@@ -41,6 +41,21 @@ With images:
 {"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "source": {"type": "base64", "mediaType": "image/png", "data": "..."}}]}
 ```
 
+**During streaming**: If the agent is already streaming, you must specify `streamingBehavior` to queue the message:
+
+```json
+{"type": "prompt", "message": "New instruction", "streamingBehavior": "steer"}
+```
+
+- `"steer"`: Interrupt the agent mid-run. Message is delivered after current tool execution, remaining tools are skipped.
+- `"followUp"`: Wait until the agent finishes. Message is delivered only when agent stops.
+
+If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
+
+**Hook commands**: If the message is a hook command (e.g., `/mycommand`), it executes immediately even during streaming. Hook commands manage their own LLM interaction via `pi.sendMessage()`.
+
+**Slash commands**: File-based slash commands (from `.md` files) are expanded before sending/queueing.
+
 Response:
 ```json
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
@@ -48,20 +63,35 @@ Response:
 
 The `images` field is optional. Each image uses `ImageContent` format with base64 or URL source.
 
-#### queue_message
+#### steer
 
-Queue a message to be injected at the next agent turn. Queued messages are added to the conversation without triggering a new prompt. Useful for injecting context mid-conversation.
+Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. File-based slash commands are expanded. Hook commands are not allowed (use `prompt` instead).
 
 ```json
-{"type": "queue_message", "message": "Additional context"}
+{"type": "steer", "message": "Stop and do this instead"}
 ```
 
 Response:
 ```json
-{"type": "response", "command": "queue_message", "success": true}
+{"type": "response", "command": "steer", "success": true}
 ```
 
-See [set_queue_mode](#set_queue_mode) for controlling how queued messages are processed.
+See [set_steering_mode](#set_steering_mode) for controlling how steering messages are processed.
+
+#### follow_up
+
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. File-based slash commands are expanded. Hook commands are not allowed (use `prompt` instead).
+
+```json
+{"type": "follow_up", "message": "After you're done, also do this"}
+```
+
+Response:
+```json
+{"type": "response", "command": "follow_up", "success": true}
+```
+
+See [set_follow_up_mode](#set_follow_up_mode) for controlling how follow-up messages are processed.
 
 #### abort
 
@@ -120,12 +150,13 @@ Response:
     "thinkingLevel": "medium",
     "isStreaming": false,
     "isCompacting": false,
-    "queueMode": "all",
+    "steeringMode": "all",
+    "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
     "autoCompactionEnabled": true,
     "messageCount": 5,
-    "queuedMessageCount": 0
+    "pendingMessageCount": 0
   }
 }
 ```
@@ -253,23 +284,40 @@ Response:
 }
 ```
 
-### Queue Mode
+### Queue Modes
 
-#### set_queue_mode
+#### set_steering_mode
 
-Control how queued messages (from `queue_message`) are injected into the conversation.
+Control how steering messages (from `steer`) are delivered.
 
 ```json
-{"type": "set_queue_mode", "mode": "one-at-a-time"}
+{"type": "set_steering_mode", "mode": "one-at-a-time"}
 ```
 
 Modes:
-- `"all"`: Inject all queued messages at the next turn
-- `"one-at-a-time"`: Inject one queued message per turn (default)
+- `"all"`: Deliver all steering messages at the next interruption point
+- `"one-at-a-time"`: Deliver one steering message per interruption (default)
 
 Response:
 ```json
-{"type": "response", "command": "set_queue_mode", "success": true}
+{"type": "response", "command": "set_steering_mode", "success": true}
+```
+
+#### set_follow_up_mode
+
+Control how follow-up messages (from `follow_up`) are delivered.
+
+```json
+{"type": "set_follow_up_mode", "mode": "one-at-a-time"}
+```
+
+Modes:
+- `"all"`: Deliver all follow-up messages when agent finishes
+- `"one-at-a-time"`: Deliver one follow-up message per agent completion (default)
+
+Response:
+```json
+{"type": "response", "command": "set_follow_up_mode", "success": true}
 ```
 
 ### Compaction

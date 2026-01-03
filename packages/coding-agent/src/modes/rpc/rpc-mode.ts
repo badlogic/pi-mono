@@ -244,10 +244,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			case "prompt": {
 				// Don't await - events will stream
-				// Hook commands and file slash commands are handled in session.prompt()
+				// Hook commands are executed immediately, file slash commands are expanded
+				// If streaming and streamingBehavior specified, queues via steer/followUp
 				session
 					.prompt(command.message, {
 						images: command.images,
+						streamingBehavior: command.streamingBehavior,
 					})
 					.catch((e) => output(error(id, "prompt", e.message)));
 				return success(id, "prompt");

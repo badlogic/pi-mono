@@ -915,26 +915,13 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Hook commands always run immediately, even during streaming
-			// (if they need to interact with LLM, they use pi.sendMessage which handles queueing)
-			if (text.startsWith("/") && this.session.hookRunner) {
-				const spaceIndex = text.indexOf(" ");
-				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-				const command = this.session.hookRunner.getCommand(commandName);
-				if (command) {
-					this.editor.addToHistory(text);
-					this.editor.setText("");
-					await this.session.prompt(text);
-					return;
-				}
-			}
-
-			// Queue steering message if agent is streaming (interrupts current work)
+			// If streaming, use prompt() with steer behavior
+			// This handles hook commands (execute immediately), slash command expansion, and queueing
 			if (this.session.isStreaming) {
-				await this.session.steer(text);
-				this.updatePendingMessagesDisplay();
 				this.editor.addToHistory(text);
 				this.editor.setText("");
+				await this.session.prompt(text, { streamingBehavior: "steer" });
+				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
 			}
@@ -1461,11 +1448,12 @@ export class InteractiveMode {
 		if (!text) return;
 
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
+		// This handles hook commands (execute immediately), slash command expansion, and queueing
 		if (this.session.isStreaming) {
-			await this.session.followUp(text);
-			this.updatePendingMessagesDisplay();
 			this.editor.addToHistory(text);
 			this.editor.setText("");
+			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
 		// If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
