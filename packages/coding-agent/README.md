@@ -465,6 +465,37 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 }
 ```
 
+**Overriding built-in providers:**
+
+To route a built-in provider (anthropic, openai, google, etc.) through a proxy without redefining all models, just specify the `baseUrl`:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "baseUrl": "https://my-proxy.example.com/v1"
+    }
+  }
+}
+```
+
+All built-in Anthropic models remain available with the new endpoint. Existing OAuth or API key auth continues to work.
+
+To fully replace a built-in provider with custom models, include the `models` array:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "baseUrl": "https://my-proxy.example.com/v1",
+      "apiKey": "ANTHROPIC_API_KEY",
+      "api": "anthropic-messages",
+      "models": [...]
+    }
+  }
+}
+```
+
 **Authorization header:** Set `authHeader: true` to add `Authorization: Bearer <apiKey>` automatically.
 
 **OpenAI compatibility (`compat` field):**
