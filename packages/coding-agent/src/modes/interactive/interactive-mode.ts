@@ -31,7 +31,7 @@ import { exec, spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
-import type { HookUIContext } from "../../core/hooks/index.js";
+import type { HookContext, HookRunner, HookUIContext } from "../../core/hooks/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -581,12 +581,12 @@ export class InteractiveMode {
 	/**
 	 * Set up keyboard shortcuts registered by hooks.
 	 */
-	private setupHookShortcuts(hookRunner: import("../../core/hooks/index.js").HookRunner): void {
+	private setupHookShortcuts(hookRunner: HookRunner): void {
 		const shortcuts = hookRunner.getShortcuts();
 		if (shortcuts.size === 0) return;
 
 		// Create a context for shortcut handlers
-		const createContext = (): import("../../core/hooks/types.js").HookContext => ({
+		const createContext = (): HookContext => ({
 			ui: this.createHookUIContext(),
 			hasUI: true,
 			cwd: process.cwd(),

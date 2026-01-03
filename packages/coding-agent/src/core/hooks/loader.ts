@@ -12,7 +12,7 @@ import { getAgentDir } from "../../config.js";
 import type { HookMessage } from "../messages.js";
 import type { SessionManager } from "../session-manager.js";
 import { execCommand } from "./runner.js";
-import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
+import type { ExecOptions, HookAPI, HookContext, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types.js";
 
 // Create require function to resolve module paths at runtime
 const require = createRequire(import.meta.url);
@@ -101,7 +101,7 @@ export interface HookShortcut {
 	/** Description for help */
 	description?: string;
 	/** Handler function */
-	handler: (ctx: import("./types.js").HookContext) => Promise<void> | void;
+	handler: (ctx: HookContext) => Promise<void> | void;
 	/** Hook path that registered this shortcut */
 	hookPath: string;
 }
@@ -296,7 +296,7 @@ function createHookAPI(
 			shortcut: string,
 			options: {
 				description?: string;
-				handler: (ctx: import("./types.js").HookContext) => Promise<void> | void;
+				handler: (ctx: HookContext) => Promise<void> | void;
 			},
 		): void {
 			shortcuts.set(shortcut, { shortcut, hookPath, ...options });
