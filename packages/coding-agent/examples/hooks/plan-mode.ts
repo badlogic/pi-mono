@@ -10,11 +10,12 @@
  * - Injects system context telling the agent about the restrictions
  * - After each agent response, prompts to execute the plan or continue planning
  * - Shows "plan" indicator in footer when active
+ * - Extracts todo list from plan and tracks progress during execution
  *
  * Usage:
  * 1. Copy this file to ~/.pi/agent/hooks/ or your project's .pi/hooks/
  * 2. Use /plan to toggle plan mode on/off
- * 3. Or start in plan mode: PI_PLAN_MODE=1 pi
+ * 3. Or start in plan mode with --plan flag
  */
 
 import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent/hooks";
@@ -145,9 +146,81 @@ function isSafeCommand(command: string): boolean {
 	return true;
 }
 
+// Todo item for plan execution tracking
+interface TodoItem {
+	text: string;
+	completed: boolean;
+}
+
+/**
+ * Extract todo items from assistant message.
+ * Looks for numbered lists like:
+ * 1. First task
+ * 2. Second task
+ * Or bullet points with step indicators:
+ * - Step 1: Do something
+ * - Step 2: Do another thing
+ */
+function extractTodoItems(message: string): TodoItem[] {
+	const items: TodoItem[] = [];
+
+	// Match numbered lists: "1. Task" or "1) Task"
+	const numberedPattern = /^\s*(\d+)[.)]\s+(.+)$/gm;
+	for (const match of message.matchAll(numberedPattern)) {
+		const text = match[2].trim();
+		// Skip if it's just a file path or code reference
+		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/")) {
+			items.push({ text, completed: false });
+		}
+	}
+
+	// If no numbered items found, try bullet points with "Step" prefix
+	if (items.length === 0) {
+		const stepPattern = /^\s*[-*]\s*(?:Step\s*\d+[:.])?\s*(.+)$/gim;
+		for (const match of message.matchAll(stepPattern)) {
+			const text = match[1].trim();
+			if (text.length > 10 && !text.startsWith("`")) {
+				items.push({ text, completed: false });
+			}
+		}
+	}
+
+	return items;
+}
+
+/**
+ * Try to match a tool call or message to a todo item.
+ * Returns the index of the matching item, or -1 if no match.
+ */
+function matchTodoItem(todos: TodoItem[], action: string): number {
+	const actionLower = action.toLowerCase();
+
+	for (let i = 0; i < todos.length; i++) {
+		if (todos[i].completed) continue;
+
+		const todoLower = todos[i].text.toLowerCase();
+		// Check for keyword overlap
+		const todoWords = todoLower.split(/\s+/).filter((w) => w.length > 3);
+		const matchCount = todoWords.filter((w) => actionLower.includes(w)).length;
+
+		// If more than 30% of significant words match, consider it a match
+		if (todoWords.length > 0 && matchCount / todoWords.length > 0.3) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
 export default function planModeHook(pi: HookAPI) {
 	// Track plan mode state
 	let planModeEnabled = false;
+
+	// Track execution mode (after plan confirmed)
+	let executionMode = false;
+
+	// Todo list extracted from plan
+	let todoItems: TodoItem[] = [];
 
 	// Register --plan CLI flag
 	pi.registerFlag("plan", {
@@ -158,7 +231,12 @@ export default function planModeHook(pi: HookAPI) {
 
 	// Helper to update footer status
 	function updateStatus(ctx: HookContext) {
-		if (planModeEnabled) {
+		if (executionMode && todoItems.length > 0) {
+			const completed = todoItems.filter((t) => t.completed).length;
+			const total = todoItems.length;
+			const progress = `${completed}/${total}`;
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${progress}`));
+		} else if (planModeEnabled) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
@@ -168,6 +246,8 @@ export default function planModeHook(pi: HookAPI) {
 	// Helper to toggle plan mode
 	function togglePlanMode(ctx: HookContext) {
 		planModeEnabled = !planModeEnabled;
+		executionMode = false;
+		todoItems = [];
 
 		if (planModeEnabled) {
 			pi.setTools(PLAN_MODE_TOOLS);
@@ -187,6 +267,29 @@ export default function planModeHook(pi: HookAPI) {
 		},
 	});
 
+	// Register /todos command to show current todo list
+	pi.registerCommand("todos", {
+		description: "Show current plan todo list",
+		handler: async (_args, ctx) => {
+			if (todoItems.length === 0) {
+				ctx.ui.notify("No todos. Create a plan first with /plan", "info");
+				return;
+			}
+
+			const todoList = todoItems
+				.map((item, i) => {
+					const checkbox = item.completed ? "✓" : "○";
+					const style = item.completed
+						? ctx.ui.theme.fg("muted", `${checkbox} ${item.text}`)
+						: `${checkbox} ${item.text}`;
+					return `${i + 1}. ${style}`;
+				})
+				.join("\n");
+
+			ctx.ui.notify(`Plan Progress:\n${todoList}`, "info");
+		},
+	});
+
 	// Register Shift+P shortcut
 	pi.registerShortcut("shift+p", {
 		description: "Toggle plan mode",
@@ -196,7 +299,17 @@ export default function planModeHook(pi: HookAPI) {
 	});
 
 	// Block destructive bash commands in plan mode
-	pi.on("tool_call", async (event) => {
+	pi.on("tool_call", async (event, ctx) => {
+		// Track progress in execution mode
+		if (executionMode && todoItems.length > 0) {
+			const action = `${event.toolName}: ${JSON.stringify(event.input).slice(0, 200)}`;
+			const matchIdx = matchTodoItem(todoItems, action);
+			if (matchIdx >= 0) {
+				todoItems[matchIdx].completed = true;
+				updateStatus(ctx);
+			}
+		}
+
 		if (!planModeEnabled) return;
 		if (event.toolName !== "bash") return;
 
@@ -228,35 +341,77 @@ Restrictions:
 - Focus on analysis, planning, and understanding the codebase
 
 Your task is to explore, analyze, and create a detailed plan.
-Do NOT attempt to make changes - just describe what you would do.
-When you have a complete plan, I will switch to normal mode to execute it.`,
+
+IMPORTANT: When you have a complete plan, format it as a numbered list:
+1. First step description
+2. Second step description
+3. Third step description
+...
+
+This format allows tracking progress during execution.
+Do NOT attempt to make changes - just describe what you would do.`,
 				display: false, // Don't show in TUI, just inject into context
 			},
 		};
 	});
 
 	// After agent finishes, offer to execute the plan
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (event, ctx) => {
+		// In execution mode, check if all todos are complete
+		if (executionMode && todoItems.length > 0) {
+			const allComplete = todoItems.every((t) => t.completed);
+			if (allComplete) {
+				ctx.ui.notify("Plan execution complete!", "info");
+				executionMode = false;
+				todoItems = [];
+				updateStatus(ctx);
+			}
+			return;
+		}
+
 		if (!planModeEnabled) return;
 		if (!ctx.hasUI) return;
 
-		const choice = await ctx.ui.select("Plan mode - what next?", [
-			"Execute the plan",
+		// Try to extract todo items from the last message
+		const messages = event.messages;
+		const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+		if (lastAssistant && typeof lastAssistant.content === "string") {
+			const extracted = extractTodoItems(lastAssistant.content);
+			if (extracted.length > 0) {
+				todoItems = extracted;
+			}
+		}
+
+		const hasTodos = todoItems.length > 0;
+		const todoPreview = hasTodos
+			? `\n\nExtracted ${todoItems.length} steps:\n${todoItems
+					.slice(0, 3)
+					.map((t, i) => `  ${i + 1}. ${t.text.slice(0, 50)}...`)
+					.join("\n")}${todoItems.length > 3 ? `\n  ... and ${todoItems.length - 3} more` : ""}`
+			: "";
+
+		const choice = await ctx.ui.select(`Plan mode - what next?${todoPreview}`, [
+			hasTodos ? "Execute the plan (track progress)" : "Execute the plan",
 			"Stay in plan mode",
 			"Refine the plan",
 		]);
 
-		if (choice === "Execute the plan") {
+		if (choice?.startsWith("Execute")) {
 			// Switch to normal mode
 			planModeEnabled = false;
+			executionMode = hasTodos;
 			pi.setTools(NORMAL_MODE_TOOLS);
 			updateStatus(ctx);
 
 			// Send message to trigger execution immediately
+			const execMessage = hasTodos
+				? `Execute the plan you just created. There are ${todoItems.length} steps to complete. Proceed step by step, announcing each step as you work on it.`
+				: "Execute the plan you just created. Proceed step by step.";
+
 			pi.sendMessage(
 				{
 					customType: "plan-mode-execute",
-					content: "Execute the plan you just created. Proceed step by step.",
+					content: execMessage,
 					display: true,
 				},
 				{ triggerTurn: true },
@@ -281,23 +436,35 @@ When you have a complete plan, I will switch to normal mode to execute it.`,
 		const entries = ctx.sessionManager.getEntries();
 		const planModeEntry = entries
 			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
-			.pop() as { data?: { enabled: boolean } } | undefined;
+			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
 
 		// Restore from session (overrides flag if session has state)
-		if (planModeEntry?.data?.enabled !== undefined) {
-			planModeEnabled = planModeEntry.data.enabled;
+		if (planModeEntry?.data) {
+			if (planModeEntry.data.enabled !== undefined) {
+				planModeEnabled = planModeEntry.data.enabled;
+			}
+			if (planModeEntry.data.todos) {
+				todoItems = planModeEntry.data.todos;
+			}
+			if (planModeEntry.data.executing) {
+				executionMode = planModeEntry.data.executing;
+			}
 		}
 
 		// Apply initial state if plan mode is enabled
 		if (planModeEnabled) {
 			pi.setTools(PLAN_MODE_TOOLS);
-			updateStatus(ctx);
 		}
+		updateStatus(ctx);
 	});
 
 	// Save state when plan mode changes (via tool_call or other events)
 	pi.on("turn_start", async () => {
-		// Persist current state
-		pi.appendEntry("plan-mode", { enabled: planModeEnabled });
+		// Persist current state including todos
+		pi.appendEntry("plan-mode", {
+			enabled: planModeEnabled,
+			todos: todoItems,
+			executing: executionMode,
+		});
 	});
 }
