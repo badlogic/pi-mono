@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Google Vertex AI models no longer appear in available models list without explicit authentication. Previously, `getEnvApiKey()` returned a dummy value for `google-vertex`, causing models to show up even when Google Cloud ADC was not configured.
+
 ## [0.32.2] - 2026-01-03
 
 ## [0.32.1] - 2026-01-03

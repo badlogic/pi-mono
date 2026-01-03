@@ -39,13 +39,9 @@ export function getEnvApiKey(provider: any): string | undefined {
 		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 	}
 
-	// Vertex AI doesn't use API keys.
-	// It relies on Google Cloud auth: `gcloud auth application-default login`.
-	// @google/genai library picks up and manages the auth automatically.
-	// Return a dummy value to maintain consistency.
-	if (provider === "google-vertex") {
-		return "vertex-ai-authenticated";
-	}
+	// Vertex AI uses Application Default Credentials, not API keys.
+	// Auth is configured via `gcloud auth application-default login`.
+	// Don't return a dummy value - require explicit auth.json configuration.
 
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
@@ -67,6 +63,11 @@ export function stream<TApi extends Api>(
 	context: Context,
 	options?: OptionsForApi<TApi>,
 ): AssistantMessageEventStream {
+	// Vertex AI uses Application Default Credentials, not API keys
+	if (model.api === "google-vertex") {
+		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
+	}
+
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
@@ -94,9 +95,6 @@ export function stream<TApi extends Api>(
 				providerOptions as GoogleGeminiCliOptions,
 			);
 
-		case "google-vertex":
-			return streamGoogleVertex(model as Model<"google-vertex">, context, providerOptions as GoogleVertexOptions);
-
 		default: {
 			// This should never be reached if all Api cases are handled
 			const _exhaustive: never = api;
@@ -119,6 +117,12 @@ export function streamSimple<TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
+	// Vertex AI uses Application Default Credentials, not API keys
+	if (model.api === "google-vertex") {
+		const providerOptions = mapOptionsForApi(model, options, undefined);
+		return stream(model, context, providerOptions);
+	}
+
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
