@@ -322,6 +322,21 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 }
 ```
 
+**Example (Vim-style):**
+
+```json
+{
+  "cursorUp": ["up", "alt+k"],
+  "cursorDown": ["down", "alt+j"],
+  "cursorLeft": ["left", "alt+h"],
+  "cursorRight": ["right", "alt+l"],
+  "cursorWordLeft": ["alt+left", "alt+b"],
+  "cursorWordRight": ["alt+right", "alt+w"],
+  "deleteCharBackward": ["backspace", "ctrl+h"],
+  "deleteWordBackward": ["ctrl+w", "alt+backspace"]
+}
+```
+
 ### Bash Mode
 
 Prefix commands with `!` to execute them and add output to context:
