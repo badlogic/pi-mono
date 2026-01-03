@@ -421,6 +421,15 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ctx.ui.setStatus("my-hook", "Processing 5/10...");  // Set status
 ctx.ui.setStatus("my-hook", undefined);              // Clear status
 
+// Set a multi-line widget (displayed above editor, below "Working..." indicator)
+ctx.ui.setWidget("my-todos", [
+  theme.fg("accent", "Plan Progress:"),
+  theme.fg("success", "☑ ") + theme.fg("muted", theme.strikethrough("Read files")),
+  theme.fg("muted", "☐ ") + "Modify code",
+  theme.fg("muted", "☐ ") + "Run tests",
+]);
+ctx.ui.setWidget("my-todos", undefined);  // Clear widget
+
 // Set the core input editor text (pre-fill prompts, generated content)
 ctx.ui.setEditorText("Generated prompt text here...");
 
@@ -433,6 +442,12 @@ const currentText = ctx.ui.getEditorText();
 - Statuses are displayed on a single line in the footer, sorted alphabetically by key
 - Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width
 - Use `ctx.ui.theme` to style status text with theme colors (see below)
+
+**Widget notes:**
+- Widgets are multi-line displays shown above the editor (below "Working..." indicator)
+- Multiple hooks can set widgets using unique keys
+- Use for progress lists, todo tracking, or any multi-line status
+- Supports ANSI styling via `ctx.ui.theme` (including `strikethrough`)
 
 **Styling with theme colors:**
 
