@@ -38,6 +38,16 @@ export interface ImageSettings {
 	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
 }
 
+export interface Preset {
+	tools?: string[]; // Tool names: read, bash, edit, write, grep, find, ls
+	models?: string[]; // Model patterns (same as --models)
+	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	instructions?: string; // Appended to system prompt
+	hooks?: string[]; // Additional hook paths
+	customTools?: string[]; // Additional custom tool paths
+	noSkills?: boolean; // Disable skills
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -59,6 +69,7 @@ export interface Settings {
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	presets?: Record<string, Preset>; // Named preset configurations
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -419,5 +430,13 @@ export class SettingsManager {
 	setDoubleEscapeAction(action: "branch" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
 		this.save();
+	}
+
+	getPreset(name: string): Preset | undefined {
+		return this.settings.presets?.[name];
+	}
+
+	getPresetNames(): string[] {
+		return Object.keys(this.settings.presets ?? {});
 	}
 }

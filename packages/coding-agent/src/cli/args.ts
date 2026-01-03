@@ -33,6 +33,8 @@ export interface Args {
 	noSkills?: boolean;
 	skills?: string[];
 	listModels?: string | true;
+	listPresets?: boolean;
+	preset?: string;
 	messages: string[];
 	fileArgs: string[];
 }
@@ -129,6 +131,10 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--list-presets") {
+			result.listPresets = true;
+		} else if (arg === "--preset" && i + 1 < args.length) {
+			result.preset = args[++i];
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (!arg.startsWith("-")) {
@@ -169,6 +175,8 @@ ${chalk.bold("Options:")}
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --list-presets                 List available presets from settings.json
+  --preset <name>                Load a preset configuration from settings.json
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -208,6 +216,9 @@ ${chalk.bold("Examples:")}
 
   # Read-only mode (no file modifications possible)
   ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+
+  # Use a preset for research mode (read-only, brief answers)
+  ${APP_NAME} --preset research "How does authentication work?"
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl

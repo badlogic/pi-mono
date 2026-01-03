@@ -190,3 +190,25 @@ describe("parseArgs", () => {
 		});
 	});
 });
+
+describe("--preset flag", () => {
+	test("parses --preset flag", () => {
+		const result = parseArgs(["--preset", "research"]);
+		expect(result.preset).toBe("research");
+	});
+
+	test("--preset with other flags", () => {
+		const result = parseArgs(["--preset", "fast", "--tools", "bash", "-p", "test"]);
+		expect(result.preset).toBe("fast");
+		expect(result.tools).toEqual(["bash"]);
+		expect(result.print).toBe(true);
+		expect(result.messages).toContain("test");
+	});
+});
+
+describe("--list-presets flag", () => {
+	test("parses --list-presets flag", () => {
+		const result = parseArgs(["--list-presets"]);
+		expect(result.listPresets).toBe(true);
+	});
+});

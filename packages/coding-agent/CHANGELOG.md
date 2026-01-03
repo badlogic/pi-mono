@@ -5,6 +5,7 @@
 ### Added
 
 - `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
+- Preset configurations: define named presets in `settings.json` with tools, models, thinking level, instructions, hooks, and more. Use `--preset <name>` to load a preset, `--list-presets` to see available presets. CLI flags override preset values. ([#347](https://github.com/badlogic/pi-mono/issues/347))
 
 ### Fixed
 

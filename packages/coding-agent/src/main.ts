@@ -207,6 +207,89 @@ function discoverSystemPromptFile(): string | undefined {
 	return undefined;
 }
 
+function listPresets(settingsManager: SettingsManager): void {
+	const names = settingsManager.getPresetNames();
+	if (names.length === 0) {
+		console.log(chalk.dim("No presets defined in settings.json"));
+		console.log(chalk.dim("\nDefine presets in ~/.pi/agent/settings.json or .pi/settings.json:"));
+		console.log(
+			chalk.dim(`  {
+    "presets": {
+      "research": {
+        "tools": ["read", "grep", "find", "ls"],
+        "instructions": "Briefly answer by researching the codebase."
+      }
+    }
+  }`),
+		);
+		return;
+	}
+
+	console.log(chalk.bold("Available presets:\n"));
+	for (const name of names) {
+		const preset = settingsManager.getPreset(name);
+		if (!preset) continue;
+
+		const parts: string[] = [];
+		if (preset.tools) parts.push(`tools: ${preset.tools.join(", ")}`);
+		if (preset.models) parts.push(`models: ${preset.models.join(", ")}`);
+		if (preset.thinking) parts.push(`thinking: ${preset.thinking}`);
+		if (preset.instructions) {
+			const truncated =
+				preset.instructions.length > 50 ? `${preset.instructions.slice(0, 50)}...` : preset.instructions;
+			parts.push(`instructions: "${truncated}"`);
+		}
+		if (preset.hooks) parts.push(`hooks: ${preset.hooks.length}`);
+		if (preset.customTools) parts.push(`customTools: ${preset.customTools.length}`);
+		if (preset.noSkills) parts.push("noSkills: true");
+
+		console.log(`  ${chalk.cyan(name)}`);
+		if (parts.length > 0) {
+			console.log(chalk.dim(`    ${parts.join(", ")}`));
+		}
+	}
+}
+
+/** Apply preset values as defaults to parsed args (CLI flags take precedence) */
+function applyPreset(parsed: Args, settingsManager: SettingsManager): void {
+	if (!parsed.preset) return;
+
+	const preset = settingsManager.getPreset(parsed.preset);
+	if (!preset) {
+		console.error(chalk.red(`Preset "${parsed.preset}" not found`));
+		const available = settingsManager.getPresetNames();
+		if (available.length > 0) {
+			console.error(chalk.yellow(`Available presets: ${available.join(", ")}`));
+		}
+		process.exit(1);
+	}
+
+	// Apply preset values only if CLI didn't override
+	if (preset.tools && !parsed.tools) {
+		parsed.tools = preset.tools.filter((t): t is keyof typeof allTools => t in allTools);
+	}
+	if (preset.models && !parsed.models) {
+		parsed.models = preset.models;
+	}
+	if (preset.thinking && !parsed.thinking) {
+		parsed.thinking = preset.thinking;
+	}
+	if (preset.instructions && !parsed.appendSystemPrompt) {
+		parsed.appendSystemPrompt = preset.instructions;
+	}
+	if (preset.hooks) {
+		// Merge: preset hooks + CLI hooks
+		parsed.hooks = [...preset.hooks, ...(parsed.hooks ?? [])];
+	}
+	if (preset.customTools) {
+		// Merge: preset custom tools + CLI custom tools
+		parsed.customTools = [...preset.customTools, ...(parsed.customTools ?? [])];
+	}
+	if (preset.noSkills && parsed.noSkills === undefined) {
+		parsed.noSkills = true;
+	}
+}
+
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
@@ -313,6 +396,13 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	if (parsed.listPresets) {
+		const cwd = process.cwd();
+		const settingsManager = SettingsManager.create(cwd);
+		listPresets(settingsManager);
+		return;
+	}
+
 	if (parsed.export) {
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
@@ -334,6 +424,10 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const settingsManager = SettingsManager.create(cwd);
 	time("SettingsManager.create");
+
+	// Apply preset (acts as defaults, CLI flags take precedence)
+	applyPreset(parsed, settingsManager);
+
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
