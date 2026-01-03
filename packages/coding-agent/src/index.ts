@@ -48,6 +48,7 @@ export type {
 	RenderResultOptions,
 } from "./core/custom-tools/index.js";
 export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
 export type * from "./core/hooks/index.js";
 // Hook system types and type guards
 export {

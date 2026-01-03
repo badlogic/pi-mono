@@ -25,6 +25,7 @@ export {
 	loadCustomTools,
 	type RenderResultOptions,
 } from "./custom-tools/index.js";
+export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
 export {
 	type HookAPI,
 	type HookContext,

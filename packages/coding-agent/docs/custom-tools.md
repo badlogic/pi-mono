@@ -159,6 +159,7 @@ interface CustomToolAPI {
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   ui: ToolUIContext;
   hasUI: boolean;  // false in --print or --mode rpc
+  events: EventBus;  // Shared event bus for tool/hook communication
 }
 
 interface ToolUIContext {
@@ -183,6 +184,22 @@ interface ExecResult {
 ```
 
 Always check `pi.hasUI` before using UI methods.
+
+### Event Bus
+
+Tools can emit events that hooks (or other tools) listen for via `pi.events`:
+
+```typescript
+// Emit an event
+pi.events.emit("mytool:completed", { result: "success", itemCount: 42 });
+
+// Listen for events (tools can also subscribe)
+const unsubscribe = pi.events.on("other:event", (data) => {
+  console.log("Received:", data);
+});
+```
+
+Events are session-scoped. Use namespaced channel names like `"toolname:event"` to avoid collisions.
 
 ### Cancellation Example
 

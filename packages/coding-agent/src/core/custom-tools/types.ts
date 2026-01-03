@@ -10,6 +10,7 @@ import type { Model } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
 import type { ModelRegistry } from "../model-registry.js";
@@ -34,6 +35,8 @@ export interface CustomToolAPI {
 	ui: CustomToolUIContext;
 	/** Whether UI is available (false in print/RPC mode) */
 	hasUI: boolean;
+	/** Shared event bus for tool/hook communication */
+	events: EventBus;
 }
 
 /**
