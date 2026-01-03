@@ -479,8 +479,13 @@ export class ToolExecutionComponent extends Container {
 				if (errorText) {
 					text += `\n\n${theme.fg("error", errorText)}`;
 				}
+			} else if (this.result?.details?.diff) {
+				// Tool executed successfully - use the diff from result
+				// This takes priority over editDiffPreview which may have a stale error
+				// due to race condition (async preview computed after file was modified)
+				text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath })}`;
 			} else if (this.editDiffPreview) {
-				// Use cached diff preview (works both before and after execution)
+				// Use cached diff preview (before tool executes)
 				if ("error" in this.editDiffPreview) {
 					text += `\n\n${theme.fg("error", this.editDiffPreview.error)}`;
 				} else if (this.editDiffPreview.diff) {
