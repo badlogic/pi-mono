@@ -98,6 +98,10 @@ export class HookRunner {
 		sendMessageHandler: SendMessageHandler;
 		/** Handler for hooks to append entries */
 		appendEntryHandler: AppendEntryHandler;
+		/** Handler for getting current tools */
+		getToolsHandler: () => string[];
+		/** Handler for setting tools */
+		setToolsHandler: (toolNames: string[]) => void;
 		/** Handler for creating new sessions (for HookCommandContext) */
 		newSessionHandler?: NewSessionHandler;
 		/** Handler for branching sessions (for HookCommandContext) */
@@ -132,10 +136,12 @@ export class HookRunner {
 		if (options.navigateTreeHandler) {
 			this.navigateTreeHandler = options.navigateTreeHandler;
 		}
-		// Set per-hook handlers for pi.sendMessage() and pi.appendEntry()
+		// Set per-hook handlers for pi.sendMessage(), pi.appendEntry(), pi.getTools(), pi.setTools()
 		for (const hook of this.hooks) {
 			hook.setSendMessageHandler(options.sendMessageHandler);
 			hook.setAppendEntryHandler(options.appendEntryHandler);
+			hook.setGetToolsHandler(options.getToolsHandler);
+			hook.setSetToolsHandler(options.setToolsHandler);
 		}
 		this.uiContext = options.uiContext ?? noOpUIContext;
 		this.hasUI = options.hasUI ?? false;

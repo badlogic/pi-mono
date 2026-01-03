@@ -749,6 +749,28 @@ export interface HookAPI {
 	 * Supports timeout and abort signal.
 	 */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+
+	/**
+	 * Get the list of currently active tool names.
+	 * @returns Array of tool names (e.g., ["read", "bash", "edit", "write"])
+	 */
+	getTools(): string[];
+
+	/**
+	 * Set the active tools by name.
+	 * Only built-in tools can be enabled/disabled. Custom tools are always active.
+	 * Changes take effect on the next agent turn.
+	 *
+	 * @param toolNames - Array of tool names to enable (e.g., ["read", "bash", "grep", "find", "ls"])
+	 *
+	 * @example
+	 * // Switch to read-only mode (plan mode)
+	 * pi.setTools(["read", "bash", "grep", "find", "ls"]);
+	 *
+	 * // Restore full access
+	 * pi.setTools(["read", "bash", "edit", "write"]);
+	 */
+	setTools(toolNames: string[]): void;
 }
 
 /**

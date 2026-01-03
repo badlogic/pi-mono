@@ -752,6 +752,29 @@ const result = await pi.exec("git", ["status"], {
 // result.stdout, result.stderr, result.code, result.killed
 ```
 
+### pi.getTools()
+
+Get the names of currently active tools:
+
+```typescript
+const toolNames = pi.getTools();
+// ["read", "bash", "edit", "write"]
+```
+
+### pi.setTools(toolNames)
+
+Set the active tools by name. Changes take effect on the next agent turn.
+
+```typescript
+// Switch to read-only mode (plan mode)
+pi.setTools(["read", "bash", "grep", "find", "ls"]);
+
+// Restore full access
+pi.setTools(["read", "bash", "edit", "write"]);
+```
+
+Only built-in tools can be enabled/disabled. Custom tools are always active. Unknown tool names are ignored.
+
 ## Examples
 
 ### Permission Gate

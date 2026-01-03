@@ -453,6 +453,8 @@ export class InteractiveMode {
 			appendEntryHandler: (customType, data) => {
 				this.sessionManager.appendCustomEntry(customType, data);
 			},
+			getToolsHandler: () => this.session.getActiveToolNames(),
+			setToolsHandler: (toolNames) => this.session.setActiveToolsByName(toolNames),
 			newSessionHandler: async (options) => {
 				// Stop any loading animation
 				if (this.loadingAnimation) {
