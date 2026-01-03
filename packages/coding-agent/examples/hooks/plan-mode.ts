@@ -294,27 +294,42 @@ export default function planModeHook(pi: HookAPI) {
 	// Filter out stale plan mode context messages from LLM context
 	// This ensures the agent only sees the CURRENT state (plan mode on/off)
 	pi.on("context", async (event) => {
+		console.error(`[plan-mode] context event: planModeEnabled=${planModeEnabled}, executionMode=${executionMode}, msgs=${event.messages.length}`);
+		
 		// Only filter when NOT in plan mode (i.e., when executing)
-		if (planModeEnabled) return;
+		if (planModeEnabled) {
+			console.error("[plan-mode] skipping filter - plan mode enabled");
+			return;
+		}
 
 		// Remove any previous plan-mode-context messages
+		const beforeCount = event.messages.length;
 		const filtered = event.messages.filter((m) => {
 			if (m.role === "user" && Array.isArray(m.content)) {
 				const hasOldContext = m.content.some(
 					(c) => c.type === "text" && c.text.includes("[PLAN MODE ACTIVE]"),
 				);
-				if (hasOldContext) return false;
+				if (hasOldContext) {
+					console.error("[plan-mode] FILTERING OUT message with [PLAN MODE ACTIVE]");
+					return false;
+				}
 			}
 			return true;
 		});
+		console.error(`[plan-mode] filtered ${beforeCount} -> ${filtered.length} messages`);
 		return { messages: filtered };
 	});
 
 	// Inject plan mode context
 	pi.on("before_agent_start", async () => {
-		if (!planModeEnabled && !executionMode) return;
+		console.error(`[plan-mode] before_agent_start: planModeEnabled=${planModeEnabled}, executionMode=${executionMode}`);
+		if (!planModeEnabled && !executionMode) {
+			console.error("[plan-mode] before_agent_start: no injection needed");
+			return;
+		}
 
 		if (planModeEnabled) {
+			console.error("[plan-mode] before_agent_start: injecting PLAN MODE ACTIVE");
 			return {
 				message: {
 					customType: "plan-mode-context",
@@ -339,6 +354,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		}
 
 		if (executionMode && todoItems.length > 0) {
+			console.error("[plan-mode] before_agent_start: injecting EXECUTING PLAN context");
 			const remaining = todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `- [${t.id}] ${t.text}`).join("\n");
 			return {
@@ -356,6 +372,7 @@ Example: [DONE:${remaining[0]?.id || "abc123"}]`,
 				},
 			};
 		}
+		console.error("[plan-mode] before_agent_start: no context injected (shouldn't reach here)");
 	});
 
 	// After agent finishes
@@ -447,6 +464,8 @@ Example: [DONE:${remaining[0]?.id || "abc123"}]`,
 		if (choice?.startsWith("Execute")) {
 			planModeEnabled = false;
 			executionMode = hasTodos;
+			console.error(`[plan-mode] EXECUTING: planModeEnabled=${planModeEnabled}, executionMode=${executionMode}`);
+			console.error(`[plan-mode] Setting tools to: ${NORMAL_MODE_TOOLS.join(", ")}`);
 			pi.setActiveTools(NORMAL_MODE_TOOLS);
 			updateStatus(ctx);
 
