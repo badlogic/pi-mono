@@ -293,19 +293,15 @@ export default function planModeHook(pi: HookAPI) {
 
 	// Filter out stale plan mode context messages from LLM context
 	// This ensures the agent only sees the CURRENT state (plan mode on/off)
-	(pi as any).on("context", async (event: { messages: Array<{ role: string; content: unknown }> }) => {
-		// Remove any previous plan-mode-context or plan-execution-context messages
-		// They'll be re-injected with current state via before_agent_start
+	pi.on("context", async (event) => {
+		// Only filter when NOT in plan mode (i.e., when executing)
+		if (planModeEnabled) return;
+
+		// Remove any previous plan-mode-context messages
 		const filtered = event.messages.filter((m) => {
 			if (m.role === "user" && Array.isArray(m.content)) {
-				// Check for our custom message types in user messages
-				const hasOldContext = (m.content as Array<{ type: string; text?: string }>).some(
-					(c) =>
-						c.type === "text" &&
-						c.text &&
-						(c.text.includes("[PLAN MODE ACTIVE]") ||
-							c.text.includes("[PLAN MODE DISABLED") ||
-							c.text.includes("[EXECUTING PLAN]")),
+				const hasOldContext = m.content.some(
+					(c) => c.type === "text" && c.text.includes("[PLAN MODE ACTIVE]"),
 				);
 				if (hasOldContext) return false;
 			}
