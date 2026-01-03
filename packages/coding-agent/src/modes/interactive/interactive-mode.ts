@@ -13,6 +13,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	getEditorKeybindings,
 	Input,
 	Loader,
 	Markdown,
@@ -220,43 +221,65 @@ export class InteractiveMode {
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
-		// Add header
+		// Add header with keybindings from config
 		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+
+		// Format keybinding for startup display (lowercase, compact)
+		const formatStartupKey = (keys: string | string[]): string => {
+			const keyArray = Array.isArray(keys) ? keys : [keys];
+			return keyArray.join("/");
+		};
+
+		const kb = this.keybindings;
+		const interrupt = formatStartupKey(kb.getKeys("interrupt"));
+		const clear = formatStartupKey(kb.getKeys("clear"));
+		const exit = formatStartupKey(kb.getKeys("exit"));
+		const suspend = formatStartupKey(kb.getKeys("suspend"));
+		const deleteToLineEnd = formatStartupKey(getEditorKeybindings().getKeys("deleteToLineEnd"));
+		const cycleThinkingLevel = formatStartupKey(kb.getKeys("cycleThinkingLevel"));
+		const cycleModelForward = formatStartupKey(kb.getKeys("cycleModelForward"));
+		const cycleModelBackward = formatStartupKey(kb.getKeys("cycleModelBackward"));
+		const selectModel = formatStartupKey(kb.getKeys("selectModel"));
+		const expandTools = formatStartupKey(kb.getKeys("expandTools"));
+		const toggleThinking = formatStartupKey(kb.getKeys("toggleThinking"));
+		const externalEditor = formatStartupKey(kb.getKeys("externalEditor"));
+		const followUp = formatStartupKey(kb.getKeys("followUp"));
+
 		const instructions =
-			theme.fg("dim", "esc") +
+			theme.fg("dim", interrupt) +
 			theme.fg("muted", " to interrupt") +
 			"\n" +
-			theme.fg("dim", "ctrl+c") +
+			theme.fg("dim", clear) +
 			theme.fg("muted", " to clear") +
 			"\n" +
-			theme.fg("dim", "ctrl+c twice") +
+			theme.fg("dim", `${clear} twice`) +
 			theme.fg("muted", " to exit") +
 			"\n" +
-			theme.fg("dim", "ctrl+d") +
+			theme.fg("dim", exit) +
 			theme.fg("muted", " to exit (empty)") +
 			"\n" +
-			theme.fg("dim", "ctrl+z") +
+			theme.fg("dim", suspend) +
 			theme.fg("muted", " to suspend") +
 			"\n" +
-			theme.fg("dim", "ctrl+k") +
+			theme.fg("dim", deleteToLineEnd) +
 			theme.fg("muted", " to delete line") +
 			"\n" +
-			theme.fg("dim", "shift+tab") +
+			theme.fg("dim", cycleThinkingLevel) +
 			theme.fg("muted", " to cycle thinking") +
 			"\n" +
-			theme.fg("dim", "ctrl+p/shift+ctrl+p") +
+			theme.fg("dim", `${cycleModelForward}/${cycleModelBackward}`) +
 			theme.fg("muted", " to cycle models") +
 			"\n" +
-			theme.fg("dim", "ctrl+l") +
+			theme.fg("dim", selectModel) +
 			theme.fg("muted", " to select model") +
 			"\n" +
-			theme.fg("dim", "ctrl+o") +
+			theme.fg("dim", expandTools) +
 			theme.fg("muted", " to expand tools") +
 			"\n" +
-			theme.fg("dim", "ctrl+t") +
+			theme.fg("dim", toggleThinking) +
 			theme.fg("muted", " to toggle thinking") +
 			"\n" +
-			theme.fg("dim", "ctrl+g") +
+			theme.fg("dim", externalEditor) +
 			theme.fg("muted", " for external editor") +
 			"\n" +
 			theme.fg("dim", "/") +
@@ -265,7 +288,7 @@ export class InteractiveMode {
 			theme.fg("dim", "!") +
 			theme.fg("muted", " to run bash") +
 			"\n" +
-			theme.fg("dim", "alt+enter") +
+			theme.fg("dim", followUp) +
 			theme.fg("muted", " to queue follow-up") +
 			"\n" +
 			theme.fg("dim", "drop files") +
@@ -2262,38 +2285,96 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Format keybindings for display (e.g., "ctrl+c" -> "Ctrl+C").
+	 */
+	private formatKeyDisplay(keys: string | string[]): string {
+		const keyArray = Array.isArray(keys) ? keys : [keys];
+		return keyArray
+			.map((key) =>
+				key
+					.split("+")
+					.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+					.join("+"),
+			)
+			.join("/");
+	}
+
+	/**
+	 * Get display string for an app keybinding action.
+	 */
+	private getAppKeyDisplay(action: Parameters<KeybindingsManager["getDisplayString"]>[0]): string {
+		const display = this.keybindings.getDisplayString(action);
+		return this.formatKeyDisplay(display);
+	}
+
+	/**
+	 * Get display string for an editor keybinding action.
+	 */
+	private getEditorKeyDisplay(action: Parameters<ReturnType<typeof getEditorKeybindings>["getKeys"]>[0]): string {
+		const keys = getEditorKeybindings().getKeys(action);
+		return this.formatKeyDisplay(keys);
+	}
+
 	private handleHotkeysCommand(): void {
+		// Navigation keybindings
+		const cursorWordLeft = this.getEditorKeyDisplay("cursorWordLeft");
+		const cursorWordRight = this.getEditorKeyDisplay("cursorWordRight");
+		const cursorLineStart = this.getEditorKeyDisplay("cursorLineStart");
+		const cursorLineEnd = this.getEditorKeyDisplay("cursorLineEnd");
+
+		// Editing keybindings
+		const submit = this.getEditorKeyDisplay("submit");
+		const newLine = this.getEditorKeyDisplay("newLine");
+		const deleteWordBackward = this.getEditorKeyDisplay("deleteWordBackward");
+		const deleteToLineStart = this.getEditorKeyDisplay("deleteToLineStart");
+		const deleteToLineEnd = this.getEditorKeyDisplay("deleteToLineEnd");
+		const tab = this.getEditorKeyDisplay("tab");
+
+		// App keybindings
+		const interrupt = this.getAppKeyDisplay("interrupt");
+		const clear = this.getAppKeyDisplay("clear");
+		const exit = this.getAppKeyDisplay("exit");
+		const suspend = this.getAppKeyDisplay("suspend");
+		const cycleThinkingLevel = this.getAppKeyDisplay("cycleThinkingLevel");
+		const cycleModelForward = this.getAppKeyDisplay("cycleModelForward");
+		const expandTools = this.getAppKeyDisplay("expandTools");
+		const toggleThinking = this.getAppKeyDisplay("toggleThinking");
+		const externalEditor = this.getAppKeyDisplay("externalEditor");
+		const followUp = this.getAppKeyDisplay("followUp");
+
 		const hotkeys = `
 **Navigation**
 | Key | Action |
 |-----|--------|
 | \`Arrow keys\` | Move cursor / browse history (Up when empty) |
-| \`Option+Left/Right\` | Move by word |
-| \`Ctrl+A\` / \`Home\` / \`Cmd+Left\` | Start of line |
-| \`Ctrl+E\` / \`End\` / \`Cmd+Right\` | End of line |
+| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
+| \`${cursorLineStart}\` | Start of line |
+| \`${cursorLineEnd}\` | End of line |
 
 **Editing**
 | Key | Action |
 |-----|--------|
-| \`Enter\` | Send message |
-| \`Shift+Enter\` / \`Alt+Enter\` | New line |
-| \`Ctrl+W\` / \`Option+Backspace\` | Delete word backwards |
-| \`Ctrl+U\` | Delete to start of line |
-| \`Ctrl+K\` | Delete to end of line |
+| \`${submit}\` | Send message |
+| \`${newLine}\` | New line |
+| \`${deleteWordBackward}\` | Delete word backwards |
+| \`${deleteToLineStart}\` | Delete to start of line |
+| \`${deleteToLineEnd}\` | Delete to end of line |
 
 **Other**
 | Key | Action |
 |-----|--------|
-| \`Tab\` | Path completion / accept autocomplete |
-| \`Escape\` | Cancel autocomplete / abort streaming |
-| \`Ctrl+C\` | Clear editor (first) / exit (second) |
-| \`Ctrl+D\` | Exit (when editor is empty) |
-| \`Ctrl+Z\` | Suspend to background |
-| \`Shift+Tab\` | Cycle thinking level |
-| \`Ctrl+P\` | Cycle models |
-| \`Ctrl+O\` | Toggle tool output expansion |
-| \`Ctrl+T\` | Toggle thinking block visibility |
-| \`Ctrl+G\` | Edit message in external editor |
+| \`${tab}\` | Path completion / accept autocomplete |
+| \`${interrupt}\` | Cancel autocomplete / abort streaming |
+| \`${clear}\` | Clear editor (first) / exit (second) |
+| \`${exit}\` | Exit (when editor is empty) |
+| \`${suspend}\` | Suspend to background |
+| \`${cycleThinkingLevel}\` | Cycle thinking level |
+| \`${cycleModelForward}\` | Cycle models |
+| \`${expandTools}\` | Toggle tool output expansion |
+| \`${toggleThinking}\` | Toggle thinking block visibility |
+| \`${externalEditor}\` | Edit message in external editor |
+| \`${followUp}\` | Queue follow-up message |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 `;
