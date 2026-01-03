@@ -241,8 +241,8 @@ export default function planModeHook(pi: HookAPI) {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Update widget with todo list
-		if (executionMode && todoItems.length > 0) {
+		// Update widget with todo list (show in both plan mode and execution mode)
+		if (todoItems.length > 0) {
 			const lines: string[] = [];
 			for (const item of todoItems) {
 				if (item.completed) {
@@ -395,6 +395,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 			const extracted = extractTodoItems(lastAssistant.content);
 			if (extracted.length > 0) {
 				todoItems = extracted;
+				updateStatus(ctx); // Show the extracted todos
 			}
 		}
 
