@@ -141,6 +141,10 @@ export class InteractiveMode {
 	private hookInput: HookInputComponent | undefined = undefined;
 	private hookEditor: HookEditorComponent | undefined = undefined;
 
+	// Hook widgets (multi-line status displays)
+	private hookWidgets = new Map<string, string[]>();
+	private widgetContainer!: Container;
+
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
 
@@ -175,6 +179,7 @@ export class InteractiveMode {
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
+		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
 		this.editor = new CustomEditor(getEditorTheme(), this.keybindings);
 		this.editorContainer = new Container();
@@ -330,6 +335,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
+		this.ui.addChild(this.widgetContainer);
 		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.footer);
@@ -619,6 +625,40 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a hook widget (multi-line status display).
+	 */
+	private setHookWidget(key: string, lines: string[] | undefined): void {
+		if (lines === undefined) {
+			this.hookWidgets.delete(key);
+		} else {
+			this.hookWidgets.set(key, lines);
+		}
+		this.renderWidgets();
+	}
+
+	/**
+	 * Render all hook widgets to the widget container.
+	 */
+	private renderWidgets(): void {
+		if (!this.widgetContainer) return;
+		this.widgetContainer.clear();
+
+		if (this.hookWidgets.size === 0) {
+			this.ui.requestRender();
+			return;
+		}
+
+		// Render each widget
+		for (const [_key, lines] of this.hookWidgets) {
+			for (const line of lines) {
+				this.widgetContainer.addChild(new Text(line, 1, 0));
+			}
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Create the HookUIContext for hooks and tools.
 	 */
 	private createHookUIContext(): HookUIContext {
@@ -628,6 +668,7 @@ export class InteractiveMode {
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
 			setStatus: (key, text) => this.setHookStatus(key, text),
+			setWidget: (key, lines) => this.setHookWidget(key, lines),
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),

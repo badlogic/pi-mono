@@ -229,17 +229,33 @@ export default function planModeHook(pi: HookAPI) {
 		default: false,
 	});
 
-	// Helper to update footer status
+	// Helper to update status displays
 	function updateStatus(ctx: HookContext) {
+		// Update footer status
 		if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
-			const total = todoItems.length;
-			const progress = `${completed}/${total}`;
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${progress}`));
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`));
 		} else if (planModeEnabled) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
+		}
+
+		// Update widget with todo list
+		if (executionMode && todoItems.length > 0) {
+			const lines: string[] = [];
+			for (const item of todoItems) {
+				if (item.completed) {
+					lines.push(
+						ctx.ui.theme.fg("success", "☑ ") + ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text)),
+					);
+				} else {
+					lines.push(ctx.ui.theme.fg("muted", "☐ ") + item.text);
+				}
+			}
+			ctx.ui.setWidget("plan-todos", lines);
+		} else {
+			ctx.ui.setWidget("plan-todos", undefined);
 		}
 	}
 

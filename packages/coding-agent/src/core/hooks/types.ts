@@ -75,6 +75,28 @@ export interface HookUIContext {
 	setStatus(key: string, text: string | undefined): void;
 
 	/**
+	 * Set a widget to display in the status area (above the editor, below "Working..." indicator).
+	 * Supports multi-line content. Pass undefined to clear.
+	 * Text can include ANSI escape codes for styling.
+	 *
+	 * @param key - Unique key to identify this widget (e.g., hook name)
+	 * @param lines - Array of lines to display, or undefined to clear
+	 *
+	 * @example
+	 * // Show a todo list
+	 * ctx.ui.setWidget("plan-todos", [
+	 *   theme.fg("accent", "Plan Progress:"),
+	 *   "☑ " + theme.fg("muted", theme.strikethrough("Step 1: Read files")),
+	 *   "☐ Step 2: Modify code",
+	 *   "☐ Step 3: Run tests",
+	 * ]);
+	 *
+	 * // Clear the widget
+	 * ctx.ui.setWidget("plan-todos", undefined);
+	 */
+	setWidget(key: string, lines: string[] | undefined): void;
+
+	/**
 	 * Show a custom component with keyboard focus.
 	 * The factory receives TUI, theme, and a done() callback to close the component.
 	 * Can be async for fire-and-forget work (don't await the work, just start it).

@@ -131,6 +131,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
+		setWidget(key: string, lines: string[] | undefined): void {
+			// Fire and forget - host can implement widget display
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "setWidget",
+				widgetKey: key,
+				widgetLines: lines,
+			} as RpcHookUIRequest);
+		},
+
 		async custom() {
 			// Custom UI not supported in RPC mode
 			return undefined as never;
