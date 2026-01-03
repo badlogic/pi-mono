@@ -333,8 +333,7 @@
       margin-top: var(--line-height);
     }
 
-    .assistant-text + .tool-execution,
-    .thinking-block + .tool-execution {
+    .assistant-text + .tool-execution {
       margin-top: var(--line-height);
     }
 
