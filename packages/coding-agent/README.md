@@ -9,13 +9,9 @@
   <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
 </p>
 
-# pi
-
 A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
 
 Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)).
-
-> **Note:** The Discord is an unofficial community server, not monitored by maintainers. For bug reports and feature requests, use [GitHub Issues](https://github.com/badlogic/pi-mono/issues).
 
 ## Table of Contents
 
