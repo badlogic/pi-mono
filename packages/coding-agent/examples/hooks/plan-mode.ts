@@ -425,11 +425,13 @@ Do NOT attempt to make changes - just describe what you would do.`,
 
 		if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
+			const remaining = todoItems.filter((t) => !t.completed).map((t) => t.text);
 			return {
 				message: {
 					customType: "plan-execution-context",
 					content: `[EXECUTING PLAN - ${completed}/${todoItems.length} complete]
-Continue executing the plan step by step.`,
+Plan mode is OFF. You have FULL access to: read, write, edit, bash.
+${remaining.length > 0 ? `Remaining steps:\n${remaining.map((t, i) => `${i + 1}. ${t}`).join("\n")}` : "All steps complete!"}`,
 					display: false,
 				},
 			};
@@ -509,8 +511,12 @@ Continue executing the plan step by step.`,
 			updateStatus(ctx);
 
 			const execMessage = hasTodos
-				? `Execute the plan step by step. Start with: ${todoItems[0].text}`
-				: "Execute the plan you just created. Proceed step by step.";
+				? `[PLAN MODE DISABLED - EXECUTE NOW]
+You now have FULL access to all tools: read, write, edit, bash.
+Execute the plan step by step. Start with: ${todoItems[0].text}`
+				: `[PLAN MODE DISABLED - EXECUTE NOW]
+You now have FULL access to all tools: read, write, edit, bash.
+Execute the plan you just created. Proceed step by step.`;
 
 			pi.sendMessage(
 				{
