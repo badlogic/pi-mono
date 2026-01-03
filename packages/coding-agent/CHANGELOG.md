@@ -25,6 +25,7 @@
 
 ### Added
 
+- Configurable double-escape action: choose whether double-escape with empty editor opens `/tree` (default) or `/branch`. Configure via `/settings` or `doubleEscapeAction` in settings.json ([#404](https://github.com/badlogic/pi-mono/issues/404))
 - Vertex AI provider (`google-vertex`): access Gemini models via Google Cloud Vertex AI using Application Default Credentials ([#300](https://github.com/badlogic/pi-mono/pull/300) by [@default-anton](https://github.com/default-anton))
 - Built-in provider overrides in `models.json`: override just `baseUrl` to route a built-in provider through a proxy while keeping all its models, or define `models` to fully replace the provider ([#406](https://github.com/badlogic/pi-mono/pull/406) by [@yevhen](https://github.com/yevhen))
 - Automatic image resizing: images larger than 2000x2000 are resized for better model compatibility. Original dimensions are injected into the prompt. Controlled via `/settings` or `images.autoResize` in settings.json. ([#402](https://github.com/badlogic/pi-mono/pull/402) by [@mitsuhiko](https://github.com/mitsuhiko))

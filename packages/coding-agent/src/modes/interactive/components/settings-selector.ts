@@ -33,6 +33,7 @@ export interface SettingsConfig {
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
+	doubleEscapeAction: "branch" | "tree";
 }
 
 export interface SettingsCallbacks {
@@ -46,6 +47,7 @@ export interface SettingsCallbacks {
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
+	onDoubleEscapeActionChange: (action: "branch" | "tree") => void;
 	onCancel: () => void;
 }
 
@@ -161,6 +163,13 @@ export class SettingsSelectorComponent extends Container {
 				values: ["true", "false"],
 			},
 			{
+				id: "double-escape-action",
+				label: "Double-escape action",
+				description: "Action when pressing Escape twice with empty editor",
+				currentValue: config.doubleEscapeAction,
+				values: ["tree", "branch"],
+			},
+			{
 				id: "thinking",
 				label: "Thinking level",
 				description: "Reasoning depth for thinking-capable models",
@@ -263,6 +272,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "collapse-changelog":
 						callbacks.onCollapseChangelogChange(newValue === "true");
+						break;
+					case "double-escape-action":
+						callbacks.onDoubleEscapeActionChange(newValue as "branch" | "tree");
 						break;
 				}
 			},

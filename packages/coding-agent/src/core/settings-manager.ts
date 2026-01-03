@@ -58,6 +58,7 @@ export interface Settings {
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
+	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -409,5 +410,14 @@ export class SettingsManager {
 
 	getEnabledModels(): string[] | undefined {
 		return this.settings.enabledModels;
+	}
+
+	getDoubleEscapeAction(): "branch" | "tree" {
+		return this.settings.doubleEscapeAction ?? "tree";
+	}
+
+	setDoubleEscapeAction(action: "branch" | "tree"): void {
+		this.globalSettings.doubleEscapeAction = action;
+		this.save();
 	}
 }

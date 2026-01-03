@@ -755,10 +755,14 @@ export class InteractiveMode {
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
 			} else if (!this.editor.getText().trim()) {
-				// Double-escape with empty editor triggers /branch
+				// Double-escape with empty editor triggers /tree or /branch based on setting
 				const now = Date.now();
 				if (now - this.lastEscapeTime < 500) {
-					this.showUserMessageSelector();
+					if (this.settingsManager.getDoubleEscapeAction() === "tree") {
+						this.showTreeSelector();
+					} else {
+						this.showUserMessageSelector();
+					}
 					this.lastEscapeTime = 0;
 				} else {
 					this.lastEscapeTime = now;
@@ -1682,6 +1686,7 @@ export class InteractiveMode {
 					availableThemes: getAvailableThemes(),
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
+					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -1738,6 +1743,9 @@ export class InteractiveMode {
 					},
 					onCollapseChangelogChange: (collapsed) => {
 						this.settingsManager.setCollapseChangelog(collapsed);
+					},
+					onDoubleEscapeActionChange: (action) => {
+						this.settingsManager.setDoubleEscapeAction(action);
 					},
 					onCancel: () => {
 						done();
