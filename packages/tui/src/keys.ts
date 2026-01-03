@@ -7,7 +7,122 @@
  * API:
  * - matchesKey(data, keyId) - Check if input matches a key identifier
  * - parseKey(data) - Parse input and return the key identifier
+ * - Key - Helper object for creating typed key identifiers
  */
+
+// =============================================================================
+// Type-Safe Key Identifiers
+// =============================================================================
+
+type Letter =
+	| "a"
+	| "b"
+	| "c"
+	| "d"
+	| "e"
+	| "f"
+	| "g"
+	| "h"
+	| "i"
+	| "j"
+	| "k"
+	| "l"
+	| "m"
+	| "n"
+	| "o"
+	| "p"
+	| "q"
+	| "r"
+	| "s"
+	| "t"
+	| "u"
+	| "v"
+	| "w"
+	| "x"
+	| "y"
+	| "z";
+
+type SpecialKey =
+	| "escape"
+	| "esc"
+	| "enter"
+	| "return"
+	| "tab"
+	| "space"
+	| "backspace"
+	| "delete"
+	| "home"
+	| "end"
+	| "up"
+	| "down"
+	| "left"
+	| "right";
+
+type BaseKey = Letter | SpecialKey;
+
+/**
+ * Union type of all valid key identifiers.
+ * Provides autocomplete and catches typos at compile time.
+ */
+export type KeyId =
+	| BaseKey
+	| `ctrl+${BaseKey}`
+	| `shift+${BaseKey}`
+	| `alt+${BaseKey}`
+	| `ctrl+shift+${BaseKey}`
+	| `shift+ctrl+${BaseKey}`
+	| `ctrl+alt+${BaseKey}`
+	| `alt+ctrl+${BaseKey}`
+	| `shift+alt+${BaseKey}`
+	| `alt+shift+${BaseKey}`
+	| `ctrl+shift+alt+${BaseKey}`
+	| `ctrl+alt+shift+${BaseKey}`
+	| `shift+ctrl+alt+${BaseKey}`
+	| `shift+alt+ctrl+${BaseKey}`
+	| `alt+ctrl+shift+${BaseKey}`
+	| `alt+shift+ctrl+${BaseKey}`;
+
+/**
+ * Helper object for creating typed key identifiers with autocomplete.
+ *
+ * Usage:
+ * - Key.escape, Key.enter, Key.tab, etc. for special keys
+ * - Key.ctrl("c"), Key.alt("x") for single modifier
+ * - Key.ctrlShift("p"), Key.ctrlAlt("x") for combined modifiers
+ */
+export const Key = {
+	// Special keys
+	escape: "escape" as const,
+	esc: "esc" as const,
+	enter: "enter" as const,
+	return: "return" as const,
+	tab: "tab" as const,
+	space: "space" as const,
+	backspace: "backspace" as const,
+	delete: "delete" as const,
+	home: "home" as const,
+	end: "end" as const,
+	up: "up" as const,
+	down: "down" as const,
+	left: "left" as const,
+	right: "right" as const,
+
+	// Single modifiers
+	ctrl: <K extends BaseKey>(key: K): `ctrl+${K}` => `ctrl+${key}`,
+	shift: <K extends BaseKey>(key: K): `shift+${K}` => `shift+${key}`,
+	alt: <K extends BaseKey>(key: K): `alt+${K}` => `alt+${key}`,
+
+	// Combined modifiers
+	ctrlShift: <K extends BaseKey>(key: K): `ctrl+shift+${K}` => `ctrl+shift+${key}`,
+	shiftCtrl: <K extends BaseKey>(key: K): `shift+ctrl+${K}` => `shift+ctrl+${key}`,
+	ctrlAlt: <K extends BaseKey>(key: K): `ctrl+alt+${K}` => `ctrl+alt+${key}`,
+	altCtrl: <K extends BaseKey>(key: K): `alt+ctrl+${K}` => `alt+ctrl+${key}`,
+	shiftAlt: <K extends BaseKey>(key: K): `shift+alt+${K}` => `shift+alt+${key}`,
+	altShift: <K extends BaseKey>(key: K): `alt+shift+${K}` => `alt+shift+${key}`,
+
+	// Triple modifiers
+	ctrlShiftAlt: <K extends BaseKey>(key: K): `ctrl+shift+alt+${K}` => `ctrl+shift+alt+${key}`,
+} as const;
 
 // =============================================================================
 // Constants
@@ -142,10 +257,12 @@ function parseKeyId(keyId: string): { key: string; ctrl: boolean; shift: boolean
  * - Alt combinations: "alt+enter", "alt+backspace"
  * - Combined modifiers: "shift+ctrl+p", "ctrl+alt+x"
  *
+ * Use the Key helper for autocomplete: Key.ctrl("c"), Key.escape, Key.ctrlShift("p")
+ *
  * @param data - Raw input data from terminal
- * @param keyId - Key identifier string (e.g., "ctrl+c", "escape")
+ * @param keyId - Key identifier (e.g., "ctrl+c", "escape", Key.ctrl("c"))
  */
-export function matchesKey(data: string, keyId: string): boolean {
+export function matchesKey(data: string, keyId: KeyId): boolean {
 	const parsed = parseKeyId(keyId);
 	if (!parsed) return false;
 

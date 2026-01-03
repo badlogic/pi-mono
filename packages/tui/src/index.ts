@@ -27,11 +27,10 @@ export {
 	type EditorKeybindingsConfig,
 	EditorKeybindingsManager,
 	getEditorKeybindings,
-	type KeyId,
 	setEditorKeybindings,
 } from "./keybindings.js";
 // Keyboard input handling
-export { matchesKey, parseKey } from "./keys.js";
+export { Key, type KeyId, matchesKey, parseKey } from "./keys.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support

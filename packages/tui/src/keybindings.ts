@@ -1,4 +1,4 @@
-import { matchesKey } from "./keys.js";
+import { type KeyId, matchesKey } from "./keys.js";
 
 /**
  * Editor actions that can be bound to keys.
@@ -31,10 +31,8 @@ export type EditorAction =
 	// Clipboard
 	| "copy";
 
-/**
- * Key identifier string (e.g., "ctrl+c", "shift+ctrl+p", "escape").
- */
-export type KeyId = string;
+// Re-export KeyId from keys.ts
+export type { KeyId };
 
 /**
  * Editor keybindings configuration.
