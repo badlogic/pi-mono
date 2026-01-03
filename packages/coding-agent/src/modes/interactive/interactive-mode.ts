@@ -141,9 +141,8 @@ export class InteractiveMode {
 	private hookInput: HookInputComponent | undefined = undefined;
 	private hookEditor: HookEditorComponent | undefined = undefined;
 
-	// Hook widgets (multi-line status displays or custom components)
-	private hookWidgets = new Map<string, string[]>();
-	private hookWidgetComponents = new Map<string, Component & { dispose?(): void }>();
+	// Hook widgets (components rendered above the editor)
+	private hookWidgets = new Map<string, Component & { dispose?(): void }>();
 	private widgetContainer!: Container;
 
 	// Custom tools for custom rendering
@@ -627,41 +626,32 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Set a hook widget (multi-line status display).
+	 * Set a hook widget (string array or custom component).
 	 */
-	private setHookWidget(key: string, lines: string[] | undefined): void {
-		if (lines === undefined) {
-			this.hookWidgets.delete(key);
-		} else {
-			// Clear any component widget with same key
-			const existing = this.hookWidgetComponents.get(key);
-			if (existing?.dispose) existing.dispose();
-			this.hookWidgetComponents.delete(key);
-
-			this.hookWidgets.set(key, lines);
-		}
-		this.renderWidgets();
-	}
-
-	/**
-	 * Set a hook widget component (custom component without focus).
-	 */
-	private setHookWidgetComponent(
+	private setHookWidget(
 		key: string,
-		factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
+		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
 	): void {
-		// Dispose existing component
-		const existing = this.hookWidgetComponents.get(key);
+		// Dispose and remove existing widget
+		const existing = this.hookWidgets.get(key);
 		if (existing?.dispose) existing.dispose();
 
-		if (factory === undefined) {
-			this.hookWidgetComponents.delete(key);
-		} else {
-			// Clear any string widget with same key
+		if (content === undefined) {
 			this.hookWidgets.delete(key);
-
-			const component = factory(this.ui, theme);
-			this.hookWidgetComponents.set(key, component);
+		} else if (Array.isArray(content)) {
+			// Wrap string array in a Container with Text components
+			const container = new Container();
+			for (const line of content.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
+				container.addChild(new Text(line, 1, 0));
+			}
+			if (content.length > InteractiveMode.MAX_WIDGET_LINES) {
+				container.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
+			}
+			this.hookWidgets.set(key, container);
+		} else {
+			// Factory function - create component
+			const component = content(this.ui, theme);
+			this.hookWidgets.set(key, component);
 		}
 		this.renderWidgets();
 	}
@@ -676,30 +666,12 @@ export class InteractiveMode {
 		if (!this.widgetContainer) return;
 		this.widgetContainer.clear();
 
-		const hasStringWidgets = this.hookWidgets.size > 0;
-		const hasComponentWidgets = this.hookWidgetComponents.size > 0;
-
-		if (!hasStringWidgets && !hasComponentWidgets) {
+		if (this.hookWidgets.size === 0) {
 			this.ui.requestRender();
 			return;
 		}
 
-		// Render string widgets first, respecting max lines
-		let totalLines = 0;
-		for (const [_key, lines] of this.hookWidgets) {
-			for (const line of lines) {
-				if (totalLines >= InteractiveMode.MAX_WIDGET_LINES) {
-					this.widgetContainer.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
-					this.ui.requestRender();
-					return;
-				}
-				this.widgetContainer.addChild(new Text(line, 1, 0));
-				totalLines++;
-			}
-		}
-
-		// Render component widgets
-		for (const [_key, component] of this.hookWidgetComponents) {
+		for (const [_key, component] of this.hookWidgets) {
 			this.widgetContainer.addChild(component);
 		}
 
@@ -716,8 +688,7 @@ export class InteractiveMode {
 			input: (title, placeholder) => this.showHookInput(title, placeholder),
 			notify: (message, type) => this.showHookNotify(message, type),
 			setStatus: (key, text) => this.setHookStatus(key, text),
-			setWidget: (key, lines) => this.setHookWidget(key, lines),
-			setWidgetComponent: (key, factory) => this.setHookWidgetComponent(key, factory),
+			setWidget: (key, content) => this.setHookWidget(key, content),
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),

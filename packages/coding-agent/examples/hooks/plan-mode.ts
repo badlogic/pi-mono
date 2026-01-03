@@ -20,6 +20,7 @@
  */
 
 import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent/hooks";
+import { Key } from "@mariozechner/pi-tui";
 
 // Read-only tools for plan mode
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls"];
@@ -292,7 +293,7 @@ export default function planModeHook(pi: HookAPI) {
 	});
 
 	// Register Shift+P shortcut
-	pi.registerShortcut("shift+p", {
+	pi.registerShortcut(Key.shift("p"), {
 		description: "Toggle plan mode",
 		handler: async (ctx) => {
 			togglePlanMode(ctx);

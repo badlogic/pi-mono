@@ -131,19 +131,18 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
-		setWidget(key: string, lines: string[] | undefined): void {
-			// Fire and forget - host can implement widget display
-			output({
-				type: "hook_ui_request",
-				id: crypto.randomUUID(),
-				method: "setWidget",
-				widgetKey: key,
-				widgetLines: lines,
-			} as RpcHookUIRequest);
-		},
-
-		setWidgetComponent(): void {
-			// Custom components not supported in RPC mode - host would need to implement
+		setWidget(key: string, content: unknown): void {
+			// Only support string arrays in RPC mode - factory functions are ignored
+			if (content === undefined || Array.isArray(content)) {
+				output({
+					type: "hook_ui_request",
+					id: crypto.randomUUID(),
+					method: "setWidget",
+					widgetKey: key,
+					widgetLines: content as string[] | undefined,
+				} as RpcHookUIRequest);
+			}
+			// Component factories are not supported in RPC mode - would need TUI access
 		},
 
 		async custom() {
