@@ -291,11 +291,18 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
+	// Buffer for accumulating text to handle [DONE:id] split across chunks
+	let textBuffer = "";
+
 	// Watch for [DONE:id] tags in streaming text
 	pi.on("text_delta", async (event, ctx) => {
 		if (!executionMode || todoItems.length === 0) return;
 
-		const doneIds = findDoneTags(event.text);
+		// Accumulate text in buffer
+		textBuffer += event.text;
+
+		// Look for complete [DONE:id] patterns
+		const doneIds = findDoneTags(textBuffer);
 		if (doneIds.length === 0) return;
 
 		let changed = false;
@@ -305,6 +312,11 @@ export default function planModeHook(pi: HookAPI) {
 				item.completed = true;
 				changed = true;
 			}
+		}
+
+		// Clear processed patterns from buffer (keep last 20 chars for partial matches)
+		if (textBuffer.length > 50) {
+			textBuffer = textBuffer.slice(-20);
 		}
 
 		if (changed) {
@@ -360,6 +372,9 @@ IMPORTANT: After completing each step, output [DONE:id] where id is the step's I
 
 	// After agent finishes in plan mode
 	pi.on("agent_end", async (event, ctx) => {
+		// Clear text buffer
+		textBuffer = "";
+
 		// Check for done tags in the final message too
 		if (executionMode && todoItems.length > 0) {
 			const messages = event.messages;
