@@ -306,6 +306,21 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
+#### text_delta
+
+Fired for each chunk of streaming text from the assistant. Useful for real-time monitoring of agent output.
+
+```typescript
+pi.on("text_delta", async (event, ctx) => {
+  // event.text - the new text chunk
+  
+  // Example: watch for specific patterns in streaming output
+  if (event.text.includes("[DONE:")) {
+    // Handle completion marker
+  }
+});
+```
+
 #### context
 
 Fired before each LLM call. Modify messages non-destructively (session unchanged).

@@ -393,6 +393,16 @@ export interface AgentEndEvent {
 }
 
 /**
+ * Event data for text_delta event.
+ * Fired when new text is streamed from the assistant.
+ */
+export interface TextDeltaEvent {
+	type: "text_delta";
+	/** The new text chunk */
+	text: string;
+}
+
+/**
  * Event data for turn_start event.
  */
 export interface TurnStartEvent {
@@ -535,6 +545,7 @@ export type HookEvent =
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
+	| TextDeltaEvent
 	| TurnStartEvent
 	| TurnEndEvent
 	| ToolCallEvent
@@ -701,6 +712,7 @@ export interface HookAPI {
 	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
+	on(event: "text_delta", handler: HookHandler<TextDeltaEvent>): void;
 
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry that

@@ -291,12 +291,25 @@ export default function planModeHook(pi: HookAPI) {
 		}
 	});
 
-	// Check for [DONE:id] tags after each tool result (agent may output them in tool-related text)
-	pi.on("tool_result", async (_event, ctx) => {
+	// Watch for [DONE:id] tags in streaming text
+	pi.on("text_delta", async (event, ctx) => {
 		if (!executionMode || todoItems.length === 0) return;
-		// The actual checking happens in agent_end when we have the full message
-		// But we update status here to keep UI responsive
-		updateStatus(ctx);
+
+		const doneIds = findDoneTags(event.text);
+		if (doneIds.length === 0) return;
+
+		let changed = false;
+		for (const id of doneIds) {
+			const item = todoItems.find((t) => t.id === id);
+			if (item && !item.completed) {
+				item.completed = true;
+				changed = true;
+			}
+		}
+
+		if (changed) {
+			updateStatus(ctx);
+		}
 	});
 
 	// Inject plan mode context

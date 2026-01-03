@@ -40,6 +40,7 @@
 - Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts (e.g., `shift+p`, `ctrl+shift+x`)
 - Hook API: `ctx.ui.setWidget(key, lines)` for multi-line status displays above the editor (todo lists, progress tracking)
 - Hook API: `theme.strikethrough(text)` for strikethrough text styling
+- Hook API: `text_delta` event for monitoring streaming assistant text in real-time
 - `/hotkeys` command now shows hook-registered shortcuts in a separate "Hooks" section
 - New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:
   - Toggle via `/plan` command, `Shift+P` shortcut, or `--plan` CLI flag
@@ -47,6 +48,8 @@
   - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
   - Interactive prompt after each response: execute plan, stay in plan mode, or refine
   - Todo list widget showing progress with checkboxes and strikethrough for completed items
+  - Each todo has a unique ID; agent marks items done by outputting `[DONE:id]`
+  - Real-time progress updates via streaming text monitoring
   - `/todos` command to view current plan progress
   - Shows `⏸ plan` indicator in footer when in plan mode, `📋 2/5` when executing
   - State persists across sessions (including todo progress)
