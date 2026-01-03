@@ -10,7 +10,7 @@ import * as path from "node:path";
 import Clipboard from "@crosscopy/clipboard";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
-import type { SlashCommand } from "@mariozechner/pi-tui";
+import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -19,6 +19,7 @@ import {
 	Input,
 	Loader,
 	Markdown,
+	matchesKey,
 	ProcessTerminal,
 	Spacer,
 	Text,
@@ -592,7 +593,8 @@ export class InteractiveMode {
 		// Set up the hook shortcut handler on the editor
 		this.editor.onHookShortcut = (data: string) => {
 			for (const [shortcutStr, shortcut] of shortcuts) {
-				if (this.matchShortcut(data, shortcutStr)) {
+				// Cast to KeyId - hook shortcuts use the same format
+				if (matchesKey(data, shortcutStr as KeyId)) {
 					// Run handler async, don't block input
 					Promise.resolve(shortcut.handler(createContext())).catch((err) => {
 						this.showError(`Shortcut handler error: ${err instanceof Error ? err.message : String(err)}`);
@@ -602,47 +604,6 @@ export class InteractiveMode {
 			}
 			return false;
 		};
-	}
-
-	/**
-	 * Match a key input against a shortcut string like "shift+p" or "ctrl+shift+x".
-	 */
-	private matchShortcut(data: string, shortcut: string): boolean {
-		const parts = shortcut.toLowerCase().split("+");
-		const key = parts.pop() ?? "";
-		const modifiers = new Set(parts);
-
-		const hasShift = modifiers.has("shift");
-		const hasCtrl = modifiers.has("ctrl");
-		const hasAlt = modifiers.has("alt");
-
-		// Get the key codepoint
-		const keyCode = key.length === 1 ? key.charCodeAt(0) : 0;
-		if (keyCode === 0) return false;
-
-		// Calculate expected modifier bits for Kitty protocol
-		// Kitty modifier bits: 1=shift, 2=alt, 4=ctrl
-		let expectedMod = 0;
-		if (hasShift) expectedMod |= 1;
-		if (hasAlt) expectedMod |= 2;
-		if (hasCtrl) expectedMod |= 4;
-
-		// Try to match Kitty protocol: \x1b[<code>;<mod>u
-		// With modifier offset: mod in sequence = expectedMod + 1
-		const kittyPattern = new RegExp(`^\x1b\\[${keyCode};(\\d+)u$`);
-		const kittyMatch = data.match(kittyPattern);
-		if (kittyMatch) {
-			const actualMod = parseInt(kittyMatch[1], 10) - 1; // Subtract 1 for the offset
-			// Mask out lock bits (8=capslock, 16=numlock)
-			return (actualMod & 0x7) === expectedMod;
-		}
-
-		// Try uppercase letter for shift+letter (legacy terminals)
-		if (hasShift && !hasCtrl && !hasAlt && key.length === 1) {
-			return data === key.toUpperCase();
-		}
-
-		return false;
 	}
 
 	/**
@@ -2470,7 +2431,7 @@ export class InteractiveMode {
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
 		const followUp = this.getAppKeyDisplay("followUp");
 
-		const hotkeys = `
+		let hotkeys = `
 **Navigation**
 | Key | Action |
 |-----|--------|
@@ -2506,6 +2467,24 @@ export class InteractiveMode {
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 `;
+
+		// Add hook-registered shortcuts
+		const hookRunner = this.session.hookRunner;
+		if (hookRunner) {
+			const shortcuts = hookRunner.getShortcuts();
+			if (shortcuts.size > 0) {
+				hotkeys += `
+**Hooks**
+| Key | Action |
+|-----|--------|
+`;
+				for (const [key, shortcut] of shortcuts) {
+					const description = shortcut.description ?? shortcut.hookPath;
+					hotkeys += `| \`${key}\` | ${description} |\n`;
+				}
+			}
+		}
+
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
