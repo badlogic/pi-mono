@@ -79,6 +79,8 @@ export interface HookUIContext {
 	 * Supports multi-line content. Pass undefined to clear.
 	 * Text can include ANSI escape codes for styling.
 	 *
+	 * For simple text displays, use this method. For custom components, use setWidgetComponent().
+	 *
 	 * @param key - Unique key to identify this widget (e.g., hook name)
 	 * @param lines - Array of lines to display, or undefined to clear
 	 *
@@ -95,6 +97,31 @@ export interface HookUIContext {
 	 * ctx.ui.setWidget("plan-todos", undefined);
 	 */
 	setWidget(key: string, lines: string[] | undefined): void;
+
+	/**
+	 * Set a custom component as a widget (above the editor, below "Working..." indicator).
+	 * Unlike custom(), this does NOT take keyboard focus - the editor remains focused.
+	 * Pass undefined to clear the widget.
+	 *
+	 * The component should implement render(width) and optionally dispose().
+	 * Components are rendered inline without taking focus - they cannot handle keyboard input.
+	 *
+	 * @param key - Unique key to identify this widget (e.g., hook name)
+	 * @param factory - Function that creates the component, or undefined to clear
+	 *
+	 * @example
+	 * // Show a custom progress component
+	 * ctx.ui.setWidgetComponent("my-progress", (tui, theme) => {
+	 *   return new MyProgressComponent(tui, theme);
+	 * });
+	 *
+	 * // Clear the widget
+	 * ctx.ui.setWidgetComponent("my-progress", undefined);
+	 */
+	setWidgetComponent(
+		key: string,
+		factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+	): void;
 
 	/**
 	 * Show a custom component with keyboard focus.
