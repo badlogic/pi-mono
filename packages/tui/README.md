@@ -409,24 +409,29 @@ editor.setAutocompleteProvider(provider);
 
 ## Key Detection
 
-Helper functions for detecting keyboard input (supports Kitty keyboard protocol):
+Use `matchesKey()` with the `Key` helper for detecting keyboard input (supports Kitty keyboard protocol):
 
 ```typescript
-import {
-  isEnter, isEscape, isTab, isShiftTab,
-  isArrowUp, isArrowDown, isArrowLeft, isArrowRight,
-  isCtrlA, isCtrlC, isCtrlE, isCtrlK, isCtrlO, isCtrlP,
-  isCtrlLeft, isCtrlRight, isAltLeft, isAltRight,
-  isShiftEnter, isAltEnter,
-  isShiftCtrlO, isShiftCtrlD, isShiftCtrlP,
-  isBackspace, isDelete, isHome, isEnd,
-  // ... and more
-} from "@mariozechner/pi-tui";
+import { matchesKey, Key } from "@mariozechner/pi-tui";
 
-if (isCtrlC(data)) {
+if (matchesKey(data, Key.ctrl("c"))) {
   process.exit(0);
 }
+
+if (matchesKey(data, Key.enter)) {
+  submit();
+} else if (matchesKey(data, Key.escape)) {
+  cancel();
+} else if (matchesKey(data, Key.up)) {
+  moveUp();
+}
 ```
+
+**Key identifiers** (use `Key.*` for autocomplete, or string literals):
+- Basic keys: `Key.enter`, `Key.escape`, `Key.tab`, `Key.space`, `Key.backspace`, `Key.delete`, `Key.home`, `Key.end`
+- Arrow keys: `Key.up`, `Key.down`, `Key.left`, `Key.right`
+- With modifiers: `Key.ctrl("c")`, `Key.shift("tab")`, `Key.alt("left")`, `Key.ctrlShift("p")`
+- String format also works: `"enter"`, `"ctrl+c"`, `"shift+tab"`, `"ctrl+shift+p"`
 
 ## Differential Rendering
 
@@ -487,13 +492,10 @@ When creating custom components, **each line returned by `render()` must not exc
 
 ### Handling Input
 
-Use the key detection utilities to handle keyboard input:
+Use `matchesKey()` with the `Key` helper for keyboard input:
 
 ```typescript
-import {
-  isEnter, isEscape, isArrowUp, isArrowDown,
-  isCtrlC, isTab, isBackspace
-} from "@mariozechner/pi-tui";
+import { matchesKey, Key, truncateToWidth } from "@mariozechner/pi-tui";
 import type { Component } from "@mariozechner/pi-tui";
 
 class MyInteractiveComponent implements Component {
@@ -504,13 +506,13 @@ class MyInteractiveComponent implements Component {
   public onCancel?: () => void;
 
   handleInput(data: string): void {
-    if (isArrowUp(data)) {
+    if (matchesKey(data, Key.up)) {
       this.selectedIndex = Math.max(0, this.selectedIndex - 1);
-    } else if (isArrowDown(data)) {
+    } else if (matchesKey(data, Key.down)) {
       this.selectedIndex = Math.min(this.items.length - 1, this.selectedIndex + 1);
-    } else if (isEnter(data)) {
+    } else if (matchesKey(data, Key.enter)) {
       this.onSelect?.(this.selectedIndex);
-    } else if (isEscape(data) || isCtrlC(data)) {
+    } else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
       this.onCancel?.();
     }
   }
