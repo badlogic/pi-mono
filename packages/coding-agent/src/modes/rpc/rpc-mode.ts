@@ -189,6 +189,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			appendEntryHandler: (customType, data) => {
 				session.sessionManager.appendCustomEntry(customType, data);
 			},
+			getToolsHandler: () => session.getActiveToolNames(),
+			setToolsHandler: (toolNames) => session.setActiveToolsByName(toolNames),
 			uiContext: createHookUIContext(),
 			hasUI: false,
 		});

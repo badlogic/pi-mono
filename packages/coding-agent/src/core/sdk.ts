@@ -29,7 +29,7 @@
  * ```
  */
 
-import { Agent, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
@@ -349,6 +349,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
 		) => void = () => {};
 		let appendEntryHandler: (customType: string, data?: any) => void = () => {};
+		let getToolsHandler: () => string[] = () => [];
+		let setToolsHandler: (toolNames: string[]) => void = () => {};
 		let newSessionHandler: (options?: any) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let branchHandler: (entryId: string) => Promise<{ cancelled: boolean }> = async () => ({ cancelled: false });
 		let navigateTreeHandler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }> = async () => ({
@@ -376,6 +378,8 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			newSession: (options?: any) => newSessionHandler(options),
 			branch: (entryId: string) => branchHandler(entryId),
 			navigateTree: (targetId: string, options?: any) => navigateTreeHandler(targetId, options),
+			getTools: () => getToolsHandler(),
+			setTools: (toolNames: string[]) => setToolsHandler(toolNames),
 		};
 
 		def.factory(api as any);
@@ -402,6 +406,12 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			},
 			setNavigateTreeHandler: (handler: (targetId: string, options?: any) => Promise<{ cancelled: boolean }>) => {
 				navigateTreeHandler = handler;
+			},
+			setGetToolsHandler: (handler: () => string[]) => {
+				getToolsHandler = handler;
+			},
+			setSetToolsHandler: (handler: (toolNames: string[]) => void) => {
+				setToolsHandler = handler;
 			},
 		};
 	});
@@ -588,10 +598,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 	}));
 
+	// Create tool registry mapping name -> tool (for hook getTools/setTools)
+	// Cast to AgentTool since createCodingTools actually returns AgentTool[] (type is just Tool[])
+	const toolRegistry = new Map<string, AgentTool>();
+	for (const tool of builtInTools as AgentTool[]) {
+		toolRegistry.set(tool.name, tool);
+	}
+	for (const tool of wrappedCustomTools as AgentTool[]) {
+		toolRegistry.set(tool.name, tool);
+	}
+
 	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
 	time("combineTools");
+
+	// Wrap tools with hooks if available
+	let wrappedToolRegistry: Map<string, AgentTool> | undefined;
 	if (hookRunner) {
-		allToolsArray = wrapToolsWithHooks(allToolsArray, hookRunner) as Tool[];
+		allToolsArray = wrapToolsWithHooks(allToolsArray as AgentTool[], hookRunner);
+		// Also create a wrapped version of the registry for setTools
+		wrappedToolRegistry = new Map<string, AgentTool>();
+		for (const tool of allToolsArray as AgentTool[]) {
+			wrappedToolRegistry.set(tool.name, tool);
+		}
 	}
 
 	let systemPrompt: string;
@@ -670,6 +698,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customTools: customToolsResult.tools,
 		skillsSettings: settingsManager.getSkillsSettings(),
 		modelRegistry,
+		toolRegistry: wrappedToolRegistry ?? toolRegistry,
 	});
 	time("createAgentSession");
 

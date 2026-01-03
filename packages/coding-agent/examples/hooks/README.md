@@ -16,6 +16,7 @@ cp permission-gate.ts ~/.pi/agent/hooks/
 
 | Hook | Description |
 |------|-------------|
+| `plan-mode.ts` | Claude Code-style plan mode for read-only exploration with `/plan` command |
 | `permission-gate.ts` | Prompts for confirmation before dangerous bash commands (rm -rf, sudo, etc.) |
 | `git-checkpoint.ts` | Creates git stash checkpoints at each turn for code restoration on branch |
 | `protected-paths.ts` | Blocks writes to protected paths (.env, .git/, node_modules/) |

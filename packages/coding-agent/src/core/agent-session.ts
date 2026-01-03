@@ -13,7 +13,14 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type { Agent, AgentEvent, AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type {
+	Agent,
+	AgentEvent,
+	AgentMessage,
+	AgentState,
+	AgentTool,
+	ThinkingLevel,
+} from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
@@ -75,6 +82,8 @@ export interface AgentSessionConfig {
 	skillsSettings?: Required<SkillsSettings>;
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
+	/** Tool registry for hook getTools/setTools - maps name to tool */
+	toolRegistry?: Map<string, AgentTool>;
 }
 
 /** Options for AgentSession.prompt() */
@@ -174,6 +183,9 @@ export class AgentSession {
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
+	// Tool registry for hook getTools/setTools
+	private _toolRegistry: Map<string, AgentTool>;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -184,6 +196,7 @@ export class AgentSession {
 		this._customTools = config.customTools ?? [];
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
+		this._toolRegistry = config.toolRegistry ?? new Map();
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, hooks, auto-compaction, retry logic)
@@ -415,6 +428,30 @@ export class AgentSession {
 	/** Whether agent is currently streaming a response */
 	get isStreaming(): boolean {
 		return this.agent.state.isStreaming;
+	}
+
+	/**
+	 * Get the names of currently active tools.
+	 * Returns the names of tools currently set on the agent.
+	 */
+	getActiveToolNames(): string[] {
+		return this.agent.state.tools.map((t) => t.name);
+	}
+
+	/**
+	 * Set active tools by name.
+	 * Only tools in the registry can be enabled. Unknown tool names are ignored.
+	 * Changes take effect on the next agent turn.
+	 */
+	setActiveToolsByName(toolNames: string[]): void {
+		const tools: AgentTool[] = [];
+		for (const name of toolNames) {
+			const tool = this._toolRegistry.get(name);
+			if (tool) {
+				tools.push(tool);
+			}
+		}
+		this.agent.setTools(tools);
 	}
 
 	/** Whether auto-compaction is currently running */

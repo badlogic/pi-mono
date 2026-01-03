@@ -80,6 +80,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
+			setGetToolsHandler: () => {},
+			setSetToolsHandler: () => {},
 		};
 	}
 
@@ -104,6 +106,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			getModel: () => session.model,
 			sendMessageHandler: async () => {},
 			appendEntryHandler: async () => {},
+			getToolsHandler: () => [],
+			setToolsHandler: () => {},
 			uiContext: {
 				select: async () => undefined,
 				confirm: async () => false,
@@ -267,6 +271,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
+			setGetToolsHandler: () => {},
+			setSetToolsHandler: () => {},
 		};
 
 		createSession([throwingHook]);
@@ -314,6 +320,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
+			setGetToolsHandler: () => {},
+			setSetToolsHandler: () => {},
 		};
 
 		const hook2: LoadedHook = {
@@ -343,6 +351,8 @@ describe.skipIf(!API_KEY)("Compaction hooks", () => {
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
+			setGetToolsHandler: () => {},
+			setSetToolsHandler: () => {},
 		};
 
 		createSession([hook1, hook2]);

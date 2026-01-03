@@ -62,6 +62,16 @@ export type SendMessageHandler = <T = unknown>(
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
 /**
+ * Get tools handler type for pi.getTools().
+ */
+export type GetToolsHandler = () => string[];
+
+/**
+ * Set tools handler type for pi.setTools().
+ */
+export type SetToolsHandler = (toolNames: string[]) => void;
+
+/**
  * New session handler type for ctx.newSession() in HookCommandContext.
  */
 export type NewSessionHandler = (options?: {
@@ -100,6 +110,10 @@ export interface LoadedHook {
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	/** Set the append entry handler for this hook's pi.appendEntry() */
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
+	/** Set the get tools handler for this hook's pi.getTools() */
+	setGetToolsHandler: (handler: GetToolsHandler) => void;
+	/** Set the set tools handler for this hook's pi.setTools() */
+	setSetToolsHandler: (handler: SetToolsHandler) => void;
 }
 
 /**
@@ -159,11 +173,17 @@ function createHookAPI(
 	commands: Map<string, RegisteredCommand>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
+	setGetToolsHandler: (handler: GetToolsHandler) => void;
+	setSetToolsHandler: (handler: SetToolsHandler) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {
 		// Default no-op until mode sets the handler
 	};
 	let appendEntryHandler: AppendEntryHandler = () => {
+		// Default no-op until mode sets the handler
+	};
+	let getToolsHandler: GetToolsHandler = () => [];
+	let setToolsHandler: SetToolsHandler = () => {
 		// Default no-op until mode sets the handler
 	};
 	const messageRenderers = new Map<string, HookMessageRenderer>();
@@ -195,6 +215,12 @@ function createHookAPI(
 		exec(command: string, args: string[], options?: ExecOptions) {
 			return execCommand(command, args, options?.cwd ?? cwd, options);
 		},
+		getTools(): string[] {
+			return getToolsHandler();
+		},
+		setTools(toolNames: string[]): void {
+			setToolsHandler(toolNames);
+		},
 	} as HookAPI;
 
 	return {
@@ -206,6 +232,12 @@ function createHookAPI(
 		},
 		setAppendEntryHandler: (handler: AppendEntryHandler) => {
 			appendEntryHandler = handler;
+		},
+		setGetToolsHandler: (handler: GetToolsHandler) => {
+			getToolsHandler = handler;
+		},
+		setSetToolsHandler: (handler: SetToolsHandler) => {
+			setToolsHandler = handler;
 		},
 	};
 }
@@ -234,10 +266,15 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, messageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = createHookAPI(
-			handlers,
-			cwd,
-		);
+		const {
+			api,
+			messageRenderers,
+			commands,
+			setSendMessageHandler,
+			setAppendEntryHandler,
+			setGetToolsHandler,
+			setSetToolsHandler,
+		} = createHookAPI(handlers, cwd);
 
 		// Call factory to register handlers
 		factory(api);
@@ -251,6 +288,8 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				commands,
 				setSendMessageHandler,
 				setAppendEntryHandler,
+				setGetToolsHandler,
+				setSetToolsHandler,
 			},
 			error: null,
 		};
