@@ -164,21 +164,24 @@ interface TodoItem {
 function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
 
-	// Match numbered lists: "1. Task" or "1) Task"
-	const numberedPattern = /^\s*(\d+)[.)]\s+(.+)$/gm;
+	// Match numbered lists: "1. Task" or "1) Task" (handles markdown bold like "1. **Task**")
+	const numberedPattern = /^\s*(\d+)[.)]\s+\*{0,2}([^*\n]+)/gm;
 	for (const match of message.matchAll(numberedPattern)) {
-		const text = match[2].trim();
-		// Skip if it's just a file path or code reference
-		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/")) {
+		let text = match[2].trim();
+		// Remove trailing ** if present
+		text = text.replace(/\*{1,2}$/, "").trim();
+		// Skip if it's just a file path, code reference, or sub-item
+		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
 			items.push({ text, completed: false });
 		}
 	}
 
 	// If no numbered items found, try bullet points with "Step" prefix
 	if (items.length === 0) {
-		const stepPattern = /^\s*[-*]\s*(?:Step\s*\d+[:.])?\s*(.+)$/gim;
+		const stepPattern = /^\s*[-*]\s*(?:Step\s*\d+[:.])?\s*\*{0,2}([^*\n]+)/gim;
 		for (const match of message.matchAll(stepPattern)) {
-			const text = match[1].trim();
+			let text = match[1].trim();
+			text = text.replace(/\*{1,2}$/, "").trim();
 			if (text.length > 10 && !text.startsWith("`")) {
 				items.push({ text, completed: false });
 			}
@@ -391,11 +394,19 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		// Try to extract todo items from the last message
 		const messages = event.messages;
 		const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-		if (lastAssistant && typeof lastAssistant.content === "string") {
-			const extracted = extractTodoItems(lastAssistant.content);
-			if (extracted.length > 0) {
-				todoItems = extracted;
-				updateStatus(ctx); // Show the extracted todos
+		if (lastAssistant && Array.isArray(lastAssistant.content)) {
+			// Extract text from content blocks
+			const textContent = lastAssistant.content
+				.filter((block): block is { type: "text"; text: string } => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+
+			if (textContent) {
+				const extracted = extractTodoItems(textContent);
+				if (extracted.length > 0) {
+					todoItems = extracted;
+					updateStatus(ctx); // Show the extracted todos
+				}
 			}
 		}
 
