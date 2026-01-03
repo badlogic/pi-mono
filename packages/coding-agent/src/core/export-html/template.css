@@ -333,6 +333,11 @@
       margin-top: var(--line-height);
     }
 
+    .assistant-text + .tool-execution,
+    .thinking-block + .tool-execution {
+      margin-top: var(--line-height);
+    }
+
     .tool-execution.pending { background: var(--toolPendingBg); }
     .tool-execution.success { background: var(--toolSuccessBg); }
     .tool-execution.error { background: var(--toolErrorBg); }
