@@ -446,9 +446,25 @@ const currentText = ctx.ui.getEditorText();
 **Widget notes:**
 - Widgets are multi-line displays shown above the editor (below "Working..." indicator)
 - Multiple hooks can set widgets using unique keys (all widgets are displayed, stacked vertically)
-- Use for progress lists, todo tracking, or any multi-line status
+- Use `setWidget()` for simple styled text, `setWidgetComponent()` for custom components
 - Supports ANSI styling via `ctx.ui.theme` (including `strikethrough`)
-- **Caution:** Keep widgets small (a few lines). Large widgets from multiple hooks can cause viewport overflow and TUI flicker.
+- **Caution:** Keep widgets small (a few lines). Large widgets from multiple hooks can cause viewport overflow and TUI flicker. Max 10 lines total across all string widgets.
+
+**Custom widget components:**
+
+For more complex widgets, use `setWidgetComponent()` to render a custom TUI component:
+
+```typescript
+ctx.ui.setWidgetComponent("my-widget", (tui, theme) => {
+  // Return any Component that implements render(width): string[]
+  return new MyCustomComponent(tui, theme);
+});
+
+// Clear the widget
+ctx.ui.setWidgetComponent("my-widget", undefined);
+```
+
+Unlike `ctx.ui.custom()`, widget components do NOT take keyboard focus - they render inline above the editor.
 
 **Styling with theme colors:**
 

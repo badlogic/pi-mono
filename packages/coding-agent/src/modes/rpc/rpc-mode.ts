@@ -142,6 +142,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcHookUIRequest);
 		},
 
+		setWidgetComponent(): void {
+			// Custom components not supported in RPC mode - host would need to implement
+		},
+
 		async custom() {
 			// Custom UI not supported in RPC mode
 			return undefined as never;
