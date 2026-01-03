@@ -31,6 +31,7 @@
 
 import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
+import type { KeyId } from "@mariozechner/pi-tui";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
@@ -349,7 +350,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 		const commands = new Map<string, any>();
 		const flags = new Map<string, any>();
 		const flagValues = new Map<string, boolean | string>();
-		const shortcuts = new Map<string, any>();
+		const shortcuts = new Map<KeyId, any>();
 		let sendMessageHandler: (
 			message: any,
 			options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
@@ -389,7 +390,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 				}
 			},
 			getFlag: (name: string) => flagValues.get(name),
-			registerShortcut: (shortcut: string, options: any) => {
+			registerShortcut: (shortcut: KeyId, options: any) => {
 				shortcuts.set(shortcut, { shortcut, hookPath, ...options });
 			},
 			newSession: (options?: any) => newSessionHandler(options),

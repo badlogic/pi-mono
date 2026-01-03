@@ -446,22 +446,22 @@ const currentText = ctx.ui.getEditorText();
 **Widget notes:**
 - Widgets are multi-line displays shown above the editor (below "Working..." indicator)
 - Multiple hooks can set widgets using unique keys (all widgets are displayed, stacked vertically)
-- Use `setWidget()` for simple styled text, `setWidgetComponent()` for custom components
+- `setWidget()` accepts either a string array or a component factory function
 - Supports ANSI styling via `ctx.ui.theme` (including `strikethrough`)
 - **Caution:** Keep widgets small (a few lines). Large widgets from multiple hooks can cause viewport overflow and TUI flicker. Max 10 lines total across all string widgets.
 
 **Custom widget components:**
 
-For more complex widgets, use `setWidgetComponent()` to render a custom TUI component:
+For more complex widgets, pass a factory function to `setWidget()`:
 
 ```typescript
-ctx.ui.setWidgetComponent("my-widget", (tui, theme) => {
+ctx.ui.setWidget("my-widget", (tui, theme) => {
   // Return any Component that implements render(width): string[]
   return new MyCustomComponent(tui, theme);
 });
 
 // Clear the widget
-ctx.ui.setWidgetComponent("my-widget", undefined);
+ctx.ui.setWidget("my-widget", undefined);
 ```
 
 Unlike `ctx.ui.custom()`, widget components do NOT take keyboard focus - they render inline above the editor.
@@ -815,7 +815,7 @@ pi.setActiveTools(["read", "bash", "grep", "find", "ls"]);
 pi.setActiveTools(["read", "bash", "edit", "write"]);
 ```
 
-Only built-in tools can be enabled/disabled. Custom tools are always active. Unknown tool names are ignored.
+Both built-in and custom tools can be enabled/disabled. Unknown tool names are ignored.
 
 ### pi.registerFlag(name, options)
 

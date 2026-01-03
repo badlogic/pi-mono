@@ -4,6 +4,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
+import type { KeyId } from "@mariozechner/pi-tui";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
@@ -52,7 +53,6 @@ const noOpUIContext: HookUIContext = {
 	notify: () => {},
 	setStatus: () => {},
 	setWidget: () => {},
-	setWidgetComponent: () => {},
 	custom: async () => undefined as never,
 	setEditorText: () => {},
 	getEditorText: () => "",
@@ -223,11 +223,12 @@ export class HookRunner {
 	 * Conflicts with built-in shortcuts are skipped with a warning.
 	 * Conflicts between hooks are logged as warnings.
 	 */
-	getShortcuts(): Map<string, HookShortcut> {
-		const allShortcuts = new Map<string, HookShortcut>();
+	getShortcuts(): Map<KeyId, HookShortcut> {
+		const allShortcuts = new Map<KeyId, HookShortcut>();
 		for (const hook of this.hooks) {
 			for (const [key, shortcut] of hook.shortcuts) {
-				const normalizedKey = key.toLowerCase();
+				// Normalize to lowercase for comparison (KeyId is string at runtime)
+				const normalizedKey = key.toLowerCase() as KeyId;
 
 				// Check for built-in shortcut conflicts
 				if (HookRunner.RESERVED_SHORTCUTS.has(normalizedKey)) {

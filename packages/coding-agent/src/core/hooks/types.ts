@@ -7,7 +7,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, TUI } from "@mariozechner/pi-tui";
+import type { Component, KeyId, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
@@ -79,13 +79,13 @@ export interface HookUIContext {
 	 * Supports multi-line content. Pass undefined to clear.
 	 * Text can include ANSI escape codes for styling.
 	 *
-	 * For simple text displays, use this method. For custom components, use setWidgetComponent().
+	 * Accepts either an array of styled strings, or a factory function that creates a Component.
 	 *
 	 * @param key - Unique key to identify this widget (e.g., hook name)
-	 * @param lines - Array of lines to display, or undefined to clear
+	 * @param content - Array of lines to display, or undefined to clear
 	 *
 	 * @example
-	 * // Show a todo list
+	 * // Show a todo list with styled strings
 	 * ctx.ui.setWidget("plan-todos", [
 	 *   theme.fg("accent", "Plan Progress:"),
 	 *   "☑ " + theme.fg("muted", theme.strikethrough("Step 1: Read files")),
@@ -96,7 +96,7 @@ export interface HookUIContext {
 	 * // Clear the widget
 	 * ctx.ui.setWidget("plan-todos", undefined);
 	 */
-	setWidget(key: string, lines: string[] | undefined): void;
+	setWidget(key: string, content: string[] | undefined): void;
 
 	/**
 	 * Set a custom component as a widget (above the editor, below "Working..." indicator).
@@ -107,21 +107,18 @@ export interface HookUIContext {
 	 * Components are rendered inline without taking focus - they cannot handle keyboard input.
 	 *
 	 * @param key - Unique key to identify this widget (e.g., hook name)
-	 * @param factory - Function that creates the component, or undefined to clear
+	 * @param content - Factory function that creates the component, or undefined to clear
 	 *
 	 * @example
 	 * // Show a custom progress component
-	 * ctx.ui.setWidgetComponent("my-progress", (tui, theme) => {
+	 * ctx.ui.setWidget("my-progress", (tui, theme) => {
 	 *   return new MyProgressComponent(tui, theme);
 	 * });
 	 *
 	 * // Clear the widget
-	 * ctx.ui.setWidgetComponent("my-progress", undefined);
+	 * ctx.ui.setWidget("my-progress", undefined);
 	 */
-	setWidgetComponent(
-		key: string,
-		factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
-	): void;
+	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
 	/**
 	 * Show a custom component with keyboard focus.
@@ -813,7 +810,7 @@ export interface HookAPI {
 
 	/**
 	 * Set the active tools by name.
-	 * Only built-in tools can be enabled/disabled. Custom tools are always active.
+	 * Both built-in and custom tools can be enabled/disabled.
 	 * Changes take effect on the next agent turn.
 	 * Note: This will invalidate prompt caching for the next request.
 	 *
@@ -871,11 +868,13 @@ export interface HookAPI {
 	 * Register a keyboard shortcut for this hook.
 	 * The handler is called when the shortcut is pressed in interactive mode.
 	 *
-	 * @param shortcut - Shortcut definition (e.g., "shift+p", "ctrl+shift+x")
+	 * @param shortcut - Key identifier (e.g., Key.shift("p"), "ctrl+x")
 	 * @param options - Shortcut configuration
 	 *
 	 * @example
-	 * pi.registerShortcut("shift+p", {
+	 * import { Key } from "@mariozechner/pi-tui";
+	 *
+	 * pi.registerShortcut(Key.shift("p"), {
 	 *   description: "Toggle plan mode",
 	 *   handler: async (ctx) => {
 	 *     // toggle plan mode
@@ -883,7 +882,7 @@ export interface HookAPI {
 	 * });
 	 */
 	registerShortcut(
-		shortcut: string,
+		shortcut: KeyId,
 		options: {
 			/** Description shown in help */
 			description?: string;

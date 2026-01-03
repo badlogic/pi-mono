@@ -40,9 +40,8 @@
 - Hook API: `pi.getActiveTools()` and `pi.setActiveTools(toolNames)` for dynamically enabling/disabling tools from hooks
 - Hook API: `pi.getAllTools()` to enumerate all configured tools (built-in via --tools or default, plus custom tools)
 - Hook API: `pi.registerFlag(name, options)` and `pi.getFlag(name)` for hooks to register custom CLI flags (parsed automatically)
-- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts (e.g., `shift+p`, `ctrl+shift+x`). Conflicts with built-in shortcuts are skipped, conflicts between hooks logged as warnings.
-- Hook API: `ctx.ui.setWidget(key, lines)` for multi-line status displays above the editor (todo lists, progress tracking)
-- Hook API: `ctx.ui.setWidgetComponent(key, factory)` for custom TUI components as widgets (no focus, renders inline)
+- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts using `KeyId` (e.g., `Key.shift("p")`). Conflicts with built-in shortcuts are skipped, conflicts between hooks logged as warnings.
+- Hook API: `ctx.ui.setWidget(key, content)` for status displays above the editor. Accepts either a string array or a component factory function.
 - Hook API: `theme.strikethrough(text)` for strikethrough text styling
 - `/hotkeys` command now shows hook-registered shortcuts in a separate "Hooks" section
 - New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:

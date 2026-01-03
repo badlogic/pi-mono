@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { KeyId } from "@mariozechner/pi-tui";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
 import type { HookMessage } from "../messages.js";
@@ -103,8 +104,8 @@ export interface HookFlag {
  * Keyboard shortcut registered by a hook.
  */
 export interface HookShortcut {
-	/** Shortcut string (e.g., "shift+p", "ctrl+shift+x") */
-	shortcut: string;
+	/** Key identifier (e.g., Key.shift("p"), "ctrl+x") */
+	shortcut: KeyId;
 	/** Description for help */
 	description?: string;
 	/** Handler function */
@@ -153,7 +154,7 @@ export interface LoadedHook {
 	/** Flag values (set after CLI parsing) */
 	flagValues: Map<string, boolean | string>;
 	/** Keyboard shortcuts registered by this hook */
-	shortcuts: Map<string, HookShortcut>;
+	shortcuts: Map<KeyId, HookShortcut>;
 	/** Set the send message handler for this hook's pi.sendMessage() */
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	/** Set the append entry handler for this hook's pi.appendEntry() */
@@ -226,7 +227,7 @@ function createHookAPI(
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, HookFlag>;
 	flagValues: Map<string, boolean | string>;
-	shortcuts: Map<string, HookShortcut>;
+	shortcuts: Map<KeyId, HookShortcut>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
 	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
@@ -249,7 +250,7 @@ function createHookAPI(
 	const commands = new Map<string, RegisteredCommand>();
 	const flags = new Map<string, HookFlag>();
 	const flagValues = new Map<string, boolean | string>();
-	const shortcuts = new Map<string, HookShortcut>();
+	const shortcuts = new Map<KeyId, HookShortcut>();
 
 	// Cast to HookAPI - the implementation is more general (string event names)
 	// but the interface has specific overloads for type safety in hooks
@@ -300,7 +301,7 @@ function createHookAPI(
 			return flagValues.get(name);
 		},
 		registerShortcut(
-			shortcut: string,
+			shortcut: KeyId,
 			options: {
 				description?: string;
 				handler: (ctx: HookContext) => Promise<void> | void;
