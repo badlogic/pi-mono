@@ -15,6 +15,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Slash Commands](#slash-commands)
   - [Editor Features](#editor-features)
   - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Custom Keybindings](#custom-keybindings)
   - [Bash Mode](#bash-mode)
   - [Image Support](#image-support)
 - [Sessions](#sessions)
@@ -256,6 +257,61 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
+
+### Custom Keybindings
+
+All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Each action can be bound to one or more keys.
+
+**Key format:** `modifier+key` where modifiers are `ctrl`, `shift`, `alt` and keys are `a-z`, `0-9`, `escape`, `tab`, `enter`, `space`, `backspace`, `delete`, `home`, `end`, `up`, `down`, `left`, `right`.
+
+**Configurable actions:**
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `cursorUp` | `up` | Move cursor up |
+| `cursorDown` | `down` | Move cursor down |
+| `cursorLeft` | `left` | Move cursor left |
+| `cursorRight` | `right` | Move cursor right |
+| `cursorWordLeft` | `alt+left`, `ctrl+left` | Move cursor word left |
+| `cursorWordRight` | `alt+right`, `ctrl+right` | Move cursor word right |
+| `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
+| `cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
+| `deleteCharBackward` | `backspace` | Delete char backward |
+| `deleteCharForward` | `delete` | Delete char forward |
+| `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
+| `deleteToLineStart` | `ctrl+u` | Delete to line start |
+| `deleteToLineEnd` | `ctrl+k` | Delete to line end |
+| `newLine` | `shift+enter`, `alt+enter` | Insert new line |
+| `submit` | `enter` | Submit input |
+| `tab` | `tab` | Tab/autocomplete |
+| `interrupt` | `escape` | Interrupt operation |
+| `clear` | `ctrl+c` | Clear editor |
+| `exit` | `ctrl+d` | Exit (when empty) |
+| `suspend` | `ctrl+z` | Suspend process |
+| `cycleThinkingLevel` | `shift+tab` | Cycle thinking level |
+| `cycleModelForward` | `ctrl+p` | Next model |
+| `cycleModelBackward` | `shift+ctrl+p` | Previous model |
+| `selectModel` | `ctrl+l` | Open model selector |
+| `expandTools` | `ctrl+o` | Expand tool output |
+| `toggleThinking` | `ctrl+t` | Toggle thinking |
+| `externalEditor` | `ctrl+g` | Open external editor |
+| `followUp` | `alt+enter` | Queue follow-up message |
+
+**Example (Emacs-style):**
+
+```json
+{
+  "cursorUp": ["up", "ctrl+p"],
+  "cursorDown": ["down", "ctrl+n"],
+  "cursorLeft": ["left", "ctrl+b"],
+  "cursorRight": ["right", "ctrl+f"],
+  "cursorWordLeft": ["alt+left", "alt+b"],
+  "cursorWordRight": ["alt+right", "alt+f"],
+  "deleteCharForward": ["delete", "ctrl+d"],
+  "deleteCharBackward": ["backspace", "ctrl+h"],
+  "newLine": ["shift+enter", "ctrl+j"]
+}
+```
 
 ### Bash Mode
 
