@@ -441,7 +441,9 @@ export async function loadHooks(paths: string[], cwd: string, eventBus?: EventBu
 
 /**
  * Discover hook files from a directory.
- * Returns all .ts files (and symlinks to .ts files) in the directory (non-recursive).
+ * Returns:
+ * - All .ts files (and symlinks to .ts files) in the directory
+ * - All subdirectories containing an index.ts file
  */
 function discoverHooksInDir(dir: string): string[] {
 	if (!fs.existsSync(dir)) {
@@ -450,9 +452,27 @@ function discoverHooksInDir(dir: string): string[] {
 
 	try {
 		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		return entries
-			.filter((e) => (e.isFile() || e.isSymbolicLink()) && e.name.endsWith(".ts"))
-			.map((e) => path.join(dir, e.name));
+		const hooks: string[] = [];
+
+		for (const entry of entries) {
+			const entryPath = path.join(dir, entry.name);
+
+			// Direct .ts files
+			if ((entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".ts")) {
+				hooks.push(entryPath);
+				continue;
+			}
+
+			// Subdirectories with index.ts
+			if (entry.isDirectory()) {
+				const indexPath = path.join(entryPath, "index.ts");
+				if (fs.existsSync(indexPath)) {
+					hooks.push(indexPath);
+				}
+			}
+		}
+
+		return hooks;
 	} catch {
 		return [];
 	}
