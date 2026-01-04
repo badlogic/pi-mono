@@ -266,6 +266,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
+| Ctrl+V | Paste image from clipboard |
 
 ### Custom Keybindings
 
@@ -361,6 +362,10 @@ Ran `ls -la`
 Run multiple commands before prompting; all outputs are included together.
 
 ### Image Support
+
+**Pasting images:** Press `Ctrl+V` to paste an image from your clipboard.
+
+**Dragging images:** Drag image files onto the terminal to insert their path. On macOS, you can also drag the screenshot thumbnail (after Cmd+Shift+4) directly onto the terminal.
 
 **Attaching images:** Include image paths in your message:
 

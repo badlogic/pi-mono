@@ -1,4 +1,4 @@
-import { Editor, type EditorTheme } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, matchesKey } from "@mariozechner/pi-tui";
 import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**
@@ -11,6 +11,7 @@ export class CustomEditor extends Editor {
 	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;
 	public onCtrlD?: () => void;
+	public onPasteImage?: () => void;
 
 	constructor(theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(theme);
@@ -25,6 +26,12 @@ export class CustomEditor extends Editor {
 	}
 
 	handleInput(data: string): void {
+		// Check for Ctrl+V to handle clipboard image paste
+		if (matchesKey(data, "ctrl+v")) {
+			this.onPasteImage?.();
+			return;
+		}
+
 		// Check app keybindings first
 
 		// Escape/interrupt - only if autocomplete is NOT active

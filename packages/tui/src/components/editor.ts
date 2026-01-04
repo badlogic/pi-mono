@@ -408,7 +408,9 @@ export class Editor implements Component {
 			const endIndex = this.pasteBuffer.indexOf("\x1b[201~");
 			if (endIndex !== -1) {
 				const pasteContent = this.pasteBuffer.substring(0, endIndex);
-				this.handlePaste(pasteContent);
+				if (pasteContent.length > 0) {
+					this.handlePaste(pasteContent);
+				}
 				this.isInPaste = false;
 				const remaining = this.pasteBuffer.substring(endIndex + 6);
 				this.pasteBuffer = "";
@@ -705,6 +707,16 @@ export class Editor implements Component {
 	setText(text: string): void {
 		this.historyIndex = -1; // Exit history browsing mode
 		this.setTextInternal(text);
+	}
+
+	/**
+	 * Insert text at the current cursor position.
+	 * Used for programmatic insertion (e.g., clipboard image markers).
+	 */
+	insertTextAtCursor(text: string): void {
+		for (const char of text) {
+			this.insertCharacter(char);
+		}
 	}
 
 	// All the editor methods from before...
