@@ -656,9 +656,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	let wrappedToolRegistry: Map<string, AgentTool> | undefined;
 	if (hookRunner) {
 		activeToolsArray = wrapToolsWithHooks(activeToolsArray as AgentTool[], hookRunner);
-		// Also create a wrapped version of the registry for setTools
+		// Wrap ALL registry tools (not just active) so hooks can enable any
+		const allRegistryTools = Array.from(toolRegistry.values());
+		const wrappedAllTools = wrapToolsWithHooks(allRegistryTools, hookRunner);
 		wrappedToolRegistry = new Map<string, AgentTool>();
-		for (const tool of activeToolsArray as AgentTool[]) {
+		for (const tool of wrappedAllTools) {
 			wrappedToolRegistry.set(tool.name, tool);
 		}
 	}
