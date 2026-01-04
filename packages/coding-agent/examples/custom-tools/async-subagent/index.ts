@@ -32,7 +32,7 @@ import { type AgentConfig, type AgentScope, discoverAgents, formatAgentList } fr
 const MAX_PARALLEL = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEMS = 8;
-const RESULTS_DIR = path.join(os.tmpdir(), "pi-async-subagent-results");
+const RESULTS_DIR = "/tmp/pi-async-subagent-results";
 
 const require = createRequire(import.meta.url);
 const jitiCliPath: string | undefined = (() => {

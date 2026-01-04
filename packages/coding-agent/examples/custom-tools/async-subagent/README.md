@@ -155,7 +155,7 @@ interface AsyncSubagentResult {
 ## Hook Example
 
 ```typescript
-// ~/.pi/agent/hooks/async-notify.ts
+// ~/.pi/agent/hooks/async-subagent-notify.ts
 import type { HookAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: HookAPI) {
@@ -175,7 +175,7 @@ export default function (pi: HookAPI) {
 
 Register: `~/.pi/agent/settings.json`
 ```json
-{ "hooks": ["~/.pi/agent/hooks/async-notify.ts"] }
+{ "hooks": ["~/.pi/agent/hooks/async-subagent-notify.ts"] }
 ```
 
 ## Installation
@@ -189,7 +189,7 @@ mkdir -p ~/.pi/agent/agents
 cp examples/custom-tools/subagent/agents/*.md ~/.pi/agent/agents/
 
 # Hook (optional)
-cp examples/hooks/async-notify.ts ~/.pi/agent/hooks/
+cp examples/hooks/async-subagent-notify.ts ~/.pi/agent/hooks/
 ```
 
 ## Agent Definitions
