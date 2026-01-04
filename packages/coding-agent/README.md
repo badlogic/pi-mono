@@ -385,6 +385,8 @@ Run multiple commands before prompting; all outputs are included together.
 
 **Pasting images:** Press `Ctrl+V` to paste an image from your clipboard.
 
+> **Note:** On macOS, pressing Cmd+C on an image file in Finder copies the file path, not the image contents. Use Preview or another image viewer to copy the actual image, or drag the file onto the terminal instead.
+
 **Dragging images:** Drag image files onto the terminal to insert their path. On macOS, you can also drag the screenshot thumbnail (after Cmd+Shift+4) directly onto the terminal.
 
 **Attaching images:** Include image paths in your message:
