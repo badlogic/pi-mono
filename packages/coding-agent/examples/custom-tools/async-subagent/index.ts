@@ -98,6 +98,65 @@ function getFinalOutput(messages: Message[]): string {
 	return "";
 }
 
+interface ErrorInfo {
+	hasError: boolean;
+	exitCode?: number;
+	errorType?: string;
+	details?: string;
+}
+
+function detectSubagentError(messages: Message[]): ErrorInfo {
+	for (const msg of messages) {
+		if (msg.role === "toolResult" && (msg as any).isError) {
+			const text = msg.content.find((c) => c.type === "text");
+			const details = text && "text" in text ? text.text : undefined;
+			const exitMatch = details?.match(/exit(?:ed)?\s*(?:with\s*)?(?:code|status)?\s*[:\s]?\s*(\d+)/i);
+			return {
+				hasError: true,
+				exitCode: exitMatch ? parseInt(exitMatch[1], 10) : 1,
+				errorType: (msg as any).toolName || "tool",
+				details: details?.slice(0, 200),
+			};
+		}
+	}
+
+	for (const msg of messages) {
+		if (msg.role !== "toolResult") continue;
+		const toolName = (msg as any).toolName;
+		if (toolName !== "bash") continue;
+
+		const text = msg.content.find((c) => c.type === "text");
+		if (!text || !("text" in text)) continue;
+		const output = text.text;
+
+		const exitMatch = output.match(/exit(?:ed)?\s*(?:with\s*)?(?:code|status)?\s*[:\s]?\s*(\d+)/i);
+		if (exitMatch) {
+			const code = parseInt(exitMatch[1], 10);
+			if (code !== 0) {
+				return { hasError: true, exitCode: code, errorType: "bash", details: output.slice(0, 200) };
+			}
+		}
+
+		const errorPatterns = [
+			/command not found/i,
+			/permission denied/i,
+			/no such file or directory/i,
+			/segmentation fault/i,
+			/killed|terminated/i,
+			/out of memory/i,
+			/connection refused/i,
+			/timeout/i,
+		];
+		for (const pattern of errorPatterns) {
+			if (pattern.test(output)) {
+				return { hasError: true, exitCode: 1, errorType: "bash", details: output.slice(0, 200) };
+			}
+		}
+	}
+
+	return { hasError: false };
+}
+
 function getDisplayItems(messages: Message[]): DisplayItem[] {
 	const items: DisplayItem[] = [];
 	for (const msg of messages) {
@@ -221,6 +280,7 @@ async function runSync(
 			} catch {}
 		};
 
+		let stderrBuf = "";
 		proc.stdout.on("data", (d) => {
 			buf += d.toString();
 			const lines = buf.split("\n");
@@ -228,10 +288,13 @@ async function runSync(
 			lines.forEach(processLine);
 		});
 		proc.stderr.on("data", (d) => {
-			if (!result.error) result.error = d.toString();
+			stderrBuf += d.toString();
 		});
 		proc.on("close", (code) => {
 			if (buf.trim()) processLine(buf);
+			if (code !== 0 && stderrBuf.trim() && !result.error) {
+				result.error = stderrBuf.trim();
+			}
 			resolve(code ?? 0);
 		});
 		proc.on("error", () => resolve(1));
@@ -248,6 +311,17 @@ async function runSync(
 
 	if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 	result.exitCode = exitCode;
+
+	if (exitCode === 0 && !result.error) {
+		const errInfo = detectSubagentError(result.messages);
+		if (errInfo.hasError) {
+			result.exitCode = errInfo.exitCode ?? 1;
+			result.error = errInfo.details
+				? `${errInfo.errorType} failed (exit ${errInfo.exitCode}): ${errInfo.details}`
+				: `${errInfo.errorType} failed with exit code ${errInfo.exitCode}`;
+		}
+	}
+
 	return result;
 }
 
