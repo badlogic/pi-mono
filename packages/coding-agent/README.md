@@ -272,7 +272,12 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 
 All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Each action can be bound to one or more keys.
 
-**Key format:** `modifier+key` where modifiers are `ctrl`, `shift`, `alt` and keys are `a-z`, `0-9`, `escape`, `tab`, `enter`, `space`, `backspace`, `delete`, `home`, `end`, `up`, `down`, `left`, `right`.
+**Key format:** `modifier+key` where modifiers are `ctrl`, `shift`, `alt` and keys are:
+
+- Letters: `a-z`
+- Numbers: `0-9`
+- Special keys: `escape`, `tab`, `enter`, `space`, `backspace`, `delete`, `home`, `end`, `up`, `down`, `left`, `right`
+- Symbol keys: `` ` ``, `-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `!`, `@`, `#`, `$`, `%`, `^`, `&`, `*`, `(`, `)`, `_`, `+`, `|`, `~`, `{`, `}`, `:`, `<`, `>`, `?`
 
 **Configurable actions:**
 
@@ -337,6 +342,21 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
   "deleteWordBackward": ["ctrl+w", "alt+backspace"]
 }
 ```
+
+**Example (symbol keys):**
+
+```json
+{
+  "submit": ["enter", "ctrl+j"],
+  "newLine": ["shift+enter", "ctrl+;"],
+  "toggleThinking": "ctrl+/",
+  "cycleModelForward": "ctrl+.",
+  "cycleModelBackward": "ctrl+,",
+  "interrupt": ["escape", "ctrl+`"]
+}
+```
+
+> **Note:** Some `ctrl+symbol` combinations overlap with ASCII control characters due to terminal legacy behavior (e.g., `ctrl+[` is the same as Escape, `ctrl+M` is the same as Enter). These can still be used with `ctrl+shift+key` (e.g., `ctrl+shift+]`). See [Kitty keyboard protocol: legacy ctrl mapping of ASCII keys](https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys) for all unsupported keys.
 
 ### Bash Mode
 

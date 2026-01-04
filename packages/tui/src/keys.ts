@@ -4,6 +4,11 @@
  * Supports both legacy terminal sequences and Kitty keyboard protocol.
  * See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
  *
+ * Symbol keys are also supported, however some ctrl+symbol combos
+ * overlap with ASCII codes, e.g. ctrl+[ = ESC.
+ * See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys
+ * Those can still be * used for ctrl+shift combos
+ *
  * API:
  * - matchesKey(data, keyId) - Check if input matches a key identifier
  * - parseKey(data) - Parse input and return the key identifier
@@ -42,6 +47,39 @@ type Letter =
 	| "y"
 	| "z";
 
+type SymbolKey =
+	| "`"
+	| "-"
+	| "="
+	| "["
+	| "]"
+	| "\\"
+	| ";"
+	| "'"
+	| ","
+	| "."
+	| "/"
+	| "!"
+	| "@"
+	| "#"
+	| "$"
+	| "%"
+	| "^"
+	| "&"
+	| "*"
+	| "("
+	| ")"
+	| "_"
+	| "+"
+	| "|"
+	| "~"
+	| "{"
+	| "}"
+	| ":"
+	| "<"
+	| ">"
+	| "?";
+
 type SpecialKey =
 	| "escape"
 	| "esc"
@@ -58,7 +96,7 @@ type SpecialKey =
 	| "left"
 	| "right";
 
-type BaseKey = Letter | SpecialKey;
+type BaseKey = Letter | SymbolKey | SpecialKey;
 
 /**
  * Union type of all valid key identifiers.
@@ -87,6 +125,7 @@ export type KeyId =
  *
  * Usage:
  * - Key.escape, Key.enter, Key.tab, etc. for special keys
+ * - Key.backtick, Key.comma, Key.period, etc. for symbol keys
  * - Key.ctrl("c"), Key.alt("x") for single modifier
  * - Key.ctrlShift("p"), Key.ctrlAlt("x") for combined modifiers
  */
@@ -106,6 +145,39 @@ export const Key = {
 	down: "down" as const,
 	left: "left" as const,
 	right: "right" as const,
+
+	// Symbol keys
+	backtick: "`" as const,
+	hyphen: "-" as const,
+	equals: "=" as const,
+	leftbracket: "[" as const,
+	rightbracket: "]" as const,
+	backslash: "\\" as const,
+	semicolon: ";" as const,
+	quote: "'" as const,
+	comma: "," as const,
+	period: "." as const,
+	slash: "/" as const,
+	exclamation: "!" as const,
+	at: "@" as const,
+	hash: "#" as const,
+	dollar: "$" as const,
+	percent: "%" as const,
+	caret: "^" as const,
+	ampersand: "&" as const,
+	asterisk: "*" as const,
+	leftparen: "(" as const,
+	rightparen: ")" as const,
+	underscore: "_" as const,
+	plus: "+" as const,
+	pipe: "|" as const,
+	tilde: "~" as const,
+	leftbrace: "{" as const,
+	rightbrace: "}" as const,
+	colon: ":" as const,
+	lessthan: "<" as const,
+	greaterthan: ">" as const,
+	question: "?" as const,
 
 	// Single modifiers
 	ctrl: <K extends BaseKey>(key: K): `ctrl+${K}` => `ctrl+${key}`,
@@ -127,6 +199,40 @@ export const Key = {
 // =============================================================================
 // Constants
 // =============================================================================
+
+const SYMBOL_KEYS = new Set([
+	"`",
+	"-",
+	"=",
+	"[",
+	"]",
+	"\\",
+	";",
+	"'",
+	",",
+	".",
+	"/",
+	"!",
+	"@",
+	"#",
+	"$",
+	"%",
+	"^",
+	"&",
+	"*",
+	"(",
+	")",
+	"_",
+	"+",
+	"|",
+	"~",
+	"{",
+	"}",
+	":",
+	"<",
+	">",
+	"?",
+]);
 
 const MODIFIERS = {
 	shift: 1,
@@ -403,8 +509,8 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			return matchesKittySequence(data, ARROW_CODEPOINTS.right, modifier);
 	}
 
-	// Handle single letter keys (a-z)
-	if (key.length === 1 && key >= "a" && key <= "z") {
+	// Handle single letter keys (a-z) and some symbols
+	if (key.length === 1 && ((key >= "a" && key <= "z") || SYMBOL_KEYS.has(key))) {
 		const codepoint = key.charCodeAt(0);
 
 		if (ctrl && !shift && !alt) {
@@ -464,6 +570,7 @@ export function parseKey(data: string): string | undefined {
 		else if (codepoint === ARROW_CODEPOINTS.left) keyName = "left";
 		else if (codepoint === ARROW_CODEPOINTS.right) keyName = "right";
 		else if (codepoint >= 97 && codepoint <= 122) keyName = String.fromCharCode(codepoint);
+		else if (SYMBOL_KEYS.has(String.fromCharCode(codepoint))) keyName = String.fromCharCode(codepoint);
 
 		if (keyName) {
 			return mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName;
