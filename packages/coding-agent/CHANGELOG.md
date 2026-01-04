@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Expanded keybinding documentation to list all 32 supported symbol keys with notes on ctrl+symbol behavior ([#450](https://github.com/badlogic/pi-mono/pull/450) by [@kaofelix](https://github.com/kaofelix))
+
 ## [0.34.0] - 2026-01-04
 
 ### Added

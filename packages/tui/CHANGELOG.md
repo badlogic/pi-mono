@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Symbol key support in keybinding system: `SymbolKey` type with 32 symbol keys, `Key` constants (e.g., `Key.backtick`, `Key.comma`), updated `matchesKey()` and `parseKey()` to handle symbol input ([#450](https://github.com/badlogic/pi-mono/pull/450) by [@kaofelix](https://github.com/kaofelix))
+
 ## [0.34.0] - 2026-01-04
 
 ### Added
