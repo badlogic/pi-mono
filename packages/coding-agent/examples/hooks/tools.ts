@@ -9,8 +9,9 @@
  * 2. Use /tools to open the tool selector
  */
 
+import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent/hooks";
-import { Container, type SettingItem, SettingsList, type SettingsListTheme } from "@mariozechner/pi-tui";
+import { Container, type SettingItem, SettingsList } from "@mariozechner/pi-tui";
 
 // State persisted to session
 interface ToolsState {
@@ -87,20 +88,10 @@ export default function toolsHook(pi: HookAPI) {
 					})(),
 				);
 
-				// Create theme for SettingsList using the passed theme
-				const settingsTheme: SettingsListTheme = {
-					label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
-					value: (text: string, selected: boolean) =>
-						selected ? theme.fg("accent", text) : theme.fg("muted", text),
-					description: (text: string) => theme.fg("dim", text),
-					cursor: theme.fg("accent", "→ "),
-					hint: (text: string) => theme.fg("dim", text),
-				};
-
 				const settingsList = new SettingsList(
 					items,
 					Math.min(items.length + 2, 15),
-					settingsTheme,
+					getSettingsListTheme(theme),
 					(id, newValue) => {
 						// Update enabled state and apply immediately
 						if (newValue === "enabled") {
