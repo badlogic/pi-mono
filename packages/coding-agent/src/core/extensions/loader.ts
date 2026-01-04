@@ -407,19 +407,91 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 	};
 }
 
+interface PiManifest {
+	extensions?: string[];
+	themes?: string[];
+	skills?: string[];
+}
+
+function readPiManifest(packageJsonPath: string): PiManifest | null {
+	try {
+		const content = fs.readFileSync(packageJsonPath, "utf-8");
+		const pkg = JSON.parse(content);
+		if (pkg.pi && typeof pkg.pi === "object") {
+			return pkg.pi as PiManifest;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+function isExtensionFile(name: string): boolean {
+	return name.endsWith(".ts") || name.endsWith(".js");
+}
+
+/**
+ * Discover extensions in a directory.
+ *
+ * Discovery rules:
+ * 1. Direct files: `extensions/*.ts` or `*.js` → load
+ * 2. Subdirectory with index: `extensions/* /index.ts` or `index.js` → load
+ * 3. Subdirectory with package.json: `extensions/* /package.json` with "pi" field → load what it declares
+ *
+ * No recursion beyond one level. Complex packages must use package.json manifest.
+ */
 function discoverExtensionsInDir(dir: string): string[] {
 	if (!fs.existsSync(dir)) {
 		return [];
 	}
 
+	const discovered: string[] = [];
+
 	try {
 		const entries = fs.readdirSync(dir, { withFileTypes: true });
-		return entries
-			.filter((e) => (e.isFile() || e.isSymbolicLink()) && e.name.endsWith(".ts"))
-			.map((e) => path.join(dir, e.name));
+
+		for (const entry of entries) {
+			const entryPath = path.join(dir, entry.name);
+
+			// 1. Direct files: *.ts or *.js
+			if ((entry.isFile() || entry.isSymbolicLink()) && isExtensionFile(entry.name)) {
+				discovered.push(entryPath);
+				continue;
+			}
+
+			// 2 & 3. Subdirectories
+			if (entry.isDirectory() || entry.isSymbolicLink()) {
+				// Check for package.json with "pi" field first
+				const packageJsonPath = path.join(entryPath, "package.json");
+				if (fs.existsSync(packageJsonPath)) {
+					const manifest = readPiManifest(packageJsonPath);
+					if (manifest?.extensions) {
+						// Load paths declared in manifest (relative to package.json dir)
+						for (const extPath of manifest.extensions) {
+							const resolvedExtPath = path.resolve(entryPath, extPath);
+							if (fs.existsSync(resolvedExtPath)) {
+								discovered.push(resolvedExtPath);
+							}
+						}
+						continue; // package.json found, don't check for index
+					}
+				}
+
+				// Check for index.ts or index.js
+				const indexTs = path.join(entryPath, "index.ts");
+				const indexJs = path.join(entryPath, "index.js");
+				if (fs.existsSync(indexTs)) {
+					discovered.push(indexTs);
+				} else if (fs.existsSync(indexJs)) {
+					discovered.push(indexJs);
+				}
+			}
+		}
 	} catch {
 		return [];
 	}
+
+	return discovered;
 }
 
 /**
