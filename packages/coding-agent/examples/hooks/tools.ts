@@ -57,8 +57,8 @@ export default function toolsHook(pi: HookAPI) {
 			enabledTools = new Set(savedTools.filter((t: string) => allTools.includes(t)));
 			applyTools();
 		} else {
-			// No saved state - enable all tools by default
-			enabledTools = new Set(allTools);
+			// No saved state - sync with currently active tools
+			enabledTools = new Set(pi.getActiveTools());
 		}
 	}
 
