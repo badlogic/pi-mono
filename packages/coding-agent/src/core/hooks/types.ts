@@ -10,6 +10,7 @@ import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mario
 import type { Component, KeyId, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
+import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
@@ -747,15 +748,19 @@ export interface HookAPI {
 	 * @param message.content - Message content (string or TextContent/ImageContent array)
 	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
 	 * @param message.details - Optional hook-specific metadata (not sent to LLM)
-	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn. Default: false.
+	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn.
+	 *                             Required for async patterns where you want the agent to respond.
 	 *                             If agent is streaming, message is queued and triggerTurn is ignored.
-	 * @param options.deliverAs - How to deliver when agent is streaming. Default: "steer".
-	 *                           - "steer": Interrupt mid-run, delivered after current tool execution.
-	 *                           - "followUp": Wait until agent finishes all work before delivery.
+	 * @param options.deliverAs - How to deliver the message. Default: "steer".
+	 *                           - "steer": (streaming) Interrupt mid-run, delivered after current tool execution.
+	 *                           - "followUp": (streaming) Wait until agent finishes all work before delivery.
+	 *                           - "nextTurn": (idle) Queue to be included with the next user message as context.
+	 *                                         The message becomes an "aside" - context for the next turn without
+	 *                                         triggering a turn or appearing as a standalone entry.
 	 */
 	sendMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): void;
 
 	/**
@@ -899,6 +904,21 @@ export interface HookAPI {
 			handler: (ctx: HookContext) => Promise<void> | void;
 		},
 	): void;
+
+	/**
+	 * Shared event bus for tool/hook communication.
+	 * Tools can emit events, hooks can listen for them.
+	 *
+	 * @example
+	 * // Hook listening for events
+	 * pi.events.on("subagent:complete", (data) => {
+	 *   pi.sendMessage({ customType: "notify", content: `Done: ${data.summary}` });
+	 * });
+	 *
+	 * // Tool emitting events (in custom tool)
+	 * pi.events.emit("my:event", { status: "complete" });
+	 */
+	events: EventBus;
 }
 
 /**

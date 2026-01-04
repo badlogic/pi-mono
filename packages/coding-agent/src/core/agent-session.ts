@@ -155,6 +155,8 @@ export class AgentSession {
 	private _steeringMessages: string[] = [];
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
 	private _followUpMessages: string[] = [];
+	/** Messages queued to be included with the next user prompt as context ("asides"). */
+	private _pendingNextTurnMessages: HookMessage[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -605,6 +607,12 @@ export class AgentSession {
 			timestamp: Date.now(),
 		});
 
+		// Inject any pending "nextTurn" messages as context alongside the user message
+		for (const msg of this._pendingNextTurnMessages) {
+			messages.push(msg);
+		}
+		this._pendingNextTurnMessages = [];
+
 		// Emit before_agent_start hook event
 		if (this._hookRunner) {
 			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
@@ -752,11 +760,11 @@ export class AgentSession {
 	 *
 	 * @param message Hook message with customType, content, display, details
 	 * @param options.triggerTurn If true and not streaming, triggers a new LLM turn
-	 * @param options.deliverAs When streaming, use "steer" (default) for immediate or "followUp" to wait
+	 * @param options.deliverAs Delivery mode: "steer", "followUp", or "nextTurn"
 	 */
 	async sendHookMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): Promise<void> {
 		const appMessage = {
 			role: "hookMessage" as const,
@@ -766,18 +774,17 @@ export class AgentSession {
 			details: message.details,
 			timestamp: Date.now(),
 		} satisfies HookMessage<T>;
-		if (this.isStreaming) {
-			// Queue for processing by agent loop
+		if (options?.deliverAs === "nextTurn") {
+			this._pendingNextTurnMessages.push(appMessage);
+		} else if (this.isStreaming) {
 			if (options?.deliverAs === "followUp") {
 				this.agent.followUp(appMessage);
 			} else {
 				this.agent.steer(appMessage);
 			}
 		} else if (options?.triggerTurn) {
-			// Send as prompt - agent loop will emit message events
 			await this.agent.prompt(appMessage);
 		} else {
-			// Just append to agent state and session, no turn
 			this.agent.appendMessage(appMessage);
 			this.sessionManager.appendCustomMessageEntry(
 				message.customType,

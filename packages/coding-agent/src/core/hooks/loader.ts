@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { createJiti } from "jiti";
 import { getAgentDir } from "../../config.js";
+import { createEventBus, type EventBus } from "../event-bus.js";
 import type { HookMessage } from "../messages.js";
 import type { SessionManager } from "../session-manager.js";
 import { execCommand } from "./runner.js";
@@ -61,7 +62,7 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
  */
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 ) => void;
 
 /**
@@ -221,6 +222,7 @@ function createHookAPI(
 	handlers: Map<string, HandlerFn[]>,
 	cwd: string,
 	hookPath: string,
+	eventBus: EventBus,
 ): {
 	api: HookAPI;
 	messageRenderers: Map<string, HookMessageRenderer>;
@@ -292,7 +294,6 @@ function createHookAPI(
 			options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
 		): void {
 			flags.set(name, { name, hookPath, ...options });
-			// Set default value if provided
 			if (options.default !== undefined) {
 				flagValues.set(name, options.default);
 			}
@@ -309,6 +310,7 @@ function createHookAPI(
 		): void {
 			shortcuts.set(shortcut, { shortcut, hookPath, ...options });
 		},
+		events: eventBus,
 	} as HookAPI;
 
 	return {
@@ -342,7 +344,11 @@ function createHookAPI(
 /**
  * Load a single hook module using jiti.
  */
-async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHook | null; error: string | null }> {
+async function loadHook(
+	hookPath: string,
+	cwd: string,
+	eventBus: EventBus,
+): Promise<{ hook: LoadedHook | null; error: string | null }> {
 	const resolvedPath = resolveHookPath(hookPath, cwd);
 
 	try {
@@ -376,7 +382,7 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 			setGetAllToolsHandler,
 			setSetActiveToolsHandler,
 			setFlagValue,
-		} = createHookAPI(handlers, cwd, hookPath);
+		} = createHookAPI(handlers, cwd, hookPath, eventBus);
 
 		// Call factory to register handlers
 		factory(api);
@@ -410,13 +416,15 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
  * Load all hooks from configuration.
  * @param paths - Array of hook file paths
  * @param cwd - Current working directory for resolving relative paths
+ * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
-export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooksResult> {
+export async function loadHooks(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadHooksResult> {
 	const hooks: LoadedHook[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
+	const resolvedEventBus = eventBus ?? createEventBus();
 
 	for (const hookPath of paths) {
-		const { hook, error } = await loadHook(hookPath, cwd);
+		const { hook, error } = await loadHook(hookPath, cwd, resolvedEventBus);
 
 		if (error) {
 			errors.push({ path: hookPath, error });
@@ -456,11 +464,17 @@ function discoverHooksInDir(dir: string): string[] {
  * 2. cwd/.pi/hooks/*.ts (project-local)
  *
  * Plus any explicitly configured paths from settings.
+ *
+ * @param configuredPaths - Explicitly configured hook paths
+ * @param cwd - Current working directory
+ * @param agentDir - Agent configuration directory
+ * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverAndLoadHooks(
 	configuredPaths: string[],
 	cwd: string,
 	agentDir: string = getAgentDir(),
+	eventBus?: EventBus,
 ): Promise<LoadHooksResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
@@ -487,5 +501,5 @@ export async function discoverAndLoadHooks(
 	// 3. Explicitly configured paths (can override/add)
 	addPaths(configuredPaths.map((p) => resolveHookPath(p, cwd)));
 
-	return loadHooks(allPaths, cwd);
+	return loadHooks(allPaths, cwd, eventBus);
 }

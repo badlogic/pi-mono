@@ -10,8 +10,10 @@ import type { Model } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
+import type { HookMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { ReadonlySessionManager } from "../session-manager.js";
 
@@ -34,6 +36,30 @@ export interface CustomToolAPI {
 	ui: CustomToolUIContext;
 	/** Whether UI is available (false in print/RPC mode) */
 	hasUI: boolean;
+	/** Shared event bus for tool/hook communication */
+	events: EventBus;
+	/**
+	 * Send a message to the agent session.
+	 *
+	 * Delivery behavior depends on agent state and options:
+	 * - Streaming + "steer" (default): Interrupt mid-run, delivered after current tool.
+	 * - Streaming + "followUp": Wait until agent finishes before delivery.
+	 * - Idle + triggerTurn: Triggers a new LLM turn immediately.
+	 * - Idle + "nextTurn": Queue to be included with the next user message as context.
+	 * - Idle + neither: Append to session history as standalone entry.
+	 *
+	 * @param message - The message to send
+	 * @param message.customType - Identifier for your tool
+	 * @param message.content - Message content (string or TextContent/ImageContent array)
+	 * @param message.display - Whether to show in TUI (true = styled display, false = hidden)
+	 * @param message.details - Optional tool-specific metadata (not sent to LLM)
+	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn
+	 * @param options.deliverAs - Delivery mode: "steer", "followUp", or "nextTurn"
+	 */
+	sendMessage<T = unknown>(
+		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+	): void;
 }
 
 /**
@@ -156,10 +182,18 @@ export interface LoadedCustomTool {
 	tool: CustomTool;
 }
 
+/** Send message handler type for tool sendMessage */
+export type ToolSendMessageHandler = <T = unknown>(
+	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+) => void;
+
 /** Result from loading custom tools */
 export interface CustomToolsLoadResult {
 	tools: LoadedCustomTool[];
 	errors: Array<{ path: string; error: string }>;
 	/** Update the UI context for all loaded tools. Call when mode initializes. */
 	setUIContext(uiContext: CustomToolUIContext, hasUI: boolean): void;
+	/** Set the sendMessage handler for all loaded tools. Call when session initializes. */
+	setSendMessageHandler(handler: ToolSendMessageHandler): void;
 }

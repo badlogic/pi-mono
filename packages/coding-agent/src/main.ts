@@ -17,6 +17,7 @@ import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.j
 import type { AgentSession } from "./core/agent-session.js";
 
 import type { LoadedCustomTool } from "./core/custom-tools/index.js";
+import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { discoverAndLoadHooks } from "./core/hooks/index.js";
 import type { HookUIContext } from "./core/index.js";
@@ -303,8 +304,9 @@ export async function main(args: string[]) {
 	// Early load hooks to discover their CLI flags
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
+	const eventBus = createEventBus();
 	const hookPaths = firstPass.hooks ?? [];
-	const { hooks: loadedHooks } = await discoverAndLoadHooks(hookPaths, cwd, agentDir);
+	const { hooks: loadedHooks } = await discoverAndLoadHooks(hookPaths, cwd, agentDir, eventBus);
 	time("discoverHookFlags");
 
 	// Collect all hook flags
@@ -402,6 +404,7 @@ export async function main(args: string[]) {
 	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, loadedHooks);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
+	sessionOptions.eventBus = eventBus;
 
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {

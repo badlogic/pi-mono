@@ -43,6 +43,9 @@
 - Tool registry now contains all built-in tools (read, bash, edit, write, grep, find, ls) even when `--tools` limits the initially active set. Hooks can enable any tool from the registry via `pi.setActiveTools()`.
 - System prompt now automatically rebuilds when tools change via `setActiveTools()`, updating tool descriptions and guidelines to match the new tool set
 - Hook errors now display full stack traces for easier debugging
+- Event bus (`pi.events`) for tool/hook communication: shared pub/sub between custom tools and hooks
+- Custom tools now have `pi.sendMessage()` to send messages directly to the agent session without needing the event bus
+- `sendMessage()` supports `deliverAs: "nextTurn"` to queue messages for the next user prompt
 
 ### Changed
 

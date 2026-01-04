@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { getAgentDir, isBunBinary } from "../../config.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
+import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import type { HookUIContext } from "../hooks/types.js";
@@ -213,10 +214,12 @@ export async function loadCustomTools(
 	paths: string[],
 	cwd: string,
 	builtInToolNames: string[],
+	eventBus?: EventBus,
 ): Promise<CustomToolsLoadResult> {
 	const tools: LoadedCustomTool[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const seenNames = new Set<string>(builtInToolNames);
+	const resolvedEventBus = eventBus ?? createEventBus();
 
 	// Shared API object - all tools get the same instance
 	const sharedApi: CustomToolAPI = {
@@ -225,6 +228,8 @@ export async function loadCustomTools(
 			execCommand(command, args, options?.cwd ?? cwd, options),
 		ui: createNoOpUIContext(),
 		hasUI: false,
+		events: resolvedEventBus,
+		sendMessage: () => {},
 	};
 
 	for (const toolPath of paths) {
@@ -258,6 +263,9 @@ export async function loadCustomTools(
 		setUIContext(uiContext, hasUI) {
 			sharedApi.ui = uiContext;
 			sharedApi.hasUI = hasUI;
+		},
+		setSendMessageHandler(handler) {
+			sharedApi.sendMessage = handler;
 		},
 	};
 }
@@ -303,12 +311,14 @@ function discoverToolsInDir(dir: string): string[] {
  * @param cwd - Current working directory
  * @param builtInToolNames - Names of built-in tools to check for conflicts
  * @param agentDir - Agent config directory. Default: from getAgentDir()
+ * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverAndLoadCustomTools(
 	configuredPaths: string[],
 	cwd: string,
 	builtInToolNames: string[],
 	agentDir: string = getAgentDir(),
+	eventBus?: EventBus,
 ): Promise<CustomToolsLoadResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
@@ -335,5 +345,5 @@ export async function discoverAndLoadCustomTools(
 	// 3. Explicitly configured paths (can override/add)
 	addPaths(configuredPaths.map((p) => resolveToolPath(p, cwd)));
 
-	return loadCustomTools(allPaths, cwd, builtInToolNames);
+	return loadCustomTools(allPaths, cwd, builtInToolNames, eventBus);
 }

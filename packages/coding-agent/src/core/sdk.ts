@@ -43,6 +43,7 @@ import {
 	wrapCustomTools,
 } from "./custom-tools/index.js";
 import type { CustomTool } from "./custom-tools/types.js";
+import { createEventBus, type EventBus } from "./event-bus.js";
 import { discoverAndLoadHooks, HookRunner, type LoadedHook, wrapToolsWithHooks } from "./hooks/index.js";
 import type { HookFactory } from "./hooks/types.js";
 import { convertToLlm } from "./messages.js";
@@ -117,6 +118,9 @@ export interface CreateAgentSessionOptions {
 	additionalHookPaths?: string[];
 	/** Pre-loaded hooks (skips loading, used when hooks were loaded early for CLI flags). */
 	preloadedHooks?: LoadedHook[];
+
+	/** Shared event bus for tool/hook communication. Default: creates new bus. */
+	eventBus?: EventBus;
 
 	/** Skills. Default: discovered from multiple locations */
 	skills?: Skill[];
@@ -199,15 +203,19 @@ export function discoverModels(authStorage: AuthStorage, agentDir: string = getD
 
 /**
  * Discover hooks from cwd and agentDir.
+ * @param cwd - Current working directory
+ * @param agentDir - Agent configuration directory
+ * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverHooks(
 	cwd?: string,
 	agentDir?: string,
+	eventBus?: EventBus,
 ): Promise<Array<{ path: string; factory: HookFactory }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 
-	const { hooks, errors } = await discoverAndLoadHooks([], resolvedCwd, resolvedAgentDir);
+	const { hooks, errors } = await discoverAndLoadHooks([], resolvedCwd, resolvedAgentDir, eventBus);
 
 	// Log errors but don't fail
 	for (const { path, error } of errors) {
@@ -222,15 +230,25 @@ export async function discoverHooks(
 
 /**
  * Discover custom tools from cwd and agentDir.
+ * @param cwd - Current working directory
+ * @param agentDir - Agent configuration directory
+ * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverCustomTools(
 	cwd?: string,
 	agentDir?: string,
+	eventBus?: EventBus,
 ): Promise<Array<{ path: string; tool: CustomTool }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 
-	const { tools, errors } = await discoverAndLoadCustomTools([], resolvedCwd, Object.keys(allTools), resolvedAgentDir);
+	const { tools, errors } = await discoverAndLoadCustomTools(
+		[],
+		resolvedCwd,
+		Object.keys(allTools),
+		resolvedAgentDir,
+		eventBus,
+	);
 
 	// Log errors but don't fail
 	for (const { path, error } of errors) {
@@ -344,7 +362,10 @@ function createFactoryFromLoadedHook(loaded: LoadedHook): HookFactory {
 /**
  * Convert hook definitions to LoadedHooks for the HookRunner.
  */
-function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; factory: HookFactory }>): LoadedHook[] {
+function createLoadedHooksFromDefinitions(
+	definitions: Array<{ path?: string; factory: HookFactory }>,
+	eventBus: EventBus,
+): LoadedHook[] {
 	return definitions.map((def) => {
 		const hookPath = def.path ?? "<inline>";
 		const handlers = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
@@ -401,6 +422,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 			getActiveTools: () => getActiveToolsHandler(),
 			getAllTools: () => getAllToolsHandler(),
 			setActiveTools: (toolNames: string[]) => setActiveToolsHandler(toolNames),
+			events: eventBus,
 		};
 
 		def.factory(api as any);
@@ -484,6 +506,7 @@ function createLoadedHooksFromDefinitions(definitions: Array<{ path?: string; fa
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
+	const eventBus = options.eventBus ?? createEventBus();
 
 	// Use provided or create AuthStorage and ModelRegistry
 	const authStorage = options.authStorage ?? discoverAuthStorage(agentDir);
@@ -591,11 +614,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: loadedTools,
 			errors: [],
 			setUIContext: () => {},
+			setSendMessageHandler: () => {},
 		};
 	} else {
 		// Discover custom tools, merging with additional paths
 		const configuredPaths = [...settingsManager.getCustomToolPaths(), ...(options.additionalCustomToolPaths ?? [])];
-		customToolsResult = await discoverAndLoadCustomTools(configuredPaths, cwd, Object.keys(allTools), agentDir);
+		customToolsResult = await discoverAndLoadCustomTools(
+			configuredPaths,
+			cwd,
+			Object.keys(allTools),
+			agentDir,
+			eventBus,
+		);
 		time("discoverAndLoadCustomTools");
 		for (const { path, error } of customToolsResult.errors) {
 			console.error(`Failed to load custom tool "${path}": ${error}`);
@@ -608,13 +638,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		hookRunner = new HookRunner(options.preloadedHooks, cwd, sessionManager, modelRegistry);
 	} else if (options.hooks !== undefined) {
 		if (options.hooks.length > 0) {
-			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks);
+			const loadedHooks = createLoadedHooksFromDefinitions(options.hooks, eventBus);
 			hookRunner = new HookRunner(loadedHooks, cwd, sessionManager, modelRegistry);
 		}
 	} else {
 		// Discover hooks, merging with additional paths
 		const configuredPaths = [...settingsManager.getHookPaths(), ...(options.additionalHookPaths ?? [])];
-		const { hooks, errors } = await discoverAndLoadHooks(configuredPaths, cwd, agentDir);
+		const { hooks, errors } = await discoverAndLoadHooks(configuredPaths, cwd, agentDir, eventBus);
 		time("discoverAndLoadHooks");
 		for (const { path, error } of errors) {
 			console.error(`Failed to load hook "${path}": ${error}`);
@@ -754,6 +784,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		rebuildSystemPrompt,
 	});
 	time("createAgentSession");
+
+	// Wire up sendMessage for custom tools
+	customToolsResult.setSendMessageHandler((msg, opts) => {
+		session.sendHookMessage(msg, opts);
+	});
 
 	return {
 		session,
