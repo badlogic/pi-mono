@@ -161,4 +161,10 @@ export { main } from "./main.js";
 // UI components for hooks
 export { BorderedLoader } from "./modes/interactive/components/bordered-loader.js";
 // Theme utilities for custom tools and hooks
-export { getMarkdownTheme, Theme, type ThemeColor } from "./modes/interactive/theme/theme.js";
+export {
+	getMarkdownTheme,
+	getSelectListTheme,
+	getSettingsListTheme,
+	Theme,
+	type ThemeColor,
+} from "./modes/interactive/theme/theme.js";
