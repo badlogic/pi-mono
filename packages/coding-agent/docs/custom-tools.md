@@ -160,6 +160,7 @@ interface CustomToolAPI {
   ui: ToolUIContext;
   hasUI: boolean;  // false in --print or --mode rpc
   events: EventBus;  // Shared event bus for tool/hook communication
+  sendMessage(message, options?): void;  // Send messages to the agent session
 }
 
 interface ToolUIContext {
@@ -212,6 +213,24 @@ pi.events.on("mytool:event", async (data) => {
   }
 });
 ```
+
+### Sending Messages
+
+Tools can send messages to the agent session via `pi.sendMessage()`:
+
+```typescript
+pi.sendMessage({
+  customType: "mytool-notify",
+  content: "Configuration was updated",
+  display: true,
+}, {
+  deliverAs: "nextTurn",
+});
+```
+
+**Delivery modes:** `"steer"` (default) interrupts streaming, `"followUp"` waits for completion, `"nextTurn"` queues for next user message. Use `triggerTurn: true` to wake an idle agent immediately.
+
+See [hooks documentation](hooks.md#pisendmessagemessage-options) for full details.
 
 ### Cancellation Example
 

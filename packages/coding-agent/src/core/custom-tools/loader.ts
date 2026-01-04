@@ -228,6 +228,7 @@ export async function loadCustomTools(
 		ui: createNoOpUIContext(),
 		hasUI: false,
 		events: resolvedEventBus,
+		sendMessage: () => {},
 	};
 
 	for (const toolPath of paths) {
@@ -261,6 +262,9 @@ export async function loadCustomTools(
 		setUIContext(uiContext, hasUI) {
 			sharedApi.ui = uiContext;
 			sharedApi.hasUI = hasUI;
+		},
+		setSendMessageHandler(handler) {
+			sharedApi.sendMessage = handler;
 		},
 	};
 }

@@ -62,7 +62,7 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
  */
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 ) => void;
 
 /**

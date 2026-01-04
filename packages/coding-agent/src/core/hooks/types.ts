@@ -744,13 +744,16 @@ export interface HookAPI {
 	 * @param options.triggerTurn - If true and agent is idle, triggers a new LLM turn.
 	 *                             Required for async patterns where you want the agent to respond.
 	 *                             If agent is streaming, message is queued and triggerTurn is ignored.
-	 * @param options.deliverAs - How to deliver when agent is streaming. Default: "steer".
-	 *                           - "steer": Interrupt mid-run, delivered after current tool execution.
-	 *                           - "followUp": Wait until agent finishes all work before delivery.
+	 * @param options.deliverAs - How to deliver the message. Default: "steer".
+	 *                           - "steer": (streaming) Interrupt mid-run, delivered after current tool execution.
+	 *                           - "followUp": (streaming) Wait until agent finishes all work before delivery.
+	 *                           - "nextTurn": (idle) Queue to be included with the next user message as context.
+	 *                                         The message becomes an "aside" - context for the next turn without
+	 *                                         triggering a turn or appearing as a standalone entry.
 	 */
 	sendMessage<T = unknown>(
 		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): void;
 
 	/**

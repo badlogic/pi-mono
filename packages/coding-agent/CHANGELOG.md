@@ -13,6 +13,8 @@
 - `getSettingsListTheme()` and `getSelectListTheme()` now accept optional theme parameter for use in hooks loaded via jiti
 - Hook errors now display full stack traces for easier debugging
 - Event bus (`pi.events`) for tool/hook communication: shared pub/sub between custom tools and hooks
+- Custom tools now have `pi.sendMessage()` to send messages directly to the agent session without needing the event bus
+- `sendMessage()` supports `deliverAs: "nextTurn"` to queue messages for the next user prompt
 
 ### Changed
 

@@ -689,16 +689,33 @@ pi.sendMessage({
   details: { ... },           // Optional metadata (not sent to LLM)
 }, {
   triggerTurn: true,          // If true and agent is idle, triggers LLM response
-  deliverAs: "steer",         // "steer" (default) or "followUp" when agent is streaming
+  deliverAs: "steer",         // "steer", "followUp", or "nextTurn"
 });
 ```
 
-**Storage and timing:**
-- The message is appended to the session file immediately as a `CustomMessageEntry`
-- If the agent is currently streaming:
-  - `deliverAs: "steer"` (default): Delivered after current tool execution, interrupts remaining tools
-  - `deliverAs: "followUp"`: Delivered only after agent finishes all work
-- If `triggerTurn` is true and the agent is idle, a new agent loop starts
+**Delivery modes (`deliverAs`):**
+
+| Mode | When agent is streaming | When agent is idle |
+|------|------------------------|-------------------|
+| `"steer"` (default) | Delivered after current tool, interrupts remaining | Appended to session immediately |
+| `"followUp"` | Delivered after agent finishes all work | Appended to session immediately |
+| `"nextTurn"` | Same as "steer" | Queued as context for next user message |
+
+The `"nextTurn"` mode is useful for notifications that shouldn't wake the agent but should be seen on the next turn. The message becomes an "aside" - included alongside the next user prompt as context, rather than appearing as a standalone entry or triggering immediate response.
+
+```typescript
+// Example: Notify agent about tool changes without interrupting
+pi.sendMessage(
+  { customType: "notify", content: "Tool configuration was updated", display: true },
+  { deliverAs: "nextTurn" }
+);
+// On next user message, agent sees this as context
+```
+
+**`triggerTurn` option:**
+- If `triggerTurn: true` and the agent is idle, a new agent loop starts immediately
+- Ignored when streaming (use `deliverAs` to control timing instead)
+- Ignored when `deliverAs: "nextTurn"` (the message waits for user input)
 
 **LLM context:**
 - `CustomMessageEntry` is converted to a user message when building context for the LLM

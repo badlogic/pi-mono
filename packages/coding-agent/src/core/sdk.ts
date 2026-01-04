@@ -119,6 +119,9 @@ export interface CreateAgentSessionOptions {
 	/** Pre-loaded hooks (skips loading, used when hooks were loaded early for CLI flags). */
 	preloadedHooks?: LoadedHook[];
 
+	/** Shared event bus for tool/hook communication. Default: creates new bus. */
+	eventBus?: EventBus;
+
 	/** Skills. Default: discovered from multiple locations */
 	skills?: Skill[];
 	/** Context files (AGENTS.md content). Default: discovered walking up from cwd */
@@ -503,7 +506,7 @@ function createLoadedHooksFromDefinitions(
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
-	const eventBus = createEventBus();
+	const eventBus = options.eventBus ?? createEventBus();
 
 	// Use provided or create AuthStorage and ModelRegistry
 	const authStorage = options.authStorage ?? discoverAuthStorage(agentDir);
@@ -611,6 +614,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: loadedTools,
 			errors: [],
 			setUIContext: () => {},
+			setSendMessageHandler: () => {},
 		};
 	} else {
 		// Discover custom tools, merging with additional paths
@@ -780,6 +784,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		rebuildSystemPrompt,
 	});
 	time("createAgentSession");
+
+	// Wire up sendMessage for custom tools
+	customToolsResult.setSendMessageHandler((msg, opts) => {
+		session.sendHookMessage(msg, opts);
+	});
 
 	return {
 		session,
