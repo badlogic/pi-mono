@@ -685,6 +685,7 @@ export class InteractiveMode {
 			notify: (message, type) => this.showHookNotify(message, type),
 			setStatus: (key, text) => this.setHookStatus(key, text),
 			setWidget: (key, content) => this.setHookWidget(key, content),
+			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory) => this.showHookCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
