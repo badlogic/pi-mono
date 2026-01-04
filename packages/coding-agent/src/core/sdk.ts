@@ -203,14 +203,14 @@ export function discoverModels(authStorage: AuthStorage, agentDir: string = getD
 
 /**
  * Discover hooks from cwd and agentDir.
+ * @param eventBus - Shared event bus for pi.events communication. Pass to createAgentSession too.
  * @param cwd - Current working directory
  * @param agentDir - Agent configuration directory
- * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverHooks(
+	eventBus: EventBus,
 	cwd?: string,
 	agentDir?: string,
-	eventBus?: EventBus,
 ): Promise<Array<{ path: string; factory: HookFactory }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
@@ -230,14 +230,14 @@ export async function discoverHooks(
 
 /**
  * Discover custom tools from cwd and agentDir.
+ * @param eventBus - Shared event bus for tool.events communication. Pass to createAgentSession too.
  * @param cwd - Current working directory
  * @param agentDir - Agent configuration directory
- * @param eventBus - Optional shared event bus (creates isolated bus if not provided)
  */
 export async function discoverCustomTools(
+	eventBus: EventBus,
 	cwd?: string,
 	agentDir?: string,
-	eventBus?: EventBus,
 ): Promise<Array<{ path: string; tool: CustomTool }>> {
 	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();

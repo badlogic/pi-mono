@@ -463,10 +463,14 @@ const { session } = await createAgentSession({
   customTools: [{ tool: myTool }],
 });
 
-// Merge with discovered tools
-const discovered = await discoverCustomTools();
+// Merge with discovered tools (share eventBus for tool.events communication)
+import { createEventBus } from "@mariozechner/pi-coding-agent";
+
+const eventBus = createEventBus();
+const discovered = await discoverCustomTools(eventBus);
 const { session } = await createAgentSession({
   customTools: [...discovered, { tool: myTool }],
+  eventBus,
 });
 
 // Add paths without replacing discovery
@@ -528,10 +532,14 @@ const { session } = await createAgentSession({
   hooks: [],
 });
 
-// Merge with discovered
-const discovered = await discoverHooks();
+// Merge with discovered (share eventBus for pi.events communication)
+import { createEventBus } from "@mariozechner/pi-coding-agent";
+
+const eventBus = createEventBus();
+const discovered = await discoverHooks(eventBus);
 const { session } = await createAgentSession({
   hooks: [...discovered, { factory: loggingHook }],
+  eventBus,
 });
 
 // Add paths without replacing
@@ -540,8 +548,12 @@ const { session } = await createAgentSession({
 });
 ```
 
+**Event Bus:** If hooks or tools use `pi.events` for inter-component communication, pass the same `eventBus` to `discoverHooks()`, `discoverCustomTools()`, and `createAgentSession()`. Otherwise each gets an isolated bus and events won't be shared.
+
 Hook API methods:
-- `api.on(event, handler)` - Subscribe to events
+- `api.on(event, handler)` - Subscribe to lifecycle events
+- `api.events.emit(channel, data)` - Emit to shared event bus
+- `api.events.on(channel, handler)` - Listen on shared event bus
 - `api.sendMessage(message, triggerTurn?)` - Inject message (creates `CustomMessageEntry`)
 - `api.appendEntry(customType, data?)` - Persist hook state (not in LLM context)
 - `api.registerCommand(name, options)` - Register custom slash command
@@ -778,10 +790,12 @@ const builtIn = getModel("anthropic", "claude-opus-4-5"); // Built-in only
 const skills = discoverSkills(cwd, agentDir, skillsSettings);
 
 // Hooks (async - loads TypeScript)
-const hooks = await discoverHooks(cwd, agentDir);
+// Pass eventBus to share pi.events across hooks/tools
+const eventBus = createEventBus();
+const hooks = await discoverHooks(eventBus, cwd, agentDir);
 
 // Custom tools (async - loads TypeScript)
-const tools = await discoverCustomTools(cwd, agentDir);
+const tools = await discoverCustomTools(eventBus, cwd, agentDir);
 
 // Context files
 const contextFiles = discoverContextFiles(cwd, agentDir);
@@ -950,6 +964,9 @@ discoverHooks
 discoverCustomTools
 discoverContextFiles
 discoverSlashCommands
+
+// Event Bus (for shared hook/tool communication)
+createEventBus
 
 // Helpers
 loadSettings

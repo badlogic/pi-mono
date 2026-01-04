@@ -865,6 +865,7 @@ export class AgentSession {
 		this.sessionManager.newSession(options);
 		this._steeringMessages = [];
 		this._followUpMessages = [];
+		this._pendingNextTurnMessages = [];
 		this._reconnectToAgent();
 
 		// Emit session_switch event with reason "new" to hooks
@@ -1653,6 +1654,7 @@ export class AgentSession {
 		await this.abort();
 		this._steeringMessages = [];
 		this._followUpMessages = [];
+		this._pendingNextTurnMessages = [];
 
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
@@ -1727,6 +1729,9 @@ export class AgentSession {
 			}
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
+
+		// Clear pending messages (bound to old session state)
+		this._pendingNextTurnMessages = [];
 
 		if (!selectedEntry.parentId) {
 			this.sessionManager.newSession();
