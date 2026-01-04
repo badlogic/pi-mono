@@ -451,11 +451,11 @@ export class HookRunner {
 	 * Handlers are chained - each gets the previous handler's output (if any).
 	 * Returns the final modified messages, or the original if no modifications.
 	 *
-	 * Note: Messages are already deep-copied by the caller (pi-ai preprocessor).
+	 * Messages are deep-copied before passing to hooks, so mutations are safe.
 	 */
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
-		let currentMessages = messages;
+		let currentMessages = structuredClone(messages);
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get("context");
