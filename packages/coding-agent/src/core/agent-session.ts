@@ -774,14 +774,14 @@ export class AgentSession {
 			details: message.details,
 			timestamp: Date.now(),
 		} satisfies HookMessage<T>;
-		if (this.isStreaming) {
+		if (options?.deliverAs === "nextTurn") {
+			this._pendingNextTurnMessages.push(appMessage);
+		} else if (this.isStreaming) {
 			if (options?.deliverAs === "followUp") {
 				this.agent.followUp(appMessage);
 			} else {
 				this.agent.steer(appMessage);
 			}
-		} else if (options?.deliverAs === "nextTurn") {
-			this._pendingNextTurnMessages.push(appMessage);
 		} else if (options?.triggerTurn) {
 			await this.agent.prompt(appMessage);
 		} else {

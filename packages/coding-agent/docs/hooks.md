@@ -699,7 +699,7 @@ pi.sendMessage({
 |------|------------------------|-------------------|
 | `"steer"` (default) | Delivered after current tool, interrupts remaining | Appended to session immediately |
 | `"followUp"` | Delivered after agent finishes all work | Appended to session immediately |
-| `"nextTurn"` | Same as "steer" | Queued as context for next user message |
+| `"nextTurn"` | Queued as context for next user message | Queued as context for next user message |
 
 The `"nextTurn"` mode is useful for notifications that shouldn't wake the agent but should be seen on the next turn. The message becomes an "aside" - included alongside the next user prompt as context, rather than appearing as a standalone entry or triggering immediate response.
 
