@@ -241,13 +241,6 @@ export class Editor implements Component {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	/**
-	 * Called when a single file path is pasted (drag-drop or paste).
-	 * If the handler returns a string, that string is inserted instead of the original path.
-	 * If the handler returns undefined, the original path is inserted as-is.
-	 */
-	public onFilePaste?: (filePath: string) => string | undefined;
-
 	constructor(theme: EditorTheme) {
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
@@ -793,26 +786,11 @@ export class Editor implements Component {
 
 		// If pasting a file path (starts with /, ~, or .) and the character before
 		// the cursor is a word character, prepend a space for better readability
-		const looksLikeFilePath = /^[/~.]/.test(filteredText) && !filteredText.includes("\n");
-		if (looksLikeFilePath) {
+		if (/^[/~.]/.test(filteredText)) {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const charBeforeCursor = this.state.cursorCol > 0 ? currentLine[this.state.cursorCol - 1] : "";
 			if (charBeforeCursor && /\w/.test(charBeforeCursor)) {
 				filteredText = ` ${filteredText}`;
-			}
-
-			// Allow callback to transform file paths (e.g., for image placeholders)
-			if (this.onFilePaste) {
-				const transformed = this.onFilePaste(filteredText.trim());
-				if (transformed !== undefined) {
-					// Insert the transformed text, preserving leading space if we added one
-					const prefix = filteredText.startsWith(" ") ? " " : "";
-					for (const char of prefix + transformed) {
-						this.insertCharacter(char);
-					}
-					if (this.onChange) this.onChange(this.getText());
-					return;
-				}
 			}
 		}
 

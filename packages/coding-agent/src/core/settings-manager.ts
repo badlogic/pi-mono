@@ -36,7 +36,6 @@ export interface TerminalSettings {
 
 export interface ImageSettings {
 	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
-	usePlaceholders?: boolean; // default: false (show [image #N] markers when pasting images, replaced on submit)
 }
 
 export interface Settings {
@@ -406,18 +405,6 @@ export class SettingsManager {
 			this.globalSettings.images = {};
 		}
 		this.globalSettings.images.autoResize = enabled;
-		this.save();
-	}
-
-	getImageUsePlaceholders(): boolean {
-		return this.settings.images?.usePlaceholders ?? false;
-	}
-
-	setImageUsePlaceholders(enabled: boolean): void {
-		if (!this.globalSettings.images) {
-			this.globalSettings.images = {};
-		}
-		this.globalSettings.images.usePlaceholders = enabled;
 		this.save();
 	}
 
