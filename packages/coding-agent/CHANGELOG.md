@@ -10,7 +10,6 @@
 - New example hook: `pirate.ts` - Demonstrates `systemPromptAppend` to make the agent speak like a pirate
 - Tool registry now contains all built-in tools (read, bash, edit, write, grep, find, ls) even when `--tools` limits the initially active set. Hooks can enable any tool from the registry via `pi.setActiveTools()`.
 - System prompt now automatically rebuilds when tools change via `setActiveTools()`, updating tool descriptions and guidelines to match the new tool set
-- `getSettingsListTheme()` and `getSelectListTheme()` now accept optional theme parameter for use in hooks loaded via jiti
 - Hook errors now display full stack traces for easier debugging
 
 ### Changed
