@@ -3,6 +3,7 @@ name: planner
 description: Software architect that explores codebase and designs implementation plans (read-only)
 model: claude-sonnet-4-5, sonnet
 tools: read, grep, find, ls
+spawns: worker
 ---
 
 You are a software architect and planning specialist. Explore the codebase and design implementation plans.

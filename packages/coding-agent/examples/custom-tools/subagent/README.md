@@ -11,8 +11,11 @@ Delegate tasks to specialized subagents with isolated context windows.
 - **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
 - **Abort support**: Ctrl+C propagates to kill subagent processes
 - **Fuzzy model matching**: Use patterns like "sonnet" or fallbacks like "gpt, opus"
-- **Recursion guard**: Prevents infinite subagent spawning (unless `recursive: true`)
+- **Fine-grained spawn control**: Control which agents can spawn which (via `spawns` field)
+- **Self-recursion prevention**: An agent cannot spawn itself
+- **Sample agents**: Includes scout, planner, reviewer, and worker (symlink to ~/.pi/agent/agents/)
 - **Output files**: Optionally write results to files for later reference
+- **Model caching**: 5-minute TTL cache for available models
 - **Configurable**: Adjust concurrency, persistence, and other options
 
 ## Structure
@@ -195,8 +198,10 @@ System prompt for the agent goes here.
 | `description` | Yes | What the agent does (shown in tool description) |
 | `tools` | No | Comma-separated tool list (default: all tools) |
 | `model` | No | Model pattern with optional fallbacks |
-| `recursive` | No | If `true`, agent can spawn subagents (default: `false`) |
-| `forkContext` | No | Reserved for future use |
+| `spawns` | No | Which agents this can spawn: `*` (all), comma-separated list, or omit (none) |
+| `recursive` | No | **Deprecated**: Use `spawns: "*"` instead |
+
+**Note**: An agent can never spawn itself, regardless of the `spawns` field (self-recursion prevention).
 
 ### Model Patterns
 
@@ -222,12 +227,25 @@ When multiple directories contain an agent with the same name:
 
 ## Sample Agents
 
-| Agent | Purpose | Model | Tools |
-|-------|---------|-------|-------|
-| `scout` | Fast codebase recon | Haiku | read, grep, find, ls, bash |
-| `planner` | Implementation plans | Sonnet | read, grep, find, ls |
-| `reviewer` | Code review | Sonnet | read, grep, find, ls, bash |
-| `worker` | General-purpose | Sonnet | (all default) |
+This tool includes sample agents in `./agents/` that should be symlinked during installation:
+
+| Agent | Purpose | Model | Tools | Spawns |
+|-------|---------|-------|-------|--------|
+| `scout` | Fast codebase recon | Haiku | read, grep, find, ls, bash | planner |
+| `planner` | Implementation plans | Sonnet | read, grep, find, ls | worker |
+| `reviewer` | Code review | Sonnet | read, grep, find, ls, bash | *(none)* |
+| `worker` | General-purpose | Sonnet | (all default) | reviewer |
+
+### Agent Sources (Priority Order)
+
+1. **Project `.pi/agents/`** (highest priority)
+2. **Project `.claude/agents/`** (fallback)
+3. **User `~/.pi/agent/agents/`**
+4. **User `~/.claude/agents/`** (fallback)
+
+## Custom Agents
+
+Create your own agents by placing markdown files in `~/.pi/agent/agents/`.
 
 ## Workflow Commands
 
@@ -243,7 +261,42 @@ When multiple directories contain an agent with the same name:
 - **stopReason "error"**: LLM error propagated with error message
 - **stopReason "aborted"**: User abort (Ctrl+C) kills subprocess, throws error
 - **Chain mode**: Stops at first failing step, reports which step failed
-- **Recursion guard**: Unless `recursive: true`, subagents cannot spawn more subagents
+- **Spawn control**: Agents respect `spawns` field restrictions from parent
+- **Self-recursion block**: An agent cannot spawn itself (automatic protection)
+
+## Spawn Control
+
+Agents can control which other agents they can spawn using the `spawns` frontmatter field:
+
+```markdown
+---
+name: orchestrator
+description: Coordinates multiple agents
+spawns: scout, planner, worker
+---
+```
+
+**Spawn field values:**
+- `spawns: "*"` — Can spawn any agent
+- `spawns: scout, planner` — Can only spawn listed agents
+- Omit `spawns` field — Cannot spawn any agents
+
+**Self-recursion is always blocked**: An agent cannot spawn itself, even if `spawns: "*"`.
+
+**Propagation**: When agent A spawns agent B, B inherits A's spawn restrictions. For example:
+- A has `spawns: scout, planner`
+- A spawns B (scout)
+- B can only spawn: scout, planner (but not itself since self-recursion is blocked)
+
+### Environment Variables (Internal)
+
+The spawn control system uses environment variables to propagate restrictions:
+
+| Variable | Description |
+|----------|-------------|
+| `PI_NO_SUBAGENTS` | Legacy: if set, completely disables subagent tool |
+| `PI_BLOCKED_AGENT` | Name of the agent that cannot spawn itself |
+| `PI_SPAWNS` | Allowed spawn list (`*`, comma-separated, or empty for none) |
 
 ## Output Files & Session Persistence
 
@@ -252,13 +305,16 @@ When `persistSessions` is enabled (default: `true`) and there's a parent session
 **Artifacts are stored next to the parent session file:**
 ```
 /path/to/sessions/2026-01-01T14-28-11-636Z_uuid/
-├── scout_Abc12345.in.md      # Input task
-├── scout_Abc12345.out.md     # Output result  
-├── scout_Abc12345.jsonl      # Session file (resumable)
-├── planner_Xyz98765.in.md
-├── planner_Xyz98765.out.md
-└── planner_Xyz98765.jsonl
+├── scout_0.in.md      # Input task
+├── scout_0.out.md     # Output result  
+├── scout_0.jsonl      # Session file (resumable)
+├── planner_1.in.md
+├── planner_1.out.md
+└── planner_1.jsonl
 ```
+
+Files use index-based naming (`<agent>_<index>`) for predictable, ordered artifacts.
+Indices are allocated by scanning existing files, so resumed sessions create new files instead of overwriting.
 
 When `persistSessions` is disabled OR there's no parent session:
 
@@ -267,8 +323,10 @@ When `persistSessions` is disabled OR there's no parent session:
 /tmp/pi-subagent-<runId>/
 ├── task_scout_0.md
 ├── task_planner_1.md
-└── chain_1_scout.md
+└── chain_0_scout.md
 ```
+
+Temp directories are automatically cleaned up after execution completes.
 
 This is useful for:
 - Reviewing agent outputs after the session

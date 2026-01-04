@@ -11,13 +11,15 @@
  *
  * Uses JSON mode to capture structured output from subagents.
  *
- * Features merged from oh-my-pi:
+ * Features:
  *   - Fuzzy model matching with fallback patterns (e.g., "sonnet, haiku")
- *   - Recursion guard (PI_NO_SUBAGENTS env var)
+ *   - Fine-grained spawn control via `spawns` frontmatter field
+ *   - Self-recursion prevention (same agent can't spawn itself)
+ *   - Sample agents included (scout, planner, reviewer, worker)
  *   - .claude/agents/ fallback directory for backwards compat
- *   - Optional session persistence and output file writing
+ *   - Session persistence and artifact writing
  *   - Tree-style rendering with progress indicators
- *   - Enhanced frontmatter: forkContext, recursive
+ *   - Model cache with 5-minute TTL
  *
  * Configuration:
  *   Edit subagent.json in the tool directory to customize settings.
@@ -25,16 +27,13 @@
  *     - PI_SUBAGENT_MAX_PARALLEL_TASKS
  *     - PI_SUBAGENT_MAX_CONCURRENCY
  *     - PI_SUBAGENT_PERSIST_SESSIONS (0/1)
- *     - PI_SUBAGENT_WRITE_OUTPUT_FILES (0/1)
  */
 
 import { spawn } from "node:child_process";
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { Api, Message, Model } from "@mariozechner/pi-ai";
 import { StringEnum } from "@mariozechner/pi-ai";
 import {
@@ -47,7 +46,14 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { type AgentConfig, type AgentScope, discoverAgents, formatAgentList } from "./agents.js";
+import {
+	type AgentConfig,
+	type AgentScope,
+	type AgentSource,
+	discoverAgents,
+	formatAgentList,
+	getAgent,
+} from "./agents.js";
 
 // ============================================================================
 // Configuration
@@ -119,11 +125,11 @@ function loadConfig(): SubagentConfig {
 
 	if (envParallel) {
 		const val = parseInt(envParallel, 10);
-		if (!isNaN(val) && val > 0) config.maxParallelTasks = val;
+		if (!Number.isNaN(val) && val > 0) config.maxParallelTasks = val;
 	}
 	if (envConcurrency) {
 		const val = parseInt(envConcurrency, 10);
-		if (!isNaN(val) && val > 0) config.maxConcurrency = val;
+		if (!Number.isNaN(val) && val > 0) config.maxConcurrency = val;
 	}
 	if (envPersist !== undefined) {
 		config.persistSessions = envPersist === "1" || envPersist.toLowerCase() === "true";
@@ -143,22 +149,85 @@ function loadConfig(): SubagentConfig {
 // Load config once at module load time
 const CONFIG = loadConfig();
 
-/** Env var set to inhibit subagent spawning (prevents infinite recursion) */
+// ============================================================================
+// Environment Variables for Spawn Control
+// ============================================================================
+
+/** Env var set to inhibit ALL subagent spawning (legacy, backwards compat) */
 const PI_NO_SUBAGENTS_ENV = "PI_NO_SUBAGENTS";
+
+/** Env var containing the blocked agent name (self-recursion prevention) */
+const PI_BLOCKED_AGENT_ENV = "PI_BLOCKED_AGENT";
+
+/** Env var containing allowed spawn list (propagated to subprocesses) */
+const PI_SPAWNS_ENV = "PI_SPAWNS";
+
+// ============================================================================
+// Model Cache (5-minute TTL)
+// ============================================================================
+
+let cachedModels: Model<Api>[] | null = null;
+let modelCacheExpiry = 0;
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Get available models with caching.
+ */
+function getCachedModels(modelRegistry: { getAvailable(): Model<Api>[] }): Model<Api>[] {
+	const now = Date.now();
+	if (cachedModels !== null && now < modelCacheExpiry) {
+		return cachedModels;
+	}
+	cachedModels = modelRegistry.getAvailable();
+	modelCacheExpiry = now + MODEL_CACHE_TTL_MS;
+	return cachedModels;
+}
 
 // ============================================================================
 // Utilities
 // ============================================================================
 
-const NANOID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-function nanoid(size = 12): string {
-	const bytes = crypto.randomBytes(size);
-	let id = "";
-	for (let i = 0; i < size; i++) {
-		id += NANOID_ALPHABET[bytes[i] % NANOID_ALPHABET.length];
+/**
+ * Get the next available index for an agent's artifacts in a directory.
+ * Scans for existing `<agent>_<N>.out.md` files and returns max+1.
+ * This ensures resumed sessions don't overwrite previous artifacts.
+ */
+function getNextIndex(dir: string, agentName: string): number {
+	const prefix = `${sanitizeAgentName(agentName)}_`;
+	try {
+		const existing = fs
+			.readdirSync(dir)
+			.filter((f) => f.startsWith(prefix) && f.endsWith(".out.md"))
+			.map((f) => parseInt(f.slice(prefix.length).split(".")[0], 10))
+			.filter((n) => !Number.isNaN(n));
+		return existing.length > 0 ? Math.max(...existing) + 1 : 0;
+	} catch {
+		return 0;
 	}
-	return id;
+}
+
+/**
+ * Batch-allocate indices for multiple agents.
+ * Returns an array of indices corresponding to each agent name.
+ * Handles duplicate agent names correctly (each gets incrementing index).
+ */
+function allocateIndices(dir: string, agentNames: string[]): number[] {
+	const counters = new Map<string, number>();
+
+	// Get starting index for each unique agent
+	for (const name of new Set(agentNames)) {
+		counters.set(name, getNextIndex(dir, name));
+	}
+
+	// Allocate indices in order
+	const result: number[] = [];
+	for (const name of agentNames) {
+		const idx = counters.get(name)!;
+		result.push(idx);
+		counters.set(name, idx + 1);
+	}
+
+	return result;
 }
 
 function formatTokens(count: number): string {
@@ -373,8 +442,9 @@ interface UsageStats {
 }
 
 interface SingleResult {
+	index: number;
 	agent: string;
-	agentSource: "user" | "project" | "unknown";
+	agentSource: AgentSource;
 	task: string;
 	exitCode: number;
 	messages: Message[];
@@ -386,11 +456,14 @@ interface SingleResult {
 	errorMessage?: string;
 	step?: number;
 	durationMs?: number;
+	/** Extracted data from subprocess tool events */
+	extractedToolData?: Record<string, unknown[]>;
 }
 
 interface AgentProgress {
+	index: number;
 	agent: string;
-	agentSource: "user" | "project" | "unknown";
+	agentSource: AgentSource;
 	status: "queued" | "running" | "completed" | "failed";
 	task: string;
 	currentTool?: string;
@@ -402,8 +475,9 @@ interface AgentProgress {
 	tokens: number;
 	durationMs: number;
 	step?: number;
-	index: number;
 	modelOverride?: string;
+	/** Extracted data from subprocess tool events */
+	extractedToolData?: Record<string, unknown[]>;
 }
 
 interface SubagentDetails {
@@ -494,11 +568,19 @@ function getSessionArtifactsDir(sessionFile: string | null): string | null {
 	return sessionFile;
 }
 
+/**
+ * Clean up a temporary directory and its contents.
+ * Non-blocking, ignores errors.
+ */
+function cleanupTempDir(dir: string): void {
+	fs.rm(dir, { recursive: true, force: true }, () => {
+		// Ignore errors
+	});
+}
+
 // ============================================================================
 // Agent Execution
 // ============================================================================
-
-type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
 interface RunAgentOptions {
 	pi: CustomToolAPI;
@@ -534,12 +616,13 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 	} = options;
 
 	const startTime = Date.now();
-	const agent = agents.find((a) => a.name === agentName);
+	const agent = getAgent(agents, agentName);
 
 	if (!agent) {
 		return {
+			index,
 			agent: agentName,
-			agentSource: "unknown",
+			agentSource: "user",
 			task,
 			exitCode: 1,
 			messages: [],
@@ -559,18 +642,23 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 		args.push("--no-session");
 	}
 
-	// Resolve model using proper API
+	// Resolve model using cached models
 	const rawModel = modelOverride === "default" ? undefined : (modelOverride ?? agent.model);
 	if (rawModel) {
-		const availableModels = ctx.modelRegistry.getAvailable();
+		const availableModels = getCachedModels(ctx.modelRegistry);
 		const resolved = resolveModelPattern(rawModel, availableModels);
 		if (resolved) {
 			args.push("--model", resolved.id);
 		}
 	}
 
-	if (agent.tools && agent.tools.length > 0) {
-		args.push("--tools", agent.tools.join(","));
+	// Build tools list - auto-include subagent if spawns defined
+	let toolList = agent.tools;
+	if (agent.spawns !== undefined && toolList && !toolList.includes("subagent")) {
+		toolList = [...toolList, "subagent"];
+	}
+	if (toolList && toolList.length > 0) {
+		args.push("--tools", toolList.join(","));
 	}
 
 	// Write task to file
@@ -588,6 +676,7 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 	}
 
 	const currentResult: SingleResult = {
+		index,
 		agent: agentName,
 		agentSource: agent.source,
 		task,
@@ -599,6 +688,9 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 		modelOverride,
 		step,
 	};
+
+	// Extracted tool data from subprocess
+	const extractedToolData: Record<string, unknown[]> = {};
 
 	// Progress tracking
 	let toolCount = 0;
@@ -612,6 +704,7 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 
 	const emitProgress = (status: "queued" | "running" | "completed" | "failed" = "running") => {
 		onProgress?.({
+			index,
 			agent: agentName,
 			agentSource: agent.source,
 			status,
@@ -625,8 +718,8 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 			tokens: currentResult.usage.contextTokens,
 			durationMs: Date.now() - startTime,
 			step,
-			index,
 			modelOverride,
+			extractedToolData: Object.keys(extractedToolData).length > 0 ? { ...extractedToolData } : undefined,
 		});
 	};
 
@@ -656,8 +749,23 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 				resolve(code);
 			};
 
-			// Spawn with recursion guard unless agent has recursive: true
-			const spawnEnv = agent.recursive ? process.env : { ...process.env, [PI_NO_SUBAGENTS_ENV]: "1" };
+			// Set up spawn environment for recursion control
+			const spawnEnv = { ...process.env };
+
+			// Block same-agent recursion (agent can't spawn itself)
+			spawnEnv[PI_BLOCKED_AGENT_ENV] = agent.name;
+
+			// Propagate spawn restrictions to subprocess
+			if (agent.spawns === undefined) {
+				// No spawns defined = deny all
+				spawnEnv[PI_SPAWNS_ENV] = "";
+			} else if (agent.spawns === "*") {
+				// Wildcard = allow all
+				spawnEnv[PI_SPAWNS_ENV] = "*";
+			} else {
+				// Specific list
+				spawnEnv[PI_SPAWNS_ENV] = agent.spawns.join(",");
+			}
 
 			const proc = spawn("pi", args, {
 				cwd: cwd ?? pi.cwd,
@@ -690,6 +798,15 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 						recentTools.push({ tool: currentTool, desc, endMs: Date.now() });
 						if (recentTools.length > MAX_RECENT_TOOLS) recentTools.shift();
 					}
+
+					// Extract tool result data if present (for custom rendering)
+					if (event.toolName && event.result?.details) {
+						if (!extractedToolData[event.toolName]) {
+							extractedToolData[event.toolName] = [];
+						}
+						extractedToolData[event.toolName].push(event.result.details);
+					}
+
 					currentTool = undefined;
 					currentToolDescription = undefined;
 					currentToolStartMs = undefined;
@@ -783,6 +900,8 @@ async function runSingleAgent(options: RunAgentOptions): Promise<SingleResult> {
 		});
 
 		currentResult.exitCode = exitCode;
+		currentResult.extractedToolData = Object.keys(extractedToolData).length > 0 ? extractedToolData : undefined;
+
 		if (wasAborted) {
 			currentResult.stderr = "Interrupted";
 			emitProgress("failed");
@@ -860,12 +979,30 @@ const TREE = {
 // ============================================================================
 
 const factory: CustomToolFactory = (pi) => {
-	// Check if subagent spawning is inhibited (we're inside a non-recursive subagent)
+	// Check if subagent spawning is completely inhibited (legacy)
 	if (process.env[PI_NO_SUBAGENTS_ENV]) {
 		return []; // No subagent tool available in this context
 	}
 
-	const runId = nanoid(8);
+	// Get blocked agent (self-recursion prevention) and spawn restrictions from parent
+	const blockedAgent = process.env[PI_BLOCKED_AGENT_ENV];
+	const parentSpawns = process.env[PI_SPAWNS_ENV];
+
+	/**
+	 * Check if spawning a specific agent is allowed based on parent restrictions.
+	 */
+	const isSpawnAllowed = (agentName: string): boolean => {
+		// Block self-recursion
+		if (blockedAgent && agentName === blockedAgent) return false;
+		// Check parent spawn restrictions
+		if (parentSpawns === undefined) return true; // Root = allow all
+		if (parentSpawns === "") return false; // Empty = deny all
+		if (parentSpawns === "*") return true; // Wildcard = allow all
+		const allowed = new Set(parentSpawns.split(",").map((s) => s.trim()));
+		return allowed.has(agentName);
+	};
+
+	const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 	let artifactsDir: string | null = null;
 	const tempDir = path.join(os.tmpdir(), `pi-subagent-${runId}`);
 
@@ -903,7 +1040,7 @@ const factory: CustomToolFactory = (pi) => {
 		},
 		parameters: SubagentParams,
 
-		onSession(event: CustomToolSessionEvent, ctx: CustomToolContext) {
+		onSession(_event: CustomToolSessionEvent, ctx: CustomToolContext) {
 			if (CONFIG.persistSessions && ctx.sessionManager) {
 				const sessionFile = (ctx.sessionManager as any).sessionFile;
 				artifactsDir = getSessionArtifactsDir(sessionFile);
@@ -982,9 +1119,40 @@ const factory: CustomToolFactory = (pi) => {
 				}
 			}
 
+			// Collect all requested agent names for validation
+			const requestedAgentNames: string[] = [];
+			if (params.chain) requestedAgentNames.push(...params.chain.map((s) => s.agent));
+			if (params.tasks) requestedAgentNames.push(...params.tasks.map((t) => t.agent));
+			if (params.agent) requestedAgentNames.push(params.agent);
+
+			// Check spawn restrictions from parent
+			for (const agentName of requestedAgentNames) {
+				if (!isSpawnAllowed(agentName)) {
+					const reason =
+						blockedAgent && agentName === blockedAgent
+							? `Cannot spawn '${agentName}' from within itself (self-recursion blocked)`
+							: `Cannot spawn '${agentName}'. Parent allows: ${parentSpawns || "none"}`;
+					return {
+						content: [{ type: "text", text: reason }],
+						details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+					};
+				}
+			}
+
+			// Validate all agents exist
+			for (const agentName of requestedAgentNames) {
+				if (!getAgent(agents, agentName)) {
+					const available = agents.map((a) => a.name).join(", ") || "none";
+					return {
+						content: [{ type: "text", text: `Unknown agent: ${agentName}. Available: ${available}` }],
+						details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+					};
+				}
+			}
+
 			// Prepare output directory
 			// When persistSessions is enabled AND we have an artifacts dir:
-			//   - Store: <artifactsDir>/<agent>_<id>.{in.md,out.md,jsonl}
+			//   - Store: <artifactsDir>/<agent>_<index>.{in.md,out.md,jsonl}
 			// Otherwise (ephemeral):
 			//   - Store: <tempDir>/task_<agent>_<idx>.md (output only)
 			const outputDir = artifactsDir ?? tempDir;
@@ -1002,27 +1170,29 @@ const factory: CustomToolFactory = (pi) => {
 				let previousOutput = "";
 				const outputPaths: string[] = [];
 
-				// Generate unique IDs for each step
-				const agentIds = params.chain.map((step) => `${sanitizeAgentName(step.agent)}_${nanoid(8)}`);
+				// Allocate indices for all agents (handles duplicates, avoids overwrites on resume)
+				const agentNames = params.chain.map((s) => s.agent);
+				const indices = artifactsDir ? allocateIndices(artifactsDir, agentNames) : agentNames.map((_, i) => i);
 
 				for (let i = 0; i < params.chain.length; i++) {
 					const step = params.chain[i];
 					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
-					const agentId = agentIds[i];
+					const idx = indices[i];
 
-					// Set up file paths
+					// Set up file paths using allocated index
+					const baseName = `${sanitizeAgentName(step.agent)}_${idx}`;
 					let outputFile: string;
 					let sessionFile: string | undefined;
 					let inputFile: string | undefined;
 
 					if (artifactsDir) {
 						// Persistent: store input, output, and session
-						outputFile = path.join(artifactsDir, `${agentId}.out.md`);
-						sessionFile = path.join(artifactsDir, `${agentId}.jsonl`);
-						inputFile = path.join(artifactsDir, `${agentId}.in.md`);
+						outputFile = path.join(artifactsDir, `${baseName}.out.md`);
+						sessionFile = path.join(artifactsDir, `${baseName}.jsonl`);
+						inputFile = path.join(artifactsDir, `${baseName}.in.md`);
 					} else {
 						// Ephemeral: output only
-						outputFile = path.join(tempDir, `chain_${i + 1}_${sanitizeAgentName(step.agent)}.md`);
+						outputFile = path.join(tempDir, `chain_${i}_${sanitizeAgentName(step.agent)}.md`);
 					}
 					outputPaths.push(outputFile);
 
@@ -1034,13 +1204,14 @@ const factory: CustomToolFactory = (pi) => {
 						task: taskWithContext,
 						cwd: step.cwd,
 						step: i + 1,
-						index: i,
+						index: idx,
 						signal,
 						modelOverride: step.model,
 						sessionFile,
 						inputFile,
 						onProgress: (progress) => {
-							const allProgress: AgentProgress[] = results.map((r, idx) => ({
+							const allProgress: AgentProgress[] = results.map((r) => ({
+								index: r.index,
 								agent: r.agent,
 								agentSource: r.agentSource,
 								status: "completed" as const,
@@ -1050,8 +1221,7 @@ const factory: CustomToolFactory = (pi) => {
 								toolCount: 0,
 								tokens: r.usage.contextTokens,
 								durationMs: r.durationMs ?? 0,
-								step: idx + 1,
-								index: idx,
+								step: r.step,
 								modelOverride: r.modelOverride,
 							}));
 							allProgress.push(progress);
@@ -1076,6 +1246,8 @@ const factory: CustomToolFactory = (pi) => {
 					if (isError) {
 						const errorMsg =
 							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+						// Cleanup temp directory if not using artifacts
+						if (!artifactsDir) cleanupTempDir(tempDir);
 						return {
 							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
 							details: makeDetails("chain")(results, undefined, outputPaths),
@@ -1084,6 +1256,9 @@ const factory: CustomToolFactory = (pi) => {
 					}
 					previousOutput = getFinalOutput(result.messages);
 				}
+
+				// Cleanup temp directory if not using artifacts
+				if (!artifactsDir) cleanupTempDir(tempDir);
 
 				return {
 					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
@@ -1107,24 +1282,26 @@ const factory: CustomToolFactory = (pi) => {
 					};
 				}
 
-				// Generate unique IDs for each task
-				const agentIds = params.tasks.map((t) => `${sanitizeAgentName(t.agent)}_${nanoid(8)}`);
+				// Allocate indices for all agents (handles duplicates, avoids overwrites on resume)
+				const agentNames = params.tasks.map((t) => t.agent);
+				const indices = artifactsDir ? allocateIndices(artifactsDir, agentNames) : agentNames.map((_, i) => i);
 
-				// Set up file paths
+				// Set up file paths using allocated indices
 				const outputPaths: string[] = [];
 				const sessionFiles: (string | undefined)[] = [];
 				const inputFiles: (string | undefined)[] = [];
 
 				for (let i = 0; i < params.tasks.length; i++) {
-					const agentId = agentIds[i];
+					const idx = indices[i];
+					const baseName = `${sanitizeAgentName(params.tasks[i].agent)}_${idx}`;
 					if (artifactsDir) {
 						// Persistent: store input, output, and session
-						outputPaths.push(path.join(artifactsDir, `${agentId}.out.md`));
-						sessionFiles.push(path.join(artifactsDir, `${agentId}.jsonl`));
-						inputFiles.push(path.join(artifactsDir, `${agentId}.in.md`));
+						outputPaths.push(path.join(artifactsDir, `${baseName}.out.md`));
+						sessionFiles.push(path.join(artifactsDir, `${baseName}.jsonl`));
+						inputFiles.push(path.join(artifactsDir, `${baseName}.in.md`));
 					} else {
 						// Ephemeral: output only
-						outputPaths.push(path.join(tempDir, `task_${sanitizeAgentName(params.tasks[i].agent)}_${i}.md`));
+						outputPaths.push(path.join(tempDir, `task_${baseName}.md`));
 						sessionFiles.push(undefined);
 						inputFiles.push(undefined);
 					}
@@ -1135,10 +1312,11 @@ const factory: CustomToolFactory = (pi) => {
 
 				for (let i = 0; i < params.tasks.length; i++) {
 					const t = params.tasks[i];
-					const agentCfg = agents.find((a) => a.name === t.agent);
+					const agentCfg = getAgent(agents, t.agent);
 					progressMap.set(i, {
+						index: i,
 						agent: t.agent,
-						agentSource: agentCfg?.source ?? "unknown",
+						agentSource: agentCfg?.source ?? "user",
 						status: "queued",
 						task: t.task,
 						recentTools: [],
@@ -1146,7 +1324,6 @@ const factory: CustomToolFactory = (pi) => {
 						toolCount: 0,
 						tokens: 0,
 						durationMs: 0,
-						index: i,
 						modelOverride: t.model,
 					});
 				}
@@ -1163,35 +1340,40 @@ const factory: CustomToolFactory = (pi) => {
 
 				emitParallelProgress();
 
-				const results = await mapWithConcurrencyLimit(params.tasks, CONFIG.maxConcurrency, async (t, index) => {
-					const result = await runSingleAgent({
-						pi,
-						ctx,
-						agents,
-						agentName: t.agent,
-						task: t.task,
-						cwd: t.cwd,
-						index,
-						signal,
-						modelOverride: t.model,
-						sessionFile: sessionFiles[index],
-						inputFile: inputFiles[index],
-						onProgress: (progress) => {
-							progressMap.set(index, progress);
-							emitParallelProgress();
-						},
-					});
+				const results = await mapWithConcurrencyLimit(
+					params.tasks,
+					CONFIG.maxConcurrency,
+					async (t, arrayIndex) => {
+						const idx = indices[arrayIndex];
+						const result = await runSingleAgent({
+							pi,
+							ctx,
+							agents,
+							agentName: t.agent,
+							task: t.task,
+							cwd: t.cwd,
+							index: idx,
+							signal,
+							modelOverride: t.model,
+							sessionFile: sessionFiles[arrayIndex],
+							inputFile: inputFiles[arrayIndex],
+							onProgress: (progress) => {
+								progressMap.set(arrayIndex, progress);
+								emitParallelProgress();
+							},
+						});
 
-					// Write output file
-					const content = getFinalOutput(result.messages) || result.stderr || "(no output)";
-					try {
-						fs.writeFileSync(outputPaths[index], content.trim(), { encoding: "utf-8" });
-					} catch {
-						/* ignore */
-					}
+						// Write output file
+						const content = getFinalOutput(result.messages) || result.stderr || "(no output)";
+						try {
+							fs.writeFileSync(outputPaths[arrayIndex], content.trim(), { encoding: "utf-8" });
+						} catch {
+							/* ignore */
+						}
 
-					return result;
-				});
+						return result;
+					},
+				);
 
 				const successCount = results.filter((r) => r.exitCode === 0).length;
 				const summaries = results.map((r, i) => {
@@ -1200,6 +1382,9 @@ const factory: CustomToolFactory = (pi) => {
 					const outputNote = outputPaths[i] ? ` → ${outputPaths[i]}` : "";
 					return `[${r.agent}] ${r.exitCode === 0 ? "completed" : "failed"}${outputNote}: ${preview || "(no output)"}`;
 				});
+
+				// Cleanup temp directory if not using artifacts
+				if (!artifactsDir) cleanupTempDir(tempDir);
 
 				return {
 					content: [
@@ -1216,22 +1401,22 @@ const factory: CustomToolFactory = (pi) => {
 			// SINGLE MODE
 			// ============================================================
 			if (params.agent && params.task) {
-				// Generate unique ID for this agent invocation
-				const agentId = `${sanitizeAgentName(params.agent)}_${nanoid(8)}`;
+				// Get next available index (avoids overwrites on resume)
+				const idx = artifactsDir ? getNextIndex(artifactsDir, params.agent) : 0;
+				const baseName = `${sanitizeAgentName(params.agent)}_${idx}`;
 
-				// Set up file paths
 				let outputFile: string;
 				let sessionFile: string | undefined;
 				let inputFile: string | undefined;
 
 				if (artifactsDir) {
 					// Persistent: store input, output, and session
-					outputFile = path.join(artifactsDir, `${agentId}.out.md`);
-					sessionFile = path.join(artifactsDir, `${agentId}.jsonl`);
-					inputFile = path.join(artifactsDir, `${agentId}.in.md`);
+					outputFile = path.join(artifactsDir, `${baseName}.out.md`);
+					sessionFile = path.join(artifactsDir, `${baseName}.jsonl`);
+					inputFile = path.join(artifactsDir, `${baseName}.in.md`);
 				} else {
 					// Ephemeral: output only
-					outputFile = path.join(tempDir, `single_${sanitizeAgentName(params.agent)}.md`);
+					outputFile = path.join(tempDir, `single_${baseName}.md`);
 				}
 
 				const outputPaths = [outputFile];
@@ -1243,7 +1428,7 @@ const factory: CustomToolFactory = (pi) => {
 					agentName: params.agent,
 					task: params.task,
 					cwd: params.cwd,
-					index: 0,
+					index: idx,
 					signal,
 					modelOverride: params.model,
 					sessionFile,
@@ -1273,6 +1458,11 @@ const factory: CustomToolFactory = (pi) => {
 						details: makeDetails("single")([result], undefined, outputPaths),
 						isError: true,
 					};
+				}
+
+				// Cleanup temp directory if not using artifacts
+				if (!artifactsDir) {
+					cleanupTempDir(tempDir);
 				}
 
 				return {
