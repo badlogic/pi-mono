@@ -1,0 +1,10 @@
+{
+  "$schema": "./subagent.schema.json",
+  "maxParallelTasks": 16,
+  "maxConcurrency": 8,
+  "maxAgentsInDescription": 10,
+  "collapsedItemCount": 10,
+  "persistSessions": true,
+  "maxOutputLines": 5000,
+  "maxOutputBytes": 500000
+}

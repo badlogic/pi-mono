@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Subagent Configuration",
+  "description": "Configuration options for the subagent tool",
+  "type": "object",
+  "properties": {
+    "maxParallelTasks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 16,
+      "description": "Maximum number of tasks in parallel mode"
+    },
+    "maxConcurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 8,
+      "description": "Maximum number of concurrent subprocess executions"
+    },
+    "maxAgentsInDescription": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "Maximum agents to show in tool description"
+    },
+    "collapsedItemCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 10,
+      "description": "Maximum items to show in collapsed view"
+    },
+    "persistSessions": {
+      "type": "boolean",
+      "default": true,
+      "description": "Persist subagent sessions and artifacts next to parent session file. When true, creates <session-dir>/<agent>_<id>.{jsonl,in.md,out.md}. When false, writes only outputs to /tmp/pi-subagent-<runId>/"
+    },
+    "maxOutputLines": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000,
+      "default": 5000,
+      "description": "Maximum output lines to capture per agent"
+    },
+    "maxOutputBytes": {
+      "type": "integer",
+      "minimum": 10000,
+      "maximum": 10000000,
+      "default": 500000,
+      "description": "Maximum output bytes to capture per agent"
+    }
+  },
+  "additionalProperties": false
+}

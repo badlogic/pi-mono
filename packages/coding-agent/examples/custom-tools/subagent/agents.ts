@@ -1,5 +1,23 @@
 /**
  * Agent discovery and configuration
+ *
+ * Discovers agent definitions from:
+ *   - ~/.pi/agent/agents/*.md (user-level, primary)
+ *   - ~/.claude/agents/*.md (user-level, fallback for backwards compat)
+ *   - .pi/agents/*.md (project-level, primary)
+ *   - .claude/agents/*.md (project-level, fallback)
+ *
+ * Agent files use markdown with YAML frontmatter:
+ *
+ *   ---
+ *   name: explore
+ *   description: Fast codebase recon
+ *   tools: read, grep, find, ls, bash
+ *   model: claude-haiku-4-5, haiku, flash
+ *   recursive: false
+ *   ---
+ *
+ *   You are a scout. Quickly investigate and return findings.
  */
 
 import * as fs from "node:fs";
@@ -12,7 +30,12 @@ export interface AgentConfig {
 	name: string;
 	description: string;
 	tools?: string[];
+	/** Model pattern (supports fuzzy matching and fallbacks like "sonnet, haiku") */
 	model?: string;
+	/** If true, fork the parent's context into the subagent (not yet implemented) */
+	forkContext?: boolean;
+	/** If true, this agent can spawn subagents. Default: false (subagents inhibited) */
+	recursive?: boolean;
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -53,6 +76,11 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 	return { frontmatter, body };
 }
 
+function parseBooleanFrontmatter(value: string | undefined): boolean | undefined {
+	if (value === undefined) return undefined;
+	return value === "true" || value === "1";
+}
+
 function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
@@ -69,9 +97,16 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 
 	for (const entry of entries) {
 		if (!entry.name.endsWith(".md")) continue;
-		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 
 		const filePath = path.join(dir, entry.name);
+
+		// Handle both regular files and symlinks (statSync follows symlinks)
+		try {
+			if (!fs.statSync(filePath).isFile()) continue;
+		} catch {
+			continue;
+		}
+
 		let content: string;
 		try {
 			content = fs.readFileSync(filePath, "utf-8");
@@ -95,6 +130,8 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
 			model: frontmatter.model,
+			forkContext: parseBooleanFrontmatter(frontmatter.forkContext),
+			recursive: parseBooleanFrontmatter(frontmatter.recursive),
 			systemPrompt: body,
 			source,
 			filePath,
@@ -112,10 +149,10 @@ function isDirectory(p: string): boolean {
 	}
 }
 
-function findNearestProjectAgentsDir(cwd: string): string | null {
+function findNearestDir(cwd: string, relPath: string): string | null {
 	let currentDir = cwd;
 	while (true) {
-		const candidate = path.join(currentDir, ".pi", "agents");
+		const candidate = path.join(currentDir, relPath);
 		if (isDirectory(candidate)) return candidate;
 
 		const parentDir = path.dirname(currentDir);
@@ -125,24 +162,44 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 }
 
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
-	const userDir = path.join(os.homedir(), ".pi", "agent", "agents");
-	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
+	// Primary directories (.pi)
+	const userPiDir = path.join(os.homedir(), ".pi", "agent", "agents");
+	const projectPiDir = findNearestDir(cwd, ".pi/agents");
 
-	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
+	// Fallback directories (.claude) - for backwards compatibility
+	const userClaudeDir = path.join(os.homedir(), ".claude", "agents");
+	const projectClaudeDir = findNearestDir(cwd, ".claude/agents");
 
 	const agentMap = new Map<string, AgentConfig>();
 
+	// Load from .claude directories first (fallback, lower priority)
+	const userClaudeAgents = scope === "project" ? [] : loadAgentsFromDir(userClaudeDir, "user");
+	const projectClaudeAgents =
+		scope === "user" || !projectClaudeDir ? [] : loadAgentsFromDir(projectClaudeDir, "project");
+
+	// Load from .pi directories (primary, higher priority - overrides .claude)
+	const userPiAgents = scope === "project" ? [] : loadAgentsFromDir(userPiDir, "user");
+	const projectPiAgents = scope === "user" || !projectPiDir ? [] : loadAgentsFromDir(projectPiDir, "project");
+
 	if (scope === "both") {
-		for (const agent of userAgents) agentMap.set(agent.name, agent);
-		for (const agent of projectAgents) agentMap.set(agent.name, agent);
+		// Order: user .claude → user .pi → project .claude → project .pi
+		// Later entries override earlier ones, so .pi takes precedence over .claude
+		// and project takes precedence over user
+		for (const agent of userClaudeAgents) agentMap.set(agent.name, agent);
+		for (const agent of userPiAgents) agentMap.set(agent.name, agent);
+		for (const agent of projectClaudeAgents) agentMap.set(agent.name, agent);
+		for (const agent of projectPiAgents) agentMap.set(agent.name, agent);
 	} else if (scope === "user") {
-		for (const agent of userAgents) agentMap.set(agent.name, agent);
+		// user .claude → user .pi (later overrides earlier)
+		for (const agent of userClaudeAgents) agentMap.set(agent.name, agent);
+		for (const agent of userPiAgents) agentMap.set(agent.name, agent);
 	} else {
-		for (const agent of projectAgents) agentMap.set(agent.name, agent);
+		// project .claude → project .pi
+		for (const agent of projectClaudeAgents) agentMap.set(agent.name, agent);
+		for (const agent of projectPiAgents) agentMap.set(agent.name, agent);
 	}
 
-	return { agents: Array.from(agentMap.values()), projectAgentsDir };
+	return { agents: Array.from(agentMap.values()), projectAgentsDir: projectPiDir };
 }
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {
