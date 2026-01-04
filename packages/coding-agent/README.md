@@ -1132,6 +1132,21 @@ import { getPackageDir, getThemeDir } from "./paths.js";
 
 Never use `__dirname` directly for package assets.
 
+### Module Resolution with tsx
+
+When running from source via `npx tsx src/cli.ts`, hooks loaded via jiti may get separate module instances from the main app. This can cause issues with global state (like the theme object).
+
+**Workaround**: Functions like `getSettingsListTheme()` accept an optional theme parameter. In hooks, pass the theme from `ctx.ui.custom()`:
+
+```typescript
+await ctx.ui.custom((tui, theme, done) => {
+  const settingsTheme = getSettingsListTheme(theme);
+  // ...
+});
+```
+
+When running the built version (`node dist/cli.js` or installed via npm), this is not an issue.
+
 ### Debug Command
 
 `/debug` (hidden) writes rendered lines with ANSI codes to `~/.pi/agent/pi-debug.log` for TUI debugging, as well as the last set of messages that were sent to the LLM.

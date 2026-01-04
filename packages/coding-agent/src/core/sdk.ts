@@ -60,6 +60,7 @@ import {
 	allTools,
 	bashTool,
 	codingTools,
+	createAllTools,
 	createBashTool,
 	createCodingTools,
 	createEditTool,
@@ -76,6 +77,7 @@ import {
 	readOnlyTools,
 	readTool,
 	type Tool,
+	type ToolName,
 	writeTool,
 } from "./tools/index.js";
 
@@ -567,8 +569,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
-	const builtInTools = options.tools ?? createCodingTools(cwd, { read: { autoResizeImages } });
-	time("createCodingTools");
+	// Create ALL built-in tools for the registry (hooks can enable any of them)
+	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	// Determine initially active built-in tools (default: read, bash, edit, write)
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
+	const initialActiveToolNames: ToolName[] = options.tools
+		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allBuiltInToolsMap)
+		: defaultActiveToolNames;
+	const initialActiveBuiltInTools = initialActiveToolNames.map((name) => allBuiltInToolsMap[name]);
+	time("createAllTools");
 
 	let customToolsResult: CustomToolsLoadResult;
 	if (options.customTools !== undefined) {
@@ -630,51 +639,61 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}));
 
 	// Create tool registry mapping name -> tool (for hook getTools/setTools)
-	// Cast to AgentTool since createCodingTools actually returns AgentTool[] (type is just Tool[])
+	// Registry contains ALL built-in tools so hooks can enable any of them
 	const toolRegistry = new Map<string, AgentTool>();
-	for (const tool of builtInTools as AgentTool[]) {
-		toolRegistry.set(tool.name, tool);
+	for (const [name, tool] of Object.entries(allBuiltInToolsMap)) {
+		toolRegistry.set(name, tool as AgentTool);
 	}
 	for (const tool of wrappedCustomTools as AgentTool[]) {
 		toolRegistry.set(tool.name, tool);
 	}
 
-	let allToolsArray: Tool[] = [...builtInTools, ...wrappedCustomTools];
+	// Initially active tools = active built-in + custom
+	let activeToolsArray: Tool[] = [...initialActiveBuiltInTools, ...wrappedCustomTools];
 	time("combineTools");
 
 	// Wrap tools with hooks if available
 	let wrappedToolRegistry: Map<string, AgentTool> | undefined;
 	if (hookRunner) {
-		allToolsArray = wrapToolsWithHooks(allToolsArray as AgentTool[], hookRunner);
+		activeToolsArray = wrapToolsWithHooks(activeToolsArray as AgentTool[], hookRunner);
 		// Also create a wrapped version of the registry for setTools
 		wrappedToolRegistry = new Map<string, AgentTool>();
-		for (const tool of allToolsArray as AgentTool[]) {
+		for (const tool of activeToolsArray as AgentTool[]) {
 			wrappedToolRegistry.set(tool.name, tool);
 		}
 	}
 
-	let systemPrompt: string;
-	const defaultPrompt = buildSystemPromptInternal({
-		cwd,
-		agentDir,
-		skills,
-		contextFiles,
-	});
-	time("buildSystemPrompt");
-
-	if (options.systemPrompt === undefined) {
-		systemPrompt = defaultPrompt;
-	} else if (typeof options.systemPrompt === "string") {
-		systemPrompt = buildSystemPromptInternal({
+	// Function to rebuild system prompt when tools change
+	// Captures static options (cwd, agentDir, skills, contextFiles, customPrompt)
+	const rebuildSystemPrompt = (toolNames: string[]): string => {
+		// Filter to valid tool names
+		const validToolNames = toolNames.filter((n): n is ToolName => n in allBuiltInToolsMap);
+		const defaultPrompt = buildSystemPromptInternal({
 			cwd,
 			agentDir,
 			skills,
 			contextFiles,
-			customPrompt: options.systemPrompt,
+			selectedTools: validToolNames,
 		});
-	} else {
-		systemPrompt = options.systemPrompt(defaultPrompt);
-	}
+
+		if (options.systemPrompt === undefined) {
+			return defaultPrompt;
+		} else if (typeof options.systemPrompt === "string") {
+			return buildSystemPromptInternal({
+				cwd,
+				agentDir,
+				skills,
+				contextFiles,
+				selectedTools: validToolNames,
+				customPrompt: options.systemPrompt,
+			});
+		} else {
+			return options.systemPrompt(defaultPrompt);
+		}
+	};
+
+	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames);
+	time("buildSystemPrompt");
 
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
@@ -684,7 +703,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			systemPrompt,
 			model,
 			thinkingLevel,
-			tools: allToolsArray,
+			tools: activeToolsArray,
 		},
 		convertToLlm,
 		transformContext: hookRunner
@@ -730,6 +749,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		skillsSettings: settingsManager.getSkillsSettings(),
 		modelRegistry,
 		toolRegistry: wrappedToolRegistry ?? toolRegistry,
+		rebuildSystemPrompt,
 	});
 	time("createAgentSession");
 
