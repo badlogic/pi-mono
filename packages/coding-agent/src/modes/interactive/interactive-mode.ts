@@ -833,6 +833,39 @@ export class InteractiveMode {
 		this.editor.onPasteImage = () => {
 			this.handleClipboardImagePaste();
 		};
+
+		// Handle file path paste/drop - convert image paths to placeholders if enabled
+		this.editor.onFilePaste = (filePath: string) => {
+			return this.handleFilePaste(filePath);
+		};
+	}
+
+	/**
+	 * Check if a file path is an image and convert to placeholder if enabled.
+	 * Returns the placeholder marker if applicable, undefined to use original path.
+	 */
+	private handleFilePaste(filePath: string): string | undefined {
+		// Check if placeholders are enabled
+		if (!this.settingsManager.getImageUsePlaceholders()) {
+			return undefined; // Use original path
+		}
+
+		// Check if it's an image file
+		const ext = path.extname(filePath).toLowerCase();
+		const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+		if (!imageExtensions.includes(ext)) {
+			return undefined; // Not an image, use original path
+		}
+
+		// Check if file exists
+		if (!fs.existsSync(filePath)) {
+			return undefined; // File doesn't exist, use original path
+		}
+
+		// Store mapping and return marker
+		const imageId = ++this.clipboardImageCounter;
+		this.clipboardImages.set(imageId, filePath);
+		return `[image #${imageId}]`;
 	}
 
 	private async handleClipboardImagePaste(): Promise<void> {
@@ -847,15 +880,21 @@ export class InteractiveMode {
 			}
 
 			// Write to temp file
-			const imageId = ++this.clipboardImageCounter;
 			const tmpDir = os.tmpdir();
 			const fileName = `pi-clipboard-${crypto.randomUUID()}.png`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(imageData));
 
-			// Store mapping and insert marker
-			this.clipboardImages.set(imageId, filePath);
-			this.editor.insertTextAtCursor(`[image #${imageId}]`);
+			// Check if placeholders are enabled
+			if (this.settingsManager.getImageUsePlaceholders()) {
+				// Store mapping and insert marker
+				const imageId = ++this.clipboardImageCounter;
+				this.clipboardImages.set(imageId, filePath);
+				this.editor.insertTextAtCursor(`[image #${imageId}]`);
+			} else {
+				// Insert file path directly
+				this.editor.insertTextAtCursor(filePath);
+			}
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
@@ -1757,6 +1796,7 @@ export class InteractiveMode {
 					autoCompact: this.session.autoCompactionEnabled,
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
+					imagePlaceholders: this.settingsManager.getImageUsePlaceholders(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -1782,6 +1822,9 @@ export class InteractiveMode {
 					},
 					onAutoResizeImagesChange: (enabled) => {
 						this.settingsManager.setImageAutoResize(enabled);
+					},
+					onImagePlaceholdersChange: (enabled) => {
+						this.settingsManager.setImageUsePlaceholders(enabled);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);

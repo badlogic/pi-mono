@@ -25,6 +25,7 @@ export interface SettingsConfig {
 	autoCompact: boolean;
 	showImages: boolean;
 	autoResizeImages: boolean;
+	imagePlaceholders: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
@@ -40,6 +41,7 @@ export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
+	onImagePlaceholdersChange: (enabled: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
@@ -243,6 +245,15 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Image placeholders toggle (show [image #N] markers vs direct paths when pasting)
+		items.splice(supportsImages ? 3 : 2, 0, {
+			id: "image-placeholders",
+			label: "Image placeholders",
+			description: "Show [image #N] markers when pasting images (replaced on submit)",
+			currentValue: config.imagePlaceholders ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -260,6 +271,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "auto-resize-images":
 						callbacks.onAutoResizeImagesChange(newValue === "true");
+						break;
+					case "image-placeholders":
+						callbacks.onImagePlaceholdersChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
