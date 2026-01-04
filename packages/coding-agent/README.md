@@ -671,7 +671,6 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
-
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `hooks` | Additional hook file paths | `[]` |
 | `customTools` | Additional custom tool file paths | `[]` |

@@ -143,10 +143,6 @@ export class InteractiveMode {
 	// Custom tools for custom rendering
 	private customTools: Map<string, LoadedCustomTool>;
 
-	// Clipboard image tracking: imageId -> temp file path
-	private clipboardImages = new Map<number, string>();
-	private clipboardImageCounter = 0;
-
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -847,33 +843,17 @@ export class InteractiveMode {
 			}
 
 			// Write to temp file
-			const imageId = ++this.clipboardImageCounter;
 			const tmpDir = os.tmpdir();
 			const fileName = `pi-clipboard-${crypto.randomUUID()}.png`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(imageData));
 
-			// Store mapping and insert marker
-			this.clipboardImages.set(imageId, filePath);
-			this.editor.insertTextAtCursor(`[image #${imageId}]`);
+			// Insert file path directly
+			this.editor.insertTextAtCursor(filePath);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
 		}
-	}
-
-	/**
-	 * Replace [image #N] markers with actual file paths and clear the image map.
-	 */
-	private replaceImageMarkers(text: string): string {
-		let result = text;
-		for (const [imageId, filePath] of this.clipboardImages) {
-			const marker = `[image #${imageId}]`;
-			result = result.replace(marker, filePath);
-		}
-		this.clipboardImages.clear();
-		this.clipboardImageCounter = 0;
-		return result;
 	}
 
 	private setupEditorSubmitHandler(): void {
@@ -1003,9 +983,6 @@ export class InteractiveMode {
 			}
 
 			// If streaming, use prompt() with steer behavior
-			// Replace image markers with actual file paths
-			text = this.replaceImageMarkers(text);
-
 			// This handles hook commands (execute immediately), slash command expansion, and queueing
 			if (this.session.isStreaming) {
 				this.editor.addToHistory(text);
