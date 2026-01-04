@@ -33,6 +33,7 @@ import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom
 import type { HookUIContext } from "../../core/hooks/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { INIT_PROMPT } from "../../core/prompts/index.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
@@ -198,6 +199,7 @@ export class InteractiveMode {
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
+			{ name: "init", description: "Create AGENTS.md for this project" },
 		];
 
 		// Load hide thinking block setting
@@ -976,6 +978,11 @@ export class InteractiveMode {
 			if (text === "/quit" || text === "/exit") {
 				this.editor.setText("");
 				await this.shutdown();
+				return;
+			}
+			if (text === "/init") {
+				this.editor.setText("");
+				await this.handleInitCommand();
 				return;
 			}
 
@@ -2509,6 +2516,19 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new ArminComponent(this.ui));
 		this.ui.requestRender();
+	}
+
+	private async handleInitCommand(): Promise<void> {
+		const agentsPath = path.join(process.cwd(), "AGENTS.md");
+
+		if (fs.existsSync(agentsPath)) {
+			this.showWarning(`AGENTS.md already exists at ${agentsPath}. Delete it first or edit it manually.`);
+			return;
+		}
+
+		if (this.onInputCallback) {
+			this.onInputCallback(INIT_PROMPT);
+		}
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
