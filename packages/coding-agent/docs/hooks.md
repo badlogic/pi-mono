@@ -906,17 +906,7 @@ unsubscribe();
 
 Events are session-scoped (cleared when session ends). Channel names are arbitrary strings - use namespaced names like `"toolname:event"` to avoid collisions.
 
-Handler errors are caught and logged. For async handlers, handle errors internally:
-
-```typescript
-pi.events.on("mytool:event", async (data) => {
-  try {
-    await doSomething(data);
-  } catch (err) {
-    console.error("Handler failed:", err);
-  }
-});
-```
+Handler errors (sync and async) are caught and logged.
 
 **Important:** Use `{ triggerTurn: true }` when you want the agent to respond to the event. Without it, the message displays but the agent stays idle.
 
