@@ -279,7 +279,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-**message**: Persisted as `CustomMessageEntry` and sent to the LLM.
+**message**: Persisted as `CustomMessageEntry` and sent to the LLM. Multiple hooks can each return a message; all are injected in order.
 
 **systemPromptAppend**: Appended to the base system prompt for this agent run only. Multiple hooks can each return `systemPromptAppend` strings, which are concatenated. This is useful for dynamic instructions based on hook state (e.g., plan mode, persona toggles).
 
