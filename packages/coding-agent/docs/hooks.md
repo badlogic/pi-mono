@@ -904,11 +904,7 @@ const unsubscribe = pi.events.on("my:channel", handler);
 unsubscribe();
 ```
 
-Events are session-scoped (cleared when session ends). Channel names are arbitrary strings - use namespaced names like `"toolname:event"` to avoid collisions.
-
-Handler errors (sync and async) are caught and logged.
-
-**Important:** Use `{ triggerTurn: true }` when you want the agent to respond to the event. Without it, the message displays but the agent stays idle.
+Event handlers persist across session switches (registered once at hook load time). Channel names are arbitrary strings; use namespaced names like `"toolname:event"` to avoid collisions. Handler errors (sync and async) are caught and logged.
 
 ## Examples
 
