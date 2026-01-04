@@ -196,34 +196,44 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 
 					// Some endpoints return reasoning in reasoning_content (llama.cpp),
 					// or reasoning (other openai compatible endpoints)
+					// Use the first non-empty reasoning field to avoid duplication
+					// (e.g., chutes.ai returns both reasoning_content and reasoning with same content)
 					const reasoningFields = ["reasoning_content", "reasoning", "reasoning_text"];
+					let foundReasoningField: string | null = null;
 					for (const field of reasoningFields) {
 						if (
 							(choice.delta as any)[field] !== null &&
 							(choice.delta as any)[field] !== undefined &&
 							(choice.delta as any)[field].length > 0
 						) {
-							if (!currentBlock || currentBlock.type !== "thinking") {
-								finishCurrentBlock(currentBlock);
-								currentBlock = {
-									type: "thinking",
-									thinking: "",
-									thinkingSignature: field,
-								};
-								output.content.push(currentBlock);
-								stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+							if (!foundReasoningField) {
+								foundReasoningField = field;
+								break;
 							}
+						}
+					}
 
-							if (currentBlock.type === "thinking") {
-								const delta = (choice.delta as any)[field];
-								currentBlock.thinking += delta;
-								stream.push({
-									type: "thinking_delta",
-									contentIndex: blockIndex(),
-									delta,
-									partial: output,
-								});
-							}
+					if (foundReasoningField) {
+						if (!currentBlock || currentBlock.type !== "thinking") {
+							finishCurrentBlock(currentBlock);
+							currentBlock = {
+								type: "thinking",
+								thinking: "",
+								thinkingSignature: foundReasoningField,
+							};
+							output.content.push(currentBlock);
+							stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+						}
+
+						if (currentBlock.type === "thinking") {
+							const delta = (choice.delta as any)[foundReasoningField];
+							currentBlock.thinking += delta;
+							stream.push({
+								type: "thinking_delta",
+								contentIndex: blockIndex(),
+								delta,
+								partial: output,
+							});
 						}
 					}
 
