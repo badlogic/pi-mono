@@ -16,8 +16,26 @@
 
 ### Added
 
+- Hook API: `pi.getActiveTools()` and `pi.setActiveTools(toolNames)` for dynamically enabling/disabling tools from hooks
+- Hook API: `pi.getAllTools()` to enumerate all configured tools (built-in via --tools or default, plus custom tools)
+- Hook API: `pi.registerFlag(name, options)` and `pi.getFlag(name)` for hooks to register custom CLI flags (parsed automatically)
+- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts using `KeyId` (e.g., `Key.shift("p")`). Conflicts with built-in shortcuts are skipped, conflicts between hooks logged as warnings.
+- Hook API: `ctx.ui.setWidget(key, content)` for status displays above the editor. Accepts either a string array or a component factory function.
+- Hook API: `theme.strikethrough(text)` for strikethrough text styling
 - Hook API: `before_agent_start` handlers can now return `systemPromptAppend` to dynamically append text to the system prompt for that turn. Multiple hooks' appends are concatenated.
 - Hook API: `before_agent_start` handlers can now return multiple messages (all are injected, not just the first)
+- `/hotkeys` command now shows hook-registered shortcuts in a separate "Hooks" section
+- New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:
+  - Toggle via `/plan` command, `Shift+P` shortcut, or `--plan` CLI flag
+  - Read-only tools: `read`, `bash`, `grep`, `find`, `ls` (no `edit`/`write`)
+  - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
+  - Interactive prompt after each response: execute plan, stay in plan mode, or refine
+  - Todo list widget showing progress with checkboxes and strikethrough for completed items
+  - Each todo has a unique ID; agent marks items done by outputting `[DONE:id]`
+  - Progress updates via `agent_end` hook (parses completed items from final message)
+  - `/todos` command to view current plan progress
+  - Shows `⏸ plan` indicator in footer when in plan mode, `📋 2/5` when executing
+  - State persists across sessions (including todo progress)
 - New example hook: `tools.ts` - Interactive `/tools` command to enable/disable tools with session persistence
 - New example hook: `pirate.ts` - Demonstrates `systemPromptAppend` to make the agent speak like a pirate
 - Tool registry now contains all built-in tools (read, bash, edit, write, grep, find, ls) even when `--tools` limits the initially active set. Hooks can enable any tool from the registry via `pi.setActiveTools()`.
@@ -63,24 +81,6 @@
 ### Added
 
 - `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
-- Hook API: `pi.getActiveTools()` and `pi.setActiveTools(toolNames)` for dynamically enabling/disabling tools from hooks
-- Hook API: `pi.getAllTools()` to enumerate all configured tools (built-in via --tools or default, plus custom tools)
-- Hook API: `pi.registerFlag(name, options)` and `pi.getFlag(name)` for hooks to register custom CLI flags (parsed automatically)
-- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts using `KeyId` (e.g., `Key.shift("p")`). Conflicts with built-in shortcuts are skipped, conflicts between hooks logged as warnings.
-- Hook API: `ctx.ui.setWidget(key, content)` for status displays above the editor. Accepts either a string array or a component factory function.
-- Hook API: `theme.strikethrough(text)` for strikethrough text styling
-- `/hotkeys` command now shows hook-registered shortcuts in a separate "Hooks" section
-- New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:
-  - Toggle via `/plan` command, `Shift+P` shortcut, or `--plan` CLI flag
-  - Read-only tools: `read`, `bash`, `grep`, `find`, `ls` (no `edit`/`write`)
-  - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
-  - Interactive prompt after each response: execute plan, stay in plan mode, or refine
-  - Todo list widget showing progress with checkboxes and strikethrough for completed items
-  - Each todo has a unique ID; agent marks items done by outputting `[DONE:id]`
-  - Progress updates via `agent_end` hook (parses completed items from final message)
-  - `/todos` command to view current plan progress
-  - Shows `⏸ plan` indicator in footer when in plan mode, `📋 2/5` when executing
-  - State persists across sessions (including todo progress)
 
 ### Changed
 
