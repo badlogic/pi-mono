@@ -201,6 +201,18 @@ const unsubscribe = pi.events.on("other:event", (data) => {
 
 Events are session-scoped. Use namespaced channel names like `"toolname:event"` to avoid collisions.
 
+Handler errors are caught and logged. For async handlers, handle errors internally:
+
+```typescript
+pi.events.on("mytool:event", async (data) => {
+  try {
+    await doSomething(data);
+  } catch (err) {
+    console.error("Handler failed:", err);
+  }
+});
+```
+
 ### Cancellation Example
 
 Pass the `signal` from `execute` to `pi.exec` to support cancellation:
