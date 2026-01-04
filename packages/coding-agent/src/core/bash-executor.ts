@@ -97,11 +97,13 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			options.signal.addEventListener("abort", abortHandler, { once: true });
 		}
 
+		const decoder = new TextDecoder();
+
 		const handleData = (data: Buffer) => {
 			totalBytes += data.length;
 
 			// Sanitize once at the source: strip ANSI, replace binary garbage, normalize newlines
-			const text = sanitizeBinaryOutput(stripAnsi(data.toString())).replace(/\r/g, "");
+			const text = sanitizeBinaryOutput(stripAnsi(decoder.decode(data, { stream: true }))).replace(/\r/g, "");
 
 			// Start writing to temp file if exceeds threshold
 			if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
