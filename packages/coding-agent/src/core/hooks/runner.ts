@@ -410,10 +410,12 @@ export class HookRunner {
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
 					this.emitError({
 						hookPath: hook.path,
 						event: event.type,
 						error: message,
+						stack,
 					});
 				}
 			}
@@ -477,10 +479,12 @@ export class HookRunner {
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
 					this.emitError({
 						hookPath: hook.path,
 						event: "context",
 						error: message,
+						stack,
 					});
 				}
 			}
@@ -523,10 +527,12 @@ export class HookRunner {
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
 					this.emitError({
 						hookPath: hook.path,
 						event: "before_agent_start",
 						error: message,
+						stack,
 					});
 				}
 			}

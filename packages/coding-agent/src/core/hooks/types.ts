@@ -911,4 +911,5 @@ export interface HookError {
 	hookPath: string;
 	event: string;
 	error: string;
+	stack?: string;
 }

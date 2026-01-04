@@ -524,7 +524,7 @@ export class InteractiveMode {
 
 		// Subscribe to hook errors
 		hookRunner.onError((error) => {
-			this.showHookError(error.hookPath, error.error);
+			this.showHookError(error.hookPath, error.error, error.stack);
 		});
 
 		// Set up hook-registered shortcuts
@@ -863,9 +863,21 @@ export class InteractiveMode {
 	/**
 	 * Show a hook error in the UI.
 	 */
-	private showHookError(hookPath: string, error: string): void {
-		const errorText = new Text(theme.fg("error", `Hook "${hookPath}" error: ${error}`), 1, 0);
+	private showHookError(hookPath: string, error: string, stack?: string): void {
+		const errorMsg = `Hook "${hookPath}" error: ${error}`;
+		const errorText = new Text(theme.fg("error", errorMsg), 1, 0);
 		this.chatContainer.addChild(errorText);
+		if (stack) {
+			// Show stack trace in dim color, indented
+			const stackLines = stack
+				.split("\n")
+				.slice(1) // Skip first line (duplicates error message)
+				.map((line) => theme.fg("dim", `  ${line.trim()}`))
+				.join("\n");
+			if (stackLines) {
+				this.chatContainer.addChild(new Text(stackLines, 1, 0));
+			}
+		}
 		this.ui.requestRender();
 	}
 
