@@ -82,6 +82,7 @@ function runSubagent(config: SubagentRunConfig): void {
 			results,
 			exitCode: results.every((r) => r.success) ? 0 : 1,
 			timestamp: Date.now(),
+			cwd,
 			...(taskIndex !== undefined && { taskIndex }),
 			...(totalTasks !== undefined && { totalTasks }),
 		}),

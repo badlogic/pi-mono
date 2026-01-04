@@ -360,18 +360,16 @@ const Params = Type.Object({
 
 const factory: CustomToolFactory = (pi) => {
 	fs.mkdirSync(RESULTS_DIR, { recursive: true });
-	for (const f of fs.readdirSync(RESULTS_DIR).filter((f) => f.endsWith(".json"))) {
-		fs.unlinkSync(path.join(RESULTS_DIR, f));
-	}
 
 	const handleResult = (file: string) => {
 		const p = path.join(RESULTS_DIR, file);
 		if (!fs.existsSync(p)) return;
 		try {
 			const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+			if (data.cwd && data.cwd !== pi.cwd) return;
 			pi.events.emit("async_subagent:complete", data);
+			fs.unlinkSync(p);
 		} catch {}
-		fs.unlinkSync(p);
 	};
 
 	const watcher = fs.watch(RESULTS_DIR, (ev, file) => {
@@ -394,11 +392,14 @@ const factory: CustomToolFactory = (pi) => {
 		async execute(_id, params, onUpdate, _ctx, signal) {
 			const scope: AgentScope = params.agentScope ?? "user";
 			const agents = discoverAgents(pi.cwd, scope).agents;
-			const isAsync = params.async !== false;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
 			const hasSingle = Boolean(params.agent && params.task);
+
+			const requestedAsync = params.async !== false;
+			const parallelDowngraded = hasTasks && requestedAsync;
+			const isAsync = requestedAsync && !hasTasks;
 
 			if (Number(hasChain) + Number(hasTasks) + Number(hasSingle) !== 1) {
 				return {
@@ -433,50 +434,6 @@ const factory: CustomToolFactory = (pi) => {
 					});
 					proc.unref();
 				};
-
-				if (hasTasks && params.tasks) {
-					if (params.tasks.length > MAX_PARALLEL)
-						return {
-							content: [{ type: "text", text: `Max ${MAX_PARALLEL} tasks` }],
-							isError: true,
-							details: { mode: "single" as const, results: [] },
-						};
-					for (let i = 0; i < params.tasks.length; i++) {
-						const t = params.tasks[i];
-						const a = agents.find((x) => x.name === t.agent);
-						if (!a)
-							return {
-								content: [{ type: "text", text: `Unknown: ${t.agent}` }],
-								isError: true,
-								details: { mode: "single" as const, results: [] },
-							};
-						spawnRunner(
-							{
-								id,
-								steps: [
-									{
-										agent: t.agent,
-										task: t.task,
-										cwd: t.cwd,
-										model: a.model,
-										tools: a.tools,
-										systemPrompt: a.systemPrompt?.trim() || null,
-									},
-								],
-								resultPath: path.join(RESULTS_DIR, `${id}-${i}.json`),
-								cwd: t.cwd ?? params.cwd ?? pi.cwd,
-								placeholder: "{previous}",
-								taskIndex: i,
-								totalTasks: params.tasks.length,
-							},
-							`${id}-${i}`,
-						);
-					}
-					return {
-						content: [{ type: "text", text: `Async parallel: ${params.tasks.length} tasks [${id}]` }],
-						details: { mode: "parallel", results: [], asyncId: id },
-					};
-				}
 
 				if (hasChain && params.chain) {
 					const steps = params.chain.map((s) => {
@@ -586,8 +543,9 @@ const factory: CustomToolFactory = (pi) => {
 					runSync(pi, agents, t.agent, t.task, t.cwd ?? params.cwd, signal),
 				);
 				const ok = results.filter((r) => r.exitCode === 0).length;
+				const downgradeNote = parallelDowngraded ? " (async not supported for parallel)" : "";
 				return {
-					content: [{ type: "text", text: `${ok}/${results.length} succeeded` }],
+					content: [{ type: "text", text: `${ok}/${results.length} succeeded${downgradeNote}` }],
 					details: { mode: "parallel", results },
 				};
 			}
@@ -614,16 +572,17 @@ const factory: CustomToolFactory = (pi) => {
 		},
 
 		renderCall(args, theme) {
-			const asyncLabel = args.async !== false ? theme.fg("warning", " [async]") : "";
+			const isParallel = (args.tasks?.length ?? 0) > 0;
+			const asyncLabel = args.async !== false && !isParallel ? theme.fg("warning", " [async]") : "";
 			if (args.chain?.length)
 				return new Text(
 					`${theme.fg("toolTitle", theme.bold("async_subagent "))}chain (${args.chain.length})${asyncLabel}`,
 					0,
 					0,
 				);
-			if (args.tasks?.length)
+			if (isParallel)
 				return new Text(
-					`${theme.fg("toolTitle", theme.bold("async_subagent "))}parallel (${args.tasks.length})${asyncLabel}`,
+					`${theme.fg("toolTitle", theme.bold("async_subagent "))}parallel (${args.tasks!.length})`,
 					0,
 					0,
 				);
