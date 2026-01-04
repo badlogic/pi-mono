@@ -145,6 +145,16 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Component factories are not supported in RPC mode - would need TUI access
 		},
 
+		setTitle(title: string): void {
+			// Fire and forget - host can implement terminal title control
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "setTitle",
+				title,
+			} as RpcHookUIRequest);
+		},
+
 		async custom() {
 			// Custom UI not supported in RPC mode
 			return undefined as never;

@@ -437,6 +437,9 @@ ctx.ui.setWidget("my-todos", [
 ]);
 ctx.ui.setWidget("my-todos", undefined);  // Clear widget
 
+// Set the terminal window/tab title
+ctx.ui.setTitle("pi - my-project");
+
 // Set the core input editor text (pre-fill prompts, generated content)
 ctx.ui.setEditorText("Generated prompt text here...");
 
@@ -456,6 +459,10 @@ const currentText = ctx.ui.getEditorText();
 - `setWidget()` accepts either a string array or a component factory function
 - Supports ANSI styling via `ctx.ui.theme` (including `strikethrough`)
 - **Caution:** Keep widgets small (a few lines). Large widgets from multiple hooks can cause viewport overflow and TUI flicker. Max 10 lines total across all string widgets.
+
+**Terminal title notes:**
+- Uses OSC escape sequence (works in most modern terminals like iTerm2, Terminal.app, Windows Terminal)
+- Useful for showing project name, current task, or session status in the terminal tab/window title
 
 **Custom widget components:**
 

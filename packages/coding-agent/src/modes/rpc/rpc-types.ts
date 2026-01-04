@@ -196,6 +196,7 @@ export type RpcHookUIRequest =
 			widgetKey: string;
 			widgetLines: string[] | undefined;
 	  }
+	| { type: "hook_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "hook_ui_request"; id: string; method: "set_editor_text"; text: string };
 
 // ============================================================================

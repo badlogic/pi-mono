@@ -121,6 +121,13 @@ export interface HookUIContext {
 	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
 	/**
+	 * Set the terminal window/tab title.
+	 * Uses OSC escape sequence (works in most modern terminals).
+	 * @param title - Title text to display
+	 */
+	setTitle(title: string): void;
+
+	/**
 	 * Show a custom component with keyboard focus.
 	 * The factory receives TUI, theme, and a done() callback to close the component.
 	 * Can be async for fire-and-forget work (don't await the work, just start it).
