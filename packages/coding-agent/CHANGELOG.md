@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+
+- Fixed potential text decoding issues in bash executor by using streaming TextDecoder instead of Buffer.toString()
 
 ## [0.33.0] - 2026-01-04
 
