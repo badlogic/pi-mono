@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
@@ -41,7 +44,16 @@ export function getEnvApiKey(provider: any): string | undefined {
 
 	// Vertex AI uses Application Default Credentials, not API keys.
 	// Auth is configured via `gcloud auth application-default login`.
-	// Don't return a dummy value - require explicit auth.json configuration.
+	if (provider === "google-vertex") {
+		const credentialsPath = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
+		const hasCredentials = existsSync(credentialsPath);
+		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
+
+		if (hasCredentials && hasProject && hasLocation) {
+			return "<authenticated>";
+		}
+	}
 
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
