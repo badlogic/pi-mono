@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Hook API: `before_agent_start` handlers can now return `systemPromptAppend` to dynamically append text to the system prompt for that turn. Multiple hooks' appends are concatenated.
+- New example hook: `pirate.ts` demonstrates using `systemPromptAppend` to make the agent speak like a pirate when `/pirate` mode is enabled
+- Tool registry now contains all built-in tools (read, bash, edit, write, grep, find, ls) even when `--tools` limits the initially active set. Hooks can enable any tool from the registry via `pi.setActiveTools()`.
+- System prompt now automatically rebuilds when tools change via `setActiveTools()`, updating tool descriptions and guidelines to match the new tool set
+
+### Changed
+
+- Removed image placeholders after copy & paste, replaced with inserting image file paths directly. ([#442](https://github.com/badlogic/pi-mono/pull/442) by [@mitsuhiko](https://github.com/mitsuhiko))
+
 ### Fixed
 
 - Fixed potential text decoding issues in bash executor by using streaming TextDecoder instead of Buffer.toString()

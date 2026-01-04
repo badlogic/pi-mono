@@ -37,6 +37,12 @@ import type {
 	ToolResultEventResult,
 } from "./types.js";
 
+/** Combined result from all before_agent_start handlers (internal) */
+interface BeforeAgentStartCombinedResult {
+	messages?: NonNullable<BeforeAgentStartEventResult["message"]>[];
+	systemPromptAppend?: string;
+}
+
 /**
  * Listener for hook errors.
  */
@@ -485,14 +491,15 @@ export class HookRunner {
 
 	/**
 	 * Emit before_agent_start event to all hooks.
-	 * Returns the first message to inject (if any handler returns one).
+	 * Returns combined result: all messages and all systemPromptAppend strings concatenated.
 	 */
 	async emitBeforeAgentStart(
 		prompt: string,
 		images?: ImageContent[],
-	): Promise<BeforeAgentStartEventResult | undefined> {
+	): Promise<BeforeAgentStartCombinedResult | undefined> {
 		const ctx = this.createContext();
-		let result: BeforeAgentStartEventResult | undefined;
+		const messages: NonNullable<BeforeAgentStartEventResult["message"]>[] = [];
+		const systemPromptAppends: string[] = [];
 
 		for (const hook of this.hooks) {
 			const handlers = hook.handlers.get("before_agent_start");
@@ -503,9 +510,16 @@ export class HookRunner {
 					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
 					const handlerResult = await handler(event, ctx);
 
-					// Take the first message returned
-					if (handlerResult && (handlerResult as BeforeAgentStartEventResult).message && !result) {
-						result = handlerResult as BeforeAgentStartEventResult;
+					if (handlerResult) {
+						const result = handlerResult as BeforeAgentStartEventResult;
+						// Collect all messages
+						if (result.message) {
+							messages.push(result.message);
+						}
+						// Collect all systemPromptAppend strings
+						if (result.systemPromptAppend) {
+							systemPromptAppends.push(result.systemPromptAppend);
+						}
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -518,6 +532,14 @@ export class HookRunner {
 			}
 		}
 
-		return result;
+		// Return combined result
+		if (messages.length > 0 || systemPromptAppends.length > 0) {
+			return {
+				messages: messages.length > 0 ? messages : undefined,
+				systemPromptAppend: systemPromptAppends.length > 0 ? systemPromptAppends.join("\n\n") : undefined,
+			};
+		}
+
+		return undefined;
 	}
 }

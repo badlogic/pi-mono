@@ -84,6 +84,8 @@ export interface AgentSessionConfig {
 	modelRegistry: ModelRegistry;
 	/** Tool registry for hook getTools/setTools - maps name to tool */
 	toolRegistry?: Map<string, AgentTool>;
+	/** Function to rebuild system prompt when tools change */
+	rebuildSystemPrompt?: (toolNames: string[]) => string;
 }
 
 /** Options for AgentSession.prompt() */
@@ -186,6 +188,12 @@ export class AgentSession {
 	// Tool registry for hook getTools/setTools
 	private _toolRegistry: Map<string, AgentTool>;
 
+	// Function to rebuild system prompt when tools change
+	private _rebuildSystemPrompt?: (toolNames: string[]) => string;
+
+	// Base system prompt (without hook appends) - used to apply fresh appends each turn
+	private _baseSystemPrompt: string;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -197,6 +205,8 @@ export class AgentSession {
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
 		this._toolRegistry = config.toolRegistry ?? new Map();
+		this._rebuildSystemPrompt = config.rebuildSystemPrompt;
+		this._baseSystemPrompt = config.agent.state.systemPrompt;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, hooks, auto-compaction, retry logic)
@@ -448,17 +458,26 @@ export class AgentSession {
 	/**
 	 * Set active tools by name.
 	 * Only tools in the registry can be enabled. Unknown tool names are ignored.
+	 * Also rebuilds the system prompt to reflect the new tool set.
 	 * Changes take effect on the next agent turn.
 	 */
 	setActiveToolsByName(toolNames: string[]): void {
 		const tools: AgentTool[] = [];
+		const validToolNames: string[] = [];
 		for (const name of toolNames) {
 			const tool = this._toolRegistry.get(name);
 			if (tool) {
 				tools.push(tool);
+				validToolNames.push(name);
 			}
 		}
 		this.agent.setTools(tools);
+
+		// Rebuild base system prompt with new tool set
+		if (this._rebuildSystemPrompt) {
+			this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames);
+			this.agent.setSystemPrompt(this._baseSystemPrompt);
+		}
 	}
 
 	/** Whether auto-compaction is currently running */
@@ -589,15 +608,25 @@ export class AgentSession {
 		// Emit before_agent_start hook event
 		if (this._hookRunner) {
 			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
-			if (result?.message) {
-				messages.push({
-					role: "hookMessage",
-					customType: result.message.customType,
-					content: result.message.content,
-					display: result.message.display,
-					details: result.message.details,
-					timestamp: Date.now(),
-				});
+			// Add all hook messages
+			if (result?.messages) {
+				for (const msg of result.messages) {
+					messages.push({
+						role: "hookMessage",
+						customType: msg.customType,
+						content: msg.content,
+						display: msg.display,
+						details: msg.details,
+						timestamp: Date.now(),
+					});
+				}
+			}
+			// Apply hook systemPromptAppend on top of base prompt
+			if (result?.systemPromptAppend) {
+				this.agent.setSystemPrompt(`${this._baseSystemPrompt}\n\n${result.systemPromptAppend}`);
+			} else {
+				// Ensure we're using the base prompt (in case previous turn had appends)
+				this.agent.setSystemPrompt(this._baseSystemPrompt);
 			}
 		}
 

@@ -608,6 +608,8 @@ export interface ToolResultEventResult {
 export interface BeforeAgentStartEventResult {
 	/** Message to inject into context (persisted to session, visible in TUI) */
 	message?: Pick<HookMessage, "customType" | "content" | "display" | "details">;
+	/** Text to append to the system prompt for this agent run */
+	systemPromptAppend?: string;
 }
 
 /** Return type for session_before_switch handlers */

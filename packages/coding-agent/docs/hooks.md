@@ -104,7 +104,7 @@ pi starts
       ▼
 user sends prompt ─────────────────────────────────────────┐
   │                                                        │
-  ├─► before_agent_start (can inject message)              │
+  ├─► before_agent_start (can inject message, append to system prompt) │
   ├─► agent_start                                          │
   │                                                        │
   │   ┌─── turn (repeats while LLM calls tools) ───┐       │
@@ -259,7 +259,7 @@ pi.on("session_shutdown", async (_event, ctx) => {
 
 #### before_agent_start
 
-Fired after user submits prompt, before agent loop. Can inject a persistent message.
+Fired after user submits prompt, before agent loop. Can inject a message and/or append to the system prompt.
 
 ```typescript
 pi.on("before_agent_start", async (event, ctx) => {
@@ -267,16 +267,23 @@ pi.on("before_agent_start", async (event, ctx) => {
   // event.images - attached images (if any)
 
   return {
+    // Inject a persistent message (stored in session, sent to LLM)
     message: {
       customType: "my-hook",
       content: "Additional context for the LLM",
       display: true,  // Show in TUI
-    }
+    },
+    // Append to system prompt for this turn only
+    systemPromptAppend: "Extra instructions for this turn...",
   };
 });
 ```
 
-The injected message is persisted as `CustomMessageEntry` and sent to the LLM.
+**message**: Persisted as `CustomMessageEntry` and sent to the LLM.
+
+**systemPromptAppend**: Appended to the base system prompt for this agent run only. Multiple hooks can each return `systemPromptAppend` strings, which are concatenated. This is useful for dynamic instructions based on hook state (e.g., plan mode, persona toggles).
+
+See [examples/hooks/pirate.ts](../examples/hooks/pirate.ts) for an example using `systemPromptAppend`.
 
 #### agent_start / agent_end
 
