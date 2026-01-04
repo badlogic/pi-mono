@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Editor.getExpandedText()` method that returns text with paste markers expanded to their actual content ([#444](https://github.com/badlogic/pi-mono/pull/444) by [@aliou](https://github.com/aliou))
+
 ## [0.33.0] - 2026-01-04
 
 ### Breaking Changes

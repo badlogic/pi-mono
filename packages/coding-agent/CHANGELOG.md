@@ -1,9 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+
 ### Fixed
 
 - Fixed potential text decoding issues in bash executor by using streaming TextDecoder instead of Buffer.toString()
+- External editor (Ctrl-G) now shows full pasted content instead of `[paste #N ...]` placeholders ([#444](https://github.com/badlogic/pi-mono/pull/444) by [@aliou](https://github.com/aliou))
 
 ## [0.33.0] - 2026-01-04
 
