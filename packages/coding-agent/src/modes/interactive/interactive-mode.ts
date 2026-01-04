@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import Clipboard from "@crosscopy/clipboard";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
+import { type AssistantMessage, completeSimple, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -20,6 +20,7 @@ import {
 	Loader,
 	Markdown,
 	ProcessTerminal,
+	SelectList,
 	Spacer,
 	Text,
 	TruncatedText,
@@ -27,7 +28,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { exec, spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
+import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CustomToolSessionEvent, LoadedCustomTool } from "../../core/custom-tools/index.js";
 import type { HookUIContext } from "../../core/hooks/index.js";
@@ -64,6 +65,7 @@ import {
 	getAvailableThemes,
 	getEditorTheme,
 	getMarkdownTheme,
+	getSelectListTheme,
 	onThemeChange,
 	setTheme,
 	type Theme,
@@ -120,6 +122,9 @@ export class InteractiveMode {
 
 	// Track if editor is in bash mode (text starts with !)
 	private isBashMode = false;
+
+	// Track if editor is in memory mode (text starts with #)
+	private isMemoryMode = false;
 
 	// Track current bash execution component
 	private bashComponent: BashExecutionComponent | undefined = undefined;
@@ -823,8 +828,10 @@ export class InteractiveMode {
 
 		this.editor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
+			const wasMemoryMode = this.isMemoryMode;
 			this.isBashMode = text.trimStart().startsWith("!");
-			if (wasBashMode !== this.isBashMode) {
+			this.isMemoryMode = text.trimStart().startsWith("#") && !this.isBashMode;
+			if (wasBashMode !== this.isBashMode || wasMemoryMode !== this.isMemoryMode) {
 				this.updateEditorBorderColor();
 			}
 		};
@@ -993,6 +1000,18 @@ export class InteractiveMode {
 					await this.handleBashCommand(command, isExcluded);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
+					return;
+				}
+			}
+
+			// Handle memory instruction (# prefix)
+			if (text.startsWith("#")) {
+				const instruction = text.slice(1).trim();
+				if (instruction) {
+					this.editor.setText("");
+					this.isMemoryMode = false;
+					this.updateEditorBorderColor();
+					await this.handleMemoryInstruction(instruction);
 					return;
 				}
 			}
@@ -1555,6 +1574,8 @@ export class InteractiveMode {
 	private updateEditorBorderColor(): void {
 		if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
+		} else if (this.isMemoryMode) {
+			this.editor.borderColor = theme.getMemoryModeBorderColor();
 		} else {
 			const level = this.session.thinkingLevel || "off";
 			this.editor.borderColor = theme.getThinkingBorderColor(level);
@@ -2554,6 +2575,264 @@ export class InteractiveMode {
 
 		this.bashComponent = undefined;
 		this.ui.requestRender();
+	}
+
+	private async handleMemoryInstruction(instruction: string): Promise<void> {
+		const cwd = process.cwd();
+		const agentDir = getAgentDir();
+
+		// Build list of save locations
+		const items = [
+			{
+				value: "local",
+				label: "Project Local",
+				description: `${path.join(cwd, "AGENTS.local.md")} (gitignored, just for you)`,
+			},
+			{
+				value: "project",
+				label: "Project",
+				description: `${path.join(cwd, "AGENTS.md")} (shared with team)`,
+			},
+			{
+				value: "global",
+				label: "Global",
+				description: `${path.join(agentDir, "AGENTS.md")} (all your projects)`,
+			},
+		];
+
+		// Show selector
+		const selectList = new SelectList(items, 5, getSelectListTheme());
+
+		const handleSelection = async (result: "local" | "project" | "global" | null) => {
+			if (!result) {
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.ui.setFocus(this.editor);
+				return;
+			}
+
+			let filePath: string;
+			switch (result) {
+				case "local":
+					filePath = path.join(cwd, "AGENTS.local.md");
+					break;
+				case "project":
+					filePath = path.join(cwd, "AGENTS.md");
+					break;
+				case "global":
+					filePath = path.join(agentDir, "AGENTS.md");
+					break;
+			}
+
+			// Read existing content
+			let existingContent = "";
+			if (fs.existsSync(filePath)) {
+				existingContent = fs.readFileSync(filePath, "utf-8");
+			}
+
+			// Show loader while AI processes
+			this.editorContainer.clear();
+			const loader = new Loader(
+				this.ui,
+				(s) => theme.fg("accent", s),
+				(s) => theme.fg("muted", s),
+				"Integrating instruction...",
+			);
+			loader.start();
+			this.editorContainer.addChild(loader);
+			this.ui.requestRender();
+
+			try {
+				// Get current model
+				const model = this.session.model;
+				if (!model) {
+					throw new Error("No model selected");
+				}
+
+				// Get API key for current model
+				const apiKey = await this.session.modelRegistry.getApiKey(model);
+				if (!apiKey) {
+					throw new Error("No API key available for current model");
+				}
+
+				// Create abort controller for cancellation
+				const abortController = new AbortController();
+
+				// Call AI to integrate the instruction
+				const systemPrompt = `You are helping to maintain an AGENTS.md file that provides instructions for an AI coding assistant.
+
+Your task is to integrate a new instruction into the existing file content. Follow these rules:
+- If the file is empty, create a well-structured markdown document with the instruction
+- If the file has existing content, integrate the new instruction in the most appropriate location
+- Group related instructions together under appropriate headings
+- Avoid duplicating instructions - if a similar one exists, update it instead
+- Maintain consistent formatting with the existing content
+- Keep the file concise and well-organized
+- Output ONLY the final file content, no explanations or markdown code fences`;
+
+				const userPrompt = existingContent
+					? `Here is the existing AGENTS.md content:
+
+\`\`\`markdown
+${existingContent}
+\`\`\`
+
+Please integrate this new instruction:
+${instruction}
+
+Output the complete updated file content:`
+					: `The AGENTS.md file is currently empty. Please create it with this instruction:
+${instruction}
+
+Output the complete file content:`;
+
+				const response = await completeSimple(
+					model,
+					{
+						systemPrompt,
+						messages: [{ role: "user", content: [{ type: "text", text: userPrompt }], timestamp: Date.now() }],
+					},
+					{ apiKey, signal: abortController.signal, maxTokens: 4096 },
+				);
+
+				loader.stop();
+
+				if (response.stopReason === "aborted") {
+					this.editorContainer.clear();
+					this.editorContainer.addChild(this.editor);
+					this.ui.setFocus(this.editor);
+					return;
+				}
+
+				if (response.stopReason === "error") {
+					throw new Error(response.errorMessage || "AI request failed");
+				}
+
+				// Extract the new content from AI response
+				let newContent = response.content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("\n")
+					.trim();
+
+				// Remove markdown code fences if present
+				if (newContent.startsWith("```markdown")) {
+					newContent = newContent.slice(11);
+				} else if (newContent.startsWith("```")) {
+					newContent = newContent.slice(3);
+				}
+				if (newContent.endsWith("```")) {
+					newContent = newContent.slice(0, -3);
+				}
+				newContent = newContent.trim();
+
+				// Show preview with confirmation
+				await this.showMemoryPreview(filePath, existingContent, newContent, result === "local", cwd);
+			} catch (error) {
+				loader.stop();
+				this.editorContainer.clear();
+				this.editorContainer.addChild(this.editor);
+				this.ui.setFocus(this.editor);
+				this.showError(
+					`Failed to process instruction: ${error instanceof Error ? error.message : "Unknown error"}`,
+				);
+			}
+		};
+
+		selectList.onSelect = (item) => handleSelection(item.value as "local" | "project" | "global");
+		selectList.onCancel = () => handleSelection(null);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(new Text("Save instruction to:", 0, 0));
+		this.editorContainer.addChild(selectList);
+		this.ui.setFocus(selectList);
+		this.ui.requestRender();
+	}
+
+	private async showMemoryPreview(
+		filePath: string,
+		_oldContent: string,
+		newContent: string,
+		isLocal: boolean,
+		cwd: string,
+	): Promise<void> {
+		// Create a container for the preview
+		const previewContainer = new Container();
+
+		// Add header
+		previewContainer.addChild(new Text(theme.bold("Preview: ") + theme.fg("muted", filePath), 0, 0));
+		previewContainer.addChild(new Spacer(1));
+
+		// Show the new content as markdown
+		previewContainer.addChild(new Markdown(newContent, 1, 0, getMarkdownTheme()));
+		previewContainer.addChild(new Spacer(1));
+
+		// Add confirmation options
+		const confirmItems = [
+			{ value: "save", label: "Save", description: "Save the changes" },
+			{ value: "cancel", label: "Cancel", description: "Discard changes" },
+		];
+		const confirmList = new SelectList(confirmItems, 2, getSelectListTheme());
+
+		confirmList.onSelect = (item) => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+
+			if (item.value === "save") {
+				try {
+					const dir = path.dirname(filePath);
+					if (!fs.existsSync(dir)) {
+						fs.mkdirSync(dir, { recursive: true });
+					}
+					fs.writeFileSync(filePath, newContent);
+
+					if (isLocal) {
+						this.ensureGitignore(cwd, "AGENTS.local.md");
+					}
+
+					this.showStatus(`Saved to ${filePath}`);
+				} catch (error) {
+					this.showError(`Failed to save: ${error instanceof Error ? error.message : "Unknown error"}`);
+				}
+			}
+		};
+
+		confirmList.onCancel = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+		};
+
+		previewContainer.addChild(new Text(theme.fg("dim", "Save changes?"), 0, 0));
+		previewContainer.addChild(confirmList);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(previewContainer);
+		this.ui.setFocus(confirmList);
+		this.ui.requestRender();
+	}
+
+	private ensureGitignore(cwd: string, filename: string): void {
+		const gitignorePath = path.join(cwd, ".gitignore");
+		try {
+			let content = "";
+			if (fs.existsSync(gitignorePath)) {
+				content = fs.readFileSync(gitignorePath, "utf-8");
+			}
+
+			// Check if already in .gitignore
+			const lines = content.split("\n");
+			if (lines.some((line) => line.trim() === filename)) {
+				return;
+			}
+
+			// Add to .gitignore
+			const newContent = `${content.trimEnd()}${content.endsWith("\n") ? "" : "\n"}${filename}\n`;
+			fs.writeFileSync(gitignorePath, newContent);
+		} catch {
+			// Ignore errors - gitignore update is best-effort
+		}
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {

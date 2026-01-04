@@ -26,6 +26,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Keyboard Shortcuts](#keyboard-shortcuts)
   - [Custom Keybindings](#custom-keybindings)
   - [Bash Mode](#bash-mode)
+  - [Memory Mode](#memory-mode)
   - [Image Support](#image-support)
 - [Sessions](#sessions)
   - [Session Management](#session-management)
@@ -360,6 +361,35 @@ Ran `ls -la`
 ```
 
 Run multiple commands before prompting; all outputs are included together.
+
+### Memory Mode
+
+Prefix instructions with `#` to save them to memory files (the editor border turns blue):
+
+```
+# Always use TypeScript strict mode
+# Prefer async/await over callbacks
+# Never use git commands
+```
+
+When you submit:
+
+1. **Select location** - Choose where to save:
+
+| Location | File | Use Case |
+|----------|------|----------|
+| Project Local | `./AGENTS.local.md` | Personal preferences, auto-added to `.gitignore` |
+| Project | `./AGENTS.md` | Team-shared project instructions |
+| Global | `~/.pi/agent/AGENTS.md` | Your preferences across all projects |
+
+2. **AI integration** - The current model intelligently integrates your instruction into the existing file:
+   - Groups related instructions under appropriate headings
+   - Avoids duplicating existing rules (updates them instead)
+   - Maintains consistent formatting
+
+3. **Preview & confirm** - Review the proposed changes before saving
+
+Pi loads these files at startup as part of the system prompt.
 
 ### Image Support
 

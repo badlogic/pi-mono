@@ -13,6 +13,7 @@
 
 ### Added
 
+- Memory mode: Type `#` followed by an instruction to save it to memory files. The editor border turns blue to indicate memory mode. On submit, a selector lets you choose to save to Project Local (`AGENTS.local.md`, gitignored), Project (`AGENTS.md`, shared), or Global (`~/.pi/agent/AGENTS.md`). The current model intelligently integrates the instruction into the existing file structure, avoiding duplicates and maintaining consistent formatting. A preview is shown before saving.
 - Clipboard image paste support via `Ctrl+V`. Images are saved to a temp file and attached to the message. Works on macOS, Windows, and Linux (X11). ([#419](https://github.com/badlogic/pi-mono/issues/419))
 - Configurable keybindings via `~/.pi/agent/keybindings.json`. All keyboard shortcuts (editor navigation, deletion, app actions like model cycling, etc.) can now be customized. Supports multiple bindings per action. ([#405](https://github.com/badlogic/pi-mono/pull/405) by [@hjanuschka](https://github.com/hjanuschka))
 - `/quit` and `/exit` slash commands to gracefully exit the application. Unlike double Ctrl+C, these properly await hook and custom tool cleanup handlers before exiting. ([#426](https://github.com/badlogic/pi-mono/pull/426) by [@ben-vargas](https://github.com/ben-vargas))

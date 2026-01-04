@@ -264,6 +264,10 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				},
+				"memoryMode": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Editor border color in memory mode (# instructions)"
 				}
 			},
 			"additionalProperties": false

@@ -74,7 +74,8 @@
 		"thinkingHigh": "#875f87",
 		"thinkingXhigh": "#8b008b",
 
-		"bashMode": "green"
+		"bashMode": "green",
+		"memoryMode": "blue"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

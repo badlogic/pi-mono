@@ -140,7 +140,8 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
-	| "bashMode";
+	| "bashMode"
+	| "memoryMode";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -414,6 +415,14 @@ export class Theme {
 
 	getBashModeBorderColor(): (str: string) => string {
 		return (str: string) => this.fg("bashMode", str);
+	}
+
+	getMemoryModeBorderColor(): (str: string) => string {
+		// Fall back to "border" color for custom themes without memoryMode
+		if (this.fgColors.has("memoryMode")) {
+			return (str: string) => this.fg("memoryMode", str);
+		}
+		return (str: string) => this.fg("border", str);
 	}
 }
 
