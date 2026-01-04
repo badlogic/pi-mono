@@ -1576,7 +1576,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 8192,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"llama-3.3-70b-versatile": {
 			id: "llama-3.3-70b-versatile",
@@ -1724,12 +1724,12 @@ export const MODELS = {
 			input: ["text"],
 			cost: {
 				input: 0.15,
-				output: 0.75,
+				output: 0.6,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 32768,
+			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-20b": {
 			id: "openai/gpt-oss-20b",
@@ -1740,13 +1740,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.1,
-				output: 0.5,
+				input: 0.075,
+				output: 0.3,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 32768,
+			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
 		"qwen-qwq-32b": {
 			id: "qwen-qwq-32b",
