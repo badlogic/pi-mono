@@ -946,14 +946,13 @@ export function getMarkdownTheme(): MarkdownTheme {
 	};
 }
 
-export function getSelectListTheme(themeOverride?: Theme): SelectListTheme {
-	const t = themeOverride ?? theme;
+export function getSelectListTheme(): SelectListTheme {
 	return {
-		selectedPrefix: (text: string) => t.fg("accent", text),
-		selectedText: (text: string) => t.fg("accent", text),
-		description: (text: string) => t.fg("muted", text),
-		scrollInfo: (text: string) => t.fg("muted", text),
-		noMatch: (text: string) => t.fg("muted", text),
+		selectedPrefix: (text: string) => theme.fg("accent", text),
+		selectedText: (text: string) => theme.fg("accent", text),
+		description: (text: string) => theme.fg("muted", text),
+		scrollInfo: (text: string) => theme.fg("muted", text),
+		noMatch: (text: string) => theme.fg("muted", text),
 	};
 }
 
@@ -964,13 +963,12 @@ export function getEditorTheme(): EditorTheme {
 	};
 }
 
-export function getSettingsListTheme(themeOverride?: Theme): import("@mariozechner/pi-tui").SettingsListTheme {
-	const t = themeOverride ?? theme;
+export function getSettingsListTheme(): import("@mariozechner/pi-tui").SettingsListTheme {
 	return {
-		label: (text: string, selected: boolean) => (selected ? t.fg("accent", text) : text),
-		value: (text: string, selected: boolean) => (selected ? t.fg("accent", text) : t.fg("muted", text)),
-		description: (text: string) => t.fg("dim", text),
-		cursor: t.fg("accent", "→ "),
-		hint: (text: string) => t.fg("dim", text),
+		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
+		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		description: (text: string) => theme.fg("dim", text),
+		cursor: theme.fg("accent", "→ "),
+		hint: (text: string) => theme.fg("dim", text),
 	};
 }

@@ -91,7 +91,7 @@ export default function toolsHook(pi: HookAPI) {
 				const settingsList = new SettingsList(
 					items,
 					Math.min(items.length + 2, 15),
-					getSettingsListTheme(theme),
+					getSettingsListTheme(),
 					(id, newValue) => {
 						// Update enabled state and apply immediately
 						if (newValue === "enabled") {
