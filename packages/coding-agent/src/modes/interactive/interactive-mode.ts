@@ -198,6 +198,8 @@ export class InteractiveMode {
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
+			{ name: "exit", description: "Exit the application" },
+			{ name: "quit", description: "Exit the application" },
 		];
 
 		// Load hide thinking block setting
