@@ -444,6 +444,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			errors: [],
 			setUIContext: () => {},
 		};
+	} else if (options.extensions !== undefined) {
+		// User explicitly provided extensions array (even if empty) - skip discovery
+		// Inline factories from options.extensions are loaded below
+		extensionsResult = {
+			extensions: [],
+			errors: [],
+			setUIContext: () => {},
+		};
 	} else {
 		// Discover extensions, merging with additional paths
 		const configuredPaths = [...settingsManager.getExtensionPaths(), ...(options.additionalExtensionPaths ?? [])];

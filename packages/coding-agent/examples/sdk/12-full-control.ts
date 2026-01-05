@@ -6,10 +6,6 @@
  * IMPORTANT: When providing `tools` with a custom `cwd`, use the tool factory
  * functions (createReadTool, createBashTool, etc.) to ensure tools resolve
  * paths relative to your cwd.
- *
- * NOTE: Extensions (extensions, custom tools) are always loaded via discovery.
- * To use custom extensions, place them in the extensions directory or
- * pass paths via additionalExtensionPaths.
  */
 
 import { getModel } from "@mariozechner/pi-ai";
@@ -57,8 +53,8 @@ const { session } = await createAgentSession({
 Available: read, bash. Be concise.`,
 	// Use factory functions with the same cwd to ensure path resolution works correctly
 	tools: [createReadTool(cwd), createBashTool(cwd)],
-	// Extensions are loaded from disk - use additionalExtensionPaths to add custom ones
-	// additionalExtensionPaths: ["./my-extension.ts"],
+	// Pass empty array to disable extension discovery, or provide inline factories
+	extensions: [],
 	skills: [],
 	contextFiles: [],
 	promptTemplates: [],
