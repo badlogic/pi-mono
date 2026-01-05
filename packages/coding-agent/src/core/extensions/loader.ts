@@ -573,7 +573,30 @@ export async function discoverAndLoadExtensions(
 	addPaths(discoverExtensionsInDir(localExtDir));
 
 	// 3. Explicitly configured paths
-	addPaths(configuredPaths.map((p) => resolvePath(p, cwd)));
+	for (const p of configuredPaths) {
+		const resolved = resolvePath(p, cwd);
+		if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+			const packageJsonPath = path.join(resolved, "package.json");
+			const manifest = fs.existsSync(packageJsonPath) ? readPiManifest(packageJsonPath) : null;
+			if (manifest?.extensions?.length) {
+				addPaths(manifest.extensions.map((ext) => path.resolve(resolved, ext)));
+				continue;
+			}
+
+			const indexTs = path.join(resolved, "index.ts");
+			const indexJs = path.join(resolved, "index.js");
+			if (fs.existsSync(indexTs)) {
+				addPaths([indexTs]);
+				continue;
+			}
+			if (fs.existsSync(indexJs)) {
+				addPaths([indexJs]);
+				continue;
+			}
+		}
+
+		addPaths([resolved]);
+	}
 
 	return loadExtensions(allPaths, cwd, eventBus);
 }
