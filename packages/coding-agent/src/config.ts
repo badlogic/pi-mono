@@ -142,7 +142,7 @@ export function getSettingsPath(): string {
 	return join(getAgentDir(), "settings.json");
 }
 
-/** Get path to tools directory (deprecated, use extensions/ for JS/TS tools) */
+/** Get path to tools directory */
 export function getToolsDir(): string {
 	return join(getAgentDir(), "tools");
 }

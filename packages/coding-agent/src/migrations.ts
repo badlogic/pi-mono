@@ -216,11 +216,7 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 			const customTools = entries.filter((e) => {
 				const lower = e.toLowerCase();
 				return (
-					lower !== "fd" &&
-					lower !== "rg" &&
-					lower !== "fd.exe" &&
-					lower !== "rg.exe" &&
-					!e.startsWith(".") // Ignore .DS_Store and other hidden files
+					lower !== "fd" && lower !== "rg" && lower !== "fd.exe" && lower !== "rg.exe" && !e.startsWith(".") // Ignore .DS_Store and other hidden files
 				);
 			});
 			if (customTools.length > 0) {
