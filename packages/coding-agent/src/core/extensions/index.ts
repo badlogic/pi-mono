@@ -2,7 +2,7 @@
  * Extension system for lifecycle events and custom tools.
  */
 
-export { discoverAndLoadExtensions, loadExtensions } from "./loader.js";
+export { discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions } from "./loader.js";
 export type { BranchHandler, ExtensionErrorListener, NavigateTreeHandler, NewSessionHandler } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {

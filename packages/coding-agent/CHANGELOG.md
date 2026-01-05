@@ -198,6 +198,7 @@ pi --extension ./safety.ts -e ./todo.ts
 - Examples: `examples/hooks/` and `examples/custom-tools/` merged into `examples/extensions/`
 - README: Extensions section expanded with custom tools, commands, events, state persistence, shortcuts, flags, and UI examples
 - SDK: `customTools` option now accepts `ToolDefinition[]` directly (simplified from `Array<{ path?, tool }>`)
+- SDK: `extensions` option accepts `ExtensionFactory[]` for inline extensions
 - SDK: `additionalExtensionPaths` replaces both `additionalHookPaths` and `additionalCustomToolPaths`
 
 ## [0.34.2] - 2026-01-04

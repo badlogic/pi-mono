@@ -29,9 +29,11 @@ import { AuthStorage } from "./auth-storage.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	discoverAndLoadExtensions,
+	type ExtensionFactory,
 	ExtensionRunner,
 	type LoadExtensionsResult,
 	type LoadedExtension,
+	loadExtensionFromFactory,
 	type ToolDefinition,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
@@ -99,9 +101,14 @@ export interface CreateAgentSessionOptions {
 	tools?: Tool[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+	/** Inline extensions (merged with discovery). */
+	extensions?: ExtensionFactory[];
 	/** Additional extension paths to load (merged with discovery). */
 	additionalExtensionPaths?: string[];
-	/** Pre-loaded extensions (skips loading, used when extensions were loaded early for CLI flags). */
+	/**
+	 * Pre-loaded extensions (skips file discovery).
+	 * @internal Used by CLI when extensions are loaded early to parse custom flags.
+	 */
 	preloadedExtensions?: LoadedExtension[];
 
 	/** Shared event bus for tool/extension communication. Default: creates new bus. */
@@ -445,6 +452,42 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		for (const { path, error } of extensionsResult.errors) {
 			console.error(`Failed to load extension "${path}": ${error}`);
 		}
+	}
+
+	// Load inline extensions from factories
+	if (options.extensions && options.extensions.length > 0) {
+		// Create shared UI context holder that will be set later
+		const uiHolder: { ui: any; hasUI: boolean } = {
+			ui: {
+				select: async () => undefined,
+				confirm: async () => false,
+				input: async () => undefined,
+				notify: () => {},
+				setStatus: () => {},
+				setWidget: () => {},
+				setTitle: () => {},
+				custom: async () => undefined as never,
+				setEditorText: () => {},
+				getEditorText: () => "",
+				editor: async () => undefined,
+				get theme() {
+					return {} as any;
+				},
+			},
+			hasUI: false,
+		};
+		for (let i = 0; i < options.extensions.length; i++) {
+			const factory = options.extensions[i];
+			const loaded = loadExtensionFromFactory(factory, cwd, eventBus, uiHolder, `<inline-${i}>`);
+			extensionsResult.extensions.push(loaded);
+		}
+		// Extend setUIContext to update inline extensions too
+		const originalSetUIContext = extensionsResult.setUIContext;
+		extensionsResult.setUIContext = (uiContext, hasUI) => {
+			originalSetUIContext(uiContext, hasUI);
+			uiHolder.ui = uiContext;
+			uiHolder.hasUI = hasUI;
+		};
 	}
 
 	// Create extension runner if we have extensions
