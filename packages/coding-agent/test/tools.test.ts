@@ -1,14 +1,15 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bashTool } from "../src/core/tools/bash.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { bashTool, createBashTool } from "../src/core/tools/bash.js";
 import { editTool } from "../src/core/tools/edit.js";
 import { findTool } from "../src/core/tools/find.js";
 import { grepTool } from "../src/core/tools/grep.js";
 import { lsTool } from "../src/core/tools/ls.js";
 import { readTool } from "../src/core/tools/read.js";
 import { writeTool } from "../src/core/tools/write.js";
+import * as shellModule from "../src/utils/shell.js";
 
 // Helper to extract text from content blocks
 function getTextOutput(result: any): string {
@@ -276,6 +277,27 @@ describe("Coding Agent Tools", () => {
 			await expect(bashTool.execute("test-call-10", { command: "sleep 5", timeout: 1 })).rejects.toThrow(
 				/timed out/i,
 			);
+		});
+
+		it("should throw error when cwd does not exist", async () => {
+			const nonexistentCwd = "/this/directory/definitely/does/not/exist/12345";
+
+			const bashToolWithBadCwd = createBashTool(nonexistentCwd);
+
+			await expect(bashToolWithBadCwd.execute("test-call-11", { command: "echo test" })).rejects.toThrow(
+				/Working directory does not exist/,
+			);
+		});
+
+		it("should handle process spawn errors", async () => {
+			vi.spyOn(shellModule, "getShellConfig").mockReturnValueOnce({
+				shell: "/nonexistent-shell-path-xyz123",
+				args: ["-c"],
+			});
+
+			const bashWithBadShell = createBashTool(testDir);
+
+			await expect(bashWithBadShell.execute("test-call-12", { command: "echo test" })).rejects.toThrow(/ENOENT/);
 		});
 	});
 

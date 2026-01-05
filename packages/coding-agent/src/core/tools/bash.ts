@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
@@ -40,6 +40,11 @@ export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
 		) => {
 			return new Promise((resolve, reject) => {
 				const { shell, args } = getShellConfig();
+
+				if (!existsSync(cwd)) {
+					throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
+				}
+
 				const child = spawn(shell, [...args, command], {
 					cwd,
 					detached: true,
@@ -118,6 +123,17 @@ export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
 				if (child.stderr) {
 					child.stderr.on("data", handleData);
 				}
+
+				// Handle shell spawn errors to prevent session from crashing
+				child.on("error", (err) => {
+					if (timeoutHandle) {
+						clearTimeout(timeoutHandle);
+					}
+					if (signal) {
+						signal.removeEventListener("abort", onAbort);
+					}
+					reject(err);
+				});
 
 				// Handle process exit
 				child.on("close", (code) => {
