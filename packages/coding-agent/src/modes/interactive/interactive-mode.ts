@@ -84,6 +84,11 @@ function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
 
+type CompactionQueuedMessage = {
+	text: string;
+	mode: "steer" | "followUp";
+};
+
 export class InteractiveMode {
 	private session: AgentSession;
 	private ui: TUI;
@@ -139,6 +144,9 @@ export class InteractiveMode {
 	// Auto-retry state
 	private retryLoader: Loader | undefined = undefined;
 	private retryEscapeHandler?: () => void;
+
+	// Messages queued while compaction is running
+	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
 
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
@@ -459,6 +467,7 @@ export class InteractiveMode {
 				// Clear UI state
 				this.chatContainer.clear();
 				this.pendingMessagesContainer.clear();
+				this.compactionQueuedMessages = [];
 				this.streamingComponent = undefined;
 				this.streamingMessage = undefined;
 				this.pendingTools.clear();
@@ -1012,12 +1021,7 @@ export class InteractiveMode {
 			if (text === "/compact" || text.startsWith("/compact ")) {
 				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
 				this.editor.setText("");
-				this.editor.disableSubmit = true;
-				try {
-					await this.handleCompactCommand(customInstructions);
-				} finally {
-					this.editor.disableSubmit = false;
-				}
+				await this.handleCompactCommand(customInstructions);
 				return;
 			}
 			if (text === "/debug") {
@@ -1059,8 +1063,15 @@ export class InteractiveMode {
 				}
 			}
 
-			// Block input during compaction
+			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
+				if (this.isExtensionCommand(text)) {
+					this.editor.addToHistory(text);
+					this.editor.setText("");
+					await this.session.prompt(text);
+				} else {
+					this.queueCompactionMessage(text, "steer");
+				}
 				return;
 			}
 
@@ -1251,8 +1262,7 @@ export class InteractiveMode {
 				break;
 
 			case "auto_compaction_start": {
-				// Disable submit to preserve editor text during compaction
-				this.editor.disableSubmit = true;
+				// Keep editor active; submissions are queued during compaction.
 				// Set up escape to abort auto-compaction
 				this.autoCompactionEscapeHandler = this.editor.onEscape;
 				this.editor.onEscape = () => {
@@ -1273,8 +1283,6 @@ export class InteractiveMode {
 			}
 
 			case "auto_compaction_end": {
-				// Re-enable submit
-				this.editor.disableSubmit = false;
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {
 					this.editor.onEscape = this.autoCompactionEscapeHandler;
@@ -1302,6 +1310,7 @@ export class InteractiveMode {
 					});
 					this.footer.invalidate();
 				}
+				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
 				break;
 			}
@@ -1593,6 +1602,18 @@ export class InteractiveMode {
 		const text = this.editor.getText().trim();
 		if (!text) return;
 
+		// Queue input during compaction (extension commands execute immediately)
+		if (this.session.isCompacting) {
+			if (this.isExtensionCommand(text)) {
+				this.editor.addToHistory(text);
+				this.editor.setText("");
+				await this.session.prompt(text);
+			} else {
+				this.queueCompactionMessage(text, "followUp");
+			}
+			return;
+		}
+
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
 		// This handles extension commands (execute immediately), prompt template expansion, and queueing
 		if (this.session.isStreaming) {
@@ -1761,8 +1782,14 @@ export class InteractiveMode {
 
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const steeringMessages = this.session.getSteeringMessages();
-		const followUpMessages = this.session.getFollowUpMessages();
+		const steeringMessages = [
+			...this.session.getSteeringMessages(),
+			...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
+		];
+		const followUpMessages = [
+			...this.session.getFollowUpMessages(),
+			...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
+		];
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
@@ -1773,6 +1800,102 @@ export class InteractiveMode {
 				const text = theme.fg("dim", `Follow-up: ${message}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
+		}
+	}
+
+	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
+		this.compactionQueuedMessages.push({ text, mode });
+		this.editor.addToHistory(text);
+		this.editor.setText("");
+		this.updatePendingMessagesDisplay();
+		this.showStatus("Queued message for after compaction");
+	}
+
+	private isExtensionCommand(text: string): boolean {
+		if (!text.startsWith("/")) return false;
+
+		const extensionRunner = this.session.extensionRunner;
+		if (!extensionRunner) return false;
+
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		return !!extensionRunner.getCommand(commandName);
+	}
+
+	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
+		if (this.compactionQueuedMessages.length === 0) {
+			return;
+		}
+
+		const queuedMessages = [...this.compactionQueuedMessages];
+		this.compactionQueuedMessages = [];
+		this.updatePendingMessagesDisplay();
+
+		const restoreQueue = (error: unknown) => {
+			this.session.clearQueue();
+			this.compactionQueuedMessages = queuedMessages;
+			this.updatePendingMessagesDisplay();
+			this.showError(
+				`Failed to send queued message${queuedMessages.length > 1 ? "s" : ""}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		};
+
+		try {
+			if (options?.willRetry) {
+				// When retry is pending, queue messages for the retry turn
+				for (const message of queuedMessages) {
+					if (this.isExtensionCommand(message.text)) {
+						await this.session.prompt(message.text);
+					} else if (message.mode === "followUp") {
+						await this.session.followUp(message.text);
+					} else {
+						await this.session.steer(message.text);
+					}
+				}
+				this.updatePendingMessagesDisplay();
+				return;
+			}
+
+			// Find first non-extension-command message to use as prompt
+			const firstPromptIndex = queuedMessages.findIndex((message) => !this.isExtensionCommand(message.text));
+			if (firstPromptIndex === -1) {
+				// All extension commands - execute them all
+				for (const message of queuedMessages) {
+					await this.session.prompt(message.text);
+				}
+				return;
+			}
+
+			// Execute any extension commands before the first prompt
+			const preCommands = queuedMessages.slice(0, firstPromptIndex);
+			const firstPrompt = queuedMessages[firstPromptIndex];
+			const rest = queuedMessages.slice(firstPromptIndex + 1);
+
+			for (const message of preCommands) {
+				await this.session.prompt(message.text);
+			}
+
+			// Send first prompt (starts streaming)
+			const promptPromise = this.session.prompt(firstPrompt.text).catch((error) => {
+				restoreQueue(error);
+			});
+
+			// Queue remaining messages
+			for (const message of rest) {
+				if (this.isExtensionCommand(message.text)) {
+					await this.session.prompt(message.text);
+				} else if (message.mode === "followUp") {
+					await this.session.followUp(message.text);
+				} else {
+					await this.session.steer(message.text);
+				}
+			}
+			this.updatePendingMessagesDisplay();
+			void promptPromise;
+		} catch (error) {
+			restoreQueue(error);
 		}
 	}
 
@@ -2089,6 +2212,7 @@ export class InteractiveMode {
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
+		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
@@ -2549,6 +2673,7 @@ export class InteractiveMode {
 		// Clear UI state
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
+		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
@@ -2702,6 +2827,7 @@ export class InteractiveMode {
 			this.statusContainer.clear();
 			this.editor.onEscape = originalOnEscape;
 		}
+		void this.flushCompactionQueue({ willRetry: false });
 	}
 
 	stop(): void {
