@@ -2485,7 +2485,7 @@ export class InteractiveMode {
 | Key | Action |
 |-----|--------|
 | \`${submit}\` | Send message |
-| \`${newLine}\` | New line |
+| \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
 | \`${deleteWordBackward}\` | Delete word backwards |
 | \`${deleteToLineStart}\` | Delete to start of line |
 | \`${deleteToLineEnd}\` | Delete to end of line |

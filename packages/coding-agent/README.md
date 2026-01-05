@@ -138,6 +138,8 @@ config.enable_kitty_keyboard = true
 return config
 ```
 
+**Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
+
 ### API Keys & OAuth
 
 **Option 1: Auth file** (recommended)
@@ -279,7 +281,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Key | Action |
 |-----|--------|
 | Enter | Send message |
-| Shift+Enter / Alt+Enter | New line (Ctrl+Enter on WSL) |
+| Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
 | Ctrl+W / Option+Backspace | Delete word backwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
