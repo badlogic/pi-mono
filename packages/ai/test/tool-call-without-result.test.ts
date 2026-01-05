@@ -248,10 +248,10 @@ describe("Tool Call Without Result Tests", () => {
 
 	describe("OpenAI Codex Provider", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should filter out tool calls without corresponding tool results",
+			"gpt-5.2-codex - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("openai-codex", "gpt-5.2-xhigh");
+				const model = getModel("openai-codex", "gpt-5.2-codex");
 				await testToolCallWithoutResult(model, { apiKey: openaiCodexToken });
 			},
 		);

@@ -308,11 +308,15 @@ export async function transformRequestBody(
 		}
 	}
 
-	const reasoningConfig = getReasoningConfig(normalizedModel, options);
-	body.reasoning = {
-		...body.reasoning,
-		...reasoningConfig,
-	};
+	if (options.reasoningEffort !== undefined) {
+		const reasoningConfig = getReasoningConfig(normalizedModel, options);
+		body.reasoning = {
+			...body.reasoning,
+			...reasoningConfig,
+		};
+	} else {
+		delete body.reasoning;
+	}
 
 	body.text = {
 		...body.text,

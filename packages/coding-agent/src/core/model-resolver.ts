@@ -102,6 +102,18 @@ export interface ParsedModelResult {
 	warning: string | undefined;
 }
 
+const THINKING_SUFFIXES = ["-none", "-minimal", "-low", "-medium", "-high", "-xhigh"];
+
+function stripThinkingSuffix(pattern: string): string {
+	const normalized = pattern.toLowerCase();
+	for (const suffix of THINKING_SUFFIXES) {
+		if (normalized.endsWith(suffix)) {
+			return pattern.slice(0, pattern.length - suffix.length);
+		}
+	}
+	return pattern;
+}
+
 /**
  * Parse a pattern to extract model and thinking level.
  * Handles models with colons in their IDs (e.g., OpenRouter's :exacto suffix).
@@ -120,6 +132,14 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 	const exactMatch = tryMatchModel(pattern, availableModels);
 	if (exactMatch) {
 		return { model: exactMatch, thinkingLevel: "off", warning: undefined };
+	}
+
+	const normalizedPattern = stripThinkingSuffix(pattern);
+	if (normalizedPattern !== pattern) {
+		const normalizedMatch = tryMatchModel(normalizedPattern, availableModels);
+		if (normalizedMatch) {
+			return { model: normalizedMatch, thinkingLevel: "off", warning: undefined };
+		}
 	}
 
 	// No match - try splitting on last colon if present

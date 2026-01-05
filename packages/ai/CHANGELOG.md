@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added per-model `thinkingLevels` metadata for OpenAI Codex models to surface supported reasoning levels.
+
+### Changed
+
+- OpenAI Codex model list no longer exposes thinking-level suffix variants; use the thinking setting instead.
+
+### Fixed
+
+- Codex requests no longer force a default reasoning effort when thinking is off.
+
 ## [0.36.0] - 2026-01-05
 
 ### Added

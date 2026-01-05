@@ -126,10 +126,12 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				context.systemPrompt,
 			);
 
+			const reasoningEffort = transformedBody.reasoning?.effort ?? null;
 			const headers = createCodexHeaders(model.headers, accountId, apiKey, transformedBody.prompt_cache_key);
 			logCodexDebug("codex request", {
 				url,
 				model: params.model,
+				reasoningEffort,
 				headers: redactHeaders(headers),
 			});
 

@@ -210,6 +210,8 @@ export interface Model<TApi extends Api> {
 	provider: Provider;
 	baseUrl: string;
 	reasoning: boolean;
+	/** Supported reasoning levels for this model (excluding "off"). */
+	thinkingLevels?: ReasoningEffort[];
 	input: ("text" | "image")[];
 	cost: {
 		input: number; // $/million tokens

@@ -978,16 +978,12 @@ export class AgentSession {
 
 	/**
 	 * Set thinking level.
-	 * Clamps to model capabilities: "off" if no reasoning, "high" if xhigh unsupported.
+	 * Clamps to model capabilities based on available thinking levels.
 	 * Saves to session and settings.
 	 */
 	setThinkingLevel(level: ThinkingLevel): void {
-		let effectiveLevel = level;
-		if (!this.supportsThinking()) {
-			effectiveLevel = "off";
-		} else if (level === "xhigh" && !this.supportsXhighThinking()) {
-			effectiveLevel = "high";
-		}
+		const availableLevels = this.getAvailableThinkingLevels();
+		const effectiveLevel = availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
 		this.agent.setThinkingLevel(effectiveLevel);
 		this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
@@ -1013,6 +1009,14 @@ export class AgentSession {
 	 * Get available thinking levels for current model.
 	 */
 	getAvailableThinkingLevels(): ThinkingLevel[] {
+		if (!this.supportsThinking()) return ["off"];
+
+		const modelLevels = this.model?.thinkingLevels;
+		if (modelLevels && modelLevels.length > 0) {
+			const withOff: ThinkingLevel[] = ["off", ...modelLevels];
+			return THINKING_LEVELS_WITH_XHIGH.filter((level) => withOff.includes(level));
+		}
+
 		return this.supportsXhighThinking() ? THINKING_LEVELS_WITH_XHIGH : THINKING_LEVELS;
 	}
 
@@ -1028,6 +1032,24 @@ export class AgentSession {
 	 */
 	supportsThinking(): boolean {
 		return !!this.model?.reasoning;
+	}
+
+	private _clampThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {
+		const ordered = THINKING_LEVELS_WITH_XHIGH;
+		const available = new Set(availableLevels);
+		const requestedIndex = ordered.indexOf(level);
+		if (requestedIndex === -1) {
+			return availableLevels[0] ?? "off";
+		}
+		for (let i = requestedIndex; i < ordered.length; i++) {
+			const candidate = ordered[i];
+			if (available.has(candidate)) return candidate;
+		}
+		for (let i = requestedIndex - 1; i >= 0; i--) {
+			const candidate = ordered[i];
+			if (available.has(candidate)) return candidate;
+		}
+		return availableLevels[0] ?? "off";
 	}
 
 	// =========================================================================

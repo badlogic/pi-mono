@@ -18,6 +18,16 @@ import type { AuthStorage } from "./auth-storage.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 
+const ThinkingLevelsSchema = Type.Array(
+	Type.Union([
+		Type.Literal("minimal"),
+		Type.Literal("low"),
+		Type.Literal("medium"),
+		Type.Literal("high"),
+		Type.Literal("xhigh"),
+	]),
+);
+
 // Schema for OpenAI compatibility settings
 const OpenAICompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
@@ -40,6 +50,7 @@ const ModelDefinitionSchema = Type.Object({
 		]),
 	),
 	reasoning: Type.Boolean(),
+	thinkingLevels: Type.Optional(ThinkingLevelsSchema),
 	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
 	cost: Type.Object({
 		input: Type.Number(),
@@ -105,6 +116,14 @@ function resolveApiKeyConfig(keyConfig: string): string | undefined {
 	const envValue = process.env[keyConfig];
 	if (envValue) return envValue;
 	return keyConfig;
+}
+
+function normalizeCodexModelId(modelId: string): string {
+	const suffixes = ["-none", "-minimal", "-low", "-medium", "-high", "-xhigh"];
+	const normalized = modelId.toLowerCase();
+	const matchedSuffix = suffixes.find((suffix) => normalized.endsWith(suffix));
+	if (!matchedSuffix) return modelId;
+	return modelId.slice(0, modelId.length - matchedSuffix.length);
 }
 
 /**
@@ -330,6 +349,7 @@ export class ModelRegistry {
 					provider: providerName,
 					baseUrl: providerConfig.baseUrl!,
 					reasoning: modelDef.reasoning,
+					thinkingLevels: modelDef.thinkingLevels,
 					input: modelDef.input as ("text" | "image")[],
 					cost: modelDef.cost,
 					contextWindow: modelDef.contextWindow,
@@ -363,7 +383,15 @@ export class ModelRegistry {
 	 * Find a model by provider and ID.
 	 */
 	find(provider: string, modelId: string): Model<Api> | undefined {
-		return this.models.find((m) => m.provider === provider && m.id === modelId) ?? undefined;
+		const exact = this.models.find((m) => m.provider === provider && m.id === modelId);
+		if (exact) return exact;
+		if (provider === "openai-codex") {
+			const normalized = normalizeCodexModelId(modelId);
+			if (normalized !== modelId) {
+				return this.models.find((m) => m.provider === provider && m.id === normalized) ?? undefined;
+			}
+		}
+		return undefined;
 	}
 
 	/**
