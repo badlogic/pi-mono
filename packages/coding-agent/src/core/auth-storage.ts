@@ -163,6 +163,8 @@ export class AuthStorage {
 			onProgress?: (message: string) => void;
 			/** For providers with local callback servers (e.g., openai-codex), races with browser callback */
 			onManualCodeInput?: () => Promise<string>;
+			/** For cancellation support (e.g., github-copilot polling) */
+			signal?: AbortSignal;
 		},
 	): Promise<void> {
 		let credentials: OAuthCredentials;
@@ -179,13 +181,14 @@ export class AuthStorage {
 					onAuth: (url, instructions) => callbacks.onAuth({ url, instructions }),
 					onPrompt: callbacks.onPrompt,
 					onProgress: callbacks.onProgress,
+					signal: callbacks.signal,
 				});
 				break;
 			case "google-gemini-cli":
-				credentials = await loginGeminiCli(callbacks.onAuth, callbacks.onProgress);
+				credentials = await loginGeminiCli(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
 				break;
 			case "google-antigravity":
-				credentials = await loginAntigravity(callbacks.onAuth, callbacks.onProgress);
+				credentials = await loginAntigravity(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
 				break;
 			case "openai-codex":
 				credentials = await loginOpenAICodex({

@@ -296,15 +296,25 @@ export async function loginOpenAICodex(options: {
 		if (options.onManualCodeInput) {
 			// Race between browser callback and manual input
 			let manualCode: string | undefined;
+			let manualError: Error | undefined;
 			const manualPromise = options
 				.onManualCodeInput()
 				.then((input) => {
 					manualCode = input;
 					server.cancelWait();
 				})
-				.catch(() => {}); // Ignore rejection
+				.catch((err) => {
+					manualError = err instanceof Error ? err : new Error(String(err));
+					server.cancelWait();
+				});
 
 			const result = await server.waitForCode();
+
+			// If manual input was cancelled, throw that error
+			if (manualError) {
+				throw manualError;
+			}
+
 			if (result?.code) {
 				// Browser callback won
 				code = result.code;
@@ -320,6 +330,9 @@ export async function loginOpenAICodex(options: {
 			// If still no code, wait for manual promise to complete and try that
 			if (!code) {
 				await manualPromise;
+				if (manualError) {
+					throw manualError;
+				}
 				if (manualCode) {
 					const parsed = parseAuthorizationInput(manualCode);
 					if (parsed.state && parsed.state !== state) {

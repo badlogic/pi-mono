@@ -134,6 +134,11 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 			available: true,
 		},
 		{
+			id: "openai-codex",
+			name: "ChatGPT Plus/Pro (Codex Subscription)",
+			available: true,
+		},
+		{
 			id: "github-copilot",
 			name: "GitHub Copilot",
 			available: true,
@@ -146,11 +151,6 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 		{
 			id: "google-antigravity",
 			name: "Antigravity (Gemini 3, Claude, GPT-OSS)",
-			available: true,
-		},
-		{
-			id: "openai-codex",
-			name: "ChatGPT Plus/Pro (Codex Subscription)",
 			available: true,
 		},
 	];

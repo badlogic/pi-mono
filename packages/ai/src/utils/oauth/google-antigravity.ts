@@ -33,23 +33,21 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
+type CallbackServerInfo = {
+	server: Server;
+	cancelWait: () => void;
+	waitForCode: () => Promise<{ code: string; state: string } | null>;
+};
+
 /**
  * Start a local HTTP server to receive the OAuth callback
  */
-async function startCallbackServer(): Promise<{
-	server: Server;
-	getCode: () => Promise<{ code: string; state: string }>;
-}> {
+async function startCallbackServer(): Promise<CallbackServerInfo> {
 	const { createServer } = await import("http");
 
 	return new Promise((resolve, reject) => {
-		let codeResolve: (value: { code: string; state: string }) => void;
-		let codeReject: (error: Error) => void;
-
-		const codePromise = new Promise<{ code: string; state: string }>((res, rej) => {
-			codeResolve = res;
-			codeReject = rej;
-		});
+		let result: { code: string; state: string } | null = null;
+		let cancelled = false;
 
 		const server = createServer((req, res) => {
 			const url = new URL(req.url || "", `http://localhost:51121`);
@@ -64,7 +62,6 @@ async function startCallbackServer(): Promise<{
 					res.end(
 						`<html><body><h1>Authentication Failed</h1><p>Error: ${error}</p><p>You can close this window.</p></body></html>`,
 					);
-					codeReject(new Error(`OAuth error: ${error}`));
 					return;
 				}
 
@@ -73,13 +70,12 @@ async function startCallbackServer(): Promise<{
 					res.end(
 						`<html><body><h1>Authentication Successful</h1><p>You can close this window and return to the terminal.</p></body></html>`,
 					);
-					codeResolve({ code, state });
+					result = { code, state };
 				} else {
 					res.writeHead(400, { "Content-Type": "text/html" });
 					res.end(
 						`<html><body><h1>Authentication Failed</h1><p>Missing code or state parameter.</p></body></html>`,
 					);
-					codeReject(new Error("Missing code or state in callback"));
 				}
 			} else {
 				res.writeHead(404);
@@ -94,10 +90,38 @@ async function startCallbackServer(): Promise<{
 		server.listen(51121, "127.0.0.1", () => {
 			resolve({
 				server,
-				getCode: () => codePromise,
+				cancelWait: () => {
+					cancelled = true;
+				},
+				waitForCode: async () => {
+					const sleep = () => new Promise((r) => setTimeout(r, 100));
+					while (!result && !cancelled) {
+						await sleep();
+					}
+					return result;
+				},
 			});
 		});
 	});
+}
+
+/**
+ * Parse redirect URL to extract code and state
+ */
+function parseRedirectUrl(input: string): { code?: string; state?: string } {
+	const value = input.trim();
+	if (!value) return {};
+
+	try {
+		const url = new URL(value);
+		return {
+			code: url.searchParams.get("code") ?? undefined,
+			state: url.searchParams.get("state") ?? undefined,
+		};
+	} catch {
+		// Not a URL, return empty
+		return {};
+	}
 }
 
 interface LoadCodeAssistPayload {
@@ -226,16 +250,21 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
  *
  * @param onAuth - Callback with URL and optional instructions
  * @param onProgress - Optional progress callback
+ * @param onManualCodeInput - Optional promise that resolves with user-pasted redirect URL.
+ *                            Races with browser callback - whichever completes first wins.
  */
 export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
+	onManualCodeInput?: () => Promise<string>,
 ): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
 
 	// Start local server for callback
 	onProgress?.("Starting local server for OAuth callback...");
-	const { server, getCode } = await startCallbackServer();
+	const server = await startCallbackServer();
+
+	let code: string | undefined;
 
 	try {
 		// Build authorization URL
@@ -256,16 +285,75 @@ export async function loginAntigravity(
 		// Notify caller with URL to open
 		onAuth({
 			url: authUrl,
-			instructions: "Complete the sign-in in your browser. The callback will be captured automatically.",
+			instructions: "Complete the sign-in in your browser.",
 		});
 
-		// Wait for the callback
+		// Wait for the callback, racing with manual input if provided
 		onProgress?.("Waiting for OAuth callback...");
-		const { code, state } = await getCode();
 
-		// Verify state matches
-		if (state !== verifier) {
-			throw new Error("OAuth state mismatch - possible CSRF attack");
+		if (onManualCodeInput) {
+			// Race between browser callback and manual input
+			let manualInput: string | undefined;
+			let manualError: Error | undefined;
+			const manualPromise = onManualCodeInput()
+				.then((input) => {
+					manualInput = input;
+					server.cancelWait();
+				})
+				.catch((err) => {
+					manualError = err instanceof Error ? err : new Error(String(err));
+					server.cancelWait();
+				});
+
+			const result = await server.waitForCode();
+
+			// If manual input was cancelled, throw that error
+			if (manualError) {
+				throw manualError;
+			}
+
+			if (result?.code) {
+				// Browser callback won - verify state
+				if (result.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = result.code;
+			} else if (manualInput) {
+				// Manual input won
+				const parsed = parseRedirectUrl(manualInput);
+				if (parsed.state && parsed.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = parsed.code;
+			}
+
+			// If still no code, wait for manual promise and try that
+			if (!code) {
+				await manualPromise;
+				if (manualError) {
+					throw manualError;
+				}
+				if (manualInput) {
+					const parsed = parseRedirectUrl(manualInput);
+					if (parsed.state && parsed.state !== verifier) {
+						throw new Error("OAuth state mismatch - possible CSRF attack");
+					}
+					code = parsed.code;
+				}
+			}
+		} else {
+			// Original flow: just wait for callback
+			const result = await server.waitForCode();
+			if (result?.code) {
+				if (result.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = result.code;
+			}
+		}
+
+		if (!code) {
+			throw new Error("No authorization code received");
 		}
 
 		// Exchange code for tokens
@@ -320,6 +408,6 @@ export async function loginAntigravity(
 
 		return credentials;
 	} finally {
-		server.close();
+		server.server.close();
 	}
 }

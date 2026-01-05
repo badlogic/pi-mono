@@ -11,6 +11,7 @@ export class Input implements Component {
 	private value: string = "";
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
+	public onEscape?: () => void;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
@@ -63,6 +64,12 @@ export class Input implements Component {
 			return;
 		}
 		const kb = getEditorKeybindings();
+
+		// Escape/Cancel
+		if (kb.matches(data, "selectCancel")) {
+			if (this.onEscape) this.onEscape();
+			return;
+		}
 
 		// Submit
 		if (kb.matches(data, "submit") || data === "\n") {

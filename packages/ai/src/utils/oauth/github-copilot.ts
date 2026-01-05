@@ -136,17 +136,45 @@ async function startDeviceFlow(domain: string): Promise<DeviceCodeResponse> {
 	};
 }
 
+/**
+ * Sleep that can be interrupted by an AbortSignal
+ */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("Login cancelled"));
+			return;
+		}
+
+		const timeout = setTimeout(resolve, ms);
+
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timeout);
+				reject(new Error("Login cancelled"));
+			},
+			{ once: true },
+		);
+	});
+}
+
 async function pollForGitHubAccessToken(
 	domain: string,
 	deviceCode: string,
 	intervalSeconds: number,
 	expiresIn: number,
+	signal?: AbortSignal,
 ) {
 	const urls = getUrls(domain);
 	const deadline = Date.now() + expiresIn * 1000;
 	let intervalMs = Math.max(1000, Math.floor(intervalSeconds * 1000));
 
 	while (Date.now() < deadline) {
+		if (signal?.aborted) {
+			throw new Error("Login cancelled");
+		}
+
 		const raw = await fetchJson(urls.accessTokenUrl, {
 			method: "POST",
 			headers: {
@@ -168,20 +196,20 @@ async function pollForGitHubAccessToken(
 		if (raw && typeof raw === "object" && typeof (raw as DeviceTokenErrorResponse).error === "string") {
 			const err = (raw as DeviceTokenErrorResponse).error;
 			if (err === "authorization_pending") {
-				await new Promise((resolve) => setTimeout(resolve, intervalMs));
+				await abortableSleep(intervalMs, signal);
 				continue;
 			}
 
 			if (err === "slow_down") {
 				intervalMs += 5000;
-				await new Promise((resolve) => setTimeout(resolve, intervalMs));
+				await abortableSleep(intervalMs, signal);
 				continue;
 			}
 
 			throw new Error(`Device flow failed: ${err}`);
 		}
 
-		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+		await abortableSleep(intervalMs, signal);
 	}
 
 	throw new Error("Device flow timed out");
@@ -274,17 +302,23 @@ async function enableAllGitHubCopilotModels(
  * @param options.onAuth - Callback with URL and optional instructions (user code)
  * @param options.onPrompt - Callback to prompt user for input
  * @param options.onProgress - Optional progress callback
+ * @param options.signal - Optional AbortSignal for cancellation
  */
 export async function loginGitHubCopilot(options: {
 	onAuth: (url: string, instructions?: string) => void;
 	onPrompt: (prompt: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
 	onProgress?: (message: string) => void;
+	signal?: AbortSignal;
 }): Promise<OAuthCredentials> {
 	const input = await options.onPrompt({
 		message: "GitHub Enterprise URL/domain (blank for github.com)",
 		placeholder: "company.ghe.com",
 		allowEmpty: true,
 	});
+
+	if (options.signal?.aborted) {
+		throw new Error("Login cancelled");
+	}
 
 	const trimmed = input.trim();
 	const enterpriseDomain = normalizeDomain(input);
@@ -301,6 +335,7 @@ export async function loginGitHubCopilot(options: {
 		device.device_code,
 		device.interval,
 		device.expires_in,
+		options.signal,
 	);
 	const credentials = await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain ?? undefined);
 

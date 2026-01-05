@@ -9,14 +9,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import Clipboard from "@crosscopy/clipboard";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message, OAuthProvider } from "@mariozechner/pi-ai";
+import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
 import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
 	getEditorKeybindings,
-	Input,
 	Loader,
 	Markdown,
 	matchesKey,
@@ -27,7 +26,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { exec, spawn, spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type {
@@ -57,6 +56,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
+import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -2122,150 +2122,16 @@ export class InteractiveMode {
 					done();
 
 					if (mode === "login") {
-						this.showStatus(`Logging in to ${providerId}...`);
-
-						// For openai-codex: promise that resolves when user pastes code manually
-						let manualCodeResolve: ((code: string) => void) | undefined;
-						const manualCodePromise = new Promise<string>((resolve) => {
-							manualCodeResolve = resolve;
-						});
-						let manualCodeInput: Input | undefined;
-
-						try {
-
-							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
-								onAuth: (info: { url: string; instructions?: string }) => {
-									this.chatContainer.addChild(new Spacer(1));
-
-									// OSC 8 hyperlink for desktop terminals that support clicking
-									const hyperlink = `\x1b]8;;${info.url}\x07Click here to login\x1b]8;;\x07`;
-									this.chatContainer.addChild(new Text(theme.fg("accent", hyperlink), 1, 0));
-
-									// OSC 52 to copy URL to clipboard (works over SSH, e.g., Termux)
-									const urlBase64 = Buffer.from(info.url).toString("base64");
-									process.stdout.write(`\x1b]52;c;${urlBase64}\x07`);
-									this.chatContainer.addChild(
-										new Text(theme.fg("dim", "(URL copied to clipboard - paste in browser)"), 1, 0),
-									);
-
-									if (info.instructions) {
-										this.chatContainer.addChild(new Spacer(1));
-										this.chatContainer.addChild(new Text(theme.fg("warning", info.instructions), 1, 0));
-									}
-
-									this.ui.requestRender();
-
-									// Try to open browser on desktop
-									const openCmd =
-										process.platform === "darwin"
-											? "open"
-											: process.platform === "win32"
-												? "start"
-												: "xdg-open";
-									exec(`${openCmd} "${info.url}"`);
-
-									// For openai-codex: show paste input immediately (races with browser callback)
-									if (providerId === "openai-codex") {
-										this.chatContainer.addChild(new Spacer(1));
-										this.chatContainer.addChild(
-											new Text(
-												theme.fg("dim", "Alternatively, paste the authorization code or redirect URL below:"),
-												1,
-												0,
-											),
-										);
-										manualCodeInput = new Input();
-										manualCodeInput.onSubmit = () => {
-											const code = manualCodeInput!.getValue();
-											if (code && manualCodeResolve) {
-												manualCodeResolve(code);
-												manualCodeResolve = undefined;
-											}
-										};
-										this.editorContainer.clear();
-										this.editorContainer.addChild(manualCodeInput);
-										this.ui.setFocus(manualCodeInput);
-										this.ui.requestRender();
-									}
-								},
-								onPrompt: async (prompt: { message: string; placeholder?: string }) => {
-									// Clean up manual code input if it exists (fallback case)
-									if (manualCodeInput) {
-										this.editorContainer.clear();
-										this.editorContainer.addChild(this.editor);
-										manualCodeInput = undefined;
-									}
-
-									this.chatContainer.addChild(new Spacer(1));
-									this.chatContainer.addChild(new Text(theme.fg("warning", prompt.message), 1, 0));
-									if (prompt.placeholder) {
-										this.chatContainer.addChild(new Text(theme.fg("dim", prompt.placeholder), 1, 0));
-									}
-									this.ui.requestRender();
-
-									return new Promise<string>((resolve) => {
-										const codeInput = new Input();
-										codeInput.onSubmit = () => {
-											const code = codeInput.getValue();
-											this.editorContainer.clear();
-											this.editorContainer.addChild(this.editor);
-											this.ui.setFocus(this.editor);
-											resolve(code);
-										};
-										this.editorContainer.clear();
-										this.editorContainer.addChild(codeInput);
-										this.ui.setFocus(codeInput);
-										this.ui.requestRender();
-									});
-								},
-								onProgress: (message: string) => {
-									this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
-									this.ui.requestRender();
-								},
-								onManualCodeInput: () => manualCodePromise,
-							});
-
-							// Clean up manual code input if browser callback succeeded
-							if (manualCodeInput) {
-								this.editorContainer.clear();
-								this.editorContainer.addChild(this.editor);
-								this.ui.setFocus(this.editor);
-								manualCodeInput = undefined;
-							}
-
-							// Refresh models to pick up new baseUrl (e.g., github-copilot)
-							this.session.modelRegistry.refresh();
-							this.chatContainer.addChild(new Spacer(1));
-							this.chatContainer.addChild(
-								new Text(theme.fg("success", `✓ Successfully logged in to ${providerId}`), 1, 0),
-							);
-							this.chatContainer.addChild(
-								new Text(theme.fg("dim", `Credentials saved to ${getAuthPath()}`), 1, 0),
-							);
-							this.ui.requestRender();
-						} catch (error: unknown) {
-							// Clean up manual code input on error
-							if (manualCodeInput) {
-								this.editorContainer.clear();
-								this.editorContainer.addChild(this.editor);
-								this.ui.setFocus(this.editor);
-								manualCodeInput = undefined;
-							}
-							this.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
-						}
+						await this.showLoginDialog(providerId);
 					} else {
+						// Logout flow
+						const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+						const providerName = providerInfo?.name || providerId;
+
 						try {
 							this.session.modelRegistry.authStorage.logout(providerId);
-							// Refresh models to reset baseUrl
 							this.session.modelRegistry.refresh();
-							this.chatContainer.addChild(new Spacer(1));
-							this.chatContainer.addChild(
-								new Text(theme.fg("success", `✓ Successfully logged out of ${providerId}`), 1, 0),
-							);
-							this.chatContainer.addChild(
-								new Text(theme.fg("dim", `Credentials removed from ${getAuthPath()}`), 1, 0),
-							);
-							this.ui.requestRender();
+							this.showStatus(`Logged out of ${providerName}`);
 						} catch (error: unknown) {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
 						}
@@ -2278,6 +2144,95 @@ export class InteractiveMode {
 			);
 			return { component: selector, focus: selector };
 		});
+	}
+
+	private async showLoginDialog(providerId: string): Promise<void> {
+		const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+		const providerName = providerInfo?.name || providerId;
+
+		// Providers that use callback servers (can paste redirect URL)
+		const usesCallbackServer =
+			providerId === "openai-codex" || providerId === "google-gemini-cli" || providerId === "google-antigravity";
+
+		// Create login dialog component
+		const dialog = new LoginDialogComponent(this.ui, providerId, (_success, _message) => {
+			// Completion handled below
+		});
+
+		// Show dialog in editor container
+		this.editorContainer.clear();
+		this.editorContainer.addChild(dialog);
+		this.ui.setFocus(dialog);
+		this.ui.requestRender();
+
+		// Promise for manual code input (racing with callback server)
+		let manualCodeResolve: ((code: string) => void) | undefined;
+		let manualCodeReject: ((err: Error) => void) | undefined;
+		const manualCodePromise = new Promise<string>((resolve, reject) => {
+			manualCodeResolve = resolve;
+			manualCodeReject = reject;
+		});
+
+		// Restore editor helper
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		try {
+			await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
+				onAuth: (info: { url: string; instructions?: string }) => {
+					dialog.showAuth(info.url, info.instructions);
+
+					if (usesCallbackServer) {
+						// Show input for manual paste, racing with callback
+						dialog
+							.showManualInput("Paste redirect URL below, or complete login in browser:")
+							.then((value) => {
+								if (value && manualCodeResolve) {
+									manualCodeResolve(value);
+									manualCodeResolve = undefined;
+								}
+							})
+							.catch(() => {
+								if (manualCodeReject) {
+									manualCodeReject(new Error("Login cancelled"));
+									manualCodeReject = undefined;
+								}
+							});
+					} else if (providerId === "github-copilot") {
+						// GitHub Copilot polls after onAuth
+						dialog.showWaiting("Waiting for browser authentication...");
+					}
+					// For Anthropic: onPrompt is called immediately after
+				},
+
+				onPrompt: async (prompt: { message: string; placeholder?: string }) => {
+					return dialog.showPrompt(prompt.message, prompt.placeholder);
+				},
+
+				onProgress: (message: string) => {
+					dialog.showProgress(message);
+				},
+
+				onManualCodeInput: () => manualCodePromise,
+
+				signal: dialog.signal,
+			});
+
+			// Success
+			restoreEditor();
+			this.session.modelRegistry.refresh();
+			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
+		} catch (error: unknown) {
+			restoreEditor();
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			if (errorMsg !== "Login cancelled") {
+				this.showError(`Failed to login to ${providerName}: ${errorMsg}`);
+			}
+		}
 	}
 
 	// =========================================================================
