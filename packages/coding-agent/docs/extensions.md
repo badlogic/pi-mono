@@ -133,6 +133,7 @@ The `package.json` approach enables:
 - Multiple extensions from one package
 - Third-party npm dependencies (resolved via jiti)
 - Nested source structure (no depth limit within the package)
+- Deployment to and installation from npm
 
 ## Available Imports
 
