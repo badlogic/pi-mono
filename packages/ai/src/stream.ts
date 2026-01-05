@@ -10,6 +10,7 @@ import {
 	streamGoogleGeminiCli,
 } from "./providers/google-gemini-cli.js";
 import { type GoogleVertexOptions, streamGoogleVertex } from "./providers/google-vertex.js";
+import { type OpenAICodexResponsesOptions, streamOpenAICodexResponses } from "./providers/openai-codex-responses.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
@@ -106,6 +107,9 @@ export function stream<TApi extends Api>(
 
 		case "openai-responses":
 			return streamOpenAIResponses(model as Model<"openai-responses">, context, providerOptions as any);
+
+		case "openai-codex-responses":
+			return streamOpenAICodexResponses(model as Model<"openai-codex-responses">, context, providerOptions as any);
 
 		case "google-generative-ai":
 			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
@@ -223,6 +227,12 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
 			} satisfies OpenAIResponsesOptions;
+
+		case "openai-codex-responses":
+			return {
+				...base,
+				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
+			} satisfies OpenAICodexResponsesOptions;
 
 		case "google-generative-ai": {
 			// Explicitly disable thinking when reasoning is not specified

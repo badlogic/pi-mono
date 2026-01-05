@@ -2,6 +2,7 @@ import type { AnthropicOptions } from "./providers/anthropic.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
 import type { GoogleVertexOptions } from "./providers/google-vertex.js";
+import type { OpenAICodexResponsesOptions } from "./providers/openai-codex-responses.js";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
 import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 import type { AssistantMessageEventStream } from "./utils/event-stream.js";
@@ -11,6 +12,7 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 export type Api =
 	| "openai-completions"
 	| "openai-responses"
+	| "openai-codex-responses"
 	| "anthropic-messages"
 	| "google-generative-ai"
 	| "google-gemini-cli"
@@ -20,6 +22,7 @@ export interface ApiOptionsMap {
 	"anthropic-messages": AnthropicOptions;
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
+	"openai-codex-responses": OpenAICodexResponsesOptions;
 	"google-generative-ai": GoogleOptions;
 	"google-gemini-cli": GoogleGeminiCliOptions;
 	"google-vertex": GoogleVertexOptions;
@@ -43,6 +46,7 @@ export type KnownProvider =
 	| "google-antigravity"
 	| "google-vertex"
 	| "openai"
+	| "openai-codex"
 	| "github-copilot"
 	| "xai"
 	| "groq"
