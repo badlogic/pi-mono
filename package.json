@@ -4,7 +4,8 @@
 	"type": "module",
 	"workspaces": [
 		"packages/*",
-		"packages/web-ui/example"
+		"packages/web-ui/example",
+		"packages/coding-agent/examples/extensions/with-deps"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
