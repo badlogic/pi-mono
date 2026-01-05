@@ -166,10 +166,12 @@ function detectColorMode(): ColorMode {
 		return "truecolor";
 	}
 	const term = process.env.TERM || "";
-	if (term.includes("256color")) {
+	// Only fall back to 256color for truly limited terminals
+	if (term === "dumb" || term === "" || term === "linux") {
 		return "256color";
 	}
-	return "256color";
+	// Assume truecolor for everything else - virtually all modern terminals support it
+	return "truecolor";
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
