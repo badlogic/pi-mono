@@ -373,9 +373,8 @@ The output becomes part of your next prompt, formatted as:
 
 ```
 Ran `ls -la`
-```
+
 <output here>
-```
 ```
 
 Run multiple commands before prompting; all outputs are included together.
@@ -806,72 +805,248 @@ cd /path/to/brave-search && npm install
 
 ### Extensions
 
-Extensions are TypeScript modules that extend pi's behavior. They can subscribe to lifecycle events, register custom tools, add commands, and more.
+Extensions are TypeScript modules that extend pi's behavior.
 
 **Use cases:**
-- **Register custom tools** (callable by the LLM, with custom UI and rendering)
-- **Intercept events** (block commands, modify context/results, customize compaction)
-- **Persist state** (store custom data in session, reconstruct on reload/branch)
-- **External integrations** (file watchers, webhooks, git checkpointing)
+- **Custom tools** - Register tools callable by the LLM with custom UI and rendering
+- **Custom commands** - Add `/commands` for users (e.g., `/deploy`, `/stats`)
+- **Event interception** - Block tool calls, modify results, customize compaction
+- **State persistence** - Store data in session, reconstruct on reload/branch
+- **External integrations** - File watchers, webhooks, git checkpointing
+- **Custom UI** - Full TUI control from tools, commands, or event handlers
 
-**Extension locations:**
+**Locations:**
 - Global: `~/.pi/agent/extensions/*.ts` or `~/.pi/agent/extensions/*/index.ts`
 - Project: `.pi/extensions/*.ts` or `.pi/extensions/*/index.ts`
 - CLI: `--extension <path>` or `-e <path>`
 
-**Quick example:**
+**Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
+
+#### Custom Tools
+
+Tools are functions the LLM can call. They appear in the system prompt and can have custom rendering.
 
 ```typescript
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 
 export default function (pi: ExtensionAPI) {
-  // Subscribe to events
-  pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "bash" && /sudo/.test(event.input.command as string)) {
-      const ok = await ctx.ui.confirm("Allow sudo?", event.input.command as string);
-      if (!ok) return { block: true, reason: "Blocked by user" };
-    }
-  });
-
-  // Register a custom tool
   pi.registerTool({
-    name: "greet",
-    label: "Greeting",
-    description: "Generate a greeting",
+    name: "deploy",
+    label: "Deploy",
+    description: "Deploy the application to production",
     parameters: Type.Object({
-      name: Type.String({ description: "Name to greet" }),
+      environment: Type.String({ description: "Target environment" }),
     }),
+
     async execute(toolCallId, params, onUpdate, ctx, signal) {
+      // Show progress via onUpdate
+      onUpdate({ status: "Deploying..." });
+
+      // Ask user for confirmation
+      const ok = await ctx.ui.confirm("Deploy?", `Deploy to ${params.environment}?`);
+      if (!ok) {
+        return { content: [{ type: "text", text: "Cancelled" }], details: { cancelled: true } };
+      }
+
+      // Run shell commands
+      const result = await ctx.exec("./deploy.sh", [params.environment], { signal });
+
       return {
-        content: [{ type: "text", text: `Hello, ${params.name}!` }],
-        details: {},
+        content: [{ type: "text", text: result.stdout }],
+        details: { environment: params.environment, exitCode: result.exitCode },
       };
     },
-  });
 
-  // Register a command
-  pi.registerCommand("hello", {
-    description: "Say hello",
-    handler: async (args, ctx) => {
-      ctx.ui.notify(`Hello ${args || "world"}!`, "info");
+    // Custom TUI rendering (optional)
+    renderCall(args, theme) {
+      return new Text(theme.bold("deploy ") + theme.fg("accent", args.environment), 0, 0);
+    },
+    renderResult(result, options, theme) {
+      const ok = result.details?.exitCode === 0;
+      return new Text(ok ? theme.fg("success", "✓ Deployed") : theme.fg("error", "✗ Failed"), 0, 0);
     },
   });
 }
 ```
 
-**Features:**
-- Event handlers: `pi.on("tool_call", ...)`, `pi.on("session_start", ...)`, etc.
-- Custom tools: `pi.registerTool({ name, execute, renderResult, ... })`
-- Commands: `pi.registerCommand("name", { handler })`
-- Keyboard shortcuts: `pi.registerShortcut("ctrl+x", { handler })`
-- CLI flags: `pi.registerFlag("--my-flag", { ... })`
-- UI access: `ctx.ui.confirm()`, `ctx.ui.select()`, `ctx.ui.input()`
-- Shell execution: `pi.exec("git", ["status"])`
-- Message injection: `pi.sendMessage({ content, ... }, { triggerTurn: true })`
+#### Custom Commands
 
-> See [Extensions Documentation](docs/extensions.md) for full API reference. pi can help you create extensions.
+Commands are user-invoked via `/name`. They can show custom UI, modify state, or trigger agent turns.
 
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("stats", {
+    description: "Show session statistics",
+    handler: async (args, ctx) => {
+      // Simple notification
+      ctx.ui.notify(`${ctx.sessionManager.getEntries().length} entries`, "info");
+    },
+  });
+
+  pi.registerCommand("todos", {
+    description: "Interactive todo viewer",
+    handler: async (args, ctx) => {
+      // Full custom UI with keyboard handling
+      await ctx.ui.custom((tui, theme, done) => {
+        return {
+          render(width) {
+            return [
+              theme.bold("Todos"),
+              "- [ ] Item 1",
+              "- [x] Item 2",
+              "",
+              theme.fg("dim", "Press Escape to close"),
+            ];
+          },
+          handleInput(data) {
+            if (matchesKey(data, "escape")) done();
+          },
+        };
+      });
+    },
+  });
+}
+```
+
+#### Event Interception
+
+Subscribe to lifecycle events to block, modify, or observe agent behavior.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  // Block dangerous commands
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName === "bash" && /rm -rf/.test(event.input.command as string)) {
+      const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
+      if (!ok) return { block: true, reason: "Blocked by user" };
+    }
+  });
+
+  // Modify tool results
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName === "read") {
+      // Redact secrets from file contents
+      return { modifiedResult: event.result.replace(/API_KEY=\w+/g, "API_KEY=***") };
+    }
+  });
+
+  // Custom compaction
+  pi.on("session_before_compact", async (event, ctx) => {
+    return { customSummary: "My custom summary of the conversation so far..." };
+  });
+
+  // Git checkpoint on each turn
+  pi.on("turn_end", async (event, ctx) => {
+    await ctx.exec("git", ["stash", "push", "-m", `pi-checkpoint-${Date.now()}`]);
+  });
+}
+```
+
+#### State Persistence
+
+Store state in session entries that survive reload and work correctly with branching.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  let counter = 0;
+
+  // Reconstruct state from session history
+  const reconstruct = (ctx) => {
+    counter = 0;
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "custom" && entry.customType === "my_counter") {
+        counter = entry.data.value;
+      }
+    }
+  };
+
+  pi.on("session_start", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_branch", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_tree", async (e, ctx) => reconstruct(ctx));
+
+  pi.registerCommand("increment", {
+    handler: async (args, ctx) => {
+      counter++;
+      ctx.appendEntry("my_counter", { value: counter }); // Persisted in session
+      ctx.ui.notify(`Counter: ${counter}`, "info");
+    },
+  });
+}
+```
+
+#### Keyboard Shortcuts
+
+Register custom keyboard shortcuts (shown in `/hotkeys`):
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerShortcut("ctrl+shift+d", {
+    description: "Deploy to production",
+    handler: async (ctx) => {
+      ctx.ui.notify("Deploying...", "info");
+      await ctx.exec("./deploy.sh", []);
+    },
+  });
+}
+```
+
+#### CLI Flags
+
+Register custom CLI flags (parsed automatically, shown in `--help`):
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerFlag("--dry-run", {
+    description: "Run without making changes",
+    type: "boolean",
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (pi.getFlag("dry-run") && event.toolName === "write") {
+      return { block: true, reason: "Dry run mode" };
+    }
+  });
+}
+```
+
+#### Custom UI
+
+Extensions have full TUI access via `ctx.ui`:
+
+```typescript
+// Simple prompts
+const confirmed = await ctx.ui.confirm("Title", "Are you sure?");
+const choice = await ctx.ui.select("Pick one", ["Option A", "Option B"]);
+const text = await ctx.ui.input("Enter value");
+
+// Notifications
+ctx.ui.notify("Done!", "success"); // success, info, warning, error
+
+// Status line (persistent in footer, multiple extensions can set their own)
+ctx.ui.setStatus("my-ext", "Processing...");
+ctx.ui.setStatus("my-ext", null); // Clear
+
+// Widgets (above editor)
+ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
+
+// Full custom component with keyboard handling
+await ctx.ui.custom((tui, theme, done) => ({
+  render(width) {
+    return [
+      theme.bold("My Component"),
+      theme.fg("dim", "Press Escape to close"),
+    ];
+  },
+  handleInput(data) {
+    if (matchesKey(data, "escape")) done();
+  },
+}));
+```
+
+> See [docs/extensions.md](docs/extensions.md) for full API reference.
+> See [docs/tui.md](docs/tui.md) for TUI components and custom rendering.
 > See [examples/extensions/](examples/extensions/) for working examples.
 
 ---
@@ -1053,7 +1228,7 @@ pi --export session.jsonl              # Auto-generated filename
 pi --export session.jsonl output.html  # Custom filename
 ```
 
-Works with both session files and streaming event logs from `--mode json`.
+Works with session files.
 
 ---
 
@@ -1120,3 +1295,4 @@ MIT
 
 - [@mariozechner/pi-ai](https://www.npmjs.com/package/@mariozechner/pi-ai): Core LLM toolkit
 - [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [@mariozechner/pi-tui](https://www.npmjs.com/package/@mariozechner/pi-tui): Terminal UI components

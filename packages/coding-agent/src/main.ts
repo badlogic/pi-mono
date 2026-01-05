@@ -27,7 +27,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
-import { runMigrations } from "./migrations.js";
+import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
@@ -282,8 +282,8 @@ function buildSessionOptions(
 export async function main(args: string[]) {
 	time("start");
 
-	// Run migrations
-	const { migratedAuthProviders: migratedProviders } = runMigrations();
+	// Run migrations (pass cwd for project-local migrations)
+	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
 	// Create AuthStorage and ModelRegistry upfront
 	const authStorage = discoverAuthStorage();
@@ -365,6 +365,11 @@ export async function main(args: string[]) {
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
 	time("initTheme");
+
+	// Show deprecation warnings in interactive mode
+	if (isInteractive && deprecationWarnings.length > 0) {
+		await showDeprecationWarnings(deprecationWarnings);
+	}
 
 	let scopedModels: ScopedModel[] = [];
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();

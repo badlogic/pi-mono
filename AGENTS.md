@@ -19,7 +19,7 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - Always ask before removing functionality or code that appears to be intentional
 
 ## Commands
-- After code changes: `npm run check` (get full output, no tail)
+- After code changes (not documentation changes): `npm run check` (get full output, no tail)
 - NEVER run: `npm run dev`, `npm run build`, `npm test`
 - Only run specific tests if user instructs: `npm test -- test/specific.test.ts`
 - NEVER commit unless user asks

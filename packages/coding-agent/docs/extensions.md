@@ -15,13 +15,15 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 
 **Example use cases:**
 - Permission gates (confirm before `rm -rf`, `sudo`, etc.)
-- Git checkpointing (stash at each turn, restore on `/branch`)
+- Git checkpointing (stash at each turn, restore on branch)
 - Path protection (block writes to `.env`, `node_modules/`)
+- Custom compaction (summarize conversation your way)
 - Interactive tools (questions, wizards, custom dialogs)
 - Stateful tools (todo lists, connection pools)
 - External integrations (file watchers, webhooks, CI triggers)
+- Games while you wait (see `snake.ts` example)
 
-See [examples/extensions/](../examples/extensions/) and [examples/hooks/](../examples/hooks/) for working implementations.
+See [examples/extensions/](../examples/extensions/) for working implementations.
 
 ## Quick Start
 
