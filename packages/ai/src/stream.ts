@@ -24,6 +24,17 @@ import type {
 	SimpleStreamOptions,
 } from "./types.js";
 
+const VERTEX_ADC_CREDENTIALS_PATH = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
+
+let cachedVertexAdcCredentialsExists: boolean | null = null;
+
+function hasVertexAdcCredentials(): boolean {
+	if (cachedVertexAdcCredentialsExists === null) {
+		cachedVertexAdcCredentialsExists = existsSync(VERTEX_ADC_CREDENTIALS_PATH);
+	}
+	return cachedVertexAdcCredentialsExists;
+}
+
 /**
  * Get API key for provider from known environment variables, e.g. OPENAI_API_KEY.
  *
@@ -45,8 +56,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 	// Vertex AI uses Application Default Credentials, not API keys.
 	// Auth is configured via `gcloud auth application-default login`.
 	if (provider === "google-vertex") {
-		const credentialsPath = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
-		const hasCredentials = existsSync(credentialsPath);
+		const hasCredentials = hasVertexAdcCredentials();
 		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
 		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
 
