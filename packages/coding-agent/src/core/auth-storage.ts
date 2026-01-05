@@ -323,8 +323,7 @@ export class AuthStorage {
 
 					if (updatedCred?.type === "oauth" && Date.now() < updatedCred.expires) {
 						// Another instance refreshed successfully, use those credentials
-						const needsProjectId =
-							provider === "google-gemini-cli" || provider === "google-antigravity";
+						const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
 						return needsProjectId
 							? JSON.stringify({ token: updatedCred.access, projectId: updatedCred.projectId })
 							: updatedCred.access;
@@ -341,9 +340,7 @@ export class AuthStorage {
 			} else {
 				// Token not expired, use current access token
 				const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
-				return needsProjectId
-					? JSON.stringify({ token: cred.access, projectId: cred.projectId })
-					: cred.access;
+				return needsProjectId ? JSON.stringify({ token: cred.access, projectId: cred.projectId }) : cred.access;
 			}
 		}
 

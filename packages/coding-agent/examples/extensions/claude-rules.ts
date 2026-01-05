@@ -17,9 +17,9 @@
  * 3. Add .md files with your rules
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 /**
  * Recursively find all .md files in a directory
