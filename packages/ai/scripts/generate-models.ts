@@ -454,7 +454,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["low", "medium", "high", "xhigh"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -479,7 +478,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["low", "medium", "high", "xhigh"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -492,7 +490,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["low", "medium", "high"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -505,7 +502,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["medium", "high"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -518,7 +514,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["medium", "high"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -531,7 +526,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["medium", "high"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -544,7 +538,6 @@ async function generateModels() {
 			provider: "openai-codex",
 			baseUrl: CODEX_BASE_URL,
 			reasoning: true,
-			thinkingLevels: ["low", "medium", "high"],
 			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
@@ -999,9 +992,6 @@ export const MODELS = {
 `;
 			}
 			output += `\t\t\treasoning: ${model.reasoning},\n`;
-			if (model.thinkingLevels) {
-				output += `\t\t\tthinkingLevels: ${JSON.stringify(model.thinkingLevels)},\n`;
-			}
 			output += `\t\t\tinput: [${model.input.map(i => `"${i}"`).join(", ")}],\n`;
 			output += `\t\t\tcost: {\n`;
 			output += `\t\t\t\tinput: ${model.cost.input},\n`;

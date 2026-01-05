@@ -56,7 +56,7 @@ export type KnownProvider =
 	| "mistral";
 export type Provider = KnownProvider | string;
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 // Base options all providers share
 export interface StreamOptions {
@@ -68,7 +68,7 @@ export interface StreamOptions {
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
-	reasoning?: ReasoningEffort;
+	reasoning?: ThinkingLevel;
 }
 
 // Generic StreamFunction with typed options
@@ -210,8 +210,6 @@ export interface Model<TApi extends Api> {
 	provider: Provider;
 	baseUrl: string;
 	reasoning: boolean;
-	/** Supported reasoning levels for this model (excluding "off"). */
-	thinkingLevels?: ReasoningEffort[];
 	input: ("text" | "image")[];
 	cost: {
 		input: number; // $/million tokens

@@ -2781,7 +2781,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["medium","high"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2816,7 +2815,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["low","medium","high"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2834,7 +2832,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["medium","high"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2920,7 +2917,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["low","medium","high"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2938,7 +2934,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["low","medium","high","xhigh"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2956,7 +2951,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["medium","high"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -2991,7 +2985,6 @@ export const MODELS = {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
-			thinkingLevels: ["low","medium","high","xhigh"],
 			input: ["text", "image"],
 			cost: {
 				input: 0,
@@ -4056,7 +4049,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 256000,
-			maxTokens: 32768,
+			maxTokens: 128000,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3-70b-instruct": {
 			id: "meta-llama/llama-3-70b-instruct",
@@ -6670,6 +6663,23 @@ export const MODELS = {
 			cost: {
 				input: 0.25,
 				output: 0.85,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 163840,
+			maxTokens: 65536,
+		} satisfies Model<"openai-completions">,
+		"tngtech/tng-r1t-chimera:free": {
+			id: "tngtech/tng-r1t-chimera:free",
+			name: "TNG: R1T Chimera (free)",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},

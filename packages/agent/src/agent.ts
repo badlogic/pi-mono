@@ -8,7 +8,6 @@ import {
 	type ImageContent,
 	type Message,
 	type Model,
-	type ReasoningEffort,
 	streamSimple,
 	type TextContent,
 } from "@mariozechner/pi-ai";
@@ -276,8 +275,7 @@ export class Agent {
 		this._state.streamMessage = null;
 		this._state.error = undefined;
 
-		const reasoning: ReasoningEffort | undefined =
-			this._state.thinkingLevel === "off" ? undefined : (this._state.thinkingLevel as ReasoningEffort);
+		const reasoning = this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel;
 
 		const context: AgentContext = {
 			systemPrompt: this._state.systemPrompt,

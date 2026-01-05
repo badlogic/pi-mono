@@ -1007,16 +1007,10 @@ export class AgentSession {
 
 	/**
 	 * Get available thinking levels for current model.
+	 * The provider will clamp to what the specific model supports internally.
 	 */
 	getAvailableThinkingLevels(): ThinkingLevel[] {
 		if (!this.supportsThinking()) return ["off"];
-
-		const modelLevels = this.model?.thinkingLevels;
-		if (modelLevels && modelLevels.length > 0) {
-			const withOff: ThinkingLevel[] = ["off", ...modelLevels];
-			return THINKING_LEVELS_WITH_XHIGH.filter((level) => withOff.includes(level));
-		}
-
 		return this.supportsXhighThinking() ? THINKING_LEVELS_WITH_XHIGH : THINKING_LEVELS;
 	}
 
