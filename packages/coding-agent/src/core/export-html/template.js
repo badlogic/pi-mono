@@ -19,7 +19,10 @@
       // ============================================================
 
       // Parse URL parameters for deep linking: leafId and targetId
-      const urlParams = new URLSearchParams(window.location.search);
+      // Check for injected params (when loaded in iframe via srcdoc) or use window.location
+      const injectedParams = document.querySelector('meta[name="pi-url-params"]');
+      const searchString = injectedParams ? injectedParams.content : window.location.search.substring(1);
+      const urlParams = new URLSearchParams(searchString);
       const urlLeafId = urlParams.get('leafId');
       const urlTargetId = urlParams.get('targetId');
       // Use URL leafId if provided, otherwise fall back to session default
