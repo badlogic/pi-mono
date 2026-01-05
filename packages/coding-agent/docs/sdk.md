@@ -468,12 +468,15 @@ Custom tools passed via `customTools` are combined with extension-registered too
 
 ### Extensions
 
-Extensions are discovered from `~/.pi/agent/extensions/` and `.pi/extensions/`. You can also pass inline extensions or additional paths:
+By default, extensions are discovered from multiple locations:
+- `~/.pi/agent/extensions/` (global)
+- `.pi/extensions/` (project-local)
+- Paths listed in `settings.json` `"extensions"` array
 
 ```typescript
 import { createAgentSession, type ExtensionFactory } from "@mariozechner/pi-coding-agent";
 
-// Inline extension
+// Inline extension factory
 const myExtension: ExtensionFactory = (pi) => {
   pi.on("tool_call", async (event, ctx) => {
     console.log(`Tool: ${event.toolName}`);
@@ -487,14 +490,19 @@ const myExtension: ExtensionFactory = (pi) => {
   });
 };
 
-// Pass inline extensions (merged with discovery)
+// Pass inline extensions (skips file discovery)
 const { session } = await createAgentSession({
   extensions: [myExtension],
 });
 
-// Or add paths to load (merged with discovery)
+// Add paths to load (merged with discovery)
 const { session } = await createAgentSession({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
+});
+
+// Disable extension discovery entirely
+const { session } = await createAgentSession({
+  extensions: [],
 });
 ```
 

@@ -298,7 +298,10 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const eventBus = createEventBus();
-	const extensionPaths = firstPass.extensions ?? [];
+	const settingsManager = SettingsManager.create(cwd);
+	time("SettingsManager.create");
+	// Merge CLI --extension args with settings.json extensions
+	const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
 	const { extensions: loadedExtensions } = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
 	time("discoverExtensionFlags");
 
@@ -357,8 +360,6 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	const settingsManager = SettingsManager.create(cwd);
-	time("SettingsManager.create");
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
