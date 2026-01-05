@@ -158,7 +158,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 export default function (pi: ExtensionAPI) {
   // Subscribe to events
   pi.on("event_name", async (event, ctx) => {
-    // Handle event
+    // ctx.ui for user interaction
+    const ok = await ctx.ui.confirm("Title", "Are you sure?");
+    ctx.ui.notify("Done!", "success");
+    ctx.ui.setStatus("my-ext", "Processing...");  // Footer status
+    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor
   });
 
   // Register tools, commands, shortcuts, flags
