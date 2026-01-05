@@ -329,7 +329,7 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
 | `deleteToLineStart` | `ctrl+u` | Delete to line start |
 | `deleteToLineEnd` | `ctrl+k` | Delete to line end |
-| `newLine` | `shift+enter`, `alt+enter` | Insert new line |
+| `newLine` | `shift+enter` | Insert new line |
 | `submit` | `enter` | Submit input |
 | `tab` | `tab` | Tab/autocomplete |
 | `interrupt` | `escape` | Interrupt operation |
