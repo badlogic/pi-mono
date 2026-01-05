@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.35.0] - 2026-01-05
 
 This release unifies hooks and custom tools into a single "extensions" system and renames "slash commands" to "prompt templates". ([#454](https://github.com/badlogic/pi-mono/issues/454))
