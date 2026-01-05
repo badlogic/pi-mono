@@ -151,6 +151,9 @@ function mapOptionsForApi<TApi extends Api>(
 		maxTokens: options?.maxTokens || Math.min(model.maxTokens, 32000),
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
+		oauthToken: options?.oauthToken,
+		conversationId: options?.conversationId,
+		promptCacheKey: options?.promptCacheKey,
 	};
 
 	// Helper to clamp xhigh to high for providers that don't support it

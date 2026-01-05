@@ -620,6 +620,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const slashCommands = options.slashCommands ?? discoverSlashCommands(cwd, agentDir);
 	time("discoverSlashCommands");
 
+	const getStreamOptions = (currentModel: Model<any>) => {
+		const options: { oauthToken?: boolean; conversationId?: string; promptCacheKey?: string } = {};
+		if (currentModel.provider === "anthropic" && modelRegistry.isUsingOAuth(currentModel)) {
+			options.oauthToken = true;
+		}
+		if (currentModel.provider === "openai" && modelRegistry.isUsingOAuth(currentModel)) {
+			const conversationId = sessionManager.getSessionId();
+			options.conversationId = conversationId;
+			options.promptCacheKey = conversationId;
+		}
+		return options;
+	};
+
 	agent = new Agent({
 		initialState: {
 			systemPrompt,
@@ -646,6 +659,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 			return key;
 		},
+		getStreamOptions,
 	});
 	time("createAgent");
 

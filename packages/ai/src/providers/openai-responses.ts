@@ -28,6 +28,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { getCodexBaseInstructions } from "./openai-codex-prompts.js";
 import { transformMessages } from "./transorm-messages.js";
 
 /** Fast deterministic hash to shorten long strings */
@@ -85,7 +86,11 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
-			const openaiStream = await client.responses.create(params, { signal: options?.signal });
+			const requestHeaders = buildRequestHeaders(options?.conversationId, model.baseUrl);
+			const openaiStream = await client.responses.create(params, {
+				signal: options?.signal,
+				headers: requestHeaders,
+			});
 			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
@@ -356,8 +361,49 @@ function createClient(model: Model<"openai-responses">, context: Context, apiKey
 	});
 }
 
+function isChatGPTCodexBaseUrl(baseUrl?: string): boolean {
+	if (!baseUrl) return false;
+	const normalized = baseUrl.toLowerCase();
+	return (
+		normalized.includes("chatgpt.com/backend-api") ||
+		normalized.includes("chat.openai.com/backend-api") ||
+		normalized.includes("/backend-api/codex")
+	);
+}
+
+function codexSupportsParallelToolCalls(modelId: string): boolean {
+	const id = modelId.toLowerCase();
+	if (id.startsWith("gpt-5.2-codex")) return true;
+	if (id.startsWith("gpt-5.1-codex")) return false;
+	if (id.startsWith("gpt-5-codex")) return false;
+	if (id.startsWith("gpt-5.2")) return true;
+	if (id.startsWith("gpt-5.1")) return true;
+	if (id.startsWith("gpt-5")) return false;
+	return false;
+}
+
+function buildRequestHeaders(
+	conversationId: string | undefined,
+	baseUrl: string | undefined,
+): Record<string, string> | undefined {
+	const headers: Record<string, string> = {};
+	if (conversationId) {
+		headers.conversation_id = conversationId;
+		headers.session_id = conversationId;
+	}
+	if (isChatGPTCodexBaseUrl(baseUrl)) {
+		headers.Accept = "text/event-stream";
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {
-	const messages = convertMessages(model, context);
+	const isChatGPTCodex = isChatGPTCodexBaseUrl(model.baseUrl);
+	const codexInstructions = isChatGPTCodex ? getCodexBaseInstructions(model.id) : undefined;
+	const messages = convertMessages(model, context, {
+		includeSystemPrompt: !isChatGPTCodex,
+		forceMessageType: isChatGPTCodex,
+	});
 
 	const params: ResponseCreateParamsStreaming = {
 		model: model.id,
@@ -365,7 +411,21 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		stream: true,
 	};
 
-	if (options?.maxTokens) {
+	if (isChatGPTCodex) {
+		if (!codexInstructions) {
+			throw new Error(`Missing Codex base instructions for model ${model.id}`);
+		}
+		params.instructions = sanitizeSurrogates(codexInstructions);
+		params.tool_choice = "auto";
+		params.store = false;
+		params.parallel_tool_calls = codexSupportsParallelToolCalls(model.id);
+	}
+	const promptCacheKey = options?.promptCacheKey ?? options?.conversationId;
+	if (promptCacheKey) {
+		params.prompt_cache_key = promptCacheKey;
+	}
+
+	if (options?.maxTokens && !isChatGPTCodex) {
 		params.max_output_tokens = options?.maxTokens;
 	}
 
@@ -378,10 +438,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	}
 
 	if (model.reasoning) {
-		if (options?.reasoningEffort || options?.reasoningSummary) {
+		if (options?.reasoningEffort || options?.reasoningSummary || isChatGPTCodex) {
 			params.reasoning = {
 				effort: options?.reasoningEffort || "medium",
-				summary: options?.reasoningSummary || "auto",
+				summary: options?.reasoningSummary ?? "auto",
 			};
 			params.include = ["reasoning.encrypted_content"];
 		} else {
@@ -403,12 +463,17 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	return params;
 }
 
-function convertMessages(model: Model<"openai-responses">, context: Context): ResponseInput {
+function convertMessages(
+	model: Model<"openai-responses">,
+	context: Context,
+	options?: { includeSystemPrompt?: boolean; forceMessageType?: boolean },
+): ResponseInput {
 	const messages: ResponseInput = [];
 
 	const transformedMessages = transformMessages(context.messages, model);
 
-	if (context.systemPrompt) {
+	const includeSystemPrompt = options?.includeSystemPrompt ?? true;
+	if (includeSystemPrompt && context.systemPrompt) {
 		const role = model.reasoning ? "developer" : "system";
 		messages.push({
 			role,
@@ -421,6 +486,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				messages.push({
+					...(options?.forceMessageType ? { type: "message" as const } : {}),
 					role: "user",
 					content: [{ type: "input_text", text: sanitizeSurrogates(msg.content) }],
 				});
@@ -444,6 +510,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					: content;
 				if (filteredContent.length === 0) continue;
 				messages.push({
+					...(options?.forceMessageType ? { type: "message" as const } : {}),
 					role: "user",
 					content: filteredContent,
 				});
@@ -543,7 +610,7 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		name: tool.name,
 		description: tool.description,
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-		strict: null,
+		strict: false,
 	}));
 }
 

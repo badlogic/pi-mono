@@ -14,6 +14,7 @@ import {
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
+import { buildCodexHeaders } from "../utils/codex-headers.js";
 import type { AuthStorage } from "./auth-storage.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -105,6 +106,93 @@ function resolveApiKeyConfig(keyConfig: string): string | undefined {
 	return keyConfig;
 }
 
+const OPENAI_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/codex";
+const OPENAI_CODEX_CONTEXT_WINDOW = 272000;
+const OPENAI_CODEX_MAX_TOKENS = 10000;
+const OPENAI_CODEX_MODELS: Model<Api>[] = [
+	{
+		id: "gpt-5.2-codex",
+		name: "GPT-5.2 Codex",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: OPENAI_CHATGPT_BASE_URL,
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+		maxTokens: OPENAI_CODEX_MAX_TOKENS,
+	},
+	{
+		id: "gpt-5.1-codex-mini",
+		name: "GPT-5.1 Codex Mini",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: OPENAI_CHATGPT_BASE_URL,
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+		maxTokens: OPENAI_CODEX_MAX_TOKENS,
+	},
+];
+const OPENAI_CODEX_ALLOWED_IDS = new Set<string>([
+	"gpt-5.2-codex",
+	"gpt-5.1-codex-max",
+	"gpt-5.1-codex-mini",
+	"gpt-5.2",
+]);
+const OPENAI_CODEX_MODEL_OVERRIDES: Record<
+	string,
+	{ contextWindow: number; maxTokens: number; input: Array<"text" | "image"> }
+> = {
+	"gpt-5.2-codex": {
+		contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+		maxTokens: OPENAI_CODEX_MAX_TOKENS,
+		input: ["text"],
+	},
+	"gpt-5.1-codex-max": {
+		contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+		maxTokens: OPENAI_CODEX_MAX_TOKENS,
+		input: ["text"],
+	},
+	"gpt-5.1-codex-mini": {
+		contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+		maxTokens: OPENAI_CODEX_MAX_TOKENS,
+		input: ["text"],
+	},
+};
+
+function shouldOverrideOpenAIBaseUrl(baseUrl?: string): boolean {
+	if (!baseUrl) return true;
+	return baseUrl.toLowerCase().includes("api.openai.com");
+}
+
+function ensureOpenAICodexModels(models: Model<Api>[]): Model<Api>[] {
+	const existing = new Set(models.filter((m) => m.provider === "openai").map((m) => m.id));
+	const additions = OPENAI_CODEX_MODELS.filter((model) => !existing.has(model.id));
+	return additions.length > 0 ? [...models, ...additions] : models;
+}
+
+function filterOpenAIOAuthModels(models: Model<Api>[]): Model<Api>[] {
+	return models.filter((model) => model.provider !== "openai" || OPENAI_CODEX_ALLOWED_IDS.has(model.id));
+}
+
+function applyOpenAIOAuth(models: Model<Api>[], accountId?: string): Model<Api>[] {
+	const codexHeaders = buildCodexHeaders();
+	return models.map((model) => {
+		if (model.provider !== "openai") return model;
+		const baseUrl = shouldOverrideOpenAIBaseUrl(model.baseUrl) ? OPENAI_CHATGPT_BASE_URL : model.baseUrl;
+		const headers = {
+			...model.headers,
+			...codexHeaders,
+			...(accountId ? { "ChatGPT-Account-ID": accountId } : {}),
+		};
+		const override = OPENAI_CODEX_MODEL_OVERRIDES[model.id];
+		const merged = override ? { ...model, ...override } : model;
+		return { ...merged, baseUrl, headers };
+	});
+}
+
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
@@ -163,6 +251,8 @@ export class ModelRegistry {
 		const builtInModels = this.loadBuiltInModels(replacedProviders, overrides);
 		const combined = [...builtInModels, ...customModels];
 
+		let models = combined;
+
 		// Update github-copilot base URL based on OAuth credentials
 		const copilotCred = this.authStorage.get("github-copilot");
 		if (copilotCred?.type === "oauth") {
@@ -170,10 +260,20 @@ export class ModelRegistry {
 				? (normalizeDomain(copilotCred.enterpriseUrl) ?? undefined)
 				: undefined;
 			const baseUrl = getGitHubCopilotBaseUrl(copilotCred.access, domain);
-			this.models = combined.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m));
-		} else {
-			this.models = combined;
+			models = models.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m));
 		}
+
+		// Update OpenAI base URL + headers when using ChatGPT OAuth
+		const openaiCred = this.authStorage.get("openai");
+		if (openaiCred?.type === "oauth" && this.authStorage.isOAuth("openai")) {
+			if (!replacedProviders.has("openai")) {
+				models = ensureOpenAICodexModels(models);
+				models = filterOpenAIOAuthModels(models);
+			}
+			models = applyOpenAIOAuth(models, openaiCred.accountId);
+		}
+
+		this.models = models;
 	}
 
 	/** Load built-in models, skipping replaced providers and applying overrides */
@@ -372,10 +472,20 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * Force refresh OAuth credentials for a model.
+	 */
+	async refreshOAuthApiKey(model: Model<Api>): Promise<string | undefined> {
+		const apiKey = await this.authStorage.refreshOAuthApiKey(model.provider);
+		if (apiKey && (model.provider === "github-copilot" || model.provider === "openai")) {
+			this.refresh();
+		}
+		return apiKey;
+	}
+
+	/**
 	 * Check if a model is using OAuth credentials (subscription).
 	 */
 	isUsingOAuth(model: Model<Api>): boolean {
-		const cred = this.authStorage.get(model.provider);
-		return cred?.type === "oauth";
+		return this.authStorage.isOAuth(model.provider);
 	}
 }

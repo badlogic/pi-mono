@@ -1316,10 +1316,23 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
+		const authError = /unauthorized|401|invalid api key|authentication/i.test(err);
+		if (authError) {
+			const model = this.model;
+			return Boolean(model && this._modelRegistry.isUsingOAuth(model));
+		}
+
 		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error
 		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error/i.test(
 			err,
 		);
+	}
+
+	private _isAuthRefreshableError(message: AssistantMessage): boolean {
+		if (message.stopReason !== "error" || !message.errorMessage) return false;
+		const model = this.model;
+		if (!model || !this._modelRegistry.isUsingOAuth(model)) return false;
+		return /unauthorized|401|invalid api key|authentication/i.test(message.errorMessage);
 	}
 
 	/**
@@ -1327,6 +1340,13 @@ export class AgentSession {
 	 * @returns true if retry was initiated, false if max retries exceeded or disabled
 	 */
 	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
+		if (this._isAuthRefreshableError(message)) {
+			const model = this.model;
+			if (!model) return false;
+			const refreshed = await this._modelRegistry.refreshOAuthApiKey(model);
+			if (!refreshed) return false;
+		}
+
 		const settings = this.settingsManager.getRetrySettings();
 		if (!settings.enabled) return false;
 

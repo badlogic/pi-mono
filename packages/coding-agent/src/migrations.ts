@@ -45,7 +45,11 @@ export function migrateAuthToAuthJson(): string[] {
 			if (settings.apiKeys && typeof settings.apiKeys === "object") {
 				for (const [provider, key] of Object.entries(settings.apiKeys)) {
 					if (!migrated[provider] && typeof key === "string") {
-						migrated[provider] = { type: "api_key", key };
+						if (provider === "anthropic" && key.startsWith("sk-ant-oat")) {
+							migrated[provider] = { type: "api_key", key, tokenType: "oauth" };
+						} else {
+							migrated[provider] = { type: "api_key", key };
+						}
 						providers.push(provider);
 					}
 				}
@@ -63,6 +67,30 @@ export function migrateAuthToAuthJson(): string[] {
 	}
 
 	return providers;
+}
+
+/**
+ * Tag Anthropic OAuth tokens stored as api_key entries in auth.json.
+ */
+export function migrateAnthropicApiKeyTokenType(): boolean {
+	const authPath = join(getAgentDir(), "auth.json");
+	if (!existsSync(authPath)) return false;
+
+	try {
+		const raw = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, unknown>;
+		const entry = raw.anthropic;
+		if (!entry || typeof entry !== "object") return false;
+		const record = entry as { type?: string; key?: string; tokenType?: string };
+		if (record.type !== "api_key" || typeof record.key !== "string") return false;
+		if (record.tokenType) return false;
+		if (!record.key.startsWith("sk-ant-oat")) return false;
+
+		record.tokenType = "oauth";
+		writeFileSync(authPath, JSON.stringify(raw, null, 2), { mode: 0o600 });
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -130,6 +158,7 @@ export function migrateSessionsFromAgentRoot(): void {
  */
 export function runMigrations(): { migratedAuthProviders: string[] } {
 	const migratedAuthProviders = migrateAuthToAuthJson();
+	migrateAnthropicApiKeyTokenType();
 	migrateSessionsFromAgentRoot();
 	return { migratedAuthProviders };
 }

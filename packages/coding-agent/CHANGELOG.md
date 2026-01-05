@@ -1,9 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+
+- OpenAI (ChatGPT Codex) OAuth login support with device code flow and automatic base URL/header updates for the openai provider.
+- ChatGPT OAuth now injects Codex model IDs (e.g., `gpt-5.2-codex`, `gpt-5.1-codex-mini`) and filters out API-only OpenAI models.
+
 ### Fixed
 
 - Fixed potential text decoding issues in bash executor by using streaming TextDecoder instead of Buffer.toString()
+- OpenAI ChatGPT OAuth requests now pass the session ID as conversation metadata for Codex backend compatibility.
 
 ## [0.33.0] - 2026-01-04
 

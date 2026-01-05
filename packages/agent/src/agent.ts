@@ -9,6 +9,7 @@ import {
 	type Message,
 	type Model,
 	type ReasoningEffort,
+	type SimpleStreamOptions,
 	streamSimple,
 	type TextContent,
 } from "@mariozechner/pi-ai";
@@ -66,6 +67,12 @@ export interface AgentOptions {
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Additional stream options resolved per call.
+	 * Useful for provider-specific flags (e.g., Anthropic OAuth token hints).
+	 */
+	getStreamOptions?: (model: Model<any>) => Partial<SimpleStreamOptions> | Promise<Partial<SimpleStreamOptions>>;
 }
 
 export class Agent {
@@ -91,6 +98,9 @@ export class Agent {
 	private followUpMode: "all" | "one-at-a-time";
 	public streamFn: StreamFn;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+	public getStreamOptions?: (
+		model: Model<any>,
+	) => Partial<SimpleStreamOptions> | Promise<Partial<SimpleStreamOptions>>;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 
@@ -102,6 +112,7 @@ export class Agent {
 		this.followUpMode = opts.followUpMode || "one-at-a-time";
 		this.streamFn = opts.streamFn || streamSimple;
 		this.getApiKey = opts.getApiKey;
+		this.getStreamOptions = opts.getStreamOptions;
 	}
 
 	get state(): AgentState {
@@ -289,7 +300,9 @@ export class Agent {
 			tools: this._state.tools,
 		};
 
+		const extraOptions = this.getStreamOptions ? await this.getStreamOptions(model) : undefined;
 		const config: AgentLoopConfig = {
+			...extraOptions,
 			model,
 			reasoning,
 			convertToLlm: this.convertToLlm,

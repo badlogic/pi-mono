@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI OAuth (ChatGPT Codex) login support with device code flow, token refresh, and account ID parsing.
+
+### Fixed
+
+- OpenAI ChatGPT Codex requests now include conversation headers and prompt cache keys to match Codex backend expectations.
+
 ## [0.33.0] - 2026-01-04
 
 ## [0.32.3] - 2026-01-03

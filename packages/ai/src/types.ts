@@ -60,6 +60,12 @@ export interface StreamOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/** Hint that the provided apiKey should be treated as an OAuth token. */
+	oauthToken?: boolean;
+	/** Optional conversation/session identifier for providers that support it. */
+	conversationId?: string;
+	/** Optional prompt cache key override for providers that support it. */
+	promptCacheKey?: string;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

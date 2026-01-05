@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
+import { buildCodexHeaders } from "../src/utils/codex-headers.js";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -64,6 +65,38 @@ describe("ModelRegistry", () => {
 	}
 
 	describe("baseUrl override (no custom models)", () => {
+		test("openai OAuth rewrites baseUrl and adds account header", () => {
+			authStorage.set("openai", {
+				type: "oauth",
+				access: "token",
+				refresh: "refresh",
+				expires: Date.now() + 60_000,
+				accountId: "acct_123",
+			});
+
+			const codexHeaders = buildCodexHeaders();
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const openaiModels = getModelsForProvider(registry, "openai");
+
+			expect(openaiModels.length).toBeGreaterThan(0);
+			expect(openaiModels.some((model) => model.id === "gpt-5.2-codex")).toBe(true);
+			expect(openaiModels.some((model) => model.id === "gpt-5.1-codex-mini")).toBe(true);
+			expect(openaiModels.some((model) => model.id === "gpt-5.2-pro")).toBe(false);
+			for (const model of openaiModels) {
+				expect(model.baseUrl).toBe("https://chatgpt.com/backend-api/codex");
+				expect(model.headers?.["ChatGPT-Account-ID"]).toBe("acct_123");
+				expect(model.headers?.originator).toBe(codexHeaders.originator);
+				expect(model.headers?.["User-Agent"]).toBe(codexHeaders["User-Agent"]);
+				expect(model.headers?.version).toBe(codexHeaders.version);
+				if (codexHeaders["OpenAI-Organization"]) {
+					expect(model.headers?.["OpenAI-Organization"]).toBe(codexHeaders["OpenAI-Organization"]);
+				}
+				if (codexHeaders["OpenAI-Project"]) {
+					expect(model.headers?.["OpenAI-Project"]).toBe(codexHeaders["OpenAI-Project"]);
+				}
+			}
+		});
+
 		test("overriding baseUrl keeps all built-in models", () => {
 			writeRawModelsJson({
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
