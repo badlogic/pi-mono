@@ -8,7 +8,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
 - **Event interception** - Block or modify tool calls, inject context, customize compaction
 - **User interaction** - Prompt users via `ctx.ui` (select, confirm, input, notify)
-- **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()`
+- **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()` for complex interactions
 - **Custom commands** - Register commands like `/mycommand` via `pi.registerCommand()`
 - **Session persistence** - Store state that survives restarts via `pi.appendEntry()`
 - **Custom rendering** - Control how tool calls/results and messages appear in TUI
@@ -97,17 +97,42 @@ Additional paths via `settings.json`:
 }
 ```
 
-**Subdirectory structure with package.json:**
+**Discovery rules:**
+
+1. **Direct files:** `extensions/*.ts` or `*.js` → loaded directly
+2. **Subdirectory with index:** `extensions/myext/index.ts` → loaded as single extension
+3. **Subdirectory with package.json:** `extensions/myext/package.json` with `"pi"` field → loads declared paths
 
 ```
 ~/.pi/agent/extensions/
-├── simple.ts                    # Direct file (auto-discovered)
-└── complex-extension/
-    ├── package.json             # Optional: { "pi": { "extensions": ["./src/main.ts"] } }
-    ├── index.ts                 # Entry point (if no package.json)
+├── simple.ts                      # Direct file (auto-discovered)
+├── my-tool/
+│   └── index.ts                   # Subdirectory with index (auto-discovered)
+└── my-extension-pack/
+    ├── package.json               # Declares multiple extensions
+    ├── node_modules/              # Dependencies installed here
     └── src/
-        └── main.ts              # Custom entry (via package.json)
+        ├── safety-gates.ts        # First extension
+        └── custom-tools.ts        # Second extension
 ```
+
+```json
+// my-extension-pack/package.json
+{
+  "name": "my-extension-pack",
+  "dependencies": {
+    "lodash": "^4.0.0"
+  },
+  "pi": {
+    "extensions": ["./src/safety-gates.ts", "./src/custom-tools.ts"]
+  }
+}
+```
+
+The `package.json` approach enables:
+- Multiple extensions from one package
+- Third-party npm dependencies (resolved via jiti)
+- Nested source structure (no depth limit within the package)
 
 ## Available Imports
 
@@ -214,7 +239,7 @@ Fired when starting a new session (`/new`) or switching sessions (`/resume`).
 pi.on("session_before_switch", async (event, ctx) => {
   // event.reason - "new" or "resume"
   // event.targetSessionFile - session we're switching to (only for "resume")
-  
+
   if (event.reason === "new") {
     const ok = await ctx.ui.confirm("Clear?", "Delete all messages?");
     if (!ok) return { cancel: true };
