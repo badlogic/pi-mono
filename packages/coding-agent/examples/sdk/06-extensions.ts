@@ -4,11 +4,10 @@
  * Extensions intercept agent events and can register custom tools.
  * They provide a unified system for extensions, custom tools, commands, and more.
  *
- * Extension files are discovered from:
+ * By default, extension files are discovered from:
  * - ~/.pi/agent/extensions/
  * - <cwd>/.pi/extensions/
  * - Paths specified in settings.json "extensions" array
- * - Paths passed via --extension CLI flag
  *
  * An extension is a TypeScript file that exports a default function:
  *   export default function (pi: ExtensionAPI) { ... }
@@ -16,11 +15,10 @@
 
 import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
 
-// Extensions are loaded from disk, not passed inline to createAgentSession.
-// Use the discovery mechanism:
-//   1. Place extension files in ~/.pi/agent/extensions/ or .pi/extensions/
-//   2. Add paths to settings.json: { "extensions": ["./my-extension.ts"] }
-//   3. Use --extension flag: pi --extension ./my-extension.ts
+// Extensions are discovered automatically from standard locations.
+// You can also add paths via:
+//   1. settings.json: { "extensions": ["./my-extension.ts"] }
+//   2. additionalExtensionPaths option (see below)
 
 // To add additional extension paths beyond discovery:
 const { session } = await createAgentSession({
