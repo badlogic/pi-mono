@@ -12,12 +12,22 @@ describe("wrapTextWithAnsi", () => {
 
 			const wrapped = wrapTextWithAnsi(text, 40);
 
-			// First line should NOT contain underline code - it's just "read this thread "
-			assert.strictEqual(wrapped[0], "read this thread ");
+			// First line should NOT contain underline code - it's just "read this thread"
+			assert.strictEqual(wrapped[0], "read this thread");
 
 			// Second line should start with underline, have URL content
 			assert.strictEqual(wrapped[1].startsWith(underlineOn), true);
 			assert.ok(wrapped[1].includes("https://"));
+		});
+
+		it("should not have whitespace before underline reset code", () => {
+			const underlineOn = "\x1b[4m";
+			const underlineOff = "\x1b[24m";
+			const textWithUnderlinedTrailingSpace = `${underlineOn}underlined text here ${underlineOff}more`;
+
+			const wrapped = wrapTextWithAnsi(textWithUnderlinedTrailingSpace, 18);
+
+			assert.ok(!wrapped[0].includes(` ${underlineOff}`));
 		});
 
 		it("should not bleed underline to padding - each line should end with reset for underline only", () => {
@@ -99,6 +109,11 @@ describe("wrapTextWithAnsi", () => {
 			for (const line of wrapped) {
 				assert.ok(visibleWidth(line) <= 10);
 			}
+		});
+
+		it("should truncate trailing whitespace that exceeds width", () => {
+			const twoSpacesWrappedToWidth1 = wrapTextWithAnsi("  ", 1);
+			assert.ok(visibleWidth(twoSpacesWrappedToWidth1[0]) <= 1);
 		});
 
 		it("should preserve color codes across wraps", () => {
