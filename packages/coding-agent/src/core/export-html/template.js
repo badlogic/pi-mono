@@ -793,13 +793,25 @@
        * URL format: base?gistId&leafId=<leafId>&targetId=<entryId>
        */
       function buildShareUrl(entryId) {
+        // Check for injected base URL (used when loaded in iframe via srcdoc)
+        const baseUrlMeta = document.querySelector('meta[name="pi-share-base-url"]');
+        const baseUrl = baseUrlMeta ? baseUrlMeta.content : window.location.href.split('?')[0];
+        
         const url = new URL(window.location.href);
         // Find the gist ID (first query param without value, e.g., ?abc123)
         const gistId = Array.from(url.searchParams.keys()).find(k => !url.searchParams.get(k));
-        // Build search string manually to preserve ?gistId format (not ?gistId=)
+        
+        // Build the share URL
         const params = new URLSearchParams();
         params.set('leafId', currentLeafId);
         params.set('targetId', entryId);
+        
+        // If we have an injected base URL (iframe context), use it directly
+        if (baseUrlMeta) {
+          return `${baseUrl}&${params.toString()}`;
+        }
+        
+        // Otherwise build from current location (direct file access)
         url.search = gistId ? `?${gistId}&${params.toString()}` : `?${params.toString()}`;
         return url.toString();
       }
