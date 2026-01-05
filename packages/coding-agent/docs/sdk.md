@@ -129,7 +129,7 @@ interface AgentSession {
 
 ### Prompting and Message Queueing
 
-The `prompt()` method handles slash commands, hook commands, and message sending:
+The `prompt()` method handles prompt templates, extension commands, and message sending:
 
 ```typescript
 // Basic prompt (when not streaming)
@@ -146,8 +146,8 @@ await session.prompt("After you're done, also check X", { streamingBehavior: "fo
 ```
 
 **Behavior:**
-- **Hook commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
-- **File-based slash commands** (from `.md` files): Expanded to their content before sending/queueing.
+- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+- **File-based prompt templates** (from `.md` files): Expanded to their content before sending/queueing.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
 
 For explicit queueing during streaming:
@@ -160,7 +160,7 @@ await session.steer("New instruction");
 await session.followUp("After you're done, also do this");
 ```
 
-Both `steer()` and `followUp()` expand file-based slash commands but error on hook commands (hook commands cannot be queued).
+Both `steer()` and `followUp()` expand file-based prompt templates but error on extension commands (extension commands cannot be queued).
 
 ### Agent and AgentState
 
@@ -260,18 +260,16 @@ const { session } = await createAgentSession({
 ```
 
 `cwd` is used for:
-- Project hooks (`.pi/hooks/`)
-- Project tools (`.pi/tools/`)
+- Project extensions (`.pi/extensions/`)
 - Project skills (`.pi/skills/`)
-- Project commands (`.pi/commands/`)
+- Project prompts (`.pi/prompts/`)
 - Context files (`AGENTS.md` walking up from cwd)
 - Session directory naming
 
 `agentDir` is used for:
-- Global hooks (`hooks/`)
-- Global tools (`tools/`)
+- Global extensions (`extensions/`)
 - Global skills (`skills/`)
-- Global commands (`commands/`)
+- Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
 - Settings (`settings.json`)
 - Custom models (`models.json`)
@@ -442,113 +440,79 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, discoverCustomTools, type CustomTool } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 // Inline custom tool
-const myTool: CustomTool = {
+const myTool: ToolDefinition = {
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
   parameters: Type.Object({
     input: Type.String({ description: "Input value" }),
   }),
-  execute: async (toolCallId, params) => ({
+  execute: async (toolCallId, params, onUpdate, ctx, signal) => ({
     content: [{ type: "text", text: `Result: ${params.input}` }],
     details: {},
   }),
 };
 
-// Replace discovery with inline tools
+// Pass custom tools directly
 const { session } = await createAgentSession({
-  customTools: [{ tool: myTool }],
-});
-
-// Merge with discovered tools
-const discovered = await discoverCustomTools();
-const { session } = await createAgentSession({
-  customTools: [...discovered, { tool: myTool }],
-});
-
-// Add paths without replacing discovery
-const { session } = await createAgentSession({
-  additionalCustomToolPaths: ["/extra/tools"],
+  customTools: [myTool],
 });
 ```
+
+Custom tools passed via `customTools` are combined with extension-registered tools. Extensions discovered from `~/.pi/agent/extensions/` and `.pi/extensions/` can also register tools via `pi.registerTool()`.
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
-### Hooks
+### Extensions
+
+Extensions are discovered from `~/.pi/agent/extensions/` and `.pi/extensions/`. You can also pass inline extensions or additional paths:
 
 ```typescript
-import { createAgentSession, discoverHooks, type HookFactory } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type ExtensionFactory } from "@mariozechner/pi-coding-agent";
 
-// Inline hook
-const loggingHook: HookFactory = (api) => {
-  // Log tool calls
-  api.on("tool_call", async (event) => {
+// Inline extension
+const myExtension: ExtensionFactory = (pi) => {
+  pi.on("tool_call", async (event, ctx) => {
     console.log(`Tool: ${event.toolName}`);
-    return undefined; // Don't block
   });
-  
-  // Block dangerous commands
-  api.on("tool_call", async (event) => {
-    if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
-      return { block: true, reason: "Dangerous command" };
-    }
-    return undefined;
-  });
-  
-  // Register custom slash command
-  api.registerCommand("stats", {
-    description: "Show session stats",
-    handler: async (ctx) => {
-      const entries = ctx.sessionManager.getEntries();
-      ctx.ui.notify(`${entries.length} entries`, "info");
+
+  pi.registerCommand("hello", {
+    description: "Say hello",
+    handler: async (args, ctx) => {
+      ctx.ui.notify("Hello!", "info");
     },
   });
-  
-  // Inject messages
-  api.sendMessage({
-    customType: "my-hook",
-    content: "Hook initialized",
-    display: false,  // Hidden from TUI
-  }, false);  // Don't trigger agent turn
-  
-  // Persist hook state
-  api.appendEntry("my-hook", { initialized: true });
 };
 
-// Replace discovery
+// Pass inline extensions (merged with discovery)
 const { session } = await createAgentSession({
-  hooks: [{ factory: loggingHook }],
+  extensions: [myExtension],
 });
 
-// Disable all hooks
+// Or add paths to load (merged with discovery)
 const { session } = await createAgentSession({
-  hooks: [],
-});
-
-// Merge with discovered
-const discovered = await discoverHooks();
-const { session } = await createAgentSession({
-  hooks: [...discovered, { factory: loggingHook }],
-});
-
-// Add paths without replacing
-const { session } = await createAgentSession({
-  additionalHookPaths: ["/extra/hooks"],
+  additionalExtensionPaths: ["/path/to/my-extension.ts"],
 });
 ```
 
-Hook API methods:
-- `api.on(event, handler)` - Subscribe to events
-- `api.sendMessage(message, triggerTurn?)` - Inject message (creates `CustomMessageEntry`)
-- `api.appendEntry(customType, data?)` - Persist hook state (not in LLM context)
-- `api.registerCommand(name, options)` - Register custom slash command
-- `api.registerMessageRenderer(customType, renderer)` - Custom TUI rendering
-- `api.exec(command, args, options?)` - Execute shell commands
+Extensions can register tools, subscribe to events, add commands, and more. See [extensions.md](extensions.md) for the full API.
 
-> See [examples/sdk/06-hooks.ts](../examples/sdk/06-hooks.ts) and [docs/hooks.md](hooks.md)
+**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `createAgentSession()` if you need to emit/listen from outside:
+
+```typescript
+import { createAgentSession, createEventBus } from "@mariozechner/pi-coding-agent";
+
+const eventBus = createEventBus();
+const { session } = await createAgentSession({ eventBus });
+
+// Listen for events from extensions
+eventBus.on("my-extension:status", (data) => console.log(data));
+```
+
+> See [examples/sdk/06-extensions.ts](../examples/sdk/06-extensions.ts) and [docs/extensions.md](extensions.md)
 
 ### Skills
 
@@ -616,11 +580,11 @@ const { session } = await createAgentSession({
 ### Slash Commands
 
 ```typescript
-import { createAgentSession, discoverSlashCommands, type FileSlashCommand } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverPromptTemplates, type PromptTemplate } from "@mariozechner/pi-coding-agent";
 
-const discovered = discoverSlashCommands();
+const discovered = discoverPromptTemplates();
 
-const customCommand: FileSlashCommand = {
+const customCommand: PromptTemplate = {
   name: "deploy",
   description: "Deploy the application",
   source: "(custom)",
@@ -628,11 +592,11 @@ const customCommand: FileSlashCommand = {
 };
 
 const { session } = await createAgentSession({
-  slashCommands: [...discovered, customCommand],
+  promptTemplates: [...discovered, customCommand],
 });
 ```
 
-> See [examples/sdk/08-slash-commands.ts](../examples/sdk/08-slash-commands.ts)
+> See [examples/sdk/08-prompt-templates.ts](../examples/sdk/08-prompt-templates.ts)
 
 ### Session Management
 
@@ -761,7 +725,7 @@ import {
   discoverHooks,
   discoverCustomTools,
   discoverContextFiles,
-  discoverSlashCommands,
+  discoverPromptTemplates,
   loadSettings,
   buildSystemPrompt,
 } from "@mariozechner/pi-coding-agent";
@@ -778,16 +742,18 @@ const builtIn = getModel("anthropic", "claude-opus-4-5"); // Built-in only
 const skills = discoverSkills(cwd, agentDir, skillsSettings);
 
 // Hooks (async - loads TypeScript)
-const hooks = await discoverHooks(cwd, agentDir);
+// Pass eventBus to share pi.events across hooks/tools
+const eventBus = createEventBus();
+const hooks = await discoverHooks(eventBus, cwd, agentDir);
 
 // Custom tools (async - loads TypeScript)
-const tools = await discoverCustomTools(cwd, agentDir);
+const tools = await discoverCustomTools(eventBus, cwd, agentDir);
 
 // Context files
 const contextFiles = discoverContextFiles(cwd, agentDir);
 
-// Slash commands
-const commands = discoverSlashCommands(cwd, agentDir);
+// Prompt templates
+const commands = discoverPromptTemplates(cwd, agentDir);
 
 // Settings (global + project merged)
 const settings = loadSettings(cwd, agentDir);
@@ -894,7 +860,7 @@ const { session } = await createAgentSession({
   hooks: [{ factory: auditHook }],
   skills: [],
   contextFiles: [],
-  slashCommands: [],
+  promptTemplates: [],
   
   sessionManager: SessionManager.inMemory(),
   settingsManager,
@@ -949,7 +915,10 @@ discoverSkills
 discoverHooks
 discoverCustomTools
 discoverContextFiles
-discoverSlashCommands
+discoverPromptTemplates
+
+// Event Bus (for shared hook/tool communication)
+createEventBus
 
 // Helpers
 loadSettings
@@ -977,7 +946,7 @@ type CreateAgentSessionResult
 type CustomTool
 type HookFactory
 type Skill
-type FileSlashCommand
+type PromptTemplate
 type Settings
 type SkillsSettings
 type Tool

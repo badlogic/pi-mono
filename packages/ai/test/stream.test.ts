@@ -878,13 +878,15 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	// Check if ollama is installed
+	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	try {
-		execSync("which ollama", { stdio: "ignore" });
-		ollamaInstalled = true;
-	} catch {
-		ollamaInstalled = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("which ollama", { stdio: "ignore" });
+			ollamaInstalled = true;
+		} catch {
+			ollamaInstalled = false;
+		}
 	}
 
 	describe.skipIf(!ollamaInstalled)("Ollama Provider (gpt-oss-20b via OpenAI Completions)", () => {

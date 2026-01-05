@@ -172,42 +172,48 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: string; success: false; error: string };
 
 // ============================================================================
-// Hook UI Events (stdout)
+// Extension UI Events (stdout)
 // ============================================================================
 
-/** Emitted when a hook needs user input */
-export type RpcHookUIRequest =
-	| { type: "hook_ui_request"; id: string; method: "select"; title: string; options: string[] }
-	| { type: "hook_ui_request"; id: string; method: "confirm"; title: string; message: string }
-	| { type: "hook_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
-	| { type: "hook_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
+/** Emitted when an extension needs user input */
+export type RpcExtensionUIRequest =
+	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[] }
+	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string }
+	| { type: "extension_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
+	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
 	| {
-			type: "hook_ui_request";
+			type: "extension_ui_request";
 			id: string;
 			method: "notify";
 			message: string;
 			notifyType?: "info" | "warning" | "error";
 	  }
-	| { type: "hook_ui_request"; id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
 	| {
-			type: "hook_ui_request";
+			type: "extension_ui_request";
+			id: string;
+			method: "setStatus";
+			statusKey: string;
+			statusText: string | undefined;
+	  }
+	| {
+			type: "extension_ui_request";
 			id: string;
 			method: "setWidget";
 			widgetKey: string;
 			widgetLines: string[] | undefined;
 	  }
-	| { type: "hook_ui_request"; id: string; method: "setTitle"; title: string }
-	| { type: "hook_ui_request"; id: string; method: "set_editor_text"; text: string };
+	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
+	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
 // ============================================================================
-// Hook UI Commands (stdin)
+// Extension UI Commands (stdin)
 // ============================================================================
 
-/** Response to a hook UI request */
-export type RpcHookUIResponse =
-	| { type: "hook_ui_response"; id: string; value: string }
-	| { type: "hook_ui_response"; id: string; confirmed: boolean }
-	| { type: "hook_ui_response"; id: string; cancelled: true };
+/** Response to an extension UI request */
+export type RpcExtensionUIResponse =
+	| { type: "extension_ui_response"; id: string; value: string }
+	| { type: "extension_ui_response"; id: string; confirmed: boolean }
+	| { type: "extension_ui_response"; id: string; cancelled: true };
 
 // ============================================================================
 // Helper type for extracting command types

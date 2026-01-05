@@ -2,6 +2,207 @@
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-01-05
+
+This release unifies hooks and custom tools into a single "extensions" system and renames "slash commands" to "prompt templates". ([#454](https://github.com/badlogic/pi-mono/issues/454))
+
+**Before migrating, read:**
+- [docs/extensions.md](docs/extensions.md) - Full API reference
+- [README.md](README.md) - Extensions section with examples
+- [examples/extensions/](examples/extensions/) - Working examples
+
+### Extensions Migration
+
+Hooks and custom tools are now unified as **extensions**. Both were TypeScript modules exporting a factory function that receives an API object. Now there's one concept, one discovery location, one CLI flag, one settings.json entry.
+
+**Automatic migration:**
+- `commands/` directories are automatically renamed to `prompts/` on startup (both `~/.pi/agent/commands/` and `.pi/commands/`)
+
+**Manual migration required:**
+1. Move files from `hooks/` and `tools/` directories to `extensions/` (deprecation warnings shown on startup)
+2. Update imports and type names in your extension code
+3. Update `settings.json` if you have explicit hook and custom tool paths configured
+
+**Directory changes:**
+```
+# Before
+~/.pi/agent/hooks/*.ts       →  ~/.pi/agent/extensions/*.ts
+~/.pi/agent/tools/*.ts       →  ~/.pi/agent/extensions/*.ts
+.pi/hooks/*.ts               →  .pi/extensions/*.ts
+.pi/tools/*.ts               →  .pi/extensions/*.ts
+```
+
+**Extension discovery rules** (in `extensions/` directories):
+1. **Direct files:** `extensions/*.ts` or `*.js` → loaded directly
+2. **Subdirectory with index:** `extensions/myext/index.ts` → loaded as single extension
+3. **Subdirectory with package.json:** `extensions/myext/package.json` with `"pi"` field → loads declared paths
+
+```json
+// extensions/my-package/package.json
+{
+  "name": "my-extension-package",
+  "dependencies": { "zod": "^3.0.0" },
+  "pi": {
+    "extensions": ["./src/main.ts", "./src/tools.ts"]
+  }
+}
+```
+
+No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from npm.
+
+**Type renames:**
+- `HookAPI` → `ExtensionAPI`
+- `HookContext` → `ExtensionContext`
+- `HookCommandContext` → `ExtensionCommandContext`
+- `HookUIContext` → `ExtensionUIContext`
+- `CustomToolAPI` → `ExtensionAPI` (merged)
+- `CustomToolContext` → `ExtensionContext` (merged)
+- `CustomToolUIContext` → `ExtensionUIContext`
+- `CustomTool` → `ToolDefinition`
+- `CustomToolFactory` → `ExtensionFactory`
+- `HookMessage` → `CustomMessage`
+
+**Import changes:**
+```typescript
+// Before (hook)
+import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent";
+export default function (pi: HookAPI) { ... }
+
+// Before (custom tool)
+import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
+const factory: CustomToolFactory = (pi) => ({ name: "my_tool", ... });
+export default factory;
+
+// After (both are now extensions)
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+export default function (pi: ExtensionAPI) {
+  pi.on("tool_call", async (event, ctx) => { ... });
+  pi.registerTool({ name: "my_tool", ... });
+}
+```
+
+**Custom tools now have full context access.** Tools registered via `pi.registerTool()` now receive the same `ctx` object that event handlers receive. Previously, custom tools had limited context. Now all extension code shares the same capabilities:
+
+- `pi.registerTool()` - Register tools the LLM can call
+- `pi.registerCommand()` - Register commands like `/mycommand`
+- `pi.registerShortcut()` - Register keyboard shortcuts (shown in `/hotkeys`)
+- `pi.registerFlag()` - Register CLI flags (shown in `--help`)
+- `pi.registerMessageRenderer()` - Custom TUI rendering for message types
+- `pi.on()` - Subscribe to lifecycle events (tool_call, session_start, etc.)
+- `pi.sendMessage()` - Inject messages into the conversation
+- `pi.appendEntry()` - Persist custom data in session (survives restart/branch)
+- `pi.exec()` - Run shell commands
+- `pi.getActiveTools()` / `pi.setActiveTools()` - Dynamic tool enable/disable
+- `pi.getAllTools()` - List all available tools
+- `pi.events` - Event bus for cross-extension communication
+- `ctx.ui.confirm()` / `select()` / `input()` - User prompts
+- `ctx.ui.notify()` - Toast notifications
+- `ctx.ui.setStatus()` - Persistent status in footer (multiple extensions can set their own)
+- `ctx.ui.setWidget()` - Widget display above editor
+- `ctx.ui.setTitle()` - Set terminal window title
+- `ctx.ui.custom()` - Full TUI component with keyboard handling
+- `ctx.ui.editor()` - Multi-line text editor with external editor support
+- `ctx.sessionManager` - Read session entries, get branch history
+
+**Settings changes:**
+```json
+// Before
+{
+  "hooks": ["./my-hook.ts"],
+  "customTools": ["./my-tool.ts"]
+}
+
+// After
+{
+  "extensions": ["./my-extension.ts"]
+}
+```
+
+**CLI changes:**
+```bash
+# Before
+pi --hook ./safety.ts --tool ./todo.ts
+
+# After
+pi --extension ./safety.ts -e ./todo.ts
+```
+
+### Prompt Templates Migration
+
+"Slash commands" (markdown files defining reusable prompts invoked via `/name`) are renamed to "prompt templates" to avoid confusion with extension-registered commands.
+
+**Automatic migration:** The `commands/` directory is automatically renamed to `prompts/` on startup (if `prompts/` doesn't exist). Works for both regular directories and symlinks.
+
+**Directory changes:**
+```
+~/.pi/agent/commands/*.md    →  ~/.pi/agent/prompts/*.md
+.pi/commands/*.md            →  .pi/prompts/*.md
+```
+
+**SDK type renames:**
+- `FileSlashCommand` → `PromptTemplate`
+- `LoadSlashCommandsOptions` → `LoadPromptTemplatesOptions`
+
+**SDK function renames:**
+- `discoverSlashCommands()` → `discoverPromptTemplates()`
+- `loadSlashCommands()` → `loadPromptTemplates()`
+- `expandSlashCommand()` → `expandPromptTemplate()`
+- `getCommandsDir()` → `getPromptsDir()`
+
+**SDK option renames:**
+- `CreateAgentSessionOptions.slashCommands` → `.promptTemplates`
+- `AgentSession.fileCommands` → `.promptTemplates`
+- `PromptOptions.expandSlashCommands` → `.expandPromptTemplates`
+
+### SDK Migration
+
+**Discovery functions:**
+- `discoverAndLoadHooks()` → `discoverAndLoadExtensions()`
+- `discoverAndLoadCustomTools()` → merged into `discoverAndLoadExtensions()`
+- `loadHooks()` → `loadExtensions()`
+- `loadCustomTools()` → merged into `loadExtensions()`
+
+**Runner and wrapper:**
+- `HookRunner` → `ExtensionRunner`
+- `wrapToolsWithHooks()` → `wrapToolsWithExtensions()`
+- `wrapToolWithHooks()` → `wrapToolWithExtensions()`
+
+**CreateAgentSessionOptions:**
+- `.hooks` → removed (use `.additionalExtensionPaths` for paths)
+- `.additionalHookPaths` → `.additionalExtensionPaths`
+- `.preloadedHooks` → `.preloadedExtensions`
+- `.customTools` type changed: `Array<{ path?; tool: CustomTool }>` → `ToolDefinition[]`
+- `.additionalCustomToolPaths` → merged into `.additionalExtensionPaths`
+- `.slashCommands` → `.promptTemplates`
+
+**AgentSession:**
+- `.hookRunner` → `.extensionRunner`
+- `.fileCommands` → `.promptTemplates`
+- `.sendHookMessage()` → `.sendCustomMessage()`
+
+### Session Migration
+
+**Automatic.** Session version bumped from 2 to 3. Existing sessions are migrated on first load:
+- Message role `"hookMessage"` → `"custom"`
+
+### Breaking Changes
+
+- **Settings:** `hooks` and `customTools` arrays replaced with single `extensions` array
+- **CLI:** `--hook` and `--tool` flags replaced with `--extension` / `-e`
+- **Directories:** `hooks/`, `tools/` → `extensions/`; `commands/` → `prompts/`
+- **Types:** See type renames above
+- **SDK:** See SDK migration above
+
+### Changed
+
+- Extensions can have their own `package.json` with dependencies (resolved via jiti)
+- Documentation: `docs/hooks.md` and `docs/custom-tools.md` merged into `docs/extensions.md`
+- Examples: `examples/hooks/` and `examples/custom-tools/` merged into `examples/extensions/`
+- README: Extensions section expanded with custom tools, commands, events, state persistence, shortcuts, flags, and UI examples
+- SDK: `customTools` option now accepts `ToolDefinition[]` directly (simplified from `Array<{ path?, tool }>`)
+- SDK: `extensions` option accepts `ExtensionFactory[]` for inline extensions
+- SDK: `additionalExtensionPaths` replaces both `additionalHookPaths` and `additionalCustomToolPaths`
+
 ## [0.34.2] - 2026-01-04
 
 ## [0.34.1] - 2026-01-04

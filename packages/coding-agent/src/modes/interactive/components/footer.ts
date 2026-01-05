@@ -46,7 +46,7 @@ export class FooterComponent implements Component {
 	private gitWatcher: FSWatcher | null = null;
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
-	private hookStatuses: Map<string, string> = new Map();
+	private extensionStatuses: Map<string, string> = new Map();
 
 	constructor(session: AgentSession) {
 		this.session = session;
@@ -57,17 +57,17 @@ export class FooterComponent implements Component {
 	}
 
 	/**
-	 * Set hook status text to display in the footer.
+	 * Set extension status text to display in the footer.
 	 * Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width.
 	 * ANSI escape codes for styling are preserved.
 	 * @param key - Unique key to identify this status
 	 * @param text - Status text, or undefined to clear
 	 */
-	setHookStatus(key: string, text: string | undefined): void {
+	setExtensionStatus(key: string, text: string | undefined): void {
 		if (text === undefined) {
-			this.hookStatuses.delete(key);
+			this.extensionStatuses.delete(key);
 		} else {
-			this.hookStatuses.set(key, text);
+			this.extensionStatuses.set(key, text);
 		}
 	}
 
@@ -309,9 +309,9 @@ export class FooterComponent implements Component {
 
 		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
 
-		// Add hook statuses on a single line, sorted by key alphabetically
-		if (this.hookStatuses.size > 0) {
-			const sortedStatuses = Array.from(this.hookStatuses.entries())
+		// Add extension statuses on a single line, sorted by key alphabetically
+		if (this.extensionStatuses.size > 0) {
+			const sortedStatuses = Array.from(this.extensionStatuses.entries())
 				.sort(([a], [b]) => a.localeCompare(b))
 				.map(([, text]) => sanitizeStatusText(text));
 			const statusLine = sortedStatuses.join(" ");

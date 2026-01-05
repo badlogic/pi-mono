@@ -26,8 +26,7 @@ export interface Args {
 	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
-	hooks?: string[];
-	customTools?: string[];
+	extensions?: string[];
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
@@ -35,7 +34,7 @@ export interface Args {
 	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
-	/** Unknown flags (potentially hook flags) - map of flag name to value */
+	/** Unknown flags (potentially extension flags) - map of flag name to value */
 	unknownFlags: Map<string, boolean | string>;
 }
 
@@ -45,7 +44,7 @@ export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
 
-export function parseArgs(args: string[], hookFlags?: Map<string, { type: "boolean" | "string" }>): Args {
+export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "boolean" | "string" }>): Args {
 	const result: Args = {
 		messages: [],
 		fileArgs: [],
@@ -114,12 +113,9 @@ export function parseArgs(args: string[], hookFlags?: Map<string, { type: "boole
 			result.print = true;
 		} else if (arg === "--export" && i + 1 < args.length) {
 			result.export = args[++i];
-		} else if (arg === "--hook" && i + 1 < args.length) {
-			result.hooks = result.hooks ?? [];
-			result.hooks.push(args[++i]);
-		} else if (arg === "--tool" && i + 1 < args.length) {
-			result.customTools = result.customTools ?? [];
-			result.customTools.push(args[++i]);
+		} else if ((arg === "--extension" || arg === "-e") && i + 1 < args.length) {
+			result.extensions = result.extensions ?? [];
+			result.extensions.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
 		} else if (arg === "--skills" && i + 1 < args.length) {
@@ -134,18 +130,18 @@ export function parseArgs(args: string[], hookFlags?: Map<string, { type: "boole
 			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
-		} else if (arg.startsWith("--") && hookFlags) {
-			// Check if it's a hook-registered flag
+		} else if (arg.startsWith("--") && extensionFlags) {
+			// Check if it's an extension-registered flag
 			const flagName = arg.slice(2);
-			const hookFlag = hookFlags.get(flagName);
-			if (hookFlag) {
-				if (hookFlag.type === "boolean") {
+			const extFlag = extensionFlags.get(flagName);
+			if (extFlag) {
+				if (extFlag.type === "boolean") {
 					result.unknownFlags.set(flagName, true);
-				} else if (hookFlag.type === "string" && i + 1 < args.length) {
+				} else if (extFlag.type === "string" && i + 1 < args.length) {
 					result.unknownFlags.set(flagName, args[++i]);
 				}
 			}
-			// Unknown flags without hookFlags are silently ignored (first pass)
+			// Unknown flags without extensionFlags are silently ignored (first pass)
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -178,8 +174,7 @@ ${chalk.bold("Options:")}
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
-  --hook <path>                  Load a hook file (can be used multiple times)
-  --tool <path>                  Load a custom tool file (can be used multiple times)
+  --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
@@ -187,7 +182,7 @@ ${chalk.bold("Options:")}
   --help, -h                     Show this help
   --version, -v                  Show version number
 
-Hooks can register additional flags (e.g., --plan from plan-mode hook).
+Extensions can register additional flags (e.g., --plan from plan-mode extension).
 
 ${chalk.bold("Examples:")}
   # Interactive mode

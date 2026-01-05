@@ -474,31 +474,31 @@ describe("agentLoopContinue with AgentMessage", () => {
 
 	it("should allow custom message types as last message (caller responsibility)", async () => {
 		// Custom message that will be converted to user message by convertToLlm
-		interface HookMessage {
-			role: "hookMessage";
+		interface CustomMessage {
+			role: "custom";
 			text: string;
 			timestamp: number;
 		}
 
-		const hookMessage: HookMessage = {
-			role: "hookMessage",
+		const customMessage: CustomMessage = {
+			role: "custom",
 			text: "Hook content",
 			timestamp: Date.now(),
 		};
 
 		const context: AgentContext = {
 			systemPrompt: "You are helpful.",
-			messages: [hookMessage as unknown as AgentMessage],
+			messages: [customMessage as unknown as AgentMessage],
 			tools: [],
 		};
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
 			convertToLlm: (messages) => {
-				// Convert hookMessage to user message
+				// Convert custom to user message
 				return messages
 					.map((m) => {
-						if ((m as any).role === "hookMessage") {
+						if ((m as any).role === "custom") {
 							return {
 								role: "user" as const,
 								content: (m as any).text,
@@ -514,13 +514,13 @@ describe("agentLoopContinue with AgentMessage", () => {
 		const streamFn = () => {
 			const stream = new MockAssistantStream();
 			queueMicrotask(() => {
-				const message = createAssistantMessage([{ type: "text", text: "Response to hook" }]);
+				const message = createAssistantMessage([{ type: "text", text: "Response to custom message" }]);
 				stream.push({ type: "done", reason: "stop", message });
 			});
 			return stream;
 		};
 
-		// Should not throw - the hookMessage will be converted to user message
+		// Should not throw - the custom message will be converted to user message
 		const stream = agentLoopContinue(context, config, undefined, streamFn);
 
 		const events: AgentEvent[] = [];

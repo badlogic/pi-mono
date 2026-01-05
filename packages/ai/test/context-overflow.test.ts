@@ -424,13 +424,15 @@ describe("Context overflow error handling", () => {
 	// Ollama (local)
 	// =============================================================================
 
-	// Check if ollama is installed
+	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	try {
-		execSync("which ollama", { stdio: "ignore" });
-		ollamaInstalled = true;
-	} catch {
-		ollamaInstalled = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("which ollama", { stdio: "ignore" });
+			ollamaInstalled = true;
+		} catch {
+			ollamaInstalled = false;
+		}
 	}
 
 	describe.skipIf(!ollamaInstalled)("Ollama (local)", () => {
@@ -514,15 +516,17 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// LM Studio (local) - Skip if not running
+	// LM Studio (local) - Skip if not running or local LLM tests disabled
 	// =============================================================================
 
 	let lmStudioRunning = false;
-	try {
-		execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
-		lmStudioRunning = true;
-	} catch {
-		lmStudioRunning = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
+			lmStudioRunning = true;
+		} catch {
+			lmStudioRunning = false;
+		}
 	}
 
 	describe.skipIf(!lmStudioRunning)("LM Studio (local)", () => {

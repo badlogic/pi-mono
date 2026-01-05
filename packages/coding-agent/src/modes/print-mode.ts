@@ -26,15 +26,15 @@ export async function runPrintMode(
 	initialMessage?: string,
 	initialImages?: ImageContent[],
 ): Promise<void> {
-	// Hook runner already has no-op UI context by default (set in main.ts)
-	// Set up hooks for print mode (no UI)
-	const hookRunner = session.hookRunner;
-	if (hookRunner) {
-		hookRunner.initialize({
+	// Extension runner already has no-op UI context by default (set in loader)
+	// Set up extensions for print mode (no UI)
+	const extensionRunner = session.extensionRunner;
+	if (extensionRunner) {
+		extensionRunner.initialize({
 			getModel: () => session.model,
 			sendMessageHandler: (message, options) => {
-				session.sendHookMessage(message, options).catch((e) => {
-					console.error(`Hook sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+				session.sendCustomMessage(message, options).catch((e) => {
+					console.error(`Extension sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
 				});
 			},
 			appendEntryHandler: (customType, data) => {
@@ -44,39 +44,13 @@ export async function runPrintMode(
 			getAllToolsHandler: () => session.getAllToolNames(),
 			setActiveToolsHandler: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 		});
-		hookRunner.onError((err) => {
-			console.error(`Hook error (${err.hookPath}): ${err.error}`);
+		extensionRunner.onError((err) => {
+			console.error(`Extension error (${err.extensionPath}): ${err.error}`);
 		});
 		// Emit session_start event
-		await hookRunner.emit({
+		await extensionRunner.emit({
 			type: "session_start",
 		});
-	}
-
-	// Emit session start event to custom tools (no UI in print mode)
-	for (const { tool } of session.customTools) {
-		if (tool.onSession) {
-			try {
-				await tool.onSession(
-					{
-						reason: "start",
-						previousSessionFile: undefined,
-					},
-					{
-						sessionManager: session.sessionManager,
-						modelRegistry: session.modelRegistry,
-						model: session.model,
-						isIdle: () => !session.isStreaming,
-						hasPendingMessages: () => session.pendingMessageCount > 0,
-						abort: () => {
-							session.abort();
-						},
-					},
-				);
-			} catch (_err) {
-				// Silently ignore tool errors
-			}
-		}
 	}
 
 	// Always subscribe to enable session persistence via _handleAgentEvent

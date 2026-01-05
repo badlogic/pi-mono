@@ -2,9 +2,14 @@
  * One-time migrations that run on startup.
  */
 
+import chalk from "chalk";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { getAgentDir } from "./config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "./config.js";
+
+const MIGRATION_GUIDE_URL =
+	"https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
+const EXTENSIONS_DOC_URL = "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md";
 
 /**
  * Migrate legacy oauth.json and settings.json apiKeys to auth.json.
@@ -124,12 +129,117 @@ export function migrateSessionsFromAgentRoot(): void {
 }
 
 /**
+ * Migrate commands/ to prompts/ if needed.
+ * Works for both regular directories and symlinks.
+ */
+function migrateCommandsToPrompts(baseDir: string, label: string): boolean {
+	const commandsDir = join(baseDir, "commands");
+	const promptsDir = join(baseDir, "prompts");
+
+	if (existsSync(commandsDir) && !existsSync(promptsDir)) {
+		try {
+			renameSync(commandsDir, promptsDir);
+			console.log(chalk.green(`Migrated ${label} commands/ → prompts/`));
+			return true;
+		} catch (err) {
+			console.log(
+				chalk.yellow(
+					`Warning: Could not migrate ${label} commands/ to prompts/: ${err instanceof Error ? err.message : err}`,
+				),
+			);
+		}
+	}
+	return false;
+}
+
+/**
+ * Check for deprecated hooks/ and tools/ directories.
+ * Note: tools/ may contain fd/rg binaries extracted by pi, so only warn if it has other files.
+ */
+function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] {
+	const hooksDir = join(baseDir, "hooks");
+	const toolsDir = join(baseDir, "tools");
+	const warnings: string[] = [];
+
+	if (existsSync(hooksDir)) {
+		warnings.push(`${label} hooks/ directory found. Hooks have been renamed to extensions.`);
+	}
+
+	if (existsSync(toolsDir)) {
+		// Check if tools/ contains anything other than fd/rg (which are auto-extracted binaries)
+		try {
+			const entries = readdirSync(toolsDir);
+			const customTools = entries.filter((e) => e !== "fd" && e !== "rg");
+			if (customTools.length > 0) {
+				warnings.push(
+					`${label} tools/ directory contains custom tools. Custom tools have been merged into extensions.`,
+				);
+			}
+		} catch {
+			// Ignore read errors
+		}
+	}
+
+	return warnings;
+}
+
+/**
+ * Run extension system migrations (commands→prompts) and collect warnings about deprecated directories.
+ */
+function migrateExtensionSystem(cwd: string): string[] {
+	const agentDir = getAgentDir();
+	const projectDir = join(cwd, CONFIG_DIR_NAME);
+
+	// Migrate commands/ to prompts/
+	migrateCommandsToPrompts(agentDir, "Global");
+	migrateCommandsToPrompts(projectDir, "Project");
+
+	// Check for deprecated directories
+	const warnings = [
+		...checkDeprecatedExtensionDirs(agentDir, "Global"),
+		...checkDeprecatedExtensionDirs(projectDir, "Project"),
+	];
+
+	return warnings;
+}
+
+/**
+ * Print deprecation warnings and wait for keypress.
+ */
+export async function showDeprecationWarnings(warnings: string[]): Promise<void> {
+	if (warnings.length === 0) return;
+
+	for (const warning of warnings) {
+		console.log(chalk.yellow(`Warning: ${warning}`));
+	}
+	console.log(chalk.yellow(`\nMove your extensions to the extensions/ directory.`));
+	console.log(chalk.yellow(`Migration guide: ${MIGRATION_GUIDE_URL}`));
+	console.log(chalk.yellow(`Documentation: ${EXTENSIONS_DOC_URL}`));
+	console.log(chalk.dim(`\nPress any key to continue...`));
+
+	await new Promise<void>((resolve) => {
+		process.stdin.setRawMode?.(true);
+		process.stdin.resume();
+		process.stdin.once("data", () => {
+			process.stdin.setRawMode?.(false);
+			process.stdin.pause();
+			resolve();
+		});
+	});
+	console.log();
+}
+
+/**
  * Run all migrations. Called once on startup.
  *
- * @returns Object with migration results
+ * @returns Object with migration results and deprecation warnings
  */
-export function runMigrations(): { migratedAuthProviders: string[] } {
+export function runMigrations(cwd: string = process.cwd()): {
+	migratedAuthProviders: string[];
+	deprecationWarnings: string[];
+} {
 	const migratedAuthProviders = migrateAuthToAuthJson();
 	migrateSessionsFromAgentRoot();
-	return { migratedAuthProviders };
+	const deprecationWarnings = migrateExtensionSystem(cwd);
+	return { migratedAuthProviders, deprecationWarnings };
 }

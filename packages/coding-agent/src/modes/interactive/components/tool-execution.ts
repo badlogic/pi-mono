@@ -11,7 +11,7 @@ import {
 	type TUI,
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
-import type { CustomTool } from "../../../core/custom-tools/types.js";
+import type { ToolDefinition } from "../../../core/extensions/types.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { convertToPng } from "../../../utils/image-convert.js";
@@ -58,7 +58,7 @@ export class ToolExecutionComponent extends Container {
 	private expanded = false;
 	private showImages: boolean;
 	private isPartial = true;
-	private customTool?: CustomTool;
+	private toolDefinition?: ToolDefinition;
 	private ui: TUI;
 	private cwd: string;
 	private result?: {
@@ -76,7 +76,7 @@ export class ToolExecutionComponent extends Container {
 		toolName: string,
 		args: any,
 		options: ToolExecutionOptions = {},
-		customTool: CustomTool | undefined,
+		toolDefinition: ToolDefinition | undefined,
 		ui: TUI,
 		cwd: string = process.cwd(),
 	) {
@@ -84,7 +84,7 @@ export class ToolExecutionComponent extends Container {
 		this.toolName = toolName;
 		this.args = args;
 		this.showImages = options.showImages ?? true;
-		this.customTool = customTool;
+		this.toolDefinition = toolDefinition;
 		this.ui = ui;
 		this.cwd = cwd;
 
@@ -94,7 +94,7 @@ export class ToolExecutionComponent extends Container {
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 
-		if (customTool || toolName === "bash") {
+		if (toolDefinition || toolName === "bash") {
 			this.addChild(this.contentBox);
 		} else {
 			this.addChild(this.contentText);
@@ -214,15 +214,15 @@ export class ToolExecutionComponent extends Container {
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
 		// Check for custom tool rendering
-		if (this.customTool) {
+		if (this.toolDefinition) {
 			// Custom tools use Box for flexible component rendering
 			this.contentBox.setBgFn(bgFn);
 			this.contentBox.clear();
 
 			// Render call component
-			if (this.customTool.renderCall) {
+			if (this.toolDefinition.renderCall) {
 				try {
-					const callComponent = this.customTool.renderCall(this.args, theme);
+					const callComponent = this.toolDefinition.renderCall(this.args, theme);
 					if (callComponent) {
 						this.contentBox.addChild(callComponent);
 					}
@@ -236,9 +236,9 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			// Render result component if we have a result
-			if (this.result && this.customTool.renderResult) {
+			if (this.result && this.toolDefinition.renderResult) {
 				try {
-					const resultComponent = this.customTool.renderResult(
+					const resultComponent = this.toolDefinition.renderResult(
 						{ content: this.result.content as any, details: this.result.details },
 						{ expanded: this.expanded, isPartial: this.isPartial },
 						theme,

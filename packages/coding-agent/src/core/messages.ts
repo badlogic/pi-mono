@@ -40,11 +40,11 @@ export interface BashExecutionMessage {
 }
 
 /**
- * Message type for hook-injected messages via sendMessage().
- * These are custom messages that hooks can inject into the conversation.
+ * Message type for extension-injected messages via sendMessage().
+ * These are custom messages that extensions can inject into the conversation.
  */
-export interface HookMessage<T = unknown> {
-	role: "hookMessage";
+export interface CustomMessage<T = unknown> {
+	role: "custom";
 	customType: string;
 	content: string | (TextContent | ImageContent)[];
 	display: boolean;
@@ -70,7 +70,7 @@ export interface CompactionSummaryMessage {
 declare module "@mariozechner/pi-agent-core" {
 	interface CustomAgentMessages {
 		bashExecution: BashExecutionMessage;
-		hookMessage: HookMessage;
+		custom: CustomMessage;
 		branchSummary: BranchSummaryMessage;
 		compactionSummary: CompactionSummaryMessage;
 	}
@@ -120,15 +120,15 @@ export function createCompactionSummaryMessage(
 }
 
 /** Convert CustomMessageEntry to AgentMessage format */
-export function createHookMessage(
+export function createCustomMessage(
 	customType: string,
 	content: string | (TextContent | ImageContent)[],
 	display: boolean,
 	details: unknown | undefined,
 	timestamp: string,
-): HookMessage {
+): CustomMessage {
 	return {
-		role: "hookMessage",
+		role: "custom",
 		customType,
 		content,
 		display,
@@ -143,7 +143,7 @@ export function createHookMessage(
  * This is used by:
  * - Agent's transormToLlm option (for prompt calls and queued messages)
  * - Compaction's generateSummary (for summarization)
- * - Custom hooks and tools
+ * - Custom extensions and tools
  */
 export function convertToLlm(messages: AgentMessage[]): Message[] {
 	return messages
@@ -159,7 +159,7 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						content: [{ type: "text", text: bashExecutionToText(m) }],
 						timestamp: m.timestamp,
 					};
-				case "hookMessage": {
+				case "custom": {
 					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 					return {
 						role: "user",

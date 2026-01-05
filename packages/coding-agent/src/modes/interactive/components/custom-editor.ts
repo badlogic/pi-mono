@@ -12,8 +12,8 @@ export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlD?: () => void;
 	public onPasteImage?: () => void;
-	/** Handler for hook-registered shortcuts. Returns true if handled. */
-	public onHookShortcut?: (data: string) => boolean;
+	/** Handler for extension-registered shortcuts. Returns true if handled. */
+	public onExtensionShortcut?: (data: string) => boolean;
 
 	constructor(theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(theme);
@@ -28,8 +28,8 @@ export class CustomEditor extends Editor {
 	}
 
 	handleInput(data: string): void {
-		// Check hook-registered shortcuts first
-		if (this.onHookShortcut?.(data)) {
+		// Check extension-registered shortcuts first
+		if (this.onExtensionShortcut?.(data)) {
 			return;
 		}
 

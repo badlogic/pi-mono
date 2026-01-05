@@ -63,6 +63,11 @@ cd packages/coding-agent && npx tsx src/cli.ts
 cd packages/pods && npx tsx src/cli.ts
 ```
 
+To run tests that don't require an LLM endpoint:
+```bash
+./test.sh
+```
+
 ### Versioning (Lockstep)
 
 **All packages MUST always have the same version number.** Use these commands to bump versions:

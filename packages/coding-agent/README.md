@@ -36,12 +36,11 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
   - [Settings File](#settings-file)
-- [Extensions](#extensions)
+- [Customization](#customization)
   - [Themes](#themes)
-  - [Custom Slash Commands](#custom-slash-commands)
+  - [Prompt Templates](#prompt-templates)
   - [Skills](#skills)
-  - [Hooks](#hooks)
-  - [Custom Tools](#custom-tools)
+  - [Extensions](#extensions)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -374,9 +373,8 @@ The output becomes part of your next prompt, formatted as:
 
 ```
 Ran `ls -la`
-```
+
 <output here>
-```
 ```
 
 Run multiple commands before prompting; all outputs are included together.
@@ -453,7 +451,7 @@ When disabled, neither case triggers automatic compaction (use `/compact` manual
 
 > **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/tree` to revisit any previous point.
 
-See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via hooks.
+See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via extensions.
 
 ### Branching
 
@@ -667,8 +665,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "images": {
     "autoResize": true
   },
-  "hooks": ["/path/to/hook.ts"],
-  "customTools": ["/path/to/tool.ts"]
+  "extensions": ["/path/to/extension.ts"]
 }
 ```
 
@@ -694,12 +691,11 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
-| `hooks` | Additional hook file paths | `[]` |
-| `customTools` | Additional custom tool file paths | `[]` |
+| `extensions` | Additional extension file paths | `[]` |
 
 ---
 
-## Extensions
+## Customization
 
 ### Themes
 
@@ -720,13 +716,13 @@ Select with `/settings`, then edit the file. Changes apply on save.
 
 **VS Code terminal fix:** Set `terminal.integrated.minimumContrastRatio` to `1` for accurate colors.
 
-### Custom Slash Commands
+### Prompt Templates
 
 Define reusable prompts as Markdown files:
 
 **Locations:**
-- Global: `~/.pi/agent/commands/*.md`
-- Project: `.pi/commands/*.md`
+- Global: `~/.pi/agent/prompts/*.md`
+- Project: `.pi/prompts/*.md`
 
 **Format:**
 
@@ -755,7 +751,7 @@ Usage: `/component Button "onClick handler" "disabled support"`
 - `$1` = `Button`
 - `$@` or `$ARGUMENTS` = all arguments joined (`Button onClick handler disabled support`)
 
-**Namespacing:** Subdirectories create prefixes. `.pi/commands/frontend/component.md` → `/component (project:frontend)`
+**Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 
 
 ### Skills
@@ -807,120 +803,251 @@ cd /path/to/brave-search && npm install
 
 > See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories. pi can help you create new skills.
 
-### Hooks
+### Extensions
 
-Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. Use them to:
+Extensions are TypeScript modules that extend pi's behavior.
 
-- **Block dangerous commands** (permission gates for `rm -rf`, `sudo`, etc.)
-- **Checkpoint code state** (git stash at each turn, restore on `/branch`)
-- **Protect paths** (block writes to `.env`, `node_modules/`, etc.)
-- **Modify tool output** (filter or transform results before the LLM sees them)
-- **Inject messages from external sources to wake up the agent** (file watchers, webhooks, CI systems)
+**Use cases:**
+- **Custom tools** - Register tools callable by the LLM with custom UI and rendering
+- **Custom commands** - Add `/commands` for users (e.g., `/deploy`, `/stats`)
+- **Event interception** - Block tool calls, modify results, customize compaction
+- **State persistence** - Store data in session, reconstruct on reload/branch
+- **External integrations** - File watchers, webhooks, git checkpointing
+- **Custom UI** - Full TUI control from tools, commands, or event handlers
 
-**Hook locations:**
-- Global: `~/.pi/agent/hooks/*.ts`
-- Project: `.pi/hooks/*.ts`
-- CLI: `--hook <path>` (for debugging)
+**Locations:**
+- Global: `~/.pi/agent/extensions/*.ts` or `~/.pi/agent/extensions/*/index.ts`
+- Project: `.pi/extensions/*.ts` or `.pi/extensions/*/index.ts`
+- CLI: `--extension <path>` or `-e <path>`
 
-**Quick example** (permission gate):
+**Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
+
+#### Custom Tools
+
+Tools are functions the LLM can call. They appear in the system prompt and can have custom rendering.
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 
-export default function (pi: HookAPI) {
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "deploy",
+    label: "Deploy",
+    description: "Deploy the application to production",
+    parameters: Type.Object({
+      environment: Type.String({ description: "Target environment" }),
+    }),
+
+    async execute(toolCallId, params, onUpdate, ctx, signal) {
+      // Show progress via onUpdate
+      onUpdate({ status: "Deploying..." });
+
+      // Ask user for confirmation
+      const ok = await ctx.ui.confirm("Deploy?", `Deploy to ${params.environment}?`);
+      if (!ok) {
+        return { content: [{ type: "text", text: "Cancelled" }], details: { cancelled: true } };
+      }
+
+      // Run shell commands
+      const result = await ctx.exec("./deploy.sh", [params.environment], { signal });
+
+      return {
+        content: [{ type: "text", text: result.stdout }],
+        details: { environment: params.environment, exitCode: result.exitCode },
+      };
+    },
+
+    // Custom TUI rendering (optional)
+    renderCall(args, theme) {
+      return new Text(theme.bold("deploy ") + theme.fg("accent", args.environment), 0, 0);
+    },
+    renderResult(result, options, theme) {
+      const ok = result.details?.exitCode === 0;
+      return new Text(ok ? theme.fg("success", "✓ Deployed") : theme.fg("error", "✗ Failed"), 0, 0);
+    },
+  });
+}
+```
+
+#### Custom Commands
+
+Commands are user-invoked via `/name`. They can show custom UI, modify state, or trigger agent turns.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("stats", {
+    description: "Show session statistics",
+    handler: async (args, ctx) => {
+      // Simple notification
+      ctx.ui.notify(`${ctx.sessionManager.getEntries().length} entries`, "info");
+    },
+  });
+
+  pi.registerCommand("todos", {
+    description: "Interactive todo viewer",
+    handler: async (args, ctx) => {
+      // Full custom UI with keyboard handling
+      await ctx.ui.custom((tui, theme, done) => {
+        return {
+          render(width) {
+            return [
+              theme.bold("Todos"),
+              "- [ ] Item 1",
+              "- [x] Item 2",
+              "",
+              theme.fg("dim", "Press Escape to close"),
+            ];
+          },
+          handleInput(data) {
+            if (matchesKey(data, "escape")) done();
+          },
+        };
+      });
+    },
+  });
+}
+```
+
+#### Event Interception
+
+Subscribe to lifecycle events to block, modify, or observe agent behavior.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  // Block dangerous commands
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "bash" && /sudo/.test(event.input.command as string)) {
-      const ok = await ctx.ui.confirm("Allow sudo?", event.input.command as string);
+    if (event.toolName === "bash" && /rm -rf/.test(event.input.command as string)) {
+      const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
       if (!ok) return { block: true, reason: "Blocked by user" };
     }
-    return undefined;
+  });
+
+  // Modify tool results
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName === "read") {
+      // Redact secrets from file contents
+      return { modifiedResult: event.result.replace(/API_KEY=\w+/g, "API_KEY=***") };
+    }
+  });
+
+  // Custom compaction
+  pi.on("session_before_compact", async (event, ctx) => {
+    return { customSummary: "My custom summary of the conversation so far..." };
+  });
+
+  // Git checkpoint on each turn
+  pi.on("turn_end", async (event, ctx) => {
+    await ctx.exec("git", ["stash", "push", "-m", `pi-checkpoint-${Date.now()}`]);
   });
 }
 ```
 
-**Sending messages from hooks:**
+#### State Persistence
 
-Use `pi.sendMessage(message, options?)` to inject messages into the session. Messages are persisted as `CustomMessageEntry` and sent to the LLM.
-
-Options:
-- `triggerTurn`: If true and agent is idle, starts a new agent turn. Default: false.
-- `deliverAs`: When agent is streaming, controls delivery timing:
-  - `"steer"` (default): Delivered after current tool execution, interrupts remaining tools.
-  - `"followUp"`: Delivered only after agent finishes all work.
+Store state in session entries that survive reload and work correctly with branching.
 
 ```typescript
-import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+export default function (pi: ExtensionAPI) {
+  let counter = 0;
 
-export default function (pi: HookAPI) {
-  pi.on("session_start", async () => {
-    fs.watch("/tmp/trigger.txt", () => {
-      const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
-      if (content) {
-        pi.sendMessage({
-          customType: "file-trigger",
-          content,
-          display: true,
-        }, true);  // triggerTurn: start agent loop
+  // Reconstruct state from session history
+  const reconstruct = (ctx) => {
+    counter = 0;
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "custom" && entry.customType === "my_counter") {
+        counter = entry.data.value;
       }
-    });
+    }
+  };
+
+  pi.on("session_start", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_branch", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_tree", async (e, ctx) => reconstruct(ctx));
+
+  pi.registerCommand("increment", {
+    handler: async (args, ctx) => {
+      counter++;
+      ctx.appendEntry("my_counter", { value: counter }); // Persisted in session
+      ctx.ui.notify(`Counter: ${counter}`, "info");
+    },
   });
 }
 ```
 
-> See [Hooks Documentation](docs/hooks.md) for full API reference. pi can help you create new hooks
+#### Keyboard Shortcuts
 
-> See [examples/hooks/](examples/hooks/) for working examples including permission gates, git checkpointing, and path protection.
-
-### Custom Tools
-
-Custom tools let you extend the built-in toolset (read, write, edit, bash, ...) and are called by the LLM directly. They are TypeScript modules that define tools with optional custom TUI integration for getting user input and custom tool call and result rendering.
-
-**Tool locations (auto-discovered):**
-- Global: `~/.pi/agent/tools/*/index.ts`
-- Project: `.pi/tools/*/index.ts`
-
-**Explicit paths:**
-- CLI: `--tool <path>` (any .ts file)
-- Settings: `customTools` array in `settings.json`
-
-**Quick example:**
+Register custom keyboard shortcuts (shown in `/hotkeys`):
 
 ```typescript
-import { Type } from "@sinclair/typebox";
-import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
-
-const factory: CustomToolFactory = (pi) => ({
-  name: "greet",
-  label: "Greeting",
-  description: "Generate a greeting",
-  parameters: Type.Object({
-    name: Type.String({ description: "Name to greet" }),
-  }),
-
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
-    const { name } = params as { name: string };
-    return {
-      content: [{ type: "text", text: `Hello, ${name}!` }],
-      details: { greeted: name },
-    };
-  },
-});
-
-export default factory;
+export default function (pi: ExtensionAPI) {
+  pi.registerShortcut("ctrl+shift+d", {
+    description: "Deploy to production",
+    handler: async (ctx) => {
+      ctx.ui.notify("Deploying...", "info");
+      await ctx.exec("./deploy.sh", []);
+    },
+  });
+}
 ```
 
-**Features:**
-- Access to `pi.cwd`, `pi.exec()`, `pi.ui` (select/confirm/input dialogs)
-- Session lifecycle via `onSession` callback (for state reconstruction)
-- Custom rendering via `renderCall()` and `renderResult()` methods
-- Streaming results via `onUpdate` callback
-- Abort handling via `signal` parameter
-- Multiple tools from one factory (return an array)
+#### CLI Flags
 
-> See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples. pi can help you create custom tools.
+Register custom CLI flags (parsed automatically, shown in `--help`):
 
-> See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerFlag("--dry-run", {
+    description: "Run without making changes",
+    type: "boolean",
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (pi.getFlag("dry-run") && event.toolName === "write") {
+      return { block: true, reason: "Dry run mode" };
+    }
+  });
+}
+```
+
+#### Custom UI
+
+Extensions have full TUI access via `ctx.ui`:
+
+```typescript
+// Simple prompts
+const confirmed = await ctx.ui.confirm("Title", "Are you sure?");
+const choice = await ctx.ui.select("Pick one", ["Option A", "Option B"]);
+const text = await ctx.ui.input("Enter value");
+
+// Notifications
+ctx.ui.notify("Done!", "success"); // success, info, warning, error
+
+// Status line (persistent in footer, multiple extensions can set their own)
+ctx.ui.setStatus("my-ext", "Processing...");
+ctx.ui.setStatus("my-ext", null); // Clear
+
+// Widgets (above editor)
+ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
+
+// Full custom component with keyboard handling
+await ctx.ui.custom((tui, theme, done) => ({
+  render(width) {
+    return [
+      theme.bold("My Component"),
+      theme.fg("dim", "Press Escape to close"),
+    ];
+  },
+  handleInput(data) {
+    if (matchesKey(data, "escape")) done();
+  },
+}));
+```
+
+> See [docs/extensions.md](docs/extensions.md) for full API reference.
+> See [docs/tui.md](docs/tui.md) for TUI components and custom rendering.
+> See [examples/extensions/](examples/extensions/) for working examples.
 
 ---
 
@@ -949,7 +1076,7 @@ pi [options] [@files...] [messages...]
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
-| `--hook <path>` | Load a hook file (can be used multiple times) |
+| `--extension <path>`, `-e` | Load an extension file (can be used multiple times) |
 | `--no-skills` | Disable skills discovery and loading |
 | `--skills <patterns>` | Comma-separated glob patterns to filter skills (e.g., `git-*,docker`) |
 | `--export <file> [output]` | Export session to HTML |
@@ -1033,7 +1160,7 @@ Available via `--tools` flag:
 
 Example: `--tools read,grep,find,ls` for code review without modification.
 
-For adding new tools, see [Custom Tools](#custom-tools) in the Configuration section.
+For adding new tools, see [Extensions](#extensions) in the Customization section.
 
 ---
 
@@ -1068,8 +1195,8 @@ The SDK provides full control over:
 - Model selection and thinking level
 - System prompt (replace or modify)
 - Tools (built-in subsets, custom tools)
-- Hooks (inline or discovered)
-- Skills, context files, slash commands
+- Extensions (discovered or via paths)
+- Skills, context files, prompt templates
 - Session persistence (`SessionManager`)
 - Settings (`SettingsManager`)
 - API key resolution and OAuth
@@ -1101,7 +1228,7 @@ pi --export session.jsonl              # Auto-generated filename
 pi --export session.jsonl output.html  # Custom filename
 ```
 
-Works with both session files and streaming event logs from `--mode json`.
+Works with session files.
 
 ---
 
@@ -1111,13 +1238,13 @@ Pi is opinionated about what it won't do. These are intentional design decisions
 
 **No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). The agent reads them on demand. [Would you like to know more?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/custom-tools/subagent/) with [custom tools](#custom-tools). Full observability and steerability.
+**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/extensions/subagent/) with [Extensions](#extensions). Full observability and steerability.
 
-**No permission popups.** Security theater. Run in a container or build your own with [Hooks](#hooks).
+**No permission popups.** Security theater. Run in a container or build your own with [Extensions](#extensions).
 
 **No plan mode.** Gather context in one session, write plans to file, start fresh for implementation.
 
-**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/custom-tools/todo/) with [custom tools](#custom-tools).
+**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/extensions/todo.ts) with [Extensions](#extensions).
 
 **No background bash.** Use tmux. Full observability, direct interaction.
 
@@ -1168,3 +1295,4 @@ MIT
 
 - [@mariozechner/pi-ai](https://www.npmjs.com/package/@mariozechner/pi-ai): Core LLM toolkit
 - [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [@mariozechner/pi-tui](https://www.npmjs.com/package/@mariozechner/pi-tui): Terminal UI components

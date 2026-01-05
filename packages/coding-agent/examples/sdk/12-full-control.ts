@@ -6,21 +6,22 @@
  * IMPORTANT: When providing `tools` with a custom `cwd`, use the tool factory
  * functions (createReadTool, createBashTool, etc.) to ensure tools resolve
  * paths relative to your cwd.
+ *
+ * NOTE: Extensions (extensions, custom tools) are always loaded via discovery.
+ * To use custom extensions, place them in the extensions directory or
+ * pass paths via additionalExtensionPaths.
  */
 
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	AuthStorage,
-	type CustomTool,
 	createAgentSession,
 	createBashTool,
 	createReadTool,
-	type HookFactory,
 	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 
 // Custom auth storage location
 const authStorage = new AuthStorage("/tmp/my-agent/auth.json");
@@ -33,27 +34,7 @@ if (process.env.MY_ANTHROPIC_KEY) {
 // Model registry with no custom models.json
 const modelRegistry = new ModelRegistry(authStorage);
 
-// Inline hook
-const auditHook: HookFactory = (api) => {
-	api.on("tool_call", async (event) => {
-		console.log(`[Audit] ${event.toolName}`);
-		return undefined;
-	});
-};
-
-// Inline custom tool
-const statusTool: CustomTool = {
-	name: "status",
-	label: "Status",
-	description: "Get system status",
-	parameters: Type.Object({}),
-	execute: async () => ({
-		content: [{ type: "text", text: `Uptime: ${process.uptime()}s, Node: ${process.version}` }],
-		details: {},
-	}),
-};
-
-const model = getModel("anthropic", "claude-opus-4-5");
+const model = getModel("anthropic", "claude-sonnet-4-20250514");
 if (!model) throw new Error("Model not found");
 
 // In-memory settings with overrides
@@ -73,14 +54,14 @@ const { session } = await createAgentSession({
 	authStorage,
 	modelRegistry,
 	systemPrompt: `You are a minimal assistant.
-Available: read, bash, status. Be concise.`,
+Available: read, bash. Be concise.`,
 	// Use factory functions with the same cwd to ensure path resolution works correctly
 	tools: [createReadTool(cwd), createBashTool(cwd)],
-	customTools: [{ tool: statusTool }],
-	hooks: [{ factory: auditHook }],
+	// Extensions are loaded from disk - use additionalExtensionPaths to add custom ones
+	// additionalExtensionPaths: ["./my-extension.ts"],
 	skills: [],
 	contextFiles: [],
-	slashCommands: [],
+	promptTemplates: [],
 	sessionManager: SessionManager.inMemory(),
 	settingsManager,
 });
@@ -91,5 +72,5 @@ session.subscribe((event) => {
 	}
 });
 
-await session.prompt("Get status and list files.");
+await session.prompt("List files in the current directory.");
 console.log();

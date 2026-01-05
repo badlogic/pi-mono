@@ -4,7 +4,7 @@ import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
  * Component that renders a compaction message with collapsed/expanded state.
- * Uses same background color as hook messages for visual consistency.
+ * Uses same background color as custom messages for visual consistency.
  */
 export class CompactionSummaryMessageComponent extends Box {
 	private expanded = false;
