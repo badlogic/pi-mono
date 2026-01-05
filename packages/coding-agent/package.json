@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-coding-agent",
-	"version": "0.36.0",
+	"version": "0.37.0",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -39,9 +39,9 @@
 	},
 	"dependencies": {
 		"@crosscopy/clipboard": "^0.2.8",
-		"@mariozechner/pi-agent-core": "^0.36.0",
-		"@mariozechner/pi-ai": "^0.36.0",
-		"@mariozechner/pi-tui": "^0.36.0",
+		"@mariozechner/pi-agent-core": "^0.37.0",
+		"@mariozechner/pi-ai": "^0.37.0",
+		"@mariozechner/pi-tui": "^0.37.0",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
