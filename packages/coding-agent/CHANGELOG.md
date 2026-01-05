@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Share viewer: copy-link buttons now generate correct URLs when session is viewed via `/share` (iframe context)
+
 ## [0.37.0] - 2026-01-05
 
 ### Added
