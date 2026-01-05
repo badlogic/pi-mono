@@ -794,34 +794,55 @@
        */
       function buildShareUrl(entryId) {
         const url = new URL(window.location.href);
-        // Preserve the gist ID (first query param without value) and set leafId/targetId
+        // Find the gist ID (first query param without value, e.g., ?abc123)
         const gistId = Array.from(url.searchParams.keys()).find(k => !url.searchParams.get(k));
-        url.search = '';
-        if (gistId) {
-          url.searchParams.set(gistId, '');
-        }
-        url.searchParams.set('leafId', currentLeafId);
-        url.searchParams.set('targetId', entryId);
+        // Build search string manually to preserve ?gistId format (not ?gistId=)
+        const params = new URLSearchParams();
+        params.set('leafId', currentLeafId);
+        params.set('targetId', entryId);
+        url.search = gistId ? `?${gistId}&${params.toString()}` : `?${params.toString()}`;
         return url.toString();
       }
 
       /**
        * Copy text to clipboard with visual feedback.
+       * Uses navigator.clipboard with fallback to execCommand for HTTP contexts.
        */
       async function copyToClipboard(text, button) {
+        let success = false;
         try {
-          await navigator.clipboard.writeText(text);
-          if (button) {
-            const originalHtml = button.innerHTML;
-            button.innerHTML = '✓';
-            button.classList.add('copied');
-            setTimeout(() => {
-              button.innerHTML = originalHtml;
-              button.classList.remove('copied');
-            }, 1500);
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            success = true;
           }
         } catch (err) {
-          console.error('Failed to copy:', err);
+          // Clipboard API failed, try fallback
+        }
+        
+        // Fallback for HTTP or when Clipboard API is unavailable
+        if (!success) {
+          try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+          } catch (err) {
+            console.error('Failed to copy:', err);
+          }
+        }
+        
+        if (success && button) {
+          const originalHtml = button.innerHTML;
+          button.innerHTML = '✓';
+          button.classList.add('copied');
+          setTimeout(() => {
+            button.innerHTML = originalHtml;
+            button.classList.remove('copied');
+          }, 1500);
         }
       }
 
