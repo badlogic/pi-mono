@@ -32,6 +32,7 @@ import {
 	ExtensionRunner,
 	type LoadExtensionsResult,
 	type LoadedExtension,
+	type ToolDefinition,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
 } from "./extensions/index.js";
@@ -96,6 +97,8 @@ export interface CreateAgentSessionOptions {
 
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
+	/** Custom tools to register (in addition to built-in tools). */
+	customTools?: ToolDefinition[];
 	/** Additional extension paths to load (merged with discovery). */
 	additionalExtensionPaths?: string[];
 	/** Pre-loaded extensions (skips loading, used when extensions were loaded early for CLI flags). */
@@ -130,7 +133,13 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
-export type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ExtensionFactory } from "./extensions/index.js";
+export type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionFactory,
+	ToolDefinition,
+} from "./extensions/index.js";
 export type { PromptTemplate } from "./prompt-templates.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
@@ -444,11 +453,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionRunner = new ExtensionRunner(extensionsResult.extensions, cwd, sessionManager, modelRegistry);
 	}
 
-	// Wrap extension-registered tools with context getter (agent/session assigned below, accessed at execute time)
+	// Wrap extension-registered tools and SDK-provided custom tools with context getter
+	// (agent/session assigned below, accessed at execute time)
 	let agent: Agent;
 	let session: AgentSession;
 	const registeredTools = extensionRunner?.getAllRegisteredTools() ?? [];
-	const wrappedExtensionTools = wrapRegisteredTools(registeredTools, () => ({
+	// Combine extension-registered tools with SDK-provided custom tools
+	const allCustomTools = [
+		...registeredTools,
+		...(options.customTools?.map((def) => ({ definition: def, extensionPath: "<sdk>" })) ?? []),
+	];
+	const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, () => ({
 		ui: extensionRunner?.getUIContext() ?? {
 			select: async () => undefined,
 			confirm: async () => false,

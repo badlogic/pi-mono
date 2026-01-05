@@ -163,11 +163,14 @@ pi --extension ./safety.ts -e ./todo.ts
 **Runner and wrapper:**
 - `HookRunner` → `ExtensionRunner`
 - `wrapToolsWithHooks()` → `wrapToolsWithExtensions()`
-- `wrapToolWithHook()` → `wrapToolWithExtensions()`
+- `wrapToolWithHooks()` → `wrapToolWithExtensions()`
 
 **CreateAgentSessionOptions:**
-- `.hooks` → `.extensions`
-- `.customTools` → merged into `.extensions`
+- `.hooks` → removed (use `.additionalExtensionPaths` for paths)
+- `.additionalHookPaths` → `.additionalExtensionPaths`
+- `.preloadedHooks` → `.preloadedExtensions`
+- `.customTools` type changed: `Array<{ path?; tool: CustomTool }>` → `ToolDefinition[]`
+- `.additionalCustomToolPaths` → merged into `.additionalExtensionPaths`
 - `.slashCommands` → `.promptTemplates`
 
 **AgentSession:**
@@ -194,6 +197,8 @@ pi --extension ./safety.ts -e ./todo.ts
 - Documentation: `docs/hooks.md` and `docs/custom-tools.md` merged into `docs/extensions.md`
 - Examples: `examples/hooks/` and `examples/custom-tools/` merged into `examples/extensions/`
 - README: Extensions section expanded with custom tools, commands, events, state persistence, shortcuts, flags, and UI examples
+- SDK: `customTools` option now accepts `ToolDefinition[]` directly (simplified from `Array<{ path?, tool }>`)
+- SDK: `additionalExtensionPaths` replaces both `additionalHookPaths` and `additionalCustomToolPaths`
 
 ## [0.34.2] - 2026-01-04
 

@@ -440,125 +440,60 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, discoverCustomTools, type CustomTool } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 // Inline custom tool
-const myTool: CustomTool = {
+const myTool: ToolDefinition = {
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
   parameters: Type.Object({
     input: Type.String({ description: "Input value" }),
   }),
-  execute: async (toolCallId, params) => ({
+  execute: async (toolCallId, params, onUpdate, ctx, signal) => ({
     content: [{ type: "text", text: `Result: ${params.input}` }],
     details: {},
   }),
 };
 
-// Replace discovery with inline tools
+// Pass custom tools directly
 const { session } = await createAgentSession({
-  customTools: [{ tool: myTool }],
-});
-
-// Merge with discovered tools (share eventBus for tool.events communication)
-import { createEventBus } from "@mariozechner/pi-coding-agent";
-
-const eventBus = createEventBus();
-const discovered = await discoverCustomTools(eventBus);
-const { session } = await createAgentSession({
-  customTools: [...discovered, { tool: myTool }],
-  eventBus,
-});
-
-// Add paths without replacing discovery
-const { session } = await createAgentSession({
-  additionalCustomToolPaths: ["/extra/tools"],
+  customTools: [myTool],
 });
 ```
+
+Custom tools passed via `customTools` are combined with extension-registered tools. Extensions discovered from `~/.pi/agent/extensions/` and `.pi/extensions/` can also register tools via `pi.registerTool()`.
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
-### Hooks
+### Extensions
+
+Extensions are discovered from `~/.pi/agent/extensions/` and `.pi/extensions/`. Use `additionalExtensionPaths` to add extra paths:
 
 ```typescript
-import { createAgentSession, discoverHooks, type HookFactory } from "@mariozechner/pi-coding-agent";
+import { createAgentSession } from "@mariozechner/pi-coding-agent";
 
-// Inline hook
-const loggingHook: HookFactory = (api) => {
-  // Log tool calls
-  api.on("tool_call", async (event) => {
-    console.log(`Tool: ${event.toolName}`);
-    return undefined; // Don't block
-  });
-  
-  // Block dangerous commands
-  api.on("tool_call", async (event) => {
-    if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
-      return { block: true, reason: "Dangerous command" };
-    }
-    return undefined;
-  });
-  
-  // Register custom prompt template
-  api.registerCommand("stats", {
-    description: "Show session stats",
-    handler: async (ctx) => {
-      const entries = ctx.sessionManager.getEntries();
-      ctx.ui.notify(`${entries.length} entries`, "info");
-    },
-  });
-  
-  // Inject messages
-  api.sendMessage({
-    customType: "my-hook",
-    content: "Hook initialized",
-    display: false,  // Hidden from TUI
-  }, false);  // Don't trigger agent turn
-  
-  // Persist hook state
-  api.appendEntry("my-hook", { initialized: true });
-};
-
-// Replace discovery
+// Add extension paths (merged with discovery)
 const { session } = await createAgentSession({
-  hooks: [{ factory: loggingHook }],
-});
-
-// Disable all hooks
-const { session } = await createAgentSession({
-  hooks: [],
-});
-
-// Merge with discovered (share eventBus for pi.events communication)
-import { createEventBus } from "@mariozechner/pi-coding-agent";
-
-const eventBus = createEventBus();
-const discovered = await discoverHooks(eventBus);
-const { session } = await createAgentSession({
-  hooks: [...discovered, { factory: loggingHook }],
-  eventBus,
-});
-
-// Add paths without replacing
-const { session } = await createAgentSession({
-  additionalHookPaths: ["/extra/hooks"],
+  additionalExtensionPaths: ["/path/to/my-extension.ts"],
 });
 ```
 
-**Event Bus:** If hooks or tools use `pi.events` for inter-component communication, pass the same `eventBus` to `discoverHooks()`, `discoverCustomTools()`, and `createAgentSession()`. Otherwise each gets an isolated bus and events won't be shared.
+Extensions can register tools, subscribe to events, add commands, and more. See [extensions.md](extensions.md) for the full API.
 
-Hook API methods:
-- `api.on(event, handler)` - Subscribe to lifecycle events
-- `api.events.emit(channel, data)` - Emit to shared event bus
-- `api.events.on(channel, handler)` - Listen on shared event bus
-- `api.sendMessage(message, triggerTurn?)` - Inject message (creates `CustomMessageEntry`)
-- `api.appendEntry(customType, data?)` - Persist hook state (not in LLM context)
-- `api.registerCommand(name, options)` - Register custom command
-- `api.registerMessageRenderer(customType, renderer)` - Custom TUI rendering
-- `api.exec(command, args, options?)` - Execute shell commands
+**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `createAgentSession()` if you need to emit/listen from outside:
 
-> See [examples/sdk/06-hooks.ts](../examples/sdk/06-hooks.ts) and [docs/hooks.md](hooks.md)
+```typescript
+import { createAgentSession, createEventBus } from "@mariozechner/pi-coding-agent";
+
+const eventBus = createEventBus();
+const { session } = await createAgentSession({ eventBus });
+
+// Listen for events from extensions
+eventBus.on("my-extension:status", (data) => console.log(data));
+```
+
+> See [examples/sdk/06-extensions.ts](../examples/sdk/06-extensions.ts) and [docs/extensions.md](extensions.md)
 
 ### Skills
 
