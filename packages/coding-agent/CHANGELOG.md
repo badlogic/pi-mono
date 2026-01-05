@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Extensions defined in `settings.json` were not loaded ([#463](https://github.com/badlogic/pi-mono/pull/463) by [@melihmucuk](https://github.com/melihmucuk))
+
 ## [0.36.0] - 2026-01-05
 
 ### Added
