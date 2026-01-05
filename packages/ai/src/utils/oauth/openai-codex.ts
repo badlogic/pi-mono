@@ -4,6 +4,7 @@
 
 import { randomBytes } from "node:crypto";
 import http from "node:http";
+import { getChatgptAccountIdFromAccessToken } from "../openai-account-id.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthPrompt } from "./types.js";
 
@@ -12,7 +13,6 @@ const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const SCOPE = "openid profile email offline_access";
-const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 
 const SUCCESS_HTML = `<!doctype html>
 <html lang="en">
@@ -29,13 +29,6 @@ const SUCCESS_HTML = `<!doctype html>
 type TokenSuccess = { type: "success"; access: string; refresh: string; expires: number };
 type TokenFailure = { type: "failed" };
 type TokenResult = TokenSuccess | TokenFailure;
-
-type JwtPayload = {
-	[JWT_CLAIM_PATH]?: {
-		chatgpt_account_id?: string;
-	};
-	[key: string]: unknown;
-};
 
 function createState(): string {
 	return randomBytes(16).toString("hex");
@@ -69,18 +62,6 @@ function parseAuthorizationInput(input: string): { code?: string; state?: string
 	}
 
 	return { code: value };
-}
-
-function decodeJwt(token: string): JwtPayload | null {
-	try {
-		const parts = token.split(".");
-		if (parts.length !== 3) return null;
-		const payload = parts[1] ?? "";
-		const decoded = Buffer.from(payload, "base64").toString("utf-8");
-		return JSON.parse(decoded) as JwtPayload;
-	} catch {
-		return null;
-	}
 }
 
 async function exchangeAuthorizationCode(
@@ -256,13 +237,6 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 	});
 }
 
-function getAccountId(accessToken: string): string | null {
-	const payload = decodeJwt(accessToken);
-	const auth = payload?.[JWT_CLAIM_PATH];
-	const accountId = auth?.chatgpt_account_id;
-	return typeof accountId === "string" && accountId.length > 0 ? accountId : null;
-}
-
 /**
  * Login with OpenAI Codex OAuth
  */
@@ -303,7 +277,7 @@ export async function loginOpenAICodex(options: {
 			throw new Error("Token exchange failed");
 		}
 
-		const accountId = getAccountId(tokenResult.access);
+		const accountId = getChatgptAccountIdFromAccessToken(tokenResult.access);
 		if (!accountId) {
 			throw new Error("Failed to extract accountId from token");
 		}
@@ -328,7 +302,7 @@ export async function refreshOpenAICodexToken(refreshToken: string): Promise<OAu
 		throw new Error("Failed to refresh OpenAI Codex token");
 	}
 
-	const accountId = getAccountId(result.access);
+	const accountId = getChatgptAccountIdFromAccessToken(result.access);
 	if (!accountId) {
 		throw new Error("Failed to extract accountId from token");
 	}

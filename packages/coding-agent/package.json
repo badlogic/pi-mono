@@ -53,6 +53,7 @@
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",
+		"@types/ms": "^2.1.0",
 		"@types/node": "^24.3.0",
 		"typescript": "^5.7.3",
 		"vitest": "^3.2.4"

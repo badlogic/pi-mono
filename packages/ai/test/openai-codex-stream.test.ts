@@ -68,8 +68,15 @@ describe("openai-codex streaming", () => {
 			},
 		});
 
-		const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
-			const url = typeof input === "string" ? input : input.toString();
+		const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === "string"
+					? input
+					: input instanceof URL
+						? input.toString()
+						: input instanceof Request
+							? input.url
+							: String(input);
 			if (url === "https://api.github.com/repos/openai/codex/releases/latest") {
 				return new Response(JSON.stringify({ tag_name: "rust-v0.0.0" }), { status: 200 });
 			}
@@ -77,7 +84,8 @@ describe("openai-codex streaming", () => {
 				return new Response("PROMPT", { status: 200, headers: { etag: '"etag"' } });
 			}
 			if (url === "https://chatgpt.com/backend-api/codex/responses") {
-				const headers = init?.headers instanceof Headers ? init.headers : undefined;
+				const headers =
+					init?.headers instanceof Headers ? init.headers : input instanceof Request ? input.headers : undefined;
 				expect(headers?.get("Authorization")).toBe(`Bearer ${token}`);
 				expect(headers?.get("chatgpt-account-id")).toBe("acc_test");
 				expect(headers?.get("OpenAI-Beta")).toBe("responses=experimental");
