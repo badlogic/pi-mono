@@ -498,7 +498,7 @@ function wrapSingleLine(line: string, width: number): string[] {
 		const totalNeeded = currentVisibleLength + tokenVisibleLength;
 
 		if (totalNeeded > width && currentVisibleLength > 0) {
-			// Add specific reset for underline only (preserves background)
+			// Trim trailing whitespace, then add underline reset (not full reset, to preserve background)
 			let lineToWrap = currentLine.trimEnd();
 			const lineEndReset = tracker.getLineEndReset();
 			if (lineEndReset) {
@@ -527,7 +527,8 @@ function wrapSingleLine(line: string, width: number): string[] {
 		wrapped.push(currentLine);
 	}
 
-	return wrapped.length > 0 ? wrapped : [""];
+	// Trailing whitespace can cause lines to exceed the requested width
+	return wrapped.length > 0 ? wrapped.map((line) => line.trimEnd()) : [""];
 }
 
 const PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
