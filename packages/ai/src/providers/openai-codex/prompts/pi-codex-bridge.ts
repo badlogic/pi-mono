@@ -43,4 +43,6 @@ You are running Codex through pi, a terminal coding assistant. The tools and rul
 1. Using edit, not apply_patch
 2. No plan tools used
 3. Only the tools listed above are called
+
+Below are additional system instruction you MUST follow when responding:
 `;

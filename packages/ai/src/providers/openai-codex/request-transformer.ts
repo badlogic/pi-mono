@@ -210,37 +210,14 @@ function filterInput(input: InputItem[] | undefined): InputItem[] | undefined {
 		});
 }
 
-function getContentText(item: InputItem): string {
-	if (typeof item.content === "string") {
-		return item.content;
-	}
-	if (Array.isArray(item.content)) {
-		return item.content
-			.filter((c) => typeof c === "object" && c !== null && (c as { type?: string }).type === "input_text")
-			.map((c) => (c as { text?: string }).text)
-			.filter((text): text is string => typeof text === "string")
-			.join("\n");
-	}
-	return "";
-}
-
-function isPiSystemPrompt(item: InputItem): boolean {
-	const isSystemRole = item.role === "developer" || item.role === "system";
-	if (!isSystemRole) return false;
-	const contentText = getContentText(item).trim();
-	if (!contentText) return false;
-	return contentText.startsWith(
-		"You are an expert coding assistant. You help users with coding tasks by reading files, executing commands",
-	);
-}
-
-async function filterPiSystemPrompts(input: InputItem[] | undefined): Promise<InputItem[] | undefined> {
-	if (!Array.isArray(input)) return input;
-	return input.filter((item) => item.role === "user" || !isPiSystemPrompt(item));
-}
-
-function addCodexBridgeMessage(input: InputItem[] | undefined, hasTools: boolean): InputItem[] | undefined {
+function addCodexBridgeMessage(
+	input: InputItem[] | undefined,
+	hasTools: boolean,
+	systemPrompt?: string,
+): InputItem[] | undefined {
 	if (!hasTools || !Array.isArray(input)) return input;
+
+	const bridgeText = systemPrompt ? `${CODEX_PI_BRIDGE}\n\n${systemPrompt}` : CODEX_PI_BRIDGE;
 
 	const bridgeMessage: InputItem = {
 		type: "message",
@@ -248,7 +225,7 @@ function addCodexBridgeMessage(input: InputItem[] | undefined, hasTools: boolean
 		content: [
 			{
 				type: "input_text",
-				text: CODEX_PI_BRIDGE,
+				text: bridgeText,
 			},
 		],
 	};
@@ -278,6 +255,7 @@ export async function transformRequestBody(
 	codexInstructions: string,
 	options: CodexRequestOptions = {},
 	codexMode = true,
+	systemPrompt?: string,
 ): Promise<RequestBody> {
 	const normalizedModel = normalizeModel(body.model);
 
@@ -290,8 +268,7 @@ export async function transformRequestBody(
 		body.input = filterInput(body.input);
 
 		if (codexMode) {
-			body.input = await filterPiSystemPrompts(body.input);
-			body.input = addCodexBridgeMessage(body.input, !!body.tools);
+			body.input = addCodexBridgeMessage(body.input, !!body.tools, systemPrompt);
 		} else {
 			body.input = addToolRemapMessage(body.input, !!body.tools);
 		}

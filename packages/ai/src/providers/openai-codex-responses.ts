@@ -123,6 +123,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				codexInstructions,
 				codexOptions,
 				options?.codexMode ?? true,
+				context.systemPrompt,
 			);
 
 			const headers = createCodexHeaders(model.headers, accountId, apiKey, transformedBody.prompt_cache_key);
@@ -476,14 +477,6 @@ function convertMessages(model: Model<"openai-codex-responses">, context: Contex
 	const messages: ResponseInput = [];
 
 	const transformedMessages = transformMessages(context.messages, model);
-
-	if (context.systemPrompt) {
-		const role = model.reasoning ? "developer" : "system";
-		messages.push({
-			role,
-			content: sanitizeSurrogates(context.systemPrompt),
-		});
-	}
 
 	let msgIndex = 0;
 	for (const msg of transformedMessages) {

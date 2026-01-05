@@ -10,8 +10,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -43,11 +44,12 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
+	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
 	// so when aborted they have no token stats Anthropic and Google send usage information early in the stream
 	if (
 		llm.api === "openai-completions" ||
 		llm.api === "openai-responses" ||
+		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
@@ -214,6 +216,17 @@ describe("Token Statistics on Abort", () => {
 			async () => {
 				const llm = getModel("google-antigravity", "gpt-oss-120b-medium");
 				await testTokensOnAbort(llm, { apiKey: antigravityToken });
+			},
+		);
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testTokensOnAbort(llm, { apiKey: openaiCodexToken });
 			},
 		);
 	});

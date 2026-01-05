@@ -14,8 +14,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 /**
  * Test for Unicode surrogate pair handling in tool results.
@@ -614,5 +615,34 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 		it("should handle unpaired high surrogate (0xD83D) in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testUnpairedHighSurrogate(llm);
 		});
+	});
+
+	describe("OpenAI Codex Provider Unicode Handling", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle emoji in tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testEmojiInToolResults(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle real-world LinkedIn comment data with emoji",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testRealWorldLinkedInData(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle unpaired high surrogate (0xD83D) in tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testUnpairedHighSurrogate(llm, { apiKey: openaiCodexToken });
+			},
+		);
 	});
 });

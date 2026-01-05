@@ -11,8 +11,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Simple calculate tool
 const calculateSchema = Type.Object({
@@ -241,6 +242,17 @@ describe("Tool Call Without Result Tests", () => {
 			async () => {
 				const model = getModel("google-antigravity", "gpt-oss-120b-medium");
 				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
+			},
+		);
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testToolCallWithoutResult(model, { apiKey: openaiCodexToken });
 			},
 		);
 	});
