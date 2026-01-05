@@ -1,5 +1,6 @@
 {
   "name": "pi-extension-with-deps",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "pi": {
