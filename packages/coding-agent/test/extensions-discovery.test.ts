@@ -1,8 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("extensions discovery", () => {
 	let tempDir: string;
@@ -292,5 +295,152 @@ describe("extensions discovery", () => {
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
 		expect(result.extensions[0].path).toContain("my-ext.ts");
+	});
+
+	it("resolves 3rd party npm dependencies (chalk)", async () => {
+		// Load the real chalk-logger extension from examples
+		const chalkLoggerPath = path.resolve(__dirname, "../examples/extensions/chalk-logger.ts");
+
+		const result = await discoverAndLoadExtensions([chalkLoggerPath], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].path).toContain("chalk-logger.ts");
+		// The extension registers event handlers, not commands/tools
+		expect(result.extensions[0].handlers.size).toBeGreaterThan(0);
+	});
+
+	it("resolves dependencies from extension's own node_modules", async () => {
+		// Load extension that has its own package.json and node_modules with 'ms' package
+		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");
+
+		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].path).toContain("with-deps");
+		// The extension registers a 'parse_duration' tool
+		expect(result.extensions[0].tools.has("parse_duration")).toBe(true);
+	});
+
+	it("registers message renderers", async () => {
+		const extCode = `
+			export default function(pi) {
+				pi.registerMessageRenderer("my-custom-type", (message, options, theme) => {
+					return null; // Use default rendering
+				});
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "with-renderer.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].messageRenderers.has("my-custom-type")).toBe(true);
+	});
+
+	it("reports error when extension throws during initialization", async () => {
+		const extCode = `
+			export default function(pi) {
+				throw new Error("Initialization failed!");
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0].error).toContain("Initialization failed!");
+		expect(result.extensions).toHaveLength(0);
+	});
+
+	it("reports error when extension has no default export", async () => {
+		const extCode = `
+			export function notDefault(pi) {
+				pi.registerCommand("test", { handler: async () => {} });
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "no-default.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0].error).toContain("must export a default function");
+		expect(result.extensions).toHaveLength(0);
+	});
+
+	it("allows multiple extensions to register different tools", async () => {
+		fs.writeFileSync(path.join(extensionsDir, "tool-a.ts"), extensionCodeWithTool("tool-a"));
+		fs.writeFileSync(path.join(extensionsDir, "tool-b.ts"), extensionCodeWithTool("tool-b"));
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(2);
+
+		const allTools = new Set<string>();
+		for (const ext of result.extensions) {
+			for (const name of ext.tools.keys()) {
+				allTools.add(name);
+			}
+		}
+		expect(allTools.has("tool-a")).toBe(true);
+		expect(allTools.has("tool-b")).toBe(true);
+	});
+
+	it("loads extension with event handlers", async () => {
+		const extCode = `
+			export default function(pi) {
+				pi.on("agent_start", async () => {});
+				pi.on("tool_call", async (event) => undefined);
+				pi.on("agent_end", async () => {});
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "with-handlers.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].handlers.has("agent_start")).toBe(true);
+		expect(result.extensions[0].handlers.has("tool_call")).toBe(true);
+		expect(result.extensions[0].handlers.has("agent_end")).toBe(true);
+	});
+
+	it("loads extension with shortcuts", async () => {
+		const extCode = `
+			export default function(pi) {
+				pi.registerShortcut("ctrl+t", {
+					description: "Test shortcut",
+					handler: async (ctx) => {},
+				});
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "with-shortcut.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].shortcuts.has("ctrl+t")).toBe(true);
+	});
+
+	it("loads extension with flags", async () => {
+		const extCode = `
+			export default function(pi) {
+				pi.registerFlag("--my-flag", {
+					description: "My custom flag",
+					handler: async (value) => {},
+				});
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "with-flag.ts"), extCode);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].flags.has("--my-flag")).toBe(true);
 	});
 });

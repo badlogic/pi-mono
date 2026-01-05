@@ -8,7 +8,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { complete, completeSimple } from "@mariozechner/pi-ai";
-import { convertToLlm, createBranchSummaryMessage, createHookMessage } from "../messages.js";
+import { convertToLlm, createBranchSummaryMessage, createCustomMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import {
 	computeFileLists,
@@ -44,6 +44,7 @@ function extractFileOperations(
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
 		if (!prevCompaction.fromHook && prevCompaction.details) {
+			// fromHook field kept for session file compatibility
 			const details = prevCompaction.details as CompactionDetails;
 			if (Array.isArray(details.readFiles)) {
 				for (const f of details.readFiles) fileOps.read.add(f);
@@ -75,7 +76,7 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 		return entry.message;
 	}
 	if (entry.type === "custom_message") {
-		return createHookMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
+		return createCustomMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
 	}
 	if (entry.type === "branch_summary") {
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
@@ -88,7 +89,7 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
-	/** Hook-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
+	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
 	details?: T;
 }
 
@@ -194,7 +195,7 @@ export function estimateTokens(message: AgentMessage): number {
 			}
 			return Math.ceil(chars / 4);
 		}
-		case "hookMessage":
+		case "custom":
 		case "toolResult": {
 			if (typeof message.content === "string") {
 				chars = message.content.length;
@@ -240,7 +241,7 @@ function findValidCutPoints(entries: SessionEntry[], startIndex: number, endInde
 				const role = entry.message.role;
 				switch (role) {
 					case "bashExecution":
-					case "hookMessage":
+					case "custom":
 					case "branchSummary":
 					case "compactionSummary":
 					case "user":
@@ -477,7 +478,7 @@ export async function generateSummary(
 	}
 
 	// Serialize conversation to text so model doesn't try to continue it
-	// Convert to LLM messages first (handles custom types like bashExecution, hookMessage, etc.)
+	// Convert to LLM messages first (handles custom types like bashExecution, custom, etc.)
 	const llmMessages = convertToLlm(currentMessages);
 	const conversationText = serializeConversation(llmMessages);
 
@@ -515,7 +516,7 @@ export async function generateSummary(
 }
 
 // ============================================================================
-// Compaction Preparation (for hooks)
+// Compaction Preparation (for extensions)
 // ============================================================================
 
 export interface CompactionPreparation {

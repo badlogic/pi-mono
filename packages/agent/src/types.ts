@@ -32,7 +32,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * @example
 	 * ```typescript
 	 * convertToLlm: (messages) => messages.flatMap(m => {
-	 *   if (m.role === "hookMessage") {
+	 *   if (m.role === "custom") {
 	 *     // Convert custom message to user message
 	 *     return [{ role: "user", content: m.content, timestamp: m.timestamp }];
 	 *   }

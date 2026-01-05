@@ -89,7 +89,7 @@ describe("SessionManager append and tree traversal", () => {
 			const session = SessionManager.inMemory();
 
 			const msgId = session.appendMessage(userMsg("hello"));
-			const customId = session.appendCustomEntry("my_hook", { key: "value" });
+			const customId = session.appendCustomEntry("my_data", { key: "value" });
 			const _msg2Id = session.appendMessage(assistantMsg("response"));
 
 			const entries = session.getEntries();
@@ -97,7 +97,7 @@ describe("SessionManager append and tree traversal", () => {
 			expect(customEntry).toBeDefined();
 			expect(customEntry.id).toBe(customId);
 			expect(customEntry.parentId).toBe(msgId);
-			expect(customEntry.customType).toBe("my_hook");
+			expect(customEntry.customType).toBe("my_data");
 			expect(customEntry.data).toEqual({ key: "value" });
 
 			expect(entries[2].parentId).toBe(customId);

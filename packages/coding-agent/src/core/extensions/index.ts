@@ -1,5 +1,5 @@
 /**
- * Extension system - unified hooks and custom tools.
+ * Extension system for lifecycle events and custom tools.
  */
 
 export { discoverAndLoadExtensions, loadExtensions } from "./loader.js";

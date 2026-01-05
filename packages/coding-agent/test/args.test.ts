@@ -133,15 +133,20 @@ describe("parseArgs", () => {
 		});
 	});
 
-	describe("--hook flag", () => {
-		test("parses single --hook", () => {
-			const result = parseArgs(["--hook", "./my-hook.ts"]);
-			expect(result.hooks).toEqual(["./my-hook.ts"]);
+	describe("--extension flag", () => {
+		test("parses single --extension", () => {
+			const result = parseArgs(["--extension", "./my-extension.ts"]);
+			expect(result.extensions).toEqual(["./my-extension.ts"]);
 		});
 
-		test("parses multiple --hook flags", () => {
-			const result = parseArgs(["--hook", "./hook1.ts", "--hook", "./hook2.ts"]);
-			expect(result.hooks).toEqual(["./hook1.ts", "./hook2.ts"]);
+		test("parses -e shorthand", () => {
+			const result = parseArgs(["-e", "./my-extension.ts"]);
+			expect(result.extensions).toEqual(["./my-extension.ts"]);
+		});
+
+		test("parses multiple --extension flags", () => {
+			const result = parseArgs(["--extension", "./ext1.ts", "-e", "./ext2.ts"]);
+			expect(result.extensions).toEqual(["./ext1.ts", "./ext2.ts"]);
 		});
 	});
 

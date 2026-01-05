@@ -4,7 +4,7 @@
  * Extensions are TypeScript modules that can:
  * - Subscribe to agent lifecycle events
  * - Register LLM-callable tools
- * - Register slash commands, keyboard shortcuts, and CLI flags
+ * - Register commands, keyboard shortcuts, and CLI flags
  * - Interact with the user via UI primitives
  */
 
@@ -16,7 +16,7 @@ import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
-import type { HookMessage } from "../messages.js";
+import type { CustomMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type {
 	BranchSummaryEntry,
@@ -119,7 +119,7 @@ export interface ExtensionContext {
 }
 
 /**
- * Extended context for slash command handlers.
+ * Extended context for command handlers.
  * Includes session control methods only safe in user-initiated commands.
  */
 export interface ExtensionCommandContext extends ExtensionContext {
@@ -228,7 +228,7 @@ export interface SessionBeforeCompactEvent {
 export interface SessionCompactEvent {
 	type: "session_compact";
 	compactionEntry: CompactionEntry;
-	fromHook: boolean;
+	fromExtension: boolean;
 }
 
 /** Fired on process exit */
@@ -258,7 +258,7 @@ export interface SessionTreeEvent {
 	newLeafId: string | null;
 	oldLeafId: string | null;
 	summaryEntry?: BranchSummaryEntry;
-	fromHook?: boolean;
+	fromExtension?: boolean;
 }
 
 export type SessionEvent =
@@ -442,7 +442,7 @@ export interface ToolResultEventResult {
 }
 
 export interface BeforeAgentStartEventResult {
-	message?: Pick<HookMessage, "customType" | "content" | "display" | "details">;
+	message?: Pick<CustomMessage, "customType" | "content" | "display" | "details">;
 	systemPromptAppend?: string;
 }
 
@@ -477,7 +477,7 @@ export interface MessageRenderOptions {
 }
 
 export type MessageRenderer<T = unknown> = (
-	message: HookMessage<T>,
+	message: CustomMessage<T>,
 	options: MessageRenderOptions,
 	theme: Theme,
 ) => Component | undefined;
@@ -547,7 +547,7 @@ export interface ExtensionAPI {
 	// Command, Shortcut, Flag Registration
 	// =========================================================================
 
-	/** Register a custom slash command. */
+	/** Register a custom command. */
 	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
 
 	/** Register a keyboard shortcut. */
@@ -576,7 +576,7 @@ export interface ExtensionAPI {
 	// Message Rendering
 	// =========================================================================
 
-	/** Register a custom renderer for HookMessageEntry. */
+	/** Register a custom renderer for CustomMessageEntry. */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
 
 	// =========================================================================
@@ -585,7 +585,7 @@ export interface ExtensionAPI {
 
 	/** Send a custom message to the session. */
 	sendMessage<T = unknown>(
-		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
 		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): void;
 
@@ -638,7 +638,7 @@ export interface ExtensionShortcut {
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 export type SendMessageHandler = <T = unknown>(
-	message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+	message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
 	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 ) => void;
 

@@ -34,10 +34,9 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import type { CustomToolContext, CustomToolSessionEvent, LoadedCustomTool } from "./custom-tools/index.js";
 import { exportSessionToHtml } from "./export-html/index.js";
 import type {
-	HookRunner,
+	ExtensionRunner,
 	SessionBeforeBranchResult,
 	SessionBeforeCompactResult,
 	SessionBeforeSwitchResult,
@@ -45,12 +44,12 @@ import type {
 	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
-} from "./hooks/index.js";
-import type { BashExecutionMessage, HookMessage } from "./messages.js";
+} from "./extensions/index.js";
+import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
+import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
-import { expandSlashCommand, type FileSlashCommand } from "./slash-commands.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -73,16 +72,14 @@ export interface AgentSessionConfig {
 	settingsManager: SettingsManager;
 	/** Models to cycle through with Ctrl+P (from --models flag) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
-	/** File-based slash commands for expansion */
-	fileCommands?: FileSlashCommand[];
-	/** Hook runner (created in main.ts with wrapped tools) */
-	hookRunner?: HookRunner;
-	/** Custom tools for session lifecycle events */
-	customTools?: LoadedCustomTool[];
+	/** File-based prompt templates for expansion */
+	promptTemplates?: PromptTemplate[];
+	/** Extension runner (created in sdk.ts with wrapped tools) */
+	extensionRunner?: ExtensionRunner;
 	skillsSettings?: Required<SkillsSettings>;
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
-	/** Tool registry for hook getTools/setTools - maps name to tool */
+	/** Tool registry for extension getTools/setTools - maps name to tool */
 	toolRegistry?: Map<string, AgentTool>;
 	/** Function to rebuild system prompt when tools change */
 	rebuildSystemPrompt?: (toolNames: string[]) => string;
@@ -90,8 +87,8 @@ export interface AgentSessionConfig {
 
 /** Options for AgentSession.prompt() */
 export interface PromptOptions {
-	/** Whether to expand file-based slash commands (default: true) */
-	expandSlashCommands?: boolean;
+	/** Whether to expand file-based prompt templates (default: true) */
+	expandPromptTemplates?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
@@ -145,7 +142,7 @@ export class AgentSession {
 	readonly settingsManager: SettingsManager;
 
 	private _scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
-	private _fileCommands: FileSlashCommand[];
+	private _promptTemplates: PromptTemplate[];
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
@@ -156,7 +153,7 @@ export class AgentSession {
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
 	private _followUpMessages: string[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
-	private _pendingNextTurnMessages: HookMessage[] = [];
+	private _pendingNextTurnMessages: CustomMessage[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -175,25 +172,22 @@ export class AgentSession {
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
-	// Hook system
-	private _hookRunner: HookRunner | undefined = undefined;
+	// Extension system
+	private _extensionRunner: ExtensionRunner | undefined = undefined;
 	private _turnIndex = 0;
-
-	// Custom tools for session lifecycle
-	private _customTools: LoadedCustomTool[] = [];
 
 	private _skillsSettings: Required<SkillsSettings> | undefined;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
-	// Tool registry for hook getTools/setTools
+	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool>;
 
 	// Function to rebuild system prompt when tools change
 	private _rebuildSystemPrompt?: (toolNames: string[]) => string;
 
-	// Base system prompt (without hook appends) - used to apply fresh appends each turn
+	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt: string;
 
 	constructor(config: AgentSessionConfig) {
@@ -201,9 +195,8 @@ export class AgentSession {
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
-		this._fileCommands = config.fileCommands ?? [];
-		this._hookRunner = config.hookRunner;
-		this._customTools = config.customTools ?? [];
+		this._promptTemplates = config.promptTemplates ?? [];
+		this._extensionRunner = config.extensionRunner;
 		this._skillsSettings = config.skillsSettings;
 		this._modelRegistry = config.modelRegistry;
 		this._toolRegistry = config.toolRegistry ?? new Map();
@@ -211,7 +204,7 @@ export class AgentSession {
 		this._baseSystemPrompt = config.agent.state.systemPrompt;
 
 		// Always subscribe to agent events for internal handling
-		// (session persistence, hooks, auto-compaction, retry logic)
+		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 	}
 
@@ -255,16 +248,16 @@ export class AgentSession {
 			}
 		}
 
-		// Emit to hooks first
-		await this._emitHookEvent(event);
+		// Emit to extensions first
+		await this._emitExtensionEvent(event);
 
 		// Notify all listeners
 		this._emit(event);
 
 		// Handle session persistence
 		if (event.type === "message_end") {
-			// Check if this is a hook message
-			if (event.message.role === "hookMessage") {
+			// Check if this is a custom message from extensions
+			if (event.message.role === "custom") {
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -343,30 +336,30 @@ export class AgentSession {
 		return undefined;
 	}
 
-	/** Emit hook events based on agent events */
-	private async _emitHookEvent(event: AgentEvent): Promise<void> {
-		if (!this._hookRunner) return;
+	/** Emit extension events based on agent events */
+	private async _emitExtensionEvent(event: AgentEvent): Promise<void> {
+		if (!this._extensionRunner) return;
 
 		if (event.type === "agent_start") {
 			this._turnIndex = 0;
-			await this._hookRunner.emit({ type: "agent_start" });
+			await this._extensionRunner.emit({ type: "agent_start" });
 		} else if (event.type === "agent_end") {
-			await this._hookRunner.emit({ type: "agent_end", messages: event.messages });
+			await this._extensionRunner.emit({ type: "agent_end", messages: event.messages });
 		} else if (event.type === "turn_start") {
-			const hookEvent: TurnStartEvent = {
+			const extensionEvent: TurnStartEvent = {
 				type: "turn_start",
 				turnIndex: this._turnIndex,
 				timestamp: Date.now(),
 			};
-			await this._hookRunner.emit(hookEvent);
+			await this._extensionRunner.emit(extensionEvent);
 		} else if (event.type === "turn_end") {
-			const hookEvent: TurnEndEvent = {
+			const extensionEvent: TurnEndEvent = {
 				type: "turn_end",
 				turnIndex: this._turnIndex,
 				message: event.message,
 				toolResults: event.toolResults,
 			};
-			await this._hookRunner.emit(hookEvent);
+			await this._extensionRunner.emit(extensionEvent);
 			this._turnIndex++;
 		}
 	}
@@ -517,9 +510,9 @@ export class AgentSession {
 		return this._scopedModels;
 	}
 
-	/** File-based slash commands */
-	get fileCommands(): ReadonlyArray<FileSlashCommand> {
-		return this._fileCommands;
+	/** File-based prompt templates */
+	get promptTemplates(): ReadonlyArray<PromptTemplate> {
+		return this._promptTemplates;
 	}
 
 	// =========================================================================
@@ -528,28 +521,28 @@ export class AgentSession {
 
 	/**
 	 * Send a prompt to the agent.
-	 * - Handles hook commands (registered via pi.registerCommand) immediately, even during streaming
-	 * - Expands file-based slash commands by default
+	 * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
+	 * - Expands file-based prompt templates by default
 	 * - During streaming, queues via steer() or followUp() based on streamingBehavior option
 	 * - Validates model and API key before sending (when not streaming)
 	 * @throws Error if streaming and no streamingBehavior specified
 	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
-		const expandCommands = options?.expandSlashCommands ?? true;
+		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 
-		// Handle hook commands first (execute immediately, even during streaming)
-		// Hook commands manage their own LLM interaction via pi.sendMessage()
-		if (expandCommands && text.startsWith("/")) {
-			const handled = await this._tryExecuteHookCommand(text);
+		// Handle extension commands first (execute immediately, even during streaming)
+		// Extension commands manage their own LLM interaction via pi.sendMessage()
+		if (expandPromptTemplates && text.startsWith("/")) {
+			const handled = await this._tryExecuteExtensionCommand(text);
 			if (handled) {
-				// Hook command executed, no prompt to send
+				// Extension command executed, no prompt to send
 				return;
 			}
 		}
 
-		// Expand file-based slash commands if requested
-		const expandedText = expandCommands ? expandSlashCommand(text, [...this._fileCommands]) : text;
+		// Expand file-based prompt templates if requested
+		const expandedText = expandPromptTemplates ? expandPromptTemplate(text, [...this._promptTemplates]) : text;
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -593,7 +586,7 @@ export class AgentSession {
 			await this._checkCompaction(lastAssistant, false);
 		}
 
-		// Build messages array (hook message if any, then user message)
+		// Build messages array (custom message if any, then user message)
 		const messages: AgentMessage[] = [];
 
 		// Add user message
@@ -613,14 +606,14 @@ export class AgentSession {
 		}
 		this._pendingNextTurnMessages = [];
 
-		// Emit before_agent_start hook event
-		if (this._hookRunner) {
-			const result = await this._hookRunner.emitBeforeAgentStart(expandedText, options?.images);
-			// Add all hook messages
+		// Emit before_agent_start extension event
+		if (this._extensionRunner) {
+			const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, options?.images);
+			// Add all custom messages from extensions
 			if (result?.messages) {
 				for (const msg of result.messages) {
 					messages.push({
-						role: "hookMessage",
+						role: "custom",
 						customType: msg.customType,
 						content: msg.content,
 						display: msg.display,
@@ -629,7 +622,7 @@ export class AgentSession {
 					});
 				}
 			}
-			// Apply hook systemPromptAppend on top of base prompt
+			// Apply extension systemPromptAppend on top of base prompt
 			if (result?.systemPromptAppend) {
 				this.agent.setSystemPrompt(`${this._baseSystemPrompt}\n\n${result.systemPromptAppend}`);
 			} else {
@@ -643,29 +636,29 @@ export class AgentSession {
 	}
 
 	/**
-	 * Try to execute a hook command. Returns true if command was found and executed.
+	 * Try to execute an extension command. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteHookCommand(text: string): Promise<boolean> {
-		if (!this._hookRunner) return false;
+	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+		if (!this._extensionRunner) return false;
 
 		// Parse command name and args
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
 
-		const command = this._hookRunner.getCommand(commandName);
+		const command = this._extensionRunner.getCommand(commandName);
 		if (!command) return false;
 
-		// Get command context from hook runner (includes session control methods)
-		const ctx = this._hookRunner.createCommandContext();
+		// Get command context from extension runner (includes session control methods)
+		const ctx = this._extensionRunner.createCommandContext();
 
 		try {
 			await command.handler(args, ctx);
 			return true;
 		} catch (err) {
-			// Emit error via hook runner
-			this._hookRunner.emitError({
-				hookPath: `command:${commandName}`,
+			// Emit error via extension runner
+			this._extensionRunner.emitError({
+				extensionPath: `command:${commandName}`,
 				event: "command",
 				error: err instanceof Error ? err.message : String(err),
 			});
@@ -676,17 +669,17 @@ export class AgentSession {
 	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 * Delivered after current tool execution, skips remaining tools.
-	 * Expands file-based slash commands. Errors on hook commands.
-	 * @throws Error if text is a hook command
+	 * Expands file-based prompt templates. Errors on extension commands.
+	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string): Promise<void> {
-		// Check for hook commands (cannot be queued)
+		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
-			this._throwIfHookCommand(text);
+			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based slash commands
-		const expandedText = expandSlashCommand(text, [...this._fileCommands]);
+		// Expand file-based prompt templates
+		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
 
 		await this._queueSteer(expandedText);
 	}
@@ -694,23 +687,23 @@ export class AgentSession {
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 * Delivered only when agent has no more tool calls or steering messages.
-	 * Expands file-based slash commands. Errors on hook commands.
-	 * @throws Error if text is a hook command
+	 * Expands file-based prompt templates. Errors on extension commands.
+	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string): Promise<void> {
-		// Check for hook commands (cannot be queued)
+		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
-			this._throwIfHookCommand(text);
+			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based slash commands
-		const expandedText = expandSlashCommand(text, [...this._fileCommands]);
+		// Expand file-based prompt templates
+		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
 
 		await this._queueFollowUp(expandedText);
 	}
 
 	/**
-	 * Internal: Queue a steering message (already expanded, no hook command check).
+	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string): Promise<void> {
 		this._steeringMessages.push(text);
@@ -722,7 +715,7 @@ export class AgentSession {
 	}
 
 	/**
-	 * Internal: Queue a follow-up message (already expanded, no hook command check).
+	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string): Promise<void> {
 		this._followUpMessages.push(text);
@@ -734,46 +727,46 @@ export class AgentSession {
 	}
 
 	/**
-	 * Throw an error if the text is a hook command.
+	 * Throw an error if the text is an extension command.
 	 */
-	private _throwIfHookCommand(text: string): void {
-		if (!this._hookRunner) return;
+	private _throwIfExtensionCommand(text: string): void {
+		if (!this._extensionRunner) return;
 
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const command = this._hookRunner.getCommand(commandName);
+		const command = this._extensionRunner.getCommand(commandName);
 
 		if (command) {
 			throw new Error(
-				`Hook command "/${commandName}" cannot be queued. Use prompt() or execute the command when not streaming.`,
+				`Extension command "/${commandName}" cannot be queued. Use prompt() or execute the command when not streaming.`,
 			);
 		}
 	}
 
 	/**
-	 * Send a hook message to the session. Creates a CustomMessageEntry.
+	 * Send a custom message to the session. Creates a CustomMessageEntry.
 	 *
 	 * Handles three cases:
 	 * - Streaming: queues message, processed when loop pulls from queue
 	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
 	 * - Not streaming + no trigger: appends to state/session, no turn
 	 *
-	 * @param message Hook message with customType, content, display, details
+	 * @param message Custom message with customType, content, display, details
 	 * @param options.triggerTurn If true and not streaming, triggers a new LLM turn
 	 * @param options.deliverAs Delivery mode: "steer", "followUp", or "nextTurn"
 	 */
-	async sendHookMessage<T = unknown>(
-		message: Pick<HookMessage<T>, "customType" | "content" | "display" | "details">,
+	async sendCustomMessage<T = unknown>(
+		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
 		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): Promise<void> {
 		const appMessage = {
-			role: "hookMessage" as const,
+			role: "custom" as const,
 			customType: message.customType,
 			content: message.content,
 			display: message.display,
 			details: message.details,
 			timestamp: Date.now(),
-		} satisfies HookMessage<T>;
+		} satisfies CustomMessage<T>;
 		if (options?.deliverAs === "nextTurn") {
 			this._pendingNextTurnMessages.push(appMessage);
 		} else if (this.isStreaming) {
@@ -842,14 +835,14 @@ export class AgentSession {
 	 * Clears all messages and starts a new session.
 	 * Listeners are preserved and will continue receiving events.
 	 * @param options - Optional initial messages and parent session path
-	 * @returns true if completed, false if cancelled by hook
+	 * @returns true if completed, false if cancelled by extension
 	 */
 	async newSession(options?: NewSessionOptions): Promise<boolean> {
 		const previousSessionFile = this.sessionFile;
 
 		// Emit session_before_switch event with reason "new" (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session_before_switch")) {
-			const result = (await this._hookRunner.emit({
+		if (this._extensionRunner?.hasHandlers("session_before_switch")) {
+			const result = (await this._extensionRunner.emit({
 				type: "session_before_switch",
 				reason: "new",
 			})) as SessionBeforeSwitchResult | undefined;
@@ -868,9 +861,9 @@ export class AgentSession {
 		this._pendingNextTurnMessages = [];
 		this._reconnectToAgent();
 
-		// Emit session_switch event with reason "new" to hooks
-		if (this._hookRunner) {
-			await this._hookRunner.emit({
+		// Emit session_switch event with reason "new" to extensions
+		if (this._extensionRunner) {
+			await this._extensionRunner.emit({
 				type: "session_switch",
 				reason: "new",
 				previousSessionFile,
@@ -878,7 +871,6 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitCustomToolSessionEvent("switch", previousSessionFile);
 		return true;
 	}
 
@@ -1097,11 +1089,11 @@ export class AgentSession {
 				throw new Error("Nothing to compact (session too small)");
 			}
 
-			let hookCompaction: CompactionResult | undefined;
-			let fromHook = false;
+			let extensionCompaction: CompactionResult | undefined;
+			let fromExtension = false;
 
-			if (this._hookRunner?.hasHandlers("session_before_compact")) {
-				const result = (await this._hookRunner.emit({
+			if (this._extensionRunner?.hasHandlers("session_before_compact")) {
+				const result = (await this._extensionRunner.emit({
 					type: "session_before_compact",
 					preparation,
 					branchEntries: pathEntries,
@@ -1114,8 +1106,8 @@ export class AgentSession {
 				}
 
 				if (result?.compaction) {
-					hookCompaction = result.compaction;
-					fromHook = true;
+					extensionCompaction = result.compaction;
+					fromExtension = true;
 				}
 			}
 
@@ -1124,12 +1116,12 @@ export class AgentSession {
 			let tokensBefore: number;
 			let details: unknown;
 
-			if (hookCompaction) {
-				// Hook provided compaction content
-				summary = hookCompaction.summary;
-				firstKeptEntryId = hookCompaction.firstKeptEntryId;
-				tokensBefore = hookCompaction.tokensBefore;
-				details = hookCompaction.details;
+			if (extensionCompaction) {
+				// Extension provided compaction content
+				summary = extensionCompaction.summary;
+				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
+				tokensBefore = extensionCompaction.tokensBefore;
+				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
 				const result = await compact(
@@ -1149,21 +1141,21 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			// Get the saved compaction entry for the hook
+			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
 				| CompactionEntry
 				| undefined;
 
-			if (this._hookRunner && savedCompactionEntry) {
-				await this._hookRunner.emit({
+			if (this._extensionRunner && savedCompactionEntry) {
+				await this._extensionRunner.emit({
 					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
-					fromHook,
+					fromExtension,
 				});
 			}
 
@@ -1265,11 +1257,11 @@ export class AgentSession {
 				return;
 			}
 
-			let hookCompaction: CompactionResult | undefined;
-			let fromHook = false;
+			let extensionCompaction: CompactionResult | undefined;
+			let fromExtension = false;
 
-			if (this._hookRunner?.hasHandlers("session_before_compact")) {
-				const hookResult = (await this._hookRunner.emit({
+			if (this._extensionRunner?.hasHandlers("session_before_compact")) {
+				const extensionResult = (await this._extensionRunner.emit({
 					type: "session_before_compact",
 					preparation,
 					branchEntries: pathEntries,
@@ -1277,14 +1269,14 @@ export class AgentSession {
 					signal: this._autoCompactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
 
-				if (hookResult?.cancel) {
+				if (extensionResult?.cancel) {
 					this._emit({ type: "auto_compaction_end", result: undefined, aborted: true, willRetry: false });
 					return;
 				}
 
-				if (hookResult?.compaction) {
-					hookCompaction = hookResult.compaction;
-					fromHook = true;
+				if (extensionResult?.compaction) {
+					extensionCompaction = extensionResult.compaction;
+					fromExtension = true;
 				}
 			}
 
@@ -1293,12 +1285,12 @@ export class AgentSession {
 			let tokensBefore: number;
 			let details: unknown;
 
-			if (hookCompaction) {
-				// Hook provided compaction content
-				summary = hookCompaction.summary;
-				firstKeptEntryId = hookCompaction.firstKeptEntryId;
-				tokensBefore = hookCompaction.tokensBefore;
-				details = hookCompaction.details;
+			if (extensionCompaction) {
+				// Extension provided compaction content
+				summary = extensionCompaction.summary;
+				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
+				tokensBefore = extensionCompaction.tokensBefore;
+				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
 				const compactResult = await compact(
@@ -1319,21 +1311,21 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.replaceMessages(sessionContext.messages);
 
-			// Get the saved compaction entry for the hook
+			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
 				| CompactionEntry
 				| undefined;
 
-			if (this._hookRunner && savedCompactionEntry) {
-				await this._hookRunner.emit({
+			if (this._extensionRunner && savedCompactionEntry) {
+				await this._extensionRunner.emit({
 					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
-					fromHook,
+					fromExtension,
 				});
 			}
 
@@ -1632,14 +1624,14 @@ export class AgentSession {
 	 * Switch to a different session file.
 	 * Aborts current operation, loads messages, restores model/thinking.
 	 * Listeners are preserved and will continue receiving events.
-	 * @returns true if switch completed, false if cancelled by hook
+	 * @returns true if switch completed, false if cancelled by extension
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
 		const previousSessionFile = this.sessionManager.getSessionFile();
 
 		// Emit session_before_switch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session_before_switch")) {
-			const result = (await this._hookRunner.emit({
+		if (this._extensionRunner?.hasHandlers("session_before_switch")) {
+			const result = (await this._extensionRunner.emit({
 				type: "session_before_switch",
 				reason: "resume",
 				targetSessionFile: sessionPath,
@@ -1662,9 +1654,9 @@ export class AgentSession {
 		// Reload messages
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_switch event to hooks
-		if (this._hookRunner) {
-			await this._hookRunner.emit({
+		// Emit session_switch event to extensions
+		if (this._extensionRunner) {
+			await this._extensionRunner.emit({
 				type: "session_switch",
 				reason: "resume",
 				previousSessionFile,
@@ -1672,7 +1664,6 @@ export class AgentSession {
 		}
 
 		// Emit session event to custom tools
-		await this.emitCustomToolSessionEvent("switch", previousSessionFile);
 
 		this.agent.replaceMessages(sessionContext.messages);
 
@@ -1698,12 +1689,12 @@ export class AgentSession {
 
 	/**
 	 * Create a branch from a specific entry.
-	 * Emits before_branch/branch session events to hooks.
+	 * Emits before_branch/branch session events to extensions.
 	 *
 	 * @param entryId ID of the entry to branch from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
-	 *   - cancelled: True if a hook cancelled the branch
+	 *   - cancelled: True if an extension cancelled the branch
 	 */
 	async branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
@@ -1718,8 +1709,8 @@ export class AgentSession {
 		let skipConversationRestore = false;
 
 		// Emit session_before_branch event (can be cancelled)
-		if (this._hookRunner?.hasHandlers("session_before_branch")) {
-			const result = (await this._hookRunner.emit({
+		if (this._extensionRunner?.hasHandlers("session_before_branch")) {
+			const result = (await this._extensionRunner.emit({
 				type: "session_before_branch",
 				entryId,
 			})) as SessionBeforeBranchResult | undefined;
@@ -1742,16 +1733,15 @@ export class AgentSession {
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_branch event to hooks (after branch completes)
-		if (this._hookRunner) {
-			await this._hookRunner.emit({
+		// Emit session_branch event to extensions (after branch completes)
+		if (this._extensionRunner) {
+			await this._extensionRunner.emit({
 				type: "session_branch",
 				previousSessionFile,
 			});
 		}
 
 		// Emit session event to custom tools (with reason "branch")
-		await this.emitCustomToolSessionEvent("branch", previousSessionFile);
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1812,12 +1802,12 @@ export class AgentSession {
 
 		// Set up abort controller for summarization
 		this._branchSummaryAbortController = new AbortController();
-		let hookSummary: { summary: string; details?: unknown } | undefined;
-		let fromHook = false;
+		let extensionSummary: { summary: string; details?: unknown } | undefined;
+		let fromExtension = false;
 
 		// Emit session_before_tree event
-		if (this._hookRunner?.hasHandlers("session_before_tree")) {
-			const result = (await this._hookRunner.emit({
+		if (this._extensionRunner?.hasHandlers("session_before_tree")) {
+			const result = (await this._extensionRunner.emit({
 				type: "session_before_tree",
 				preparation,
 				signal: this._branchSummaryAbortController.signal,
@@ -1828,15 +1818,15 @@ export class AgentSession {
 			}
 
 			if (result?.summary && options.summarize) {
-				hookSummary = result.summary;
-				fromHook = true;
+				extensionSummary = result.summary;
+				fromExtension = true;
 			}
 		}
 
 		// Run default summarizer if needed
 		let summaryText: string | undefined;
 		let summaryDetails: unknown;
-		if (options.summarize && entriesToSummarize.length > 0 && !hookSummary) {
+		if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
 			const model = this.model!;
 			const apiKey = await this._modelRegistry.getApiKey(model);
 			if (!apiKey) {
@@ -1862,9 +1852,9 @@ export class AgentSession {
 				readFiles: result.readFiles || [],
 				modifiedFiles: result.modifiedFiles || [],
 			};
-		} else if (hookSummary) {
-			summaryText = hookSummary.summary;
-			summaryDetails = hookSummary.details;
+		} else if (extensionSummary) {
+			summaryText = extensionSummary.summary;
+			summaryDetails = extensionSummary.details;
 		}
 
 		// Determine the new leaf position based on target type
@@ -1895,7 +1885,7 @@ export class AgentSession {
 		let summaryEntry: BranchSummaryEntry | undefined;
 		if (summaryText) {
 			// Create summary at target position (can be null for root)
-			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromHook);
+			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromExtension);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf
@@ -1910,18 +1900,17 @@ export class AgentSession {
 		this.agent.replaceMessages(sessionContext.messages);
 
 		// Emit session_tree event
-		if (this._hookRunner) {
-			await this._hookRunner.emit({
+		if (this._extensionRunner) {
+			await this._extensionRunner.emit({
 				type: "session_tree",
 				newLeafId: this.sessionManager.getLeafId(),
 				oldLeafId,
 				summaryEntry,
-				fromHook: summaryText ? fromHook : undefined,
+				fromExtension: summaryText ? fromExtension : undefined,
 			});
 		}
 
 		// Emit to custom tools
-		await this.emitCustomToolSessionEvent("tree", this.sessionFile);
 
 		this._branchSummaryAbortController = undefined;
 		return { editorText, cancelled: false, summaryEntry };
@@ -2049,60 +2038,20 @@ export class AgentSession {
 	}
 
 	// =========================================================================
-	// Hook System
+	// Extension System
 	// =========================================================================
 
 	/**
-	 * Check if hooks have handlers for a specific event type.
+	 * Check if extensions have handlers for a specific event type.
 	 */
-	hasHookHandlers(eventType: string): boolean {
-		return this._hookRunner?.hasHandlers(eventType) ?? false;
+	hasExtensionHandlers(eventType: string): boolean {
+		return this._extensionRunner?.hasHandlers(eventType) ?? false;
 	}
 
 	/**
-	 * Get the hook runner (for setting UI context and error handlers).
+	 * Get the extension runner (for setting UI context and error handlers).
 	 */
-	get hookRunner(): HookRunner | undefined {
-		return this._hookRunner;
-	}
-
-	/**
-	 * Get custom tools (for setting UI context in modes).
-	 */
-	get customTools(): LoadedCustomTool[] {
-		return this._customTools;
-	}
-
-	/**
-	 * Emit session event to all custom tools.
-	 * Called on session switch, branch, tree navigation, and shutdown.
-	 */
-	async emitCustomToolSessionEvent(
-		reason: CustomToolSessionEvent["reason"],
-		previousSessionFile?: string | undefined,
-	): Promise<void> {
-		if (!this._customTools) return;
-
-		const event: CustomToolSessionEvent = { reason, previousSessionFile };
-		const ctx: CustomToolContext = {
-			sessionManager: this.sessionManager,
-			modelRegistry: this._modelRegistry,
-			model: this.agent.state.model,
-			isIdle: () => !this.isStreaming,
-			hasPendingMessages: () => this.pendingMessageCount > 0,
-			abort: () => {
-				this.abort();
-			},
-		};
-
-		for (const { tool } of this._customTools) {
-			if (tool.onSession) {
-				try {
-					await tool.onSession(event, ctx);
-				} catch (_err) {
-					// Silently ignore tool errors during session events
-				}
-			}
-		}
+	get extensionRunner(): ExtensionRunner | undefined {
+		return this._extensionRunner;
 	}
 }

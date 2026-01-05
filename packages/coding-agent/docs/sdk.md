@@ -129,7 +129,7 @@ interface AgentSession {
 
 ### Prompting and Message Queueing
 
-The `prompt()` method handles slash commands, hook commands, and message sending:
+The `prompt()` method handles prompt templates, extension commands, and message sending:
 
 ```typescript
 // Basic prompt (when not streaming)
@@ -146,8 +146,8 @@ await session.prompt("After you're done, also check X", { streamingBehavior: "fo
 ```
 
 **Behavior:**
-- **Hook commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
-- **File-based slash commands** (from `.md` files): Expanded to their content before sending/queueing.
+- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+- **File-based prompt templates** (from `.md` files): Expanded to their content before sending/queueing.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
 
 For explicit queueing during streaming:
@@ -160,7 +160,7 @@ await session.steer("New instruction");
 await session.followUp("After you're done, also do this");
 ```
 
-Both `steer()` and `followUp()` expand file-based slash commands but error on hook commands (hook commands cannot be queued).
+Both `steer()` and `followUp()` expand file-based prompt templates but error on extension commands (extension commands cannot be queued).
 
 ### Agent and AgentState
 
@@ -260,18 +260,16 @@ const { session } = await createAgentSession({
 ```
 
 `cwd` is used for:
-- Project hooks (`.pi/hooks/`)
-- Project tools (`.pi/tools/`)
+- Project extensions (`.pi/extensions/`)
 - Project skills (`.pi/skills/`)
-- Project commands (`.pi/commands/`)
+- Project prompts (`.pi/prompts/`)
 - Context files (`AGENTS.md` walking up from cwd)
 - Session directory naming
 
 `agentDir` is used for:
-- Global hooks (`hooks/`)
-- Global tools (`tools/`)
+- Global extensions (`extensions/`)
 - Global skills (`skills/`)
-- Global commands (`commands/`)
+- Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
 - Settings (`settings.json`)
 - Custom models (`models.json`)
@@ -502,7 +500,7 @@ const loggingHook: HookFactory = (api) => {
     return undefined;
   });
   
-  // Register custom slash command
+  // Register custom prompt template
   api.registerCommand("stats", {
     description: "Show session stats",
     handler: async (ctx) => {
@@ -556,7 +554,7 @@ Hook API methods:
 - `api.events.on(channel, handler)` - Listen on shared event bus
 - `api.sendMessage(message, triggerTurn?)` - Inject message (creates `CustomMessageEntry`)
 - `api.appendEntry(customType, data?)` - Persist hook state (not in LLM context)
-- `api.registerCommand(name, options)` - Register custom slash command
+- `api.registerCommand(name, options)` - Register custom command
 - `api.registerMessageRenderer(customType, renderer)` - Custom TUI rendering
 - `api.exec(command, args, options?)` - Execute shell commands
 
@@ -628,11 +626,11 @@ const { session } = await createAgentSession({
 ### Slash Commands
 
 ```typescript
-import { createAgentSession, discoverSlashCommands, type FileSlashCommand } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, discoverPromptTemplates, type PromptTemplate } from "@mariozechner/pi-coding-agent";
 
-const discovered = discoverSlashCommands();
+const discovered = discoverPromptTemplates();
 
-const customCommand: FileSlashCommand = {
+const customCommand: PromptTemplate = {
   name: "deploy",
   description: "Deploy the application",
   source: "(custom)",
@@ -640,11 +638,11 @@ const customCommand: FileSlashCommand = {
 };
 
 const { session } = await createAgentSession({
-  slashCommands: [...discovered, customCommand],
+  promptTemplates: [...discovered, customCommand],
 });
 ```
 
-> See [examples/sdk/08-slash-commands.ts](../examples/sdk/08-slash-commands.ts)
+> See [examples/sdk/08-prompt-templates.ts](../examples/sdk/08-prompt-templates.ts)
 
 ### Session Management
 
@@ -773,7 +771,7 @@ import {
   discoverHooks,
   discoverCustomTools,
   discoverContextFiles,
-  discoverSlashCommands,
+  discoverPromptTemplates,
   loadSettings,
   buildSystemPrompt,
 } from "@mariozechner/pi-coding-agent";
@@ -800,8 +798,8 @@ const tools = await discoverCustomTools(eventBus, cwd, agentDir);
 // Context files
 const contextFiles = discoverContextFiles(cwd, agentDir);
 
-// Slash commands
-const commands = discoverSlashCommands(cwd, agentDir);
+// Prompt templates
+const commands = discoverPromptTemplates(cwd, agentDir);
 
 // Settings (global + project merged)
 const settings = loadSettings(cwd, agentDir);
@@ -908,7 +906,7 @@ const { session } = await createAgentSession({
   hooks: [{ factory: auditHook }],
   skills: [],
   contextFiles: [],
-  slashCommands: [],
+  promptTemplates: [],
   
   sessionManager: SessionManager.inMemory(),
   settingsManager,
@@ -963,7 +961,7 @@ discoverSkills
 discoverHooks
 discoverCustomTools
 discoverContextFiles
-discoverSlashCommands
+discoverPromptTemplates
 
 // Event Bus (for shared hook/tool communication)
 createEventBus
@@ -994,7 +992,7 @@ type CreateAgentSessionResult
 type CustomTool
 type HookFactory
 type Skill
-type FileSlashCommand
+type PromptTemplate
 type Settings
 type SkillsSettings
 type Tool

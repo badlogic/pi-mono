@@ -11,7 +11,7 @@ Programmatic usage of pi-coding-agent via `createAgentSession()`.
 | `03-custom-prompt.ts` | Replace or modify system prompt |
 | `04-skills.ts` | Discover, filter, or replace skills |
 | `05-tools.ts` | Built-in tools, custom tools |
-| `06-hooks.ts` | Logging, blocking, result modification |
+| `06-extensions.ts` | Logging, blocking, result modification |
 | `07-context-files.ts` | AGENTS.md context files |
 | `08-slash-commands.ts` | File-based slash commands |
 | `09-api-keys-and-oauth.ts` | API key resolution, OAuth config |
@@ -36,7 +36,7 @@ import {
   discoverAuthStorage,
   discoverModels,
   discoverSkills,
-  discoverHooks,
+  discoverExtensions,
   discoverCustomTools,
   discoverContextFiles,
   discoverSlashCommands,
@@ -89,7 +89,7 @@ const { session } = await createAgentSession({
   systemPrompt: "You are helpful.",
   tools: [readTool, bashTool],
   customTools: [{ tool: myTool }],
-  hooks: [{ factory: myHook }],
+  extensions: [{ factory: myExtension }],
   skills: [],
   contextFiles: [],
   slashCommands: [],
@@ -119,8 +119,8 @@ await session.prompt("Hello");
 | `tools` | `codingTools` | Built-in tools |
 | `customTools` | Discovered | Replaces discovery |
 | `additionalCustomToolPaths` | `[]` | Merge with discovery |
-| `hooks` | Discovered | Replaces discovery |
-| `additionalHookPaths` | `[]` | Merge with discovery |
+| `extensions` | Discovered | Replaces discovery |
+| `additionalExtensionPaths` | `[]` | Merge with discovery |
 | `skills` | Discovered | Skills for prompt |
 | `contextFiles` | Discovered | AGENTS.md files |
 | `slashCommands` | Discovered | File commands |
