@@ -161,6 +161,8 @@ export class AuthStorage {
 			onAuth: (info: { url: string; instructions?: string }) => void;
 			onPrompt: (prompt: { message: string; placeholder?: string }) => Promise<string>;
 			onProgress?: (message: string) => void;
+			/** For providers with local callback servers (e.g., openai-codex), races with browser callback */
+			onManualCodeInput?: () => Promise<string>;
 		},
 	): Promise<void> {
 		let credentials: OAuthCredentials;
@@ -186,7 +188,12 @@ export class AuthStorage {
 				credentials = await loginAntigravity(callbacks.onAuth, callbacks.onProgress);
 				break;
 			case "openai-codex":
-				credentials = await loginOpenAICodex(callbacks);
+				credentials = await loginOpenAICodex({
+					onAuth: callbacks.onAuth,
+					onPrompt: callbacks.onPrompt,
+					onProgress: callbacks.onProgress,
+					onManualCodeInput: callbacks.onManualCodeInput,
+				});
 				break;
 			default:
 				throw new Error(`Unknown OAuth provider: ${provider}`);
