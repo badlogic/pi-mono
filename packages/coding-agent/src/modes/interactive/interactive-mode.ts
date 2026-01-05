@@ -2132,7 +2132,6 @@ export class InteractiveMode {
 						let manualCodeInput: Input | undefined;
 
 						try {
-
 							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
 								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
@@ -2169,7 +2168,10 @@ export class InteractiveMode {
 										this.chatContainer.addChild(new Spacer(1));
 										this.chatContainer.addChild(
 											new Text(
-												theme.fg("dim", "Alternatively, paste the authorization code or redirect URL below:"),
+												theme.fg(
+													"dim",
+													"Alternatively, paste the authorization code or redirect URL below:",
+												),
 												1,
 												0,
 											),
