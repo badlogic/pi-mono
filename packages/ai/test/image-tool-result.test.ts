@@ -13,8 +13,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 /**
  * Test that tool results containing only images work correctly across all providers.
@@ -393,5 +394,25 @@ describe("Tool Results with Images", () => {
 		);**/
 
 		// Note: gpt-oss-120b-medium does not support images, so not tested here
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle tool result with only image",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await handleToolWithImageResult(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle tool result with text and image",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await handleToolWithTextAndImageResult(llm, { apiKey: openaiCodexToken });
+			},
+		);
 	});
 });

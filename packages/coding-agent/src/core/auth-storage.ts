@@ -10,6 +10,7 @@ import {
 	loginAntigravity,
 	loginGeminiCli,
 	loginGitHubCopilot,
+	loginOpenAICodex,
 	type OAuthCredentials,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
@@ -179,6 +180,9 @@ export class AuthStorage {
 				break;
 			case "google-antigravity":
 				credentials = await loginAntigravity(callbacks.onAuth, callbacks.onProgress);
+				break;
+			case "openai-codex":
+				credentials = await loginOpenAICodex(callbacks);
 				break;
 			default:
 				throw new Error(`Unknown OAuth provider: ${provider}`);

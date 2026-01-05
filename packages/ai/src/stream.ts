@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
@@ -7,6 +10,7 @@ import {
 	streamGoogleGeminiCli,
 } from "./providers/google-gemini-cli.js";
 import { type GoogleVertexOptions, streamGoogleVertex } from "./providers/google-vertex.js";
+import { type OpenAICodexResponsesOptions, streamOpenAICodexResponses } from "./providers/openai-codex-responses.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";
 import type {
@@ -20,6 +24,17 @@ import type {
 	ReasoningEffort,
 	SimpleStreamOptions,
 } from "./types.js";
+
+const VERTEX_ADC_CREDENTIALS_PATH = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
+
+let cachedVertexAdcCredentialsExists: boolean | null = null;
+
+function hasVertexAdcCredentials(): boolean {
+	if (cachedVertexAdcCredentialsExists === null) {
+		cachedVertexAdcCredentialsExists = existsSync(VERTEX_ADC_CREDENTIALS_PATH);
+	}
+	return cachedVertexAdcCredentialsExists;
+}
 
 /**
  * Get API key for provider from known environment variables, e.g. OPENAI_API_KEY.
@@ -41,7 +56,15 @@ export function getEnvApiKey(provider: any): string | undefined {
 
 	// Vertex AI uses Application Default Credentials, not API keys.
 	// Auth is configured via `gcloud auth application-default login`.
-	// Don't return a dummy value - require explicit auth.json configuration.
+	if (provider === "google-vertex") {
+		const hasCredentials = hasVertexAdcCredentials();
+		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
+
+		if (hasCredentials && hasProject && hasLocation) {
+			return "<authenticated>";
+		}
+	}
 
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
@@ -84,6 +107,9 @@ export function stream<TApi extends Api>(
 
 		case "openai-responses":
 			return streamOpenAIResponses(model as Model<"openai-responses">, context, providerOptions as any);
+
+		case "openai-codex-responses":
+			return streamOpenAICodexResponses(model as Model<"openai-codex-responses">, context, providerOptions as any);
 
 		case "google-generative-ai":
 			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
@@ -201,6 +227,12 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
 			} satisfies OpenAIResponsesOptions;
+
+		case "openai-codex-responses":
+			return {
+				...base,
+				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
+			} satisfies OpenAICodexResponsesOptions;
 
 		case "google-generative-ai": {
 			// Explicitly disable thinking when reasoning is not specified

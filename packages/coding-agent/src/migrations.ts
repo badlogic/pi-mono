@@ -169,7 +169,7 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 		// Check if tools/ contains anything other than fd/rg (which are auto-extracted binaries)
 		try {
 			const entries = readdirSync(toolsDir);
-			const customTools = entries.filter((e) => e !== "fd" && e !== "rg");
+			const customTools = entries.filter((e) => e !== "fd" && e !== "rg" && e !== "fd.exe" && e !== "rg.exe");
 			if (customTools.length > 0) {
 				warnings.push(
 					`${label} tools/ directory contains custom tools. Custom tools have been merged into extensions.`,

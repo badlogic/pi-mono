@@ -10,8 +10,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Test with completely empty content array
@@ -570,6 +571,44 @@ describe("AI Providers Empty Message Tests", () => {
 			async () => {
 				const llm = getModel("google-antigravity", "gpt-oss-120b-medium");
 				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
+			},
+		);
+	});
+
+	describe("OpenAI Codex Provider Empty Messages", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle empty content array",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testEmptyMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle empty string content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testEmptyStringMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle whitespace-only content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testWhitespaceOnlyMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should handle empty assistant message in conversation",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				await testEmptyAssistantMessage(llm, { apiKey: openaiCodexToken });
 			},
 		);
 	});

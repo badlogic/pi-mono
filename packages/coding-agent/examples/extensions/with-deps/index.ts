@@ -10,10 +10,6 @@ import { Type } from "@sinclair/typebox";
 import ms from "ms";
 
 export default function (pi: ExtensionAPI) {
-	// Use the ms package to prove it loaded
-	const uptime = ms(process.uptime() * 1000, { long: true });
-	console.log(`[with-deps] Extension loaded. Process uptime: ${uptime}`);
-
 	// Register a tool that uses ms
 	pi.registerTool({
 		name: "parse_duration",

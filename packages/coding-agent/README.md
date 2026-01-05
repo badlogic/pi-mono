@@ -155,6 +155,7 @@ Use `/login` to authenticate with subscription-based or free-tier providers:
 | GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
 | Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
 | Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
+| OpenAI Codex (ChatGPT Plus/Pro) | Codex models via ChatGPT subscription | Subscription |
 
 ```bash
 pi
@@ -172,7 +173,17 @@ pi
 - Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
 - Both are free with any Google account, subject to rate limits
 
+**OpenAI Codex notes:**
+- Requires ChatGPT Plus/Pro OAuth (`/login openai-codex`)
+- Prompt cache stored under `~/.pi/agent/cache/openai-codex/`
+- Intended for personal use with your own subscription; not for resale or multi-user services. For production, use the OpenAI Platform API.
+
 Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
+
+**Troubleshooting (OAuth):**
+- **Port 1455 in use:** Close the conflicting process or paste the auth code/URL when prompted.
+- **Token expired / refresh failed:** Run `/login` again for the provider to refresh credentials.
+- **Usage limits (429):** Wait for the reset window; pi will surface a friendly message with the approximate retry time.
 
 ### Quick Start
 
@@ -545,7 +556,7 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 }
 ```
 
-**Supported APIs:** `openai-completions`, `openai-responses`, `anthropic-messages`, `google-generative-ai`
+**Supported APIs:** `openai-completions`, `openai-responses`, `openai-codex-responses`, `anthropic-messages`, `google-generative-ai`
 
 **API key resolution:** The `apiKey` field is checked as environment variable name first, then used as literal value.
 
@@ -1061,7 +1072,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |

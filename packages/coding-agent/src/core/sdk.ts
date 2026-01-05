@@ -29,9 +29,12 @@ import { AuthStorage } from "./auth-storage.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	discoverAndLoadExtensions,
+	type ExtensionFactory,
 	ExtensionRunner,
 	type LoadExtensionsResult,
 	type LoadedExtension,
+	loadExtensionFromFactory,
+	type ToolDefinition,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
 } from "./extensions/index.js";
@@ -96,9 +99,16 @@ export interface CreateAgentSessionOptions {
 
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
+	/** Custom tools to register (in addition to built-in tools). */
+	customTools?: ToolDefinition[];
+	/** Inline extensions (merged with discovery). */
+	extensions?: ExtensionFactory[];
 	/** Additional extension paths to load (merged with discovery). */
 	additionalExtensionPaths?: string[];
-	/** Pre-loaded extensions (skips loading, used when extensions were loaded early for CLI flags). */
+	/**
+	 * Pre-loaded extensions (skips file discovery).
+	 * @internal Used by CLI when extensions are loaded early to parse custom flags.
+	 */
 	preloadedExtensions?: LoadedExtension[];
 
 	/** Shared event bus for tool/extension communication. Default: creates new bus. */
@@ -130,7 +140,13 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
-export type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ExtensionFactory } from "./extensions/index.js";
+export type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionFactory,
+	ToolDefinition,
+} from "./extensions/index.js";
 export type { PromptTemplate } from "./prompt-templates.js";
 export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
@@ -438,17 +454,59 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
+	// Load inline extensions from factories
+	if (options.extensions && options.extensions.length > 0) {
+		// Create shared UI context holder that will be set later
+		const uiHolder: { ui: any; hasUI: boolean } = {
+			ui: {
+				select: async () => undefined,
+				confirm: async () => false,
+				input: async () => undefined,
+				notify: () => {},
+				setStatus: () => {},
+				setWidget: () => {},
+				setTitle: () => {},
+				custom: async () => undefined as never,
+				setEditorText: () => {},
+				getEditorText: () => "",
+				editor: async () => undefined,
+				get theme() {
+					return {} as any;
+				},
+			},
+			hasUI: false,
+		};
+		for (let i = 0; i < options.extensions.length; i++) {
+			const factory = options.extensions[i];
+			const loaded = loadExtensionFromFactory(factory, cwd, eventBus, uiHolder, `<inline-${i}>`);
+			extensionsResult.extensions.push(loaded);
+		}
+		// Extend setUIContext to update inline extensions too
+		const originalSetUIContext = extensionsResult.setUIContext;
+		extensionsResult.setUIContext = (uiContext, hasUI) => {
+			originalSetUIContext(uiContext, hasUI);
+			uiHolder.ui = uiContext;
+			uiHolder.hasUI = hasUI;
+		};
+	}
+
 	// Create extension runner if we have extensions
 	let extensionRunner: ExtensionRunner | undefined;
 	if (extensionsResult.extensions.length > 0) {
 		extensionRunner = new ExtensionRunner(extensionsResult.extensions, cwd, sessionManager, modelRegistry);
 	}
 
-	// Wrap extension-registered tools with context getter (agent/session assigned below, accessed at execute time)
+	// Wrap extension-registered tools and SDK-provided custom tools with context getter
+	// (agent/session assigned below, accessed at execute time)
 	let agent: Agent;
 	let session: AgentSession;
 	const registeredTools = extensionRunner?.getAllRegisteredTools() ?? [];
-	const wrappedExtensionTools = wrapRegisteredTools(registeredTools, () => ({
+	// Combine extension-registered tools with SDK-provided custom tools
+	const allCustomTools = [
+		...registeredTools,
+		...(options.customTools?.map((def) => ({ definition: def, extensionPath: "<sdk>" })) ?? []),
+	];
+	const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, () => ({
 		ui: extensionRunner?.getUIContext() ?? {
 			select: async () => undefined,
 			confirm: async () => false,

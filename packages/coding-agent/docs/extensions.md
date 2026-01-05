@@ -811,8 +811,8 @@ pi.registerTool({
       details: { progress: 50 },
     });
 
-    // Run commands with cancellation support
-    const result = await ctx.exec("some-command", [], { signal });
+    // Run commands via pi.exec (captured from extension closure)
+    const result = await pi.exec("some-command", [], { signal });
 
     // Return result
     return {
@@ -941,9 +941,9 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ctx.ui.setStatus("my-ext", "Processing...");
 ctx.ui.setStatus("my-ext", undefined);  // Clear
 
-// Widget above editor (string array or Component)
+// Widget above editor (string array or factory function)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
-ctx.ui.setWidget("my-widget", new Text(theme.fg("accent", "Custom"), 0, 0));
+ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 
 // Terminal title

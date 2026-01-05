@@ -376,6 +376,54 @@ async function loadExtension(
 }
 
 /**
+ * Create a LoadedExtension from an inline factory function.
+ */
+export function loadExtensionFromFactory(
+	factory: ExtensionFactory,
+	cwd: string,
+	eventBus: EventBus,
+	sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
+	name = "<inline>",
+): LoadedExtension {
+	const handlers = new Map<string, HandlerFn[]>();
+	const tools = new Map<string, RegisteredTool>();
+	const {
+		api,
+		messageRenderers,
+		commands,
+		flags,
+		flagValues,
+		shortcuts,
+		setSendMessageHandler,
+		setAppendEntryHandler,
+		setGetActiveToolsHandler,
+		setGetAllToolsHandler,
+		setSetActiveToolsHandler,
+		setFlagValue,
+	} = createExtensionAPI(handlers, tools, cwd, name, eventBus, sharedUI);
+
+	factory(api);
+
+	return {
+		path: name,
+		resolvedPath: name,
+		handlers,
+		tools,
+		messageRenderers,
+		commands,
+		flags,
+		flagValues,
+		shortcuts,
+		setSendMessageHandler,
+		setAppendEntryHandler,
+		setGetActiveToolsHandler,
+		setGetAllToolsHandler,
+		setSetActiveToolsHandler,
+		setFlagValue,
+	};
+}
+
+/**
  * Load extensions from paths.
  */
 export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
