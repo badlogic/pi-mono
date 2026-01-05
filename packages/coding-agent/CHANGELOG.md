@@ -44,7 +44,7 @@ Hooks and custom tools are now unified as **extensions**. Both were TypeScript m
 }
 ```
 
-No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies in `package.json` are resolved via jiti.
+No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from npm.
 
 **Type renames:**
 - `HookAPI` → `ExtensionAPI`
