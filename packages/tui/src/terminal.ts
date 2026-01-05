@@ -1,3 +1,5 @@
+import { setKittyProtocolActive } from "./keys.js";
+
 /**
  * Minimal terminal interface for TUI
  */
@@ -14,6 +16,9 @@ export interface Terminal {
 	// Get terminal dimensions
 	get columns(): number;
 	get rows(): number;
+
+	// Whether Kitty keyboard protocol is active
+	get kittyProtocolActive(): boolean;
 
 	// Cursor positioning (relative to current position)
 	moveBy(lines: number): void; // Move cursor up (negative) or down (positive) by N lines
@@ -38,6 +43,11 @@ export class ProcessTerminal implements Terminal {
 	private wasRaw = false;
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
+	private _kittyProtocolActive = false;
+
+	get kittyProtocolActive(): boolean {
+		return this._kittyProtocolActive;
+	}
 
 	start(onInput: (data: string) => void, onResize: () => void): void {
 		this.inputHandler = onInput;
@@ -54,23 +64,104 @@ export class ProcessTerminal implements Terminal {
 		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
 		process.stdout.write("\x1b[?2004h");
 
-		// Enable Kitty keyboard protocol (disambiguate escape codes)
-		// This makes terminals like Ghostty, Kitty, WezTerm send enhanced key sequences
-		// e.g., Shift+Enter becomes \x1b[13;2u instead of just \r
-		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
-		process.stdout.write("\x1b[>1u");
-
-		// Set up event handlers
-		process.stdin.on("data", this.inputHandler);
+		// Set up resize handler immediately
 		process.stdout.on("resize", this.resizeHandler);
+
+		// Query and enable Kitty keyboard protocol
+		// The query handler intercepts input temporarily, then installs the user's handler
+		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+		this.queryAndEnableKittyProtocol();
+	}
+
+	/**
+	 * Query terminal for Kitty keyboard protocol support and enable if available.
+	 *
+	 * Sends CSI ? u to query current flags. If terminal responds with CSI ? <flags> u,
+	 * it supports the protocol and we enable it with CSI > 1 u.
+	 *
+	 * Non-supporting terminals won't respond, so we use a timeout.
+	 */
+	private queryAndEnableKittyProtocol(): void {
+		const QUERY_TIMEOUT_MS = 100;
+		let resolved = false;
+		let buffer = "";
+
+		// Kitty protocol response pattern: \x1b[?<flags>u
+		const kittyResponsePattern = /\x1b\[\?(\d+)u/;
+
+		const queryHandler = (data: string) => {
+			if (resolved) {
+				// Query phase done, forward to user handler
+				if (this.inputHandler) {
+					this.inputHandler(data);
+				}
+				return;
+			}
+
+			buffer += data;
+
+			// Check if we have a Kitty protocol response
+			const match = buffer.match(kittyResponsePattern);
+			if (match) {
+				resolved = true;
+				this._kittyProtocolActive = true;
+				setKittyProtocolActive(true);
+
+				// Enable Kitty keyboard protocol (push flags)
+				// Flag 1 = disambiguate escape codes
+				process.stdout.write("\x1b[>1u");
+
+				// Remove the response from buffer, forward any remaining input
+				const remaining = buffer.replace(kittyResponsePattern, "");
+				if (remaining && this.inputHandler) {
+					this.inputHandler(remaining);
+				}
+
+				// Replace with user handler
+				process.stdin.removeListener("data", queryHandler);
+				if (this.inputHandler) {
+					process.stdin.on("data", this.inputHandler);
+				}
+			}
+		};
+
+		// Temporarily intercept input for the query
+		process.stdin.on("data", queryHandler);
+
+		// Send query
+		process.stdout.write("\x1b[?u");
+
+		// Timeout: if no response, terminal doesn't support Kitty protocol
+		setTimeout(() => {
+			if (!resolved) {
+				resolved = true;
+				this._kittyProtocolActive = false;
+				setKittyProtocolActive(false);
+
+				// Forward any buffered input that wasn't a Kitty response
+				if (buffer && this.inputHandler) {
+					this.inputHandler(buffer);
+				}
+
+				// Replace with user handler
+				process.stdin.removeListener("data", queryHandler);
+				if (this.inputHandler) {
+					process.stdin.on("data", this.inputHandler);
+				}
+			}
+		}, QUERY_TIMEOUT_MS);
 	}
 
 	stop(): void {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
 
-		// Disable Kitty keyboard protocol (pop the flags we pushed)
-		process.stdout.write("\x1b[<u");
+		// Disable Kitty keyboard protocol (pop the flags we pushed) - only if we enabled it
+		if (this._kittyProtocolActive) {
+			process.stdout.write("\x1b[<u");
+			this._kittyProtocolActive = false;
+			setKittyProtocolActive(false);
+		}
 
 		// Remove event handlers
 		if (this.inputHandler) {

@@ -55,6 +55,11 @@ export class VirtualTerminal implements Terminal {
 		return this._rows;
 	}
 
+	get kittyProtocolActive(): boolean {
+		// Virtual terminal always reports Kitty protocol as active for testing
+		return true;
+	}
+
 	moveBy(lines: number): void {
 		if (lines > 0) {
 			// Move down

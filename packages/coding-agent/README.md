@@ -18,6 +18,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
+  - [Terminal Setup](#terminal-setup)
   - [API Keys & OAuth](#api-keys--oauth)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
@@ -113,6 +114,28 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 {
   "shellPath": "C:\\cygwin64\\bin\\bash.exe"
 }
+```
+
+### Terminal Setup
+
+Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+
+**Kitty, iTerm2:** Work out of the box.
+
+**Ghostty:** Add to your Ghostty config (`~/.config/ghostty/config`):
+
+```
+keybind = alt+backspace=text:\x1b\x7f
+keybind = shift+enter=text:\n
+```
+
+**wezterm:** Create `~/.wezterm.lua`:
+
+```lua
+local wezterm = require 'wezterm'
+local config = wezterm.config_builder()
+config.enable_kitty_keyboard = true
+return config
 ```
 
 ### API Keys & OAuth
