@@ -31,6 +31,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 - [Extension Locations](#extension-locations)
 - [Available Imports](#available-imports)
 - [Writing an Extension](#writing-an-extension)
+  - [Extension Styles](#extension-styles)
 - [Events](#events)
   - [Lifecycle Overview](#lifecycle-overview)
   - [Session Events](#session-events)
@@ -40,6 +41,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 - [ExtensionCommandContext](#extensioncommandcontext)
 - [ExtensionAPI Methods](#extensionapi-methods)
 - [State Management](#state-management)
+- [Custom Tools](#custom-tools)
 - [Error Handling](#error-handling)
 - [Mode Behavior](#mode-behavior)
 
@@ -111,7 +113,7 @@ Additional paths via `settings.json`:
 
 ```json
 {
-  "extensions": ["/path/to/extension.ts"]
+  "extensions": ["/path/to/extension.ts", "/path/to/extension/dir"]
 }
 ```
 
@@ -139,7 +141,7 @@ Additional paths via `settings.json`:
 {
   "name": "my-extension-pack",
   "dependencies": {
-    "lodash": "^4.0.0"
+    "zod": "^3.0.0"
   },
   "pi": {
     "extensions": ["./src/safety-gates.ts", "./src/custom-tools.ts"]
@@ -192,6 +194,53 @@ export default function (pi: ExtensionAPI) {
 ```
 
 Extensions are loaded via [jiti](https://github.com/unjs/jiti), so TypeScript works without compilation.
+
+### Extension Styles
+
+**Single file** - simplest, for small extensions:
+
+```
+~/.pi/agent/extensions/
+└── my-extension.ts
+```
+
+**Directory with index.ts** - for multi-file extensions:
+
+```
+~/.pi/agent/extensions/
+└── my-extension/
+    ├── index.ts        # Entry point (exports default function)
+    ├── tools.ts        # Helper module
+    └── utils.ts        # Helper module
+```
+
+**Package with dependencies** - for extensions that need npm packages:
+
+```
+~/.pi/agent/extensions/
+└── my-extension/
+    ├── package.json    # Declares dependencies and entry points
+    ├── package-lock.json
+    ├── node_modules/   # After npm install
+    └── src/
+        └── index.ts
+```
+
+```json
+// package.json
+{
+  "name": "my-extension",
+  "dependencies": {
+    "zod": "^3.0.0",
+    "chalk": "^5.0.0"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
+```
+
+Run `npm install` in the extension directory, then imports from `node_modules/` work automatically.
 
 ## Events
 
@@ -526,13 +575,61 @@ Control flow helpers.
 
 ## ExtensionCommandContext
 
-Slash command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with:
+Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
+
+### ctx.waitForIdle()
+
+Wait for the agent to finish streaming:
 
 ```typescript
-await ctx.waitForIdle();              // Wait for agent to finish
-await ctx.newSession({ ... });        // Create new session
-await ctx.branch(entryId);            // Branch from entry
-await ctx.navigateTree(targetId);     // Navigate tree
+pi.registerCommand("my-cmd", {
+  handler: async (args, ctx) => {
+    await ctx.waitForIdle();
+    // Agent is now idle, safe to modify session
+  },
+});
+```
+
+### ctx.newSession(options?)
+
+Create a new session:
+
+```typescript
+const result = await ctx.newSession({
+  parentSession: ctx.sessionManager.getSessionFile(),
+  setup: async (sm) => {
+    sm.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "Context from previous session..." }],
+      timestamp: Date.now(),
+    });
+  },
+});
+
+if (result.cancelled) {
+  // An extension cancelled the new session
+}
+```
+
+### ctx.branch(entryId)
+
+Branch from a specific entry:
+
+```typescript
+const result = await ctx.branch("entry-id-123");
+if (!result.cancelled) {
+  // Now in the branched session
+}
+```
+
+### ctx.navigateTree(targetId, options?)
+
+Navigate to a different point in the session tree:
+
+```typescript
+const result = await ctx.navigateTree("entry-id-456", {
+  summarize: true,
+});
 ```
 
 ## ExtensionAPI Methods
@@ -543,7 +640,7 @@ Subscribe to events. See [Events](#events).
 
 ### pi.registerTool(definition)
 
-Register a custom tool callable by the LLM:
+Register a custom tool callable by the LLM. See [Custom Tools](#custom-tools) for full details.
 
 ```typescript
 import { Type } from "@sinclair/typebox";
@@ -560,10 +657,7 @@ pi.registerTool({
 
   async execute(toolCallId, params, onUpdate, ctx, signal) {
     // Stream progress
-    onUpdate?.({
-      content: [{ type: "text", text: "Working..." }],
-      details: { progress: 50 },
-    });
+    onUpdate?.({ content: [{ type: "text", text: "Working..." }] });
 
     return {
       content: [{ type: "text", text: "Done" }],
@@ -572,18 +666,10 @@ pi.registerTool({
   },
 
   // Optional: Custom rendering
-  renderCall(args, theme) {
-    return new Text(theme.fg("toolTitle", "my_tool ") + args.action, 0, 0);
-  },
-
-  renderResult(result, { expanded, isPartial }, theme) {
-    if (isPartial) return new Text("Working...", 0, 0);
-    return new Text(theme.fg("success", "✓ Done"), 0, 0);
-  },
+  renderCall(args, theme) { ... },
+  renderResult(result, options, theme) { ... },
 });
 ```
-
-**Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums (Google API compatible).
 
 ### pi.sendMessage(message, options?)
 
@@ -596,10 +682,17 @@ pi.sendMessage({
   display: true,
   details: { ... },
 }, {
-  triggerTurn: true,          // Trigger LLM response if idle
-  deliverAs: "steer",         // "steer", "followUp", or "nextTurn"
+  triggerTurn: true,
+  deliverAs: "steer",
 });
 ```
+
+**Options:**
+- `deliverAs` - Delivery mode:
+  - `"steer"` (default) - Interrupts streaming. Delivered after current tool finishes, remaining tools skipped.
+  - `"followUp"` - Waits for agent to finish. Delivered only when agent has no more tool calls.
+  - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
+- `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
 
 ### pi.appendEntry(customType, data?)
 
@@ -732,6 +825,153 @@ export default function (pi: ExtensionAPI) {
   });
 }
 ```
+
+## Custom Tools
+
+Register tools the LLM can call via `pi.registerTool()`. Tools appear in the system prompt and can have custom rendering.
+
+### Tool Definition
+
+```typescript
+import { Type } from "@sinclair/typebox";
+import { StringEnum } from "@mariozechner/pi-ai";
+import { Text } from "@mariozechner/pi-tui";
+
+pi.registerTool({
+  name: "my_tool",
+  label: "My Tool",
+  description: "What this tool does (shown to LLM)",
+  parameters: Type.Object({
+    action: StringEnum(["list", "add"] as const),  // Use StringEnum for Google compatibility
+    text: Type.Optional(Type.String()),
+  }),
+
+  async execute(toolCallId, params, onUpdate, ctx, signal) {
+    // Check for cancellation
+    if (signal?.aborted) {
+      return { content: [{ type: "text", text: "Cancelled" }] };
+    }
+
+    // Stream progress updates
+    onUpdate?.({
+      content: [{ type: "text", text: "Working..." }],
+      details: { progress: 50 },
+    });
+
+    // Run commands with cancellation support
+    const result = await ctx.exec("some-command", [], { signal });
+
+    // Return result
+    return {
+      content: [{ type: "text", text: "Done" }],  // Sent to LLM
+      details: { data: result },                   // For rendering & state
+    };
+  },
+
+  // Optional: Custom rendering
+  renderCall(args, theme) { ... },
+  renderResult(result, options, theme) { ... },
+});
+```
+
+**Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
+
+### Multiple Tools
+
+One extension can register multiple tools with shared state:
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  let connection = null;
+
+  pi.registerTool({ name: "db_connect", ... });
+  pi.registerTool({ name: "db_query", ... });
+  pi.registerTool({ name: "db_close", ... });
+
+  pi.on("session_shutdown", async () => {
+    connection?.close();
+  });
+}
+```
+
+### Custom Rendering
+
+Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API.
+
+Tool output is wrapped in a `Box` that handles padding and background. Your render methods return `Component` instances (typically `Text`).
+
+#### renderCall
+
+Renders the tool call (before/during execution):
+
+```typescript
+import { Text } from "@mariozechner/pi-tui";
+
+renderCall(args, theme) {
+  let text = theme.fg("toolTitle", theme.bold("my_tool "));
+  text += theme.fg("muted", args.action);
+  if (args.text) {
+    text += " " + theme.fg("dim", `"${args.text}"`);
+  }
+  return new Text(text, 0, 0);  // 0,0 padding - Box handles it
+}
+```
+
+#### renderResult
+
+Renders the tool result:
+
+```typescript
+renderResult(result, { expanded, isPartial }, theme) {
+  // Handle streaming
+  if (isPartial) {
+    return new Text(theme.fg("warning", "Processing..."), 0, 0);
+  }
+
+  // Handle errors
+  if (result.details?.error) {
+    return new Text(theme.fg("error", `Error: ${result.details.error}`), 0, 0);
+  }
+
+  // Normal result - support expanded view (Ctrl+O)
+  let text = theme.fg("success", "✓ Done");
+  if (expanded && result.details?.items) {
+    for (const item of result.details.items) {
+      text += "\n  " + theme.fg("dim", item);
+    }
+  }
+  return new Text(text, 0, 0);
+}
+```
+
+#### Theme Colors
+
+```typescript
+theme.fg("toolTitle", text)   // Tool names
+theme.fg("accent", text)      // Highlights
+theme.fg("success", text)     // Success
+theme.fg("error", text)       // Errors
+theme.fg("warning", text)     // Warnings
+theme.fg("muted", text)       // Secondary text
+theme.fg("dim", text)         // Tertiary text
+
+theme.bold(text)
+theme.italic(text)
+```
+
+#### Best Practices
+
+- Use `Text` with padding `(0, 0)` - the Box handles padding
+- Use `\n` for multi-line content
+- Handle `isPartial` for streaming progress
+- Support `expanded` for detail on demand
+- Keep default view compact
+
+#### Fallback
+
+If `renderCall`/`renderResult` is not defined or throws:
+- `renderCall`: Shows tool name
+- `renderResult`: Shows raw text from `content`
 
 ## Error Handling
 

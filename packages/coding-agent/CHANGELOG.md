@@ -37,7 +37,7 @@ Hooks and custom tools are now unified as **extensions**. Both were TypeScript m
 // extensions/my-package/package.json
 {
   "name": "my-extension-package",
-  "dependencies": { "lodash": "^4.0.0" },
+  "dependencies": { "zod": "^3.0.0" },
   "pi": {
     "extensions": ["./src/main.ts", "./src/tools.ts"]
   }
