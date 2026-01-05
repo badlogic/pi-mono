@@ -25,6 +25,24 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 
 See [examples/extensions/](../examples/extensions/) for working implementations.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Extension Locations](#extension-locations)
+- [Available Imports](#available-imports)
+- [Writing an Extension](#writing-an-extension)
+- [Events](#events)
+  - [Lifecycle Overview](#lifecycle-overview)
+  - [Session Events](#session-events)
+  - [Agent Events](#agent-events)
+  - [Tool Events](#tool-events)
+- [ExtensionContext](#extensioncontext)
+- [ExtensionCommandContext](#extensioncommandcontext)
+- [ExtensionAPI Methods](#extensionapi-methods)
+- [State Management](#state-management)
+- [Error Handling](#error-handling)
+- [Mode Behavior](#mode-behavior)
+
 ## Quick Start
 
 Create `~/.pi/agent/extensions/my-extension.ts`:
