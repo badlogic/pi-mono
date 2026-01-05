@@ -941,8 +941,9 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ctx.ui.setStatus("my-ext", "Processing...");
 ctx.ui.setStatus("my-ext", undefined);  // Clear
 
-// Widget above editor (multi-line)
+// Widget above editor (string array or Component)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+ctx.ui.setWidget("my-widget", new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 
 // Terminal title
