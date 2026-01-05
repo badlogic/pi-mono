@@ -956,32 +956,34 @@ const current = ctx.ui.getEditorText();
 
 ### Custom Components
 
-For complex UI, use `ctx.ui.custom()` with full TUI components:
+For complex UI, use `ctx.ui.custom()`. This temporarily replaces the editor with your component until `done()` is called:
 
 ```typescript
-import { Text, Box, Component } from "@mariozechner/pi-tui";
+import { Text, Component } from "@mariozechner/pi-tui";
 
-const result = await ctx.ui.custom((tui, theme, done) => {
-  // Create a component that handles keyboard input
-  const box = new Box(0, 0);
+const result = await ctx.ui.custom<boolean>((tui, theme, done) => {
   const text = new Text("Press Enter to confirm, Escape to cancel", 1, 1);
-  box.add(text);
 
-  box.onKey = (key) => {
-    if (key === "return") done({ confirmed: true });
-    if (key === "escape") done({ confirmed: false });
+  text.onKey = (key) => {
+    if (key === "return") done(true);
+    if (key === "escape") done(false);
     return true;
   };
 
-  return box;
+  return text;
 });
 
-if (result.confirmed) {
+if (result) {
   // User pressed Enter
 }
 ```
 
-See [tui.md](tui.md) for the full component API.
+The callback receives:
+- `tui` - TUI instance (for screen dimensions, focus management)
+- `theme` - Current theme for styling
+- `done(value)` - Call to close component and return value
+
+See [tui.md](tui.md) for the full component API and [examples/extensions/](../examples/extensions/) for working examples (snake.ts, todo.ts, qna.ts).
 
 ### Message Rendering
 
@@ -1031,6 +1033,7 @@ theme.fg("dim", text)         // Tertiary text
 // Text styles
 theme.bold(text)
 theme.italic(text)
+theme.strikethrough(text)
 ```
 
 ## Error Handling
