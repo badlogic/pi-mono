@@ -28,8 +28,8 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | Extension | Description |
 |-----------|-------------|
 | `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
-| `hello/` | Minimal custom tool example |
-| `question/` | Demonstrates `pi.ui.select()` for asking the user questions |
+| `hello.ts` | Minimal custom tool example |
+| `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 
 ### Commands & UI

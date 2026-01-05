@@ -1,3 +1,7 @@
+/**
+ * Hello Tool - Minimal custom tool example
+ */
+
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
