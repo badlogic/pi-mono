@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Changed
+### Fixed
 
-- Configured extension directories now respect `package.json` manifests: when a directory is specified in `settings.json` extensions array, it now checks for `pi.extensions` in `package.json` first, then falls back to `index.ts`/`index.js`
+- Extension directories in `settings.json` now respect `package.json` manifests, matching global extension behavior ([#480](https://github.com/badlogic/pi-mono/pull/480) by [@prateekmedia](https://github.com/prateekmedia))
 
 ## [0.37.1] - 2026-01-05
 
