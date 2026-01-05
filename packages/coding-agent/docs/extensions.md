@@ -42,6 +42,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 - [ExtensionAPI Methods](#extensionapi-methods)
 - [State Management](#state-management)
 - [Custom Tools](#custom-tools)
+- [Custom UI](#custom-ui)
 - [Error Handling](#error-handling)
 - [Mode Behavior](#mode-behavior)
 
@@ -503,49 +504,7 @@ Every handler receives `ctx: ExtensionContext`:
 
 ### ctx.ui
 
-UI methods for user interaction:
-
-```typescript
-// Select from options
-const choice = await ctx.ui.select("Pick one:", ["A", "B", "C"]);
-
-// Confirm dialog
-const ok = await ctx.ui.confirm("Delete?", "This cannot be undone");
-
-// Text input
-const name = await ctx.ui.input("Name:", "placeholder");
-
-// Multi-line editor
-const text = await ctx.ui.editor("Edit:", "prefilled text");
-
-// Notification
-ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
-
-// Status in footer
-ctx.ui.setStatus("my-ext", "Processing...");
-ctx.ui.setStatus("my-ext", undefined);  // Clear
-
-// Widget above editor
-ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
-ctx.ui.setWidget("my-widget", undefined);  // Clear
-
-// Terminal title
-ctx.ui.setTitle("pi - my-project");
-
-// Editor text
-ctx.ui.setEditorText("Prefill text");
-const current = ctx.ui.getEditorText();
-```
-
-**Custom components:**
-
-```typescript
-const result = await ctx.ui.custom((tui, theme, done) => {
-  const component = new MyComponent();
-  component.onComplete = (value) => done(value);
-  return component;
-});
-```
+UI methods for user interaction. See [Custom UI](#custom-ui) for full details.
 
 ### ctx.hasUI
 
@@ -727,13 +686,7 @@ pi.registerCommand("stats", {
 
 ### pi.registerMessageRenderer(customType, renderer)
 
-Register a custom TUI renderer for messages with your `customType`:
-
-```typescript
-pi.registerMessageRenderer("my-extension", (message, options, theme) => {
-  return new Text(theme.fg("accent", `[INFO] `) + message.content, 0, 0);
-});
-```
+Register a custom TUI renderer for messages with your `customType`. See [Custom UI](#custom-ui).
 
 ### pi.registerShortcut(shortcut, options)
 
@@ -944,21 +897,6 @@ renderResult(result, { expanded, isPartial }, theme) {
 }
 ```
 
-#### Theme Colors
-
-```typescript
-theme.fg("toolTitle", text)   // Tool names
-theme.fg("accent", text)      // Highlights
-theme.fg("success", text)     // Success
-theme.fg("error", text)       // Errors
-theme.fg("warning", text)     // Warnings
-theme.fg("muted", text)       // Secondary text
-theme.fg("dim", text)         // Tertiary text
-
-theme.bold(text)
-theme.italic(text)
-```
-
 #### Best Practices
 
 - Use `Text` with padding `(0, 0)` - the Box handles padding
@@ -972,6 +910,127 @@ theme.italic(text)
 If `renderCall`/`renderResult` is not defined or throws:
 - `renderCall`: Shows tool name
 - `renderResult`: Shows raw text from `content`
+
+## Custom UI
+
+Extensions can interact with users via `ctx.ui` methods and customize how messages/tools render.
+
+### Dialogs
+
+```typescript
+// Select from options
+const choice = await ctx.ui.select("Pick one:", ["A", "B", "C"]);
+
+// Confirm dialog
+const ok = await ctx.ui.confirm("Delete?", "This cannot be undone");
+
+// Text input
+const name = await ctx.ui.input("Name:", "placeholder");
+
+// Multi-line editor
+const text = await ctx.ui.editor("Edit:", "prefilled text");
+
+// Notification (non-blocking)
+ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
+```
+
+### Widgets and Status
+
+```typescript
+// Status in footer (persistent until cleared)
+ctx.ui.setStatus("my-ext", "Processing...");
+ctx.ui.setStatus("my-ext", undefined);  // Clear
+
+// Widget above editor (multi-line)
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+ctx.ui.setWidget("my-widget", undefined);  // Clear
+
+// Terminal title
+ctx.ui.setTitle("pi - my-project");
+
+// Editor text
+ctx.ui.setEditorText("Prefill text");
+const current = ctx.ui.getEditorText();
+```
+
+### Custom Components
+
+For complex UI, use `ctx.ui.custom()` with full TUI components:
+
+```typescript
+import { Text, Box, Component } from "@mariozechner/pi-tui";
+
+const result = await ctx.ui.custom((tui, theme, done) => {
+  // Create a component that handles keyboard input
+  const box = new Box(0, 0);
+  const text = new Text("Press Enter to confirm, Escape to cancel", 1, 1);
+  box.add(text);
+
+  box.onKey = (key) => {
+    if (key === "return") done({ confirmed: true });
+    if (key === "escape") done({ confirmed: false });
+    return true;
+  };
+
+  return box;
+});
+
+if (result.confirmed) {
+  // User pressed Enter
+}
+```
+
+See [tui.md](tui.md) for the full component API.
+
+### Message Rendering
+
+Register a custom renderer for messages with your `customType`:
+
+```typescript
+import { Text } from "@mariozechner/pi-tui";
+
+pi.registerMessageRenderer("my-extension", (message, options, theme) => {
+  const { expanded } = options;
+  let text = theme.fg("accent", `[${message.customType}] `);
+  text += message.content;
+
+  if (expanded && message.details) {
+    text += "\n" + theme.fg("dim", JSON.stringify(message.details, null, 2));
+  }
+
+  return new Text(text, 0, 0);
+});
+```
+
+Messages are sent via `pi.sendMessage()`:
+
+```typescript
+pi.sendMessage({
+  customType: "my-extension",  // Matches registerMessageRenderer
+  content: "Status update",
+  display: true,               // Show in TUI
+  details: { ... },            // Available in renderer
+});
+```
+
+### Theme Colors
+
+All render functions receive a `theme` object:
+
+```typescript
+// Foreground colors
+theme.fg("toolTitle", text)   // Tool names
+theme.fg("accent", text)      // Highlights
+theme.fg("success", text)     // Success (green)
+theme.fg("error", text)       // Errors (red)
+theme.fg("warning", text)     // Warnings (yellow)
+theme.fg("muted", text)       // Secondary text
+theme.fg("dim", text)         // Tertiary text
+
+// Text styles
+theme.bold(text)
+theme.italic(text)
+```
 
 ## Error Handling
 

@@ -13,11 +13,13 @@ This release unifies hooks and custom tools into a single "extensions" system an
 
 Hooks and custom tools are now unified as **extensions**. Both were TypeScript modules exporting a factory function that receives an API object. Now there's one concept, one discovery location, one CLI flag, one settings.json entry.
 
-**No automatic file migration.** You must manually:
-1. Move files from `hooks/` and `tools/` directories to `extensions/`
-2. Move files from `commands/` to `prompts/`
-3. Update imports and type names in your extension code
-4. Update `settings.json` if you have explicit hook and custom tool paths configured
+**Automatic migration:**
+- `commands/` directories are automatically renamed to `prompts/` on startup (both `~/.pi/agent/commands/` and `.pi/commands/`)
+
+**Manual migration required:**
+1. Move files from `hooks/` and `tools/` directories to `extensions/` (deprecation warnings shown on startup)
+2. Update imports and type names in your extension code
+3. Update `settings.json` if you have explicit hook and custom tool paths configured
 
 **Directory changes:**
 ```
