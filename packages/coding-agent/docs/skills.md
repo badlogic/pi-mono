@@ -37,7 +37,7 @@ Skills are loaded when:
 
 **Not a good fit for skills:**
 - "Always use TypeScript strict mode" → put in AGENTS.md
-- "Review my code" → make a slash command
+- "Review my code" → make a prompt template
 - Need user confirmation dialogs or custom TUI rendering → make a custom tool
 
 ## Skill Structure

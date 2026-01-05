@@ -5,7 +5,10 @@ import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
-const geminiCliToken = await resolveApiKey("google-gemini-cli");
+const [geminiCliToken, openaiCodexToken] = await Promise.all([
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("openai-codex"),
+]);
 
 async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -137,6 +140,18 @@ describe("AI Providers Abort Tests", () => {
 		it.skipIf(!geminiCliToken)("should handle immediate abort", { retry: 3 }, async () => {
 			const llm = getModel("google-gemini-cli", "gemini-2.5-flash");
 			await testImmediateAbort(llm, { apiKey: geminiCliToken });
+		});
+	});
+
+	describe("OpenAI Codex Provider Abort", () => {
+		it.skipIf(!openaiCodexToken)("should abort mid-stream", { retry: 3 }, async () => {
+			const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+			await testAbortSignal(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
+			const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
 		});
 	});
 });

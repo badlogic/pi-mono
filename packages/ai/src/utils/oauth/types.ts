@@ -5,9 +5,15 @@ export type OAuthCredentials = {
 	enterpriseUrl?: string;
 	projectId?: string;
 	email?: string;
+	accountId?: string;
 };
 
-export type OAuthProvider = "anthropic" | "github-copilot" | "google-gemini-cli" | "google-antigravity";
+export type OAuthProvider =
+	| "anthropic"
+	| "github-copilot"
+	| "google-gemini-cli"
+	| "google-antigravity"
+	| "openai-codex";
 
 export type OAuthPrompt = {
 	message: string;

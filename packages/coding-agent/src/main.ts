@@ -16,9 +16,9 @@ import { selectSession } from "./cli/session-picker.js";
 import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import type { AgentSession } from "./core/agent-session.js";
 
-import type { LoadedCustomTool } from "./core/custom-tools/index.js";
+import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import type { HookUIContext } from "./core/index.js";
+import { discoverAndLoadExtensions, type ExtensionUIContext, type LoadedExtension } from "./core/extensions/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -27,7 +27,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
-import { runMigrations } from "./migrations.js";
+import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
@@ -60,13 +60,13 @@ async function runInteractiveMode(
 	migratedProviders: string[],
 	versionCheckPromise: Promise<string | undefined>,
 	initialMessages: string[],
-	customTools: LoadedCustomTool[],
-	setToolUIContext: (uiContext: HookUIContext, hasUI: boolean) => void,
+	extensions: LoadedExtension[],
+	setExtensionUIContext: (uiContext: ExtensionUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
 	initialImages?: ImageContent[],
 	fdPath: string | undefined = undefined,
 ): Promise<void> {
-	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
+	const mode = new InteractiveMode(session, version, changelogMarkdown, extensions, setExtensionUIContext, fdPath);
 
 	await mode.init();
 
@@ -212,6 +212,7 @@ function buildSessionOptions(
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
+	preloadedExtensions?: LoadedExtension[],
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
@@ -270,14 +271,9 @@ function buildSessionOptions(
 		options.skills = [];
 	}
 
-	// Additional hook paths from CLI
-	if (parsed.hooks && parsed.hooks.length > 0) {
-		options.additionalHookPaths = parsed.hooks;
-	}
-
-	// Additional custom tool paths from CLI
-	if (parsed.customTools && parsed.customTools.length > 0) {
-		options.additionalCustomToolPaths = parsed.customTools;
+	// Pre-loaded extensions (from early CLI flag discovery)
+	if (preloadedExtensions && preloadedExtensions.length > 0) {
+		options.preloadedExtensions = preloadedExtensions;
 	}
 
 	return options;
@@ -286,16 +282,46 @@ function buildSessionOptions(
 export async function main(args: string[]) {
 	time("start");
 
-	// Run migrations
-	const { migratedAuthProviders: migratedProviders } = runMigrations();
+	// Run migrations (pass cwd for project-local migrations)
+	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
 	// Create AuthStorage and ModelRegistry upfront
 	const authStorage = discoverAuthStorage();
 	const modelRegistry = discoverModels(authStorage);
 	time("discoverModels");
 
-	const parsed = parseArgs(args);
+	// First pass: parse args to get --extension paths
+	const firstPass = parseArgs(args);
+	time("parseArgs-firstPass");
+
+	// Early load extensions to discover their CLI flags
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const eventBus = createEventBus();
+	const extensionPaths = firstPass.extensions ?? [];
+	const { extensions: loadedExtensions } = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
+	time("discoverExtensionFlags");
+
+	// Collect all extension flags
+	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
+	for (const ext of loadedExtensions) {
+		for (const [name, flag] of ext.flags) {
+			extensionFlags.set(name, { type: flag.type });
+		}
+	}
+
+	// Second pass: parse args with extension flags
+	const parsed = parseArgs(args, extensionFlags);
 	time("parseArgs");
+
+	// Pass flag values to extensions
+	for (const [name, value] of parsed.unknownFlags) {
+		for (const ext of loadedExtensions) {
+			if (ext.flags.has(name)) {
+				ext.setFlagValue(name, value);
+			}
+		}
+	}
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -331,7 +357,6 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	const cwd = process.cwd();
 	const settingsManager = SettingsManager.create(cwd);
 	time("SettingsManager.create");
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
@@ -340,6 +365,11 @@ export async function main(args: string[]) {
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
 	time("initTheme");
+
+	// Show deprecation warnings in interactive mode
+	if (isInteractive && deprecationWarnings.length > 0) {
+		await showDeprecationWarnings(deprecationWarnings);
+	}
 
 	let scopedModels: ScopedModel[] = [];
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
@@ -369,9 +399,10 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry);
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, loadedExtensions);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
+	sessionOptions.eventBus = eventBus;
 
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {
@@ -383,7 +414,7 @@ export async function main(args: string[]) {
 	}
 
 	time("buildSessionOptions");
-	const { session, customToolsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
+	const { session, extensionsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
 	time("createAgentSession");
 
 	if (!isInteractive && !session.model) {
@@ -436,8 +467,8 @@ export async function main(args: string[]) {
 			migratedProviders,
 			versionCheckPromise,
 			parsed.messages,
-			customToolsResult.tools,
-			customToolsResult.setUIContext,
+			extensionsResult.extensions,
+			extensionsResult.setUIContext,
 			initialMessage,
 			initialImages,
 			fdPath,

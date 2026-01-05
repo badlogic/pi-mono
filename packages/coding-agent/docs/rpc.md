@@ -52,9 +52,9 @@ With images:
 
 If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
 
-**Hook commands**: If the message is a hook command (e.g., `/mycommand`), it executes immediately even during streaming. Hook commands manage their own LLM interaction via `pi.sendMessage()`.
+**Extension commands**: If the message is a hook command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
 
-**Slash commands**: File-based slash commands (from `.md` files) are expanded before sending/queueing.
+**Prompt templates**: File-based prompt templates (from `.md` files) are expanded before sending/queueing.
 
 Response:
 ```json
@@ -65,7 +65,7 @@ The `images` field is optional. Each image uses `ImageContent` format with base6
 
 #### steer
 
-Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. File-based slash commands are expanded. Hook commands are not allowed (use `prompt` instead).
+Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. File-based prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
@@ -80,7 +80,7 @@ See [set_steering_mode](#set_steering_mode) for controlling how steering message
 
 #### follow_up
 
-Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. File-based slash commands are expanded. Hook commands are not allowed (use `prompt` instead).
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. File-based prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}

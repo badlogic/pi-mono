@@ -343,4 +343,4 @@ Call `invalidate()` when state changes, then `handle.requestRender()` to trigger
 ## Examples
 
 - **Snake game**: [examples/hooks/snake.ts](../examples/hooks/snake.ts) - Full game with keyboard input, game loop, state persistence
-- **Custom tool rendering**: [examples/custom-tools/todo/](../examples/custom-tools/todo/) - Custom `renderCall` and `renderResult`
+- **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - Custom `renderCall` and `renderResult`

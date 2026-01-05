@@ -12,6 +12,8 @@ export class CustomEditor extends Editor {
 	public onEscape?: () => void;
 	public onCtrlD?: () => void;
 	public onPasteImage?: () => void;
+	/** Handler for extension-registered shortcuts. Returns true if handled. */
+	public onExtensionShortcut?: (data: string) => boolean;
 
 	constructor(theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(theme);
@@ -26,6 +28,11 @@ export class CustomEditor extends Editor {
 	}
 
 	handleInput(data: string): void {
+		// Check extension-registered shortcuts first
+		if (this.onExtensionShortcut?.(data)) {
+			return;
+		}
+
 		// Check for Ctrl+V to handle clipboard image paste
 		if (matchesKey(data, "ctrl+v")) {
 			this.onPasteImage?.();

@@ -9,7 +9,7 @@ describe("SessionManager.saveCustomEntry", () => {
 		const msgId = session.appendMessage({ role: "user", content: "hello", timestamp: 1 });
 
 		// Save a custom entry
-		const customId = session.appendCustomEntry("my_hook", { foo: "bar" });
+		const customId = session.appendCustomEntry("my_data", { foo: "bar" });
 
 		// Save another message
 		const msg2Id = session.appendMessage({
@@ -36,7 +36,7 @@ describe("SessionManager.saveCustomEntry", () => {
 
 		const customEntry = entries.find((e) => e.type === "custom") as CustomEntry;
 		expect(customEntry).toBeDefined();
-		expect(customEntry.customType).toBe("my_hook");
+		expect(customEntry.customType).toBe("my_data");
 		expect(customEntry.data).toEqual({ foo: "bar" });
 		expect(customEntry.id).toBe(customId);
 		expect(customEntry.parentId).toBe(msgId);

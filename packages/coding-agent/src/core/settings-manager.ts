@@ -52,8 +52,7 @@ export interface Settings {
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
-	hooks?: string[]; // Array of hook file paths
-	customTools?: string[]; // Array of custom tool file paths
+	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -340,21 +339,12 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getHookPaths(): string[] {
-		return [...(this.settings.hooks ?? [])];
+	getExtensionPaths(): string[] {
+		return [...(this.settings.extensions ?? [])];
 	}
 
-	setHookPaths(paths: string[]): void {
-		this.globalSettings.hooks = paths;
-		this.save();
-	}
-
-	getCustomToolPaths(): string[] {
-		return [...(this.settings.customTools ?? [])];
-	}
-
-	setCustomToolPaths(paths: string[]): void {
-		this.globalSettings.customTools = paths;
+	setExtensionPaths(paths: string[]): void {
+		this.globalSettings.extensions = paths;
 		this.save();
 	}
 

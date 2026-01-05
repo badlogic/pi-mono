@@ -376,6 +376,10 @@ export class Theme {
 		return chalk.inverse(text);
 	}
 
+	strikethrough(text: string): string {
+		return chalk.strikethrough(text);
+	}
+
 	getFgAnsi(color: ThemeColor): string {
 		const ansi = this.fgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme color: ${color}`);

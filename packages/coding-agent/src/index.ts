@@ -33,24 +33,53 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.js";
-// Custom tools
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
+// Extension system
 export type {
+	AgentEndEvent,
+	AgentStartEvent,
+	AgentToolResult,
 	AgentToolUpdateCallback,
-	CustomTool,
-	CustomToolAPI,
-	CustomToolContext,
-	CustomToolFactory,
-	CustomToolSessionEvent,
-	CustomToolsLoadResult,
-	CustomToolUIContext,
+	BeforeAgentStartEvent,
+	ContextEvent,
+	ExecOptions,
 	ExecResult,
-	LoadedCustomTool,
-	RenderResultOptions,
-} from "./core/custom-tools/index.js";
-export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
-export type * from "./core/hooks/index.js";
-// Hook system types and type guards
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionError,
+	ExtensionEvent,
+	ExtensionFactory,
+	ExtensionFlag,
+	ExtensionHandler,
+	ExtensionShortcut,
+	ExtensionUIContext,
+	LoadExtensionsResult,
+	LoadedExtension,
+	MessageRenderer,
+	MessageRenderOptions,
+	RegisteredCommand,
+	RegisteredTool,
+	SessionBeforeBranchEvent,
+	SessionBeforeCompactEvent,
+	SessionBeforeSwitchEvent,
+	SessionBeforeTreeEvent,
+	SessionBranchEvent,
+	SessionCompactEvent,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	SessionSwitchEvent,
+	SessionTreeEvent,
+	ToolCallEvent,
+	ToolDefinition,
+	ToolRenderResultOptions,
+	ToolResultEvent,
+	TurnEndEvent,
+	TurnStartEvent,
+} from "./core/extensions/index.js";
 export {
+	discoverAndLoadExtensions,
+	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,
@@ -58,7 +87,12 @@ export {
 	isLsToolResult,
 	isReadToolResult,
 	isWriteToolResult,
-} from "./core/hooks/index.js";
+	loadExtensions,
+	wrapRegisteredTool,
+	wrapRegisteredTools,
+	wrapToolsWithExtensions,
+	wrapToolWithExtensions,
+} from "./core/extensions/index.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 // SDK for programmatic usage
@@ -82,17 +116,12 @@ export {
 	// Discovery
 	discoverAuthStorage,
 	discoverContextFiles,
-	discoverCustomTools,
-	discoverHooks,
+	discoverExtensions,
 	discoverModels,
+	discoverPromptTemplates,
 	discoverSkills,
-	discoverSlashCommands,
-	type FileSlashCommand,
-	// Hook types
-	type HookAPI,
-	type HookContext,
-	type HookFactory,
 	loadSettings,
+	type PromptTemplate,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
 } from "./core/sdk.js";
@@ -158,7 +187,13 @@ export {
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
-// UI components for hooks
+// UI components for extensions
 export { BorderedLoader } from "./modes/interactive/components/bordered-loader.js";
-// Theme utilities for custom tools and hooks
-export { getMarkdownTheme, Theme, type ThemeColor } from "./modes/interactive/theme/theme.js";
+// Theme utilities for custom tools and extensions
+export {
+	getMarkdownTheme,
+	getSelectListTheme,
+	getSettingsListTheme,
+	Theme,
+	type ThemeColor,
+} from "./modes/interactive/theme/theme.js";

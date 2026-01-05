@@ -19,8 +19,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -878,13 +879,43 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	// Check if ollama is installed
+	describe("OpenAI Codex Provider (gpt-5.2-xhigh)", () => {
+		const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+
+		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	try {
-		execSync("which ollama", { stdio: "ignore" });
-		ollamaInstalled = true;
-	} catch {
-		ollamaInstalled = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("which ollama", { stdio: "ignore" });
+			ollamaInstalled = true;
+		} catch {
+			ollamaInstalled = false;
+		}
 	}
 
 	describe.skipIf(!ollamaInstalled)("Ollama Provider (gpt-oss-20b via OpenAI Completions)", () => {

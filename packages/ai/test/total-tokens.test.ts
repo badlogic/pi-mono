@@ -24,8 +24,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Generate a long system prompt to trigger caching (>2k bytes for most providers)
 const LONG_SYSTEM_PROMPT = `You are a helpful assistant. Be concise in your responses.
@@ -524,6 +525,29 @@ describe("totalTokens field", () => {
 
 				console.log(`\nGoogle Antigravity / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: antigravityToken });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
+	// OpenAI Codex (OAuth)
+	// =========================================================================
+
+	describe("OpenAI Codex (OAuth)", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-xhigh - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+
+				console.log(`\nOpenAI Codex / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: openaiCodexToken });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);

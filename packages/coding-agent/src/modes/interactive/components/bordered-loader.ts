@@ -2,7 +2,7 @@ import { CancellableLoader, Container, Spacer, Text, type TUI } from "@mariozech
 import type { Theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
-/** Loader wrapped with borders for hook UI */
+/** Loader wrapped with borders for extension UI */
 export class BorderedLoader extends Container {
 	private loader: CancellableLoader;
 

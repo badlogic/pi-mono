@@ -196,7 +196,7 @@ export class RpcClient {
 	/**
 	 * Start a new session, optionally with parent tracking.
 	 * @param parentSession - Optional parent session path for lineage tracking
-	 * @returns Object with `cancelled: true` if a hook cancelled the new session
+	 * @returns Object with `cancelled: true` if an extension cancelled the new session
 	 */
 	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "new_session", parentSession });
@@ -330,7 +330,7 @@ export class RpcClient {
 
 	/**
 	 * Switch to a different session file.
-	 * @returns Object with `cancelled: true` if a hook cancelled the switch
+	 * @returns Object with `cancelled: true` if an extension cancelled the switch
 	 */
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "switch_session", sessionPath });
@@ -339,7 +339,7 @@ export class RpcClient {
 
 	/**
 	 * Branch from a specific message.
-	 * @returns Object with `text` (the message text) and `cancelled` (if hook cancelled)
+	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
 	 */
 	async branch(entryId: string): Promise<{ text: string; cancelled: boolean }> {
 		const response = await this.send({ type: "branch", entryId });

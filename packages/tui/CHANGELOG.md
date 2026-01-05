@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-01-05
+
+## [0.35.0] - 2026-01-05
+
+## [0.34.2] - 2026-01-04
+
+## [0.34.1] - 2026-01-04
+
+### Added
+
+- Symbol key support in keybinding system: `SymbolKey` type with 32 symbol keys, `Key` constants (e.g., `Key.backtick`, `Key.comma`), updated `matchesKey()` and `parseKey()` to handle symbol input ([#450](https://github.com/badlogic/pi-mono/pull/450) by [@kaofelix](https://github.com/kaofelix))
+
+## [0.34.0] - 2026-01-04
+
+### Added
+
+- `Editor.getExpandedText()` method that returns text with paste markers expanded to their actual content ([#444](https://github.com/badlogic/pi-mono/pull/444) by [@aliou](https://github.com/aliou))
+
 ## [0.33.0] - 2026-01-04
 
 ### Breaking Changes
