@@ -12,6 +12,10 @@
 - OAuth login UI now uses dedicated dialog component with consistent borders
 - Assume truecolor support for all terminals except `dumb`, empty, or `linux` (fixes colors over SSH)
 
+### Changed
+
+- Thinking level availability now reflects per-model supported reasoning levels.
+
 ### Fixed
 
 - Managed binaries (`fd`, `rg`) now stored in `~/.pi/agent/bin/` instead of `tools/`, eliminating false deprecation warnings ([#470](https://github.com/badlogic/pi-mono/pull/470) by [@mcinteerj](https://github.com/mcinteerj))
@@ -20,6 +24,7 @@
 - Migration warnings now ignore `fd.exe` and `rg.exe` in `tools/` on Windows ([#458](https://github.com/badlogic/pi-mono/pull/458) by [@carlosgtrz](https://github.com/carlosgtrz))
 - CI: add `examples/extensions/with-deps` to workspaces to fix typecheck ([#467](https://github.com/badlogic/pi-mono/pull/467) by [@aliou](https://github.com/aliou))
 - SDK: passing `extensions: []` now disables extension discovery as documented ([#465](https://github.com/badlogic/pi-mono/pull/465) by [@aliou](https://github.com/aliou))
+- Legacy Codex model IDs with thinking suffixes resolve to their base models.
 
 ## [0.36.0] - 2026-01-05
 

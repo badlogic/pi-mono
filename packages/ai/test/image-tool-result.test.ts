@@ -398,19 +398,19 @@ describe("Tool Results with Images", () => {
 
 	describe("OpenAI Codex Provider", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should handle tool result with only image",
+			"gpt-5.2-codex - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await handleToolWithImageResult(llm, { apiKey: openaiCodexToken });
 			},
 		);
 
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should handle tool result with text and image",
+			"gpt-5.2-codex - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await handleToolWithTextAndImageResult(llm, { apiKey: openaiCodexToken });
 			},
 		);

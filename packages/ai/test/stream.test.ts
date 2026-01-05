@@ -879,8 +879,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("OpenAI Codex Provider (gpt-5.2-xhigh)", () => {
-		const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+	describe("OpenAI Codex Provider (gpt-5.2-codex)", () => {
+		const llm = getModel("openai-codex", "gpt-5.2-codex");
 
 		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm, { apiKey: openaiCodexToken });
@@ -895,7 +895,7 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!openaiCodexToken)("should handle thinking", { retry: 3 }, async () => {
-			await handleThinking(llm, { apiKey: openaiCodexToken });
+			await handleThinking(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
 		});
 
 		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
