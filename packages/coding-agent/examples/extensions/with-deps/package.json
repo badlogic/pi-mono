@@ -1,8 +1,13 @@
 {
   "name": "pi-extension-with-deps",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
+  "scripts": {
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "echo 'nothing to check'"
+  },
   "pi": {
     "extensions": [
       "./index.ts"

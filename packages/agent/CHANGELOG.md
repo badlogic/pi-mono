@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-01-05
+
 ### Fixed
 
 - `minimal` thinking level now maps to `minimal` reasoning effort instead of being treated as `low`.

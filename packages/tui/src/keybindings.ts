@@ -61,7 +61,7 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	deleteToLineStart: "ctrl+u",
 	deleteToLineEnd: "ctrl+k",
 	// Text input
-	newLine: ["shift+enter", "alt+enter"],
+	newLine: "shift+enter",
 	submit: "enter",
 	tab: "tab",
 	// Selection/autocomplete

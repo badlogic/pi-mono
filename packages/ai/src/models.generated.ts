@@ -3167,23 +3167,6 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"anthropic/claude-3-opus": {
-			id: "anthropic/claude-3-opus",
-			name: "Anthropic: Claude 3 Opus",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text", "image"],
-			cost: {
-				input: 15,
-				output: 75,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
-			},
-			contextWindow: 200000,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"anthropic/claude-3.5-haiku": {
 			id: "anthropic/claude-3.5-haiku",
 			name: "Anthropic: Claude 3.5 Haiku",
@@ -4129,11 +4112,11 @@ export const MODELS = {
 			input: ["text"],
 			cost: {
 				input: 0.02,
-				output: 0.03,
+				output: 0.049999999999999996,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 131072,
+			contextWindow: 16384,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.2-3b-instruct": {

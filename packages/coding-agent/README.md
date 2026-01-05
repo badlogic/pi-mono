@@ -18,6 +18,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
+  - [Terminal Setup](#terminal-setup)
   - [API Keys & OAuth](#api-keys--oauth)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
@@ -114,6 +115,30 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
   "shellPath": "C:\\cygwin64\\bin\\bash.exe"
 }
 ```
+
+### Terminal Setup
+
+Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+
+**Kitty, iTerm2:** Work out of the box.
+
+**Ghostty:** Add to your Ghostty config (`~/.config/ghostty/config`):
+
+```
+keybind = alt+backspace=text:\x1b\x7f
+keybind = shift+enter=text:\n
+```
+
+**wezterm:** Create `~/.wezterm.lua`:
+
+```lua
+local wezterm = require 'wezterm'
+local config = wezterm.config_builder()
+config.enable_kitty_keyboard = true
+return config
+```
+
+**Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
 
 ### API Keys & OAuth
 
@@ -256,7 +281,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Key | Action |
 |-----|--------|
 | Enter | Send message |
-| Shift+Enter / Alt+Enter | New line (Ctrl+Enter on WSL) |
+| Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
 | Ctrl+W / Option+Backspace | Delete word backwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
@@ -306,7 +331,7 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
 | `deleteToLineStart` | `ctrl+u` | Delete to line start |
 | `deleteToLineEnd` | `ctrl+k` | Delete to line end |
-| `newLine` | `shift+enter`, `alt+enter` | Insert new line |
+| `newLine` | `shift+enter` | Insert new line |
 | `submit` | `enter` | Submit input |
 | `tab` | `tab` | Tab/autocomplete |
 | `interrupt` | `escape` | Interrupt operation |
