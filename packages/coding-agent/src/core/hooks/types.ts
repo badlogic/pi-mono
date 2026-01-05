@@ -129,6 +129,12 @@ export interface HookUIContext {
 	editor(title: string, prefill?: string): Promise<string | undefined>;
 
 	/**
+	 * Send a bell character to the terminal.
+	 * Produces an audible alert or visual flash (depending on terminal settings).
+	 */
+	bell(): void;
+
+	/**
 	 * Get the current theme for styling text with ANSI codes.
 	 * Use theme.fg() and theme.bg() to style status text.
 	 *

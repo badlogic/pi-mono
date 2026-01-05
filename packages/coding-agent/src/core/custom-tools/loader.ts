@@ -96,6 +96,7 @@ function createNoOpUIContext(): HookUIContext {
 		setEditorText: () => {},
 		getEditorText: () => "",
 		editor: async () => undefined,
+		bell: () => {},
 		get theme() {
 			return theme;
 		},

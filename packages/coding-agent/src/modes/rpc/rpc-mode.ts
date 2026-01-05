@@ -171,6 +171,15 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
+		bell(): void {
+			// Fire and forget - host should play bell sound
+			output({
+				type: "hook_ui_request",
+				id: crypto.randomUUID(),
+				method: "bell",
+			} as RpcHookUIRequest);
+		},
+
 		get theme() {
 			return theme;
 		},

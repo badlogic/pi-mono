@@ -420,6 +420,7 @@ export class InteractiveMode {
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
 			editor: (title, prefill) => this.showHookEditor(title, prefill),
+			bell: () => this.sendBell(),
 			get theme() {
 				return theme;
 			},
@@ -717,6 +718,13 @@ export class InteractiveMode {
 		} else {
 			this.showStatus(message);
 		}
+	}
+
+	/**
+	 * Send a bell character to the terminal.
+	 */
+	private sendBell(): void {
+		this.ui.terminal.write("\x07");
 	}
 
 	/**

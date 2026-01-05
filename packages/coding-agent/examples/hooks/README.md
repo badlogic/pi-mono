@@ -29,6 +29,7 @@ cp permission-gate.ts ~/.pi/agent/hooks/
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
 | `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
 | `todo/` | Adds `/todos` command to view todos managed by the [todo custom tool](../custom-tools/todo/) |
+| `bell.ts` | Sends a bell notification when the agent finishes processing |
 
 ## Writing Hooks
 
