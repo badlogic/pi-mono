@@ -52,17 +52,26 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					if (!block.text || block.text.trim() === "") continue;
 					parts.push({ text: sanitizeSurrogates(block.text) });
 				} else if (block.type === "thinking") {
-					// Thinking blocks require signatures for Claude via Antigravity.
-					// If signature is missing (e.g. from GPT-OSS), convert to regular text with delimiters.
-					if (block.thinkingSignature) {
+					// Thinking blocks handling varies by model:
+					// - Claude via Antigravity: requires thinkingSignature
+					// - Gemini: skip entirely (doesn't understand thoughtSignature, and mimics <thinking> tags)
+					// - Other models: convert to text with delimiters
+					const isGemini = model.id.toLowerCase().includes("gemini");
+					const isClaude = model.id.toLowerCase().includes("claude");
+					if (isGemini) {
+					} else if (block.thinkingSignature && isClaude) {
+						// Claude via Antigravity requires the signature
 						parts.push({
 							thought: true,
 							text: sanitizeSurrogates(block.thinking),
 							thoughtSignature: block.thinkingSignature,
 						});
 					} else {
+						// Other models: convert to text with delimiters
 						parts.push({
-							text: `<thinking>\n${sanitizeSurrogates(block.thinking)}\n</thinking>`,
+							text: `<thinking>
+${sanitizeSurrogates(block.thinking)}
+</thinking>`,
 						});
 					}
 				} else if (block.type === "toolCall") {
@@ -76,8 +85,10 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					if (model.provider === "google-vertex" && part?.functionCall?.id) {
 						delete part.functionCall.id; // Vertex AI does not support 'id' in functionCall
 					}
-					if (block.thoughtSignature) {
-						part.thoughtSignature = block.thoughtSignature;
+					// Only include thoughtSignature if the model matches.
+					// Google Cloud Code Assist API rejects signatures from other models.
+					if (block.thoughtSignature && (msg as any).model === model.id) {
+						(part as any).thoughtSignature = block.thoughtSignature;
 					}
 					parts.push(part);
 				}
@@ -150,7 +161,21 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 		}
 	}
 
-	return contents;
+	// Gemini API requires alternating roles (user/model). Merge consecutive turns of the same role.
+	const alternatingContents: Content[] = [];
+	for (const content of contents) {
+		const last = alternatingContents[alternatingContents.length - 1];
+		if (last && last.role === content.role) {
+			if (!last.parts) last.parts = [];
+			if (content.parts) {
+				last.parts.push(...content.parts);
+			}
+		} else {
+			alternatingContents.push(content);
+		}
+	}
+
+	return alternatingContents;
 }
 
 /**
