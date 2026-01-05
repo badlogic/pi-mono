@@ -479,6 +479,47 @@ function isExtensionFile(name: string): boolean {
 }
 
 /**
+ * Resolve extension entry points from a directory.
+ *
+ * Checks for:
+ * 1. package.json with "pi.extensions" field -> returns declared paths
+ * 2. index.ts or index.js -> returns the index file
+ *
+ * Returns resolved paths or null if no entry points found.
+ */
+function resolveExtensionEntries(dir: string): string[] | null {
+	// Check for package.json with "pi" field first
+	const packageJsonPath = path.join(dir, "package.json");
+	if (fs.existsSync(packageJsonPath)) {
+		const manifest = readPiManifest(packageJsonPath);
+		if (manifest?.extensions?.length) {
+			const entries: string[] = [];
+			for (const extPath of manifest.extensions) {
+				const resolvedExtPath = path.resolve(dir, extPath);
+				if (fs.existsSync(resolvedExtPath)) {
+					entries.push(resolvedExtPath);
+				}
+			}
+			if (entries.length > 0) {
+				return entries;
+			}
+		}
+	}
+
+	// Check for index.ts or index.js
+	const indexTs = path.join(dir, "index.ts");
+	const indexJs = path.join(dir, "index.js");
+	if (fs.existsSync(indexTs)) {
+		return [indexTs];
+	}
+	if (fs.existsSync(indexJs)) {
+		return [indexJs];
+	}
+
+	return null;
+}
+
+/**
  * Discover extensions in a directory.
  *
  * Discovery rules:
@@ -509,29 +550,9 @@ function discoverExtensionsInDir(dir: string): string[] {
 
 			// 2 & 3. Subdirectories
 			if (entry.isDirectory() || entry.isSymbolicLink()) {
-				// Check for package.json with "pi" field first
-				const packageJsonPath = path.join(entryPath, "package.json");
-				if (fs.existsSync(packageJsonPath)) {
-					const manifest = readPiManifest(packageJsonPath);
-					if (manifest?.extensions) {
-						// Load paths declared in manifest (relative to package.json dir)
-						for (const extPath of manifest.extensions) {
-							const resolvedExtPath = path.resolve(entryPath, extPath);
-							if (fs.existsSync(resolvedExtPath)) {
-								discovered.push(resolvedExtPath);
-							}
-						}
-						continue; // package.json found, don't check for index
-					}
-				}
-
-				// Check for index.ts or index.js
-				const indexTs = path.join(entryPath, "index.ts");
-				const indexJs = path.join(entryPath, "index.js");
-				if (fs.existsSync(indexTs)) {
-					discovered.push(indexTs);
-				} else if (fs.existsSync(indexJs)) {
-					discovered.push(indexJs);
+				const entries = resolveExtensionEntries(entryPath);
+				if (entries) {
+					discovered.push(...entries);
 				}
 			}
 		}
@@ -573,7 +594,18 @@ export async function discoverAndLoadExtensions(
 	addPaths(discoverExtensionsInDir(localExtDir));
 
 	// 3. Explicitly configured paths
-	addPaths(configuredPaths.map((p) => resolvePath(p, cwd)));
+	for (const p of configuredPaths) {
+		const resolved = resolvePath(p, cwd);
+		if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+			const entries = resolveExtensionEntries(resolved);
+			if (entries) {
+				addPaths(entries);
+				continue;
+			}
+		}
+
+		addPaths([resolved]);
+	}
 
 	return loadExtensions(allPaths, cwd, eventBus);
 }

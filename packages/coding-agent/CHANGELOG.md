@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Configured extension directories now respect `package.json` manifests: when a directory is specified in `settings.json` extensions array, it now checks for `pi.extensions` in `package.json` first, then falls back to `index.ts`/`index.js`
+
 ## [0.37.1] - 2026-01-05
 
 ### Fixed
