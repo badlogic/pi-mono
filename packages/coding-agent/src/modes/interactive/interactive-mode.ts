@@ -2124,7 +2124,15 @@ export class InteractiveMode {
 					if (mode === "login") {
 						this.showStatus(`Logging in to ${providerId}...`);
 
+						// For openai-codex: promise that resolves when user pastes code manually
+						let manualCodeResolve: ((code: string) => void) | undefined;
+						const manualCodePromise = new Promise<string>((resolve) => {
+							manualCodeResolve = resolve;
+						});
+						let manualCodeInput: Input | undefined;
+
 						try {
+
 							await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
 								onAuth: (info: { url: string; instructions?: string }) => {
 									this.chatContainer.addChild(new Spacer(1));
@@ -2155,8 +2163,39 @@ export class InteractiveMode {
 												? "start"
 												: "xdg-open";
 									exec(`${openCmd} "${info.url}"`);
+
+									// For openai-codex: show paste input immediately (races with browser callback)
+									if (providerId === "openai-codex") {
+										this.chatContainer.addChild(new Spacer(1));
+										this.chatContainer.addChild(
+											new Text(
+												theme.fg("dim", "Alternatively, paste the authorization code or redirect URL below:"),
+												1,
+												0,
+											),
+										);
+										manualCodeInput = new Input();
+										manualCodeInput.onSubmit = () => {
+											const code = manualCodeInput!.getValue();
+											if (code && manualCodeResolve) {
+												manualCodeResolve(code);
+												manualCodeResolve = undefined;
+											}
+										};
+										this.editorContainer.clear();
+										this.editorContainer.addChild(manualCodeInput);
+										this.ui.setFocus(manualCodeInput);
+										this.ui.requestRender();
+									}
 								},
 								onPrompt: async (prompt: { message: string; placeholder?: string }) => {
+									// Clean up manual code input if it exists (fallback case)
+									if (manualCodeInput) {
+										this.editorContainer.clear();
+										this.editorContainer.addChild(this.editor);
+										manualCodeInput = undefined;
+									}
+
 									this.chatContainer.addChild(new Spacer(1));
 									this.chatContainer.addChild(new Text(theme.fg("warning", prompt.message), 1, 0));
 									if (prompt.placeholder) {
@@ -2183,7 +2222,17 @@ export class InteractiveMode {
 									this.chatContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
 									this.ui.requestRender();
 								},
+								onManualCodeInput: () => manualCodePromise,
 							});
+
+							// Clean up manual code input if browser callback succeeded
+							if (manualCodeInput) {
+								this.editorContainer.clear();
+								this.editorContainer.addChild(this.editor);
+								this.ui.setFocus(this.editor);
+								manualCodeInput = undefined;
+							}
+
 							// Refresh models to pick up new baseUrl (e.g., github-copilot)
 							this.session.modelRegistry.refresh();
 							this.chatContainer.addChild(new Spacer(1));
@@ -2195,6 +2244,13 @@ export class InteractiveMode {
 							);
 							this.ui.requestRender();
 						} catch (error: unknown) {
+							// Clean up manual code input on error
+							if (manualCodeInput) {
+								this.editorContainer.clear();
+								this.editorContainer.addChild(this.editor);
+								this.ui.setFocus(this.editor);
+								manualCodeInput = undefined;
+							}
 							this.showError(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
 						}
 					} else {

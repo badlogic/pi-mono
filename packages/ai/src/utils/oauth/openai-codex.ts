@@ -187,11 +187,13 @@ async function createAuthorizationFlow(): Promise<{ verifier: string; state: str
 
 type OAuthServerInfo = {
 	close: () => void;
+	cancelWait: () => void;
 	waitForCode: () => Promise<{ code: string } | null>;
 };
 
 function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 	let lastCode: string | null = null;
+	let cancelled = false;
 	const server = http.createServer((req, res) => {
 		try {
 			const url = new URL(req.url || "", "http://localhost");
@@ -226,10 +228,14 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 			.listen(1455, "127.0.0.1", () => {
 				resolve({
 					close: () => server.close(),
+					cancelWait: () => {
+						cancelled = true;
+					},
 					waitForCode: async () => {
 						const sleep = () => new Promise((r) => setTimeout(r, 100));
 						for (let i = 0; i < 600; i += 1) {
 							if (lastCode) return { code: lastCode };
+							if (cancelled) return null;
 							await sleep();
 						}
 						return null;
@@ -250,6 +256,7 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 							// ignore
 						}
 					},
+					cancelWait: () => {},
 					waitForCode: async () => null,
 				});
 			});
@@ -265,11 +272,19 @@ function getAccountId(accessToken: string): string | null {
 
 /**
  * Login with OpenAI Codex OAuth
+ *
+ * @param options.onAuth - Called with URL and instructions when auth starts
+ * @param options.onPrompt - Called to prompt user for manual code paste (fallback if no onManualCodeInput)
+ * @param options.onProgress - Optional progress messages
+ * @param options.onManualCodeInput - Optional promise that resolves with user-pasted code.
+ *                                    Races with browser callback - whichever completes first wins.
+ *                                    Useful for showing paste input immediately alongside browser flow.
  */
 export async function loginOpenAICodex(options: {
 	onAuth: (info: { url: string; instructions?: string }) => void;
 	onPrompt: (prompt: OAuthPrompt) => Promise<string>;
 	onProgress?: (message: string) => void;
+	onManualCodeInput?: () => Promise<string>;
 }): Promise<OAuthCredentials> {
 	const { verifier, state, url } = await createAuthorizationFlow();
 	const server = await startLocalOAuthServer(state);
@@ -278,11 +293,50 @@ export async function loginOpenAICodex(options: {
 
 	let code: string | undefined;
 	try {
-		const result = await server.waitForCode();
-		if (result?.code) {
-			code = result.code;
+		if (options.onManualCodeInput) {
+			// Race between browser callback and manual input
+			let manualCode: string | undefined;
+			const manualPromise = options
+				.onManualCodeInput()
+				.then((input) => {
+					manualCode = input;
+					server.cancelWait();
+				})
+				.catch(() => {}); // Ignore rejection
+
+			const result = await server.waitForCode();
+			if (result?.code) {
+				// Browser callback won
+				code = result.code;
+			} else if (manualCode) {
+				// Manual input won (or callback timed out and user had entered code)
+				const parsed = parseAuthorizationInput(manualCode);
+				if (parsed.state && parsed.state !== state) {
+					throw new Error("State mismatch");
+				}
+				code = parsed.code;
+			}
+
+			// If still no code, wait for manual promise to complete and try that
+			if (!code) {
+				await manualPromise;
+				if (manualCode) {
+					const parsed = parseAuthorizationInput(manualCode);
+					if (parsed.state && parsed.state !== state) {
+						throw new Error("State mismatch");
+					}
+					code = parsed.code;
+				}
+			}
+		} else {
+			// Original flow: wait for callback, then prompt if needed
+			const result = await server.waitForCode();
+			if (result?.code) {
+				code = result.code;
+			}
 		}
 
+		// Fallback to onPrompt if still no code
 		if (!code) {
 			const input = await options.onPrompt({
 				message: "Paste the authorization code (or full redirect URL):",
