@@ -4,11 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCodexInstructions } from "../src/providers/openai-codex/prompts/codex.js";
 import { CODEX_PI_BRIDGE } from "../src/providers/openai-codex/prompts/pi-codex-bridge.js";
-import {
-	normalizeModel,
-	type RequestBody,
-	transformRequestBody,
-} from "../src/providers/openai-codex/request-transformer.js";
+import { type RequestBody, transformRequestBody } from "../src/providers/openai-codex/request-transformer.js";
 import { parseCodexError } from "../src/providers/openai-codex/response-handler.js";
 
 const DEFAULT_PROMPT_PREFIX =
@@ -56,12 +52,6 @@ describe("openai-codex request transformer", () => {
 
 		const orphaned = input.find((item) => item.type === "message" && item.role === "assistant");
 		expect(orphaned?.content).toMatch(/Previous tool result/);
-	});
-});
-
-describe("openai-codex model normalization", () => {
-	it("maps space-separated codex-mini names to codex-mini-latest", () => {
-		expect(normalizeModel("gpt 5 codex mini")).toBe("codex-mini-latest");
 	});
 });
 

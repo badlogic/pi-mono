@@ -35,7 +35,6 @@ import {
 import { getCodexInstructions } from "./openai-codex/prompts/codex.js";
 import {
 	type CodexRequestOptions,
-	normalizeModel,
 	type RequestBody,
 	transformRequestBody,
 } from "./openai-codex/request-transformer.js";
@@ -108,8 +107,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				params.tools = convertTools(context.tools);
 			}
 
-			const normalizedModel = normalizeModel(params.model);
-			const codexInstructions = await getCodexInstructions(normalizedModel);
+			const codexInstructions = await getCodexInstructions(params.model);
 
 			const codexOptions: CodexRequestOptions = {
 				reasoningEffort: options?.reasoningEffort,
