@@ -6,6 +6,12 @@
 
 - Configured extension directories now respect `package.json` manifests: when a directory is specified in `settings.json` extensions array, it now checks for `pi.extensions` in `package.json` first, then falls back to `index.ts`/`index.js`
 
+## [0.37.1] - 2026-01-05
+
+### Fixed
+
+- Share viewer: copy-link buttons now generate correct URLs when session is viewed via `/share` (iframe context)
+
 ## [0.37.0] - 2026-01-05
 
 ### Added
