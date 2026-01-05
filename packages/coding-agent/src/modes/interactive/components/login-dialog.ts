@@ -109,9 +109,9 @@ export class LoginDialogComponent extends Container {
 
 	/**
 	 * Called by onPrompt callback - show prompt and wait for input
+	 * Note: Does NOT clear content, appends to existing (preserves URL from showAuth)
 	 */
 	showPrompt(message: string, placeholder?: string): Promise<string> {
-		this.contentContainer.clear();
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 1, 0));
 		if (placeholder) {
