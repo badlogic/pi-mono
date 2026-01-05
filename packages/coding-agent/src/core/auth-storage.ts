@@ -1,6 +1,9 @@
 /**
  * Credential storage for API keys and OAuth tokens.
  * Handles loading, saving, and refreshing credentials from auth.json.
+ *
+ * Uses file locking to prevent race conditions when multiple pi instances
+ * try to refresh tokens simultaneously.
  */
 
 import {
@@ -16,6 +19,7 @@ import {
 } from "@mariozechner/pi-ai";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import lockfile from "proper-lockfile";
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -199,11 +203,92 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Refresh OAuth token with file locking to prevent race conditions.
+	 * Multiple pi instances may try to refresh simultaneously when tokens expire.
+	 * This ensures only one instance refreshes while others wait and use the result.
+	 */
+	private async refreshOAuthTokenWithLock(
+		provider: OAuthProvider,
+	): Promise<{ apiKey: string; newCredentials: OAuthCredentials } | null> {
+		// Ensure auth file exists for locking
+		if (!existsSync(this.authPath)) {
+			const dir = dirname(this.authPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true, mode: 0o700 });
+			}
+			writeFileSync(this.authPath, "{}", "utf-8");
+			chmodSync(this.authPath, 0o600);
+		}
+
+		let release: (() => Promise<void>) | undefined;
+
+		try {
+			// Acquire exclusive lock with retry and timeout
+			// Use generous retry window to handle slow token endpoints
+			release = await lockfile.lock(this.authPath, {
+				retries: {
+					retries: 10,
+					factor: 2,
+					minTimeout: 100,
+					maxTimeout: 10000,
+					randomize: true,
+				},
+				stale: 30000, // Consider lock stale after 30 seconds
+			});
+
+			// Re-read file after acquiring lock - another instance may have refreshed
+			this.reload();
+
+			const cred = this.data[provider];
+			if (cred?.type !== "oauth") {
+				return null;
+			}
+
+			// Check if token is still expired after re-reading
+			// (another instance may have already refreshed it)
+			if (Date.now() < cred.expires) {
+				// Token is now valid - another instance refreshed it
+				const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
+				const apiKey = needsProjectId
+					? JSON.stringify({ token: cred.access, projectId: cred.projectId })
+					: cred.access;
+				return { apiKey, newCredentials: cred };
+			}
+
+			// Token still expired, we need to refresh
+			const oauthCreds: Record<string, OAuthCredentials> = {};
+			for (const [key, value] of Object.entries(this.data)) {
+				if (value.type === "oauth") {
+					oauthCreds[key] = value;
+				}
+			}
+
+			const result = await getOAuthApiKey(provider, oauthCreds);
+			if (result) {
+				this.data[provider] = { type: "oauth", ...result.newCredentials };
+				this.save();
+				return result;
+			}
+
+			return null;
+		} finally {
+			// Always release the lock
+			if (release) {
+				try {
+					await release();
+				} catch {
+					// Ignore unlock errors (lock may have been compromised)
+				}
+			}
+		}
+	}
+
+	/**
 	 * Get API key for a provider.
 	 * Priority:
 	 * 1. Runtime override (CLI --api-key)
 	 * 2. API key from auth.json
-	 * 3. OAuth token from auth.json (auto-refreshed)
+	 * 3. OAuth token from auth.json (auto-refreshed with locking)
 	 * 4. Environment variable
 	 * 5. Fallback resolver (models.json custom providers)
 	 */
@@ -221,23 +306,44 @@ export class AuthStorage {
 		}
 
 		if (cred?.type === "oauth") {
-			// Filter to only oauth credentials for getOAuthApiKey
-			const oauthCreds: Record<string, OAuthCredentials> = {};
-			for (const [key, value] of Object.entries(this.data)) {
-				if (value.type === "oauth") {
-					oauthCreds[key] = value;
-				}
-			}
+			// Check if token needs refresh
+			const needsRefresh = Date.now() >= cred.expires;
 
-			try {
-				const result = await getOAuthApiKey(provider as OAuthProvider, oauthCreds);
-				if (result) {
-					this.data[provider] = { type: "oauth", ...result.newCredentials };
-					this.save();
-					return result.apiKey;
+			if (needsRefresh) {
+				// Use locked refresh to prevent race conditions
+				try {
+					const result = await this.refreshOAuthTokenWithLock(provider as OAuthProvider);
+					if (result) {
+						return result.apiKey;
+					}
+				} catch (err) {
+					// Refresh failed - re-read file to check if another instance succeeded
+					this.reload();
+					const updatedCred = this.data[provider];
+
+					if (updatedCred?.type === "oauth" && Date.now() < updatedCred.expires) {
+						// Another instance refreshed successfully, use those credentials
+						const needsProjectId =
+							provider === "google-gemini-cli" || provider === "google-antigravity";
+						return needsProjectId
+							? JSON.stringify({ token: updatedCred.access, projectId: updatedCred.projectId })
+							: updatedCred.access;
+					}
+
+					// Refresh truly failed - DO NOT remove credentials
+					// User can retry or re-authenticate manually
+					const errorMessage = err instanceof Error ? err.message : String(err);
+					throw new Error(
+						`OAuth token refresh failed for ${provider}: ${errorMessage}. ` +
+							`Please try again or re-authenticate with /login.`,
+					);
 				}
-			} catch {
-				this.remove(provider);
+			} else {
+				// Token not expired, use current access token
+				const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
+				return needsProjectId
+					? JSON.stringify({ token: cred.access, projectId: cred.projectId })
+					: cred.access;
 			}
 		}
 
