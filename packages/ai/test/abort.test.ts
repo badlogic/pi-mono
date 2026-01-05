@@ -145,12 +145,12 @@ describe("AI Providers Abort Tests", () => {
 
 	describe("OpenAI Codex Provider Abort", () => {
 		it.skipIf(!openaiCodexToken)("should abort mid-stream", { retry: 3 }, async () => {
-			const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+			const llm = getModel("openai-codex", "gpt-5.2-codex");
 			await testAbortSignal(llm, { apiKey: openaiCodexToken });
 		});
 
 		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
-			const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+			const llm = getModel("openai-codex", "gpt-5.2-codex");
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
 		});
 	});

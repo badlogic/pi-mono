@@ -619,28 +619,28 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 
 	describe("OpenAI Codex Provider Unicode Handling", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should handle emoji in tool results",
+			"gpt-5.2-codex - should handle emoji in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await testEmojiInToolResults(llm, { apiKey: openaiCodexToken });
 			},
 		);
 
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should handle real-world LinkedIn comment data with emoji",
+			"gpt-5.2-codex - should handle real-world LinkedIn comment data with emoji",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await testRealWorldLinkedInData(llm, { apiKey: openaiCodexToken });
 			},
 		);
 
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-xhigh - should handle unpaired high surrogate (0xD83D) in tool results",
+			"gpt-5.2-codex - should handle unpaired high surrogate (0xD83D) in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-xhigh");
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await testUnpairedHighSurrogate(llm, { apiKey: openaiCodexToken });
 			},
 		);
