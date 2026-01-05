@@ -8,7 +8,7 @@ import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
-import { resolveApiKey } from "./oauth.js";
+import { resolveApiKey, resolveOAuthAccountId } from "./oauth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,11 +16,13 @@ const __dirname = dirname(__filename);
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
+	resolveApiKey("openai"),
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, openaiOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const openaiAccountId = resolveOAuthAccountId("openai");
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -727,6 +729,44 @@ describe("Generate E2E Tests", () => {
 
 		it.skipIf(!anthropicOAuthToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(model, { apiKey: anthropicOAuthToken });
+		});
+	});
+
+	describe("OpenAI OAuth Provider (gpt-5.2-codex)", () => {
+		const baseModel = getModel("openai", "gpt-5.2")!;
+		const headers = openaiAccountId
+			? { ...(baseModel.headers ?? {}), "ChatGPT-Account-ID": openaiAccountId }
+			: baseModel.headers;
+		const model: Model<"openai-responses"> = {
+			...baseModel,
+			id: "gpt-5.2-codex",
+			baseUrl: "https://chatgpt.com/backend-api/codex",
+			input: ["text"],
+			headers,
+		};
+
+		it.skipIf(!openaiOAuthToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(model, { apiKey: openaiOAuthToken });
+		});
+
+		it.skipIf(!openaiOAuthToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(model, { apiKey: openaiOAuthToken });
+		});
+
+		it.skipIf(!openaiOAuthToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(model, { apiKey: openaiOAuthToken });
+		});
+
+		it.skipIf(!openaiOAuthToken)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(model, { apiKey: openaiOAuthToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiOAuthToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(model, { apiKey: openaiOAuthToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiOAuthToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(model, { apiKey: openaiOAuthToken });
 		});
 	});
 

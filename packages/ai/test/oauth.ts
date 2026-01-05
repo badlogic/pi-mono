@@ -87,3 +87,12 @@ export async function resolveApiKey(provider: string): Promise<string | undefine
 
 	return undefined;
 }
+
+export function resolveOAuthAccountId(provider: string): string | undefined {
+	const storage = loadAuthStorage();
+	const entry = storage[provider];
+
+	if (!entry || entry.type !== "oauth") return undefined;
+
+	return entry.accountId;
+}

@@ -2,16 +2,18 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
-import { resolveApiKey } from "./oauth.js";
+import { resolveApiKey, resolveOAuthAccountId } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
+	resolveApiKey("openai"),
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, openaiOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const openaiAccountId = resolveOAuthAccountId("openai");
 
 async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -154,6 +156,28 @@ describe("Token Statistics on Abort", () => {
 			{ retry: 3, timeout: 30000 },
 			async () => {
 				await testTokensOnAbort(llm, { apiKey: anthropicOAuthToken });
+			},
+		);
+	});
+
+	describe("OpenAI OAuth Provider", () => {
+		const baseModel = getModel("openai", "gpt-5.2")!;
+		const headers = openaiAccountId
+			? { ...(baseModel.headers ?? {}), "ChatGPT-Account-ID": openaiAccountId }
+			: baseModel.headers;
+		const llm: Model<"openai-responses"> = {
+			...baseModel,
+			id: "gpt-5.2-codex",
+			baseUrl: "https://chatgpt.com/backend-api/codex",
+			input: ["text"],
+			headers,
+		};
+
+		it.skipIf(!openaiOAuthToken)(
+			"should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				await testTokensOnAbort(llm, { apiKey: openaiOAuthToken });
 			},
 		);
 	});
