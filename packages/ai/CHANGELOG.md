@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Headless OAuth support for all callback-server providers (Google Gemini CLI, Antigravity, OpenAI Codex): paste redirect URL when browser callback is unreachable ([#428](https://github.com/badlogic/pi-mono/pull/428) by [@ben-vargas](https://github.com/ben-vargas), [#468](https://github.com/badlogic/pi-mono/pull/468) by [@crcatala](https://github.com/crcatala))
+- Cancellable GitHub Copilot device code polling via AbortSignal
+
 ## [0.36.0] - 2026-01-05
 
 ### Added
