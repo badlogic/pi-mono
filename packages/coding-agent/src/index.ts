@@ -166,6 +166,12 @@ export {
 	type SkillFrontmatter,
 	type SkillWarning,
 } from "./core/skills.js";
+// System prompt construction
+export {
+	type BuildSystemPromptWithCustomOptions,
+	buildSystemPromptWithCustom,
+	type CustomPrompt,
+} from "./core/system-prompt.js";
 // Tools
 export {
 	type BashToolDetails,
