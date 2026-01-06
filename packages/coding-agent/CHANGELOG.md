@@ -4,7 +4,7 @@
 
 ### Added
 
-- `/reload` command to hot-reload AGENTS.md, skills, prompt templates, and extensions without restarting
+- `/reload` command to hot-reload AGENTS.md, skills, prompt templates, and extensions without restarting ([#508](https://github.com/badlogic/pi-mono/pull/508) by [@melihmucuk](https://github.com/melihmucuk))
 
 ### Fixed
 
