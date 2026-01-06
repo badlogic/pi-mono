@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `/new` command now reloads project context files (AGENTS.md, CLAUDE.md), skills, and prompt templates, allowing users to pick up filesystem changes without restarting the CLI
+
 ### Fixed
 
 - Add `minimatch` as a direct dependency for explicit imports.

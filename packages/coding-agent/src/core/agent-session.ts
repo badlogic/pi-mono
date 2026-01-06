@@ -210,6 +210,9 @@ export class AgentSession {
 	// Custom system prompt (string or function)
 	private _customPrompt?: string | ((defaultPrompt: string) => string);
 
+	// Guard flag to prevent concurrent newSession() calls
+	private _isNewSessionInProgress: boolean = false;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -234,66 +237,81 @@ export class AgentSession {
 	/**
 	 * Reload context files, skills, and prompt templates for a fresh session.
 	 * Called by newSession() to reflect file system changes.
+	 *
+	 * Note: Errors during reload are caught and logged, but don't fail the session.
+	 * The session will proceed with the previous prompt if reload fails.
 	 */
 	private async reloadContext(): Promise<void> {
-		const toolNames = this.getActiveToolNames();
-		const validToolNames = toolNames.filter((n): n is ToolName => n in allTools);
+		try {
+			const toolNames = this.getActiveToolNames();
+			const validToolNames = toolNames.filter((n): n is ToolName => n in allTools);
 
-		// Reload context files (AGENTS.md, etc.)
-		const contextFiles = loadProjectContextFiles({
-			cwd: this._cwd,
-			agentDir: this._agentDir,
-		});
-
-		// Reload skills
-		const { skills } = loadSkills({
-			cwd: this._cwd,
-			agentDir: this._agentDir,
-			...this._skillsSettings,
-		});
-
-		// Reload prompt templates
-		this._promptTemplates = loadPromptTemplatesInternal({
-			cwd: this._cwd,
-			agentDir: this._agentDir,
-		});
-
-		// Build base system prompt with fresh context
-		let newPrompt: string;
-
-		if (this._customPrompt === undefined) {
-			// Use default prompt with fresh context
-			newPrompt = buildSystemPrompt({
+			// Reload context files (AGENTS.md, etc.)
+			const contextFiles = loadProjectContextFiles({
 				cwd: this._cwd,
 				agentDir: this._agentDir,
-				contextFiles,
-				skills,
-				selectedTools: validToolNames,
 			});
-		} else if (typeof this._customPrompt === "string") {
-			// Build with custom string prompt
-			newPrompt = buildSystemPrompt({
+
+			// Reload skills
+			const { skills } = loadSkills({
 				cwd: this._cwd,
 				agentDir: this._agentDir,
-				contextFiles,
-				skills,
-				selectedTools: validToolNames,
-				customPrompt: this._customPrompt,
+				...this._skillsSettings,
 			});
-		} else {
-			// Call custom function with default prompt built from fresh context
-			const defaultPrompt = buildSystemPrompt({
+
+			// Reload prompt templates
+			this._promptTemplates = loadPromptTemplatesInternal({
 				cwd: this._cwd,
 				agentDir: this._agentDir,
-				contextFiles,
-				skills,
-				selectedTools: validToolNames,
 			});
-			newPrompt = this._customPrompt(defaultPrompt);
+
+			// Build base system prompt with fresh context
+			let newPrompt: string;
+
+			if (this._customPrompt === undefined) {
+				// Use default prompt with fresh context
+				newPrompt = buildSystemPrompt({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					contextFiles,
+					skills,
+					selectedTools: validToolNames,
+				});
+			} else if (typeof this._customPrompt === "string") {
+				// Build with custom string prompt
+				newPrompt = buildSystemPrompt({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					contextFiles,
+					skills,
+					selectedTools: validToolNames,
+					customPrompt: this._customPrompt,
+				});
+			} else {
+				// Call custom function with default prompt built from fresh context
+				const defaultPrompt = buildSystemPrompt({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					contextFiles,
+					skills,
+					selectedTools: validToolNames,
+				});
+				newPrompt = this._customPrompt(defaultPrompt);
+			}
+
+			// Validate prompt is non-empty before updating
+			if (!newPrompt || newPrompt.trim().length === 0) {
+				throw new Error("buildSystemPrompt returned empty prompt");
+			}
+
+			this._baseSystemPrompt = newPrompt;
+			this.agent.setSystemPrompt(this._baseSystemPrompt);
+		} catch (error) {
+			// Log error but don't fail the session
+			// Session will proceed with previous prompt
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			console.warn(`Warning: Failed to reload context on newSession(): ${errorMsg}`);
 		}
-
-		this._baseSystemPrompt = newPrompt;
-		this.agent.setSystemPrompt(this._baseSystemPrompt);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -926,43 +944,54 @@ export class AgentSession {
 	 * @returns true if completed, false if cancelled by extension
 	 */
 	async newSession(options?: NewSessionOptions): Promise<boolean> {
-		const previousSessionFile = this.sessionFile;
+		// Guard against concurrent newSession() calls
+		if (this._isNewSessionInProgress) {
+			console.warn("Warning: newSession() already in progress, ignoring concurrent call");
+			return false;
+		}
+		this._isNewSessionInProgress = true;
 
-		// Emit session_before_switch event with reason "new" (can be cancelled)
-		if (this._extensionRunner?.hasHandlers("session_before_switch")) {
-			const result = (await this._extensionRunner.emit({
-				type: "session_before_switch",
-				reason: "new",
-			})) as SessionBeforeSwitchResult | undefined;
+		try {
+			const previousSessionFile = this.sessionFile;
 
-			if (result?.cancel) {
-				return false;
+			// Emit session_before_switch event with reason "new" (can be cancelled)
+			if (this._extensionRunner?.hasHandlers("session_before_switch")) {
+				const result = (await this._extensionRunner.emit({
+					type: "session_before_switch",
+					reason: "new",
+				})) as SessionBeforeSwitchResult | undefined;
+
+				if (result?.cancel) {
+					return false;
+				}
 			}
+
+			this._disconnectFromAgent();
+			await this.abort();
+			this.agent.reset();
+			this.sessionManager.newSession(options);
+			this._steeringMessages = [];
+			this._followUpMessages = [];
+			this._pendingNextTurnMessages = [];
+			this._reconnectToAgent();
+
+			// Reload context files, skills, and prompt templates for fresh session
+			await this.reloadContext();
+
+			// Emit session_switch event with reason "new" to extensions
+			if (this._extensionRunner) {
+				await this._extensionRunner.emit({
+					type: "session_switch",
+					reason: "new",
+					previousSessionFile,
+				});
+			}
+
+			// Emit session event to custom tools
+			return true;
+		} finally {
+			this._isNewSessionInProgress = false;
 		}
-
-		this._disconnectFromAgent();
-		await this.abort();
-		this.agent.reset();
-		this.sessionManager.newSession(options);
-		this._steeringMessages = [];
-		this._followUpMessages = [];
-		this._pendingNextTurnMessages = [];
-		this._reconnectToAgent();
-
-		// Reload context files, skills, and prompt templates for fresh session
-		await this.reloadContext();
-
-		// Emit session_switch event with reason "new" to extensions
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_switch",
-				reason: "new",
-				previousSessionFile,
-			});
-		}
-
-		// Emit session event to custom tools
-		return true;
 	}
 
 	// =========================================================================
