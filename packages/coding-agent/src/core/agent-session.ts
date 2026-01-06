@@ -67,8 +67,10 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| {
 			type: "context_reloaded";
+			isInitial?: boolean;
 			contextFiles: Array<{ path: string }>;
 			skills: Array<{ filePath: string }>;
+			skillWarnings: Array<{ skillPath: string; message: string }>;
 			templates: Array<{ name: string; description?: string; source: string }>;
 			errors?: string[];
 	  };
@@ -260,7 +262,7 @@ export class AgentSession {
 			});
 
 			// Reload skills
-			const { skills } = loadSkills({
+			const { skills, warnings: skillWarnings } = loadSkills({
 				cwd: this._cwd,
 				agentDir: this._agentDir,
 				...this._skillsSettings,
@@ -295,6 +297,7 @@ export class AgentSession {
 				type: "context_reloaded",
 				contextFiles,
 				skills,
+				skillWarnings,
 				templates: this._promptTemplates,
 			});
 		} catch (error) {
@@ -308,6 +311,7 @@ export class AgentSession {
 				type: "context_reloaded",
 				contextFiles: [],
 				skills: [],
+				skillWarnings: [],
 				templates: [],
 				errors: [errorMsg],
 			});
@@ -488,6 +492,35 @@ export class AgentSession {
 	}
 
 	/**
+	 * Emit an event with initial loaded context data.
+	 * Should be called by the UI after subscribing to events to show initial state.
+	 */
+	emitInitialContextLoaded(): void {
+		// Load context files
+		const contextFiles = loadProjectContextFiles({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+		});
+
+		// Load skills
+		const { skills, warnings: skillWarnings } = loadSkills({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+			...this._skillsSettings,
+		});
+
+		// Emit event with initial data
+		this._emit({
+			type: "context_reloaded",
+			isInitial: true,
+			contextFiles,
+			skills,
+			skillWarnings,
+			templates: this._promptTemplates,
+		});
+	}
+
+	/**
 	 * Temporarily disconnect from agent events.
 	 * User listeners are preserved and will receive events again after resubscribe().
 	 * Used internally during operations that need to pause event processing.
@@ -619,16 +652,6 @@ export class AgentSession {
 	/** File-based prompt templates */
 	get promptTemplates(): ReadonlyArray<PromptTemplate> {
 		return this._promptTemplates;
-	}
-
-	/** Current working directory */
-	get cwd(): string {
-		return this._cwd;
-	}
-
-	/** Agent configuration directory */
-	get agentDir(): string {
-		return this._agentDir;
 	}
 
 	// =========================================================================

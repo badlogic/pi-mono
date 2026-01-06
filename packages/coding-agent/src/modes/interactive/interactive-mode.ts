@@ -37,10 +37,7 @@ import type {
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
-import { loadPromptTemplates } from "../../core/prompt-templates.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
-import { loadSkills } from "../../core/skills.js";
-import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -359,11 +356,14 @@ export class InteractiveMode {
 		const cwdBasename = path.basename(process.cwd());
 		this.ui.terminal.setTitle(`pi - ${cwdBasename}`);
 
+		// Subscribe to agent events before emitting initial context
+		this.subscribeToAgent();
+
+		// Emit initial loaded context event (triggers display in context_reloaded handler)
+		this.session.emitInitialContextLoaded();
+
 		// Initialize extensions with TUI-based UI context
 		await this.initExtensions();
-
-		// Subscribe to agent events
-		this.subscribeToAgent();
 
 		// Set up theme file watcher
 		onThemeChange(() => {
@@ -405,31 +405,6 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		// Show loaded project context files
-		const contextFiles = loadProjectContextFiles();
-		this.displayLoadedSection("Loaded context", contextFiles, (f) => f.path);
-
-		// Show loaded skills
-		const skillsSettings = this.session.skillsSettings;
-		if (skillsSettings?.enabled !== false) {
-			const { skills, warnings: skillWarnings } = loadSkills(skillsSettings ?? {});
-			this.displayLoadedSection("Loaded skills", skills, (s) => s.filePath);
-
-			// Show skill warnings if any
-			this.displayLoadedSection("Skill warnings", skillWarnings, (w) => `${w.skillPath}: ${w.message}`, "warning");
-		}
-
-		// Show loaded prompt templates
-		const templates = loadPromptTemplates({
-			cwd: this.session.cwd,
-			agentDir: this.session.agentDir,
-		});
-		this.displayLoadedSection(
-			"Loaded templates",
-			templates,
-			(t) => `${t.name}${t.description ? `: ${t.description}` : ""}`,
-		);
-
 		// Create and set extension UI context
 		const uiContext = this.createExtensionUIContext();
 		this.setExtensionUIContext(uiContext, true);
@@ -1382,13 +1357,23 @@ export class InteractiveMode {
 					);
 					this.chatContainer.addChild(new Spacer(1));
 				} else {
-					// Show successful reload with file lists (similar to startup)
-					this.displayLoadedSection("Reloaded context", event.contextFiles, (f) => f.path);
-					this.displayLoadedSection("Reloaded skills", event.skills, (s) => s.filePath);
+					// Show successful reload with file lists
+					// Use "Loaded" for initial load, "Reloaded" for subsequent reloads
+					const labelPrefix = event.isInitial ? "Loaded" : "Reloaded";
+					this.displayLoadedSection(`${labelPrefix} context`, event.contextFiles, (f) => f.path);
+					this.displayLoadedSection(`${labelPrefix} skills`, event.skills, (s) => s.filePath);
 					this.displayLoadedSection(
-						"Reloaded templates",
+						`${labelPrefix} templates`,
 						event.templates,
 						(t) => `${t.name}${t.description ? `: ${t.description}` : ""}`,
+					);
+
+					// Show skill warnings if any
+					this.displayLoadedSection(
+						"Skill warnings",
+						event.skillWarnings,
+						(w) => `${w.skillPath}: ${w.message}`,
+						"warning",
 					);
 				}
 				this.ui.requestRender();
