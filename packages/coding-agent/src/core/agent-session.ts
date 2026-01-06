@@ -515,6 +515,14 @@ export class AgentSession {
 		return this._promptTemplates;
 	}
 
+	/**
+	 * Replace prompt templates with new ones.
+	 * Used by /reload command to apply changes to /prompts/ directories.
+	 */
+	reloadPromptTemplates(newTemplates: PromptTemplate[]): void {
+		this._promptTemplates = newTemplates;
+	}
+
 	// =========================================================================
 	// Prompting
 	// =========================================================================
@@ -858,6 +866,49 @@ export class AgentSession {
 
 	get skillsSettings(): Required<SkillsSettings> | undefined {
 		return this._skillsSettings;
+	}
+
+	/**
+	 * Reload the system prompt with new content.
+	 * Used by /reload command to apply changes to AGENTS.md, skills, etc.
+	 */
+	reloadSystemPrompt(newSystemPrompt: string): void {
+		this._baseSystemPrompt = newSystemPrompt;
+		this.agent.setSystemPrompt(newSystemPrompt);
+	}
+
+	/**
+	 * Replace extension tools in the registry.
+	 * Built-in tools are preserved, extension tools are replaced.
+	 * Used by /reload command to apply changes to extensions.
+	 * Does NOT rebuild system prompt (caller is responsible for that).
+	 * @param newExtensionTools - New wrapped extension tools to register
+	 * @param builtInToolNames - Names of built-in tools to preserve
+	 */
+	replaceExtensionTools(newExtensionTools: AgentTool[], builtInToolNames: ReadonlySet<string>): void {
+		// Remove old extension tools (keep only built-in)
+		for (const name of this._toolRegistry.keys()) {
+			if (!builtInToolNames.has(name)) {
+				this._toolRegistry.delete(name);
+			}
+		}
+
+		// Add new extension tools
+		for (const tool of newExtensionTools) {
+			this._toolRegistry.set(tool.name, tool);
+		}
+
+		// Re-apply active tools to agent WITHOUT rebuilding system prompt
+		// (caller already set the system prompt with fresh context/skills)
+		const activeNames = this.getActiveToolNames();
+		const tools: AgentTool[] = [];
+		for (const name of activeNames) {
+			const tool = this._toolRegistry.get(name);
+			if (tool) {
+				tools.push(tool);
+			}
+		}
+		this.agent.setTools(tools);
 	}
 
 	/**

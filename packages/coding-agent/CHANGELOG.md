@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/reload` command to hot-reload AGENTS.md, skills, prompt templates, and extensions without restarting
+
 ### Fixed
 
 - Queued steering/follow-up messages no longer wipe unsent editor input ([#503](https://github.com/badlogic/pi-mono/pull/503) by [@tmustier](https://github.com/tmustier))

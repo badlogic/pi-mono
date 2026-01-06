@@ -38,6 +38,9 @@ export const allTools = {
 
 export type ToolName = keyof typeof allTools;
 
+/** Set of built-in tool names for filtering extension tools */
+export const builtInToolNames: ReadonlySet<string> = new Set(Object.keys(allTools));
+
 export interface ToolsOptions {
 	/** Options for the read tool */
 	read?: ReadToolOptions;

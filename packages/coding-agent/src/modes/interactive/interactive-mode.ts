@@ -26,19 +26,24 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
+import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
-import type {
-	ExtensionContext,
-	ExtensionRunner,
-	ExtensionUIContext,
-	LoadedExtension,
+import {
+	type ExtensionContext,
+	type ExtensionRunner,
+	type ExtensionUIContext,
+	type LoadedExtension,
+	loadExtensions,
+	wrapRegisteredTools,
+	wrapToolsWithExtensions,
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { loadPromptTemplates } from "../../core/prompt-templates.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
-import { loadProjectContextFiles } from "../../core/system-prompt.js";
+import { buildSystemPrompt, loadProjectContextFiles } from "../../core/system-prompt.js";
+import { builtInToolNames, type ToolName } from "../../core/tools/index.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -160,6 +165,29 @@ export class InteractiveMode {
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
 
+	// fd path for autocomplete (stored for reload)
+	private fdPath: string | undefined = undefined;
+
+	// Built-in slash commands (static, for autocomplete)
+	private static readonly builtInSlashCommands: SlashCommand[] = [
+		{ name: "settings", description: "Open settings menu" },
+		{ name: "model", description: "Select model (opens selector UI)" },
+		{ name: "export", description: "Export session to HTML file" },
+		{ name: "share", description: "Share session as a secret GitHub gist" },
+		{ name: "copy", description: "Copy last agent message to clipboard" },
+		{ name: "session", description: "Show session info and stats" },
+		{ name: "changelog", description: "Show changelog entries" },
+		{ name: "hotkeys", description: "Show all keyboard shortcuts" },
+		{ name: "branch", description: "Create a new branch from a previous message" },
+		{ name: "tree", description: "Navigate session tree (switch branches)" },
+		{ name: "login", description: "Login with OAuth provider" },
+		{ name: "logout", description: "Logout from OAuth provider" },
+		{ name: "new", description: "Start a new session" },
+		{ name: "compact", description: "Manually compact the session context" },
+		{ name: "resume", description: "Resume a different session" },
+		{ name: "reload", description: "Reload AGENTS.md, skills, and extensions" },
+	];
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -182,6 +210,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = version;
 		this.changelogMarkdown = changelogMarkdown;
+		this.fdPath = fdPath;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -194,29 +223,19 @@ export class InteractiveMode {
 		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
-		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = [
-			{ name: "settings", description: "Open settings menu" },
-			{ name: "model", description: "Select model (opens selector UI)" },
-			{ name: "export", description: "Export session to HTML file" },
-			{ name: "share", description: "Share session as a secret GitHub gist" },
-			{ name: "copy", description: "Copy last agent message to clipboard" },
-			{ name: "session", description: "Show session info and stats" },
-			{ name: "changelog", description: "Show changelog entries" },
-			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
-			{ name: "branch", description: "Create a new branch from a previous message" },
-			{ name: "tree", description: "Navigate session tree (switch branches)" },
-			{ name: "login", description: "Login with OAuth provider" },
-			{ name: "logout", description: "Logout from OAuth provider" },
-			{ name: "new", description: "Start a new session" },
-			{ name: "compact", description: "Manually compact the session context" },
-			{ name: "resume", description: "Resume a different session" },
-		];
-
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
-		// Convert prompt templates to SlashCommand format for autocomplete
+		// Setup autocomplete with built-in, template, and extension commands
+		this.updateAutocomplete();
+	}
+
+	/**
+	 * Update autocomplete provider with current commands.
+	 * Called on init and after /reload to pick up new extension commands.
+	 */
+	private updateAutocomplete(): void {
+		// Convert prompt templates to SlashCommand format
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
 			name: cmd.name,
 			description: cmd.description,
@@ -232,9 +251,9 @@ export class InteractiveMode {
 
 		// Setup autocomplete
 		const autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands],
+			[...InteractiveMode.builtInSlashCommands, ...templateCommands, ...extensionCommands],
 			process.cwd(),
-			fdPath,
+			this.fdPath,
 		);
 		this.editor.setAutocompleteProvider(autocompleteProvider);
 	}
@@ -425,7 +444,37 @@ export class InteractiveMode {
 			return; // No extensions loaded
 		}
 
-		extensionRunner.initialize({
+		extensionRunner.initialize(this.createExtensionInitializeOptions(uiContext));
+
+		// Subscribe to extension errors
+		extensionRunner.onError((error) => {
+			this.showExtensionError(error.extensionPath, error.error, error.stack);
+		});
+
+		// Set up extension-registered shortcuts
+		this.setupExtensionShortcuts(extensionRunner);
+
+		// Show loaded extensions
+		const extensionPaths = extensionRunner.getExtensionPaths();
+		if (extensionPaths.length > 0) {
+			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Emit session_start event
+		await extensionRunner.emit({
+			type: "session_start",
+		});
+	}
+
+	/**
+	 * Create extension initialize options. Used by initializeExtensions and handleReloadCommand.
+	 */
+	private createExtensionInitializeOptions(
+		uiContext: ExtensionUIContext,
+	): Parameters<ExtensionRunner["initialize"]>[0] {
+		return {
 			getModel: () => this.session.model,
 			sendMessageHandler: (message, options) => {
 				const wasStreaming = this.session.isStreaming;
@@ -524,28 +573,7 @@ export class InteractiveMode {
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			uiContext,
 			hasUI: true,
-		});
-
-		// Subscribe to extension errors
-		extensionRunner.onError((error) => {
-			this.showExtensionError(error.extensionPath, error.error, error.stack);
-		});
-
-		// Set up extension-registered shortcuts
-		this.setupExtensionShortcuts(extensionRunner);
-
-		// Show loaded extensions
-		const extensionPaths = extensionRunner.getExtensionPaths();
-		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
-
-		// Emit session_start event
-		await extensionRunner.emit({
-			type: "session_start",
-		});
+		};
 	}
 
 	/**
@@ -1072,6 +1100,11 @@ export class InteractiveMode {
 			if (text === "/resume") {
 				this.showSessionSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/reload") {
+				this.editor.setText("");
+				await this.handleReloadCommand();
 				return;
 			}
 			if (text === "/quit" || text === "/exit") {
@@ -2718,6 +2751,104 @@ export class InteractiveMode {
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+		this.ui.requestRender();
+	}
+
+	private async handleReloadCommand(): Promise<void> {
+		// Prevent reload during streaming
+		if (this.session.isStreaming) {
+			this.showWarning("Cannot reload while streaming. Wait or press Esc first.");
+			return;
+		}
+
+		const reloadedItems: string[] = [];
+
+		// 1. Reload context files (AGENTS.md, etc.)
+		const contextFiles = loadProjectContextFiles();
+		reloadedItems.push(`${contextFiles.length} context file(s)`);
+
+		// 2. Reload prompt templates
+		const promptTemplates = loadPromptTemplates({ cwd: process.cwd(), agentDir: getAgentDir() });
+		this.session.reloadPromptTemplates(promptTemplates);
+		reloadedItems.push(`${promptTemplates.length} template(s)`);
+
+		// 3. Reload skills
+		const skillsSettings = this.session.skillsSettings;
+		const { skills } = loadSkills(skillsSettings ?? {});
+		reloadedItems.push(`${skills.length} skill(s)`);
+
+		// 4. Rebuild system prompt with fresh context and skills
+		const newSystemPrompt = buildSystemPrompt({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			skills,
+			contextFiles,
+			selectedTools: this.session.getActiveToolNames() as ToolName[],
+		});
+		this.session.reloadSystemPrompt(newSystemPrompt);
+
+		// 5. Reload extensions
+		const extensionRunner = this.session.extensionRunner;
+		if (extensionRunner) {
+			const paths = extensionRunner.getExtensionPaths();
+			if (paths.length > 0) {
+				const result = await loadExtensions(paths, process.cwd());
+				extensionRunner.replaceExtensions(result.extensions);
+
+				// Re-initialize extension handlers using shared helper
+				const uiContext = this.createExtensionUIContext();
+				extensionRunner.initialize(this.createExtensionInitializeOptions(uiContext));
+
+				// Re-setup extension shortcuts
+				this.setupExtensionShortcuts(extensionRunner);
+
+				// 6. Reload extension tools
+				const registeredTools = extensionRunner.getAllRegisteredTools();
+				if (registeredTools.length > 0) {
+					// Create context getter for tool wrapping
+					const getContext = (): ExtensionContext => ({
+						ui: uiContext,
+						hasUI: true,
+						cwd: process.cwd(),
+						sessionManager: this.sessionManager,
+						modelRegistry: this.session.modelRegistry,
+						model: this.session.model,
+						isIdle: () => !this.session.isStreaming,
+						hasPendingMessages: () => this.session.pendingMessageCount > 0,
+						abort: () => this.session.abort(),
+					});
+
+					// Wrap registered tools
+					let wrappedTools = wrapRegisteredTools(registeredTools, getContext);
+
+					// Wrap with extension callbacks
+					wrappedTools = wrapToolsWithExtensions(wrappedTools, extensionRunner);
+
+					// Update session tool registry
+					this.session.replaceExtensionTools(wrappedTools, builtInToolNames);
+
+					reloadedItems.push(`${registeredTools.length} tool(s)`);
+				}
+
+				reloadedItems.push(`${result.extensions.length} extension(s)`);
+
+				// Show extension errors if any
+				if (result.errors.length > 0) {
+					for (const err of result.errors) {
+						this.showExtensionError(err.path, err.error);
+					}
+				}
+			}
+		}
+
+		// Update autocomplete to pick up new extension commands
+		this.updateAutocomplete();
+
+		// Show success message
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(
+			new Text(`${theme.fg("accent", "✓ Reloaded:")} ${theme.fg("muted", reloadedItems.join(", "))}`, 1, 1),
+		);
 		this.ui.requestRender();
 	}
 

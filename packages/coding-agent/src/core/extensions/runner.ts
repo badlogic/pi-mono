@@ -106,6 +106,13 @@ export class ExtensionRunner {
 		this.modelRegistry = modelRegistry;
 	}
 
+	/**
+	 * Replace all extensions with new ones. Used by /reload command.
+	 */
+	replaceExtensions(newExtensions: LoadedExtension[]): void {
+		this.extensions = newExtensions;
+	}
+
 	initialize(options: {
 		getModel: () => Model<any> | undefined;
 		sendMessageHandler: SendMessageHandler;
