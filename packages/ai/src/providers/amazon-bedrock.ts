@@ -8,6 +8,7 @@ import {
 	type ContentBlockStopEvent,
 	ConversationRole,
 	ConverseStreamCommand,
+	type ConverseStreamMetadataEvent,
 	ImageFormat,
 	type Message,
 	type ToolChoice,
@@ -98,14 +99,8 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 					handleContentBlockStop(item.contentBlockStop, blocks, output, stream);
 				} else if (item.messageStop) {
 					output.stopReason = mapStopReason(item.messageStop.stopReason);
-				} else if (item.metadata?.usage) {
-					const usage = item.metadata.usage;
-					output.usage.input = usage.inputTokens || 0;
-					output.usage.output = usage.outputTokens || 0;
-					output.usage.cacheRead = usage.cacheReadInputTokens || 0;
-					output.usage.cacheWrite = usage.cacheWriteInputTokens || 0;
-					output.usage.totalTokens = usage.totalTokens || output.usage.input + output.usage.output;
-					calculateCost(model, output.usage);
+				} else if (item.metadata) {
+					handleMetadata(item.metadata, model, output);
 				} else if (item.internalServerException) {
 					throw new Error(`Internal server error: ${item.internalServerException.message}`);
 				} else if (item.modelStreamErrorException) {
@@ -222,6 +217,21 @@ function handleContentBlockDelta(
 					(thinkingBlock.thinkingSignature || "") + delta.reasoningContent.signature;
 			}
 		}
+	}
+}
+
+function handleMetadata(
+	event: ConverseStreamMetadataEvent,
+	model: Model<"bedrock-converse-stream">,
+	output: AssistantMessage,
+): void {
+	if (event.usage) {
+		output.usage.input = event.usage.inputTokens || 0;
+		output.usage.output = event.usage.outputTokens || 0;
+		output.usage.cacheRead = event.usage.cacheReadInputTokens || 0;
+		output.usage.cacheWrite = event.usage.cacheWriteInputTokens || 0;
+		output.usage.totalTokens = event.usage.totalTokens || output.usage.input + output.usage.output;
+		calculateCost(model, output.usage);
 	}
 }
 
