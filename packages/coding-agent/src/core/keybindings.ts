@@ -22,6 +22,8 @@ export type AppAction =
 	| "cycleThinkingLevel"
 	| "cycleModelForward"
 	| "cycleModelBackward"
+	| "cycleFavoriteForward"
+	| "cycleFavoriteBackward"
 	| "selectModel"
 	| "expandTools"
 	| "toggleThinking"
@@ -51,6 +53,8 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	cycleThinkingLevel: "shift+tab",
 	cycleModelForward: "ctrl+p",
 	cycleModelBackward: "shift+ctrl+p",
+	cycleFavoriteForward: "alt+p",
+	cycleFavoriteBackward: "shift+alt+p",
 	selectModel: "ctrl+l",
 	expandTools: "ctrl+o",
 	toggleThinking: "ctrl+t",
@@ -75,6 +79,8 @@ const APP_ACTIONS: AppAction[] = [
 	"cycleThinkingLevel",
 	"cycleModelForward",
 	"cycleModelBackward",
+	"cycleFavoriteForward",
+	"cycleFavoriteBackward",
 	"selectModel",
 	"expandTools",
 	"toggleThinking",

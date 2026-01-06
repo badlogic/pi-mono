@@ -58,6 +58,7 @@ export interface Settings {
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
+	favoriteModels?: string[]; // Favorite models for Alt+P cycling (format: "provider/model:thinkingLevel")
 	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
 }
 
@@ -146,6 +147,9 @@ export class SettingsManager {
 		if ("queueMode" in settings && !("steeringMode" in settings)) {
 			settings.steeringMode = settings.queueMode;
 			delete settings.queueMode;
+		}
+		if (Array.isArray(settings.favoriteModels)) {
+			settings.favoriteModels = SettingsManager.normalizeFavoriteModels(settings.favoriteModels);
 		}
 		return settings as Settings;
 	}
@@ -413,6 +417,129 @@ export class SettingsManager {
 
 	getEnabledModels(): string[] | undefined {
 		return this.settings.enabledModels;
+	}
+
+	private static readonly VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+	private static getFavoritePrefix(key: string): string | null {
+		const colonIndex = key.lastIndexOf(":");
+		const modelPart = colonIndex !== -1 ? key.substring(0, colonIndex) : key;
+		if (!modelPart.includes("/")) return null;
+		return modelPart;
+	}
+
+	private static normalizeFavoriteModels(favorites: string[] | undefined): string[] {
+		if (!favorites) return [];
+		const normalized: string[] = [];
+		const seen = new Set<string>();
+
+		for (const favorite of favorites) {
+			const prefix = SettingsManager.getFavoritePrefix(favorite);
+			if (!prefix) {
+				normalized.push(favorite);
+				continue;
+			}
+			if (seen.has(prefix)) continue;
+			seen.add(prefix);
+			normalized.push(favorite);
+		}
+
+		return normalized;
+	}
+
+	private isValidFavoriteKey(key: string): boolean {
+		const colonIndex = key.lastIndexOf(":");
+		const modelPart = colonIndex !== -1 ? key.substring(0, colonIndex) : key;
+		const levelPart = colonIndex !== -1 ? key.substring(colonIndex + 1) : null;
+
+		if (!modelPart.includes("/")) return false;
+		if (levelPart !== null && !SettingsManager.VALID_THINKING_LEVELS.includes(levelPart)) return false;
+
+		return true;
+	}
+
+	/**
+	 * Get effective favorites (merged: global + project settings).
+	 * Use getGlobalFavoriteModels() if you need only user-configured favorites.
+	 */
+	getFavoriteModels(): string[] {
+		return SettingsManager.normalizeFavoriteModels(this.settings.favoriteModels);
+	}
+
+	/**
+	 * Get only global favorites (excludes project-level favorites).
+	 * These are the favorites the user can add/remove via UI.
+	 */
+	getGlobalFavoriteModels(): string[] {
+		return SettingsManager.normalizeFavoriteModels(this.globalSettings.favoriteModels);
+	}
+
+	/**
+	 * Add a favorite model to global settings.
+	 * @param modelKey Format: "provider/modelId" or "provider/modelId:thinkingLevel"
+	 * @returns true if valid and added, false if invalid format
+	 */
+	addFavoriteModel(modelKey: string): boolean {
+		if (!this.isValidFavoriteKey(modelKey)) {
+			return false;
+		}
+		const favorites = this.globalSettings.favoriteModels ?? [];
+		const prefix = SettingsManager.getFavoritePrefix(modelKey);
+		if (!prefix) {
+			return false;
+		}
+		const withoutDuplicates = favorites.filter((favorite) => SettingsManager.getFavoritePrefix(favorite) !== prefix);
+		if (withoutDuplicates.length === favorites.length && favorites.includes(modelKey)) {
+			return true;
+		}
+		this.globalSettings.favoriteModels = [...withoutDuplicates, modelKey];
+		this.save();
+		return true;
+	}
+
+	removeFavoriteModel(modelKey: string): void {
+		const favorites = this.globalSettings.favoriteModels ?? [];
+		const prefix = SettingsManager.getFavoritePrefix(modelKey);
+		const updated = prefix
+			? favorites.filter((favorite) => SettingsManager.getFavoritePrefix(favorite) !== prefix)
+			: favorites.filter((favorite) => favorite !== modelKey);
+		if (updated.length !== favorites.length) {
+			this.globalSettings.favoriteModels = updated;
+			this.save();
+		}
+	}
+
+	/**
+	 * Check if a model key matches a favorite (prefix-based matching).
+	 * Handles both "provider/model" and "provider/model:thinkingLevel" formats.
+	 */
+	isFavoriteModel(provider: string, modelId: string): boolean {
+		const favorites = this.settings.favoriteModels ?? [];
+		const prefix = `${provider}/${modelId}`;
+		return favorites.some((fav) => fav === prefix || fav.startsWith(`${prefix}:`));
+	}
+
+	/**
+	 * Check if a favorite is from project settings (read-only from UI).
+	 */
+	isFavoriteFromProject(provider: string, modelId: string): boolean {
+		const prefix = `${provider}/${modelId}`;
+		const globalFavorites = this.globalSettings.favoriteModels ?? [];
+		const mergedFavorites = this.settings.favoriteModels ?? [];
+
+		// If it's in merged but not in global, it came from project
+		const inMerged = mergedFavorites.some((fav) => fav === prefix || fav.startsWith(`${prefix}:`));
+		const inGlobal = globalFavorites.some((fav) => fav === prefix || fav.startsWith(`${prefix}:`));
+		return inMerged && !inGlobal;
+	}
+
+	/**
+	 * Find and return the exact favorite key for a provider/model if it exists in global settings.
+	 */
+	findGlobalFavoriteKey(provider: string, modelId: string): string | undefined {
+		const favorites = this.globalSettings.favoriteModels ?? [];
+		const prefix = `${provider}/${modelId}`;
+		return favorites.find((fav) => fav === prefix || fav.startsWith(`${prefix}:`));
 	}
 
 	getDoubleEscapeAction(): "branch" | "tree" {

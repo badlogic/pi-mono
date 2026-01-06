@@ -266,6 +266,8 @@ export class InteractiveMode {
 		const cycleThinkingLevel = formatStartupKey(kb.getKeys("cycleThinkingLevel"));
 		const cycleModelForward = formatStartupKey(kb.getKeys("cycleModelForward"));
 		const cycleModelBackward = formatStartupKey(kb.getKeys("cycleModelBackward"));
+		const cycleFavoriteForward = formatStartupKey(kb.getKeys("cycleFavoriteForward"));
+		const cycleFavoriteBackward = formatStartupKey(kb.getKeys("cycleFavoriteBackward"));
 		const selectModel = formatStartupKey(kb.getKeys("selectModel"));
 		const expandTools = formatStartupKey(kb.getKeys("expandTools"));
 		const toggleThinking = formatStartupKey(kb.getKeys("toggleThinking"));
@@ -296,6 +298,9 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", `${cycleModelForward}/${cycleModelBackward}`) +
 			theme.fg("muted", " to cycle models") +
+			"\n" +
+			theme.fg("dim", `${cycleFavoriteForward}/${cycleFavoriteBackward}`) +
+			theme.fg("muted", " to cycle favorites") +
 			"\n" +
 			theme.fg("dim", selectModel) +
 			theme.fg("muted", " to select model") +
@@ -981,6 +986,8 @@ export class InteractiveMode {
 		this.editor.onAction("cycleThinkingLevel", () => this.cycleThinkingLevel());
 		this.editor.onAction("cycleModelForward", () => this.cycleModel("forward"));
 		this.editor.onAction("cycleModelBackward", () => this.cycleModel("backward"));
+		this.editor.onAction("cycleFavoriteForward", () => this.cycleFavoriteModel("forward"));
+		this.editor.onAction("cycleFavoriteBackward", () => this.cycleFavoriteModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
@@ -1746,6 +1753,23 @@ export class InteractiveMode {
 		}
 	}
 
+	private async cycleFavoriteModel(direction: "forward" | "backward"): Promise<void> {
+		try {
+			const result = await this.session.cycleFavoriteModel(direction);
+			if (result === undefined) {
+				this.showStatus("No favorite models configured (use * in /model to add)");
+			} else {
+				this.footer.invalidate();
+				this.updateEditorBorderColor();
+				const thinkingStr =
+					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
+				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
+			}
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
 	private toggleToolOutputExpansion(): void {
 		this.toolOutputExpanded = !this.toolOutputExpanded;
 		for (const child of this.chatContainer.children) {
@@ -2102,8 +2126,10 @@ export class InteractiveMode {
 			const selector = new ModelSelectorComponent(
 				this.ui,
 				this.session.model,
+				this.session.thinkingLevel,
 				this.settingsManager,
 				this.session.modelRegistry,
+				this.keybindings,
 				this.session.scopedModels,
 				async (model) => {
 					try {
@@ -2673,6 +2699,7 @@ export class InteractiveMode {
 		const suspend = this.getAppKeyDisplay("suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("cycleThinkingLevel");
 		const cycleModelForward = this.getAppKeyDisplay("cycleModelForward");
+		const cycleFavoriteForward = this.getAppKeyDisplay("cycleFavoriteForward");
 		const expandTools = this.getAppKeyDisplay("expandTools");
 		const toggleThinking = this.getAppKeyDisplay("toggleThinking");
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
@@ -2706,6 +2733,7 @@ export class InteractiveMode {
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` | Cycle models |
+| \`${cycleFavoriteForward}\` | Cycle favorite models |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |

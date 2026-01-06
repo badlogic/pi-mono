@@ -1012,6 +1012,122 @@ export class AgentSession {
 		return this._modelRegistry.getAvailable();
 	}
 
+	/**
+	 * Cycle through favorite models.
+	 * When --models scope is active, only favorites within that scope are cycled.
+	 * Returns undefined if no favorites are configured or none are valid.
+	 */
+	async cycleFavoriteModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | undefined> {
+		const favoriteKeys = this.settingsManager.getFavoriteModels();
+		if (favoriteKeys.length === 0) return undefined;
+
+		let favorites = await this._parseFavoriteModels(favoriteKeys);
+		if (favorites.length === 0) return undefined;
+
+		// When --models scope is active, filter favorites to only those in scope
+		const isScoped = this._scopedModels.length > 0;
+		if (isScoped) {
+			favorites = favorites.filter((fav) => this._scopedModels.some((sm) => modelsAreEqual(sm.model, fav.model)));
+			if (favorites.length === 0) return undefined;
+		}
+
+		// For single favorite, switch to it if not already on it
+		if (favorites.length === 1) {
+			const fav = favorites[0];
+			// Clamp thinking level to what the target model actually supports before comparing
+			const favAvailableLevels = this._getAvailableThinkingLevelsForModel(fav.model);
+			const effectiveFavThinkingLevel = favAvailableLevels.includes(fav.thinkingLevel)
+				? fav.thinkingLevel
+				: this._clampThinkingLevel(fav.thinkingLevel, favAvailableLevels);
+			if (modelsAreEqual(fav.model, this.model) && this.thinkingLevel === effectiveFavThinkingLevel) {
+				// Already on this model with same thinking level - no change needed
+				return { model: fav.model, thinkingLevel: this.thinkingLevel, isScoped };
+			}
+			this.agent.setModel(fav.model);
+			this.sessionManager.appendModelChange(fav.model.provider, fav.model.id);
+			this.settingsManager.setDefaultModelAndProvider(fav.model.provider, fav.model.id);
+			this.setThinkingLevel(fav.thinkingLevel);
+			return { model: fav.model, thinkingLevel: this.thinkingLevel, isScoped };
+		}
+
+		const currentModel = this.model;
+		let currentIndex = favorites.findIndex((f) => modelsAreEqual(f.model, currentModel));
+		if (currentIndex === -1) {
+			currentIndex = direction === "forward" ? -1 : 0;
+		}
+
+		const len = favorites.length;
+
+		// API key was already validated in _parseFavoriteModels, so this should not fail
+		// but check defensively anyway - loop through favorites to find one with valid API key
+		for (let attempt = 0; attempt < len; attempt++) {
+			const nextIndex =
+				direction === "forward" ? (currentIndex + 1 + attempt) % len : (currentIndex - 1 - attempt + len * 2) % len;
+			const next = favorites[nextIndex];
+
+			const apiKey = await this._modelRegistry.getApiKey(next.model);
+			if (!apiKey) {
+				// Skip this favorite and try the next one
+				continue;
+			}
+
+			this.agent.setModel(next.model);
+			this.sessionManager.appendModelChange(next.model.provider, next.model.id);
+			this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
+			this.setThinkingLevel(next.thinkingLevel);
+
+			return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped };
+		}
+
+		// No favorites with valid API keys found
+		return undefined;
+	}
+
+	private async _parseFavoriteModels(
+		favoriteKeys: string[],
+	): Promise<Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>> {
+		const results: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
+
+		for (const key of favoriteKeys) {
+			const parsed = this._parseFavoriteKey(key);
+			if (!parsed) continue;
+
+			const model = this._modelRegistry.find(parsed.provider, parsed.modelId);
+			if (model) {
+				const apiKey = await this._modelRegistry.getApiKey(model);
+				if (apiKey) {
+					results.push({ model, thinkingLevel: parsed.thinkingLevel });
+				}
+			}
+		}
+
+		return results;
+	}
+
+	private _parseFavoriteKey(key: string): { provider: string; modelId: string; thinkingLevel: ThinkingLevel } | null {
+		// Format: "provider/modelId:thinkingLevel" or "provider/modelId"
+		const colonIndex = key.lastIndexOf(":");
+		let modelPart = key;
+		let thinkingLevel: ThinkingLevel = "off";
+
+		if (colonIndex !== -1) {
+			modelPart = key.substring(0, colonIndex);
+			const levelStr = key.substring(colonIndex + 1);
+			if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(levelStr)) {
+				thinkingLevel = levelStr as ThinkingLevel;
+			}
+		}
+
+		const slashIndex = modelPart.indexOf("/");
+		if (slashIndex === -1) return null;
+
+		return {
+			provider: modelPart.substring(0, slashIndex),
+			modelId: modelPart.substring(slashIndex + 1),
+			thinkingLevel,
+		};
+	}
+
 	// =========================================================================
 	// Thinking Level Management
 	// =========================================================================
@@ -1066,6 +1182,11 @@ export class AgentSession {
 	 */
 	supportsThinking(): boolean {
 		return !!this.model?.reasoning;
+	}
+
+	private _getAvailableThinkingLevelsForModel(model: Model<any>): ThinkingLevel[] {
+		if (!model.reasoning) return ["off"];
+		return supportsXhigh(model) ? THINKING_LEVELS_WITH_XHIGH : THINKING_LEVELS;
 	}
 
 	private _clampThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {

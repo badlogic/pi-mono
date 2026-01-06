@@ -297,7 +297,8 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+Z | Suspend to background (use `fg` in shell to resume) |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P / Shift+Ctrl+P | Cycle models forward/backward (scoped by `--models`) |
-| Ctrl+L | Open model selector |
+| Alt+P / Shift+Alt+P | Cycle favorite models forward/backward |
+| Ctrl+L | Open model selector (press `*` to toggle favorite) |
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
