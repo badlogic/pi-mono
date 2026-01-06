@@ -999,7 +999,7 @@ export class InteractiveMode {
 				return;
 			}
 			if (text.startsWith("/export")) {
-				this.handleExportCommand(text);
+				await this.handleExportCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -2402,12 +2402,12 @@ export class InteractiveMode {
 	// Command handlers
 	// =========================================================================
 
-	private handleExportCommand(text: string): void {
+	private async handleExportCommand(text: string): Promise<void> {
 		const parts = text.split(/\s+/);
 		const outputPath = parts.length > 1 ? parts[1] : undefined;
 
 		try {
-			const filePath = this.session.exportToHtml(outputPath);
+			const filePath = await this.session.exportToHtml(outputPath);
 			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -2430,7 +2430,7 @@ export class InteractiveMode {
 		// Export to a temp file
 		const tmpFile = path.join(os.tmpdir(), "session.html");
 		try {
-			this.session.exportToHtml(tmpFile);
+			await this.session.exportToHtml(tmpFile);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 			return;

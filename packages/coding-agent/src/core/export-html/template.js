@@ -12,7 +12,7 @@
         bytes[i] = binary.charCodeAt(i);
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const { header, entries, leafId: defaultLeafId, systemPrompt, tools } = data;
+      const { header, entries, leafId: defaultLeafId, systemPrompt, providerSystemPrompt, tools } = data;
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -1060,7 +1060,32 @@
             </div>
           </div>`;
 
-        if (systemPrompt) {
+        // Render provider-injected system prompt (e.g., Codex) if present
+        if (providerSystemPrompt) {
+          const lines = providerSystemPrompt.content.split('\n');
+          const previewLines = 10;
+          const noteHtml = providerSystemPrompt.note 
+            ? `<div class="system-prompt-note">${escapeHtml(providerSystemPrompt.note)}</div>` 
+            : '';
+          if (lines.length > previewLines) {
+            const preview = lines.slice(0, previewLines).join('\n');
+            const remaining = lines.length - previewLines;
+            html += `<div class="system-prompt provider-prompt expandable" onclick="this.classList.toggle('expanded')">
+              <div class="system-prompt-header">${escapeHtml(providerSystemPrompt.title)}</div>
+              ${noteHtml}
+              <div class="system-prompt-preview">${escapeHtml(preview)}</div>
+              <div class="system-prompt-expand-hint">... (${remaining} more lines, click to expand)</div>
+              <div class="system-prompt-full">${escapeHtml(providerSystemPrompt.content)}</div>
+            </div>`;
+          } else {
+            html += `<div class="system-prompt provider-prompt">
+              <div class="system-prompt-header">${escapeHtml(providerSystemPrompt.title)}</div>
+              ${noteHtml}
+              <div class="system-prompt-full" style="display: block">${escapeHtml(providerSystemPrompt.content)}</div>
+            </div>`;
+          }
+        } else if (systemPrompt) {
+          // Standard system prompt (non-Codex providers)
           const lines = systemPrompt.split('\n');
           const previewLines = 10;
           if (lines.length > previewLines) {

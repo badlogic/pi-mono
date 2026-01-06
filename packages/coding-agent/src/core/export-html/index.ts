@@ -1,4 +1,5 @@
 import type { AgentState } from "@mariozechner/pi-agent-core";
+import { buildCodexPiBridge, getCodexInstructions, getModelFamily } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
@@ -8,6 +9,47 @@ import { SessionManager } from "../session-manager.js";
 export interface ExportOptions {
 	outputPath?: string;
 	themeName?: string;
+}
+
+interface ProviderSystemPrompt {
+	title: string;
+	content: string;
+	note?: string;
+}
+
+/**
+ * Build the provider-specific system prompt for display in exports.
+ * Currently only supports OpenAI Codex provider.
+ */
+async function buildProviderSystemPrompt(state?: AgentState): Promise<ProviderSystemPrompt | undefined> {
+	if (!state?.model || state.model.provider !== "openai-codex") {
+		return undefined;
+	}
+
+	let instructions: string | null = null;
+	try {
+		instructions = await getCodexInstructions(state.model.id);
+	} catch {
+		// Cache miss or fetch failed - that's fine
+	}
+
+	const bridgeText = buildCodexPiBridge(state.tools);
+	const userPrompt = state.systemPrompt || "";
+	const modelFamily = getModelFamily(state.model.id);
+
+	const instructionsText =
+		instructions || "(Codex instructions not cached. Run a Codex request to populate the local cache.)";
+	const note = instructions
+		? `Injected by the OpenAI Codex provider for model family "${modelFamily}" (instructions + bridge + user system prompt).`
+		: "Codex instructions unavailable; showing bridge and user system prompt only.";
+
+	const content = `# Codex Instructions\n${instructionsText}\n\n# Codex-Pi Bridge\n${bridgeText}\n\n# User System Prompt\n${userPrompt || "(empty)"}`;
+
+	return {
+		title: "Injected Prompt (OpenAI Codex)",
+		content,
+		note,
+	};
 }
 
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
@@ -103,6 +145,7 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
+	providerSystemPrompt?: ProviderSystemPrompt;
 	tools?: { name: string; description: string }[];
 }
 
@@ -146,7 +189,11 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
  * Export session to HTML using SessionManager and AgentState.
  * Used by TUI's /export command.
  */
-export function exportSessionToHtml(sm: SessionManager, state?: AgentState, options?: ExportOptions | string): string {
+export async function exportSessionToHtml(
+	sm: SessionManager,
+	state?: AgentState,
+	options?: ExportOptions | string,
+): Promise<string> {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	const sessionFile = sm.getSessionFile();
@@ -162,6 +209,7 @@ export function exportSessionToHtml(sm: SessionManager, state?: AgentState, opti
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
+		providerSystemPrompt: await buildProviderSystemPrompt(state),
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
 	};
 
@@ -195,6 +243,7 @@ export function exportFromFile(inputPath: string, options?: ExportOptions | stri
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: undefined,
+		providerSystemPrompt: undefined,
 		tools: undefined,
 	};
 

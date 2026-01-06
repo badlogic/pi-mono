@@ -593,6 +593,17 @@
       display: block;
     }
 
+    .system-prompt.provider-prompt {
+      border-left: 3px solid var(--warning);
+    }
+
+    .system-prompt-note {
+      font-size: 10px;
+      font-style: italic;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
     /* Tools list */
     .tools-list {
       background: var(--customMessageBg);
