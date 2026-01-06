@@ -25,6 +25,7 @@ export interface SettingsConfig {
 	autoCompact: boolean;
 	showImages: boolean;
 	autoResizeImages: boolean;
+	blockImages: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
@@ -40,6 +41,7 @@ export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
+	onBlockImagesChange: (blocked: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
@@ -243,6 +245,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Block images toggle (always available, insert after auto-resize-images)
+		const autoResizeIndex = items.findIndex((item) => item.id === "auto-resize-images");
+		items.splice(autoResizeIndex + 1, 0, {
+			id: "block-images",
+			label: "Block images",
+			description: "Prevent images from being sent to LLM providers",
+			currentValue: config.blockImages ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -260,6 +272,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "auto-resize-images":
 						callbacks.onAutoResizeImagesChange(newValue === "true");
+						break;
+					case "block-images":
+						callbacks.onBlockImagesChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
