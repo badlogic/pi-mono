@@ -294,27 +294,46 @@ function convertMessages(context: Context): Message[] {
 								}),
 				});
 				break;
-			case "assistant":
+			case "assistant": {
+				// Skip assistant messages with empty content (e.g., from aborted requests)
+				// Bedrock rejects messages with empty content arrays
+				if (m.content.length === 0) {
+					continue;
+				}
+				const contentBlocks: ContentBlock[] = [];
+				for (const c of m.content) {
+					switch (c.type) {
+						case "text":
+							// Skip empty text blocks
+							if (c.text.trim().length === 0) continue;
+							contentBlocks.push({ text: c.text });
+							break;
+						case "toolCall":
+							contentBlocks.push({
+								toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
+							});
+							break;
+						case "thinking":
+							// Skip empty thinking blocks
+							if (c.thinking.trim().length === 0) continue;
+							contentBlocks.push({
+								reasoningContent: { reasoningText: { text: c.thinking, signature: c.thinkingSignature } },
+							});
+							break;
+						default:
+							throw new Error("Unknown assistant content type");
+					}
+				}
+				// Skip if all content blocks were filtered out
+				if (contentBlocks.length === 0) {
+					continue;
+				}
 				result.push({
 					role: ConversationRole.ASSISTANT,
-					content: m.content.map((c) => {
-						switch (c.type) {
-							case "text":
-								return { text: c.text };
-							case "toolCall":
-								return {
-									toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
-								};
-							case "thinking":
-								return {
-									reasoningContent: { reasoningText: { text: c.thinking, signature: c.thinkingSignature } },
-								};
-							default:
-								throw new Error("Unknown assistant content type");
-						}
-					}),
+					content: contentBlocks,
 				});
 				break;
+			}
 			case "toolResult": {
 				// Collect all consecutive toolResult messages into a single user message
 				// Bedrock requires all tool results to be in one message
