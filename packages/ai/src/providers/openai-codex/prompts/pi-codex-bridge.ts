@@ -3,7 +3,63 @@
  * Aligns Codex CLI expectations with Pi's toolset.
  */
 
-export const CODEX_PI_BRIDGE = `# Codex Running in Pi
+export interface CodexToolInfo {
+	name: string;
+	description?: string;
+}
+
+const DEFAULT_TOOL_INFOS: CodexToolInfo[] = [
+	{ name: "read", description: "Read file contents" },
+	{ name: "bash", description: "Execute bash commands" },
+	{ name: "edit", description: "Modify files with exact find/replace (requires prior read)" },
+	{ name: "write", description: "Create or overwrite files" },
+	{ name: "grep", description: "Search file contents (read-only)" },
+	{ name: "find", description: "Find files by glob pattern (read-only)" },
+	{ name: "ls", description: "List directory contents (read-only)" },
+];
+
+function normalizeToolInfos(tools?: CodexToolInfo[]): CodexToolInfo[] {
+	if (tools === undefined) {
+		return DEFAULT_TOOL_INFOS;
+	}
+	if (tools.length === 0) {
+		return [];
+	}
+
+	const normalized: CodexToolInfo[] = [];
+	for (const tool of tools) {
+		const name = tool.name.trim();
+		if (!name) continue;
+		const description = tool.description?.trim() || "Custom tool";
+		normalized.push({ name, description });
+	}
+
+	return normalized;
+}
+
+function formatToolList(tools: CodexToolInfo[]): string {
+	if (tools.length === 0) {
+		return "- (none)";
+	}
+
+	const maxNameLength = tools.reduce((max, tool) => Math.max(max, tool.name.length), 0);
+	const padWidth = Math.max(6, maxNameLength + 1);
+
+	return tools
+		.map((tool) => {
+			const paddedName = tool.name.padEnd(padWidth);
+			// Collapse newlines to keep list formatting intact
+			const desc = (tool.description ?? "Custom tool").replace(/\s*\n\s*/g, " ").trim();
+			return `- ${paddedName}- ${desc}`;
+		})
+		.join("\n");
+}
+
+export function buildCodexPiBridge(tools?: CodexToolInfo[]): string {
+	const normalizedTools = normalizeToolInfos(tools);
+	const toolsList = formatToolList(normalizedTools);
+
+	return `# Codex Running in Pi
 
 You are running Codex through pi, a terminal coding assistant. The tools and rules differ from Codex CLI.
 
@@ -23,13 +79,7 @@ You are running Codex through pi, a terminal coding assistant. The tools and rul
 
 ## Available Tools (pi)
 
-- read  - Read file contents
-- bash  - Execute bash commands
-- edit  - Modify files with exact find/replace (requires prior read)
-- write - Create or overwrite files
-- grep  - Search file contents (read-only)
-- find  - Find files by glob pattern (read-only)
-- ls    - List directory contents (read-only)
+${toolsList}
 
 ## Usage Rules
 
@@ -46,3 +96,4 @@ You are running Codex through pi, a terminal coding assistant. The tools and rul
 
 Below are additional system instruction you MUST follow when responding:
 `;
+}

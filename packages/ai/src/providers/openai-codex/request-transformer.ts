@@ -1,5 +1,5 @@
 import { TOOL_REMAP_MESSAGE } from "./prompts/codex.js";
-import { CODEX_PI_BRIDGE } from "./prompts/pi-codex-bridge.js";
+import { buildCodexPiBridge, type CodexToolInfo } from "./prompts/pi-codex-bridge.js";
 
 export interface ReasoningConfig {
 	effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -210,14 +210,60 @@ function filterInput(input: InputItem[] | undefined): InputItem[] | undefined {
 		});
 }
 
+type ToolRecord = Record<string, unknown>;
+
+function extractToolInfos(tools: unknown): CodexToolInfo[] {
+	if (!Array.isArray(tools)) return [];
+
+	const infos: CodexToolInfo[] = [];
+	const seen = new Set<string>();
+
+	for (const tool of tools) {
+		if (!tool || typeof tool !== "object") continue;
+		const info = getToolInfo(tool as ToolRecord);
+		if (!info || seen.has(info.name)) continue;
+		seen.add(info.name);
+		infos.push(info);
+	}
+
+	return infos;
+}
+
+function getToolInfo(record: ToolRecord): CodexToolInfo | null {
+	let name: string | undefined;
+	let description: string | undefined;
+
+	if (typeof record.name === "string") {
+		name = record.name;
+	}
+	if (typeof record.description === "string") {
+		description = record.description;
+	}
+
+	if ((!name || !description) && typeof record.function === "object" && record.function !== null) {
+		const fnRecord = record.function as ToolRecord;
+		if (!name && typeof fnRecord.name === "string") {
+			name = fnRecord.name;
+		}
+		if (!description && typeof fnRecord.description === "string") {
+			description = fnRecord.description;
+		}
+	}
+
+	if (!name) return null;
+	return { name, description };
+}
+
 function addCodexBridgeMessage(
 	input: InputItem[] | undefined,
 	hasTools: boolean,
-	systemPrompt?: string,
+	systemPrompt: string | undefined,
+	toolInfos: CodexToolInfo[],
 ): InputItem[] | undefined {
 	if (!hasTools || !Array.isArray(input)) return input;
 
-	const bridgeText = systemPrompt ? `${CODEX_PI_BRIDGE}\n\n${systemPrompt}` : CODEX_PI_BRIDGE;
+	const bridge = buildCodexPiBridge(toolInfos);
+	const bridgeText = systemPrompt ? `${bridge}\n\n${systemPrompt}` : bridge;
 
 	const bridgeMessage: InputItem = {
 		type: "message",
@@ -267,8 +313,10 @@ export async function transformRequestBody(
 	if (body.input && Array.isArray(body.input)) {
 		body.input = filterInput(body.input);
 
+		const toolInfos = extractToolInfos(body.tools);
+
 		if (codexMode) {
-			body.input = addCodexBridgeMessage(body.input, !!body.tools, systemPrompt);
+			body.input = addCodexBridgeMessage(body.input, !!body.tools, systemPrompt, toolInfos);
 		} else {
 			body.input = addToolRemapMessage(body.input, !!body.tools);
 		}

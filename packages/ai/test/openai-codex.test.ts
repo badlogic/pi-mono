@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCodexInstructions } from "../src/providers/openai-codex/prompts/codex.js";
-import { CODEX_PI_BRIDGE } from "../src/providers/openai-codex/prompts/pi-codex-bridge.js";
+import { buildCodexPiBridge } from "../src/providers/openai-codex/prompts/pi-codex-bridge.js";
 import {
 	normalizeModel,
 	type RequestBody,
@@ -52,7 +52,9 @@ describe("openai-codex request transformer", () => {
 		expect(input.some((item) => item.type === "item_reference")).toBe(false);
 		expect(input.some((item) => "id" in item)).toBe(false);
 		expect(input[0]?.type).toBe("message");
-		expect(input[0]?.content).toEqual([{ type: "input_text", text: CODEX_PI_BRIDGE }]);
+		expect(input[0]?.content).toEqual([
+			{ type: "input_text", text: buildCodexPiBridge([{ name: "tool", description: "" }]) },
+		]);
 
 		const orphaned = input.find((item) => item.type === "message" && item.role === "assistant");
 		expect(orphaned?.content).toMatch(/Previous tool result/);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Codex bridge prompt now dynamically lists active tools from the request, including custom extension tools. Previously only built-in tools were hardcoded in the prompt.
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed
