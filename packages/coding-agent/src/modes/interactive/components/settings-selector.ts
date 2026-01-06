@@ -250,7 +250,7 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(autoResizeIndex + 1, 0, {
 			id: "block-images",
 			label: "Block images",
-			description: "Prevent images from being sent to LLM providers (restart session for full effect)",
+			description: "Prevent images from being sent to LLM providers",
 			currentValue: config.blockImages ? "true" : "false",
 			values: ["true", "false"],
 		});

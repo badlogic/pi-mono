@@ -18,8 +18,6 @@ export interface ProcessedFiles {
 export interface ProcessFileOptions {
 	/** Whether to auto-resize images to 2000x2000 max. Default: true */
 	autoResizeImages?: boolean;
-	/** When true, skip image files with warning. Default: false */
-	blockImages?: boolean;
 }
 
 /** Process @file arguments into text content and image attachments */
@@ -50,11 +48,6 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 		const mimeType = await detectSupportedImageMimeTypeFromFile(absolutePath);
 
 		if (mimeType) {
-			// Check if images are blocked
-			if (options?.blockImages) {
-				console.warn(chalk.yellow(`[blockImages] Skipping image file: ${absolutePath}`));
-				continue;
-			}
 			// Handle image file
 			const content = await readFile(absolutePath);
 			const base64Content = content.toString("base64");

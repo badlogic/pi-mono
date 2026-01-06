@@ -426,9 +426,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
-	const blockImages = settingsManager.getBlockImages();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages, blockImages } });
+	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
 	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
@@ -607,30 +606,42 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
 	time("discoverPromptTemplates");
 
-	// Create convertToLlm wrapper that filters images if blockImages is enabled
-	const convertToLlmWithBlockImages = blockImages
-		? (messages: AgentMessage[]): Message[] => {
-				const converted = convertToLlm(messages);
-				let totalFiltered = 0;
-				// Filter out ImageContent from all messages as defense-in-depth
-				const filtered = converted.map((msg) => {
-					if (msg.role === "user" || msg.role === "toolResult") {
-						const content = msg.content;
-						if (Array.isArray(content)) {
-							const originalLength = content.length;
-							const filteredContent = content.filter((c) => c.type !== "image");
-							totalFiltered += originalLength - filteredContent.length;
-							return { ...msg, content: filteredContent };
-						}
+	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
+	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
+		const converted = convertToLlm(messages);
+		// Check setting dynamically so mid-session changes take effect
+		if (!settingsManager.getBlockImages()) {
+			return converted;
+		}
+		// Filter out ImageContent from all messages, replacing with text placeholder
+		return converted.map((msg) => {
+			if (msg.role === "user" || msg.role === "toolResult") {
+				const content = msg.content;
+				if (Array.isArray(content)) {
+					const hasImages = content.some((c) => c.type === "image");
+					if (hasImages) {
+						const filteredContent = content
+							.map((c) =>
+								c.type === "image" ? { type: "text" as const, text: "Image reading is disabled." } : c,
+							)
+							.filter(
+								(c, i, arr) =>
+									// Dedupe consecutive "Image reading is disabled." texts
+									!(
+										c.type === "text" &&
+										c.text === "Image reading is disabled." &&
+										i > 0 &&
+										arr[i - 1].type === "text" &&
+										(arr[i - 1] as { type: "text"; text: string }).text === "Image reading is disabled."
+									),
+							);
+						return { ...msg, content: filteredContent };
 					}
-					return msg;
-				});
-				if (totalFiltered > 0) {
-					console.warn(`[blockImages] Defense-in-depth: filtered ${totalFiltered} image(s) at convertToLlm layer`);
 				}
-				return filtered;
 			}
-		: convertToLlm;
+			return msg;
+		});
+	};
 
 	agent = new Agent({
 		initialState: {

@@ -54,28 +54,13 @@ describe("blockImages setting", () => {
 			rmSync(testDir, { recursive: true, force: true });
 		});
 
-		it("should return text message when blockImages is true", async () => {
+		it("should always read images (filtering happens at convertToLlm layer)", async () => {
 			// Create test image
 			const imagePath = join(testDir, "test.png");
 			writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 
-			const tool = createReadTool(testDir, { blockImages: true });
+			const tool = createReadTool(testDir);
 			const result = await tool.execute("test-1", { path: imagePath });
-
-			expect(result.content).toHaveLength(1);
-			expect(result.content[0].type).toBe("text");
-			const textContent = result.content[0] as { type: "text"; text: string };
-			expect(textContent.text).toContain("Image reading is disabled");
-			expect(textContent.text).toContain("blockImages");
-		});
-
-		it("should return image content when blockImages is false", async () => {
-			// Create test image
-			const imagePath = join(testDir, "test.png");
-			writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
-
-			const tool = createReadTool(testDir, { blockImages: false });
-			const result = await tool.execute("test-2", { path: imagePath });
 
 			// Should have text note + image content
 			expect(result.content.length).toBeGreaterThanOrEqual(1);
@@ -83,13 +68,13 @@ describe("blockImages setting", () => {
 			expect(hasImage).toBe(true);
 		});
 
-		it("should read text files normally even when blockImages is true", async () => {
+		it("should read text files normally", async () => {
 			// Create test text file
 			const textPath = join(testDir, "test.txt");
 			writeFileSync(textPath, "Hello, world!");
 
-			const tool = createReadTool(testDir, { blockImages: true });
-			const result = await tool.execute("test-3", { path: textPath });
+			const tool = createReadTool(testDir);
+			const result = await tool.execute("test-2", { path: textPath });
 
 			expect(result.content).toHaveLength(1);
 			expect(result.content[0].type).toBe("text");
@@ -110,35 +95,23 @@ describe("blockImages setting", () => {
 			rmSync(testDir, { recursive: true, force: true });
 		});
 
-		it("should skip image files when blockImages is true", async () => {
+		it("should always process images (filtering happens at convertToLlm layer)", async () => {
 			// Create test image
 			const imagePath = join(testDir, "test.png");
 			writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 
-			const result = await processFileArguments([imagePath], { blockImages: true });
-
-			expect(result.images).toHaveLength(0);
-			// Text should be empty since image was skipped
-			expect(result.text).toBe("");
-		});
-
-		it("should include image files when blockImages is false", async () => {
-			// Create test image
-			const imagePath = join(testDir, "test.png");
-			writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
-
-			const result = await processFileArguments([imagePath], { blockImages: false });
+			const result = await processFileArguments([imagePath]);
 
 			expect(result.images).toHaveLength(1);
 			expect(result.images[0].type).toBe("image");
 		});
 
-		it("should process text files normally when blockImages is true", async () => {
+		it("should process text files normally", async () => {
 			// Create test text file
 			const textPath = join(testDir, "test.txt");
 			writeFileSync(textPath, "Hello, world!");
 
-			const result = await processFileArguments([textPath], { blockImages: true });
+			const result = await processFileArguments([textPath]);
 
 			expect(result.images).toHaveLength(0);
 			expect(result.text).toContain("Hello, world!");

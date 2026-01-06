@@ -592,13 +592,7 @@ export class AgentSession {
 		// Add user message
 		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
 		if (options?.images) {
-			const blockImages = this.settingsManager.getBlockImages();
-			if (blockImages) {
-				// Log warning for blocked images
-				console.warn(`[blockImages] Blocked ${options.images.length} image(s) from being sent to provider`);
-			} else {
-				userContent.push(...options.images);
-			}
+			userContent.push(...options.images);
 		}
 		messages.push({
 			role: "user",
