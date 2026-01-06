@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Session picker (`pi -r`) and `--session` flag now support searching/resuming by session ID (UUID prefix) ([#495](https://github.com/badlogic/pi-mono/issues/495) by [@arunsathiya](https://github.com/arunsathiya))
+
 ### Fixed
 
 - Queued steering/follow-up messages no longer wipe unsent editor input ([#503](https://github.com/badlogic/pi-mono/pull/503) by [@tmustier](https://github.com/tmustier))
