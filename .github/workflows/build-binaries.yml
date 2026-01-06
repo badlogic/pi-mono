@@ -43,9 +43,10 @@ jobs:
         run: |
           # npm ci only installs optional deps for the current platform (linux-x64)
           # We need all platform bindings for bun cross-compilation
+          # Use --force to bypass platform checks (os/cpu restrictions in package.json)
 
           # Clipboard bindings for all target platforms
-          npm install --no-save \
+          npm install --no-save --force \
             @crosscopy/clipboard-darwin-arm64@0.2.8 \
             @crosscopy/clipboard-darwin-x64@0.2.8 \
             @crosscopy/clipboard-linux-x64-gnu@0.2.8 \
@@ -53,7 +54,7 @@ jobs:
             @crosscopy/clipboard-win32-x64-msvc@0.2.8
 
           # Sharp bindings for all target platforms
-          npm install --no-save \
+          npm install --no-save --force \
             @img/sharp-darwin-arm64@0.34.5 \
             @img/sharp-darwin-x64@0.34.5 \
             @img/sharp-linux-x64@0.34.5 \

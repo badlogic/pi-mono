@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.37.6] - 2026-01-06
+
+### Added
+
+- Exported OpenAI Codex utilities: `CacheMetadata`, `getCodexInstructions`, `getModelFamily`, `ModelFamily`, `buildCodexPiBridge`, `buildCodexSystemPrompt`, `CodexSystemPrompt` ([#510](https://github.com/badlogic/pi-mono/pull/510) by [@mitsuhiko](https://github.com/mitsuhiko))
+
 ## [0.37.5] - 2026-01-06
 
 ## [0.37.4] - 2026-01-06
