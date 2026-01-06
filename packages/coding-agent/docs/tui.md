@@ -340,7 +340,225 @@ class CachedComponent {
 
 Call `invalidate()` when state changes, then `handle.requestRender()` to trigger re-render.
 
+## Common Patterns
+
+These patterns cover the most common UI needs in extensions. **Copy these patterns instead of building from scratch.**
+
+### Pattern 1: Selection Dialog (SelectList)
+
+For letting users pick from a list of options. Use `SelectList` from `@mariozechner/pi-tui` with `DynamicBorder` for framing.
+
+```typescript
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+
+pi.registerCommand("pick", {
+  handler: async (_args, ctx) => {
+    const items: SelectItem[] = [
+      { value: "opt1", label: "Option 1", description: "First option" },
+      { value: "opt2", label: "Option 2", description: "Second option" },
+      { value: "opt3", label: "Option 3" },  // description is optional
+    ];
+
+    const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+      const container = new Container();
+
+      // Top border
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+      // Title
+      container.addChild(new Text(theme.fg("accent", theme.bold("Pick an Option")), 1, 0));
+
+      // SelectList with theme
+      const selectList = new SelectList(items, Math.min(items.length, 10), {
+        selectedPrefix: (t) => theme.fg("accent", t),
+        selectedText: (t) => theme.fg("accent", t),
+        description: (t) => theme.fg("muted", t),
+        scrollInfo: (t) => theme.fg("dim", t),
+        noMatch: (t) => theme.fg("warning", t),
+      });
+      selectList.onSelect = (item) => done(item.value);
+      selectList.onCancel = () => done(null);
+      container.addChild(selectList);
+
+      // Help text
+      container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc cancel"), 1, 0));
+
+      // Bottom border
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+      return {
+        render: (w) => container.render(w),
+        invalidate: () => container.invalidate(),
+        handleInput: (data) => { selectList.handleInput(data); tui.requestRender(); },
+      };
+    });
+
+    if (result) {
+      ctx.ui.notify(`Selected: ${result}`, "info");
+    }
+  },
+});
+```
+
+**Examples:** [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
+
+### Pattern 2: Async Operation with Cancel (BorderedLoader)
+
+For operations that take time and should be cancellable. `BorderedLoader` shows a spinner and handles escape to cancel.
+
+```typescript
+import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+
+pi.registerCommand("fetch", {
+  handler: async (_args, ctx) => {
+    const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+      const loader = new BorderedLoader(tui, theme, "Fetching data...");
+      loader.onAbort = () => done(null);
+
+      // Do async work
+      fetchData(loader.signal)
+        .then((data) => done(data))
+        .catch(() => done(null));
+
+      return loader;
+    });
+
+    if (result === null) {
+      ctx.ui.notify("Cancelled", "info");
+    } else {
+      ctx.ui.setEditorText(result);
+    }
+  },
+});
+```
+
+**Examples:** [qna.ts](../examples/extensions/qna.ts), [handoff.ts](../examples/extensions/handoff.ts)
+
+### Pattern 3: Settings/Toggles (SettingsList)
+
+For toggling multiple settings. Use `SettingsList` from `@mariozechner/pi-tui` with `getSettingsListTheme()`.
+
+```typescript
+import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
+import { Container, type SettingItem, SettingsList, Text } from "@mariozechner/pi-tui";
+
+pi.registerCommand("settings", {
+  handler: async (_args, ctx) => {
+    const items: SettingItem[] = [
+      { id: "verbose", label: "Verbose mode", currentValue: "off", values: ["on", "off"] },
+      { id: "color", label: "Color output", currentValue: "on", values: ["on", "off"] },
+    ];
+
+    await ctx.ui.custom((_tui, theme, done) => {
+      const container = new Container();
+      container.addChild(new Text(theme.fg("accent", theme.bold("Settings")), 1, 1));
+
+      const settingsList = new SettingsList(
+        items,
+        Math.min(items.length + 2, 15),
+        getSettingsListTheme(),
+        (id, newValue) => {
+          // Handle value change
+          ctx.ui.notify(`${id} = ${newValue}`, "info");
+        },
+        () => done(undefined),  // On close
+      );
+      container.addChild(settingsList);
+
+      return {
+        render: (w) => container.render(w),
+        invalidate: () => container.invalidate(),
+        handleInput: (data) => settingsList.handleInput?.(data),
+      };
+    });
+  },
+});
+```
+
+**Examples:** [tools.ts](../examples/extensions/tools.ts)
+
+### Pattern 4: Persistent Status Indicator
+
+Show status in the footer that persists across renders. Good for mode indicators.
+
+```typescript
+// Set status (shown in footer)
+ctx.ui.setStatus("my-ext", ctx.ui.theme.fg("accent", "● active"));
+
+// Clear status
+ctx.ui.setStatus("my-ext", undefined);
+```
+
+**Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+
+### Pattern 5: Widget Above Editor
+
+Show persistent content above the input editor. Good for todo lists, progress.
+
+```typescript
+// Simple string array
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+
+// Or with theme
+ctx.ui.setWidget("my-widget", (_tui, theme) => {
+  const lines = items.map((item, i) =>
+    item.done
+      ? theme.fg("success", "✓ ") + theme.fg("muted", item.text)
+      : theme.fg("dim", "○ ") + item.text
+  );
+  return {
+    render: () => lines,
+    invalidate: () => {},
+  };
+});
+
+// Clear
+ctx.ui.setWidget("my-widget", undefined);
+```
+
+**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts)
+
+### Pattern 6: Custom Footer
+
+Replace the entire footer with custom content.
+
+```typescript
+ctx.ui.setFooter((_tui, theme) => ({
+  render(width: number): string[] {
+    const left = theme.fg("dim", "custom footer");
+    const right = theme.fg("accent", "status");
+    const padding = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
+    return [truncateToWidth(left + padding + right, width)];
+  },
+  invalidate() {},
+}));
+
+// Restore default
+ctx.ui.setFooter(undefined);
+```
+
+**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts)
+
+## Key Rules
+
+1. **Always use theme from callback** - Don't import theme directly. Use `theme` from the `ctx.ui.custom((tui, theme, done) => ...)` callback.
+
+2. **Always type DynamicBorder color param** - Write `(s: string) => theme.fg("accent", s)`, not `(s) => theme.fg("accent", s)`.
+
+3. **Call tui.requestRender() after state changes** - In `handleInput`, call `tui.requestRender()` after updating state.
+
+4. **Return the three-method object** - Custom components need `{ render, invalidate, handleInput }`.
+
+5. **Use existing components** - `SelectList`, `SettingsList`, `BorderedLoader` cover 90% of cases. Don't rebuild them.
+
 ## Examples
 
-- **Snake game**: [examples/hooks/snake.ts](../examples/hooks/snake.ts) - Full game with keyboard input, game loop, state persistence
-- **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - Custom `renderCall` and `renderResult`
+- **Selection UI**: [examples/extensions/preset.ts](../examples/extensions/preset.ts) - SelectList with DynamicBorder framing
+- **Async with cancel**: [examples/extensions/qna.ts](../examples/extensions/qna.ts) - BorderedLoader for LLM calls
+- **Settings toggles**: [examples/extensions/tools.ts](../examples/extensions/tools.ts) - SettingsList for tool enable/disable
+- **Status indicators**: [examples/extensions/plan-mode.ts](../examples/extensions/plan-mode.ts) - setStatus and setWidget
+- **Custom footer**: [examples/extensions/custom-footer.ts](../examples/extensions/custom-footer.ts) - setFooter with stats
+- **Snake game**: [examples/extensions/snake.ts](../examples/extensions/snake.ts) - Full game with keyboard input, game loop
+- **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - renderCall and renderResult

@@ -88,6 +88,9 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			setGetActiveToolsHandler: () => {},
 			setGetAllToolsHandler: () => {},
 			setSetActiveToolsHandler: () => {},
+			setSetModelHandler: () => {},
+			setGetThinkingLevelHandler: () => {},
+			setSetThinkingLevelHandler: () => {},
 			setFlagValue: () => {},
 		};
 	}
@@ -117,6 +120,9 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			getActiveToolsHandler: () => [],
 			getAllToolsHandler: () => [],
 			setActiveToolsHandler: () => {},
+			setModelHandler: async () => false,
+			getThinkingLevelHandler: () => "off",
+			setThinkingLevelHandler: () => {},
 			uiContext: {
 				select: async () => undefined,
 				confirm: async () => false,
@@ -292,6 +298,9 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			setGetActiveToolsHandler: () => {},
 			setGetAllToolsHandler: () => {},
 			setSetActiveToolsHandler: () => {},
+			setSetModelHandler: () => {},
+			setGetThinkingLevelHandler: () => {},
+			setSetThinkingLevelHandler: () => {},
 			setFlagValue: () => {},
 		};
 
@@ -348,6 +357,9 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			setGetActiveToolsHandler: () => {},
 			setGetAllToolsHandler: () => {},
 			setSetActiveToolsHandler: () => {},
+			setSetModelHandler: () => {},
+			setGetThinkingLevelHandler: () => {},
+			setSetThinkingLevelHandler: () => {},
 			setFlagValue: () => {},
 		};
 
@@ -386,6 +398,9 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			setGetActiveToolsHandler: () => {},
 			setGetAllToolsHandler: () => {},
 			setSetActiveToolsHandler: () => {},
+			setSetModelHandler: () => {},
+			setGetThinkingLevelHandler: () => {},
+			setSetThinkingLevelHandler: () => {},
 			setFlagValue: () => {},
 		};
 

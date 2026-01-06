@@ -23,6 +23,7 @@ import type {
 	ExtensionUIContext,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetThinkingLevelHandler,
 	LoadExtensionsResult,
 	LoadedExtension,
 	MessageRenderer,
@@ -31,6 +32,8 @@ import type {
 	SendMessageHandler,
 	SendUserMessageHandler,
 	SetActiveToolsHandler,
+	SetModelHandler,
+	SetThinkingLevelHandler,
 	ToolDefinition,
 } from "./types.js";
 
@@ -124,6 +127,9 @@ function createExtensionAPI(
 	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
 	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
 	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
+	setSetModelHandler: (handler: SetModelHandler) => void;
+	setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => void;
+	setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => void;
 	setFlagValue: (name: string, value: boolean | string) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {};
@@ -132,6 +138,9 @@ function createExtensionAPI(
 	let getActiveToolsHandler: GetActiveToolsHandler = () => [];
 	let getAllToolsHandler: GetAllToolsHandler = () => [];
 	let setActiveToolsHandler: SetActiveToolsHandler = () => {};
+	let setModelHandler: SetModelHandler = async () => false;
+	let getThinkingLevelHandler: GetThinkingLevelHandler = () => "off";
+	let setThinkingLevelHandler: SetThinkingLevelHandler = () => {};
 
 	const messageRenderers = new Map<string, MessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
@@ -213,6 +222,18 @@ function createExtensionAPI(
 			setActiveToolsHandler(toolNames);
 		},
 
+		setModel(model) {
+			return setModelHandler(model);
+		},
+
+		getThinkingLevel() {
+			return getThinkingLevelHandler();
+		},
+
+		setThinkingLevel(level) {
+			setThinkingLevelHandler(level);
+		},
+
 		events: eventBus,
 	} as ExtensionAPI;
 
@@ -240,6 +261,15 @@ function createExtensionAPI(
 		},
 		setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => {
 			setActiveToolsHandler = handler;
+		},
+		setSetModelHandler: (handler: SetModelHandler) => {
+			setModelHandler = handler;
+		},
+		setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => {
+			getThinkingLevelHandler = handler;
+		},
+		setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => {
+			setThinkingLevelHandler = handler;
 		},
 		setFlagValue: (name: string, value: boolean | string) => {
 			flagValues.set(name, value);
@@ -277,6 +307,9 @@ async function loadExtensionWithBun(
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
 			setSetActiveToolsHandler,
+			setSetModelHandler,
+			setGetThinkingLevelHandler,
+			setSetThinkingLevelHandler,
 			setFlagValue,
 		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
 
@@ -299,6 +332,9 @@ async function loadExtensionWithBun(
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
 				setSetActiveToolsHandler,
+				setSetModelHandler,
+				setGetThinkingLevelHandler,
+				setSetThinkingLevelHandler,
 				setFlagValue,
 			},
 			error: null,
@@ -359,6 +395,9 @@ async function loadExtension(
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
 			setSetActiveToolsHandler,
+			setSetModelHandler,
+			setGetThinkingLevelHandler,
+			setSetThinkingLevelHandler,
 			setFlagValue,
 		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
 
@@ -381,6 +420,9 @@ async function loadExtension(
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
 				setSetActiveToolsHandler,
+				setSetModelHandler,
+				setGetThinkingLevelHandler,
+				setSetThinkingLevelHandler,
 				setFlagValue,
 			},
 			error: null,
@@ -416,6 +458,9 @@ export function loadExtensionFromFactory(
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,
 		setSetActiveToolsHandler,
+		setSetModelHandler,
+		setGetThinkingLevelHandler,
+		setSetThinkingLevelHandler,
 		setFlagValue,
 	} = createExtensionAPI(handlers, tools, cwd, name, eventBus, sharedUI);
 
@@ -437,6 +482,9 @@ export function loadExtensionFromFactory(
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,
 		setSetActiveToolsHandler,
+		setSetModelHandler,
+		setGetThinkingLevelHandler,
+		setSetThinkingLevelHandler,
 		setFlagValue,
 	};
 }

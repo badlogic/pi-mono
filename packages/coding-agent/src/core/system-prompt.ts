@@ -283,7 +283,7 @@ Documentation:
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
-- When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/theme.md), skills (docs/skills.md)
+- When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/theme.md), skills (docs/skills.md), TUI components (docs/tui.md - has copy-paste patterns)
 - Always read the doc, examples, AND follow .md cross-references before implementing`;
 
 	if (appendSection) {

@@ -525,6 +525,14 @@ export class InteractiveMode {
 
 				return { cancelled: false };
 			},
+			setModelHandler: async (model) => {
+				const key = await this.session.modelRegistry.getApiKey(model);
+				if (!key) return false;
+				await this.session.setModel(model);
+				return true;
+			},
+			getThinkingLevelHandler: () => this.session.thinkingLevel,
+			setThinkingLevelHandler: (level) => this.session.setThinkingLevel(level),
 			isIdle: () => !this.session.isStreaming,
 			waitForIdle: () => this.session.agent.waitForIdle(),
 			abort: () => {

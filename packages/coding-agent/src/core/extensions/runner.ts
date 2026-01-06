@@ -23,6 +23,7 @@ import type {
 	ExtensionUIContext,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetThinkingLevelHandler,
 	LoadedExtension,
 	MessageRenderer,
 	RegisteredCommand,
@@ -32,6 +33,8 @@ import type {
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
 	SetActiveToolsHandler,
+	SetModelHandler,
+	SetThinkingLevelHandler,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -115,6 +118,9 @@ export class ExtensionRunner {
 		getActiveToolsHandler: GetActiveToolsHandler;
 		getAllToolsHandler: GetAllToolsHandler;
 		setActiveToolsHandler: SetActiveToolsHandler;
+		setModelHandler: SetModelHandler;
+		getThinkingLevelHandler: GetThinkingLevelHandler;
+		setThinkingLevelHandler: SetThinkingLevelHandler;
 		newSessionHandler?: NewSessionHandler;
 		branchHandler?: BranchHandler;
 		navigateTreeHandler?: NavigateTreeHandler;
@@ -148,6 +154,9 @@ export class ExtensionRunner {
 			ext.setGetActiveToolsHandler(options.getActiveToolsHandler);
 			ext.setGetAllToolsHandler(options.getAllToolsHandler);
 			ext.setSetActiveToolsHandler(options.setActiveToolsHandler);
+			ext.setSetModelHandler(options.setModelHandler);
+			ext.setGetThinkingLevelHandler(options.getThinkingLevelHandler);
+			ext.setSetThinkingLevelHandler(options.setThinkingLevelHandler);
 		}
 
 		this.uiContext = options.uiContext ?? noOpUIContext;

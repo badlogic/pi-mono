@@ -36,6 +36,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
+| `preset.ts` | Named presets for model, thinking level, tools, and instructions via `--preset` flag and `/preset` command |
 | `plan-mode.ts` | Claude Code-style plan mode for read-only exploration with `/plan` command |
 | `tools.ts` | Interactive `/tools` command to enable/disable tools with session persistence |
 | `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |

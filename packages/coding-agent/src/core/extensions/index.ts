@@ -39,6 +39,7 @@ export type {
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetThinkingLevelHandler,
 	GrepToolResultEvent,
 	LoadExtensionsResult,
 	// Loaded Extension
@@ -70,6 +71,8 @@ export type {
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	SetActiveToolsHandler,
+	SetModelHandler,
+	SetThinkingLevelHandler,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,
