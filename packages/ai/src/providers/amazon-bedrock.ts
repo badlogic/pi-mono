@@ -27,8 +27,10 @@ import type {
 	StreamOptions,
 	TextContent,
 	ThinkingContent,
+	ThinkingLevel,
 	Tool,
 	ToolCall,
+	ToolResultMessage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
@@ -37,6 +39,8 @@ export interface BedrockOptions extends StreamOptions {
 	region?: string;
 	profile?: string;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	/* See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-reasoning.html for supported models. */
+	reasoning?: ThinkingLevel;
 }
 
 type Block = (TextContent | ThinkingContent | ToolCall) & { index?: number; partialJson?: string };
@@ -81,6 +85,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 				system: context.systemPrompt ? [{ text: context.systemPrompt }] : undefined,
 				inferenceConfig: { maxTokens: options.maxTokens, temperature: options.temperature },
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
+				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
 			});
 
 			const response = await client.send(command, { abortSignal: options.signal });
@@ -262,10 +267,15 @@ function handleContentBlockStop(
 }
 
 function convertMessages(context: Context): Message[] {
-	return context.messages.map((m) => {
+	const result: Message[] = [];
+	const messages = context.messages;
+
+	for (let i = 0; i < messages.length; i++) {
+		const m = messages[i];
+
 		switch (m.role) {
 			case "user":
-				return {
+				result.push({
 					role: ConversationRole.USER,
 					content:
 						typeof m.content === "string"
@@ -280,9 +290,10 @@ function convertMessages(context: Context): Message[] {
 											throw new Error("Unknown user content type");
 									}
 								}),
-				};
+				});
+				break;
 			case "assistant":
-				return {
+				result.push({
 					role: ConversationRole.ASSISTANT,
 					content: m.content.map((c) => {
 						switch (c.type) {
@@ -300,22 +311,57 @@ function convertMessages(context: Context): Message[] {
 								throw new Error("Unknown assistant content type");
 						}
 					}),
-				};
-			case "toolResult":
-				return {
-					role: ConversationRole.USER,
-					content: m.content.map((c) => ({
+				});
+				break;
+			case "toolResult": {
+				// Collect all consecutive toolResult messages into a single user message
+				// Bedrock requires all tool results to be in one message
+				const toolResults: ContentBlock.ToolResultMember[] = [];
+
+				// Add current tool result
+				for (const c of m.content) {
+					toolResults.push({
 						toolResult: {
 							toolUseId: m.toolCallId,
 							content: [c.type === "image" ? { image: createImageBlock(c.mimeType, c.data) } : { text: c.text }],
 							status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
 						},
-					})) as ContentBlock.ToolResultMember[],
-				};
+					});
+				}
+
+				// Look ahead for consecutive toolResult messages
+				let j = i + 1;
+				while (j < messages.length && messages[j].role === "toolResult") {
+					const nextMsg = messages[j] as ToolResultMessage;
+					for (const c of nextMsg.content) {
+						toolResults.push({
+							toolResult: {
+								toolUseId: nextMsg.toolCallId,
+								content: [
+									c.type === "image" ? { image: createImageBlock(c.mimeType, c.data) } : { text: c.text },
+								],
+								status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
+							},
+						});
+					}
+					j++;
+				}
+
+				// Skip the messages we've already processed
+				i = j - 1;
+
+				result.push({
+					role: ConversationRole.USER,
+					content: toolResults,
+				});
+				break;
+			}
 			default:
 				throw new Error("Unknown message role");
 		}
-	});
+	}
+
+	return result;
 }
 
 function convertToolConfig(
@@ -362,6 +408,34 @@ function mapStopReason(reason: string | undefined): StopReason {
 		default:
 			return "error";
 	}
+}
+
+function buildAdditionalModelRequestFields(
+	model: Model<"bedrock-converse-stream">,
+	options: BedrockOptions,
+): Record<string, any> | undefined {
+	if (!options.reasoning || !model.reasoning) {
+		return undefined;
+	}
+
+	if (model.id.includes("anthropic.claude")) {
+		const budgets: Record<ThinkingLevel, number> = {
+			minimal: 1024,
+			low: 2048,
+			medium: 8192,
+			high: 16384,
+			xhigh: 16384, // Claude doesn't support xhigh, clamp to high
+		};
+
+		return {
+			thinking: {
+				type: "enabled",
+				budget_tokens: budgets[options.reasoning],
+			},
+		};
+	}
+
+	return undefined;
 }
 
 function createImageBlock(mimeType: string, data: string) {

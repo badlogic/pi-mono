@@ -230,8 +230,10 @@ function mapOptionsForApi<TApi extends Api>(
 		}
 
 		case "bedrock-converse-stream":
-			// TODO: We should probably tweak reasoning config here?
-			return base satisfies BedrockOptions;
+			return {
+				...base,
+				reasoning: options?.reasoning,
+			} satisfies BedrockOptions;
 
 		case "openai-completions":
 			return {

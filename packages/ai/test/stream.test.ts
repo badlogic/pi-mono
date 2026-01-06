@@ -356,7 +356,7 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle ", { retry: 3 }, async () => {
+		it("should handle thinking", { retry: 3 }, async () => {
 			await handleThinking(llm, { thinking: { enabled: true, budgetTokens: 1024 } });
 		});
 
@@ -920,6 +920,14 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle streaming", { retry: 3 }, async () => {
 			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoning: "medium" });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { reasoning: "high" });
 		});
 
 		it("should handle image input", { retry: 3 }, async () => {
