@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `blockImages` setting to prevent images from being sent to LLM providers. Provides defense-in-depth blocking at Read tool, CLI file processor, AgentSession, and convertToLlm layer. ([#492](https://github.com/badlogic/pi-mono/pull/492))
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed

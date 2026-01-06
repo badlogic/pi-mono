@@ -21,10 +21,13 @@ export interface ReadToolDetails {
 export interface ReadToolOptions {
 	/** Whether to auto-resize images to 2000x2000 max. Default: true */
 	autoResizeImages?: boolean;
+	/** When true, return text message instead of image content. Default: false */
+	blockImages?: boolean;
 }
 
 export function createReadTool(cwd: string, options?: ReadToolOptions): AgentTool<typeof readSchema> {
 	const autoResizeImages = options?.autoResizeImages ?? true;
+	const blockImages = options?.blockImages ?? false;
 	return {
 		name: "read",
 		label: "read",
@@ -75,29 +78,39 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 							let details: ReadToolDetails | undefined;
 
 							if (mimeType) {
-								// Read as image (binary)
-								const buffer = await readFile(absolutePath);
-								const base64 = buffer.toString("base64");
-
-								if (autoResizeImages) {
-									// Resize image if needed
-									const resized = await resizeImage({ type: "image", data: base64, mimeType });
-									const dimensionNote = formatDimensionNote(resized);
-
-									let textNote = `Read image file [${resized.mimeType}]`;
-									if (dimensionNote) {
-										textNote += `\n${dimensionNote}`;
-									}
-
+								// Check if images are blocked
+								if (blockImages) {
 									content = [
-										{ type: "text", text: textNote },
-										{ type: "image", data: resized.data, mimeType: resized.mimeType },
+										{
+											type: "text",
+											text: `[Image file detected: ${absolutePath}]\nImage reading is disabled. The 'blockImages' setting is enabled.`,
+										},
 									];
 								} else {
-									content = [
-										{ type: "text", text: `Read image file [${mimeType}]` },
-										{ type: "image", data: base64, mimeType },
-									];
+									// Read as image (binary)
+									const buffer = await readFile(absolutePath);
+									const base64 = buffer.toString("base64");
+
+									if (autoResizeImages) {
+										// Resize image if needed
+										const resized = await resizeImage({ type: "image", data: base64, mimeType });
+										const dimensionNote = formatDimensionNote(resized);
+
+										let textNote = `Read image file [${resized.mimeType}]`;
+										if (dimensionNote) {
+											textNote += `\n${dimensionNote}`;
+										}
+
+										content = [
+											{ type: "text", text: textNote },
+											{ type: "image", data: resized.data, mimeType: resized.mimeType },
+										];
+									} else {
+										content = [
+											{ type: "text", text: `Read image file [${mimeType}]` },
+											{ type: "image", data: base64, mimeType },
+										];
+									}
 								}
 							} else {
 								// Read as text

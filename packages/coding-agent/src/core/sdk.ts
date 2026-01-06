@@ -20,8 +20,8 @@
  * ```
  */
 
-import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Message, Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
@@ -300,6 +300,7 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		extensions: manager.getExtensionPaths(),
 		skills: manager.getSkillsSettings(),
 		terminal: { showImages: manager.getShowImages() },
+		images: { autoResize: manager.getImageAutoResize(), blockImages: manager.getBlockImages() },
 	};
 }
 
@@ -425,8 +426,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
+	const blockImages = settingsManager.getBlockImages();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages, blockImages } });
 	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
@@ -605,6 +607,31 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
 	time("discoverPromptTemplates");
 
+	// Create convertToLlm wrapper that filters images if blockImages is enabled
+	const convertToLlmWithBlockImages = blockImages
+		? (messages: AgentMessage[]): Message[] => {
+				const converted = convertToLlm(messages);
+				let totalFiltered = 0;
+				// Filter out ImageContent from all messages as defense-in-depth
+				const filtered = converted.map((msg) => {
+					if (msg.role === "user" || msg.role === "toolResult") {
+						const content = msg.content;
+						if (Array.isArray(content)) {
+							const originalLength = content.length;
+							const filteredContent = content.filter((c) => c.type !== "image");
+							totalFiltered += originalLength - filteredContent.length;
+							return { ...msg, content: filteredContent };
+						}
+					}
+					return msg;
+				});
+				if (totalFiltered > 0) {
+					console.warn(`[blockImages] Defense-in-depth: filtered ${totalFiltered} image(s) at convertToLlm layer`);
+				}
+				return filtered;
+			}
+		: convertToLlm;
+
 	agent = new Agent({
 		initialState: {
 			systemPrompt,
@@ -612,7 +639,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			thinkingLevel,
 			tools: activeToolsArray,
 		},
-		convertToLlm,
+		convertToLlm: convertToLlmWithBlockImages,
 		transformContext: extensionRunner
 			? async (messages) => {
 					return extensionRunner.emitContext(messages);
