@@ -154,4 +154,16 @@ describe("AI Providers Abort Tests", () => {
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
 		});
 	});
+
+	describe.skipIf(!process.env.AWS_PROFILE)("Amazon Bedrock Provider Abort", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, { reasoning: "medium" });
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
 });
