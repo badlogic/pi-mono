@@ -644,7 +644,8 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			return matchesKittySequence(data, codepoint, modifier);
 		}
 
-		return data === key;
+		// Check both raw char and Kitty sequence (needed for release events)
+		return data === key || matchesKittySequence(data, codepoint, 0);
 	}
 
 	return false;
