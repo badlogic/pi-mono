@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCodexInstructions } from "../src/providers/openai-codex/prompts/codex.js";
-import { CODEX_PI_BRIDGE } from "../src/providers/openai-codex/prompts/pi-codex-bridge.js";
 import {
 	normalizeModel,
 	type RequestBody,
@@ -19,7 +18,7 @@ const FALLBACK_PROMPT = readFileSync(
 );
 
 describe("openai-codex request transformer", () => {
-	it("filters item_reference, strips ids, and inserts bridge message", async () => {
+	it("filters item_reference and strips ids", async () => {
 		const body: RequestBody = {
 			model: "gpt-5.1-codex",
 			input: [
@@ -41,18 +40,19 @@ describe("openai-codex request transformer", () => {
 			tools: [{ type: "function", name: "tool", description: "", parameters: {} }],
 		};
 
-		const transformed = await transformRequestBody(body, "CODEX_INSTRUCTIONS", {}, true);
+		const transformed = await transformRequestBody(body, {});
 
 		expect(transformed.store).toBe(false);
 		expect(transformed.stream).toBe(true);
-		expect(transformed.instructions).toBe("CODEX_INSTRUCTIONS");
 		expect(transformed.include).toEqual(["reasoning.encrypted_content"]);
 
 		const input = transformed.input || [];
 		expect(input.some((item) => item.type === "item_reference")).toBe(false);
 		expect(input.some((item) => "id" in item)).toBe(false);
-		expect(input[0]?.type).toBe("message");
-		expect(input[0]?.content).toEqual([{ type: "input_text", text: CODEX_PI_BRIDGE }]);
+		const first = input[0];
+		expect(first?.type).toBe("message");
+		expect(first?.role).toBe("developer");
+		expect(first?.content).toEqual([{ type: "input_text", text: `${DEFAULT_PROMPT_PREFIX}...` }]);
 
 		const orphaned = input.find((item) => item.type === "message" && item.role === "assistant");
 		expect(orphaned?.content).toMatch(/Previous tool result/);
