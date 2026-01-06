@@ -19,7 +19,14 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { convertMessages, convertTools, mapStopReasonString, mapToolChoice } from "./google-shared.js";
+import {
+	convertMessages,
+	convertTools,
+	isThinkingPart,
+	mapStopReasonString,
+	mapToolChoice,
+	retainThoughtSignature,
+} from "./google-shared.js";
 
 /**
  * Thinking level for Gemini 3 models.
@@ -360,7 +367,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					if (candidate?.content?.parts) {
 						for (const part of candidate.content.parts) {
 							if (part.text !== undefined) {
-								const isThinking = part.thought === true;
+								const isThinking = isThinkingPart(part);
 								if (
 									!currentBlock ||
 									(isThinking && currentBlock.type !== "thinking") ||
@@ -395,7 +402,10 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 								}
 								if (currentBlock.type === "thinking") {
 									currentBlock.thinking += part.text;
-									currentBlock.thinkingSignature = part.thoughtSignature;
+									currentBlock.thinkingSignature = retainThoughtSignature(
+										currentBlock.thinkingSignature,
+										part.thoughtSignature,
+									);
 									stream.push({
 										type: "thinking_delta",
 										contentIndex: blockIndex(),
