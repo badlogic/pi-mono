@@ -443,7 +443,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "export_html": {
-				const path = session.exportToHtml(command.outputPath);
+				const path = await session.exportToHtml(command.outputPath);
 				return success(id, "export_html", { path });
 			}
 

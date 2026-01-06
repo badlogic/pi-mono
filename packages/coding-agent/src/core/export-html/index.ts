@@ -1,4 +1,5 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentState, AgentTool } from "@mariozechner/pi-agent-core";
+import { buildCodexPiBridge, getCodexInstructions } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
@@ -8,6 +9,37 @@ import { SessionManager } from "../session-manager.js";
 export interface ExportOptions {
 	outputPath?: string;
 	themeName?: string;
+}
+
+/** Info about Codex injection to show inline with model_change entries */
+interface CodexInjectionInfo {
+	/** Codex instructions text */
+	instructions: string;
+	/** Bridge text (tool list) */
+	bridge: string;
+}
+
+/**
+ * Build Codex injection info for display inline with model_change entries.
+ */
+async function buildCodexInjectionInfo(tools?: AgentTool[]): Promise<CodexInjectionInfo | undefined> {
+	// Try to get cached instructions for default model family
+	let instructions: string | null = null;
+	try {
+		instructions = await getCodexInstructions("gpt-5.1-codex");
+	} catch {
+		// Cache miss - that's fine
+	}
+
+	const bridgeText = buildCodexPiBridge(tools);
+
+	const instructionsText =
+		instructions || "(Codex instructions not cached. Run a Codex request to populate the local cache.)";
+
+	return {
+		instructions: instructionsText,
+		bridge: bridgeText,
+	};
 }
 
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
@@ -103,6 +135,8 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
+	/** Info for rendering Codex injection inline with model_change entries */
+	codexInjectionInfo?: CodexInjectionInfo;
 	tools?: { name: string; description: string }[];
 }
 
@@ -146,7 +180,11 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
  * Export session to HTML using SessionManager and AgentState.
  * Used by TUI's /export command.
  */
-export function exportSessionToHtml(sm: SessionManager, state?: AgentState, options?: ExportOptions | string): string {
+export async function exportSessionToHtml(
+	sm: SessionManager,
+	state?: AgentState,
+	options?: ExportOptions | string,
+): Promise<string> {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	const sessionFile = sm.getSessionFile();
@@ -162,6 +200,7 @@ export function exportSessionToHtml(sm: SessionManager, state?: AgentState, opti
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
+		codexInjectionInfo: await buildCodexInjectionInfo(state?.tools),
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
 	};
 
@@ -181,7 +220,7 @@ export function exportSessionToHtml(sm: SessionManager, state?: AgentState, opti
  * Export session file to HTML (standalone, without AgentState).
  * Used by CLI for exporting arbitrary session files.
  */
-export function exportFromFile(inputPath: string, options?: ExportOptions | string): string {
+export async function exportFromFile(inputPath: string, options?: ExportOptions | string): Promise<string> {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	if (!existsSync(inputPath)) {
@@ -195,6 +234,7 @@ export function exportFromFile(inputPath: string, options?: ExportOptions | stri
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: undefined,
+		codexInjectionInfo: await buildCodexInjectionInfo(undefined),
 		tools: undefined,
 	};
 
