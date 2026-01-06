@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `matchesKey()` now correctly matches Kitty protocol sequences for unmodified letter keys (needed for key release events)
+
 ## [0.37.6] - 2026-01-06
 
 ### Added
