@@ -87,7 +87,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 			for await (const item of response.stream!) {
 				if (item.messageStart) {
 					if (item.messageStart.role !== ConversationRole.ASSISTANT) {
-						throw new Error("Unexpected `assistant` message start but got `user` message start instead");
+						throw new Error("Unexpected assistant message start but got user message start instead");
 					}
 					stream.push({ type: "start", partial: output });
 				} else if (item.contentBlockStart) {

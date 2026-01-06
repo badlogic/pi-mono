@@ -116,12 +116,10 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				// Some Amazon Bedrock models require cross-region inference profiles to work.
 				// To use cross-region inference, we need to add a region prefix to the models.
 				// See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html#inference-profiles-support-system
-				if (
-				id.includes("anthropic.claude-opus-4-5") ||
-				id.includes("anthropic.claude-haiku-4-5") ||
-				id.includes("anthropic.claude-sonnet-4")) {
-				  // TODO: Add other models. Can we get this information from models.dev or AWS SDK?
-				  id = "global." + id;
+				if (id.includes("anthropic.claude-haiku-4-5") ||
+						id.includes("anthropic.claude-sonnet-4")) {
+						// TODO: Add other models. Can we get this information from models.dev or AWS SDK?
+						id = "global." + id;
 				}
 
 				models.push({
