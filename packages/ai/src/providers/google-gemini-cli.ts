@@ -266,6 +266,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
 			// Fetch with retry logic for rate limits and transient errors
+			const fetchFn = options?.fetch ?? globalThis.fetch;
 			let response: Response | undefined;
 			let lastError: Error | undefined;
 
@@ -275,7 +276,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				}
 
 				try {
-					response = await fetch(url, {
+					response = await fetchFn(url, {
 						method: "POST",
 						headers: {
 							Authorization: `Bearer ${accessToken}`,

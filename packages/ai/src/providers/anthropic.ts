@@ -115,7 +115,12 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 
 		try {
 			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
-			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
+			const { client, isOAuthToken } = createClient(
+				model,
+				apiKey,
+				options?.interleavedThinking ?? true,
+				options?.fetch,
+			);
 			const params = buildParams(model, context, isOAuthToken, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
@@ -282,6 +287,7 @@ function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
 	interleavedThinking: boolean,
+	customFetch?: typeof globalThis.fetch,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (interleavedThinking) {
@@ -302,6 +308,7 @@ function createClient(
 			baseURL: model.baseUrl,
 			defaultHeaders,
 			dangerouslyAllowBrowser: true,
+			fetch: customFetch,
 		});
 
 		return { client, isOAuthToken: true };
@@ -318,6 +325,7 @@ function createClient(
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
 			defaultHeaders,
+			fetch: customFetch,
 		});
 
 		return { client, isOAuthToken: false };

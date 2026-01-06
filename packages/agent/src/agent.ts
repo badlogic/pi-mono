@@ -71,6 +71,12 @@ export interface AgentOptions {
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Factory to create a custom fetch function for HTTP requests.
+	 * Use this to intercept, modify, or log HTTP requests made to the LLM provider.
+	 */
+	createFetch?: (model: Model<any>) => typeof globalThis.fetch;
 }
 
 export class Agent {
@@ -97,6 +103,7 @@ export class Agent {
 	public streamFn: StreamFn;
 	private _sessionId?: string;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+	public createFetch?: (model: Model<any>) => typeof globalThis.fetch;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 
@@ -109,6 +116,7 @@ export class Agent {
 		this.streamFn = opts.streamFn || streamSimple;
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
+		this.createFetch = opts.createFetch;
 	}
 
 	/**
@@ -313,6 +321,7 @@ export class Agent {
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
+			createFetch: this.createFetch,
 			getSteeringMessages: async () => {
 				if (this.steeringMode === "one-at-a-time") {
 					if (this.steeringQueue.length > 0) {

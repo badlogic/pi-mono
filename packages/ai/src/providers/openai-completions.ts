@@ -100,7 +100,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, context, apiKey);
+			const client = createClient(model, context, apiKey, options?.fetch);
 			const params = buildParams(model, context, options);
 			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
@@ -315,7 +315,12 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 	return stream;
 };
 
-function createClient(model: Model<"openai-completions">, context: Context, apiKey?: string) {
+function createClient(
+	model: Model<"openai-completions">,
+	context: Context,
+	apiKey?: string,
+	customFetch?: typeof globalThis.fetch,
+) {
 	if (!apiKey) {
 		if (!process.env.OPENAI_API_KEY) {
 			throw new Error(
@@ -356,6 +361,7 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: headers,
+		fetch: customFetch,
 	});
 }
 
