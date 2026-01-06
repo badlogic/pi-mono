@@ -37,6 +37,7 @@ import type {
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { loadPromptTemplates } from "../../core/prompt-templates.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
@@ -411,6 +412,19 @@ export class InteractiveMode {
 				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
+		}
+
+		// Show loaded prompt templates
+		const templates = loadPromptTemplates({
+			cwd: this.session.cwd,
+			agentDir: this.session.agentDir,
+		});
+		if (templates.length > 0) {
+			const templateList = templates
+				.map((t) => theme.fg("dim", `  ${t.name}${t.description ? `: ${t.description}` : ""}`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded templates:\n") + templateList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		// Create and set extension UI context

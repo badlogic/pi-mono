@@ -621,6 +621,16 @@ export class AgentSession {
 		return this._promptTemplates;
 	}
 
+	/** Current working directory */
+	get cwd(): string {
+		return this._cwd;
+	}
+
+	/** Agent configuration directory */
+	get agentDir(): string {
+		return this._agentDir;
+	}
+
 	// =========================================================================
 	// Prompting
 	// =========================================================================
