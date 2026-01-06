@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Kitty keyboard protocol flag 2 support for key release events. New exports: `isKeyRelease(data)`, `isKeyRepeat(data)`, `KeyEventType` type. Terminals supporting Kitty protocol (Kitty, Ghostty, WezTerm) now send proper key-up events.
+
 ## [0.37.5] - 2026-01-06
 
 ## [0.37.4] - 2026-01-06

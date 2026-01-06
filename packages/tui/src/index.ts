@@ -30,7 +30,17 @@ export {
 	setEditorKeybindings,
 } from "./keybindings.js";
 // Keyboard input handling
-export { isKittyProtocolActive, Key, type KeyId, matchesKey, parseKey, setKittyProtocolActive } from "./keys.js";
+export {
+	isKeyRelease,
+	isKeyRepeat,
+	isKittyProtocolActive,
+	Key,
+	type KeyEventType,
+	type KeyId,
+	matchesKey,
+	parseKey,
+	setKittyProtocolActive,
+} from "./keys.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support
