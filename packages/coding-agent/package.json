@@ -49,6 +49,7 @@
 		"glob": "^11.0.3",
 		"jiti": "^2.6.1",
 		"marked": "^15.0.12",
+		"minimatch": "^10.1.1",
 		"proper-lockfile": "^4.1.2",
 		"sharp": "^0.34.2"
 	},

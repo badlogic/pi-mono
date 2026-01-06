@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Add `minimatch` as a direct dependency for explicit imports.
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed
