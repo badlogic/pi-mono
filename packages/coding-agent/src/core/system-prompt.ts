@@ -310,3 +310,37 @@ Documentation:
 
 	return prompt;
 }
+
+/** Custom system prompt: string, function, or undefined (use default) */
+export type CustomPrompt = string | ((defaultPrompt: string) => string) | undefined;
+
+/** Options for buildSystemPromptWithCustom, extending BuildSystemPromptOptions */
+export interface BuildSystemPromptWithCustomOptions extends Omit<BuildSystemPromptOptions, "customPrompt"> {
+	/** Custom system prompt (string, function, or undefined). Default: undefined (use default prompt) */
+	customPrompt?: CustomPrompt;
+}
+
+/**
+ * Build system prompt with custom prompt handling for all cases:
+ * - undefined → use default prompt
+ * - string → use custom string as base (context appended)
+ * - function → call function with default prompt
+ *
+ * This centralizes the three-case logic used by AgentSession.reloadContext()
+ * to reduce duplication and make testing easier.
+ */
+export function buildSystemPromptWithCustom(options: BuildSystemPromptWithCustomOptions = {}): string {
+	const { customPrompt, ...rest } = options;
+
+	if (customPrompt === undefined) {
+		// Case 1: Use default prompt
+		return buildSystemPrompt(rest);
+	} else if (typeof customPrompt === "string") {
+		// Case 2: Custom string prompt (passed to buildSystemPrompt)
+		return buildSystemPrompt({ ...rest, customPrompt });
+	} else {
+		// Case 3: Custom function prompt
+		const defaultPrompt = buildSystemPrompt(rest);
+		return customPrompt(defaultPrompt);
+	}
+}

@@ -15,7 +15,7 @@ import { loadPromptTemplates } from "../src/core/prompt-templates.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { loadSkills } from "../src/core/skills.js";
-import { buildSystemPrompt, loadProjectContextFiles } from "../src/core/system-prompt.js";
+import { buildSystemPromptWithCustom, loadProjectContextFiles } from "../src/core/system-prompt.js";
 
 describe("AgentSession context reloading on newSession", () => {
 	let session: AgentSession;
@@ -62,28 +62,14 @@ describe("AgentSession context reloading on newSession", () => {
 		const initialToolNames = options?.initialToolNames || [];
 
 		const rebuildSystemPrompt = (toolNames: string[]): string => {
-			const defaultPrompt = buildSystemPrompt({
+			return buildSystemPromptWithCustom({
 				cwd: tempDir,
 				agentDir: join(tempDir, "agent"),
 				contextFiles,
 				skills,
 				selectedTools: toolNames as any[],
+				customPrompt: options?.customPrompt,
 			});
-
-			if (options?.customPrompt === undefined) {
-				return defaultPrompt;
-			} else if (typeof options.customPrompt === "string") {
-				return buildSystemPrompt({
-					cwd: tempDir,
-					agentDir: join(tempDir, "agent"),
-					contextFiles,
-					skills,
-					selectedTools: toolNames as any[],
-					customPrompt: options.customPrompt,
-				});
-			} else {
-				return options.customPrompt(defaultPrompt);
-			}
 		};
 
 		const systemPrompt = rebuildSystemPrompt(initialToolNames);

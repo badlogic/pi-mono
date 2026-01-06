@@ -55,7 +55,7 @@ import {
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
 import { loadSkills } from "./skills.js";
-import { buildSystemPrompt, loadProjectContextFiles } from "./system-prompt.js";
+import { buildSystemPromptWithCustom, loadProjectContextFiles } from "./system-prompt.js";
 import { allTools, type ToolName } from "./tools/index.js";
 
 /** Session-specific events that extend the core AgentEvent */
@@ -265,43 +265,19 @@ export class AgentSession {
 				agentDir: this._agentDir,
 			});
 
-			// Build base system prompt with fresh context
-			let newPrompt: string;
-
-			if (this._customPrompt === undefined) {
-				// Use default prompt with fresh context
-				newPrompt = buildSystemPrompt({
-					cwd: this._cwd,
-					agentDir: this._agentDir,
-					contextFiles,
-					skills,
-					selectedTools: validToolNames,
-				});
-			} else if (typeof this._customPrompt === "string") {
-				// Build with custom string prompt
-				newPrompt = buildSystemPrompt({
-					cwd: this._cwd,
-					agentDir: this._agentDir,
-					contextFiles,
-					skills,
-					selectedTools: validToolNames,
-					customPrompt: this._customPrompt,
-				});
-			} else {
-				// Call custom function with default prompt built from fresh context
-				const defaultPrompt = buildSystemPrompt({
-					cwd: this._cwd,
-					agentDir: this._agentDir,
-					contextFiles,
-					skills,
-					selectedTools: validToolNames,
-				});
-				newPrompt = this._customPrompt(defaultPrompt);
-			}
+			// Build base system prompt with fresh context and custom prompt handling
+			const newPrompt = buildSystemPromptWithCustom({
+				cwd: this._cwd,
+				agentDir: this._agentDir,
+				contextFiles,
+				skills,
+				selectedTools: validToolNames,
+				customPrompt: this._customPrompt,
+			});
 
 			// Validate prompt is non-empty before updating
 			if (!newPrompt || newPrompt.trim().length === 0) {
-				throw new Error("buildSystemPrompt returned empty prompt");
+				throw new Error("buildSystemPromptWithCustom returned empty prompt");
 			}
 
 			this._baseSystemPrompt = newPrompt;
