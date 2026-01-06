@@ -442,6 +442,11 @@ export class InteractiveMode {
 						this.showError(`Extension sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
 					});
 			},
+			sendUserMessageHandler: (content, options) => {
+				this.session.sendUserMessage(content, options).catch((err) => {
+					this.showError(`Extension sendUserMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+				});
+			},
 			appendEntryHandler: (customType, data) => {
 				this.sessionManager.appendCustomEntry(customType, data);
 			},

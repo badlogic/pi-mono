@@ -37,6 +37,11 @@ export async function runPrintMode(
 					console.error(`Extension sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
 				});
 			},
+			sendUserMessageHandler: (content, options) => {
+				session.sendUserMessage(content, options).catch((e) => {
+					console.error(`Extension sendUserMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+				});
+			},
 			appendEntryHandler: (customType, data) => {
 				session.sessionManager.appendCustomEntry(customType, data);
 			},

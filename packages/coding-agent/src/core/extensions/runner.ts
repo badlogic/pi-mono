@@ -28,6 +28,7 @@ import type {
 	RegisteredCommand,
 	RegisteredTool,
 	SendMessageHandler,
+	SendUserMessageHandler,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
 	SetActiveToolsHandler,
@@ -108,6 +109,7 @@ export class ExtensionRunner {
 	initialize(options: {
 		getModel: () => Model<any> | undefined;
 		sendMessageHandler: SendMessageHandler;
+		sendUserMessageHandler: SendUserMessageHandler;
 		appendEntryHandler: AppendEntryHandler;
 		getActiveToolsHandler: GetActiveToolsHandler;
 		getAllToolsHandler: GetAllToolsHandler;
@@ -140,6 +142,7 @@ export class ExtensionRunner {
 
 		for (const ext of this.extensions) {
 			ext.setSendMessageHandler(options.sendMessageHandler);
+			ext.setSendUserMessageHandler(options.sendUserMessageHandler);
 			ext.setAppendEntryHandler(options.appendEntryHandler);
 			ext.setGetActiveToolsHandler(options.getActiveToolsHandler);
 			ext.setGetAllToolsHandler(options.getAllToolsHandler);

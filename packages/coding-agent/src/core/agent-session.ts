@@ -789,6 +789,45 @@ export class AgentSession {
 	}
 
 	/**
+	 * Send a user message to the agent. Always triggers a turn.
+	 * When the agent is streaming, use deliverAs to specify how to queue the message.
+	 *
+	 * @param content User message content (string or content array)
+	 * @param options.deliverAs Delivery mode when streaming: "steer" or "followUp"
+	 */
+	async sendUserMessage(
+		content: string | (TextContent | ImageContent)[],
+		options?: { deliverAs?: "steer" | "followUp" },
+	): Promise<void> {
+		// Normalize content to text string + optional images
+		let text: string;
+		let images: ImageContent[] | undefined;
+
+		if (typeof content === "string") {
+			text = content;
+		} else {
+			const textParts: string[] = [];
+			images = [];
+			for (const part of content) {
+				if (part.type === "text") {
+					textParts.push(part.text);
+				} else {
+					images.push(part);
+				}
+			}
+			text = textParts.join("\n");
+			if (images.length === 0) images = undefined;
+		}
+
+		// Use prompt() with expandPromptTemplates: false to skip command handling and template expansion
+		await this.prompt(text, {
+			expandPromptTemplates: false,
+			streamingBehavior: options?.deliverAs,
+			images,
+		});
+	}
+
+	/**
 	 * Clear all queued messages and return them.
 	 * Useful for restoring to editor when user aborts.
 	 * @returns Object with steering and followUp arrays

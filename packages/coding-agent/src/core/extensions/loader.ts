@@ -29,6 +29,7 @@ import type {
 	RegisteredCommand,
 	RegisteredTool,
 	SendMessageHandler,
+	SendUserMessageHandler,
 	SetActiveToolsHandler,
 	ToolDefinition,
 } from "./types.js";
@@ -117,6 +118,7 @@ function createExtensionAPI(
 	flagValues: Map<string, boolean | string>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
+	setSendUserMessageHandler: (handler: SendUserMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
 	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
 	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
@@ -124,6 +126,7 @@ function createExtensionAPI(
 	setFlagValue: (name: string, value: boolean | string) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {};
+	let sendUserMessageHandler: SendUserMessageHandler = () => {};
 	let appendEntryHandler: AppendEntryHandler = () => {};
 	let getActiveToolsHandler: GetActiveToolsHandler = () => [];
 	let getAllToolsHandler: GetAllToolsHandler = () => [];
@@ -185,6 +188,10 @@ function createExtensionAPI(
 			sendMessageHandler(message, options);
 		},
 
+		sendUserMessage(content, options): void {
+			sendUserMessageHandler(content, options);
+		},
+
 		appendEntry(customType: string, data?: unknown): void {
 			appendEntryHandler(customType, data);
 		},
@@ -217,6 +224,9 @@ function createExtensionAPI(
 		shortcuts,
 		setSendMessageHandler: (handler: SendMessageHandler) => {
 			sendMessageHandler = handler;
+		},
+		setSendUserMessageHandler: (handler: SendUserMessageHandler) => {
+			sendUserMessageHandler = handler;
 		},
 		setAppendEntryHandler: (handler: AppendEntryHandler) => {
 			appendEntryHandler = handler;
@@ -261,6 +271,7 @@ async function loadExtensionWithBun(
 			flagValues,
 			shortcuts,
 			setSendMessageHandler,
+			setSendUserMessageHandler,
 			setAppendEntryHandler,
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
@@ -282,6 +293,7 @@ async function loadExtensionWithBun(
 				flagValues,
 				shortcuts,
 				setSendMessageHandler,
+				setSendUserMessageHandler,
 				setAppendEntryHandler,
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
@@ -341,6 +353,7 @@ async function loadExtension(
 			flagValues,
 			shortcuts,
 			setSendMessageHandler,
+			setSendUserMessageHandler,
 			setAppendEntryHandler,
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
@@ -362,6 +375,7 @@ async function loadExtension(
 				flagValues,
 				shortcuts,
 				setSendMessageHandler,
+				setSendUserMessageHandler,
 				setAppendEntryHandler,
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
@@ -396,6 +410,7 @@ export function loadExtensionFromFactory(
 		flagValues,
 		shortcuts,
 		setSendMessageHandler,
+		setSendUserMessageHandler,
 		setAppendEntryHandler,
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,
@@ -416,6 +431,7 @@ export function loadExtensionFromFactory(
 		flagValues,
 		shortcuts,
 		setSendMessageHandler,
+		setSendUserMessageHandler,
 		setAppendEntryHandler,
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,

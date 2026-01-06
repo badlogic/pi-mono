@@ -229,6 +229,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					output(error(undefined, "extension_send", e.message));
 				});
 			},
+			sendUserMessageHandler: (content, options) => {
+				session.sendUserMessage(content, options).catch((e) => {
+					output(error(undefined, "extension_send_user", e.message));
+				});
+			},
 			appendEntryHandler: (customType, data) => {
 				session.sessionManager.appendCustomEntry(customType, data);
 			},
