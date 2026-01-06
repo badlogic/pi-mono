@@ -84,6 +84,7 @@ export class TUI extends Container {
 	public onDebug?: () => void;
 	private renderRequested = false;
 	private cursorRow = 0; // Track where cursor is (0-indexed, relative to our first line)
+	private viewportBottomRow = 0; // Track where viewport bottom is (0-indexed, relative to our first line)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
 
@@ -127,6 +128,7 @@ export class TUI extends Container {
 			this.previousLines = [];
 			this.previousWidth = 0;
 			this.cursorRow = 0;
+			this.viewportBottomRow = 0;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -205,9 +207,54 @@ export class TUI extends Container {
 		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
 	}
 
+	private findFakeCursor(lines: string[], width: number): { row: number; col: number } | null {
+		const marker = "\x1b[7m";
+		let cursorRow = -1;
+		let cursorCol = 0;
+
+		for (let row = 0; row < lines.length; row++) {
+			const line = lines[row];
+			if (!line) continue;
+			const idx = line.lastIndexOf(marker);
+			if (idx === -1) continue;
+			cursorRow = row;
+			cursorCol = visibleWidth(line.slice(0, idx));
+		}
+
+		if (cursorRow === -1) {
+			return null;
+		}
+
+		if (width > 0) {
+			cursorCol = Math.max(0, Math.min(width - 1, cursorCol));
+		} else {
+			cursorCol = Math.max(0, cursorCol);
+		}
+
+		return { row: cursorRow, col: cursorCol };
+	}
+
+	private appendMoveCursor(buffer: string, fromRow: number, target: { row: number; col: number }): string {
+		const rowDiff = target.row - fromRow;
+		if (rowDiff > 0) {
+			buffer += `\x1b[${rowDiff}B`;
+		} else if (rowDiff < 0) {
+			buffer += `\x1b[${-rowDiff}A`;
+		}
+
+		buffer += "\r";
+		if (target.col > 0) {
+			buffer += `\x1b[${target.col}C`;
+		}
+
+		return buffer;
+	}
+
 	private doRender(): void {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
+
+		const previousViewportBottomRow = this.viewportBottomRow;
 
 		// Render all components to get new lines
 		const newLines = this.render(width);
@@ -222,10 +269,22 @@ export class TUI extends Container {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
 			}
+
+			// After rendering N lines, cursor is at end of last line (line N-1)
+			// If a fake cursor is present, we move the real terminal cursor there for IME candidate positioning.
+			const newViewportBottomRow = newLines.length - 1;
+			this.viewportBottomRow = newViewportBottomRow;
+
+			const fakeCursor = this.findFakeCursor(newLines, width);
+			if (fakeCursor) {
+				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
+				this.cursorRow = fakeCursor.row;
+			} else {
+				this.cursorRow = newViewportBottomRow;
+			}
+
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			// After rendering N lines, cursor is at end of last line (line N-1)
-			this.cursorRow = newLines.length - 1;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -239,9 +298,20 @@ export class TUI extends Container {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
 			}
+
+			const newViewportBottomRow = newLines.length - 1;
+			this.viewportBottomRow = newViewportBottomRow;
+
+			const fakeCursor = this.findFakeCursor(newLines, width);
+			if (fakeCursor) {
+				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
+				this.cursorRow = fakeCursor.row;
+			} else {
+				this.cursorRow = newViewportBottomRow;
+			}
+
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = newLines.length - 1;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -267,10 +337,10 @@ export class TUI extends Container {
 		}
 
 		// Check if firstChanged is outside the viewport
-		// cursorRow is the line where cursor is (0-indexed)
-		// Viewport shows lines from (cursorRow - height + 1) to cursorRow
+		// viewportBottomRow is the line where the viewport ends (0-indexed)
+		// Viewport shows lines from (viewportBottomRow - height + 1) to viewportBottomRow
 		// If firstChanged < viewportTop, we need full re-render
-		const viewportTop = this.cursorRow - height + 1;
+		const viewportTop = previousViewportBottomRow - height + 1;
 		if (firstChanged < viewportTop) {
 			// First change is above viewport - need full re-render
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
@@ -279,9 +349,20 @@ export class TUI extends Container {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
 			}
+
+			const newViewportBottomRow = newLines.length - 1;
+			this.viewportBottomRow = newViewportBottomRow;
+
+			const fakeCursor = this.findFakeCursor(newLines, width);
+			if (fakeCursor) {
+				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
+				this.cursorRow = fakeCursor.row;
+			} else {
+				this.cursorRow = newViewportBottomRow;
+			}
+
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = newLines.length - 1;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -337,13 +418,23 @@ export class TUI extends Container {
 			buffer += `\x1b[${extraLines}A`;
 		}
 
+		// Cursor is now at end of last line
+		// If a fake cursor is present, we move the real terminal cursor there for IME candidate positioning.
+		const newViewportBottomRow = newLines.length - 1;
+		this.viewportBottomRow = newViewportBottomRow;
+
+		const fakeCursor = this.findFakeCursor(newLines, width);
+		if (fakeCursor) {
+			buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
+			this.cursorRow = fakeCursor.row;
+		} else {
+			this.cursorRow = newViewportBottomRow;
+		}
+
 		buffer += "\x1b[?2026l"; // End synchronized output
 
 		// Write entire buffer at once
 		this.terminal.write(buffer);
-
-		// Cursor is now at end of last line
-		this.cursorRow = newLines.length - 1;
 
 		this.previousLines = newLines;
 		this.previousWidth = width;
